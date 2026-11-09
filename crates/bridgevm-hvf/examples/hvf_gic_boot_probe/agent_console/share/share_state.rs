@@ -46,9 +46,16 @@ pub(in crate::agent_console) struct ShareState {
     pub(in crate::agent_console) low_space_seen: HashSet<(String, Option<String>)>,
     /// Synced versions and PUT marks beside the VM's UEFI vars (share_sync_file.rs).
     pub(in crate::agent_console) sync_file: Option<sync_file::SyncStateFile>,
+    /// The marks number the next PUT waits for, and since when (share_sync_file.rs).
+    marks_due: Option<(u64, Instant)>,
+    /// A PUT held until its marks are on disk.
+    pub(in crate::agent_console) held_put: Option<ServiceReq>,
     #[cfg(test)]
     pub(in crate::agent_console) host_scans: usize,
 }
+
+/// A PUT waits at most this long for its marks; then the state turns off and the PUT goes.
+const MARKS_WAIT: Duration = Duration::from_secs(10);
 
 impl ShareState {
     pub(in crate::agent_console) fn new(
@@ -80,6 +87,8 @@ impl ShareState {
             big: None,
             low_space_seen: HashSet::new(),
             sync_file: None,
+            marks_due: None,
+            held_put: None,
             #[cfg(test)]
             host_scans: 0,
         }
@@ -92,11 +101,12 @@ impl ShareState {
         self.sync_file = Some(file);
     }
 
-    /// Before a PUT of `name` goes out: its mark on disk first. One write also marks every other
-    /// file this scan pass may still send (they settle if it does not), so a pass of many PUTs
-    /// costs vCPU 0 one write, not one each: measured 0.9 ms per mark write in a burst of 200
-    /// PUTs, +0.95 ms per PUT. A mark that cannot be written turns the state off; the share goes
-    /// on as without one.
+    /// Before a PUT of `name` goes out: its mark on disk first. The state thread writes it, and
+    /// the PUT waits for it (`after_marks`), so vCPU 0 does not wait for the barrier (1.6-4.5 ms
+    /// measured in a burst, on top of the scan's own tick). The same write also marks every
+    /// other file this scan pass may still send (they settle if it does not), so a pass of many
+    /// PUTs writes once (0.9 ms each when every PUT wrote its own). A mark that cannot be
+    /// written turns the state off; the share goes on as without one.
     pub(in crate::agent_console) fn mark_put(&mut self, name: &str, now: Instant) {
         self.engine.mark_put(name);
         let mut names = vec![share_sync::normalize_rel(name)];
@@ -110,7 +120,39 @@ impl ShareState {
                 }
             }
         }
-        self.mark_on_disk(&names);
+        let Some(file) = self.sync_file.as_mut() else {
+            return;
+        };
+        if let Some(seq) = file.ask_marks(names.iter().map(String::as_str)) {
+            let since = self.marks_due.map_or(now, |(_, since)| since);
+            self.marks_due = Some((seq, since));
+        }
+    }
+
+    /// `req`, a PUT, to send now, or None: held until its marks are on disk (`release_held_put`).
+    pub(in crate::agent_console) fn after_marks(&mut self, req: ServiceReq) -> Option<ServiceReq> {
+        if self.marks_due.is_none() {
+            return Some(req);
+        }
+        debug_assert!(self.held_put.is_none());
+        self.held_put = Some(req);
+        None
+    }
+
+    /// The held PUT once its marks are on disk. Never held for good: when a write failed, the
+    /// state thread is gone or the write takes longer than MARKS_WAIT, the state turns off and
+    /// the PUT goes (the share works as without a state).
+    pub(in crate::agent_console) fn release_held_put(&mut self, now: Instant) -> Option<ServiceReq> {
+        self.held_put.as_ref()?;
+        if let Some((seq, since)) = self.marks_due {
+            match self.sync_file.as_ref().and_then(|file| file.marks_durable(seq)) {
+                Some(true) => self.marks_due = None,
+                Some(false) if now.duration_since(since) < MARKS_WAIT => return None,
+                Some(false) => self.sync_state_off("a mark took too long to write"),
+                None => self.sync_state_off("a mark could not be written"),
+            }
+        }
+        self.held_put.take()
     }
 
     /// Before a fetched copy of `name` is published here: marked on disk, settling from `now`.
@@ -135,6 +177,7 @@ impl ShareState {
 
     fn sync_state_off(&mut self, why: &str) {
         println!("BVAGENT SHARE sync-state off {why}");
+        self.marks_due = None;
         if let Some(file) = self.sync_file.take() {
             file.remove();
         }

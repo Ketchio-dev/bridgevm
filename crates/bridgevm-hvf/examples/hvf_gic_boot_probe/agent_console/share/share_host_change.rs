@@ -16,6 +16,13 @@ use super::*;
 const SHARE_ADOPT_STEP_BYTES: usize = 64 << 20;
 
 impl AgentConsoleHarness {
+    /// A PUT held for its marks goes out once they are on disk (share_state.rs).
+    pub(in crate::agent_console) fn release_held_share_put(&mut self, now: Instant) {
+        if let Some(req) = self.share.as_mut().and_then(|share| share.release_held_put(now)) {
+            self.queue.push_back(req);
+        }
+    }
+
     pub(in crate::agent_console) fn enqueue_one_share_host_change(&mut self, now: Instant) -> bool {
         self.enqueue_one_share_host_change_with(now, read_share_host_snapshot)
     }
@@ -30,6 +37,9 @@ impl AgentConsoleHarness {
             return false;
         };
         share.flush_sync_state(now);
+        if share.held_put.is_some() {
+            return true; // released by release_held_share_put once its marks are on disk
+        }
         let fresh = share
             .host_actions_at
             .is_some_and(|at| now.duration_since(at) < share.interval);
@@ -72,7 +82,9 @@ impl AgentConsoleHarness {
                         // Larger than one range: streamed from the file (share_big_put.rs).
                         Some(Err(_)) => match start_big_put(share, &name, now) {
                             BigPutStart::Started => {
-                                self.queue.push_back(ServiceReq::ShareBigPut(BigPutStep::Beg));
+                                if let Some(req) = share.after_marks(ServiceReq::ShareBigPut(BigPutStep::Beg)) {
+                                    self.queue.push_back(req);
+                                }
                                 return true;
                             }
                             BigPutStart::Adopted => continue,
@@ -93,13 +105,10 @@ impl AgentConsoleHarness {
                     {
                         // The guest truncates before it writes (share_synced.rs).
                         share.mark_put(&name, now);
-                        self.queue
-                            .push_back(share_put_req(
-                            name,
-                            push.bytes,
-                            push.hash,
-                            Some(snapshot.mtime_ms),
-                        ));
+                        let req = share_put_req(name, push.bytes, push.hash, Some(snapshot.mtime_ms));
+                        if let Some(req) = share.after_marks(req) {
+                            self.queue.push_back(req);
+                        }
                         return true;
                     }
                 }

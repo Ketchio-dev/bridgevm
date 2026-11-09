@@ -2,10 +2,12 @@
 //! `<vars>.share-sync` holds each name's last and previous synced version and the marks as of a
 //! sequence number; `<vars>.share-sync-puts` holds the marks as of every later number.
 //!
-//! A mark reaches the disk before what it guards: before a PUT goes out (on the service thread)
-//! and before a fetched copy is published (on whichever thread publishes it): a few names,
-//! renamed into place and ordered with F_BARRIERFSYNC before any later write, as a guest flush is
-//! ordered. One writer, behind a lock, keeps the marks file and its number. The versions are
+//! A mark reaches the disk before what it guards: before a PUT goes out and before a fetched copy
+//! is published: the names, renamed into place and ordered with F_BARRIERFSYNC before any later
+//! write, as a guest flush is ordered. The service thread only asks for a PUT's marks; the state
+//! thread writes them and the PUT waits for that number to be on disk (share_state.rs), so vCPU 0
+//! never waits for the barrier. A fetched copy's mark is written by the thread that publishes it.
+//! One write at a time, each with every mark asked before it, keeps the file's number in order. The versions are
 //! written by a thread of their own about once a second (and at session end), with the marks as
 //! they are then: settled marks leave the disk that way. Losing that write is safe: the marks file
 //! then still holds every mark it has not dropped, and an old version only makes the Mac win. A
@@ -19,7 +21,8 @@ use std::collections::HashMap;
 use std::io::Write as _;
 use std::os::fd::AsRawFd as _;
 use std::os::unix::ffi::OsStrExt as _;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 
 const VERSIONS_HEADER: &str = "bridgevm-share-sync 1";
 const MARKS_HEADER: &str = "bridgevm-share-puts 1";
@@ -28,48 +31,92 @@ const FLUSH_EVERY: Duration = Duration::from_secs(1);
 
 enum ToWriter {
     Flush { changes: Vec<(String, Option<SyncedFile>)>, marks: Vec<String>, seq: u64 },
+    /// The PUT marks asked for so far, to be written.
+    Marks,
     /// The state is off: delete both files after any write still queued.
     Remove,
 }
 
-/// The marks file, its number and the names it holds (less those settled since).
+/// The marks asked for, their number and the names (less those settled since).
 pub(in crate::agent_console) struct Marks {
     path: PathBuf,
     root: String,
     seq: u64,
     names: HashSet<String>,
-    /// A mark could not be written: the state must go.
-    failed: bool,
 }
 
-pub(in crate::agent_console) type SharedMarks = Arc<Mutex<Marks>>;
+/// The marks file, shared by the service thread (which asks), the state thread (which writes
+/// PUT marks) and a thread that publishes a fetched copy (which writes its own).
+pub(in crate::agent_console) struct MarksFile {
+    state: Mutex<Marks>,
+    /// Held while the file is written: one write at a time, each with every mark asked before it.
+    write: Mutex<()>,
+    /// The newest number on disk.
+    durable: AtomicU64,
+    /// A mark could not be written: the state must go.
+    failed: AtomicBool,
+    /// Tests hold the state thread's writes here.
+    #[cfg(test)]
+    pub(in crate::agent_console) hold: AtomicBool,
+}
 
-impl Marks {
-    /// Every one of `names` marked on disk, in one write if any is new. An error also sets `failed`.
-    pub(in crate::agent_console) fn add_all<'a>(&mut self, names: impl IntoIterator<Item = &'a str>) -> std::io::Result<()> {
-        let before = self.names.len();
-        self.names.extend(names.into_iter().map(str::to_string));
-        if self.names.len() == before {
-            return Ok(());
+pub(in crate::agent_console) type SharedMarks = Arc<MarksFile>;
+
+impl MarksFile {
+    fn lock(&self) -> MutexGuard<'_, Marks> {
+        self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// `names` asked for (no write here): the number that holds them all.
+    pub(in crate::agent_console) fn ask<'a>(&self, names: impl IntoIterator<Item = &'a str>) -> u64 {
+        let mut held = self.lock();
+        let before = held.names.len();
+        held.names.extend(names.into_iter().map(str::to_string));
+        if held.names.len() != before {
+            held.seq += 1;
         }
-        self.seq += 1;
-        let mut text = format!("{MARKS_HEADER}\nroot {}\nseq {}\n", self.root, self.seq);
-        push_marks(&mut text, self.names.iter());
-        let written = write_replace(&self.path, text.as_bytes()).and_then(|file| {
+        held.seq
+    }
+
+    /// Every mark asked so far on disk, unless it already is. An error also sets `failed`.
+    pub(in crate::agent_console) fn write_through(&self) -> std::io::Result<()> {
+        let _one = self.write.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (path, text, seq) = {
+            let held = self.lock();
+            if held.seq <= self.durable.load(Ordering::Acquire) {
+                return Ok(());
+            }
+            let mut text = format!("{MARKS_HEADER}\nroot {}\nseq {}\n", held.root, held.seq);
+            push_marks(&mut text, held.names.iter());
+            (held.path.clone(), text, held.seq)
+        };
+        let written = write_replace(&path, text.as_bytes()).and_then(|file| {
             // SAFETY: a live descriptor; F_BARRIERFSYNC takes no argument.
             if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_BARRIERFSYNC) } < 0 {
                 return Err(std::io::Error::last_os_error());
             }
             Ok(())
         });
-        self.failed |= written.is_err();
+        match &written {
+            Ok(()) => drop(self.durable.fetch_max(seq, Ordering::AcqRel)),
+            Err(_) => self.failed.store(true, Ordering::Release),
+        }
         written
+    }
+
+    /// Number `seq` is on disk (Some(true)), not yet (Some(false)), or never will be (None).
+    pub(in crate::agent_console) fn durable(&self, seq: u64) -> Option<bool> {
+        if self.failed.load(Ordering::Acquire) {
+            return None;
+        }
+        Some(self.durable.load(Ordering::Acquire) >= seq)
     }
 }
 
-/// Mark `names` on disk through the shared writer (from any thread), in one write.
+/// Mark `names` on disk here (from any thread), in one write with any mark asked before.
 pub(in crate::agent_console) fn mark<'a>(marks: &SharedMarks, names: impl IntoIterator<Item = &'a str>) -> std::io::Result<()> {
-    marks.lock().unwrap_or_else(std::sync::PoisonError::into_inner).add_all(names)
+    marks.ask(names);
+    marks.write_through()
 }
 
 pub(in crate::agent_console) struct SyncStateFile {
@@ -100,13 +147,19 @@ impl SyncStateFile {
         let [versions, marks] = bridgevm_hvf::snapshot_pair::SHARE_STATE_SUFFIXES;
         let mut file = Self {
             versions: side(versions),
-            marks: Arc::new(Mutex::new(Marks {
-                path: side(marks),
-                root: root.clone(),
-                seq: 0,
-                names: HashSet::new(),
-                failed: false,
-            })),
+            marks: Arc::new(MarksFile {
+                state: Mutex::new(Marks {
+                    path: side(marks),
+                    root: root.clone(),
+                    seq: 0,
+                    names: HashSet::new(),
+                }),
+                write: Mutex::new(()),
+                durable: AtomicU64::new(0),
+                failed: AtomicBool::new(false),
+                #[cfg(test)]
+                hold: AtomicBool::new(false),
+            }),
             root,
             base: None,
             writer: None,
@@ -122,12 +175,13 @@ impl SyncStateFile {
             held.seq = seq;
             held.names = marks.clone();
         }
+        file.marks.durable.store(seq, Ordering::Release);
         file.base = Some(files.clone());
         (file, files, marks)
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Marks> {
-        self.marks.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    fn lock(&self) -> MutexGuard<'_, Marks> {
+        self.marks.lock()
     }
 
     /// The marks writer, for a thread that publishes a fetched copy.
@@ -157,15 +211,49 @@ impl SyncStateFile {
         Some((files, marked, seq.max(later_seq)))
     }
 
-    /// Mark `names` on disk (one write) before a PUT goes out or a fetched copy is published here.
+    /// Mark `names` on disk here (one write) before a fetched copy is published on this thread.
     pub(in crate::agent_console) fn mark<'a>(&self, names: impl IntoIterator<Item = &'a str>) -> std::io::Result<()> {
-        self.lock().add_all(names)
+        mark(&self.marks, names)
+    }
+
+    /// Ask for a PUT's marks, written by the state thread: the number the PUT waits for, or None
+    /// when they are on disk already.
+    pub(in crate::agent_console) fn ask_marks<'a>(&mut self, names: impl IntoIterator<Item = &'a str>) -> Option<u64> {
+        let seq = self.marks.ask(names);
+        if self.marks.durable(seq) == Some(true) {
+            return None;
+        }
+        let sent = self.writer().is_some_and(|writer| writer.send(ToWriter::Marks).is_ok());
+        if !sent {
+            self.marks.failed.store(true, Ordering::Release);
+        }
+        Some(seq)
+    }
+
+    /// Number `seq` is on disk (Some(true)), not yet (Some(false)), or never will be (None: a
+    /// write failed or the state thread is gone).
+    pub(in crate::agent_console) fn marks_durable(&self, seq: u64) -> Option<bool> {
+        let durable = self.marks.durable(seq)?;
+        if !durable && self.thread.as_ref().is_none_or(std::thread::JoinHandle::is_finished) {
+            return None;
+        }
+        Some(durable)
+    }
+
+    /// Tests: wait until every mark asked is on disk (or failed), unless writes are held.
+    #[cfg(test)]
+    pub(in crate::agent_console) fn wait_marks(&self) {
+        let seq = self.lock().seq;
+        let until = Instant::now() + Duration::from_secs(5);
+        while !self.marks.hold.load(Ordering::Acquire) && self.marks_durable(seq) == Some(false) && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     /// Settled marks leave, and the versions changed since the last flush go to the writer, at
     /// most once a second. False when a mark could not be written: the caller turns the state off.
     pub(in crate::agent_console) fn flush(&mut self, engine: &mut ShareSync, now: Instant) -> bool {
-        if self.lock().failed {
+        if self.marks.failed.load(Ordering::Acquire) {
             return false;
         }
         if self.last_flush.is_some_and(|at| now.duration_since(at) < FLUSH_EVERY) {
@@ -210,7 +298,7 @@ impl SyncStateFile {
     fn writer(&mut self) -> Option<&mpsc::Sender<ToWriter>> {
         if self.writer.is_none() {
             let (to, inbox) = mpsc::channel();
-            let (versions, marks, root) = (self.versions.clone(), self.lock().path.clone(), self.root.clone());
+            let (versions, marks, root) = (self.versions.clone(), Arc::clone(&self.marks), self.root.clone());
             let files = self.base.take().unwrap_or_default();
             let thread = std::thread::Builder::new()
                 .name("bvagent-share-state".into())
@@ -233,13 +321,29 @@ impl SyncStateFile {
     }
 }
 
-fn run(versions: &Path, marks: &Path, root: &str, mut files: HashMap<String, SyncedFile>, inbox: &mpsc::Receiver<ToWriter>) {
+fn run(versions: &Path, marks: &MarksFile, root: &str, mut files: HashMap<String, SyncedFile>, inbox: &mpsc::Receiver<ToWriter>) {
     let mut warned = false;
     while let Ok(message) = inbox.recv() {
-        let ToWriter::Flush { changes, marks: marked, seq } = message else {
-            let _ = std::fs::remove_file(marks);
-            let _ = std::fs::remove_file(versions);
-            return;
+        let (changes, marked, seq) = match message {
+            ToWriter::Flush { changes, marks, seq } => (changes, marks, seq),
+            ToWriter::Marks => {
+                // Bounded, so a failing test ends instead of waiting here for good.
+                #[cfg(test)]
+                for _ in 0..5000 {
+                    if !marks.hold.load(Ordering::Acquire) {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                // A failure sets `failed`; the service thread then turns the state off.
+                let _ = marks.write_through();
+                continue;
+            }
+            ToWriter::Remove => {
+                let _ = std::fs::remove_file(&marks.lock().path);
+                let _ = std::fs::remove_file(versions);
+                return;
+            }
         };
         for (name, file) in changes {
             match file {

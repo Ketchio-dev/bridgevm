@@ -246,6 +246,10 @@ impl Rig {
     /// are written by the reply handler and forwarded like `service_pump`.
     fn run(&mut self, ticks: usize) {
         for _ in 0..ticks {
+            // The state thread's mark writes land between ticks (unless a test holds them).
+            if let Some(file) = self.h.share.as_ref().and_then(|share| share.sync_file.as_ref()) {
+                file.wait_marks();
+            }
             self.now += Duration::from_secs(1);
             self.h.service_enqueue(self.now);
             let Some(req) = self.h.queue.pop_front() else { continue };

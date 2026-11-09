@@ -389,5 +389,27 @@ fn a_snapshot_restore_drops_the_synced_state_so_the_rolled_back_guest_copy_is_no
     assert_eq!(rig.guest.gets[gets..], [] as [String; 0], "the rolled-back guest copy was fetched");
     assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"version three, current"[..]));
     assert_eq!(rig.guest.content("doc.bin"), Some(&b"version three, current"[..]));
+    rig.h.share = None; // the session's state thread ends before its files go
     std::fs::remove_dir_all(&vm).unwrap();
+}
+
+#[test]
+fn a_put_waits_until_the_state_thread_has_its_mark_on_disk() {
+    let mut rig = Rig::new("mark-gate");
+    let vars = vars(&rig);
+    new_session(&mut rig, Some(&vars));
+    rig.run(4);
+    let marks = rig.h.share.as_ref().and_then(ShareState::sync_marks).unwrap();
+    marks.hold.store(true, std::sync::atomic::Ordering::Release);
+    std::fs::write(rig.dir.join("gated.txt"), b"after its mark").unwrap();
+    rig.run(6);
+    assert_eq!(rig.guest.puts, [] as [String; 0], "a PUT went out before its mark was on disk");
+    assert!(rig.h.share.as_ref().unwrap().held_put.is_some());
+    marks.hold.store(false, std::sync::atomic::Ordering::Release);
+    rig.run(4);
+    assert_eq!(rig.guest.content("gated.txt"), Some(&b"after its mark"[..]));
+    let mut path = vars.as_os_str().to_owned();
+    path.push(".share-sync-puts");
+    let text = std::fs::read_to_string(path).unwrap();
+    assert!(text.lines().any(|line| line.starts_with("mark ")), "{text}");
 }
