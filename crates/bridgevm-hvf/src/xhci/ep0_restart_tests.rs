@@ -26,7 +26,8 @@ impl GuestMemoryMut for ObservedMemory {
         if self.reject_state_write && gpa == EP0_CONTEXT {
             return false;
         }
-        if gpa == EVENT_RING1 + TRB_SIZE && data.len() == TRB_SIZE as usize {
+        // The event becomes visible with its cycle dword, the TRB's last store (event.rs).
+        if gpa == EVENT_RING1 + TRB_SIZE + 12 && data.len() == 4 {
             self.event_states
                 .push(self.ram.read_u32(EP0_CONTEXT) & EP_STATE_MASK);
         }

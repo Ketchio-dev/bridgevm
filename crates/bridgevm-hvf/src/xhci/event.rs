@@ -298,7 +298,15 @@ impl XhciController {
         event[0..8].copy_from_slice(&parameter.to_le_bytes());
         event[8..12].copy_from_slice(&status.to_le_bytes());
         event[12..16].copy_from_slice(&control.to_le_bytes());
-        if !mem.write_bytes(event_gpa, &event) {
+        // The guest drains every event TRB whose cycle bit matches, then reads its parameter and
+        // status and any data the transfer moved. Other cores may see our stores out of order
+        // (Apple silicon is weakly ordered), so the dword holding the cycle bit goes last, after
+        // a release fence that orders every earlier store before it.
+        let stored = mem.write_bytes(event_gpa, &event[..12]) && {
+            std::sync::atomic::fence(std::sync::atomic::Ordering::Release);
+            mem.write_bytes(event_gpa + 12, &event[12..])
+        };
+        if !stored {
             trace::event_post_reject_with_event("event_write_failed", trace);
             self.record_event_post_failure();
             return false;
