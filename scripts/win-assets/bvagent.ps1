@@ -587,20 +587,46 @@ function Test-DropName([string]$Name) {
 # reparse point; an existing name becomes "name (2).ext" ("name (2)" for a folder). The path is
 # returned as is; every file system call on it goes through Get-IoPath, so a dropped folder deeper
 # than 260 characters lands too.
-# Each dropped file is written here and moved to its Desktop name at DROPEND, so a drop the agent
-# never finished (a guest restart, the VM stopping) leaves no cut-short file under a real name, and
-# a OneDrive Desktop never uploads one. The user's temp folder is on the profile's volume, so the
-# move is a rename.
-function Get-DropStaging {
-    $dir = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'BridgeVM-drop')
-    [void][System.IO.Directory]::CreateDirectory($dir)
+# Each dropped file is written to a staging folder and moved to its Desktop name at DROPEND, so a
+# drop the agent never finished (a guest restart, the VM stopping) leaves no cut-short file under a
+# real name, and a OneDrive Desktop never uploads one. The move must be a rename, so the folder is on
+# the target's volume: the user's temp folder when it shares it, else a hidden folder on the Desktop
+# itself (a relocated or redirected Desktop). Drops never cross a reparse point below the Desktop.
+function Get-DropVolume([string]$Path) {
+    if ($Path.StartsWith('\\')) {
+        $parts = $Path.Substring(2).Split([char]92)
+        if ($parts.Length -ge 2) { return ('\\' + $parts[0] + '\' + $parts[1]).ToUpperInvariant() }
+    }
+    if ($Path.Length -ge 2) { return $Path.Substring(0, 2).ToUpperInvariant() }
+    return $Path
+}
+
+function Select-DropStaging([string]$Temp, [string]$Desktop, [string]$Target) {
+    if ((Get-DropVolume $Temp) -ceq (Get-DropVolume $Target)) { return [System.IO.Path]::Combine($Temp, 'BridgeVM-drop') }
+    return [System.IO.Path]::Combine($Desktop, '.bridgevm-drop')
+}
+
+function Get-DropStagingDirs {
+    return @([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'BridgeVM-drop'), [System.IO.Path]::Combine((Get-DropRoot), '.bridgevm-drop'))
+}
+
+function Get-DropStaging([string]$Target) {
+    $desktop = Get-DropRoot
+    $dir = Select-DropStaging ([System.IO.Path]::GetTempPath()) $desktop $Target
+    if (-not [System.IO.Directory]::Exists($dir)) {
+        $info = [System.IO.Directory]::CreateDirectory($dir)
+        if ($dir.StartsWith($desktop)) { $info.Attributes = $info.Attributes -bor [System.IO.FileAttributes]::Hidden }
+    }
     return $dir
 }
 
 # A drop job starts with no file open: anything left here is from an agent that stopped mid-drop.
 function Clear-DropStaging {
-    foreach ($file in [System.IO.Directory]::GetFiles((Get-DropStaging))) {
-        if ([System.IO.Path]::GetFileName($file) -cmatch '^[0-9a-f]{32}\.part$') { try { [System.IO.File]::Delete($file) } catch { } }
+    foreach ($dir in (Get-DropStagingDirs)) {
+        if (-not [System.IO.Directory]::Exists($dir)) { continue }
+        foreach ($file in [System.IO.Directory]::GetFiles($dir)) {
+            if ([System.IO.Path]::GetFileName($file) -cmatch '^[0-9a-f]{32}\.part$') { try { [System.IO.File]::Delete($file) } catch { } }
+        }
     }
 }
 
@@ -1944,7 +1970,7 @@ while ($true) {
                         $parts = $arg.Split(' ')
                         $total = [int64]$parts[1]
                         $target = Resolve-DropTarget (Get-DropRoot) ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0]))) $false
-                        $temp = [System.IO.Path]::Combine((Get-DropStaging), ([Guid]::NewGuid().ToString('N') + '.part'))
+                        $temp = [System.IO.Path]::Combine((Get-DropStaging $target), ([Guid]::NewGuid().ToString('N') + '.part'))
                         $script:BvDropStream = [System.IO.File]::Open($temp, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
                         $script:BvDropTemp = $temp
                         $script:BvDropPath = $target

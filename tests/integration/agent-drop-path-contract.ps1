@@ -7,7 +7,7 @@
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $source = [IO.File]::ReadAllText((Join-Path $repo 'scripts/win-assets/bvagent.ps1'))
-foreach ($name in @('Get-IoPath', 'Test-DropName', 'Get-FreeDropPath', 'Resolve-DropTarget', 'Close-DropStream', 'Clear-DropStaging')) {
+foreach ($name in @('Get-IoPath', 'Test-DropName', 'Get-FreeDropPath', 'Resolve-DropTarget', 'Close-DropStream', 'Clear-DropStaging', 'Get-DropVolume', 'Select-DropStaging')) {
     $function = [regex]::Match($source, "(?s)\nfunction $name\b.*?\r?\n\}\r?\n")
     if (-not $function.Success) { throw "$name not found" }
     . ([scriptblock]::Create($function.Value))
@@ -41,6 +41,7 @@ function Get-DropRoot { return $root }
 $staging = Join-Path ([IO.Path]::GetTempPath()) ('bv-drop-staging-' + [Guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($staging)
 function Get-DropStaging { return $staging }
+function Get-DropStagingDirs { return @($staging) }
 function Test-DropReader { return $false }
 function Staged { @([IO.Directory]::GetFiles($staging)).Count }
 $script:BvDropReader = $false
@@ -102,6 +103,15 @@ try {
     [IO.File]::WriteAllText((Join-Path $staging 'notes.txt'), 'not ours')
     Assert ((Send 'DROPCAPS' '') -ceq 'BVDROP_CAPS 1') "DROPCAPS: $script:sent"
     Assert ((Staged) -eq 1 -and [IO.File]::Exists((Join-Path $staging 'notes.txt'))) 'DROPCAPS did not clear exactly the staged copies'
+    $cases++
+
+    # The staging folder is on the target's volume, so DROPEND's move is a rename: the user's temp
+    # folder when it shares it, else a folder on the (relocated or redirected) Desktop itself.
+    $temp = 'C:\Users\u\AppData\Local\Temp\'
+    Assert ((Select-DropStaging $temp 'C:\Users\u\Desktop' 'c:\Users\u\Desktop\a.txt') -ceq [IO.Path]::Combine($temp, 'BridgeVM-drop')) 'same volume: not the temp folder'
+    Assert ((Select-DropStaging $temp 'D:\Desk' 'D:\Desk\sub\a.txt') -ceq [IO.Path]::Combine('D:\Desk', '.bridgevm-drop')) 'relocated Desktop: not on its volume'
+    Assert ((Select-DropStaging $temp '\\srv\home\u\Desktop' '\\srv\home\u\Desktop\a.txt') -ceq [IO.Path]::Combine('\\srv\home\u\Desktop', '.bridgevm-drop')) 'redirected Desktop: not on its share'
+    Assert ((Get-DropVolume '\\srv\home\u') -ceq (Get-DropVolume '\\SRV\Home\v')) 'one share, two volumes'
     $cases++
 
     # The deepest folder dropped again becomes "<name> (2)".
