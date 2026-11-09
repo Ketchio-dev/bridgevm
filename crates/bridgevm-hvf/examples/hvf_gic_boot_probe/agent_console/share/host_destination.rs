@@ -25,8 +25,30 @@ mod seal_host;
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
-/// The prefix of the host's unpublished temporaries; the host scan never shares such a name.
+/// The prefix of the host's unpublished temporaries, `.bridgevm-sync-<pid>-<n>`.
 pub(super) const TEMP_PREFIX: &str = ".bridgevm-sync-";
+
+/// Whether the last part of `name` is exactly a temporary one side writes: the host's
+/// `.bridgevm-sync-<pid>-<n>` or the agent's `.bridgevm-part-<32 lowercase hex>` (a large PUT).
+/// Such a file is never shared either way; any other name, a user's `.bridgevm-part-notes` too,
+/// is a file like any other.
+pub(super) fn is_share_temporary(name: &str) -> bool {
+    let leaf = name.rsplit('/').next().unwrap_or(name);
+    match leaf.strip_prefix(".bridgevm-part-") {
+        Some(hex) => hex.len() == 32 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')),
+        None => host_temporary_pid(leaf).is_some(),
+    }
+}
+
+/// The writer's pid in a host temporary's exact name.
+pub(super) fn host_temporary_pid(leaf: &str) -> Option<libc::pid_t> {
+    let (pid, n) = leaf.strip_prefix(TEMP_PREFIX)?.split_once('-')?;
+    let digits = |s: &str, most: usize| (1..=most).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_digit());
+    if !digits(pid, 10) || !digits(n, 20) {
+        return None;
+    }
+    pid.parse().ok().filter(|pid| *pid > 0)
+}
 
 /// A temporary written in parts, published or discarded by its Destination.
 pub(super) struct Staged {

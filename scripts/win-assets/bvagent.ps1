@@ -338,8 +338,11 @@ function Close-PutStream {
 # temporary of its own beside the target, apart from PUTBEG's stream, so clipboard images and tools
 # updates can go between its chunks. At the end it is flushed to disk and renamed over the target in
 # one step, so the name holds the old file or the whole new one, never part of one. An error or an
-# abort deletes the temporary, and LSR deletes one an earlier agent left (.bridgevm-part-*).
+# abort deletes the temporary. Its name is exactly .bridgevm-part-<32 lowercase hex>; LSR never lists
+# such a file and deletes one no PUT holds once it is a few minutes old (an earlier agent's). Any
+# other name, a user's .bridgevm-part-notes too, is a file like any other.
 $script:BvLPut = $null
+$script:BvLPutTempName = '^\.bridgevm-part-[0-9a-f]{32}$'
 
 function Close-LargePut {
     $put = $script:BvLPut
@@ -1631,9 +1634,10 @@ while ($true) {
                             # that fails the whole listing.
                             $listRoot = Get-IoPath $rootFull $true
                             foreach ($e in Get-ChildItem -LiteralPath $listRoot -Recurse -Force -ErrorAction Stop) {
-                                if (-not $e.PSIsContainer -and $e.Name.StartsWith('.bridgevm-part-', [System.StringComparison]::Ordinal)) {
-                                    # A large PUT's temporary (large put), never listed; one no PUT holds open is a leftover.
-                                    if ($null -eq $script:BvLPut -or -not [string]::Equals([System.IO.Path]::GetFileName($script:BvLPut.Temp), $e.Name, [System.StringComparison]::OrdinalIgnoreCase)) { try { $e.Delete() } catch { } }
+                                if (-not $e.PSIsContainer -and $e.Name -cmatch $script:BvLPutTempName) {
+                                    # A large PUT's temporary (large put), never listed; an old one no PUT holds is a leftover.
+                                    $held = $null -ne $script:BvLPut -and [string]::Equals([System.IO.Path]::GetFileName($script:BvLPut.Temp), $e.Name, [System.StringComparison]::OrdinalIgnoreCase)
+                                    if (-not $held -and $e.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddMinutes(-5)) { try { $e.Delete() } catch { } }
                                     continue
                                 }
                                 $full = $e.FullName

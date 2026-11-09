@@ -281,22 +281,51 @@ fn an_agent_without_ranges_keeps_the_whole_file_limit() {
     assert_eq!(rig.h.share.as_ref().unwrap().engine.max_bytes(), 1 << 40);
 }
 
+const GUEST_TEMP: &str = ".bridgevm-part-0123456789abcdef0123456789abcdef";
+
 #[test]
-fn the_host_scan_never_shares_a_temporary_and_removes_one_left_by_a_dead_process() {
+fn the_host_scan_keeps_only_exact_temporaries_out_and_removes_one_left_by_a_dead_process() {
     let mut rig = rig("temps", 1 << 30);
     let mut child = std::process::Command::new("/usr/bin/true").spawn().unwrap();
     let dead = child.id();
     child.wait().unwrap();
     let stale = format!(".bridgevm-sync-{dead}-3");
     let live = format!(".bridgevm-sync-{}-4", std::process::id());
-    for name in [&stale, &live, &"kept.txt".to_string()] {
+    // A user's own names that only look like ours are files like any other.
+    let users = [".bridgevm-part-notes".to_string(), format!(".bridgevm-sync-{dead}-notes"), ".bridgevm-sync-notes".into()];
+    for name in users.iter().chain([&stale, &live, &GUEST_TEMP.to_string(), &"kept.txt".to_string()]) {
         std::fs::write(rig.dir.join(name), b"x").unwrap();
     }
     let share = rig.h.share.as_mut().unwrap();
     assert!(scan_share_host_dir(share, rig.now).is_some());
-    let scanned: Vec<_> = share.host_scan_scratch.iter().map(|file| file.name.clone()).collect();
-    assert_eq!(scanned, ["kept.txt"]);
-    let mut left = rig.files();
+    let mut scanned: Vec<_> = share.host_scan_scratch.iter().map(|file| file.name.clone()).collect();
+    scanned.sort();
+    let mut want: Vec<_> = users.to_vec();
+    want.push("kept.txt".into());
+    want.sort();
+    assert_eq!(scanned, want, "only exact temporaries stay out of the scan");
+    let mut left: Vec<_> = want.clone();
+    left.extend([live, GUEST_TEMP.to_string()]);
     left.sort();
-    assert_eq!(left, [live, "kept.txt".to_string()]);
+    assert_eq!(rig.files(), left, "only the dead process's own temporary is removed");
+}
+
+#[test]
+fn a_guest_name_in_a_temporarys_exact_form_is_never_fetched_and_a_look_alike_is() {
+    let mut rig = rig("guest-temps", 1 << 30);
+    let names = [GUEST_TEMP, "sub/.bridgevm-sync-12-3", ".bridgevm-part-notes", "sub/.bridgevm-sync-notes"];
+    let listing: String = names.iter().map(|name| format!("{name}|5|0|{TIME}\n")).collect();
+    rig.h.in_flight = Some((ServiceReq::ShareLs, rig.now));
+    rig.reply(&format!("LSOK {}", base64_encode(listing.as_bytes())));
+    let mut fetched: Vec<_> = rig
+        .h
+        .queue
+        .iter()
+        .filter_map(|req| match req {
+            ServiceReq::ShareGet { name } => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+    fetched.sort();
+    assert_eq!(fetched, [".bridgevm-part-notes", "sub/.bridgevm-sync-notes"]);
 }

@@ -3,7 +3,8 @@
 # can reassemble a file range by range and tell when it changed meanwhile. LPUTBEG/LPUTDATA/LPUTEND
 # write a temporary and rename it over the target only whole, with the Mac's time; an abort, a bad
 # chunk or a short end deletes the temporary and leaves the target as it was; a volume without the
-# room answers disk-full; LSR never lists a temporary and deletes one no PUT holds. Runs the
+# room answers disk-full; LSR never lists a temporary (exactly .bridgevm-part-<32 hex>) and deletes
+# one no PUT holds once it is a few minutes old, while a user's look-alike name is a file like any. Runs the
 # agent's own verb cases against a temporary folder (no serial port: replies are collected).
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
@@ -115,7 +116,7 @@ try {
         & $verbs[$verb]
         return $script:sent[0]
     }
-    function Parts([string]$dir) { @([IO.Directory]::GetFiles($dir) | ForEach-Object { [IO.Path]::GetFileName($_) } | Where-Object { $_.StartsWith('.bridgevm-part-') }) }
+    function Parts([string]$dir) { @([IO.Directory]::GetFiles($dir) | ForEach-Object { [IO.Path]::GetFileName($_) } | Where-Object { $_ -cmatch '^\.bridgevm-part-[0-9a-f]{32}$' }) }
     $target = [IO.Path]::Combine($root, 'sub', 'movie.mov')
     [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))
     [IO.File]::WriteAllBytes($target, [byte[]](9, 9))
@@ -159,16 +160,28 @@ try {
     Assert ((Get-PutError $full) -ceq 'disk-full') 'ERROR_DISK_FULL is disk-full'
     $cases++
 
-    # LSR: the open stream's temporary is neither listed nor deleted; a leftover is deleted, unlisted.
-    [IO.File]::WriteAllBytes([IO.Path]::Combine($dir, '.bridgevm-part-leftover'), [byte[]](1))
+    # LSR: the open stream's temporary is neither listed nor deleted; an old leftover is deleted and a
+    # recent one kept, both unlisted; a user's file whose name only starts like one is listed and kept.
+    $old = [IO.Path]::Combine($dir, '.bridgevm-part-' + [Guid]::NewGuid().ToString('N'))
+    $recent = [IO.Path]::Combine($dir, '.bridgevm-part-' + [Guid]::NewGuid().ToString('N'))
+    $users = @('.bridgevm-part-notes', ('.bridgevm-part-' + [Guid]::NewGuid().ToString('N').ToUpperInvariant()))
+    foreach ($file in @($old, $recent) + @($users | ForEach-Object { [IO.Path]::Combine($dir, $_) })) { [IO.File]::WriteAllBytes($file, [byte[]](1)) }
+    [IO.File]::SetLastWriteTimeUtc($old, [DateTime]::UtcNow.AddMinutes(-10))
     Assert ((Put 'LPUTBEG' ((B64 $target) + ' 3') $null) -ceq 'OK LPUTBEG') 'LPUTBEG for LSR'
     $script:BvLsrChanges = [long]-1
     $reply = Put 'LSR' (B64 $root) $null
 
     $listing = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($reply.Substring(5)))
-    Assert ($reply -clike 'LSOK *' -and $listing -notmatch 'bridgevm-part') "listed a temporary: $listing"
-    $left = @(Parts $dir)
-    Assert ($left.Count -eq 1 -and $left[0] -ceq [IO.Path]::GetFileName($script:BvLPut.Temp)) "temporaries left: $($left -join ',')"
+    $listed = @($listing -split "`r?`n" | Where-Object { $_ } | ForEach-Object { [IO.Path]::GetFileName(($_ -split '\|')[0].Replace('\', '/')) } | Where-Object { $_.StartsWith('.bridgevm-part-', [StringComparison]::OrdinalIgnoreCase) })
+    Assert ($reply -clike 'LSOK *' -and $listing -notmatch 'bridgevm-part-[0-9a-f]{32}\|') "listed a temporary: $listing"
+    if ([IO.Path]::DirectorySeparatorChar -eq '\') {
+        # LSR roots its listing at <root>\, which only Windows paths match (macOS pwsh lists nothing).
+        Assert ((($listed | Sort-Object) -join ',') -ceq (($users | Sort-Object) -join ',')) "listed: $($listed -join ',')"
+    }
+    $left = @(Parts $dir | Sort-Object)
+    $want = @([IO.Path]::GetFileName($script:BvLPut.Temp), [IO.Path]::GetFileName($recent)) | Sort-Object
+    Assert (($left -join ',') -ceq ($want -join ',')) "temporaries left: $($left -join ',')"
+    foreach ($user in $users) { Assert ([IO.File]::Exists([IO.Path]::Combine($dir, $user))) "deleted the user's $user" }
     Assert ((Put 'LPUTABORT' '' $null) -ceq 'OK LPUTABORT') 'abort for LSR'
     $cases++
 

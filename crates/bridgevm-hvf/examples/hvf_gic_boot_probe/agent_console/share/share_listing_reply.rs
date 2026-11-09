@@ -96,6 +96,10 @@ impl AgentConsoleHarness {
         for line in refused_name_lines(&mut share.engine, &refused) {
             println!("{line}");
         }
+        // A temporary's exact name (host_destination.rs) is neither fetched nor, absent, deleted.
+        share
+            .guest_ls_scratch
+            .retain(|entry| entry.is_dir || !host_destination::is_share_temporary(&entry.name));
         share.key_guest_listing();
         let actions = share
             .engine
