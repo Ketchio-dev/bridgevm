@@ -101,9 +101,14 @@ impl ShareState {
 
     /// Keep the synced state beside the VM's UEFI vars at `vars`, and take what it holds.
     pub(in crate::agent_console) fn attach_sync_state(&mut self, vars: &Path) {
-        let (file, files, marks) = sync_file::SyncStateFile::open(vars, &self.host_dir);
+        let (file, files, marks, unremoved) = sync_file::SyncStateFile::open(vars, &self.host_dir);
         self.engine.load_synced(files, marks);
         self.sync_file = Some(file);
+        // A state it could not take whole and could not remove: off, and PUTs wait until it is
+        // gone (release_held_put).
+        if let Some(error) = unremoved {
+            self.sync_state_off(&format!("an unusable state could not be removed: {error}"));
+        }
     }
 
     /// Before a PUT of `name` goes out: its mark on disk first. The state thread writes it, and

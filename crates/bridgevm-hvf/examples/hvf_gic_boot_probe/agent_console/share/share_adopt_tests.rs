@@ -481,7 +481,7 @@ fn a_versions_write_in_flight_when_the_state_turns_off_leaves_no_file_behind() {
     use std::sync::atomic::Ordering;
     let rig = Rig::new("state-off-race");
     let vars = vars(&rig);
-    let (mut file, _, _) = SyncStateFile::open(&vars, &rig.dir);
+    let (mut file, _, _, _) = SyncStateFile::open(&vars, &rig.dir);
     let mut engine = ShareSync::new(512);
     let marks = file.marks();
     marks.hold.store(true, Ordering::Release);
@@ -523,4 +523,123 @@ fn a_mac_edit_made_while_a_preferred_guest_copy_is_fetched_wins_and_is_sent() {
     assert_eq!(fetches(&rig), before + 1, "the preferred copy was not fetched once: {:?}", rig.guest.gets);
     assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"edited on the Mac mid-fetch"[..]), "the guest copy replaced the Mac edit");
     assert_eq!(rig.guest.content("doc.bin"), Some(&b"edited on the Mac mid-fetch"[..]), "the Mac edit was not sent");
+}
+
+#[test]
+fn a_state_with_an_unusable_marks_file_is_removed_so_a_later_mark_is_not_outranked() {
+    // Codex on #572: a valid versions file (seq 5) beside a corrupt marks file. Starting from
+    // seq 0 while that versions file survived, the session's first mark (seq 1) was dropped at
+    // the next start as older than it, and the cut-short guest copy of the PUT it guarded was
+    // fetched over the complete Mac file.
+    let (mut rig, vars) = synced_from_guest("unusable-marks", now_ms() - 2 * HOUR_MS, true);
+    settle(&mut rig);
+    rig.h.share = None;
+    let side = |suffix: &str| {
+        let mut path = vars.as_os_str().to_owned();
+        path.push(suffix);
+        PathBuf::from(path)
+    };
+    let (versions, marks) = (side(".share-sync"), side(".share-sync-puts"));
+    let text = std::fs::read_to_string(&versions).unwrap();
+    let seq = text.lines().find(|line| line.starts_with("seq ")).unwrap().to_string();
+    std::fs::write(&versions, text.replace(&seq, "seq 5")).unwrap();
+    std::fs::write(&marks, b"bridgevm-share-puts 1\nnot a state\n").unwrap();
+    // The guest copy differs (an older one): with no usable state the Mac copy is sent.
+    rig.guest.write("doc.bin", b"reverted, from before");
+    rig.guest.stamps.insert("DOC.BIN".into(), now_ms() - 3 * HOUR_MS);
+    new_session(&mut rig, Some(&vars));
+    let kept = versions.exists() || marks.exists();
+    let mut sent = false;
+    for _ in 0..16 {
+        rig.run(1);
+        if rig.guest.puts.iter().any(|name| name == "doc.bin") {
+            sent = true;
+            break;
+        }
+    }
+    assert!(sent, "the Mac copy was not sent: {:?}", rig.guest.puts);
+    // The probe killed right after the PUT went out: the state files as they are now ...
+    let on_disk = [&versions, &marks].map(|path| std::fs::read(path).ok());
+    rig.h.share = None;
+    for (path, bytes) in [&versions, &marks].into_iter().zip(on_disk) {
+        match bytes {
+            Some(bytes) => std::fs::write(path, bytes).unwrap(),
+            None => drop(std::fs::remove_file(path)),
+        }
+    }
+    // ... and the PUT cut short in the guest's cache: a partial copy stamped with its time.
+    rig.guest.write("doc.bin", b"old ver");
+    rig.guest.stamps.insert("DOC.BIN".into(), now_ms() + 4 * HOUR_MS);
+    new_session(&mut rig, Some(&vars));
+    let gets = rig.guest.gets.len();
+    rig.run(16);
+    assert_eq!(rig.guest.gets[gets..], [] as [String; 0], "the cut-short guest copy was fetched");
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"old version"[..]));
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"old version"[..]));
+    assert!(!kept, "a state not taken whole stayed on disk");
+}
+
+/// Clears a file's user-immutable flag when dropped, so a failing test leaves nothing behind.
+struct Mutable(std::ffi::CString);
+
+impl Mutable {
+    fn set(path: &Path) -> Self {
+        let path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
+        // SAFETY: a valid C path; UF_IMMUTABLE is the owner's own flag.
+        assert_eq!(unsafe { libc::chflags(path.as_ptr(), libc::UF_IMMUTABLE as _) }, 0);
+        Self(path)
+    }
+}
+
+impl Drop for Mutable {
+    fn drop(&mut self) {
+        // SAFETY: as in `set`.
+        unsafe { libc::chflags(self.0.as_ptr(), 0) };
+    }
+}
+
+#[test]
+fn an_unusable_state_that_cannot_be_removed_holds_the_puts_until_it_is() {
+    // The marks file is corrupt and the versions file cannot be removed (it is immutable), while
+    // the folder still takes new files: kept on, the session would number its marks from 0 next
+    // to that file. It goes off instead, and PUTs wait until the file is gone.
+    let (mut rig, vars) = synced_from_guest("unusable-stuck", now_ms() - 2 * HOUR_MS, true);
+    settle(&mut rig);
+    rig.h.share = None;
+    let side = |suffix: &str| {
+        let mut path = vars.as_os_str().to_owned();
+        path.push(suffix);
+        PathBuf::from(path)
+    };
+    let (versions, marks) = (side(".share-sync"), side(".share-sync-puts"));
+    std::fs::write(&marks, b"not a state\n").unwrap();
+    let immutable = Mutable::set(&versions);
+    std::fs::write(rig.dir.join("held.txt"), b"after the state is gone").unwrap();
+    new_session(&mut rig, Some(&vars));
+    rig.run(8);
+    assert!(!rig.guest.puts.iter().any(|name| name == "held.txt"), "a PUT went out beside an unusable state");
+    assert!(rig.h.share.as_ref().unwrap().sync_state_stuck());
+    drop(immutable);
+    rig.run(4);
+    assert_eq!(rig.guest.content("held.txt"), Some(&b"after the state is gone"[..]));
+    assert!(!versions.exists() && !marks.exists());
+}
+
+#[test]
+fn a_session_that_ended_writes_no_more_marks() {
+    // A large copy from Windows publishes on its own thread, with the session's marks: once the
+    // session has ended, its late mark must not replace the next session's file.
+    let mut rig = Rig::new("ended-session");
+    let vars = vars(&rig);
+    new_session(&mut rig, Some(&vars));
+    rig.run(4);
+    std::fs::write(rig.dir.join("a.txt"), b"sent").unwrap();
+    rig.run(8);
+    let marks = rig.h.share.as_ref().and_then(ShareState::sync_marks).unwrap();
+    rig.h.share = None;
+    let mut path = vars.as_os_str().to_owned();
+    path.push(".share-sync-puts");
+    let before = std::fs::read(&path).unwrap();
+    assert!(crate::agent_console::state::sync_file::mark(&marks, ["late.bin"]).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), before, "an ended session wrote its marks file");
 }

@@ -142,10 +142,22 @@ pub(in crate::agent_console) struct SyncStateFile {
 
 type Loaded = (HashMap<String, SyncedFile>, HashSet<String>, u64);
 
+/// What `open` found: the versions and marks to trust, and, for a state it could not take
+/// whole, why its files could not be removed (the caller turns the state off).
+pub(in crate::agent_console) type Opened = (SyncStateFile, HashMap<String, SyncedFile>, HashSet<String>, Option<std::io::Error>);
+
+/// A file that is not there: missing, or its folder is not a folder.
+fn absent(error: &std::io::Error) -> bool {
+    matches!(error.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory)
+}
+
 impl SyncStateFile {
     /// The state beside `vars` for the Mac folder `host_dir`, and what it holds when it can be
-    /// trusted (otherwise nothing: every decision is then the one without a state).
-    pub(in crate::agent_console) fn open(vars: &Path, host_dir: &Path) -> (Self, HashMap<String, SyncedFile>, HashSet<String>) {
+    /// trusted (otherwise nothing: every decision is then the one without a state). A state not
+    /// taken whole (either file unreadable, corrupt or for another folder) is removed here,
+    /// before anything is sent: this session numbers its marks from 0, and a surviving older
+    /// file with a higher number would outrank them at the next start.
+    pub(in crate::agent_console) fn open(vars: &Path, host_dir: &Path) -> Opened {
         let side = |suffix: &str| {
             let mut name = vars.as_os_str().to_owned();
             name.push(suffix);
@@ -178,8 +190,14 @@ impl SyncStateFile {
             removed_unsynced: false,
             last_flush: None,
         };
+        let mut unremoved = None;
         let (files, marks, seq) = file.load().unwrap_or_else(|| {
             println!("BVAGENT SHARE sync-state ignored");
+            match file.invalidate() {
+                Ok(true) => {}
+                Ok(false) => unremoved = Some(std::io::Error::other("state file busy")),
+                Err(error) => unremoved = Some(error),
+            }
             Default::default()
         });
         {
@@ -189,7 +207,7 @@ impl SyncStateFile {
         }
         file.marks.durable.store(seq, Ordering::Release);
         file.base = Some(files.clone());
-        (file, files, marks)
+        (file, files, marks, unremoved)
     }
 
     fn lock(&self) -> MutexGuard<'_, Marks> {
@@ -204,7 +222,7 @@ impl SyncStateFile {
     fn load(&self) -> Option<Loaded> {
         let read = |path: &Path| match std::fs::read_to_string(path) {
             Ok(text) => Some(Some(text)),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Some(None),
+            Err(error) if absent(&error) => Some(None),
             Err(_) => None,
         };
         let marks_path = self.lock().path.clone();
@@ -289,6 +307,9 @@ impl SyncStateFile {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
+        // A copy from Windows its own thread still publishes marks nothing now: the next session
+        // numbers its own marks in these files, and a late write here would replace them.
+        self.marks.off.store(true, Ordering::Release);
     }
 
     fn flush_now(&mut self, engine: &mut ShareSync, now: Instant) {
@@ -342,7 +363,7 @@ impl SyncStateFile {
         for path in [&self.versions, &marks_path] {
             match std::fs::remove_file(path) {
                 Ok(()) => self.removed_unsynced = true,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) if absent(&error) => {}
                 Err(error) => return Err(error),
             }
         }
