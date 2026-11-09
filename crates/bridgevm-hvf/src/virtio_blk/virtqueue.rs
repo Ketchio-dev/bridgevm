@@ -3,6 +3,7 @@
 use super::queue_pending::pending_entries;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
+use crate::virtio_queue::address::read_avail_idx;
 use crate::virtio_queue::address::read_descriptor;
 use crate::virtio_queue::address::read_u16_at;
 use crate::virtio_queue::address::write_used;
@@ -29,7 +30,7 @@ impl VirtioMmioBlock {
         if !self.queue_ready || self.queue_num == 0 || self.queue_desc == 0 {
             return;
         }
-        let Some(avail_idx) = read_u16_at(mem, self.queue_driver, 2) else {
+        let Some(avail_idx) = read_avail_idx(mem, self.queue_driver) else {
             return;
         };
         let mut descs = std::mem::take(&mut self.descriptor_scratch);

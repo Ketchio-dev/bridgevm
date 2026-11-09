@@ -61,7 +61,7 @@ impl VirtioConsole {
         if !queue.ready || queue.size == 0 || queue.desc == 0 || bytes_len == 0 {
             return None;
         }
-        let avail_idx = read_u16(mem, queue.driver, 2)?;
+        let avail_idx = read_avail_idx(mem, queue.driver)?;
         state.queues[queue_index].last_avail_seen = avail_idx;
         let last_avail_idx = state.queues[queue_index].last_avail_idx;
         if last_avail_idx == avail_idx {
