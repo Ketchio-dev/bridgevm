@@ -54,7 +54,11 @@ final class HvfClipboardImageNoticeTests: XCTestCase {
         feed(session, ["BVAGENT CLIPSYNC guest->host files=1 bytes=5 copy=5 t=700"])
         XCTAssertNil(session.clipboardImageNotice.shown, "a later copy clears it")
         feed(session, ["BVAGENT CLIPSYNC refused guest-files unsafe-path files=1 bytes=5 copy=6 t=800"])
-        XCTAssertNil(session.clipboardImageNotice.shown, "only a size refusal is explained")
+        XCTAssertNil(session.clipboardImageNotice.shown, "a refusal for another reason is not explained")
+        feed(session, ["BVAGENT CLIPSYNC skip host-files unreadable files=2 bytes=0 copy=7 t=900",
+                       "BVAGENT CLIPSYNC host->guest bytes=6 copy=7 t=901"])
+        XCTAssertEqual(session.clipboardImageNotice.shown, .macFilesUnreadable)
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Mac에서 복사한 파일 중 읽을 수 없는 것이 있어 Windows에는 파일 이름만 보냈습니다.")
     }
 
     /// One row per notice transition: the lines in order, then the notice left showing. The
