@@ -60,6 +60,11 @@ pub(in crate::agent_console) struct MarksFile {
     /// Tests hold the state thread's writes here.
     #[cfg(test)]
     pub(in crate::agent_console) hold: AtomicBool,
+    /// Tests hold a marks write inside the write lock, past its `off` check (`parked` then).
+    #[cfg(test)]
+    pub(in crate::agent_console) hold_write: AtomicBool,
+    #[cfg(test)]
+    pub(in crate::agent_console) parked: AtomicBool,
 }
 
 pub(in crate::agent_console) type SharedMarks = Arc<MarksFile>;
@@ -85,9 +90,21 @@ impl MarksFile {
     /// which is safe, because the versions on disk predate it (a later session finds the Mac copy
     /// newer than its last synced version: the Mac wins).
     pub(in crate::agent_console) fn write_through(&self) -> std::io::Result<()> {
+        // `off` is checked under this lock, which the write holds through its rename: once
+        // `finish` or `invalidate` holds it after setting `off`, no write is under way or follows.
         let _one = self.write.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if self.off.load(Ordering::Acquire) {
             return Err(std::io::Error::other("the share state is off"));
+        }
+        #[cfg(test)]
+        if self.hold_write.load(Ordering::Acquire) {
+            self.parked.store(true, Ordering::Release);
+            for _ in 0..5000 {
+                if !self.hold_write.load(Ordering::Acquire) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
         }
         let (path, text, seq) = {
             let held = self.lock();
@@ -182,6 +199,10 @@ impl SyncStateFile {
                 off: AtomicBool::new(false),
                 #[cfg(test)]
                 hold: AtomicBool::new(false),
+                #[cfg(test)]
+                hold_write: AtomicBool::new(false),
+                #[cfg(test)]
+                parked: AtomicBool::new(false),
             }),
             root,
             base: None,
@@ -308,8 +329,10 @@ impl SyncStateFile {
             let _ = thread.join();
         }
         // A copy from Windows its own thread still publishes marks nothing now: the next session
-        // numbers its own marks in these files, and a late write here would replace them.
+        // numbers its own marks in these files, and a late write here would replace them. A
+        // write already past its check finishes first: its lock is taken (and let go) here.
         self.marks.off.store(true, Ordering::Release);
+        drop(self.marks.write.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
     }
 
     fn flush_now(&mut self, engine: &mut ShareSync, now: Instant) {

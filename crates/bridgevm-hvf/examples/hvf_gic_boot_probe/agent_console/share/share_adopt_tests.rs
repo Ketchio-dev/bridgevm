@@ -724,3 +724,41 @@ fn a_mac_edit_made_after_a_preferred_copy_failed_to_publish_survives_its_retry()
     assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"edited on the Mac meanwhile"[..]), "the retry replaced the Mac edit");
     assert_eq!(rig.guest.content("doc.bin"), Some(&b"edited on the Mac meanwhile"[..]), "the Mac edit was not sent");
 }
+
+#[test]
+fn a_session_end_waits_for_a_mark_being_written_and_none_lands_after_it() {
+    // Codex on #572: a large copy's stage writer past its `off` check when the session ended
+    // could still rename its marks file in after the next session had written its own.
+    use crate::agent_console::state::sync_file::{mark, SyncStateFile};
+    use std::sync::atomic::Ordering;
+    let rig = Rig::new("finish-drains");
+    let vars = vars(&rig);
+    let (file, _, _, _) = SyncStateFile::open(&vars, &rig.dir);
+    let marks = file.marks();
+    let mut path = vars.as_os_str().to_owned();
+    path.push(".share-sync-puts");
+    let path = PathBuf::from(path);
+    marks.hold_write.store(true, Ordering::Release);
+    std::thread::scope(|scope| {
+        let writer = scope.spawn(|| mark(&marks, ["fetched.bin"]));
+        let until = Instant::now() + Duration::from_secs(5);
+        while !marks.parked.load(Ordering::Acquire) && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(marks.parked.load(Ordering::Acquire), "the mark write did not reach its hold");
+        let (done, finished) = std::sync::mpsc::channel();
+        let mut file = file;
+        scope.spawn(move || {
+            file.finish(&mut ShareSync::new(512));
+            done.send(()).unwrap();
+        });
+        let early = finished.recv_timeout(Duration::from_millis(200));
+        marks.hold_write.store(false, Ordering::Release);
+        assert!(early.is_err(), "the session ended while a mark was being written");
+        finished.recv_timeout(Duration::from_secs(5)).expect("the session did not end");
+        assert!(writer.join().unwrap().is_ok());
+    });
+    let before = std::fs::read(&path).expect("the mark written before the end");
+    assert!(mark(&marks, ["later.bin"]).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), before, "a mark landed after the session ended");
+}
