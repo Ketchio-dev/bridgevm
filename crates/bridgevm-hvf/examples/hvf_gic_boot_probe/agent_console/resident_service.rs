@@ -78,6 +78,8 @@ impl AgentConsoleHarness {
         //    The engine compares guest mtimes as strings because the frozen
         //    PowerShell agent already emits a stable ISO form and the host does
         //    not need to understand Windows timestamp semantics.
+        // A large copy's writer answers and its next range (share_big.rs).
+        self.advance_big_share(now);
         let share_due = self.share.as_ref().is_some_and(|share| {
             share
                 .last_poll
@@ -175,8 +177,15 @@ impl AgentConsoleHarness {
                 self.overdue_beats += 1;
                 if self.overdue_beats >= 3 {
                     if let Some((req, _)) = self.in_flight.take() {
+                        // A large copy's range continues one already written: the copy
+                        // starts over (its first GET is resent; a later range is not).
+                        if self.is_big_share_step(&req) {
+                            self.abort_big_share("stalled", now);
+                        }
                         // A drop step creates guest files; resending could duplicate one.
-                        if is_drop_req(&req) {
+                        if matches!(req, ServiceReq::ShareRange { .. }) {
+                            println!("BVAGENT SERVICE dropped share-range t={}", self.t_ms(now));
+                        } else if is_drop_req(&req) {
                             self.fail_drop("stalled", now);
                         } else {
                             println!(
@@ -199,8 +208,13 @@ impl AgentConsoleHarness {
         }
         self.overdue_beats = 0;
         let hold_images = self.agent_update_holds_images();
+        // During a large copy only its own steps go out of the shared-folder requests.
+        let hold_share = self.big_share_active();
         let Some(req) = super::service_queue::pop_next_request(&mut self.queue, |req| {
-            hold_images && super::agent_update::is_clip_image_req(req)
+            (hold_images && super::agent_update::is_clip_image_req(req))
+                || (hold_share
+                    && is_share_req(req)
+                    && !matches!(req, ServiceReq::ShareRange { .. }))
         }) else {
             return;
         };
@@ -293,6 +307,17 @@ impl AgentConsoleHarness {
                 self.service_line_scratch.push('\n');
                 true
             }
+            ServiceReq::ShareGet { name } if self.share_big => {
+                // A file the listing shows larger than a range needs room on the Mac first.
+                let listed = self.share.as_ref().and_then(|share| share.engine.listed_file(name));
+                if let Some((size, _)) = listed.filter(|(size, _)| *size > SHARE_RANGE_BYTES) {
+                    if self.share_space_refuses(name, size) {
+                        return false;
+                    }
+                }
+                self.write_share_range_line(name, 0)
+            }
+            ServiceReq::ShareRange { name, offset } => self.write_share_range_line(name, *offset),
             ServiceReq::ShareGet { name } => {
                 let Some(share) = self.share.as_ref() else {
                     return false;
@@ -393,7 +418,7 @@ impl AgentConsoleHarness {
         self.queue.iter().any(pred)
     }
     pub(super) fn share_pending(&self) -> bool {
-        self.any_pending(is_share_req)
+        self.any_pending(is_share_req) || self.big_share_active()
     }
     pub(super) fn complete_in_flight(&mut self) {
         self.in_flight = None;
@@ -486,6 +511,10 @@ impl AgentConsoleHarness {
             if self.clipsync && !self.any_pending(|req| matches!(req, ServiceReq::ClipPoll)) {
                 self.queue.push_back(ServiceReq::ClipPoll);
             }
+            return;
+        }
+        // A large shared-folder copy takes its own GETBEG/GETCHUNK/GETEND (share_big.rs).
+        if self.handle_big_get_line(line, now) {
             return;
         }
         if matches!(

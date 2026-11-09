@@ -61,6 +61,8 @@ impl AgentConsoleHarness {
         }
         // The new agent holds no open drop file; end the job instead of guessing its state.
         self.fail_drop("agent-restarted", now);
+        // Nor a large shared-folder copy's place (share_big.rs).
+        self.abort_big_share("agent-restarted", now);
         self.get_accum = None;
         self.out_accum = None;
         self.note_agent_ready(hostname, now);

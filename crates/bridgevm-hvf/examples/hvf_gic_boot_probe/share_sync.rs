@@ -36,6 +36,14 @@ pub enum GuestFileOutcome {
     Skip(SkipReason),
 }
 
+/// `on_guest_version`'s answer: the bytes stay with the caller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GuestVersion {
+    AlreadySynced,
+    WriteHost,
+    Skip(SkipReason),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PushGuest {
     pub bytes: Vec<u8>,
@@ -45,7 +53,8 @@ pub struct PushGuest {
 #[derive(Debug, Clone)]
 struct FileRecord {
     size: u64,
-    hash: u64,
+    /// None for a large file recorded from its size and time alone (share_adopt.rs).
+    hash: Option<u64>,
     host_mtime_ms: Option<u128>,
     guest_mtime: Option<String>,
     awaiting_guest_stamp: bool,
@@ -69,6 +78,8 @@ struct GuestFileStat {
 pub struct ShareSync {
     records: HashMap<String, FileRecord>,
     max_bytes: u64,
+    /// The largest file an agent without ranged transfers moves (whole in memory).
+    whole_file_limit: Option<u64>,
     guest_skip_seen: HashSet<(String, String, SkipKey)>,
     pending_guest_mtime: HashMap<String, String>,
     pending_host_changed: HashSet<String>,
@@ -100,8 +111,21 @@ impl ShareSync {
         }
     }
 
+    /// The share's size cap, lowered to `whole_file_limit` while the agent moves files whole.
     pub fn max_bytes(&self) -> u64 {
-        self.max_bytes
+        self.whole_file_limit
+            .map_or(self.max_bytes, |limit| limit.min(self.max_bytes))
+    }
+
+    /// An agent without ranged transfers (READY without `bigfile`) gets files of at most `limit`.
+    pub fn set_whole_file_limit(&mut self, limit: Option<u64>) {
+        self.whole_file_limit = limit;
+    }
+
+    /// The size and time the last guest listing gave `name`.
+    pub fn listed_file(&self, name: &str) -> Option<(u64, &str)> {
+        let entry = self.guest_file_entries_scratch.get(name)?;
+        Some((entry.size, entry.mtime.as_str()))
     }
 
     #[cfg(test)]
@@ -154,8 +178,9 @@ impl ShareSync {
         self.drop_fetched_over_cap();
         self.drop_refused_writes();
 
+        let max_bytes = self.max_bytes();
         for (name, entry) in &self.guest_file_entries_scratch {
-            if entry.size > self.max_bytes {
+            if entry.size > max_bytes {
                 if self.guest_skip_seen.insert((
                     name.clone(),
                     entry.mtime.clone(),
@@ -218,29 +243,44 @@ impl ShareSync {
         bytes: Vec<u8>,
         mtime: Option<&str>,
     ) -> GuestFileOutcome {
-        let name = normalize_rel(&name);
-        if bytes.len() as u64 > self.max_bytes {
-            return self.refuse_over_cap(name, bytes.len() as u64, mtime);
-        }
-        let hash = fnv1a64(&bytes);
         let size = bytes.len() as u64;
+        match self.on_guest_version(name, size, fnv1a64(&bytes), mtime) {
+            GuestVersion::AlreadySynced => GuestFileOutcome::AlreadySynced,
+            GuestVersion::Skip(reason) => GuestFileOutcome::Skip(reason),
+            GuestVersion::WriteHost => GuestFileOutcome::WriteHost(bytes),
+        }
+    }
+
+    /// A fetched guest file known by its size and hash (a large one streams to the Mac
+    /// without being held whole): whether the host copy must be written.
+    pub fn on_guest_version(
+        &mut self,
+        name: String,
+        size: u64,
+        hash: u64,
+        mtime: Option<&str>,
+    ) -> GuestVersion {
+        let name = normalize_rel(&name);
+        if size > self.max_bytes() {
+            return GuestVersion::Skip(self.refuse_over_cap(name, size, mtime));
+        }
         let guest_mtime = mtime
             .map(str::to_string)
             .or_else(|| self.pending_guest_mtime.remove(&name));
         self.pending_host_changed.remove(&name);
         if let Some(record) = self.records.get_mut(&name) {
-            if !record.host_write_failed && record.hash == hash {
+            if !record.host_write_failed && record.hash == Some(hash) {
                 record.size = size;
                 record.guest_mtime = guest_mtime;
                 record.awaiting_guest_stamp = false;
-                return GuestFileOutcome::AlreadySynced;
+                return GuestVersion::AlreadySynced;
             }
         }
         self.records.insert(
             name,
             FileRecord {
                 size,
-                hash,
+                hash: Some(hash),
                 host_mtime_ms: None,
                 guest_mtime,
                 awaiting_guest_stamp: false,
@@ -248,7 +288,7 @@ impl ShareSync {
                 put_unconfirmed: false,
             },
         );
-        GuestFileOutcome::WriteHost(bytes)
+        GuestVersion::WriteHost
     }
 
     #[cfg(test)]
@@ -306,7 +346,7 @@ mod share_hash;
 pub mod share_mtime;
 #[path = "share_adopt.rs"]
 mod share_adopt;
-pub use share_hash::fnv1a64;
+pub use share_hash::{fnv1a64, fnv1a64_continue, FNV1A64_START};
 #[path = "share_host_unseen.rs"]
 mod share_host_unseen;
 #[path = "share_listing.rs"]

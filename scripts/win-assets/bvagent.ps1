@@ -1293,7 +1293,7 @@ function Get-BvAgentId([string]$Dir) {
 # for the host's Confirm (bvagent-update.ps1 keeps update\pending.txt beside
 # the version folders): the host then confirms it whatever it recorded itself.
 function Get-BvReady([string]$Dir, [string]$Id) {
-    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata'
+    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile'
     if (-not $Id) { return $ready }
     $ready += ' agent=' + $Id
     $root = Split-Path -Parent $Dir
@@ -1629,6 +1629,46 @@ while ($true) {
                         }
                         Write-Line $h ('GETEND ' + $seq) 'GETEND'
                     } catch { Write-Line $h ('ERR GET ' + $_.Exception.Message) 'ERR' }
+                }
+                'GETRANGE' {
+                    # GETRANGE <b64(path)> <offset> <length> -> GETBEG <b64(path)> <bytes> <nchunks>
+                    # <offset> <size> <mtime>, then GETCHUNK lines and GETEND as GET: up to <length>
+                    # bytes from <offset>, with the file's size and time (as LSR lists it) read after
+                    # those bytes, so a host that sees either change knows the file changed while it
+                    # was copied. Chunks are 768 KiB raw (Write-Bytes sends 32 KiB writes).
+                    try {
+                        $p = $arg.Split(' ')
+                        $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($p[0]))
+                        $offset = [int64]$p[1]
+                        $want = [System.Math]::Min([int64]$p[2], [int64](16 * 1024 * 1024))
+                        $io = Get-IoPath $path
+                        $fs = [System.IO.File]::Open($io, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, ([System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete))
+                        try {
+                            $len = [int][System.Math]::Max([int64]0, [System.Math]::Min($want, $fs.Length - $offset))
+                            $bytes = New-Object byte[] $len
+                            $got = 0
+                            if ($len -gt 0) {
+                                [void]$fs.Seek($offset, [System.IO.SeekOrigin]::Begin)
+                                while ($got -lt $len) {
+                                    $n = $fs.Read($bytes, $got, $len - $got)
+                                    if ($n -le 0) { break }
+                                    $got += $n
+                                }
+                            }
+                            $size = $fs.Length
+                        } finally { $fs.Close() }
+                        $mtime = [System.IO.File]::GetLastWriteTimeUtc($io).ToString('o')
+                        $chunk = 786432
+                        $n = [int][System.Math]::Ceiling($got / [double]$chunk)
+                        Write-Line $h ('GETBEG ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($path)) + ' ' + $got + ' ' + $n + ' ' + $offset + ' ' + $size + ' ' + $mtime) 'GETBEG'
+                        $seq = 0; $off = 0
+                        while ($off -lt $got) {
+                            $take = [System.Math]::Min($chunk, $got - $off)
+                            Write-Line $h ('GETCHUNK ' + $seq + ' ' + [System.Convert]::ToBase64String($bytes, $off, $take)) 'GETCHUNK'
+                            $off += $take; $seq++
+                        }
+                        Write-Line $h ('GETEND ' + $seq) 'GETEND'
+                    } catch { Write-Line $h ('ERR GETRANGE ' + $_.Exception.Message) 'ERR' }
                 }
                 'PUT' {
                     # PUT <b64(path)> <b64(rawbytes)> [<mtime ms>] -> PUTOK <b64(path)> <bytes>.

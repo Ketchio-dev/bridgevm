@@ -16,14 +16,14 @@ impl ShareSync {
         name: String,
         size: u64,
         mtime: Option<&str>,
-    ) -> GuestFileOutcome {
+    ) -> SkipReason {
         let mtime = mtime
             .map(str::to_string)
             .or_else(|| self.pending_guest_mtime.remove(&name));
         if let Some(mtime) = mtime {
             self.fetched_over_cap.insert(name, mtime);
         }
-        GuestFileOutcome::Skip(SkipReason::TooLarge { size })
+        SkipReason::TooLarge { size }
     }
 
     /// Take the listed versions a GET found over the cap out of this listing's
@@ -41,7 +41,7 @@ impl ShareSync {
     /// that left the listing, or guest listings grow this set without limit.
     pub(super) fn retain_guest_skips(&mut self) {
         let listed = &self.guest_file_entries_scratch;
-        let max_bytes = self.max_bytes;
+        let max_bytes = self.max_bytes();
         self.guest_skip_seen.retain(|(name, mtime, _)| {
             listed
                 .get(name)

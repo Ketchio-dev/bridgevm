@@ -97,7 +97,7 @@ impl ShareSync {
         self.pending_guest_mtime.remove(&name);
         let hash = fnv1a64(&bytes);
         if let Some(record) = self.records.get_mut(&name) {
-            if record.hash == hash && !record.put_unconfirmed {
+            if record.hash == Some(hash) && !record.put_unconfirmed {
                 record.size = bytes.len() as u64;
                 record.host_mtime_ms = Some(mtime_ms);
                 return None;
@@ -109,4 +109,5 @@ impl ShareSync {
         self.guest_file_entries_scratch.remove(&name);
         Some(PushGuest { bytes, hash })
     }
+
 }

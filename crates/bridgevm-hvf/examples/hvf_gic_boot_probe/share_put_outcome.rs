@@ -18,7 +18,7 @@ impl ShareSync {
             name,
             FileRecord {
                 size,
-                hash,
+                hash: Some(hash),
                 host_mtime_ms: None,
                 guest_mtime: None,
                 awaiting_guest_stamp: true,
