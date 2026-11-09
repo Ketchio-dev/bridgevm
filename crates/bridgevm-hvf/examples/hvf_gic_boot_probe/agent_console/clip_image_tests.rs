@@ -298,6 +298,8 @@ struct Rig {
     /// A Mac copy with nothing the guest takes (a Finder copy before file
     /// copies go to Windows), seen by the Mac poll after the next GET.
     mac_copy_after_get: bool,
+    /// The same, seen while a GET is still coming in (after its GETBEG).
+    mac_copy_mid_get: bool,
 }
 
 impl Rig {
@@ -325,6 +327,7 @@ impl Rig {
             wire: Vec::new(),
             now,
             mac_copy_after_get: false,
+            mac_copy_mid_get: false,
         }
     }
     /// One clip interval: the Mac poll, a service pass, every reply in
@@ -350,6 +353,10 @@ impl Rig {
                         more.push(bytes.to_vec())
                     });
                     wire.extend(more);
+                    if reply.starts_with("GETBEG ") && std::mem::take(&mut self.mac_copy_mid_get) {
+                        self.mac.copy(None, None);
+                        assert!(self.worker.poll(&mut self.mac));
+                    }
                     if reply.starts_with("GETEND ") && std::mem::take(&mut self.mac_copy_after_get) {
                         self.mac.copy(None, None);
                         assert!(self.worker.poll(&mut self.mac));
@@ -481,6 +488,22 @@ fn guest_image_is_checked_then_written_once_with_its_text() {
     }
     assert!(rig.verbs().is_empty(), "neither fetched again nor pushed back");
     assert_eq!(rig.mac.writes.len(), 2);
+}
+
+#[test]
+fn a_mac_copy_while_the_guest_image_comes_in_wins() {
+    let mut rig = Rig::new(true);
+    let image = png(1920, 1080, 30 * 1024, 5);
+    rig.guest.text = "cells\n".into();
+    rig.guest.image = Some(image.clone());
+    // A Mac copy of nothing the guest takes, made while the image comes over.
+    rig.mac_copy_mid_get = true;
+    rig.settle();
+    rig.settle();
+    assert!(
+        rig.mac.writes.iter().all(|(_, png)| png.is_none()),
+        "the guest image replaced a newer Mac copy"
+    );
 }
 
 /// A clipboard as one unit: its text and its image (a `pair_image` id).
