@@ -290,8 +290,17 @@ impl NvmeController {
         entry[12..14].copy_from_slice(&cmd.command_id.to_le_bytes());
         entry[14..16].copy_from_slice(&status_field.to_le_bytes());
 
+        // A guest polling this queue takes the entry once its phase tag flips, then reads the rest
+        // of it and the command's data. Other cores may see our stores out of order (Apple
+        // silicon is weakly ordered), so the dword holding the phase goes last, after a release
+        // fence that orders every earlier store before it: the data this command moved, here or
+        // on a worker whose handoff this thread acquired, and the rest of the entry.
         let entry_gpa = base + u64::from(tail) * CQ_ENTRY_SIZE;
-        if !mem.write_bytes(entry_gpa, &entry) {
+        if !mem.write_bytes(entry_gpa, &entry[..12]) {
+            return (false, None);
+        }
+        std::sync::atomic::fence(std::sync::atomic::Ordering::Release);
+        if !mem.write_bytes(entry_gpa + 12, &entry[12..]) {
             return (false, None);
         }
 

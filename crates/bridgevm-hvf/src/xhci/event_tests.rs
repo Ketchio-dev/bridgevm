@@ -123,3 +123,53 @@ fn event_lifecycle_stats_count_post_results_and_erdp_consumption() {
     );
     assert_eq!(after_erdp.last_erdp, EVENT_RING + TRB_SIZE);
 }
+
+/// Guest RAM that records each store's address and length.
+struct Recording {
+    inner: TestRam,
+    writes: Vec<(u64, usize)>,
+}
+
+impl crate::fwcfg::GuestMemoryMut for Recording {
+    fn write_bytes(&mut self, gpa: u64, data: &[u8]) -> bool {
+        self.writes.push((gpa, data.len()));
+        self.inner.write_bytes(gpa, data)
+    }
+    fn read_bytes(&self, gpa: u64, len: usize) -> Option<Vec<u8>> {
+        self.inner.read_bytes(gpa, len)
+    }
+    fn read_into(&self, gpa: u64, dst: &mut [u8]) -> bool {
+        self.inner.read_into(gpa, dst)
+    }
+}
+
+#[test]
+fn an_event_trb_cycle_dword_is_stored_after_the_rest_of_the_trb() {
+    // The guest drains every event TRB whose cycle bit matches, then reads its parameter and
+    // status. Other cores may see our stores out of order (Apple silicon), so the dword holding
+    // the cycle bit is stored last, after a release fence.
+    let mut xhci = XhciController::new();
+    let mut mem = TestRam::new(0x5000);
+    setup_command_rings(
+        &mut xhci,
+        &mut mem,
+        command_control(TRB_TYPE_ENABLE_SLOT, ENABLE_SLOT_ID),
+    );
+    let mut mem = Recording {
+        inner: mem,
+        writes: Vec::new(),
+    };
+    xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem);
+    let trb: Vec<_> = mem
+        .writes
+        .iter()
+        .copied()
+        .filter(|&(gpa, len)| gpa >= EVENT_RING && gpa + len as u64 <= EVENT_RING + TRB_SIZE)
+        .collect();
+    assert_eq!(
+        trb,
+        [(EVENT_RING, 12), (EVENT_RING + 12, 4)],
+        "event TRB stores: {:?}",
+        mem.writes
+    );
+}
