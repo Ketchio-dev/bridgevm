@@ -52,6 +52,7 @@ final class HvfClipboardImageNoticeTests: XCTestCase {
         feed(session, [windows])
         XCTAssertEqual(session.clipboardImageNotice.shown, .windowsFilesTooLarge)
         XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Windows에서 복사한 파일이 너무 많거나 커서 Mac으로 가져오지 않았습니다.")
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("공유 폴더"), true, "what to do instead")
         feed(session, ["BVAGENT CLIPSYNC guest->host files=1 bytes=5 copy=5 t=700"])
         XCTAssertNil(session.clipboardImageNotice.shown, "a later copy clears it")
         feed(session, ["BVAGENT CLIPSYNC refused guest-files unsafe-path files=1 bytes=5 copy=6 t=800"])
