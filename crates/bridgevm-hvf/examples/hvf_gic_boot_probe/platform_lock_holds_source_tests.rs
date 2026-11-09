@@ -17,13 +17,13 @@ fn every_lock_site_beside_the_tick_holds_through_the_record() {
         // writes: around the doorbell, and after the unlocked transfer when
         // the vCPU's worker finished it within the wait.
         let sites = match site {
-            "HoldSite::Automation" => 4,
+            "HoldSite::Automation" => 3,
             "HoldSite::Mmio(ipa)" => 2,
             _ => 1,
         };
         assert_eq!(count(run, site), sites, "{site}");
     }
-    assert_eq!(count(run, "lock_platform("), 7);
+    assert_eq!(count(run, "lock_platform("), 6);
     assert_eq!(count(run, "nvme_io_worker.run(io, &"), 1);
     let secondary = include_str!("secondary_vcpu.rs");
     assert_eq!(count(secondary, "lock_platform("), 2);

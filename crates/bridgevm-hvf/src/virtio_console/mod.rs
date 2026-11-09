@@ -27,7 +27,7 @@ use crate::virtio_queue::address::read_descriptor;
 use crate::virtio_queue::address::read_u16_at as read_u16;
 use crate::virtio_queue::address::write_used;
 use crate::virtio_queue::address::DESC_SIZE;
-pub use agent_inbound::AGENT_INBOUND_HOOK;
+pub use agent_inbound::{AGENT_INBOUND_HOOK, MAX_HOST_INBOUND_LEN};
 pub(crate) use control_plane::*;
 pub use device_state::*;
 pub(crate) use msix_bridge::*;

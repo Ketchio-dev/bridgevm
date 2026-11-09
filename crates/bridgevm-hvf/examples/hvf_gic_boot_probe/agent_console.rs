@@ -81,6 +81,8 @@ mod resident_service;
 mod service_queue;
 #[path = "agent_console/ctl_wake.rs"]
 mod ctl_wake;
+#[path = "agent_console/service_thread.rs"]
+mod service_thread;
 #[path = "agent_console/service_wake.rs"]
 mod service_wake;
 #[path = "agent_console/share.rs"]
@@ -110,6 +112,7 @@ use file_drop::*;
 use protocol::*;
 pub use desktop_scale::{request_desktop_scale, DESKTOP_SCALES};
 pub use desktop_switch::request_desktop_mode;
+pub use service_thread::ServiceThread;
 pub use service_wake::ServiceWake;
 use share::*;
 pub use state::AgentConsoleHarness;

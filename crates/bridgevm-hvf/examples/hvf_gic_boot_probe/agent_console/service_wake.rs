@@ -41,6 +41,11 @@ impl ServiceWake {
             unsafe { hv_vcpus_exit(&v, 1) };
         });
     }
+    /// A vCPU0 wake its exit dispatcher counts as this one (the agent service's TX).
+    pub fn waker(&self, vcpu: HvVcpuT) -> impl Fn() + Send + 'static {
+        let fired = Arc::clone(&self.fired);
+        move || super::ctl_wake::request_wake(vcpu, &fired)
+    }
     pub fn canceled_by_service_wake(&self, exit_reason: u32, watchdog_fired: &AtomicBool) -> bool {
         exit_reason == EXIT_CANCELED
             && self.fired.swap(false, Ordering::SeqCst)

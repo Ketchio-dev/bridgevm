@@ -14,7 +14,7 @@ pub(super) const DNS_FLUSH_COMMAND: &str = "ipconfig /flushdns";
 
 #[derive(Default)]
 pub(super) struct DnsFlush {
-    /// The NAT's switch count at the last capture.
+    /// The NAT's switch count as vCPU0 last read it (service_thread.rs).
     pub(super) seen: u64,
     /// The count the last queued flush covers.
     pub(super) covered: u64,
@@ -25,13 +25,6 @@ pub(super) fn is_dns_flush(req: &ServiceReq) -> bool {
 }
 
 impl AgentConsoleHarness {
-    /// Under the platform guard, with the inbound capture.
-    pub(super) fn observe_dns_server(&mut self, platform: &VirtPlatform) {
-        if let Some(stats) = platform.virtio_net_nat_stats() {
-            self.dns_flush.seen = stats.dns_server_changes;
-        }
-    }
-
     pub(super) fn enqueue_dns_flush(&mut self) {
         if self.dns_flush.seen == self.dns_flush.covered {
             return;
