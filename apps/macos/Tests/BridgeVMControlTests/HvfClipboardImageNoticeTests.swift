@@ -48,6 +48,7 @@ final class HvfClipboardImageNoticeTests: XCTestCase {
         XCTAssertEqual(session.clipboardImageNotice.shown, .macFilesTooLarge)
         XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Mac에서 복사한 파일이 너무 많거나 커서 Windows에는 파일 이름만 보냈습니다.")
         XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("64MB"), true)
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("끌어다 놓으면"), true, "what to do instead")
         feed(session, [windows])
         XCTAssertEqual(session.clipboardImageNotice.shown, .windowsFilesTooLarge)
         XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Windows에서 복사한 파일이 너무 많거나 커서 Mac으로 가져오지 않았습니다.")
