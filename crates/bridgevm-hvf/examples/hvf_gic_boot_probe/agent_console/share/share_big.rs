@@ -25,6 +25,7 @@ pub(in crate::agent_console) const SHARE_FREE_MARGIN: u64 = 2 << 30;
 
 pub(in crate::agent_console) enum BigTransfer {
     Get(BigGet),
+    Put(super::share_big_put::BigPut),
 }
 
 pub(in crate::agent_console) struct BigGet {
@@ -69,6 +70,7 @@ impl AgentConsoleHarness {
     fn big_get(&mut self) -> Option<&mut BigGet> {
         match self.share.as_mut()?.big.as_mut()? {
             BigTransfer::Get(get) => Some(get),
+            BigTransfer::Put(_) => None,
         }
     }
 
@@ -279,6 +281,9 @@ impl AgentConsoleHarness {
 
     /// The writer's answers, then the next range once the writer has caught up.
     pub(in crate::agent_console) fn advance_big_share(&mut self, now: Instant) {
+        if matches!(self.share.as_ref().and_then(|share| share.big.as_ref()), Some(BigTransfer::Put(_))) {
+            return self.advance_big_put(now);
+        }
         while let Some(answer) = self.big_get().and_then(|get| get.writer.poll()) {
             match answer {
                 FromWriter::Hashed(hash) => self.big_get_hashed(hash),
@@ -388,9 +393,14 @@ impl AgentConsoleHarness {
         let Some(share) = self.share.as_mut() else {
             return;
         };
-        let BigTransfer::Get(get) = match share.big.as_ref() {
+        let get = match share.big.as_ref() {
             Some(BigTransfer::Get(get)) if get.publishing => return,
-            Some(_) => share.big.take().expect("checked"),
+            Some(BigTransfer::Get(_)) => match share.big.take() {
+                Some(BigTransfer::Get(get)) => get,
+                _ => unreachable!("checked"),
+            },
+            // A stall or another fault asks the agent to delete its temporary; a new agent holds none.
+            Some(BigTransfer::Put(_)) => return self.abort_big_put(reason, reason != "agent-restarted", now),
             None => return,
         };
         println!(
@@ -404,7 +414,7 @@ impl AgentConsoleHarness {
     /// Whether `req` is a fetch whose large copy is under way.
     pub(in crate::agent_console) fn is_big_share_step(&self, req: &ServiceReq) -> bool {
         match req {
-            ServiceReq::ShareRange { .. } => true,
+            ServiceReq::ShareRange { .. } | ServiceReq::ShareBigPut(_) => true,
             ServiceReq::ShareGet { name } => matches!(
                 self.share.as_ref().and_then(|share| share.big.as_ref()),
                 Some(BigTransfer::Get(get)) if get.name == *name

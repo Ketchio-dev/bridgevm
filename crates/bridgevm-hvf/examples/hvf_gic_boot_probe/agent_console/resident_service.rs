@@ -183,8 +183,8 @@ impl AgentConsoleHarness {
                             self.abort_big_share("stalled", now);
                         }
                         // A drop step creates guest files; resending could duplicate one.
-                        if matches!(req, ServiceReq::ShareRange { .. }) {
-                            println!("BVAGENT SERVICE dropped share-range t={}", self.t_ms(now));
+                        if matches!(req, ServiceReq::ShareRange { .. } | ServiceReq::ShareBigPut(_)) {
+                            println!("BVAGENT SERVICE dropped {} t={}", req_kind(&req), self.t_ms(now));
                         } else if is_drop_req(&req) {
                             self.fail_drop("stalled", now);
                         } else {
@@ -214,7 +214,7 @@ impl AgentConsoleHarness {
             (hold_images && super::agent_update::is_clip_image_req(req))
                 || (hold_share
                     && is_share_req(req)
-                    && !matches!(req, ServiceReq::ShareRange { .. }))
+                    && !matches!(req, ServiceReq::ShareRange { .. } | ServiceReq::ShareBigPut(_)))
         }) else {
             return;
         };
@@ -318,6 +318,7 @@ impl AgentConsoleHarness {
                 self.write_share_range_line(name, 0)
             }
             ServiceReq::ShareRange { name, offset } => self.write_share_range_line(name, *offset),
+            ServiceReq::ShareBigPut(step) => self.write_big_put_line(step),
             ServiceReq::ShareGet { name } => {
                 let Some(share) = self.share.as_ref() else {
                     return false;
@@ -560,6 +561,7 @@ impl AgentConsoleHarness {
             InFlightSnapshot::SharePut => {
                 self.handle_share_put_reply_with_sender(line, now, send);
             }
+            InFlightSnapshot::ShareBigPut => self.handle_big_put_reply(line, now),
             InFlightSnapshot::TimeSync => self.handle_time_resync_reply(line),
             InFlightSnapshot::Drop => self.handle_drop_reply(line, now),
             InFlightSnapshot::AgentUpdate => self.handle_agent_update_reply_with_sender(line, now, send),

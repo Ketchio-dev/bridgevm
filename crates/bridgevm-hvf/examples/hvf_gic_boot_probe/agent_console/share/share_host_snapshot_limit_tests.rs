@@ -8,7 +8,9 @@ fn share_file_read_rejects_oversized_file_before_allocation() {
     rig.h.share.as_mut().unwrap().engine = ShareSync::new(4);
     let file = std::fs::File::create(rig.dir.join("big.bin")).unwrap();
     file.set_len(512 * 1024 * 1024).unwrap();
-    let error = read_share_host_snapshot(rig.h.share.as_mut().unwrap(), "big.bin")
+    let share = rig.h.share.as_mut().unwrap();
+    let max_bytes = share.engine.max_bytes();
+    let error = read_share_host_snapshot(share, "big.bin", max_bytes)
         .err()
         .unwrap();
     assert_eq!(error, ShareFileReadError::TooLarge(512 * 1024 * 1024));

@@ -317,6 +317,8 @@ pub(super) enum ServiceReq {
     ShareGet { name: String },
     /// The next range of a large guest file being copied (share_big.rs).
     ShareRange { name: String, offset: u64 },
+    /// One step of a large Mac file streamed to the guest (share_big_put.rs).
+    ShareBigPut(BigPutStep),
     /// Push one captured host file payload into the guest shared directory.
     SharePut {
         name: String,
@@ -367,6 +369,7 @@ pub(super) enum InFlightSnapshot {
         name: String,
     },
     SharePut,
+    ShareBigPut,
     ShareDel {
         name: String,
         direction: ShareDelDirection,
@@ -395,6 +398,7 @@ impl InFlightSnapshot {
                 Self::ShareGet { name: name.clone() }
             }
             ServiceReq::SharePut { .. } => Self::SharePut,
+            ServiceReq::ShareBigPut(_) => Self::ShareBigPut,
             ServiceReq::ShareDel { name, direction } => Self::ShareDel {
                 name: name.clone(),
                 direction: *direction,

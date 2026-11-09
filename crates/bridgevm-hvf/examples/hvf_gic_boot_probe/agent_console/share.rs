@@ -23,6 +23,7 @@ pub(super) fn req_kind(req: &ServiceReq) -> &'static str {
         ServiceReq::ShareLs => "share-ls",
         ServiceReq::ShareGet { .. } => "share-get",
         ServiceReq::ShareRange { .. } => "share-range",
+        ServiceReq::ShareBigPut(_) => "share-big-put",
         ServiceReq::SharePut { .. } => "share-put",
         ServiceReq::ShareDel { .. } => "share-del",
         ServiceReq::TimeSync => "time-sync",
@@ -37,6 +38,7 @@ pub(super) fn is_share_req(req: &ServiceReq) -> bool {
         ServiceReq::ShareLs
             | ServiceReq::ShareGet { .. }
             | ServiceReq::ShareRange { .. }
+            | ServiceReq::ShareBigPut(_)
             | ServiceReq::SharePut { .. }
             | ServiceReq::ShareDel { .. }
     )
@@ -81,6 +83,9 @@ mod share_delete_wire;
 #[path = "share/share_big.rs"]
 mod share_big;
 pub(super) use share_big::{BigTransfer, SHARE_RANGE_BYTES};
+#[path = "share/share_big_put.rs"]
+mod share_big_put;
+pub(super) use share_big_put::{start_big_put, BigPutStart, BigPutStep};
 #[path = "share/share_stage_writer.rs"]
 mod share_stage_writer;
 

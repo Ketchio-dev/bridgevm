@@ -110,4 +110,19 @@ impl ShareSync {
         Some(PushGuest { bytes, hash })
     }
 
+    /// A large host file streams to the guest without being read first, so it has no hash
+    /// to compare yet: it is sent whenever the scan found it changed (on_put_ok records it).
+    pub fn on_host_push_streamed(&mut self, name: &str) -> bool {
+        let name = normalize_rel(name);
+        if self.records.get(&name).is_some_and(|record| record.host_write_failed) {
+            return false;
+        }
+        self.pending_host_changed.remove(&name);
+        self.pending_guest_mtime.remove(&name);
+        if let Some(record) = self.records.get_mut(&name) {
+            record.put_unconfirmed = true;
+        }
+        self.guest_file_entries_scratch.remove(&name);
+        true
+    }
 }
