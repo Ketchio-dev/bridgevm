@@ -363,6 +363,8 @@ impl Rig {
         h.clipsync = true;
         h.commands.clear();
         h.pasteboard = Some(pasteboard);
+        // The boot's clock resync (time_resync.rs) is not part of these flows.
+        h.clock.boot_resync_queued = true;
         let now = Instant::now();
         assert!(h.next_command_line(0, now).is_none());
         Self {

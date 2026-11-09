@@ -336,6 +336,8 @@ impl AgentConsoleHarness {
                 println!("BVAGENT SERVICE start t={}", self.t_ms(now));
                 // Desktop modes requested before the agent was up.
                 self.enqueue_desktop_switch();
+                // Windows' clock after a boot (time_resync.rs).
+                self.enqueue_boot_time_resync();
                 // Whether this agent can move clipboard images (clip_image.rs).
                 if self.clipsync {
                     self.queue.push_front(ServiceReq::ClipCaps);

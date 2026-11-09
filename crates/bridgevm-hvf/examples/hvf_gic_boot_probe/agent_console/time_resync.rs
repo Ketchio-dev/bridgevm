@@ -9,6 +9,12 @@
 //! `RESYNC_GAP` saw a suspension. Once the agent service runs, one `Set-Date`
 //! puts the guest on the host's UTC time, read from the host clock when the
 //! command is sent. The command is fixed text plus that one integer.
+//!
+//! The same resync runs once at each boot's first service start. Windows reads
+//! the RTC as local time, and the PL031 starts at UTC, so in any zone but UTC
+//! (new installs take the Mac's) Windows' clock came up off by the zone offset
+//! at every boot. Measured live: Korea 9 h behind, Eastern 4 h ahead (daylight
+//! time), until a host sleep or W32Time's weekly sync.
 
 use super::*;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -37,6 +43,9 @@ pub(super) struct HostClock {
     /// BRIDGEVM_GUEST_RTC_EPOCH: the guest's fixed start time, and the host
     /// time it was taken at.
     pub(super) rtc_epoch: Option<(SystemTime, SystemTime)>,
+    /// This boot's service start queued its resync (an agent restart does not
+    /// queue another).
+    pub(super) boot_resync_queued: bool,
 }
 
 impl HostClock {
@@ -148,6 +157,13 @@ impl AgentConsoleHarness {
         let paused_ms = u64::try_from(paused.as_millis()).unwrap_or(u64::MAX);
         self.clock.pending_gap_ms = self.clock.pending_gap_ms.saturating_add(paused_ms);
         self.enqueue_time_resync();
+    }
+
+    /// The boot's first service start: put the guest clock on host time once.
+    pub(super) fn enqueue_boot_time_resync(&mut self) {
+        if !std::mem::replace(&mut self.clock.boot_resync_queued, true) {
+            self.requeue_time_resync();
+        }
     }
 
     /// An agent restart may have dropped the resync before it ran.
