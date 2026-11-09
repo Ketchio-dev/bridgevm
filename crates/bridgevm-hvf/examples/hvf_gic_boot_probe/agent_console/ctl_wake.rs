@@ -1,7 +1,8 @@
-//! Event-driven agent service: a control-file append or a guest agent reply
-//! wakes vCPU0's service tick at once, instead of waiting for the next
-//! ServiceWake period and the 200 ms control-file poll. Input on the ordered
-//! agent route was bounded by those (one command per round trip, about 4 Hz).
+//! Event-driven agent service: a control-file append wakes the service thread
+//! at once, and a guest agent reply wakes vCPU0, which drains it from the
+//! device and hands it to the service (service_thread.rs). Neither waits for
+//! the service's 250 ms tick or the 200 ms control-file poll. Input on the
+//! ordered agent route was bounded by those (one command per round trip, about 4 Hz).
 
 use std::os::fd::AsRawFd;
 use std::ptr::{null, null_mut};
@@ -9,6 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::service_thread::ServiceSlot;
 use super::{hv_vcpus_exit, HvVcpuT, CTL_ENV};
 
 /// Set by the watcher on an append; the next service tick reads the file then.
@@ -18,9 +20,10 @@ pub(super) fn take_ctl_changed() -> bool {
     CTL_CHANGED.swap(false, Ordering::SeqCst)
 }
 
-fn ctl_changed(vcpu: HvVcpuT, fired: &AtomicBool) {
+/// The service reads the file and wakes vCPU0 itself once it has bytes to send.
+pub(super) fn ctl_changed(service: &ServiceSlot) {
     CTL_CHANGED.store(true, Ordering::SeqCst);
-    request_wake(vcpu, fired);
+    service.unpark();
 }
 
 /// Exit vCPU0 once per pending wake; a wake already pending covers this one.
@@ -35,21 +38,21 @@ pub(super) fn request_wake(vcpu: HvVcpuT, fired: &AtomicBool) {
 }
 
 /// Install the guest-reply hook and watch the control file, when service mode has one.
-pub(super) fn start(vcpu: HvVcpuT, fired: &Arc<AtomicBool>) {
+pub(super) fn start(vcpu: HvVcpuT, fired: &Arc<AtomicBool>, service: &Arc<ServiceSlot>) {
     let hook_fired = Arc::clone(fired);
     let _ = bridgevm_hvf::virtio_console::AGENT_INBOUND_HOOK
         .set(Box::new(move || request_wake(vcpu, &hook_fired)));
     let Some(path) = std::env::var(CTL_ENV).ok().filter(|path| !path.is_empty()) else {
         return;
     };
-    let fired = Arc::clone(fired);
+    let service = Arc::clone(service);
     std::thread::spawn(move || loop {
         // The app creates the file with its first command; until then (or after a
         // rename) poll for it. A kqueue failure degrades to a 5 ms length poll.
         match std::fs::File::open(&path) {
             Ok(file) => {
-                if !watch_until_replaced(&file, vcpu, &fired) {
-                    poll_length(&path, vcpu, &fired);
+                if !watch_until_replaced(&file, &service) {
+                    poll_length(&path, &service);
                 }
             }
             Err(_) => std::thread::sleep(Duration::from_millis(50)),
@@ -58,7 +61,7 @@ pub(super) fn start(vcpu: HvVcpuT, fired: &Arc<AtomicBool>) {
 }
 
 /// Wake on every write; return true when the file was deleted or renamed.
-fn watch_until_replaced(file: &std::fs::File, vcpu: HvVcpuT, fired: &AtomicBool) -> bool {
+fn watch_until_replaced(file: &std::fs::File, service: &ServiceSlot) -> bool {
     // SAFETY: plain kqueue/kevent calls on descriptors this function owns or borrows.
     let queue = unsafe { libc::kqueue() };
     if queue < 0 {
@@ -83,7 +86,7 @@ fn watch_until_replaced(file: &std::fs::File, vcpu: HvVcpuT, fired: &AtomicBool)
         }
         ok = n == 1;
         if ok {
-            ctl_changed(vcpu, fired);
+            ctl_changed(service);
             if event.fflags & (libc::NOTE_DELETE | libc::NOTE_RENAME) != 0 {
                 break;
             }
@@ -94,7 +97,7 @@ fn watch_until_replaced(file: &std::fs::File, vcpu: HvVcpuT, fired: &AtomicBool)
     ok
 }
 
-fn poll_length(path: &str, vcpu: HvVcpuT, fired: &AtomicBool) {
+fn poll_length(path: &str, service: &ServiceSlot) {
     let mut last = std::fs::metadata(path).map(|m| m.len()).ok();
     loop {
         std::thread::sleep(Duration::from_millis(5));
@@ -104,7 +107,7 @@ fn poll_length(path: &str, vcpu: HvVcpuT, fired: &AtomicBool) {
         }
         if now != last {
             last = now;
-            ctl_changed(vcpu, fired);
+            ctl_changed(service);
         }
     }
 }

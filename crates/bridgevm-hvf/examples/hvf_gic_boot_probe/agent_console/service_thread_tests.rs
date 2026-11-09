@@ -5,6 +5,10 @@ use crate::agent_console::agent_console_tests::tests::harness;
 use std::sync::mpsc::{channel, Receiver};
 
 const WAIT: Duration = Duration::from_secs(10);
+/// A backstop tick that never comes in a test: only an unpark steps the service.
+const PARKED: Duration = Duration::from_secs(3600);
+/// How long a service that should stay parked is watched.
+const QUIET: Duration = Duration::from_millis(300);
 
 /// The device as `exchange` sees it: guest chains leave the ring while its
 /// buffer is under the bound (process_agent_tx_queue), and a send polls.
@@ -13,6 +17,7 @@ struct Wire {
     ring: VecDeque<Vec<u8>>,
     inbound: Vec<u8>,
     sent: Vec<u8>,
+    dns: Option<u64>,
 }
 
 impl Wire {
@@ -39,7 +44,7 @@ impl AgentWire for Wire {
         self.poll();
     }
     fn dns_server_changes(&self) -> Option<u64> {
-        None
+        self.dns
     }
 }
 
@@ -51,10 +56,23 @@ fn harness_in(state: AgentConsoleState) -> AgentConsoleHarness {
 }
 
 fn spawn(h: AgentConsoleHarness) -> (ServiceThread, Receiver<()>) {
+    spawn_ticking(h, &Arc::default(), SERVICE_TICK)
+}
+
+fn spawn_ticking(
+    h: AgentConsoleHarness,
+    slot: &Arc<ServiceSlot>,
+    tick: Duration,
+) -> (ServiceThread, Receiver<()>) {
     let (woke, wakes) = channel();
-    let service = ServiceThread::spawn(h, move || {
-        let _ = woke.send(());
-    });
+    let service = ServiceThread::start(
+        h,
+        slot,
+        move || {
+            let _ = woke.send(());
+        },
+        tick,
+    );
     (service, wakes)
 }
 
@@ -69,7 +87,7 @@ fn bytes_keep_their_order_both_ways_over_many_rounds() {
     let (woke, wakes) = channel();
     let go = Arc::new(AtomicBool::new(false));
     let gate = Arc::clone(&go);
-    let mut service = ServiceThread::spawn(h, move || {
+    let mut service = ServiceThread::spawn(h, &Arc::default(), move || {
         let _ = woke.send(());
         let deadline = Instant::now() + WAIT;
         while !gate.swap(false, Ordering::AcqRel) && Instant::now() < deadline {
@@ -125,7 +143,7 @@ fn drop_returns_once_the_thread_and_its_harness_are_gone() {
     let mut h = harness_in(AgentConsoleState::WaitingReady);
     h.pasteboard = Some(pasteboard);
     let (entered, in_wake) = channel();
-    let service = ServiceThread::spawn(h, move || {
+    let service = ServiceThread::spawn(h, &Arc::default(), move || {
         let _ = entered.send(());
         std::thread::sleep(Duration::from_millis(200));
     });
@@ -138,10 +156,16 @@ fn drop_returns_once_the_thread_and_its_harness_are_gone() {
 #[test]
 fn vcpu0_is_woken_for_tx_readiness_and_a_full_rx_but_not_for_an_idle_step() {
     // Idle: a step with nothing for vCPU0 does not wake it, or each exchange
-    // would unpark the service and each step kick vCPU0 again.
-    let (mut service, wakes) = spawn(harness_in(AgentConsoleState::TimedOut));
+    // would unpark the service and each step kick vCPU0 again. Guest bytes
+    // step the service; a finished harness leaves them.
+    let (mut service, wakes) = spawn_ticking(
+        harness_in(AgentConsoleState::TimedOut),
+        &Arc::default(),
+        PARKED,
+    );
     let mut wire = Wire::default();
     for _ in 0..3 {
+        wire.guest_writes(b"x");
         service.exchange_with(&mut wire);
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -162,4 +186,71 @@ fn vcpu0_is_woken_for_tx_readiness_and_a_full_rx_but_not_for_an_idle_step() {
     service.exchange_with(&mut wire);
     wakes.recv_timeout(WAIT).expect("taking a full rx did not wake vCPU0");
     assert!(wire.sent.is_empty());
+}
+
+#[test]
+fn an_exchange_unparks_the_service_only_with_news_for_it() {
+    // Each case starts a service that steps only when unparked; its harness
+    // owes a PING, so a step wakes vCPU0.
+    let after = |news: &dyn Fn(&mut ServiceThread, &mut Wire)| {
+        let (mut service, wakes) = spawn_ticking(
+            harness_in(AgentConsoleState::WaitingReady),
+            &Arc::default(),
+            PARKED,
+        );
+        let mut wire = Wire {
+            dns: Some(0),
+            ..Wire::default()
+        };
+        news(&mut service, &mut wire);
+        service.exchange_with(&mut wire);
+        (service, wakes)
+    };
+    // Automation ticks that moved nothing, with the DNS count unchanged: every
+    // tick while the pointer moves.
+    let (_service, wakes) = after(&|service, wire| {
+        service.exchange_with(wire);
+        service.exchange_with(wire);
+    });
+    assert!(wakes.recv_timeout(QUIET).is_err(), "a tick with no news stepped the service");
+
+    let news: [(&str, &dyn Fn(&mut ServiceThread, &mut Wire)); 5] = [
+        ("guest bytes", &|_, wire| wire.guest_writes(b"P")),
+        ("a send", &|service, _| lock(&service.shared.tx).extend_from_slice(b"x")),
+        ("a DNS switch", &|_, wire| wire.dns = Some(1)),
+        ("a VM pause", &|service, _| service.note_vm_pause(Duration::from_secs(1))),
+        // Last: the request stays pending on this thread.
+        ("a desktop request", &|_, _| request_desktop_mode((1920, 1080))),
+    ];
+    for (name, news) in news {
+        let (_service, wakes) = after(news);
+        assert!(wakes.recv_timeout(WAIT).is_ok(), "{name} did not step the service");
+    }
+}
+
+#[test]
+fn a_ctl_append_wakes_the_service_not_vcpu0() {
+    let path = std::env::temp_dir().join(format!(
+        "bvagent-service-thread-ctl-{}.ctl",
+        std::process::id()
+    ));
+    std::fs::write(&path, b"PING\n").unwrap();
+    let now = Instant::now();
+    let mut h = harness_in(AgentConsoleState::Service);
+    h.service = true;
+    h.ctl_path = Some(path.to_string_lossy().into_owned());
+    h.last_send = Some(now);
+    h.last_alive = Some(now);
+    let slot = Arc::default();
+    let (mut service, wakes) = spawn_ticking(h, &slot, PARKED);
+    // What the ctl watcher thread does on each append; it holds only the slot.
+    crate::agent_console::ctl_wake::ctl_changed(&slot);
+    // The service read the command and woke vCPU0 to send it, with no exchange before.
+    wakes.recv_timeout(WAIT).expect("the ctl append did not reach the service");
+    let mut wire = Wire::default();
+    service.exchange_with(&mut wire);
+    assert_eq!(wire.sent, b"PING\n");
+    drop(service);
+    assert!(lock(&slot.0).is_none(), "the slot outlived its boot's service thread");
+    std::fs::remove_file(path).unwrap();
 }

@@ -8,16 +8,35 @@
 //! thread is the harness's only owner, so the pasteboard's `Cell` never has
 //! two (`spawn` needs `AgentConsoleHarness: Send`). Readiness, the NAT's DNS
 //! switches and VM pauses cross as atomics.
+//!
+//! The thread steps when there is news for it, never on every vCPU0 tick: when
+//! `exchange` moved bytes or saw a DNS switch or desktop request, on a VM
+//! pause, on a ctl append (ctl_wake.rs, through `ServiceSlot`), and otherwise
+//! every `SERVICE_TICK`. That tick replaces the vCPU0 wake the agent used to
+//! need (service_wake_interval.rs).
 
 use super::*;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::virtio_console::MAX_HOST_INBOUND_LEN;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Mutex, MutexGuard, PoisonError};
-use std::thread::JoinHandle;
+use std::thread::{JoinHandle, Thread};
 
-/// The service's own cadence while vCPU0 does not unpark it (a VM pause, say).
+/// The service's own cadence: its host-driven work (clipboard and share polls,
+/// heartbeats, timeouts) runs at least this often.
 const SERVICE_TICK: Duration = Duration::from_millis(250);
+
+/// The current boot's service thread, for the probe-lifetime ctl watcher.
+#[derive(Default)]
+pub(super) struct ServiceSlot(Mutex<Option<Thread>>);
+
+impl ServiceSlot {
+    pub(super) fn unpark(&self) {
+        if let Some(thread) = &*lock(&self.0) {
+            thread.unpark();
+        }
+    }
+}
 
 #[derive(Default)]
 struct Shared {
@@ -34,22 +53,42 @@ struct Shared {
 pub struct ServiceThread {
     shared: Arc<Shared>,
     thread: Option<JoinHandle<()>>,
+    slot: Arc<ServiceSlot>,
+    /// The desktop mode and scale requests as `exchange` last saw them.
+    desktop_seen: (u64, u32),
 }
 
 impl ServiceThread {
-    /// Move `harness` onto its own thread; `wake` asks vCPU0 to exchange soon.
-    pub fn spawn(harness: AgentConsoleHarness, wake: impl Fn() + Send + 'static) -> Self {
+    /// Move `harness` onto its own thread, found through `slot` until dropped;
+    /// `wake` asks vCPU0 to exchange soon.
+    pub(super) fn spawn(
+        harness: AgentConsoleHarness,
+        slot: &Arc<ServiceSlot>,
+        wake: impl Fn() + Send + 'static,
+    ) -> Self {
+        Self::start(harness, slot, wake, SERVICE_TICK)
+    }
+
+    fn start(
+        harness: AgentConsoleHarness,
+        slot: &Arc<ServiceSlot>,
+        wake: impl Fn() + Send + 'static,
+        tick: Duration,
+    ) -> Self {
         let shared = Arc::<Shared>::default();
         let thread = std::thread::Builder::new()
             .name("bv-agent-service".into())
             .spawn({
                 let shared = Arc::clone(&shared);
-                move || serve(harness, &shared, &wake)
+                move || serve(harness, &shared, &wake, tick)
             })
             .expect("spawn the agent service thread");
+        *lock(&slot.0) = Some(thread.thread().clone());
         Self {
             shared,
             thread: Some(thread),
+            slot: Arc::clone(slot),
+            desktop_seen: (0, 0),
         }
     }
 
@@ -62,28 +101,39 @@ impl ServiceThread {
     fn exchange_with(&mut self, wire: &mut impl AgentWire) {
         // While the service holds a full `rx`, the guest's bytes wait in the
         // device, which holds the guest back at the same bound (agent_inbound.rs).
-        let capped = {
+        let drained = {
             let mut rx = lock(&self.shared.rx);
             let before = rx.len();
             if before < MAX_HOST_INBOUND_LEN {
                 wire.drain_inbound_into(&mut rx);
             }
-            rx.len() - before >= MAX_HOST_INBOUND_LEN
+            rx.len() - before
         };
         // A full device stopped taking the guest's chains; take those left in the ring.
-        if capped {
+        if drained >= MAX_HOST_INBOUND_LEN {
             wire.poll();
         }
-        if let Some(changes) = wire.dns_server_changes() {
+        let dns_switched = wire.dns_server_changes().is_some_and(|changes| {
             self.shared
                 .dns_server_changes
-                .store(changes, Ordering::Relaxed);
-        }
+                .swap(changes, Ordering::Relaxed)
+                != changes
+        });
+        // Requests live input made in this tick, before the exchange.
+        let desktop = (
+            super::desktop_switch::requested_mode(),
+            super::desktop_scale::requested_scale(),
+        );
+        let desktop_requested = std::mem::replace(&mut self.desktop_seen, desktop) != desktop;
         let sending = std::mem::take(&mut *lock(&self.shared.tx));
         if !sending.is_empty() {
             wire.send(&sending);
         }
-        self.unpark();
+        // Only news: a step for nothing would run the service's host work at
+        // every automation tick, 120 times a second while the pointer moves.
+        if drained > 0 || !sending.is_empty() || dns_switched || desktop_requested {
+            self.unpark();
+        }
     }
 
     /// The harness's `desktop_ready` as of its last step.
@@ -109,6 +159,7 @@ impl Drop for ServiceThread {
     /// Returns once the harness is dropped: the next boot generation's harness
     /// starts after its ctl offset, pasteboard and share state are gone.
     fn drop(&mut self) {
+        *lock(&self.slot.0) = None;
         self.shared.stop.store(true, Ordering::Release);
         if let Some(thread) = self.thread.take() {
             thread.thread().unpark();
@@ -117,12 +168,12 @@ impl Drop for ServiceThread {
     }
 }
 
-fn serve(mut harness: AgentConsoleHarness, shared: &Shared, wake: &dyn Fn()) {
+fn serve(mut harness: AgentConsoleHarness, shared: &Shared, wake: &dyn Fn(), tick: Duration) {
     raise_qos();
     loop {
         // Nothing else on this thread parks (channels are polled with try_recv),
-        // so vCPU0's unpark is never used up elsewhere.
-        std::thread::park_timeout(SERVICE_TICK);
+        // so an unpark is never used up elsewhere.
+        std::thread::park_timeout(tick);
         if shared.stop.load(Ordering::Acquire) {
             return;
         }
@@ -160,8 +211,8 @@ fn raise_qos() {
     }
 }
 
-fn lock(buffer: &Mutex<Vec<u8>>) -> MutexGuard<'_, Vec<u8>> {
-    buffer.lock().unwrap_or_else(PoisonError::into_inner)
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// What `exchange` needs of the platform under its guard; tests model the device.

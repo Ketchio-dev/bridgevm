@@ -1,18 +1,25 @@
-//! Host-driven vCPU wake scheduling for resident services.
+//! Host-driven vCPU0 wakes: a periodic ticker, and the agent service's wakes.
 
+use super::service_thread::{ServiceSlot, ServiceThread};
 use super::*;
 
-/// Periodic vCPU waker for service mode. The probe's main loop blocks inside
+/// vCPU0's wakes for host-driven work. The probe's main loop blocks inside
 /// hv_vcpu_run, and with the in-kernel GIC an idle desktop guest can go MINUTES
-/// without a userspace exit — so host-initiated service work (CLIPGET/LS polls,
-/// pasteboard pushes, ctl commands, even stdout flushing) froze until the guest
-/// happened to kick a virtqueue (live-observed as 5-minute log/service stalls).
-/// A steady hv_vcpus_exit heartbeat bounds tick latency the same way
-/// RamfbSampleLoop's sample tick does; the fired flag lets the exit dispatcher
-/// tell this benign wake apart from the watchdog's EXIT_CANCELED.
+/// without a userspace exit. Work that needs vCPU0 then waits for the guest to
+/// kick a virtqueue (live-observed as 5-minute log/service stalls).
+///
+/// The agent service needs vCPU0 only to move its bytes: the guest-reply hook
+/// and the service's own sends wake it (`spawn_service`). Its host work runs on
+/// its own thread and tick (service_thread.rs), so it needs no ticker. The
+/// ticker serves BOOT_TIMER, the PPM display export and a KD bridge
+/// (service_wake_interval.rs). One `fired` flag lets the exit dispatcher tell
+/// all these benign wakes apart from the watchdog's EXIT_CANCELED.
 pub struct ServiceWake {
     pub(crate) fired: Arc<AtomicBool>,
     pub(crate) started: bool,
+    agent_started: bool,
+    /// The current boot's agent service thread, for the ctl watcher.
+    service: Arc<ServiceSlot>,
 }
 
 impl ServiceWake {
@@ -20,6 +27,8 @@ impl ServiceWake {
         Self {
             fired: Arc::new(AtomicBool::new(false)),
             started: false,
+            agent_started: false,
+            service: Arc::default(),
         }
     }
     /// Idempotently start the ticker thread. Runs for the probe's lifetime
@@ -29,7 +38,6 @@ impl ServiceWake {
             return;
         }
         self.started = true;
-        super::ctl_wake::start(vcpu, &self.fired);
         let fired = Arc::clone(&self.fired);
         std::thread::spawn(move || loop {
             std::thread::sleep(interval);
@@ -41,10 +49,16 @@ impl ServiceWake {
             unsafe { hv_vcpus_exit(&v, 1) };
         });
     }
-    /// A vCPU0 wake its exit dispatcher counts as this one (the agent service's TX).
-    pub fn waker(&self, vcpu: HvVcpuT) -> impl Fn() + Send + 'static {
+    /// This boot's agent service thread. The guest-reply hook and the ctl
+    /// watcher are installed once, for the probe's lifetime.
+    pub fn spawn_service(&mut self, vcpu: HvVcpuT, harness: AgentConsoleHarness) -> ServiceThread {
+        if !std::mem::replace(&mut self.agent_started, true) {
+            super::ctl_wake::start(vcpu, &self.fired, &self.service);
+        }
         let fired = Arc::clone(&self.fired);
-        move || super::ctl_wake::request_wake(vcpu, &fired)
+        ServiceThread::spawn(harness, &self.service, move || {
+            super::ctl_wake::request_wake(vcpu, &fired);
+        })
     }
     pub fn canceled_by_service_wake(&self, exit_reason: u32, watchdog_fired: &AtomicBool) -> bool {
         exit_reason == EXIT_CANCELED

@@ -85,7 +85,12 @@ pub(super) fn reapply_desktop_scale() {
 }
 
 pub(super) fn has_requested_scale() -> bool {
-    requested().load(Ordering::Relaxed) & PENDING != 0
+    requested_scale() & PENDING != 0
+}
+
+/// The latest request with its pending bit; vCPU0 watches it for changes (service_thread.rs).
+pub(super) fn requested_scale() -> u32 {
+    requested().load(Ordering::Relaxed)
 }
 
 /// The agent command for the latest request, once.

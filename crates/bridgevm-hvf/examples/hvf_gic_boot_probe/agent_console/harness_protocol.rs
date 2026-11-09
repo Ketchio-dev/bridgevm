@@ -25,12 +25,6 @@ impl AgentConsoleHarness {
     pub(super) fn t_ms(&self, now: Instant) -> u128 {
         now.duration_since(self.start).as_millis()
     }
-    /// Whether the main loop should run the ServiceWake ticker: resident
-    /// service mode and measurement-safe scripted tests are host-driven, so
-    /// they must not depend on guest activity for their tick cadence.
-    pub fn service_wake_needed(&self) -> bool {
-        self.service || self.periodic_test
-    }
     /// Whether this harness must retain the legacy every-exit automation tick.
     /// Agent-only BOOT_TIMER runs and measurement-safe periodic tests are driven
     /// by ServiceWake and return false.
