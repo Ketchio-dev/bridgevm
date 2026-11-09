@@ -127,10 +127,19 @@ impl ShareSync {
 
     /// The session's first applied listing (the wait ends before it is applied): a guest edit
     /// of a name whose Mac copy is the last synced version is fetched, not held for the Mac
-    /// copy. A later listing without the name drops it, so the Mac file is sent again.
+    /// copy. A later listing without the name gives the preference up the way a refused publish
+    /// does (on_host_copy_kept), so the Mac file is sent again, also when that copy's publish
+    /// had failed and waited for a retry.
     pub(super) fn prefer_changed_guest_copies(&mut self) {
         let listed = &self.guest_file_entries_scratch;
-        self.guest_changed.retain(|name, _| listed.contains_key(name));
+        let gone: Vec<String> = (self.guest_changed.keys())
+            .filter(|name| !listed.contains_key(*name))
+            .cloned()
+            .collect();
+        for name in gone {
+            self.on_host_copy_kept(&name);
+        }
+        let listed = &self.guest_file_entries_scratch;
         if self.listings > 0 {
             return;
         }
@@ -172,14 +181,20 @@ impl ShareSync {
     }
 
     /// A preferred copy is not to be published (the Mac file changed, seen by its publish or by
-    /// a scan): the Mac copy wins. The record no longer waits for a host write and no longer
-    /// matches the Mac file, so the scan sends it (pending, so it is not fetched meanwhile).
+    /// a scan, or the guest no longer lists the copy): the Mac copy wins. The only way a guard
+    /// goes other than a publish or the guest copy turning out to be the synced one. The record
+    /// no longer waits for a host write and no longer matches the Mac file, so the scan sends
+    /// it; until then it is pending, so it is neither fetched over nor, absent from a listing,
+    /// taken for a guest deletion (when the last scan saw the Mac file).
     pub fn on_host_copy_kept(&mut self, name: &str) {
         let name = normalize_rel(name);
         self.guest_changed.remove(&name);
         if let Some(record) = self.records.get_mut(&name) {
             record.host_write_failed = false;
             record.host_mtime_ms = None;
+            if self.host_files_scratch.contains_key(&name) {
+                self.pending_host_changed.insert(name);
+            }
         }
     }
 }

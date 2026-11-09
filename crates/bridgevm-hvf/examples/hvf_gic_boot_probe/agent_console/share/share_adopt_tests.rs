@@ -762,3 +762,48 @@ fn a_session_end_waits_for_a_mark_being_written_and_none_lands_after_it() {
     assert!(mark(&marks, ["later.bin"]).is_err());
     assert_eq!(std::fs::read(&path).unwrap(), before, "a mark landed after the session ended");
 }
+
+#[test]
+fn a_preferred_copy_the_guest_stops_listing_after_a_failed_publish_gives_way_to_the_mac_copy() {
+    // Codex on #572: the publish of a preferred guest copy failed (it waits for a retry), then a
+    // listing left the name out. That dropped the guard but kept the failed write, so scans
+    // skipped the Mac file even once edited, and when the guest copy was listed again its retry
+    // replaced the Mac edit.
+    use std::os::unix::fs::PermissionsExt as _;
+    let (mut rig, vars) = synced_from_guest("preferred-unlisted", now_ms() - 2 * HOUR_MS, true);
+    settle(&mut rig);
+    rig.guest.write("doc.bin", b"new version, longer");
+    rig.guest.stamps.insert("DOC.BIN".into(), now_ms() - HOUR_MS);
+    let fetches = |rig: &Rig| rig.guest.gets.iter().filter(|name| *name == "doc.bin").count();
+    let before = fetches(&rig);
+    let _writable = WritableAgain(rig.dir.clone());
+    std::fs::set_permissions(&rig.dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    new_session(&mut rig, Some(&vars));
+    rig.run(8);
+    assert!(fetches(&rig) > before, "the preferred copy was not fetched");
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"old version"[..]), "the publish did not fail");
+    let preferred = |rig: &Rig| rig.h.share.as_ref().unwrap().engine.preferred_mac_stat("doc.bin").is_some();
+    assert!(preferred(&rig));
+    // A listing without the guest copy (gone for a moment, as in a rename and back).
+    let i = rig.guest.find("doc.bin").unwrap();
+    let hidden = rig.guest.files.remove(i);
+    for _ in 0..12 {
+        rig.run(1);
+        if !preferred(&rig) {
+            break;
+        }
+    }
+    assert!(!preferred(&rig), "no listing without the name");
+    let deletes = rig.h.queue.iter().any(|req| matches!(req, ServiceReq::ShareDel { name, .. } if name == "doc.bin"));
+    assert!(!deletes, "the Mac file was taken for a guest deletion");
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"old version"[..]));
+    // The Mac file edited, the folder writable again, the guest copy listed again as it was.
+    std::fs::write(rig.dir.join("doc.bin"), b"edited on the Mac afterwards").unwrap();
+    std::fs::set_permissions(&rig.dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    if rig.guest.find("doc.bin").is_none() {
+        rig.guest.files.push(hidden);
+    }
+    rig.run(16);
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"edited on the Mac afterwards"[..]), "the guest copy replaced the Mac edit");
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"edited on the Mac afterwards"[..]), "the Mac edit was not sent");
+}
