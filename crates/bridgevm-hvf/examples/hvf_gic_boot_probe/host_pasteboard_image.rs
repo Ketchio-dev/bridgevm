@@ -274,7 +274,7 @@ pub(super) unsafe fn class(name: &std::ffi::CStr) -> ObjcId {
     objc_getClass(name.as_ptr())
 }
 
-unsafe fn has_type(pb: ObjcId, ty: &std::ffi::CStr) -> bool {
+pub(super) unsafe fn has_type(pb: ObjcId, ty: &std::ffi::CStr) -> bool {
     let types = msg_send_id(pb, sel(b"types\0"));
     let ty = ns_string_from_utf8(ty.as_ptr());
     !types.is_null() && !ty.is_null() && msg_send_bool_id(types, sel(b"containsObject:\0"), ty)

@@ -17,6 +17,8 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 
 /// The agent serves CLIPXF (with CF_HTML).
 pub(super) const CLIP_CAPS_FILES_MARKER: &str = "CF_HDROP";
+/// The agent serves CLIPSETFILES (with CF_HDROP): Mac file copies go to Windows.
+pub(super) const CLIP_CAPS_SET_FILES_MARKER: &str = "CLIPSETFILES";
 /// Most entries (files and folders) one copy brings over: the agent's FilesMax.
 pub(super) const CLIP_FILES_MAX_ENTRIES: usize = 256;
 /// Most file bytes one copy brings over.
@@ -230,14 +232,26 @@ pub(super) fn guest_files_refusal_line(reason: &str, entries: usize, bytes: u64,
 impl AgentConsoleHarness {
     /// The files part of a CLIPXF reply. True when the copy is a files copy
     /// and was handled here; false sends it on as text and image.
-    pub(super) fn handle_guest_files(&mut self, files: GuestFiles, part: &str, later: bool, now: Instant) -> bool {
+    pub(super) fn handle_guest_files(
+        &mut self,
+        files: GuestFiles,
+        part: &str,
+        later: bool,
+        echo: bool,
+        now: Instant,
+    ) -> bool {
         let listed = match files {
             GuestFiles::Listed(list) => Ok(list),
             GuestFiles::Unlisted(count) => Err(count),
             GuestFiles::None | GuestFiles::Malformed => {
-                // A newer copy without files ends any transfer.
+                // A newer copy without files ends any transfer. When the guest's file drop
+                // gave way to text, that text is new to the Mac even if it reads as the
+                // drop's names did.
                 if self.last_synced.files.take().is_some() {
                     self.abandon_files_pull();
+                    if matches!(files, GuestFiles::None) {
+                        self.last_synced.text = None;
+                    }
                 }
                 return false;
             }
@@ -250,6 +264,16 @@ impl AgentConsoleHarness {
                     self.last_synced.guest_copy,
                     self.t_ms(now)
                 ));
+            }
+            return true;
+        }
+        // A Mac file copy we pushed (clip_files_push.rs) coming back: known, never pulled.
+        if listed.as_ref().is_ok_and(|list| self.lists_own_push(list)) {
+            self.abandon_files_pull();
+            self.last_synced.files = Some(digest);
+            self.last_synced.rebaseline = false;
+            if echo {
+                self.last_synced.guest_copy = self.last_synced.host_copy;
             }
             return true;
         }
@@ -286,6 +310,16 @@ impl AgentConsoleHarness {
         };
         self.start_files_pull(plan, list.len(), bytes, digest, now);
         true
+    }
+
+    /// Every copied item lies below `<clipdir>\files\`, where Mac copies go.
+    fn lists_own_push(&self, list: &[GuestFile]) -> bool {
+        let Some(images) = self.clip_images.as_ref() else {
+            return false;
+        };
+        let own = format!("{}\\files\\", images.dir);
+        let mut tops = list.iter().filter(|file| file.top).peekable();
+        tops.peek().is_some() && tops.all(|file| file.path.starts_with(&own))
     }
 
     /// Stage the copy's folders, then fetch its files, next on the wire.

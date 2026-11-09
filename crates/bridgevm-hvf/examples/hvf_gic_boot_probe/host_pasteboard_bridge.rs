@@ -1,7 +1,7 @@
 //! Nonblocking channels and the single pasteboard worker. The worker steps
 //! accept a backend so service-ordering tests never touch NSPasteboard.
 
-use super::{default_backend, HostImage, PngImage, Poller};
+use super::{default_backend, HostFiles, HostImage, PngImage, Poller};
 use std::cell::Cell;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -21,15 +21,18 @@ pub struct HostPasteboard {
     recopy: Arc<AtomicU64>,
     images: Arc<AtomicBool>,
     html: Arc<AtomicBool>,
+    files: Arc<AtomicBool>,
 }
 
 /// One Mac pasteboard change: its text and, while images are on, its image;
-/// while rich text is on, a text copy's `public.html`.
+/// while rich text is on, a text copy's `public.html`; while file copies are
+/// on, a Finder copy's files (with its names as text, and no image).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HostClip {
     pub text: Option<String>,
     pub image: Option<HostImage>,
     pub html: Option<String>,
+    pub files: Option<HostFiles>,
 }
 
 /// What the service had seen of the Mac pasteboard: a write made as of it loses
@@ -73,6 +76,7 @@ impl HostPasteboard {
         let recopy = Arc::new(AtomicU64::new(0));
         let images = Arc::new(AtomicBool::new(false));
         let html = Arc::new(AtomicBool::new(false));
+        let files = Arc::new(AtomicBool::new(false));
         (
             Self {
                 events,
@@ -81,6 +85,7 @@ impl HostPasteboard {
                 recopy: Arc::clone(&recopy),
                 images: Arc::clone(&images),
                 html: Arc::clone(&html),
+                files: Arc::clone(&files),
             },
             PasteboardWorker {
                 events: event_tx,
@@ -91,6 +96,7 @@ impl HostPasteboard {
                 recopy,
                 images,
                 html,
+                files,
             },
         )
     }
@@ -146,6 +152,11 @@ impl HostPasteboard {
     /// Read the Mac pasteboard's HTML too: the agent can take rich text.
     pub fn set_rich_text(&self, on: bool) {
         self.html.store(on, Ordering::Release);
+    }
+
+    /// Read the Mac pasteboard's file URLs too: the agent can take file copies.
+    pub fn set_file_copies(&self, on: bool) {
+        self.files.store(on, Ordering::Release);
     }
 
     fn write(&self, text: String, image: Option<PngImage>, html: Option<String>, files: Vec<PathBuf>) {

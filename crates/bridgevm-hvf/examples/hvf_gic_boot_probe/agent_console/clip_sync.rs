@@ -30,7 +30,9 @@ pub(super) struct ClipBaseline {
     /// ends write canonical base64, so the wire form is compared as it is.
     pub(super) html: Option<[u8; 32]>,
     /// SHA-256 of the CLIPXF files part the guest is known to hold, alone
-    /// (clip_files.rs): published, refused or on its way.
+    /// (clip_files.rs): published, refused or on its way; after a Finder copy
+    /// went to the guest (clip_files_push.rs), that copy's digest until the
+    /// guest lists it.
     pub(super) files: Option<[u8; 32]>,
     /// The PNG last synced either way, reused while it is `image`: a caption
     /// change needs no second transfer.
@@ -60,9 +62,9 @@ impl ClipBaseline {
     }
 
     /// The clipboard as one unit, either way: (text, image, html) is what was
-    /// last synced. Anything else is written whole.
+    /// last synced, and no file drop. Anything else is written whole.
     pub(super) fn holds(&self, text: Option<&str>, image: Option<[u8; 32]>, html: Option<[u8; 32]>) -> bool {
-        self.text.as_deref() == text && self.image == image && self.html == html
+        self.text.as_deref() == text && self.image == image && self.html == html && self.files.is_none()
     }
 }
 
@@ -83,6 +85,23 @@ impl AgentConsoleHarness {
             return;
         };
         self.last_synced.host_copy = self.last_synced.next_copy();
+        // File copies arrive only while the agent advertises CLIPSETFILES. Over
+        // a limit, or with a file that cannot be read, the copy goes as a plain
+        // copy would: its names as text.
+        match clip.files.filter(|_| self.clip_files_push) {
+            Some(HostFiles::Read(files)) => return self.enqueue_host_files(clip.text, files, now),
+            Some(HostFiles::TooLarge { entries, bytes }) => clip_line(format!(
+                "BVAGENT CLIPSYNC skip host-files too-large files={entries} bytes={bytes} copy={} t={}",
+                self.last_synced.host_copy,
+                self.t_ms(now)
+            )),
+            Some(HostFiles::Unreadable { entries, bytes }) => clip_line(format!(
+                "BVAGENT CLIPSYNC skip host-files unreadable files={entries} bytes={bytes} copy={} t={}",
+                self.last_synced.host_copy,
+                self.t_ms(now)
+            )),
+            None => {}
+        }
         // Images arrive only while the agent advertises IMAGE_PNG.
         match clip.image.filter(|_| self.clip_images.is_some()) {
             Some(HostImage::Png(png)) => return self.enqueue_host_image(clip.text, png, now),
@@ -144,7 +163,7 @@ impl AgentConsoleHarness {
         self.queue.push_back(ServiceReq::ClipPush(text, html));
     }
     pub(super) fn clip_push_pending(&self) -> bool {
-        self.any_pending(|req| matches!(req, ServiceReq::ClipPush(..) | ServiceReq::ClipImagePush(_)))
+        self.any_pending(is_host_push)
     }
     pub(super) fn handle_clip_poll_reply(&mut self, line: &str, now: Instant) {
         // CLIP <b64> answers CLIPGET; CLIPX adds the guest image (clip_image.rs),
@@ -222,7 +241,7 @@ impl AgentConsoleHarness {
                     self.t_ms(now)
                 ));
             }
-            if self.handle_guest_files(files, files_part, later, now) {
+            if self.handle_guest_files(files, files_part, later, echo, now) {
                 return;
             }
             return self.handle_guest_clip(b64, image, html, later, echo, now);

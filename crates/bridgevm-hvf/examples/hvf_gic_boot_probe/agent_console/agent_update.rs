@@ -370,11 +370,14 @@ fn is_update_req(req: &ServiceReq) -> bool {
 }
 
 /// A clipboard image on the move: a Mac image (PUT, then CLIPSETIMG) or a
-/// guest image fetch (GET); a guest file copy's fetch is held the same way.
+/// guest image fetch (GET); file copies either way are held the same way.
 pub(super) fn is_clip_image_req(req: &ServiceReq) -> bool {
     matches!(
         req,
-        ServiceReq::ClipImagePush(_) | ServiceReq::ClipImagePull { .. } | ServiceReq::ClipFilesPull
+        ServiceReq::ClipImagePush(_)
+            | ServiceReq::ClipImagePull { .. }
+            | ServiceReq::ClipFilesPull
+            | ServiceReq::ClipFilesPush(_)
     )
 }
 

@@ -262,6 +262,7 @@ impl AgentConsoleHarness {
                 self.write_clip_image_line(req)
             }
             ServiceReq::ClipFilesPull => self.write_clip_files_line(),
+            ServiceReq::ClipFilesPush(push) => self.write_clip_files_push_line(push),
             ServiceReq::ClipPush(text, html) => {
                 let verb = if html.is_some() { "CLIPSETH " } else { "CLIPSET " };
                 self.service_line_scratch.push_str(verb);
@@ -515,6 +516,7 @@ impl AgentConsoleHarness {
             InFlightSnapshot::ClipImagePush => self.handle_clip_image_push_reply(line, now, send),
             InFlightSnapshot::ClipImagePull => self.handle_clip_image_pull_reply(line, now),
             InFlightSnapshot::ClipFilesPull => self.handle_clip_files_pull_reply(line, now),
+            InFlightSnapshot::ClipFilesPush => self.handle_clip_files_push_reply(line, now, send),
             InFlightSnapshot::Ctl(command) => match self.handle_reply_line(line, &command) {
                 ReplyProgress::Complete => self.complete_in_flight(),
                 ReplyProgress::Incomplete | ReplyProgress::Ignored => {}

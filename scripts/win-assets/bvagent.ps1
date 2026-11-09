@@ -1082,6 +1082,18 @@ namespace BridgeVM {
             });
             return result;
         }
+
+        // One clipboard write of an Explorer copy: the paths as a file drop, Preferred
+        // DropEffect copy (1) so a paste copies, and the text when not empty.
+        public static void SetFiles(string[] paths, string text) {
+            OnSta(delegate () {
+                DataObject data = new DataObject();
+                data.SetData(DataFormats.FileDrop, true, paths);
+                data.SetData("Preferred DropEffect", false, new MemoryStream(BitConverter.GetBytes(1)));
+                if (!string.IsNullOrEmpty(text)) { data.SetData(DataFormats.UnicodeText, true, text); }
+                Clipboard.SetDataObject(data, true, 10, 100);
+            });
+        }
     }
 }
 '@
@@ -1214,6 +1226,17 @@ function Get-ClipFilesPart {
     $script:BvClipFilesPart = $part
     $script:BvClipFilesSeq = $seq
     return $part
+}
+
+# A CLIPSETFILES path, relative to one copy's folder: every part is a name (not empty, . or ..)
+# without a drive, stream or wildcard character or a control character, so it stays in that folder.
+function Test-ClipRel([string]$rel) {
+    if ([string]::IsNullOrEmpty($rel)) { return $false }
+    foreach ($part in $rel.Split('\')) {
+        if ($part -eq '' -or $part -eq '.' -or $part -eq '..' -or $part.IndexOfAny([char[]]':/*?"<>|') -ge 0) { return $false }
+        foreach ($c in $part.ToCharArray()) { if ([int]$c -lt 32) { return $false } }
+    }
+    return $true
 }
 # <<< clipboard images
 
@@ -1420,16 +1443,16 @@ while ($true) {
                     Write-Line $h ('CLIPXF ' + $image + ' ' + $html + ' ' + $files + ' ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipCache))) 'CLIPXF'
                 }
                 'CLIPCAPS' {
-                    # CLIPCAPS [PUSH] -> CLIPCAPS [IMAGE_PNG <b64(dir)> CF_HTML CF_HDROP] [CLIPPUSH]:
-                    # IMAGE_PNG when this agent can move clipboard images, CF_HTML when it serves
-                    # CLIPXH and CLIPSETH and CF_HDROP when it serves CLIPXF (all need the same
-                    # helper); CLIPPUSH when the host asked
+                    # CLIPCAPS [PUSH] -> CLIPCAPS [IMAGE_PNG <b64(dir)> CF_HTML CF_HDROP CLIPSETFILES]
+                    # [CLIPPUSH]: IMAGE_PNG when this agent can move clipboard images, CF_HTML when it
+                    # serves CLIPXH and CLIPSETH, CF_HDROP when it serves CLIPXF and CLIPSETFILES
+                    # when it serves that verb (all need the same helper); CLIPPUSH when the host asked
                     # for PUSH and the watcher runs, so Read-Line writes CLIPCHANGED after each
                     # guest clipboard change. A bare CLIPCAPS (older host) turns notices off.
                     $script:BvClipPush = ($arg -ceq 'PUSH') -and (Initialize-ClipWatch)
                     $caps = 'CLIPCAPS'
                     if (Initialize-ClipImage) {
-                        $caps += ' IMAGE_PNG ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipDir)) + ' CF_HTML CF_HDROP'
+                        $caps += ' IMAGE_PNG ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipDir)) + ' CF_HTML CF_HDROP CLIPSETFILES'
                     }
                     if ($script:BvClipPush) { $caps += ' CLIPPUSH' }
                     Write-Line $h $caps 'CLIPCAPS'
@@ -1476,6 +1499,51 @@ while ($true) {
                         $script:BvClipHtmlSeq = $seq
                         Write-Line $h 'OK CLIPSETH' 'OK'
                     } catch { Write-Line $h ('ERR CLIPSETH ' + $_.Exception.Message) 'ERR' }
+                }
+                'CLIPSETFILES' {
+                    # CLIPSETFILES <copy> <b64(list)> <b64(utf8 text)|-> -> OK CLIPSETFILES <n>: a Mac
+                    # file copy the host just PUT below <clipdir>\files\<copy> becomes an Explorer
+                    # copy. The list has one line per entry, <isDir>|<path in that folder>; a path
+                    # that would leave it is refused, listed folders are created (an empty one too)
+                    # and listed files must be there. The n top-level items go on the clipboard
+                    # with the text in one write. Older copies' folders stay for a paste that may
+                    # still read them: the 3 put on the clipboard last; older ones are deleted.
+                    try {
+                        if (-not (Initialize-ClipImage)) { throw 'clipboard files unavailable' }
+                        $parts = $arg.Split(' ')
+                        if ($parts.Length -lt 2 -or $parts[0] -notmatch '^[0-9]{1,19}$') { throw 'bad copy' }
+                        $base = $script:BvClipDir + '\files'
+                        $root = $base + '\' + $parts[0]
+                        $tops = New-Object System.Collections.Generic.List[string]
+                        foreach ($line in [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[1])).Split("`n")) {
+                            if ($line -eq '') { continue }
+                            $rel = $line.Substring([Math]::Min(2, $line.Length))
+                            if ($line.Length -lt 3 -or $line[1] -ne '|' -or -not (Test-ClipRel $rel)) { throw ('unsafe path ' + $rel) }
+                            $full = $root + '\' + $rel
+                            $io = Get-IoPath $full
+                            if ($line[0] -eq '1') { [void][System.IO.Directory]::CreateDirectory($io) }
+                            elseif ($line[0] -ne '0' -or -not [System.IO.File]::Exists($io)) { throw ('missing ' + $rel) }
+                            if ($rel.IndexOf('\') -lt 0) { $tops.Add($full) }
+                        }
+                        if ($tops.Count -eq 0) { throw 'no files' }
+                        $txt = ''
+                        if ($parts.Length -ge 3 -and $parts[2] -ne '-') { $txt = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[2])) }
+                        [BridgeVM.BvClipImage]::SetFiles($tops.ToArray(), $txt)
+                        try {
+                            [System.IO.Directory]::SetLastWriteTimeUtc((Get-IoPath $root $true), [DateTime]::UtcNow)
+                            $olds = @([System.IO.Directory]::GetDirectories($base) | Where-Object { [System.IO.Path]::GetFileName($_) -ne $parts[0] } |
+                                Sort-Object { [System.IO.Directory]::GetLastWriteTimeUtc($_) } -Descending)
+                            for ($i = 3; $i -lt $olds.Count; $i++) { [System.IO.Directory]::Delete((Get-IoPath $olds[$i] $true), $true) }
+                        } catch { Log ('CLIPSETFILES cleanup failed: ' + $_.Exception.Message) }
+                        $seq = $K::GetClipboardSequenceNumber()
+                        $script:BvClipCache = $txt
+                        $script:BvClipSeq = $seq
+                        $script:BvClipImgDesc = '0 0 0 - -'
+                        $script:BvClipImgSeq = $seq
+                        $script:BvClipHtmlPart = '0 -'
+                        $script:BvClipHtmlSeq = $seq
+                        Write-Line $h ('OK CLIPSETFILES ' + $tops.Count) 'OK'
+                    } catch { Write-Line $h ('ERR CLIPSETFILES ' + $_.Exception.Message) 'ERR' }
                 }
                 'CLIPSET' {
                     # Set the guest Windows clipboard from CLIPSET <base64(utf8)>.

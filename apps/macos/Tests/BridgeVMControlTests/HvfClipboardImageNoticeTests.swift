@@ -37,6 +37,31 @@ final class HvfClipboardImageNoticeTests: XCTestCase {
         XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("32MB"), true)
     }
 
+    /// A file copy over the limits, either way (agent_console/clip_files.rs): the Mac copy's
+    /// names still go as its text under the same copy number, which keeps the notice.
+    @MainActor
+    func testFileCopiesOverTheLimitsShowTheirOwnNotice() {
+        let mac = "BVAGENT CLIPSYNC skip host-files too-large files=300 bytes=0 copy=3 t=500"
+        let windows = "BVAGENT CLIPSYNC refused guest-files too-large files=2 bytes=70000000 copy=4 t=600"
+        let session = session()
+        feed(session, [mac, "BVAGENT CLIPSYNC host->guest bytes=40 copy=3 t=501"])
+        XCTAssertEqual(session.clipboardImageNotice.shown, .macFilesTooLarge)
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Mac에서 복사한 파일이 너무 많거나 커서 Windows에는 파일 이름만 보냈습니다.")
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("64MB"), true)
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("끌어다 놓으면"), true, "what to do instead")
+        feed(session, [windows])
+        XCTAssertEqual(session.clipboardImageNotice.shown, .windowsFilesTooLarge)
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Windows에서 복사한 파일이 너무 많거나 커서 Mac으로 가져오지 않았습니다.")
+        feed(session, ["BVAGENT CLIPSYNC guest->host files=1 bytes=5 copy=5 t=700"])
+        XCTAssertNil(session.clipboardImageNotice.shown, "a later copy clears it")
+        feed(session, ["BVAGENT CLIPSYNC refused guest-files unsafe-path files=1 bytes=5 copy=6 t=800"])
+        XCTAssertNil(session.clipboardImageNotice.shown, "a refusal for another reason is not explained")
+        feed(session, ["BVAGENT CLIPSYNC skip host-files unreadable files=2 bytes=0 copy=7 t=900",
+                       "BVAGENT CLIPSYNC host->guest bytes=6 copy=7 t=901"])
+        XCTAssertEqual(session.clipboardImageNotice.shown, .macFilesUnreadable)
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Mac에서 복사한 파일 중 읽을 수 없는 것이 있어 Windows에는 파일 이름만 보냈습니다.")
+    }
+
     /// One row per notice transition: the lines in order, then the notice left showing. The
     /// notice stays with the copy it names; only a later copy or a reset clears it.
     @MainActor

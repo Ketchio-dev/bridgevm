@@ -1,6 +1,7 @@
 //! Guest write admission and self-write suppression, unchanged by read handling.
 
 use super::super::PngImage;
+use super::super::composed_path;
 use super::{html_digest, PasteboardBackend, Poller};
 use crate::agent_console::clip_guest_admission::GUEST_CLIP_MAX_BYTES;
 use std::path::PathBuf;
@@ -22,6 +23,7 @@ impl Poller {
             self.last_image = None;
             self.last_oversized = false;
             self.last_html = None;
+            self.last_files = None;
             self.last_count = backend.change_count();
         }
     }
@@ -38,6 +40,7 @@ impl Poller {
             self.last_image = None;
             self.last_oversized = false;
             self.last_html = Some(html_digest(html));
+            self.last_files = None;
             self.last_count = backend.change_count();
         }
     }
@@ -60,6 +63,7 @@ impl Poller {
             self.last_image = Some(png.digest);
             self.last_oversized = false;
             self.last_html = None;
+            self.last_files = None;
             self.last_count = backend.change_count();
         }
     }
@@ -77,6 +81,8 @@ impl Poller {
             self.last_image = None;
             self.last_oversized = false;
             self.last_html = None;
+            self.last_files = None;
+            self.own_files = files.iter().map(|file| composed_path(file)).collect();
             self.last_count = backend.change_count();
         }
     }
@@ -90,6 +96,7 @@ impl Poller {
             self.last_image = None;
             self.last_oversized = false;
             self.last_html = None;
+            self.last_files = None;
             return false;
         }
         true

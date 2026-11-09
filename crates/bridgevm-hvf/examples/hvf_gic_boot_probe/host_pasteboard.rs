@@ -14,6 +14,7 @@
 //   set_text_html(&self, text, html)             // guest->host rich text
 //   set_rich_text(&self, on: bool)               // read public.html too (CF_HTML)
 //   set_files(&self, paths, owner)               // guest->host files, as file URLs
+//   set_file_copies(&self, on: bool)             // read file URLs too (CLIPSETFILES)
 //
 // Echo suppression contract: content written via set()/set_image()/set_files() must NOT
 // come back out of try_changed_clip(), and neither must content equal to the
@@ -37,6 +38,9 @@ mod image;
 pub use image::*;
 #[path = "host_pasteboard_rtf.rs"]
 mod rtf;
+#[path = "host_pasteboard_files.rs"]
+mod files;
+pub use files::{composed_path, host_files, HostFileCopy, HostFiles};
 
 /// Test-only: the name of a private pasteboard used instead of the user's.
 pub const TEST_PASTEBOARD_ENV: &str = "BRIDGEVM_TEST_CLIP_PASTEBOARD";
@@ -74,6 +78,10 @@ pub trait PasteboardBackend: Send {
     fn set_files(&mut self, paths: &[PathBuf]) -> bool {
         let _ = paths;
         false
+    }
+    /// The pasteboard's file URLs as paths (only read while file copies are on).
+    fn get_files(&mut self) -> Vec<PathBuf> {
+        Vec::new()
     }
 }
 
@@ -235,6 +243,16 @@ impl PasteboardBackend for NsPasteboardBackend {
         with_autorelease_pool(|| unsafe {
             let pb = self.pasteboard();
             !pb.is_null() && write_file_urls(pb, paths)
+        })
+    }
+
+    fn get_files(&mut self) -> Vec<PathBuf> {
+        with_autorelease_pool(|| unsafe {
+            let pb = self.pasteboard();
+            if pb.is_null() {
+                return Vec::new();
+            }
+            files::read_file_urls(pb)
         })
     }
 }
