@@ -171,3 +171,27 @@ fn a_resync_with_a_fixed_guest_epoch_targets_that_date_plus_the_time_since() {
     clock.rtc_epoch = None;
     assert_eq!(clock.resync_target(host_start), host_start);
 }
+
+#[test]
+fn the_first_service_start_of_a_boot_queues_one_resync_and_a_restart_none() {
+    // Windows reads the PL031 (UTC) as local time, so in any zone but UTC its clock is off by the
+    // zone offset after every boot (live: Korea -9 h, Eastern +4 h), and only a host sleep or a
+    // VM pause used to put it right.
+    let mut h = harness();
+    h.service = true;
+    let now = Instant::now();
+    assert!(h.next_command_line(h.commands.len(), now).is_none());
+    assert!(matches!(h.state, AgentConsoleState::Service));
+    assert_eq!(resyncs(&h), 1, "no resync at the boot's service start");
+    assert_eq!(h.clock.pending_gap_ms, 0);
+
+    let sent = send(&mut h, now);
+    let command = String::from_utf8(base64_decode(sent[0].strip_prefix("RUN ").unwrap().trim_end()).unwrap()).unwrap();
+    assert!(command.contains("Set-Date"), "{command}");
+    h.handle_service_reply_with_sender("OUT 0 ", now, &mut |_| {});
+    assert_eq!(resyncs(&h), 0);
+
+    // An agent restart (an update) in the same boot starts the service again: the clock is set.
+    assert!(h.next_command_line(h.commands.len(), now).is_none());
+    assert_eq!(resyncs(&h), 0);
+}
