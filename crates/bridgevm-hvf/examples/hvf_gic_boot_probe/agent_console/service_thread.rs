@@ -118,6 +118,7 @@ impl Drop for ServiceThread {
 }
 
 fn serve(mut harness: AgentConsoleHarness, shared: &Shared, wake: &dyn Fn()) {
+    raise_qos();
     loop {
         // Nothing else on this thread parks (channels are polled with try_recv),
         // so vCPU0's unpark is never used up elsewhere.
@@ -145,6 +146,17 @@ fn serve(mut harness: AgentConsoleHarness, shared: &Shared, wake: &dyn Fn()) {
         if sending || became_ready || taken >= MAX_HOST_INBOUND_LEN {
             wake();
         }
+    }
+}
+
+/// User-interactive QoS: each lockstep round trip with the guest waits for this
+/// thread to wake, as the HDA tick does (hda_service_tick_pacing.rs).
+fn raise_qos() {
+    use libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE;
+    // SAFETY: sets only the calling thread's own QoS class; no pointers.
+    let status = unsafe { libc::pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0) };
+    if status != 0 {
+        eprintln!("agent service: QoS not raised: {status}");
     }
 }
 
