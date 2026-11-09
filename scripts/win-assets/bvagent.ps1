@@ -373,6 +373,7 @@ function Move-Replace([string]$from, [string]$to) {
 # shared folder's PUT stream, so share sync and a drop can take turns on the wire.
 $script:BvDropStream = $null
 $script:BvDropPath = ''
+$script:BvDropTemp = ''
 $script:BvDropTotal = [int64]0
 $script:BvDropWritten = [int64]0
 $script:BvDropSeq = [int64]0
@@ -381,8 +382,9 @@ function Close-DropStream([bool]$Keep) {
     if ($null -ne $script:BvDropStream) {
         try { $script:BvDropStream.Close() } catch { }
         $script:BvDropStream = $null
-        if (-not $Keep -and $script:BvDropPath) { try { [System.IO.File]::Delete((Get-IoPath $script:BvDropPath)) } catch { } }
     }
+    if (-not $Keep -and $script:BvDropTemp) { try { [System.IO.File]::Delete($script:BvDropTemp) } catch { } }
+    $script:BvDropTemp = ''
     $script:BvDropPath = ''
     $script:BvDropTotal = [int64]0
     $script:BvDropWritten = [int64]0
@@ -585,6 +587,71 @@ function Test-DropName([string]$Name) {
 # reparse point; an existing name becomes "name (2).ext" ("name (2)" for a folder). The path is
 # returned as is; every file system call on it goes through Get-IoPath, so a dropped folder deeper
 # than 260 characters lands too.
+# Each dropped file is written to a staging folder and moved to its Desktop name at DROPEND, so a
+# drop the agent never finished (a guest restart, the VM stopping) leaves no cut-short file under a
+# real name, and a OneDrive Desktop never uploads one. The move must be a rename, so the folder is on
+# the target's volume: the user's temp folder when it shares it, else a hidden folder on the Desktop
+# itself (a relocated or redirected Desktop). Drops never cross a reparse point below the Desktop.
+function Get-DropVolume([string]$Path) {
+    if ($Path.StartsWith('\\')) {
+        $parts = $Path.Substring(2).Split([char]92)
+        if ($parts.Length -ge 2) { return ('\\' + $parts[0] + '\' + $parts[1]).ToUpperInvariant() }
+    }
+    if ($Path.Length -ge 2) { return $Path.Substring(0, 2).ToUpperInvariant() }
+    return $Path
+}
+
+function Select-DropStaging([string]$Temp, [string]$Desktop, [string]$Target) {
+    if ((Get-DropVolume $Temp) -ceq (Get-DropVolume $Target)) { return [System.IO.Path]::Combine($Temp, 'BridgeVM-drop') }
+    return [System.IO.Path]::Combine($Desktop, '.bridgevm-drop')
+}
+
+function Get-DropStagingDirs {
+    return @([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'BridgeVM-drop'), [System.IO.Path]::Combine((Get-DropRoot), '.bridgevm-drop'))
+}
+
+# A folder the agent made for staging holds this marker; only such a folder is ever cleared, so a
+# user's own folder of that name (made by hand, or dropped) keeps its files.
+$script:BvDropStagingMarker = '.bridgevm-staging'
+
+function Get-DropStaging([string]$Target) {
+    $desktop = Get-DropRoot
+    $dir = Select-DropStaging ([System.IO.Path]::GetTempPath()) $desktop $Target
+    if (-not [System.IO.Directory]::Exists($dir)) {
+        $info = [System.IO.Directory]::CreateDirectory($dir)
+        [System.IO.File]::WriteAllBytes([System.IO.Path]::Combine($dir, $script:BvDropStagingMarker), [byte[]]@())
+        if ($dir.StartsWith($desktop)) { $info.Attributes = $info.Attributes -bor [System.IO.FileAttributes]::Hidden }
+    }
+    return $dir
+}
+
+# A drop job starts with no file open: anything left here is from an agent that stopped mid-drop.
+function Clear-DropStaging {
+    foreach ($dir in (Get-DropStagingDirs)) {
+        if (-not [System.IO.File]::Exists([System.IO.Path]::Combine($dir, $script:BvDropStagingMarker))) { continue }
+        foreach ($file in [System.IO.Directory]::GetFiles($dir)) {
+            if ([System.IO.Path]::GetFileName($file) -cmatch '^[0-9a-f]{32}\.part$') { try { [System.IO.File]::Delete($file) } catch { } }
+        }
+    }
+}
+
+# $Leaf in $Dir, or "stem (2).ext" and on when that name is taken.
+function Get-FreeDropPath([string]$Dir, [string]$Leaf, [bool]$IsDir) {
+    $stem = $Leaf
+    $ext = ''
+    if (-not $IsDir) {
+        $stem = [System.IO.Path]::GetFileNameWithoutExtension($Leaf)
+        $ext = [System.IO.Path]::GetExtension($Leaf)
+    }
+    $target = [System.IO.Path]::Combine($Dir, $Leaf)
+    $n = 2
+    while ([System.IO.File]::Exists((Get-IoPath $target)) -or [System.IO.Directory]::Exists((Get-IoPath $target))) {
+        $target = [System.IO.Path]::Combine($Dir, ('{0} ({1}){2}' -f $stem, $n, $ext))
+        $n++
+    }
+    return $target
+}
+
 function Get-DropRoot {
     $dir = [Environment]::GetFolderPath('Desktop')
     if ([string]::IsNullOrEmpty($dir) -or -not [System.IO.Directory]::Exists($dir)) { throw 'no-desktop' }
@@ -600,20 +667,7 @@ function Resolve-DropTarget([string]$Root, [string]$Rel, [bool]$IsDir) {
         $attr = [System.IO.File]::GetAttributes((Get-IoPath $dir))
         if (($attr -band [System.IO.FileAttributes]::Directory) -eq 0 -or ($attr -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'bad-parent' }
     }
-    $leaf = $parts[$parts.Length - 1]
-    $stem = $leaf
-    $ext = ''
-    if (-not $IsDir) {
-        $stem = [System.IO.Path]::GetFileNameWithoutExtension($leaf)
-        $ext = [System.IO.Path]::GetExtension($leaf)
-    }
-    $target = [System.IO.Path]::Combine($dir, $leaf)
-    $n = 2
-    while ([System.IO.File]::Exists((Get-IoPath $target)) -or [System.IO.Directory]::Exists((Get-IoPath $target))) {
-        $target = [System.IO.Path]::Combine($dir, ('{0} ({1}){2}' -f $stem, $n, $ext))
-        $n++
-    }
-    return $target
+    return Get-FreeDropPath $dir $parts[$parts.Length - 1] $IsDir
 }
 
 # >>> clipboard watch
@@ -1903,7 +1957,7 @@ while ($true) {
                     Close-LargePut
                     Write-Line $h 'OK LPUTABORT' 'OK'
                 }
-                'DROPCAPS' { [void](Test-DropReader); Write-Line $h 'BVDROP_CAPS 1' 'CAPS' }
+                'DROPCAPS' { if ($null -eq $script:BvDropStream) { Clear-DropStaging }; [void](Test-DropReader); Write-Line $h 'BVDROP_CAPS 1' 'CAPS' }
                 'DROPDIR' {
                     # DROPDIR <b64(rel)> -> OK DROPDIR <b64(final name)>: a new folder below the Desktop.
                     try {
@@ -1913,14 +1967,17 @@ while ($true) {
                     } catch { Write-Line $h ('ERR DROPDIR ' + $_.Exception.Message) 'ERR' }
                 }
                 'DROPBEG' {
-                    # DROPBEG <b64(rel)> <size> -> OK DROPBEG <b64(final name)>. Always a new file, never
-                    # an existing one; DROPCHUNK/DROPEND fill it, and any failure deletes it.
+                    # DROPBEG <b64(rel)> <size> -> OK DROPBEG <b64(final name)>. Never an existing file:
+                    # DROPCHUNK fills a staged copy (Get-DropStaging), DROPEND moves it to the name, and
+                    # any failure deletes it.
                     try {
                         Close-DropStream $false
                         $parts = $arg.Split(' ')
                         $total = [int64]$parts[1]
                         $target = Resolve-DropTarget (Get-DropRoot) ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0]))) $false
-                        $script:BvDropStream = [System.IO.File]::Open((Get-IoPath $target), [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+                        $temp = [System.IO.Path]::Combine((Get-DropStaging $target), ([Guid]::NewGuid().ToString('N') + '.part'))
+                        $script:BvDropStream = [System.IO.File]::Open($temp, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+                        $script:BvDropTemp = $temp
                         $script:BvDropPath = $target
                         $script:BvDropTotal = $total
                         $script:BvDropStart = [System.Diagnostics.Stopwatch]::GetTimestamp()
@@ -1961,12 +2018,23 @@ while ($true) {
                         if ($null -eq $script:BvDropStream) { throw 'no-open-drop' }
                         if ([int64]$arg -ne $script:BvDropSeq) { throw 'seq' }
                         if ($script:BvDropWritten -ne $script:BvDropTotal) { throw 'short' }
-                        $script:BvDropStream.Flush()
+                        # On disk before it has its name, so a crash never shows a cut-short file there.
+                        $script:BvDropStream.Flush($true)
+                        $script:BvDropStream.Close()
+                        $script:BvDropStream = $null
+                        # The name was free at DROPBEG; a file made there since keeps it.
+                        $final = $script:BvDropPath
+                        if ([System.IO.File]::Exists((Get-IoPath $final)) -or [System.IO.Directory]::Exists((Get-IoPath $final))) {
+                            $cut = $final.LastIndexOf([char]92)
+                            $final = Get-FreeDropPath $final.Substring(0, $cut) $final.Substring($cut + 1) $false
+                        }
+                        [System.IO.File]::Move($script:BvDropTemp, (Get-IoPath $final))
+                        $script:BvDropTemp = ''
                         $written = $script:BvDropWritten
                         $tick = [double][System.Diagnostics.Stopwatch]::Frequency / 1000
                         $readMs = 0; $decodeMs = 0
                         if ($script:BvDropReader -eq $true) { $readMs = [BridgeVM.BvDropReader]::ReadTicks / $tick; $decodeMs = [BridgeVM.BvDropReader]::DecodeTicks / $tick }
-                        Log ('DROP END {0} bytes={1} chunks={2} ms={3:F0} read_ms={4:F0} decode_ms={5:F0} write_ms={6:F0}' -f $script:BvDropPath, $written, $script:BvDropSeq, (([System.Diagnostics.Stopwatch]::GetTimestamp() - $script:BvDropStart) / $tick), $readMs, $decodeMs, ($script:BvDropWriteTicks / $tick))
+                        Log ('DROP END {0} bytes={1} chunks={2} ms={3:F0} read_ms={4:F0} decode_ms={5:F0} write_ms={6:F0}' -f $final, $written, $script:BvDropSeq, (([System.Diagnostics.Stopwatch]::GetTimestamp() - $script:BvDropStart) / $tick), $readMs, $decodeMs, ($script:BvDropWriteTicks / $tick))
                         Close-DropStream $true
                         Write-Line $h ('OK DROPEND ' + $written) 'OK'
                     } catch {
