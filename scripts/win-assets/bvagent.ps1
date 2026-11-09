@@ -333,6 +333,40 @@ function Close-PutStream {
     $script:BvPutTime = ''
 }
 
+# >>> large put
+# A large shared-folder file from the Mac (LPUTBEG, LPUTDATA, LPUTEND, LPUTABORT) is written into a
+# temporary of its own beside the target, apart from PUTBEG's stream, so clipboard images and tools
+# updates can go between its chunks. At the end it is flushed to disk and renamed over the target in
+# one step, so the name holds the old file or the whole new one, never part of one. An error or an
+# abort deletes the temporary, and LSR deletes one an earlier agent left (.bridgevm-part-*).
+$script:BvLPut = $null
+
+function Close-LargePut {
+    $put = $script:BvLPut
+    $script:BvLPut = $null
+    if ($null -eq $put) { return }
+    try { $put.Stream.Close() } catch { }
+    try { [System.IO.File]::Delete($put.Temp) } catch { }
+}
+
+function Get-PutError($err) {
+    # A full disk (ERROR_DISK_FULL, ERROR_HANDLE_DISK_FULL) as the one word the host reports.
+    $e = $err.Exception
+    while ($null -ne $e) {
+        if ($e.HResult -eq -2147024784 -or $e.HResult -eq -2147024857) { return 'disk-full' }
+        $e = $e.InnerException
+    }
+    return $err.Exception.Message
+}
+
+function Move-Replace([string]$from, [string]$to) {
+    # MoveFileEx with REPLACE_EXISTING and WRITE_THROUGH: one rename. .NET Framework's File.Move
+    # cannot replace a file.
+    if ([System.IO.Path]::DirectorySeparatorChar -eq '\' -and (Test-DropReader)) { [BridgeVM.BvDropReader]::Replace($from, $to); return }
+    if ([System.IO.File]::Exists($to)) { [System.IO.File]::Replace($from, $to, [NullString]::Value) } else { [System.IO.File]::Move($from, $to) }
+}
+# <<< large put
+
 # Finder drops land on the logged-on user's Desktop through their own stream, apart from the
 # shared folder's PUT stream, so share sync and a drop can take turns on the wire.
 $script:BvDropStream = $null
@@ -367,7 +401,14 @@ namespace BridgeVM {
     public static class BvDropReader {
         [DllImport("kernel32.dll", SetLastError = true)]
         static extern bool ReadFile(IntPtr h, byte[] buf, uint toRead, out uint read, IntPtr overlapped);
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern bool MoveFileEx(string from, string to, uint flags);
         static readonly byte[] Scratch = new byte[65536];
+
+        // MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH: `to` is the old file or `from`, whole.
+        public static void Replace(string from, string to) {
+            if (!MoveFileEx(from, to, 9)) { throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()); }
+        }
         public static long ReadTicks;
         public static long DecodeTicks;
 
@@ -1590,6 +1631,11 @@ while ($true) {
                             # that fails the whole listing.
                             $listRoot = Get-IoPath $rootFull $true
                             foreach ($e in Get-ChildItem -LiteralPath $listRoot -Recurse -Force -ErrorAction Stop) {
+                                if (-not $e.PSIsContainer -and $e.Name.StartsWith('.bridgevm-part-', [System.StringComparison]::Ordinal)) {
+                                    # A large PUT's temporary (large put), never listed; one no PUT holds open is a leftover.
+                                    if ($null -eq $script:BvLPut -or -not [string]::Equals([System.IO.Path]::GetFileName($script:BvLPut.Temp), $e.Name, [System.StringComparison]::OrdinalIgnoreCase)) { try { $e.Delete() } catch { } }
+                                    continue
+                                }
                                 $full = $e.FullName
                                 if (-not $full.StartsWith($listRoot, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
                                 $rel = $full.Substring($listRoot.Length)
@@ -1777,6 +1823,80 @@ while ($true) {
                         Close-PutStream
                         Write-Line $h ('ERR PUTEND ' + $_.Exception.Message) 'ERR'
                     }
+                }
+                'LPUTBEG' {
+                    # LPUTBEG <b64(path)> <total> [<mtime ms>] -> OK LPUTBEG: a large file's own stream into a
+                    # new temporary beside <path> (large put); ERR LPUTBEG disk-full when the volume lacks
+                    # <total> bytes.
+                    $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
+                    try {
+                        Close-LargePut
+                        $parts = $arg.Split(' ')
+                        $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0]))
+                        $total = [int64]$parts[1]
+                        $io = Get-IoPath $path
+                        $dir = [System.IO.Path]::GetDirectoryName($io)
+                        if ($dir) { [void][System.IO.Directory]::CreateDirectory($dir) }
+                        $free = [int64]::MaxValue
+                        try { $free = (New-Object System.IO.DriveInfo ([System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($path)))).AvailableFreeSpace } catch { }
+                        if ($free -lt $total) { throw 'disk-full' }
+                        $temp = Get-IoPath ([System.IO.Path]::Combine($dir, '.bridgevm-part-' + [Guid]::NewGuid().ToString('N')))
+                        $stream = [System.IO.File]::Open($temp, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+                        $time = ''
+                        if ($parts.Length -ge 3) { $time = $parts[2] }
+                        $script:BvLPut = @{ Stream = $stream; Path = $path; Io = $io; Temp = $temp; Total = $total; Written = [int64]0; Seq = 0; Time = $time }
+                        Write-Line $h 'OK LPUTBEG' 'OK'
+                    } catch {
+                        Close-LargePut
+                        Write-Line $h ('ERR LPUTBEG ' + (Get-PutError $_)) 'ERR'
+                    }
+                }
+                'LPUTDATA' {
+                    # LPUTDATA <seq> <chars>, then the payload line as PUTDATA -> OK LPUTDATA <seq>. The payload is
+                    # read before any check, so a refused chunk still leaves the wire on a line boundary; a
+                    # refused chunk ends the file.
+                    $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
+                    try {
+                        $p = $arg.Split(' ')
+                        $seq = [int]$p[0]
+                        $data = Read-DataPayload $h ([int]$p[1])
+                        $put = $script:BvLPut
+                        if ($null -eq $put) { throw 'no-open-put' }
+                        if ($seq -ne $put.Seq) { throw 'seq' }
+                        if ($put.Written + $data.Length -gt $put.Total) { throw 'past-total' }
+                        $put.Stream.Write($data, 0, $data.Length)
+                        $put.Written += [int64]$data.Length
+                        $put.Seq = $put.Seq + 1
+                        Write-Line $h ('OK LPUTDATA ' + $seq) 'OK'
+                    } catch {
+                        Close-LargePut
+                        Write-Line $h ('ERR LPUTDATA ' + (Get-PutError $_)) 'ERR'
+                    }
+                }
+                'LPUTEND' {
+                    # LPUTEND <chunks> -> PUTOK <b64(path)> <bytes>: the count checked, the temporary flushed to
+                    # disk and given the Mac's time, then renamed over <path> in one step.
+                    $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
+                    try {
+                        $put = $script:BvLPut
+                        if ($null -eq $put) { throw 'no-open-put' }
+                        if ([int]$arg -ne $put.Seq) { throw 'seq' }
+                        if ($put.Written -ne $put.Total) { throw 'short' }
+                        $put.Stream.Flush($true)
+                        $put.Stream.Close()
+                        Set-PutTime $put.Temp $put.Time
+                        Move-Replace $put.Temp $put.Io
+                        $script:BvLPut = $null
+                        Write-Line $h ('PUTOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($put.Path)) + ' ' + $put.Written) 'PUTOK'
+                    } catch {
+                        Close-LargePut
+                        Write-Line $h ('ERR LPUTEND ' + (Get-PutError $_)) 'ERR'
+                    }
+                }
+                'LPUTABORT' {
+                    # LPUTABORT -> OK LPUTABORT: the large file's temporary is deleted, its target untouched.
+                    Close-LargePut
+                    Write-Line $h 'OK LPUTABORT' 'OK'
                 }
                 'DROPCAPS' { [void](Test-DropReader); Write-Line $h 'BVDROP_CAPS 1' 'CAPS' }
                 'DROPDIR' {

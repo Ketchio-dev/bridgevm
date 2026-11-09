@@ -1,21 +1,39 @@
 # The guest agent's large shared-folder verbs. GETRANGE returns the asked bytes of a file with its
 # size and time after the read, in 768 KiB chunks, and a range past the end is empty, so the host
-# can reassemble a file range by range and tell when it changed meanwhile. Runs the agent's own
-# verb cases against a temporary folder (no serial port: replies are collected).
+# can reassemble a file range by range and tell when it changed meanwhile. LPUTBEG/LPUTDATA/LPUTEND
+# write a temporary and rename it over the target only whole, with the Mac's time; an abort, a bad
+# chunk or a short end deletes the temporary and leaves the target as it was; a volume without the
+# room answers disk-full; LSR never lists a temporary and deletes one no PUT holds. Runs the
+# agent's own verb cases against a temporary folder (no serial port: replies are collected).
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $source = [IO.File]::ReadAllText((Join-Path $repo 'scripts/win-assets/bvagent.ps1'))
 $verbs = @{}
-foreach ($verb in @('GETRANGE')) {
+foreach ($verb in @('GETRANGE', 'LPUTBEG', 'LPUTDATA', 'LPUTEND', 'LPUTABORT', 'LSR')) {
     $one = [regex]::Matches($source, "(?s)\n                '$verb' \{(?<body>.*?)\r?\n                \}\r?\n")
     if ($one.Count -ne 1) { throw "expected exactly one $verb implementation" }
     $verbs[$verb] = [scriptblock]::Create($one[0].Groups['body'].Value)
 }
-foreach ($name in @('Get-IoPath')) {
+foreach ($name in @('Get-IoPath', 'Set-PutTime', 'Is-BadHandle', 'Test-DropReader', 'Read-DataPayload')) {
     $function = [regex]::Match($source, "(?s)\nfunction $name\b.*?\r?\n\}\r?\n")
     if (-not $function.Success) { throw "$name not found" }
     . ([scriptblock]::Create($function.Value))
 }
+foreach ($block in @('large put', 'share watch')) {
+    $found = [regex]::Match($source, "(?s)# >>> $block.*?# <<< $block")
+    if (-not $found.Success) { throw "$block block not found" }
+    . ([scriptblock]::Create($found.Value))
+}
+$reader = [regex]::Match($source, "(?s)\`$script:BvDropReaderSource = @'\r?\n(?<cs>.*?)\r?\n'@")
+if (-not $reader.Success) { throw 'BvDropReaderSource not found' }
+$script:BvDropReaderSource = $reader.Groups['cs'].Value
+if ($PSVersionTable.PSEdition -eq 'Core') {
+    # Windows PowerShell 5.1 compiles C# 5; prove the reader (with its MoveFileEx) does too.
+    Add-Type -TypeDefinition $script:BvDropReaderSource -CompilerOptions '/langversion:5'
+    $script:BvDropReader = $true
+}
+$script:BvLines = New-Object 'System.Collections.Generic.Queue[string]'
+$script:BvPending = New-Object System.Text.StringBuilder
 function Assert($condition, [string]$what) { if (-not $condition) { throw "FAIL: $what" } }
 function Log([string]$m) { }
 function Write-Line($handle, [string]$line, [string]$label) { [void]$script:sent.Add($line) }
@@ -89,11 +107,77 @@ try {
     Assert ($r.Error -clike 'ERR GETRANGE *') "missing file: $($r.Error)"
     $cases++
 
+    # LPUT: run requests through the verbs; a payload goes ahead in the line queue, as Read-Line left it.
+    function Put([string]$verb, [string]$argument, [byte[]]$payload) {
+        $script:sent = New-Object System.Collections.ArrayList
+        if ($null -ne $payload) { $script:BvLines.Enqueue([Convert]::ToBase64String($payload)) }
+        $arg = $argument
+        & $verbs[$verb]
+        return $script:sent[0]
+    }
+    function Parts([string]$dir) { @([IO.Directory]::GetFiles($dir) | ForEach-Object { [IO.Path]::GetFileName($_) } | Where-Object { $_.StartsWith('.bridgevm-part-') }) }
+    $target = [IO.Path]::Combine($root, 'sub', 'movie.mov')
+    [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))
+    [IO.File]::WriteAllBytes($target, [byte[]](9, 9))
+    $one = New-Object byte[] 1048576; (New-Object Random 3).NextBytes($one)
+    $tail = [byte[]](1, 2, 3)
+    $macTime = [DateTime]::new(2026, 11, 8, 0, 5, 12, 123, [DateTimeKind]::Utc)
+    Assert ((Put 'LPUTBEG' ((B64 $target) + ' 1048579 1794096312123') $null) -ceq 'OK LPUTBEG') 'LPUTBEG'
+    Assert ((Put 'LPUTDATA' "0 $([Convert]::ToBase64String($one).Length)" $one) -ceq 'OK LPUTDATA 0') 'LPUTDATA 0'
+    Assert (((Parts ([IO.Path]::GetDirectoryName($target))).Count -eq 1) -and ([IO.File]::ReadAllBytes($target).Length -eq 2)) 'mid-file: the old target stays, the new bytes are in a temporary'
+    Assert ((Put 'LPUTDATA' '1 4' $tail) -ceq 'OK LPUTDATA 1') 'LPUTDATA 1'
+    $reply = Put 'LPUTEND' '2' $null
+    Assert ($reply -ceq ('PUTOK ' + (B64 $target) + ' 1048579')) "LPUTEND: $reply"
+    $got = [IO.File]::ReadAllBytes($target)
+    Assert ($got.Length -eq 1048579 -and [Convert]::ToBase64String($got, 0, 1048576) -ceq [Convert]::ToBase64String($one)) 'the target holds the new file'
+    Assert ([IO.File]::GetLastWriteTimeUtc($target) -eq $macTime) "the Mac's time: $([IO.File]::GetLastWriteTimeUtc($target).ToString('o'))"
+    Assert ((Parts ([IO.Path]::GetDirectoryName($target))).Count -eq 0) 'no temporary after LPUTEND'
+    $cases++
+
+    # Abort, a wrong sequence number, a short end, more than announced: the target as it was, no temporary.
+    $dir = [IO.Path]::GetDirectoryName($target)
+    foreach ($bad in @(
+            @{ Steps = { Put 'LPUTABORT' '' $null }; Want = 'OK LPUTABORT' },
+            @{ Steps = { Put 'LPUTDATA' '5 4' $tail }; Want = 'ERR LPUTDATA seq' },
+            @{ Steps = { Put 'LPUTEND' '0' $null }; Want = 'ERR LPUTEND short' },
+            @{ Steps = { Put 'LPUTDATA' "0 $([Convert]::ToBase64String($one).Length)" $one }; Want = 'ERR LPUTDATA past-total' })) {
+        Assert ((Put 'LPUTBEG' ((B64 $target) + ' 3') $null) -ceq 'OK LPUTBEG') 'LPUTBEG again'
+        $reply = & $bad.Steps
+        Assert ($reply -ceq $bad.Want) "refusal: $reply"
+        Assert ((Parts $dir).Count -eq 0 -and $null -eq $script:BvLPut) "after '$reply' a temporary or stream is left"
+        Assert ([IO.File]::ReadAllBytes($target).Length -eq 1048579) "after '$reply' the target changed"
+        $cases++
+    }
+    Assert ((Put 'LPUTDATA' '0 4' $tail) -ceq 'ERR LPUTDATA no-open-put') 'a chunk with no stream'
+    Assert ($script:BvLines.Count -eq 0) 'its payload line was read'
+    $cases++
+
+    # More than the volume holds: disk-full, nothing created.
+    Assert ((Put 'LPUTBEG' ((B64 $target) + ' ' + [int64]::MaxValue) $null) -ceq 'ERR LPUTBEG disk-full') 'disk-full at LPUTBEG'
+    Assert ((Parts $dir).Count -eq 0) 'a temporary after disk-full'
+    $full = @{ Exception = (New-Object IO.IOException 'There is not enough space on the disk.', -2147024784) }
+    Assert ((Get-PutError $full) -ceq 'disk-full') 'ERROR_DISK_FULL is disk-full'
+    $cases++
+
+    # LSR: the open stream's temporary is neither listed nor deleted; a leftover is deleted, unlisted.
+    [IO.File]::WriteAllBytes([IO.Path]::Combine($dir, '.bridgevm-part-leftover'), [byte[]](1))
+    Assert ((Put 'LPUTBEG' ((B64 $target) + ' 3') $null) -ceq 'OK LPUTBEG') 'LPUTBEG for LSR'
+    $script:BvLsrChanges = [long]-1
+    $reply = Put 'LSR' (B64 $root) $null
+
+    $listing = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($reply.Substring(5)))
+    Assert ($reply -clike 'LSOK *' -and $listing -notmatch 'bridgevm-part') "listed a temporary: $listing"
+    $left = @(Parts $dir)
+    Assert ($left.Count -eq 1 -and $left[0] -ceq [IO.Path]::GetFileName($script:BvLPut.Temp)) "temporaries left: $($left -join ',')"
+    Assert ((Put 'LPUTABORT' '' $null) -ceq 'OK LPUTABORT') 'abort for LSR'
+    $cases++
+
     # A file another program holds open for writing can still be read.
     $held = [IO.File]::Open($path, 'Open', 'ReadWrite', 'ReadWrite')
     try { Assert ((Get-Range $path 0 4).Bytes -eq 4) 'a file open for writing is read' } finally { $held.Close() }
     $cases++
 } finally {
+    Close-LargePut
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }
 Write-Output "agent share large contract: PASS ($cases cases, $($PSVersionTable.PSEdition))"
