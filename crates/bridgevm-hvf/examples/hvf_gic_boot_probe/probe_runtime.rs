@@ -309,30 +309,34 @@ pub(crate) fn run() -> ExitCode {
             // The agent console runs on VM time, from this boot's start (boot_clocks).
             let boot_started = crate::boot_clocks::agent_origin(&crate::boot_clocks::Live);
             let mut boot_timer = BootTimer::from_env();
-            let mut agent_console = AgentConsoleHarness::from_env(boot_started);
+            let agent_harness = AgentConsoleHarness::from_env(boot_started);
             let automation_always_check = !uart_triggers.is_empty()
                 || !xhci_hid_boot_key_triggers.is_empty()
                 || !xhci_setup_input_triggers.is_empty()
                 || !xhci_pointer_input_triggers.is_empty()
-                || agent_console
+                || agent_harness
                     .as_ref()
                     .is_some_and(AgentConsoleHarness::per_exit_tick_needed);
             let mut automation_gate = AutomationGate::new(automation_always_check);
-            // Resident service mode and measurement-safe scripted commands are
-            // host-driven: without a steady waker the main loop sleeps in
-            // hv_vcpu_run while the desktop idles and their tick starves (see
-            // ServiceWake docs). BOOT_TIMER uses a wake no slower than 250 ms
-            // and honors a shorter requested RAMFB interval. These sources
-            // deliberately do not force the automation block's platform mutex
-            // on every CPU0 exit. ensure_started is idempotent, so re-entering
-            // here after a guest reboot is fine.
+            // Host-driven vCPU0 work with no wake of its own: without a steady
+            // waker the main loop sleeps in hv_vcpu_run while the desktop idles
+            // and its tick starves (see ServiceWake docs). BOOT_TIMER uses a
+            // wake no slower than 250 ms and honors a shorter requested RAMFB
+            // interval. These sources deliberately do not force the automation
+            // block's platform mutex on every CPU0 exit. ensure_started is
+            // idempotent, so re-entering here after a guest reboot is fine.
+            // The agent service ticks on its own thread and needs none.
             if let Some(interval) = service_wake_interval(
                 &boot_timer,
-                agent_console.as_ref(),
+                live_display_exporter.enabled(),
                 kd_serial_bridge.is_some(),
             ) {
                 agent_service_wake.ensure_started(vcpu, interval);
             }
+            // Joined on drop, at `continue 'reboot` or after the stop report:
+            // always before the next generation's from_env.
+            let mut agent_console = agent_harness
+                .map(|harness| agent_service_wake.spawn_service(vcpu, harness, &platform));
             input_control_wake.ensure_started(vcpu);
             // A finished NVMe flush completes at the next pre-run drain: run one now.
             // (vCPU0's live handle; the call only asks it to leave hv_vcpu_run.)

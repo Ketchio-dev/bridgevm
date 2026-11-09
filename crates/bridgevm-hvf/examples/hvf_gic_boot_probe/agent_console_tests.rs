@@ -83,7 +83,6 @@ pub(super) mod tests {
 
         h.periodic_test = true;
         assert!(!h.per_exit_tick_needed());
-        assert!(h.service_wake_needed());
 
         h.periodic_test = false;
         h.scripted_test = false;

@@ -1,4 +1,6 @@
-//! Automation device work brackets host-only agent progression with short platform guards.
+//! Automation device work under short platform guards. The agent console's
+//! host work runs on its own thread; vCPU0 only exchanges its bytes here
+//! (agent_console/service_thread.rs).
 
 macro_rules! automation_tick {
     ($platform:ident, $smp_trace:ident, $automation_gate:ident, $live_input:ident, $guest_ram:ident, $input_wake:ident, $serial_stop_scans:ident, $uart_triggers:ident, $xhci_hid_boot_key_triggers:ident, $agent_console:ident, $boot_timer:ident, $exits:ident, $vcpu:ident, $ram:ident, $ram_size:ident, $xhci_setup_input_triggers:ident, $pointer_deadline_wake:ident, $setup_input_host_wake:ident, $xhci_pointer_input_triggers:ident, $ramfb_sample_loop:ident, $live_display_exporter:ident, $last_pc:ident, $stop_on_linux:ident $(,)?) => {{
@@ -29,8 +31,8 @@ macro_rules! automation_tick {
                 for trigger in &mut $xhci_hid_boot_key_triggers {
                     trigger.maybe_fire(locked_platform);
                 }
-                if let Some(harness) = $agent_console.as_mut() {
-                    harness.capture_inbound(locked_platform);
+                if let Some(service) = $agent_console.as_mut() {
+                    service.exchange(locked_platform, &mut $guest_ram);
                 }
                 false
             }
@@ -38,23 +40,15 @@ macro_rules! automation_tick {
         if panicked {
             Some("serial reached Linux kernel panic".into())
         } else {
-            // The agent console on VM time, boot telemetry on host time (boot_clocks).
+            // Boot telemetry on host time (boot_clocks).
             let times = crate::boot_clocks::tick_times(&crate::boot_clocks::Live);
-            let now = times.agent;
-            if let Some(harness) = $agent_console.as_mut() {
-                harness.advance(now, &mut |bytes| {
-                    let mut platform_guard =
-                        lock_platform(&$platform, $smp_trace.as_deref(), 0, HoldSite::Automation);
-                    platform_guard.virtio_console_agent_send(bytes, &mut $guest_ram);
-                });
-            }
             let mut platform_guard =
                 lock_platform(&$platform, $smp_trace.as_deref(), 0, HoldSite::Automation);
             let locked_platform = &mut *platform_guard;
             let mut checkpoint_committed = false;
             if $agent_console
                 .as_ref()
-                .is_some_and(AgentConsoleHarness::desktop_ready)
+                .is_some_and(crate::agent_console::ServiceThread::desktop_ready)
             {
                 $boot_timer.observe_agent_ready(times.telemetry, $exits);
                 checkpoint_committed = checkpoint_glue::checkpoint_if_requested(

@@ -5,7 +5,7 @@ use super::*;
 /// Undrained guest-to-host agent bytes at which agent TX stops consuming
 /// descriptors. Like a throttled QEMU virtio-serial port, the chains stay in
 /// the ring and are consumed on a later poll once the host drains.
-pub(crate) const MAX_HOST_INBOUND_LEN: usize = 4 * 1024 * 1024;
+pub const MAX_HOST_INBOUND_LEN: usize = 4 * 1024 * 1024;
 
 /// Called (from whichever vCPU thread took the notify) once new guest agent
 /// bytes are buffered, so the owner services them now instead of at its next

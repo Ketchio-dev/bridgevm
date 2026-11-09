@@ -77,8 +77,8 @@ pub struct AgentConsoleHarness {
     /// the probe's periodic ServiceWake instead, so measurement does not add a
     /// platform-mutex acquisition to every CPU0 exit.
     pub(super) scripted_test: bool,
-    /// Run scripted commands from the periodic host wake instead of taking the
-    /// automation lock on every CPU0 exit. This keeps boot measurements honest
+    /// Run scripted commands from the service thread's own tick instead of
+    /// taking the automation lock on every CPU0 exit. This keeps boot measurements honest
     /// while still allowing a deterministic command after agent handshake.
     pub(super) periodic_test: bool,
     pub(super) framer: LineFramer,

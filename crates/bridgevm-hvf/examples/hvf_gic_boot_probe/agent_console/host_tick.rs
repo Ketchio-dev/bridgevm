@@ -1,19 +1,20 @@
-//! Host-only agent progression; the caller supplies short, synchronous wire sends.
+//! Host-only agent progression on the service thread; the caller collects the wire sends.
 
 use crate::agent_console::*;
 
 impl AgentConsoleHarness {
-    /// Only drain the device while its owning platform guard is held.
-    pub fn capture_inbound(&mut self, platform: &mut VirtPlatform) {
+    /// Take the guest bytes vCPU0 drained (service_thread.rs) and return how
+    /// many. A finished harness leaves them, so the drain stops at its bound.
+    pub(in crate::agent_console) fn take_inbound(&mut self, rx: &mut Vec<u8>) -> usize {
         if matches!(
             self.state,
             AgentConsoleState::Done | AgentConsoleState::TimedOut
         ) {
-            return;
+            return 0;
         }
         self.inbound_scratch.clear();
-        platform.virtio_console_agent_drain_inbound_into(&mut self.inbound_scratch);
-        self.observe_dns_server(platform);
+        std::mem::swap(&mut self.inbound_scratch, rx);
+        self.inbound_scratch.len()
     }
 
     /// Process replies and host filesystem work without borrowing a platform or guest RAM.

@@ -7,7 +7,8 @@
 //! and nothing said which thread held the lock. Every platform-lock site that
 //! can run while the tick does now holds the lock as a [`HeldPlatform`]: the
 //! vCPUs' pre-run drains and data-abort exits, vCPU0's automation block and
-//! UART preload, and the ramfb display exporter's config copy. The tick counts
+//! UART preload, the ramfb display exporter's config copy and the agent
+//! service's drain of the guest agent's bytes. The tick counts
 //! each attempt that finds the lock held ([`PlatformHolds::note_busy`]); a hold
 //! that such an attempt fell inside is charged to its holder as it ends, still
 //! under the lock: one hold, the attempts it blocked, whether it lasted more
@@ -81,6 +82,8 @@ pub(crate) enum HoldSite {
     Automation,
     /// The ramfb display exporter's config copy.
     Display,
+    /// The agent service thread's drain of the guest agent's bytes.
+    AgentService,
 }
 
 impl HoldSite {
@@ -94,6 +97,7 @@ impl HoldSite {
             (Self::Mmio(_), _) => "secondary data-abort platform mutex",
             (Self::Automation, _) => "cpu0 automation platform mutex",
             (Self::Display, _) => "ramfb display platform mutex",
+            (Self::AgentService, _) => "agent service platform mutex",
         }
     }
 }
@@ -106,7 +110,7 @@ pub(crate) enum Holder {
     Tpm,
     Mmio,
     Automation,
-    /// The UART preload and the display exporter.
+    /// The UART preload, the display exporter and the agent service.
     Host,
 }
 
@@ -137,7 +141,7 @@ impl Holder {
             HoldSite::PreRun => Self::PreRun,
             HoldSite::Mmio(ipa) => mmio_holder(ipa, platform),
             HoldSite::Automation => Self::Automation,
-            HoldSite::UartPreload | HoldSite::Display => Self::Host,
+            HoldSite::UartPreload | HoldSite::Display | HoldSite::AgentService => Self::Host,
         }
     }
 }

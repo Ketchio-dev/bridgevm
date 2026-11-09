@@ -107,7 +107,12 @@ pub fn request_desktop_mode((width, height): (u32, u32)) {
 }
 
 pub(super) fn has_requested_mode() -> bool {
-    requested().load(Ordering::Relaxed) != 0
+    requested_mode() != 0
+}
+
+/// The pending request, 0 for none; vCPU0 watches it for changes (service_thread.rs).
+pub(super) fn requested_mode() -> u64 {
+    requested().load(Ordering::Relaxed)
 }
 
 /// The agent command for the latest request, once.

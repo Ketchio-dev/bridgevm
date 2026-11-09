@@ -38,6 +38,10 @@ impl LiveDisplayExporter {
         }
     }
 
+    pub fn enabled(&self) -> bool {
+        self.path.is_some()
+    }
+
     pub fn due(&self, now: Instant) -> bool {
         self.path.is_some() && now >= self.next_due
     }
