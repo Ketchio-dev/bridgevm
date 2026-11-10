@@ -81,6 +81,37 @@ final class HvfFramebufferDamageTests: XCTestCase {
         }
     }
 
+    /// A surface that stopped being the layer's contents can still be read by WindowServer until it releases
+    /// it: a frame is never written into it before then. A third surface takes the frame, and with none free
+    /// the shown frame stays until one is.
+    func testASurfaceWindowServerStillReadsIsNeverWritten() throws {
+        try withDisplay { view, publish in
+            let busy = InUse()
+            view.surfaces?.inUse = { surface in busy.surfaces.contains { $0 === surface } }
+            let first = try publish(Frame(Array(repeating: Self.gray, count: 8), sequence: 2))
+            let firstSurface = try Fixture.contents(view)
+            let second = try publish(first.changing([1: 0xb1], sequence: 4, damage: [1, 0, 1, 1]))
+            let secondSurface = try Fixture.contents(view)
+            busy.surfaces = [firstSurface]
+            let third = try publish(second.changing([6: 0xc6, 0: 0xdead], sequence: 6, damage: [2, 1, 1, 1]))
+            let thirdSurface = try Fixture.contents(view)
+            XCTAssertFalse(thirdSurface === firstSurface || thirdSurface === secondSurface, "a third surface")
+            XCTAssertEqual(try Self.shown(view), third.pixels, "it held no frame: whole")
+            busy.surfaces = [firstSurface, secondSurface]
+            let fourth = third.changing([5: 0xd5], sequence: 8, damage: [1, 1, 1, 1])
+            try fourth.write(try XCTUnwrap(view.framebufferPath))
+            XCTAssertEqual(view.refreshFrame(at: 100), .busy, "no surface is free")
+            XCTAssertTrue(try Fixture.contents(view) === thirdSurface)
+            XCTAssertEqual(try Self.shown(view), third.pixels, "the shown frame stays as it was")
+            busy.surfaces = []
+            guard case .presented = view.refreshFrame(at: 101) else { return XCTFail("frame 8 was not shown") }
+            XCTAssertTrue(try Fixture.contents(view) === secondSurface, "the free surface with the newest frame")
+            XCTAssertEqual(view.surfaces?.copied, HvfFramebufferDamage(x: 1, y: 1, width: 2, height: 1),
+                           "frame 4's surface lacks frames 6 and 8: their damage, nothing else")
+            XCTAssertEqual(try Self.shown(view), fourth.pixels.enumerated().map { $0.offset == 0 ? Self.gray : $0.element })
+        }
+    }
+
     func testTheCopiedRegionsAndOpaquePixels() throws {
         try withDisplay { view, publish in
             _ = try publishTrustedFrames(publish)
@@ -111,6 +142,7 @@ final class HvfFramebufferDamageTests: XCTestCase {
 
     // MARK: - Fixture
 
+    private final class InUse { var surfaces: [AnyObject] = [] }
     private typealias Frame = HvfFramebufferDamageFrame
     private typealias Fixture = HvfFramebufferAvailabilityFixture
 
@@ -143,6 +175,7 @@ final class HvfFramebufferDamageTests: XCTestCase {
         let session = HvfEngineSession(config: config, repoRoot: root) { _ in false }
         let view = FBLayerView(session: session)
         defer { view.teardown() }
+        view.surfaces?.inUse = { _ in false }  // the tests decide when WindowServer holds a surface
         var tick = 0.0
         let path = root.appendingPathComponent("display.fb").path
         try body(view) { frame in

@@ -2,49 +2,50 @@
 import Darwin
 import IOSurface
 
-/// The 2D display's frames in two IOSurfaces of the frame's size, which the view shows in turn as its
-/// layer's contents, so Core Animation composites them without another copy and a frame is never written
-/// into the surface on screen. A new frame goes into the surface behind: only what changed since the frame
-/// that surface holds when the writer's damage is trusted (HvfFramebufferDamage), else the whole frame.
+/// The 2D display's frames in a few IOSurfaces of the frame's size, which the view shows as its layer's
+/// contents, so Core Animation composites them without another copy. A new frame goes into a surface that is
+/// neither shown nor still read by WindowServer (a surface that stopped being the contents can be until it
+/// releases it): only what changed since the frame that surface holds when the writer's damage is trusted
+/// (HvfFramebufferDamage), else the whole frame. With no such surface free, the frame waits for a later tick.
 struct HvfFramebufferSurfaces: HvfFramebufferFrameDestination {
     /// Makes a surface for width x height pixels; nil when IOSurface cannot.
     var make: (Int, Int) -> IOSurfaceRef? = HvfFramebufferSurfaces.surface
+    /// Whether another process (WindowServer) still uses a surface.
+    var inUse: (IOSurfaceRef) -> Bool = { IOSurfaceIsInUse($0) }
     /// A surface could not be made or locked: the view shows CGImages instead.
     private(set) var failed = false
     /// The pixels the newest copy wrote.
     private(set) var copied: HvfFramebufferDamage?
 
+    /// The surface shown, one WindowServer may not have released yet, and one to write.
+    static let limit = 3
     private var surfaces: [IOSurfaceRef] = []
     private var width = 0, height = 0
     /// The sequence of the frame each surface holds whole; nil while it holds none.
-    private var holds: [UInt64?] = [nil, nil]
-    private var front = 0
-    /// The trusted damage of the frame in front: what the surface behind lacks besides the next frame's.
-    private var frontDamage: (sequence: UInt64, rect: HvfFramebufferDamage)?
-    /// The newest copy's frame, until the reader's seqlock check lets it be shown.
-    private var pending: (sequence: UInt64, damage: HvfFramebufferDamage?)?
-
-    private var back: Int { 1 - front }
+    private var holds: [UInt64?] = []
+    private var front: Int?
+    /// The trusted damage of the frames shown since the last untrusted one, by sequence: what each changed
+    /// since the frame before it.
+    private var damages: [UInt64: HvfFramebufferDamage] = [:]
+    /// The newest copy, until the reader's seqlock check lets it be shown.
+    private var pending: (index: Int, sequence: UInt64, damage: HvfFramebufferDamage?)?
 
     mutating func copy(_ frame: HvfFramebufferFrame) -> Bool {
-        if surfaces.isEmpty || frame.width != width || frame.height != height {
-            guard let first = make(frame.width, frame.height), let second = make(frame.width, frame.height) else {
-                failed = true
-                return false
-            }
-            (surfaces, width, height, holds, frontDamage) = ([first, second], frame.width, frame.height, [nil, nil], nil)
+        if frame.width != width || frame.height != height {
+            (surfaces, holds, front, damages, width, height) = ([], [], nil, [:], frame.width, frame.height)
         }
-        let region = region(for: frame)
-        holds[back] = nil
-        guard Self.copy(region, of: frame, into: surfaces[back]) else {
+        guard let index = writable() else { return false }
+        let region = region(for: frame, holding: holds[index])
+        holds[index] = nil
+        guard Self.copy(region, of: frame, into: surfaces[index]) else {
             failed = true
             return false
         }
-        (pending, copied) = ((frame.sequence, frame.damage), region)
+        (pending, copied) = ((index, frame.sequence, frame.damage), region)
         return true
     }
 
-    /// A torn copy leaves the surface behind holding no whole frame, so the next copy into it is whole.
+    /// A torn copy leaves its surface holding no whole frame, so the next copy into it is whole.
     mutating func discard() {
         pending = nil
     }
@@ -53,27 +54,56 @@ struct HvfFramebufferSurfaces: HvfFramebufferFrameDestination {
     mutating func present() -> IOSurfaceRef? {
         guard let pending else { return nil }
         self.pending = nil
-        holds[back] = pending.sequence
-        frontDamage = pending.damage.map { (sequence: pending.sequence, rect: $0) }
-        front = back
-        return surfaces[front]
+        if let damage = pending.damage {
+            damages[pending.sequence] = damage
+            damages = damages.filter { pending.sequence &- $0.key < UInt64(2 * Self.limit) }
+        } else {
+            // Untrusted damage (a first or skipped frame, another file): the other surfaces' frames may not
+            // be this file's, and no damage leads from them to this frame.
+            holds = holds.map { _ in nil }
+            damages = [:]
+        }
+        holds[pending.index] = pending.sequence
+        front = pending.index
+        return surfaces[pending.index]
     }
 
     /// Lets the surfaces go.
     mutating func reset() {
-        let make = make
+        let (make, inUse) = (make, inUse)
         self = Self()
-        self.make = make
+        (self.make, self.inUse) = (make, inUse)
     }
 
-    /// The surface behind holds the frame two before this one: it lacks the front frame's damage and this
-    /// frame's. Anything else is copied whole.
-    private func region(for frame: HvfFramebufferFrame) -> HvfFramebufferDamage {
-        if let damage = frame.damage, let frontDamage, holds[back] == frame.sequence &- 4,
-           frontDamage.sequence == frame.sequence &- 2 {
-            return frontDamage.rect.union(damage)
+    /// A surface neither shown nor in use, the one with the newest frame first, or a new one while fewer than
+    /// `limit` exist. nil: none is free now, or none can be made (`failed`).
+    private mutating func writable() -> Int? {
+        let free = surfaces.indices.filter { $0 != front && !inUse(surfaces[$0]) }
+        if let newest = free.max(by: { (holds[$0] ?? 0) < (holds[$1] ?? 0) }) {
+            return newest
         }
-        return .whole(width: frame.width, height: frame.height)
+        guard surfaces.count < Self.limit else { return nil }
+        guard let surface = make(width, height) else {
+            failed = true
+            return nil
+        }
+        surfaces.append(surface)
+        holds.append(nil)
+        return surfaces.count - 1
+    }
+
+    /// What `frame` changed since the frame `held`: its own damage and that of every frame shown in between,
+    /// when all of it is trusted. Anything else is the whole frame.
+    private func region(for frame: HvfFramebufferFrame, holding held: UInt64?) -> HvfFramebufferDamage {
+        let whole = HvfFramebufferDamage.whole(width: frame.width, height: frame.height)
+        guard var region = frame.damage, let held else { return whole }
+        var sequence = frame.sequence &- 2
+        while sequence != held {
+            guard let damage = damages[sequence] else { return whole }
+            region = region.union(damage)
+            sequence &-= 2
+        }
+        return region
     }
 
     /// Copies `region` of `frame` under the surface's lock, every pixel opaque: the CGImage this replaces
