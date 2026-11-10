@@ -114,3 +114,37 @@ fn at_most_1024_refusals_are_remembered_and_the_oldest_is_fetched_again() {
     fetched(&mut rig.h, &names[0], b"x");
     assert_eq!(fetches(&mut rig.h, &names), [names[1].clone()]);
 }
+
+/// What every new temporary on this thread fails with from now on; None: nothing.
+fn fail_temporaries(errno: Option<i32>) {
+    crate::agent_console::share::host_destination::TEMPORARY_FAULT.with(|fault| fault.set(errno));
+}
+
+/// A small file skips the free-space precheck, and APFS refuses its write while it still reports
+/// space free (s5, 2026-11-10: 4 MiB refused with 33.7 MB free). The app is told once per
+/// version, the fetch is retried at each listing, and it lands once there is room.
+#[test]
+fn a_write_refused_for_want_of_space_is_told_low_space_once_per_version() {
+    let mut rig = Rig::new("low-space");
+    let told = |rig: &Rig| rig.h.share.as_ref().unwrap().low_space_seen.clone();
+    let version = |mtime: &str| ("a.txt".to_string(), Some(mtime.to_string()));
+    // Any other failure is no space problem.
+    fail_temporaries(Some(libc::EACCES));
+    rig.guest.write("a.txt", b"guest");
+    rig.run(12);
+    assert!(!rig.guest.gets.is_empty());
+    assert!(told(&rig).is_empty(), "a refused permission was told as low space");
+    fail_temporaries(Some(libc::ENOSPC));
+    let gets = rig.guest.gets.len();
+    rig.run(24);
+    assert!(rig.guest.gets.len() > gets + 1, "the write was not retried at each listing");
+    assert_eq!(told(&rig), HashSet::from([version("m1")]), "told at every retry, or never");
+    // A new version is told again.
+    rig.guest.write("a.txt", b"GUEST");
+    rig.run(12);
+    assert_eq!(told(&rig), HashSet::from([version("m1"), version("m2")]));
+    // Room again: the next listing's fetch lands.
+    fail_temporaries(None);
+    rig.run(12);
+    assert_eq!(rig.host("a.txt").as_deref(), Some(&b"GUEST"[..]));
+}

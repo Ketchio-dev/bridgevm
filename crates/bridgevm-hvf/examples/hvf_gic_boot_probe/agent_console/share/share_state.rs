@@ -42,7 +42,8 @@ pub(in crate::agent_console) struct ShareState {
     host_walk: Option<HostWalk>,
     /// The large copy under way, either way (share_big.rs).
     pub(in crate::agent_console) big: Option<BigTransfer>,
-    /// Large guest files reported as skipped for the Mac's free space: name and listed time.
+    /// Guest files reported as skipped for the Mac's free space (a large file's precheck, or a
+    /// write the Mac refused with ENOSPC or EDQUOT): name and listed time.
     pub(in crate::agent_console) low_space_seen: HashSet<(String, Option<String>)>,
     /// Synced versions and PUT marks beside the VM's UEFI vars (share_sync_file.rs).
     pub(in crate::agent_console) sync_file: Option<sync_file::SyncStateFile>,

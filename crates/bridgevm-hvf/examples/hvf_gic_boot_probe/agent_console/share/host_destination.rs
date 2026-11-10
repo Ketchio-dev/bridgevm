@@ -25,6 +25,12 @@ mod seal_host;
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
+#[cfg(test)]
+thread_local! {
+    /// The errno a new temporary fails with on this thread, as on a full Mac disk (tests).
+    pub(super) static TEMPORARY_FAULT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+}
+
 /// The Mac file a preferred guest copy is to replace, as the session's first scan saw it: size
 /// and modification time (ms), as the scan reads them (share_synced.rs).
 pub(super) type MacStat = (u64, u128);
@@ -227,6 +233,10 @@ impl Destination {
     }
 
     fn temporary(&self) -> io::Result<(CString, File)> {
+        #[cfg(test)]
+        if let Some(errno) = TEMPORARY_FAULT.with(std::cell::Cell::get) {
+            return Err(io::Error::from_raw_os_error(errno));
+        }
         for _ in 0..32 {
             // Uniqueness only: O_EXCL, not unpredictability, protects existing files.
             let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
