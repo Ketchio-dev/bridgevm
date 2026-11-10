@@ -1,9 +1,10 @@
 //! Frame requests in the BVFB header: how a reader asks a writer for a frame.
 //!
 //! The header stays version 1. Bytes 32..64 were reserved; `FbSink` writes
-//! only the 24 header bytes, the sequence at byte 24, the publish time at
-//! bytes 48..56 (`virtio_gpu/fb_sink_header.rs`) and the pixels, so readers
-//! that ignore them are unaffected and it never writes these words:
+//! only the 24 header bytes, the sequence at byte 24, the damage tag at
+//! 44..48, the publish time at bytes 48..56 and the damage rectangle at 56..64
+//! (`virtio_gpu/fb_sink_header.rs`) and the pixels, so readers that ignore
+//! them are unaffected and it never writes these words:
 //!
 //! - bytes 32..40, the request: a little-endian u64 written only by the reader,
 //!   with `pwrite`, once per display tick. It is the reader's

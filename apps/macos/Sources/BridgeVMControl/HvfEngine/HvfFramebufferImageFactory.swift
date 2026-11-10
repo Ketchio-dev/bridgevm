@@ -25,4 +25,25 @@ struct HvfFramebufferImageFactory {
         return image(provider, width, height, stride)
     }
 }
+
+/// A frame copied whole into one buffer, which `HvfFramebufferImageFactory.make` turns into a CGImage: the
+/// display path when its IOSurfaces cannot be made.
+struct HvfFramebufferImageCopy: HvfFramebufferFrameDestination {
+    private(set) var buffer: UnsafeMutableRawPointer?
+    private(set) var byteCount = 0
+    private(set) var stride = 0
+
+    mutating func copy(_ frame: HvfFramebufferFrame) -> Bool {
+        let byteCount = frame.height * frame.stride
+        guard let buffer = malloc(byteCount) else { return false }
+        Darwin.memcpy(buffer, frame.pixels, byteCount)
+        (self.buffer, self.byteCount, stride) = (buffer, byteCount, frame.stride)
+        return true
+    }
+
+    mutating func discard() {
+        free(buffer)
+        buffer = nil
+    }
+}
 #endif

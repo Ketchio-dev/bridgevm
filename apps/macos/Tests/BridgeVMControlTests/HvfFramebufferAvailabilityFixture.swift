@@ -1,10 +1,12 @@
 import AppKit
+import IOSurface
 import XCTest
 @testable import BridgeVMControl
 
 @MainActor
 enum HvfFramebufferAvailabilityFixture {
-    static func run(factory: HvfFramebufferImageFactory = .init(),
+    /// `surfaces: nil` shows frames as CGImages made by `factory`.
+    static func run(factory: HvfFramebufferImageFactory = .init(), surfaces: HvfFramebufferSurfaces? = .init(),
                     _ body: (HvfRuntimeKeyboardDraftFixture, HvfEngineSession, FBLayerView, URL) throws -> Void) throws {
         let fixture = try HvfRuntimeKeyboardDraftFixture()
         defer { fixture.remove() }
@@ -13,6 +15,7 @@ enum HvfFramebufferAvailabilityFixture {
             let path = fixture.evidence.appendingPathComponent("display.fb")
             try writeFrame(path)
             let view = FBLayerView(session: session, imageFactory: factory)
+            view.surfaces = surfaces
             view.frame = NSRect(x: 0, y: 0, width: 100, height: 100)
             defer { view.teardown() }
             view.refreshFrame(at: 0)
@@ -50,6 +53,28 @@ enum HvfFramebufferAvailabilityFixture {
         view.setMarkedText("한", selectedRange: NSRange(location: 1, length: 0),
             replacementRange: NSRange(location: NSNotFound, length: 0))
         XCTAssertTrue(view.hasMarkedText())
+    }
+
+    /// The layer's contents, a CGImage or an IOSurface.
+    static func contents(_ view: FBLayerView) throws -> AnyObject {
+        try XCTUnwrap(view.layer?.contents) as AnyObject
+    }
+
+    /// The shown frame's pixel bytes, row after row, from either kind of contents.
+    static func pixels(_ view: FBLayerView) throws -> Data {
+        let contents = try XCTUnwrap(view.layer?.contents) as CFTypeRef
+        if CFGetTypeID(contents) == CGImage.typeID {
+            return try XCTUnwrap((contents as! CGImage).dataProvider?.data) as Data
+        }
+        XCTAssertEqual(CFGetTypeID(contents), IOSurfaceGetTypeID())
+        let surface = contents as! IOSurfaceRef
+        IOSurfaceLock(surface, .readOnly, nil)
+        defer { IOSurfaceUnlock(surface, .readOnly, nil) }
+        let base = IOSurfaceGetBaseAddress(surface), rowBytes = IOSurfaceGetBytesPerRow(surface)
+        let width = IOSurfaceGetWidth(surface)
+        return (0 ..< IOSurfaceGetHeight(surface)).reduce(into: Data()) { data, row in
+            data.append(Data(bytes: base + row * rowBytes, count: width * 4))
+        }
     }
 
     static func image(_ view: FBLayerView) throws -> CGImage {

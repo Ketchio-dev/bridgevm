@@ -27,6 +27,8 @@ final class FBLayerView: HvfFramebufferTextInput {
     var lastProcessedSeq: UInt64 = .max
     private let imageFactory: HvfFramebufferImageFactory
     var frameReader = HvfFramebufferFrameReader()
+    /// Where 2D frames are copied and shown from; nil once IOSurfaces cannot be made (then CGImages).
+    var surfaces: HvfFramebufferSurfaces? = HvfFramebufferSurfaces()
     let frameRequester = HvfFramebufferFrameRequester()
     private var iosurfacePresenter = HvfIOSurfacePresenter()
     private var pointerMoves = HvfPointerMoveMailbox()
@@ -163,24 +165,42 @@ final class FBLayerView: HvfFramebufferTextInput {
             return .unmapped
         }
         defer { if framebufferMapping === mapping { frameRequester.post(mapping, path: framebufferPath) } }
-        let read = frameReader.read(mapping.pointer, length: mapping.length, shown: lastProcessedSeq)
-        guard case let .frame(buffer, byteCount, width, height, stride, sequence, published) = read else {
+        let (read, contents) = readFrame(mapping)
+        guard case let .frame(width, height, sequence, published) = read else {
             if case .invalid = read {
                 resetMapping(); invalidateDisplay()
             }
             return HvfDisplayTick(unpresented: read)
         }
-        guard let image = imageFactory.make(buffer: buffer, byteCount: byteCount,
-                                           width: width, height: height, stride: stride), let layer else {
+        guard let contents, let layer else {
             return .busy
         }
 
         let previous = lastProcessedSeq
-        layer.contents = image
+        layer.contents = contents
         lastProcessedSeq = sequence
         guestSize = CGSize(width: CGFloat(width), height: CGFloat(height))
         placeContents()
         return .presented(sequence: sequence, previous: previous, published: published)
+    }
+
+    /// Reads the newest frame into the display's IOSurfaces, or into a CGImage once they cannot be made.
+    private func readFrame(_ mapping: HvfFramebufferMapping) -> (HvfFramebufferFrameReader.Outcome, Any?) {
+        if surfaces != nil {
+            let read = frameReader.read(mapping.pointer, length: mapping.length, shown: lastProcessedSeq,
+                                        into: &surfaces!)
+            if case .frame = read { return (read, surfaces!.present()) }
+            if surfaces!.failed {
+                surfaces = nil
+                NSLog("BridgeVM display: no IOSurface for the frame; showing it as an image instead")
+            }
+            return (read, nil)
+        }
+        var copy = HvfFramebufferImageCopy()
+        let read = frameReader.read(mapping.pointer, length: mapping.length, shown: lastProcessedSeq, into: &copy)
+        guard case let .frame(width, height, _, _) = read, let buffer = copy.buffer else { return (read, nil) }
+        return (read, imageFactory.make(buffer: buffer, byteCount: copy.byteCount,
+                                        width: width, height: height, stride: copy.stride))
     }
 
     func teardown() {
@@ -190,6 +210,7 @@ final class FBLayerView: HvfFramebufferTextInput {
         stopDisplayLink()
         resetMapping()
         iosurfacePresenter.reset()
+        surfaces?.reset()
         pointerMoves.reset()
         guestCursor.reset()
         guestSize = .zero
