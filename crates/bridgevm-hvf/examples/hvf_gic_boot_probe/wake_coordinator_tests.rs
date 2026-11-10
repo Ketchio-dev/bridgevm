@@ -144,3 +144,22 @@ fn a_surplus_claim_reports_no_reasons() {
     assert!(CancelClaim::Surplus.reasons().is_empty());
     assert!(CancelClaim::StaleGeneration.reasons().is_empty());
 }
+
+#[test]
+fn the_claim_tally_counts_each_reason_and_every_cancel() {
+    let mut tally = ClaimTally::default();
+    let both = WakeReason::Vblank as u64 | WakeReason::AgentConsole as u64;
+    for _ in 0..1000 {
+        tally.add(CancelClaim::Claimed(both));
+    }
+    tally.add(CancelClaim::Claimed(WakeReason::Vblank as u64));
+    tally.add(CancelClaim::Surplus);
+    tally.add(CancelClaim::StaleGeneration);
+    assert_eq!(tally.observed, 1003);
+    let count = |reason: WakeReason| {
+        tally.per_reason[WakeReason::ALL.iter().position(|r| *r == reason).unwrap()]
+    };
+    assert_eq!(count(WakeReason::Vblank), 1001);
+    assert_eq!(count(WakeReason::AgentConsole), 1000);
+    assert_eq!(count(WakeReason::RamfbSample), 0);
+}

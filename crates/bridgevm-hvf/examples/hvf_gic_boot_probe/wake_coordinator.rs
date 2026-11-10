@@ -183,29 +183,42 @@ impl WakeCoordinator {
 #[path = "wake_coordinator_tests.rs"]
 mod tests;
 
-/// Final-report lines attributing every cancellation this generation saw.
-///
-/// Prints after the run has stopped. `surplus` here is measured, not inferred:
-/// it counts cancellations that arrived with no waker having asked for one.
-pub(crate) fn report_wake_attribution(coordinator: &WakeCoordinator, claims: &[CancelClaim]) {
-    let (requests, claimed, surplus, stale) = coordinator.counters();
-    println!(
-        "WAKE ATTRIBUTION: generation={} requests={requests} claimed={claimed} \
-         surplus={surplus} stale={stale} observed_cancels={}",
-        coordinator.generation(),
-        claims.len()
-    );
-    let mut per_reason = [0u64; WakeReason::ALL.len()];
-    for claim in claims {
+/// What the run loop's cancellations claimed, counted as they happen. The
+/// final report needs only these totals; a list of claims grew by one entry
+/// per cancel (dozens a second, thousands under disk I/O) for as long as the
+/// VM ran.
+#[derive(Debug, Default)]
+pub(crate) struct ClaimTally {
+    observed: u64,
+    per_reason: [u64; WakeReason::ALL.len()],
+}
+
+impl ClaimTally {
+    pub(crate) fn add(&mut self, claim: CancelClaim) {
+        self.observed += 1;
         for reason in claim.reasons() {
             let index = WakeReason::ALL
                 .iter()
                 .position(|candidate| *candidate == reason)
                 .expect("every reason is in ALL");
-            per_reason[index] += 1;
+            self.per_reason[index] += 1;
         }
     }
-    for (reason, count) in WakeReason::ALL.into_iter().zip(per_reason) {
+}
+
+/// Final-report lines attributing every cancellation this generation saw.
+///
+/// Prints after the run has stopped. `surplus` here is measured, not inferred:
+/// it counts cancellations that arrived with no waker having asked for one.
+pub(crate) fn report_wake_attribution(coordinator: &WakeCoordinator, claims: &ClaimTally) {
+    let (requests, claimed, surplus, stale) = coordinator.counters();
+    println!(
+        "WAKE ATTRIBUTION: generation={} requests={requests} claimed={claimed} \
+         surplus={surplus} stale={stale} observed_cancels={}",
+        coordinator.generation(),
+        claims.observed
+    );
+    for (reason, count) in WakeReason::ALL.into_iter().zip(claims.per_reason) {
         if count != 0 {
             println!("WAKE ATTRIBUTION: {} claimed {count}", reason.as_str());
         }
