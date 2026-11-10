@@ -25,6 +25,10 @@ pub(super) fn scan_share_host_dir_inner(
         let Some(name) = host_rel_path(root, &path) else {
             continue;
         };
+        // OS metadata (share_excluded.rs) is not shared: no stat, nothing below it walked.
+        if share_sync::is_share_excluded(&name) {
+            continue;
+        }
         let meta = std::fs::symlink_metadata(&path);
         // A temporary, the host's or the agent's (host_destination.rs), is never shared; the
         // host's own is removed once the process that wrote it is gone.

@@ -133,7 +133,7 @@ fn now_ms() -> u128 {
 const HOUR_MS: u128 = 3_600_000;
 
 /// The VM's UEFI vars beside the share folder (never inside it); its synced state goes next to it.
-fn vars(rig: &Rig) -> PathBuf {
+pub(super) fn vars(rig: &Rig) -> PathBuf {
     let vars = rig.dir.with_extension("vars.fd");
     for suffix in ["", ".share-sync", ".share-sync-puts"] {
         let mut path = vars.as_os_str().to_owned();
@@ -144,7 +144,7 @@ fn vars(rig: &Rig) -> PathBuf {
 }
 
 /// A new session (a VM start or guest restart), with the state at `vars` when given.
-fn new_session(rig: &mut Rig, vars: Option<&Path>) {
+pub(super) fn new_session(rig: &mut Rig, vars: Option<&Path>) {
     rig.h.share = None; // the old session ends first and leaves its state on disk
     let mut share = ShareState::new(ShareSync::new(512), rig.dir.clone(), ROOT.into(), Duration::from_millis(500));
     if let Some(vars) = vars {

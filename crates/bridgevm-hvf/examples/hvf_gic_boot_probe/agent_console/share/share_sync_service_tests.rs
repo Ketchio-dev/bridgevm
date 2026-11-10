@@ -27,6 +27,8 @@ mod listing_report_tests;
 mod put_unconfirmed_tests;
 #[path = "share_unseen_tests.rs"]
 mod unseen_tests;
+#[path = "share_excluded_tests.rs"]
+mod excluded_tests;
 #[path = "share_write_refusal_tests.rs"]
 mod write_refusal_tests;
 #[path = "share_adopt_tests.rs"]

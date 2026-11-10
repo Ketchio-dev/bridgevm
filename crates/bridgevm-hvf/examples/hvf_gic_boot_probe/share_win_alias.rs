@@ -53,9 +53,11 @@ impl ShareSync {
 
     /// The host name exists but the scan could not read it, or it is held as
     /// a Windows alias: its guest copy is neither deleted nor pulled back.
+    /// Nor is OS metadata's, which the service never lets in (share_excluded.rs).
     pub(super) fn host_held(&self, name: &str) -> bool {
         let aliased = &self.host_aliased;
-        self.host_unseen_covers(name)
+        is_share_excluded(name)
+            || self.host_unseen_covers(name)
             || (!aliased.is_empty() && aliased.contains(&share_host_unseen::unseen_key(name)))
     }
 
