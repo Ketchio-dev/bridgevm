@@ -71,10 +71,10 @@
       "id": "guest-clock-resync",
       "area": "guest-agent",
       "qemu_behavior": "Under HVF the guest counter stops while the Mac sleeps, and QEMU leaves the guest clock behind until the guest's own time sync; only a management layer can set it (guest-set-time).",
-      "bridgevm_behavior": "When the host wall clock moves more than 2 s beyond the monotonic clock between service ticks (a host sleep), the resident agent service runs one Set-Date to the host's UTC time. The PL031 counter follows the host wall clock, as QEMU's default -rtc clock=host.",
+      "bridgevm_behavior": "When the host wall clock moves more than 2 s beyond the monotonic clock between service ticks (a host sleep), the resident agent service runs one Set-Date to the host's UTC time. The same resync runs at each boot's first service start and after a VM pause, and first sets Windows to the Mac's time zone (mapped through the app's CLDR table) when they differ; a running VM checks the Mac's zone once a minute. The PL031 counter follows the host wall clock, as QEMU's default -rtc clock=host.",
       "guest_visible": true,
       "impact": "The Windows clock is correct again shortly after the Mac wakes instead of lagging by the sleep time for up to a week. Without the agent service the clock stays behind until Windows syncs or reboots.",
-      "evidence": "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/time_resync.rs"
+      "evidence": "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/time_resync.rs, crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console/time_zone.rs"
     },
     {
       "id": "nvme-dataset-management",
