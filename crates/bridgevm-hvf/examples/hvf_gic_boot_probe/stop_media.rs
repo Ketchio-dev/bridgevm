@@ -6,7 +6,8 @@
 //! final_report.rs prints on the lines right after the report's stop record,
 //! inside host framing; scripts/live-gates/hvf_host_media.py and
 //! scripts/hvf-terminal-report.sh read them only there. A failed write panics
-//! before the report, so no framed report exists and every reader fails closed.
+//! before the report, so no framed report exists and every reader fails closed;
+//! a failed vars write panics only after the disks are written back.
 
 use crate::guest_text::escape_guest_text;
 use crate::*;
@@ -18,14 +19,22 @@ pub(crate) const HOST_MEDIA_RECORD: &str = "host media: ";
 
 /// Persists the UEFI vars and each configured NVMe namespace, printing each
 /// completed write now, and returns the framed records in write order.
+///
+/// A failed vars write (a full Mac disk at stop) still panics, but only after
+/// the disks are written back and flushed: the guest's data matters more than
+/// its firmware settings, and the vars file itself is replaced atomically.
 pub(crate) fn persist_stop_media(
     platform: &mut VirtPlatform,
     media: &VirtBootMediaConfig,
     owner: &mut RuntimeLease,
 ) -> Vec<String> {
+    let mut vars_error = None;
     let vars = owner
         .persist(RuntimeMediaSlot::Vars, platform.flash_vars_image())
-        .unwrap_or_else(|e| panic!("persist UEFI vars: {e}"));
+        .unwrap_or_else(|e| {
+            vars_error = Some(e);
+            Vec::new()
+        });
     let mut records = report_media_writes("UEFI vars", &vars);
     for (disk, namespace) in [
         (media.nvme_disk.as_ref(), NvmePersistNamespace::Primary),
@@ -35,6 +44,9 @@ pub(crate) fn persist_stop_media(
             let writes = persist_nvme_media(platform, disk, namespace, owner);
             records.extend(report_media_writes(namespace.subject(), &writes));
         }
+    }
+    if let Some(e) = vars_error {
+        panic!("persist UEFI vars: {e} (the disks were written back first)");
     }
     records
 }
