@@ -18,5 +18,8 @@ struct BridgeVMControlApp: App {
                 .appUIHostSceneObservation()
         }
         .controlWindowPresentation()
+        #if canImport(AppKit)
+        .commands { HvfVirtualMachineCommands() }
+        #endif
     }
 }

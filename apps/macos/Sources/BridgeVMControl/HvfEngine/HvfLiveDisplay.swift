@@ -7,9 +7,11 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
     private static var controllers: [ObjectIdentifier: HvfDisplayWindowController] = [:]
 
     private let sessionIdentifier: ObjectIdentifier
+    private let state: HvfDisplayWindowState
 
-    private init(window: NSWindow, sessionIdentifier: ObjectIdentifier) {
+    private init(window: NSWindow, sessionIdentifier: ObjectIdentifier, state: HvfDisplayWindowState) {
         self.sessionIdentifier = sessionIdentifier
+        self.state = state
         super.init(window: window)
         window.delegate = self
     }
@@ -35,8 +37,10 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
         window.title = title
+        let state = HvfDisplayWindowState(session: session)
+        state.window = window
         let hostingController = NSHostingController(
-            rootView: HvfLiveDisplaySurface(session: session)
+            rootView: HvfLiveDisplaySurface(session: session, window: state)
                 .frame(minWidth: 640, minHeight: 400)
         )
         if #available(macOS 13.0, *) {
@@ -51,7 +55,8 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
 
         let controller = HvfDisplayWindowController(
             window: window,
-            sessionIdentifier: identifier
+            sessionIdentifier: identifier,
+            state: state
         )
         controllers[identifier] = controller
 
@@ -67,9 +72,15 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         window.orderFrontRegardless()
         window.makeKey()
+        window.makeMain() // the 가상 머신 menu acts on the main VM window
     }
 
+    func windowDidBecomeMain(_ notification: Notification) { HvfVirtualMachineMenuTarget.shared.became(state) }
+
+    func windowDidResignMain(_ notification: Notification) { HvfVirtualMachineMenuTarget.shared.resigned(state) }
+
     func windowWillClose(_ notification: Notification) {
+        HvfVirtualMachineMenuTarget.shared.resigned(state)
         if HvfDisplayWindowController.controllers[sessionIdentifier] === self {
             HvfDisplayWindowController.controllers[sessionIdentifier] = nil
         }

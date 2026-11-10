@@ -42,9 +42,10 @@ struct HvfRestartControl<Content: View>: View {
         }
     }
 
-    private var title: String {
-        session.resetConfirmation?.prompt == .windowsHasNotRestarted
-            ? "Windows가 아직 다시 시작하지 않았습니다" : "VM을 재설정할까요?"
+    private var title: String { Self.title(session.resetConfirmation?.prompt ?? .agentUnavailable) }
+
+    static func title(_ prompt: HvfResetPrompt) -> String {
+        prompt == .windowsHasNotRestarted ? "Windows가 아직 다시 시작하지 않았습니다" : "VM을 재설정할까요?"
     }
 
     private var confirming: Binding<Bool> {
