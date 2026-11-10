@@ -87,10 +87,33 @@ final class HvfAgentSilenceNoticeTests: XCTestCase {
         XCTAssertEqual(session.agentSilenceNotice.shown, .notResponding, "still overdue")
         try run(session, ["BVAGENT SERVICE alive t=120000"])
         XCTAssertNil(session.agentSilenceNotice.shown, "answered: no overdue line for 30 s")
-        try run(session, ["BVAGENT SERVICE overdue share-ls awaiting-reply=true t=130000"])
+        try run(session, ["BVAGENT SERVICE overdue clip-caps awaiting-reply=true t=130000"])
         XCTAssertEqual(session.agentSilenceNotice.shown, .notResponding)
         try run(session, ["BVAGENT re-READY host=BRIDGEVM t=131000"])
         XCTAssertNil(session.agentSilenceNotice.shown, "the agent restarted and spoke")
+    }
+
+    /// Review on f8c363f3: the probe calls any request overdue after 20 s, but a guest command (a
+    /// display-driver install runs minutes) or a clipboard image read may take longer from a healthy
+    /// agent. Only the keepalive requests count; a slow one neither shows the notice nor clears it.
+    func testOnlyAnOverdueKeepaliveShowsTheNotice() throws {
+        let session = try session(Clock())
+        try run(session, ready + ["BVAGENT SERVICE overdue ctl awaiting-reply=true t=30000",
+                                  "BVAGENT SERVICE overdue clip-image-pull awaiting-reply=true t=50000",
+                                  "BVAGENT SERVICE timeout ctl t=60000"])
+        XCTAssertNil(session.agentSilenceNotice.shown, "a slow guest command or clipboard image read")
+        for line in ["BVAGENT SERVICE overdue ctl awaiting-reply=true t=70000",
+                     "BVAGENT SERVICE overdue clip-files-pull awaiting-reply=true t=90000",
+                     "BVAGENT SERVICE overdue agent-update awaiting-reply=true t=110000"] {
+            try run(session, [line])
+            XCTAssertNil(session.agentSilenceNotice.shown, line)
+        }
+        try run(session, ["BVAGENT SERVICE overdue ping awaiting-reply=true t=120000"])
+        XCTAssertEqual(session.agentSilenceNotice.shown, .notResponding, "the keepalive got no answer")
+        try run(session, ["BVAGENT SERVICE overdue ctl awaiting-reply=true t=160000"])
+        XCTAssertEqual(session.agentSilenceNotice.shown, .notResponding, "a slow request's line clears nothing")
+        try run(session, ["BVAGENT SERVICE start t=161000"])
+        XCTAssertNil(session.agentSilenceNotice.shown, "the agent spoke")
     }
 
     /// An app that attaches reads run.log from its start: an overdue line long answered stays quiet.

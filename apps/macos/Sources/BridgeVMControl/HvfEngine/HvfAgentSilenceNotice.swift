@@ -3,8 +3,8 @@ import SwiftUI
 
 /// One plain notice while the guest agent, which carries the clipboard, the shared folder, the
 /// display's window-size switch and the clock resync, is not there: no `SERVICE start` a while after
-/// Windows started, or the probe reporting a request it is still waiting on (`BVAGENT SERVICE
-/// overdue`, agent_console/resident_service.rs). It clears by itself once the agent answers again,
+/// Windows started, or the probe reporting a keepalive request it is still waiting on (`BVAGENT
+/// SERVICE overdue`, agent_console/resident_service.rs). It clears by itself once the agent answers again,
 /// and it is off while the VM is paused, stopping or restarting (HvfEngineSessionAgentSilence).
 @MainActor
 final class HvfAgentSilenceNotice: ObservableObject {
@@ -19,6 +19,11 @@ final class HvfAgentSilenceNotice: ObservableObject {
     /// waits, and prints `SERVICE alive` every 30 s: an overdue line 30 s of probe time behind the
     /// newest line is over. Probe time stands still while the VM is paused and is rebuilt for each boot.
     static let overdueWindowMs = 30_000
+    /// The probe reports any request overdue after 20 s, but most may take longer while the agent is
+    /// well: the app's own guest commands (`ctl`: a display-driver install, a disk extend), a clipboard
+    /// image or file read, an agent update, a Finder drop, a big shared folder, a clock resync. Only the
+    /// quick keepalive requests answer within 20 s from a healthy agent (req_kind, agent_console/share.rs).
+    static let quickKinds: Set<String> = ["ping", "clip-poll", "clip-caps"]
 
     static let notConnectedText = "Windows 에이전트가 아직 연결되지 않아 클립보드·공유 폴더·화면 크기 맞춤이 동작하지 않습니다. Windows에 로그인한 뒤에도 계속되면 Windows를 다시 시작하세요."
     static let notRespondingText = "Windows 에이전트가 응답하지 않아 클립보드·공유 폴더·화면 크기 맞춤이 잠시 동작하지 않습니다. 계속되면 Windows를 다시 시작하세요."
@@ -42,9 +47,11 @@ final class HvfAgentSilenceNotice: ObservableObject {
 
     func consume(_ event: BvAgentEvent) {
         switch event {
-        case let .overdue(_, _, tMs):
+        case let .overdue(kind, _, tMs) where Self.quickKinds.contains(kind):
             overdueMs = tMs
             note(tMs)
+        case .overdue:
+            break // a slow request: neither a sign of silence nor, on its own, of an answer
         case let .ready(_, tMs), let .serviceStart(tMs):
             overdueMs = nil // the agent spoke
             note(tMs)
