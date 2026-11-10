@@ -36,7 +36,7 @@ final class HvfClipboardPastePointerTests: XCTestCase, HvfLegacyPasteFixture {
             XCTAssertEqual(session.sendText("한글"), .acceptedForProcessing)
             let command = try lastCommand(session)
             session.sendPointerMove(location: Self.at, viewSize: Self.size, imageSize: Self.size)
-            session.sendPointerScroll(1, location: Self.at, viewSize: Self.size, imageSize: Self.size)
+            session.sendPointerScroll(.init(x: 0, y: 1, precise: false), location: Self.at, viewSize: Self.size, imageSize: Self.size)
             session.sendPointerRelease(location: Self.at, viewSize: Self.size, imageSize: Self.size)
             try acknowledge(command, root: root)
             session.poll()

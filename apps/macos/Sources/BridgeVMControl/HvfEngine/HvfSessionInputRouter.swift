@@ -13,6 +13,8 @@ struct HvfSessionInputRouter {
     /// Whether a generic chord (HvfModifierChord) can reach the guest now: on the legacy route the VMM
     /// shipped with this app builds it; on the ordered route only an agent with the marker does.
     var modifierChords: Bool { !eligible || stream.modifierChords }
+    /// Whether a scroll goes as raw units (`scrollunits:`) rather than `scroll:` notches.
+    var scrollUnits: Bool { eligible && stream.scrollUnits }
 
     mutating func beginOwnedBoot(binding: [String]) {
         self = Self()

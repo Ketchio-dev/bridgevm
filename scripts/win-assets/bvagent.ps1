@@ -151,6 +151,11 @@ function Get-InputCapabilities([string]$Request) {
             }
             $keySupport += "`nBVINPUT_CHORDS $Request MODIFIER_CHORDS"
         } catch { }
+        # Raw wheel units on both axes (scrollunits:<v>,<h>@XxY); a resident older pointer module refuses the probe.
+        try {
+            $units = [BridgeVM.BvUnicodeInput]::BuildPointer('scrollunits:-1200,1200@32767x0')
+            if ($units.Length -eq 3 -and $units[1].Data.Mouse.Flags -eq 0x0800 -and $units[2].Data.Mouse.Flags -eq 0x1000) { $keySupport += "`nBVINPUT_POINTER $Request SCROLL_UNITS" }
+        } catch { }
         return @{ Exit = 0; Out = (('BVINPUT_CAPS {0} 3 TEXTINPUT KEYINPUT POINTERINPUT 65536' -f $Request) + $keySupport) }
     } catch {
         return @{ Exit = 1; Out = 'BVINPUT_CAPS_FAILED unavailable' }

@@ -14,7 +14,7 @@ struct HvfPointerHeldState {
         default: break
         }
         guard buttons != 0, fields[0] != "wheel" else { return }
-        location = fields[0] == "scroll" ? fields[1].split(separator: "@").last.map(String.init) : String(fields[1])
+        location = fields[1].split(separator: "@").last.map(String.init) // a scroll's position follows its `@`
     }
 
     mutating func inserted(_ event: HvfOrderedInputQueue.Event) {

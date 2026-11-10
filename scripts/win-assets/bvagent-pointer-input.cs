@@ -15,9 +15,22 @@ namespace BridgeVM {
                     !Regex.IsMatch(parts[0], @"\A-?[1-9][0-9]{0,2}\z") ||
                     !Int32.TryParse(parts[0], NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out ticks) ||
                     ticks < (scroll ? -128 : -127) || ticks > 127) throw new ArgumentException("pointer-input-wheel");
-                Input wheel = MouseEvent(0, 0, 0x0800);
-                wheel.Data.Mouse.MouseData = unchecked((uint)(ticks * 120));
+                Input wheel = Wheel(0x0800, ticks * 120);
                 return scroll ? new Input[] { BuildPointer("move:" + parts[1])[0], wheel } : new Input[] { wheel };
+            }
+            if (fields[0] == "scrollunits") {
+                // Raw signed wheel units (WHEEL_DELTA 120 = one notch): vertical > 0 scrolls up, horizontal > 0 right.
+                Match units = Regex.Match(fields[1], @"\A(0|-?[1-9][0-9]{0,3}),(0|-?[1-9][0-9]{0,3})@([0-9]{1,5}x[0-9]{1,5})\z");
+                int vertical, horizontal;
+                if (!units.Success ||
+                    !Int32.TryParse(units.Groups[1].Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out vertical) ||
+                    !Int32.TryParse(units.Groups[2].Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out horizontal) ||
+                    vertical < -1200 || vertical > 1200 || horizontal < -1200 || horizontal > 1200 ||
+                    (vertical == 0 && horizontal == 0)) throw new ArgumentException("pointer-input-scroll-units");
+                Input move = BuildPointer("move:" + units.Groups[3].Value)[0];
+                if (horizontal == 0) return new Input[] { move, Wheel(0x0800, vertical) };
+                if (vertical == 0) return new Input[] { move, Wheel(0x1000, horizontal) };
+                return new Input[] { move, Wheel(0x0800, vertical), Wheel(0x1000, horizontal) };
             }
             string[] point = fields[1].Split('x');
             int x, y;
@@ -47,6 +60,11 @@ namespace BridgeVM {
             return true;
         }
         public static uint InsertPointer(string command) { return InsertEvents(BuildPointer(command)); }
+        private static Input Wheel(uint flags, int units) {
+            Input wheel = MouseEvent(0, 0, flags);
+            wheel.Data.Mouse.MouseData = unchecked((uint)units);
+            return wheel;
+        }
         private static Input MouseEvent(int x, int y, uint flags) {
             Input input = new Input();
             input.Type = 0;

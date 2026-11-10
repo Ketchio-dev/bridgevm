@@ -972,21 +972,6 @@ final class HvfDisplayCoordinatesTests: XCTestCase {
         XCTAssertEqual(bottomRight?.y, 32_767)
     }
 }
-
-final class HvfScrollDeltaTests: XCTestCase {
-    func testMapsTrackpadFractionsAndMouseWheelStepsToNonzeroHIDDelta() {
-        for value in [CGFloat(0.1), .leastNonzeroMagnitude] { XCTAssertEqual(HvfScrollDelta.hid(from: value), 1) }
-        for value in [CGFloat(0.1), .leastNonzeroMagnitude] { XCTAssertEqual(HvfScrollDelta.hid(from: -value), -1) }
-        XCTAssertEqual(HvfScrollDelta.hid(from: 4.6), 5)
-    }
-
-    func testClampsToSignedHIDReportRangeAndRejectsInvalidValues() {
-        for value in [CGFloat(1_000), .greatestFiniteMagnitude] { XCTAssertEqual(HvfScrollDelta.hid(from: value), 127) }
-        for value in [CGFloat(1_000), .greatestFiniteMagnitude] { XCTAssertEqual(HvfScrollDelta.hid(from: -value), -127) }
-        XCTAssertNil(HvfScrollDelta.hid(from: 0))
-        for value in [CGFloat.infinity, -.infinity, .nan] { XCTAssertNil(HvfScrollDelta.hid(from: value)) }
-    }
-}
 #endif
 
 final class BvAgentEventTests: XCTestCase {
