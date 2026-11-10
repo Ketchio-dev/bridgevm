@@ -141,16 +141,29 @@ enum BvAgentEvent: Equatable, Identifiable {
         if parts.count >= 3, parts[0] == "del" {
             return .shareEvent(kind: .delete, path: parts[2], bytes: nil, tMs: tMs)
         }
-        guard parts.count >= 2 else { return nil }
         let kind: BvAgentShareKind
-        if parts[0] == "host->guest" {
-            kind = .hostToGuest
-        } else if parts[0] == "guest->host" {
-            kind = .guestToHost
-        } else {
-            return nil
+        switch parts.first {
+        case "host->guest": kind = .hostToGuest
+        case "guest->host": kind = .guestToHost
+        default: return nil
         }
-        return .shareEvent(kind: kind, path: parts[1], bytes: value(after: "bytes=", in: line), tMs: tMs)
+        guard let file = shareFile(in: line, after: "BVAGENT SHARE \(parts[0]) ") else { return nil }
+        return .shareEvent(kind: kind, path: file.name, bytes: file.bytes, tMs: tMs)
+    }
+
+    /// The name and size in `<prefix><name> bytes=<ASCII digits>[ ...]`. A name may hold spaces,
+    /// even ` bytes=`: it runs to the last one.
+    static func shareFile(in line: String, after prefix: String) -> (name: String, bytes: Int)? {
+        guard line.hasPrefix(prefix) else { return nil }
+        // Only after the prefix: a line that is all marker must not slice backwards.
+        let rest = line.dropFirst(prefix.count)
+        guard let marker = rest.range(of: " bytes=", options: .backwards) else { return nil }
+        let tail = rest[marker.upperBound...]
+        let digits = tail.prefix { $0.isASCII && $0.isNumber }
+        let after = tail.dropFirst(digits.count)
+        guard let bytes = Int(digits), after.isEmpty || after.hasPrefix(" ") else { return nil }
+        let name = rest[..<marker.lowerBound]
+        return name.isEmpty ? nil : (String(name), bytes)
     }
 
     private static func tMs(in line: String) -> Int? {

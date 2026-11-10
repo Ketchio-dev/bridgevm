@@ -329,3 +329,25 @@ fn a_guest_name_in_a_temporarys_exact_form_is_never_fetched_and_a_look_alike_is(
     fetched.sort();
     assert_eq!(fetched, [".bridgevm-part-notes", "sub/.bridgevm-sync-notes"]);
 }
+
+#[test]
+fn a_large_copy_the_mac_refuses_for_want_of_space_is_told_low_space() {
+    let mut rig = rig("full", 1 << 30);
+    let bytes = data(SHARE_RANGE_BYTES as usize + 1);
+    let size = bytes.len() as u64;
+    rig.list("big.bin", size, TIME);
+    let first = rig.step();
+    // The precheck passed; the volume still refuses the copy's temporary.
+    let fault = |errno| crate::agent_console::share::host_destination::TEMPORARY_FAULT.with(|f| f.set(errno));
+    fault(Some(libc::EDQUOT));
+    for reply in range_reply(first.as_deref().unwrap(), &bytes, size, TIME) {
+        rig.reply(&reply);
+    }
+    fault(None);
+    assert!(!rig.h.big_share_active());
+    let share = rig.h.share.as_ref().unwrap();
+    assert_eq!(share.low_space_seen, HashSet::from([("big.bin".to_string(), Some(TIME.to_string()))]));
+    // Fetched again at the next listing.
+    rig.list("big.bin", size, TIME);
+    assert!(is_range(&rig.step()));
+}

@@ -107,13 +107,7 @@ impl AgentConsoleHarness {
         if free >= size.saturating_add(SHARE_FREE_MARGIN) {
             return false;
         }
-        let version = (name.to_string(), share.engine.listed_file(name).map(|(_, m)| m.to_string()));
-        if share.low_space_seen.len() >= 1024 {
-            share.low_space_seen.clear();
-        }
-        if share.low_space_seen.insert(version) {
-            bridgevm_hvf::host_log::out(format_args!("BVAGENT SHARE skip {name} low-space {size}"));
-        }
+        share.report_low_space(name, size);
         true
     }
 
@@ -389,6 +383,9 @@ impl AgentConsoleHarness {
             .on_host_write_error(name, super::guest_write_refusal::is_persistent(error));
         // A full Mac disk fails these writes; run.log may be on it (host_log).
         bridgevm_hvf::host_log::out(format_args!("BVAGENT SHARE write-refused {name} {error}"));
+        if is_out_of_space(error) {
+            share.report_low_space(name, size);
+        }
         if exhausted {
             self.share = None;
             self.queue.retain(|request| !is_share_req(request));
@@ -432,6 +429,27 @@ impl AgentConsoleHarness {
             _ => false,
         }
     }
+}
+
+impl ShareState {
+    /// `name` (`size` bytes) is not copied to the Mac for want of space: told once per listed
+    /// version (the app's low-space notice), checked again at every listing.
+    pub(in crate::agent_console) fn report_low_space(&mut self, name: &str, size: u64) {
+        let version = (name.to_string(), self.engine.listed_file(name).map(|(_, m)| m.to_string()));
+        if self.low_space_seen.len() >= 1024 {
+            self.low_space_seen.clear();
+        }
+        if self.low_space_seen.insert(version) {
+            bridgevm_hvf::host_log::out(format_args!("BVAGENT SHARE skip {name} low-space {size}"));
+        }
+    }
+}
+
+/// A write the Mac refused for want of space or quota. APFS refuses writes while it still
+/// reports some space free (a 4 MiB write failed with 33.7 MB free), so no precheck catches
+/// every such file.
+pub(in crate::agent_console) fn is_out_of_space(error: &std::io::Error) -> bool {
+    matches!(error.raw_os_error(), Some(libc::ENOSPC | libc::EDQUOT))
 }
 
 fn share_state_mut(share: &mut Option<ShareState>) -> &mut ShareState {

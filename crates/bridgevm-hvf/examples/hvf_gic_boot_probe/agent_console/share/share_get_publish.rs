@@ -66,6 +66,9 @@ impl AgentConsoleHarness {
                 let exhausted = share.engine.on_host_write_error(name, is_persistent(&e));
                 // A full Mac disk fails these writes; run.log may be on it (host_log).
                 bridgevm_hvf::host_log::out(format_args!("BVAGENT SHARE write-refused {name} {e}"));
+                if crate::agent_console::share::share_big::is_out_of_space(&e) {
+                    share.report_low_space(name, bytes.len() as u64);
+                }
                 if exhausted {
                     self.share = None;
                     self.queue.retain(|request| !is_share_req(request));
