@@ -55,6 +55,12 @@ final class HvfEngineSession: ObservableObject {
     var lastHeartbeatDate: Date?
     var serviceStarted = false
     var hardwareCursorOffSent = false // HWCursor=0 went to the guest after the setting was turned off
+    // Windows links (HvfGuestLinks.swift): the registration's removal went to the guest after the setting was
+    // turned off, the last link opened, and what opens it.
+    var guestLinksOffSent = false
+    var lastGuestLinkOpen: Date?
+    var guestLinkOpener: any HvfURLOpener = HvfWorkspaceURLOpener()
+    let guestLinkNotice = HvfGuestLinkNotice()
     @Published var diskGrowNotice: String? // the guest's report on extending C: after a disk grow (HvfDiskGrow)
     var diskExtendInFlight = false
     var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it

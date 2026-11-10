@@ -19,6 +19,7 @@ extension HvfEngineSession {
             // and reads input.ctl from its end: poll() sends the window size again.
             displayResize.deviceRestarted()
             applyGuestHardwareCursorSetting()
+            applyGuestLinksSetting()
             extendGrownDisk()
             if let ownedController { ownedController.guestServiceReady() }
             else { sendGracefulStopIfReady() }
@@ -32,6 +33,8 @@ extension HvfEngineSession {
             pauseReported(line)
         case let .unknown(line) where line.hasPrefix("BVSTORAGE "):
             storageReported(line)
+        case let .unknown(line) where line.hasPrefix(HvfGuestLinks.linePrefix):
+            guestLinkReported(line)
         case .aliveHeartbeat:
             lastHeartbeatDate = Date()
             lastHeartbeatAge = 0
