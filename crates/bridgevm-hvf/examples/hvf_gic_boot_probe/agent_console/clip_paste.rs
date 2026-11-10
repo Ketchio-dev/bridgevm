@@ -29,6 +29,8 @@ impl AgentConsoleHarness {
         if is_legacy_paste(command) {
             self.last_synced.rebaseline = true;
         }
+        // A restarted agent is asked again (guest_link.rs).
+        self.link_watch |= command == super::guest_link::WATCH_VERB;
         true
     }
 }

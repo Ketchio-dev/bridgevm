@@ -41,6 +41,7 @@ pub(super) mod tests {
             put_data: false,
             share_big: false,
             display_verbs_refused: false,
+            link_watch: false,
             clip_html: false,
             clip_files: false,
             clip_files_push: false,
