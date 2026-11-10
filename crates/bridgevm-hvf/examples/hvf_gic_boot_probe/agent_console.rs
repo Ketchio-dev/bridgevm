@@ -91,6 +91,8 @@ mod share;
 mod state;
 #[path = "agent_console/time_resync.rs"]
 mod time_resync;
+#[path = "agent_console/time_zone.rs"]
+mod time_zone;
 #[path = "agent_console/verb_reply.rs"]
 mod verb_reply;
 #[path = "agent_console/window_protocol.rs"]

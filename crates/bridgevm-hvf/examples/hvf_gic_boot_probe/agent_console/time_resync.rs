@@ -46,6 +46,8 @@ pub(super) struct HostClock {
     /// This boot's service start queued its resync (an agent restart does not
     /// queue another).
     pub(super) boot_resync_queued: bool,
+    /// The Mac's time zone, which each resync also sets (time_zone.rs).
+    pub(super) zone: super::time_zone::ZoneWatch,
 }
 
 impl HostClock {
@@ -117,9 +119,20 @@ pub(super) fn parse_test_suspend(value: &str) -> Option<(Duration, Duration)> {
 
 /// Windows' own time setting. `Set-Date` takes local time, so the UTC ticks
 /// are converted in the guest, after adding the guest PowerShell's start-up.
-pub(super) fn time_resync_command(utc_ticks: u64) -> String {
+/// With `zone`, Windows first takes the Mac's time zone (a Windows ID from
+/// the app's table); a failure there is reported and never stops the clock
+/// being set. .NET caches the local zone, so the cache is cleared before the
+/// conversion.
+pub(super) fn time_resync_command(utc_ticks: u64, zone: Option<&str>) -> String {
+    let zone = zone.map_or(String::new(), |zone| {
+        format!(
+            "try{{$z='{zone}';if((Get-TimeZone).Id -ne $z){{Set-TimeZone -Id $z;\
+             [TimeZoneInfo]::ClearCachedData();'BVTZ set '+$z}}}}\
+             catch{{'BVTZ failed '+$_.Exception.Message}};"
+        )
+    });
     format!(
-        "powershell -NoProfile -NonInteractive -Command \"$ErrorActionPreference='Stop';\
+        "powershell -NoProfile -NonInteractive -Command \"$ErrorActionPreference='Stop';{zone}\
          $t=[DateTime]::new({utc_ticks},'Utc')+((Get-Date)-[Diagnostics.Process]::GetCurrentProcess().StartTime);\
          $null=Set-Date ($t.ToLocalTime())\""
     )
@@ -138,12 +151,14 @@ impl AgentConsoleHarness {
         let (wall, mono) = (SystemTime::now(), Instant::now());
         let elapsed = bridgevm_hvf::vm_clock::active_now().saturating_duration_since(self.start);
         self.clock.tick(wall, mono, elapsed);
+        self.clock.zone.tick(mono);
     }
 
     /// At most one queued resync. Its time is read when it is sent, so a
     /// queued one already covers a newer gap; one in flight gets a follow-up.
     pub(super) fn enqueue_time_resync(&mut self) {
-        if self.clock.pending_gap_ms > 0 && !self.queue.iter().any(is_time_resync) {
+        let due = self.clock.pending_gap_ms > 0 || self.clock.zone.changed;
+        if due && !self.queue.iter().any(is_time_resync) {
             self.queue.push_back(ServiceReq::TimeSync);
         }
     }
@@ -187,15 +202,23 @@ impl AgentConsoleHarness {
             self.t_ms(now)
         );
         self.clock.pending_gap_ms = 0;
+        let zone = self.clock.zone.host_zone();
+        self.clock.zone.applied = zone.or(self.clock.zone.applied);
+        self.clock.zone.changed = false;
         let ticks = UNIX_EPOCH_TICKS + (set.as_nanos() / 100) as u64;
-        write_command_wire_line_into(&time_resync_command(ticks), &mut self.service_line_scratch);
+        write_command_wire_line_into(&time_resync_command(ticks, zone), &mut self.service_line_scratch);
     }
 
     pub(super) fn handle_time_resync_reply(&mut self, line: &str) {
         if let Some((exit_code, output)) = parse_out_line(line) {
+            let text = base64_decode(output).unwrap_or_default();
+            let text = String::from_utf8_lossy(&text);
+            // The zone step's one line (guest text: one bounded line).
+            if let Some(zone) = text.lines().find(|line| line.starts_with("BVTZ ")) {
+                let zone: String = zone.split_whitespace().collect::<Vec<_>>().join(" ");
+                println!("{}", zone.chars().take(200).collect::<String>());
+            }
             if exit_code != 0 {
-                let text = base64_decode(output).unwrap_or_default();
-                let text = String::from_utf8_lossy(&text);
                 let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
                 println!(
                     "BVTIME resync failed exit={exit_code} {}",
