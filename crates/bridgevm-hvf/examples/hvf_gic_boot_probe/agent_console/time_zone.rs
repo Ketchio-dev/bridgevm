@@ -49,7 +49,8 @@ pub(super) fn iana_from_localtime(link: &Path) -> Option<String> {
 }
 
 /// The Mac's zone as a Windows ID; `None` when unknown, and Windows' zone is
-/// then left alone.
+/// then left alone. Tests never read the Mac's own zone (ZoneWatch::host).
+#[cfg(not(test))]
 pub(super) fn host_windows_zone() -> Option<&'static str> {
     windows_zone(&iana_from_localtime(Path::new("/etc/localtime"))?)
 }
