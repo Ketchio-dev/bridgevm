@@ -1,0 +1,17 @@
+name: Guest agent display verbs contract
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/win-assets/bvagent.ps1', 'scripts/test-bvagent-display-verbs.ps1', '.github/workflows/agent-display-verbs-contract.yml']}}
+permissions:
+  contents: read
+jobs:
+  display-verbs:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check DISPLAYMODE/DISPLAYSCALE with Windows PowerShell 5.1
+        shell: powershell
+        run: scripts/test-bvagent-display-verbs.ps1
+      - name: Check DISPLAYMODE/DISPLAYSCALE with PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: scripts/test-bvagent-display-verbs.ps1
