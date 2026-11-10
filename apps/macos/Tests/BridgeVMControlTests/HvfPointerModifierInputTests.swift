@@ -41,7 +41,7 @@ final class HvfPointerModifierInputTests: XCTestCase {
         }
     }
 
-    func testCommandClickIsCtrlClickOnTheMacStyleAndWinClickWithTheWindowsKeyStyle() throws {
+    func testCommandClickIsCtrlClickOnTheMacStyleAndAPlainClickWithTheWindowsKeyStyle() throws {
         try withOrderedDisplay(pointer: ["MODIFIERS"]) { view, session, fixture in
             view.mouseDown(with: PointerEvent([.command, .option, .capsLock]))
             view.mouseUp(with: PointerEvent([.control, .shift, .function]))
@@ -52,7 +52,7 @@ final class HvfPointerModifierInputTests: XCTestCase {
             view.mouseUp(with: PointerEvent(.capsLock))
             XCTAssertEqual(try deliver(fixture, session), ["press:16384x16384:ca", "releaseall:16384x16384:cs",
                                                            "rightpress:16384x16384:c", "releaseall:16384x16384",
-                                                           "press:16384x16384:ws", "releaseall:16384x16384"])
+                                                           "press:16384x16384:s", "releaseall:16384x16384"])
         }
     }
 

@@ -24,13 +24,12 @@ final class HvfPointerModifiersTests: XCTestCase {
         XCTAssertEqual(mac.pointerModifiers(rightCommand), "c")
         XCTAssertEqual(mac.pointerModifiers([.command, .control, .shift]), "cs")
         XCTAssertEqual(mac.pointerModifiers([.command, .option]), "ca")
-        // 'Windows 키로': left Command is the Windows key; right Command (often 한/영) never is.
-        XCTAssertEqual(windows.pointerModifiers(leftCommand), "w")
+        // 'Windows 키로': Command is left out (a Windows key up after a click opens Start), from either side.
+        XCTAssertEqual(windows.pointerModifiers(leftCommand), "")
         XCTAssertEqual(windows.pointerModifiers(rightCommand), "")
         XCTAssertEqual(windows.pointerModifiers(rightCommand.union(.shift)), "s")
-        XCTAssertEqual(windows.pointerModifiers(leftCommand.union(rightCommand)), "w")
-        XCTAssertEqual(windows.pointerModifiers([.command, .control, .option, .shift]), "wcas", "no side bits: left")
-        XCTAssertEqual(HvfHostKeyMapping(commandKey: .windows, modifierChords: true).pointerModifiers(leftCommand), "w")
+        XCTAssertEqual(windows.pointerModifiers([.command, .control, .option, .shift]), "cas")
+        XCTAssertEqual(HvfHostKeyMapping(commandKey: .windows, modifierChords: true).pointerModifiers(leftCommand), "")
     }
 
     func testTheHeldModifierFieldIsStrictAndEveryKeyIsCounted() {
