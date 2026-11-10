@@ -112,6 +112,7 @@ extension HvfEngineSession {
     func guestBootChanged() {
         guestBoot += 1
         pauseEnded()
+        agentSilenceNotice.reset()
         if restartRequest != nil { restartRequest = nil }
         if resetConfirmation != nil { resetConfirmation = nil }
         if restartNotice != nil { restartNotice = nil }

@@ -4,6 +4,7 @@ extension HvfEngineSession {
         agentUpdateNotice.consume(event)
         fileDrops.consume(event)
         clipboardImageNotice.consume(event)
+        agentSilenceNotice.consume(event)
         events.append(event)
         if events.count > 500 { events.removeFirst(events.count - 500) }
     }

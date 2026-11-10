@@ -1,20 +1,9 @@
 #if canImport(AppKit)
 import SwiftUI
 
+/// The guest's window list, opened from the 가상 머신 menu's Guest windows… item.
 @MainActor
-struct HvfWindowInventoryButton: View {
-    let session: HvfEngineSession
-    @State private var presented = false
-    var body: some View {
-        Button("Guest windows") { presented = true }
-            .accessibilityIdentifier("runtime.windows.open")
-            .padding(8)
-            .sheet(isPresented: $presented) { HvfWindowInventoryPanel(session: session) }
-    }
-}
-
-@MainActor
-private struct HvfWindowInventoryPanel: View {
+struct HvfWindowInventoryPanel: View {
     @StateObject private var model: HvfWindowInventoryController
     @Environment(\.dismiss) private var dismiss
     init(session: HvfEngineSession) {

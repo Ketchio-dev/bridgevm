@@ -1,15 +1,24 @@
 #if canImport(AppKit)
 import SwiftUI
 
+/// The VM window's content. Nothing of the app's own sits over Windows but the notices and the
+/// paused overlay: the VM's actions, Guest windows included, are in the menu bar's 가상 머신 menu.
 struct HvfLiveDisplaySurface: View {
     @ObservedObject var session: HvfEngineSession
+    @ObservedObject var window: HvfDisplayWindowState
+
+    init(session: HvfEngineSession, window: HvfDisplayWindowState? = nil) {
+        _session = ObservedObject(wrappedValue: session)
+        _window = ObservedObject(wrappedValue: window ?? HvfDisplayWindowState(session: session))
+    }
 
     var body: some View {
         HvfFramebufferView(session: session)
             .background(Color.black)
             .overlay { HvfPausedDisplayOverlay(session: session) }
-            .overlay(alignment: .topTrailing) { HvfWindowInventoryButton(session: session) }
+            .overlay(alignment: .top) { HvfAgentSilenceStrip(notice: session.agentSilenceNotice) }
             .overlay(alignment: .bottom) { HvfFileDropNoticeView(drops: session.fileDrops) }
+            .sheet(isPresented: $window.showsWindowInventory) { HvfWindowInventoryPanel(session: session) }
     }
 }
 #endif
