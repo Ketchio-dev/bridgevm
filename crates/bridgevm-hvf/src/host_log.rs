@@ -85,6 +85,7 @@ mod tests {
     }
 
     /// What the regular file at `path` has allocated past its end.
+    #[cfg(target_os = "macos")]
     fn reserved(path: &std::path::Path) -> u64 {
         use std::os::unix::fs::MetadataExt;
         let meta = std::fs::metadata(path).unwrap();
@@ -95,6 +96,7 @@ mod tests {
     /// or a new probe generation on the same file, adds nothing while half is
     /// left. A pipe is left alone.
     #[test]
+    #[cfg(target_os = "macos")] // elsewhere reserve_tail reserves nothing, by design
     fn the_log_reservation_is_topped_up_to_its_size() {
         use std::io::Write as _;
         use std::os::fd::AsRawFd;
