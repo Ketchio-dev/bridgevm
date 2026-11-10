@@ -14,6 +14,9 @@ struct HvfNegotiatedInputStream {
     var modifierChords: Bool { state != .ready || capability?.modifierChords == true }
     /// Only a ready stream to an agent with the marker takes raw-unit scrolls; everything else gets notches.
     var scrollUnits: Bool { state == .ready && capability?.scrollUnits == true }
+    /// Held modifiers on a pointer action and the middle button likewise reach only an agent with their markers.
+    var pointerModifiers: Bool { state == .ready && capability?.pointerModifiers == true }
+    var middleButton: Bool { state == .ready && capability?.middleButton == true }
 
     mutating func enqueue(_ event: HvfOrderedInputQueue.Event, now: Date) -> Admission {
         switch state {

@@ -224,52 +224,69 @@ final class HvfEngineSession: ObservableObject {
         sendPointerAction(.click, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
-    @discardableResult func sendPointerPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> String {
-        sendPointerAction(.press, location: location, viewSize: viewSize, imageSize: imageSize)
+    /// `modifiers` are the guest modifiers held for the action (HvfHostKeyMapping.pointerModifiers); they reach
+    /// only an agent that takes them, and are dropped otherwise, as before.
+    @discardableResult func sendPointerPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize, modifiers: String = "") -> String {
+        sendPointerAction(.press, location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
     }
 
     func sendPointerMove(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
         sendPointerAction(.move, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
-    func sendPointerRelease(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
-        sendPointerAction(.release, location: location, viewSize: viewSize, imageSize: imageSize)
+    func sendPointerRelease(location: CGPoint, viewSize: CGSize, imageSize: CGSize, modifiers: String = "") {
+        sendPointerAction(.release, location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
     }
 
     func sendPointerRightClick(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
         sendPointerAction(.rightClick, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
-    func sendPointerRightPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
-        sendPointerAction(.rightPress, location: location, viewSize: viewSize, imageSize: imageSize)
+    func sendPointerRightPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize, modifiers: String = "") {
+        sendPointerAction(.rightPress, location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
+    }
+
+    /// Only for an agent that takes the middle button (`guestMiddleButton`); the release is the common one.
+    func sendPointerMiddlePress(location: CGPoint, viewSize: CGSize, imageSize: CGSize, modifiers: String = "") {
+        guard guestMiddleButton else { return }
+        sendPointerAction(.middlePress, location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
     }
 
     /// An agent that advertised SCROLL_UNITS gets raw wheel units on both axes; an older agent and the
     /// VMM's HID wheel get whole vertical notches. True when a scroll request was formed.
     @discardableResult
-    func sendPointerScroll(_ delta: HvfScrollAccumulator.Delta, location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> Bool {
+    func sendPointerScroll(_ delta: HvfScrollAccumulator.Delta, location: CGPoint, viewSize: CGSize, imageSize: CGSize,
+                           modifiers: String = "") -> Bool {
         guard !pause.holdsInput, let fit = HvfDisplayFit(viewSize: viewSize, imageSize: imageSize),
               let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return false }
         let units = inputDriver.router.scrollUnits
         guard let scroll = scrollAccumulator.add(delta, guestPixelsPerPoint: 1 / fit.scale, wholeNotches: !units) else { return false }
-        let at = "@\(point.x)x\(point.y)"
+        let at = "@\(point.x)x\(point.y)", held = heldModifiers(modifiers)
         if units {
-            _ = inputDriver.route(.pointer("scrollunits:\(scroll.vertical),\(scroll.horizontal)" + at), binding: inputBinding)
+            _ = inputDriver.route(.pointer("scrollunits:\(scroll.vertical),\(scroll.horizontal)" + at + held), binding: inputBinding)
             return true
         }
         let command = "scroll:\(scroll.vertical / HvfScrollAccumulator.notch)" + at
-        if inputDriver.route(.pointer(command), binding: inputBinding) == .legacy { appendLiveInput("POINTER " + command) }
+        if inputDriver.route(.pointer(command + held), binding: inputBinding) == .legacy { appendLiveInput("POINTER " + command) }
         return true
     }
 
     /// Returns where the event went (queued, legacy, refused or unmapped) for the display's diagnostic.
-    @discardableResult private func sendPointerAction(_ action: HvfPointerAction, location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> String {
+    @discardableResult private func sendPointerAction(_ action: HvfPointerAction, location: CGPoint, viewSize: CGSize, imageSize: CGSize,
+                                                      modifiers: String = "") -> String {
         guard !pause.holdsInput else { return "paused" }
         guard let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return "unmapped" }
         if action.mayMoveGuestFocus { cancelPendingPaste("pointer pressed") }
-        let admission = inputDriver.route(.pointer("\(action.orderedVerb):\(point.x)x\(point.y)"), binding: inputBinding)
+        let admission = inputDriver.route(.pointer("\(action.orderedVerb):\(point.x)x\(point.y)" + heldModifiers(modifiers)),
+                                          binding: inputBinding)
         if admission != .legacy { return admission == .queued ? "queued" : "refused-" + inputDriver.routeDiagnostic(attached: attachedToExistingProcess) }
         appendLiveInput("POINTER \(action.rawValue):\(point.x)x\(point.y)"); return "legacy-" + inputDriver.routeDiagnostic(attached: attachedToExistingProcess)
+    }
+
+    /// The `:<modifiers>` field for an agent that takes held modifiers on a pointer action, else nothing. Each
+    /// request presses and releases them itself, so a drag's press and release carry their own.
+    private func heldModifiers(_ modifiers: String) -> String {
+        modifiers.isEmpty || !inputDriver.router.pointerModifiers ? "" : ":" + modifiers
     }
 
     private func mappedPointer(_ location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> (x: UInt16, y: UInt16)? {
