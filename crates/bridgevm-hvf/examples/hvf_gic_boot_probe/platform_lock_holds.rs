@@ -14,8 +14,9 @@
 //! under the lock: one hold, the attempts it blocked, whether it lasted more
 //! than 20 ms (Windows' whole 20 ms cyclic buffer in T17 r92) and its length.
 //! A data-abort exit is charged by its target: NVMe, whose reads, writes and
-//! flushes run inside the exit; the TPM, whose commands are swtpm round trips;
-//! or any other device.
+//! flushes run inside the exit; virtio-gpu, whose 2D frame copies run inside
+//! a queue kick; the TPM, whose commands are swtpm round trips; or any other
+//! device.
 //!
 //! - Cost: a hold reads one atomic and the clock as it starts and the atomic
 //!   again as it ends. Only a hold that a tick found writes counters, so the
@@ -40,7 +41,7 @@ use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 use std::time::{Duration, Instant};
 
 use bridgevm_hvf::machine;
-use bridgevm_hvf::pcie::NVME_BDF;
+use bridgevm_hvf::pcie::{NVME_BDF, VIRTIO_GPU_BDF};
 
 use crate::{lock_with_optional_trace, SmpTrace, VirtPlatform};
 
@@ -107,6 +108,8 @@ impl HoldSite {
 pub(crate) enum Holder {
     PreRun,
     Nvme,
+    /// Any BAR of the virtio-gpu function.
+    Gpu,
     Tpm,
     Mmio,
     Automation,
@@ -115,9 +118,10 @@ pub(crate) enum Holder {
 }
 
 impl Holder {
-    pub(crate) const ALL: [Self; 6] = [
+    pub(crate) const ALL: [Self; 7] = [
         Self::PreRun,
         Self::Nvme,
+        Self::Gpu,
         Self::Tpm,
         Self::Mmio,
         Self::Automation,
@@ -128,6 +132,7 @@ impl Holder {
         match self {
             Self::PreRun => "prerun",
             Self::Nvme => "nvme",
+            Self::Gpu => "gpu",
             Self::Tpm => "tpm",
             Self::Mmio => "mmio",
             Self::Automation => "automation",
@@ -152,6 +157,7 @@ fn mmio_holder(ipa: u64, platform: &VirtPlatform) -> Holder {
     }
     match platform.pcie_mmio_target(ipa) {
         Some(target) if (target.bdf, target.bar_index) == (NVME_BDF, 0) => Holder::Nvme,
+        Some(target) if target.bdf == VIRTIO_GPU_BDF => Holder::Gpu,
         _ => Holder::Mmio,
     }
 }

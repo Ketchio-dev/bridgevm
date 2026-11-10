@@ -93,6 +93,12 @@ pub struct VirtioGpu {
     pub(crate) scanout_iosurface_dumped: bool,
     pub(crate) scanout_blit_count: u64,
     pub(crate) scanout_blit_nanoseconds: u64,
+    /// 2D copies without the platform lock (unlocked_copy.rs); off until a
+    /// live VMM enables it.
+    pub(crate) unlocked_copy: bool,
+    pub(crate) copy: CopyState,
+    /// Bumped by every device reset, so a copy that ran across one posts nothing.
+    pub(crate) copy_epoch: u64,
 }
 
 pub(crate) fn parse_resolution_env() -> (u32, u32) {
@@ -186,6 +192,9 @@ impl VirtioGpu {
             scanout_blit_nanoseconds: 0,
             scanout_readback_bytes: 0,
             scanout_readback_nanoseconds: 0,
+            unlocked_copy: false,
+            copy: CopyState::Idle,
+            copy_epoch: 0,
         };
         gpu.trace_device_init(false);
         gpu
@@ -212,6 +221,8 @@ impl VirtioGpu {
         // The renderer worker owns the readback buffer until it answers, so an
         // in-flight present must be collected before the device is torn down.
         self.finish_async_present();
+        // A copy running meanwhile (unlocked_copy.rs) belongs to the old device.
+        self.copy_epoch = self.copy_epoch.wrapping_add(1);
         // A device reset removes the active scanout, so it is safe to adopt a
         // host-requested mode that was still pending when the reset began.
         self.width = self.requested_width;

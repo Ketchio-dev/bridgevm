@@ -231,6 +231,10 @@ impl VirtioGpu {
         });
         let offset = read_le_u64(request, 40).unwrap_or(0);
         let resource_id = read_le_u32(request, 48).unwrap_or(0);
+        if self.queue_transfer(resource_id, rect, offset) {
+            response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, hdr);
+            return;
+        }
         let Some(resource) = self.resources.get_mut(&resource_id) else {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
             return;

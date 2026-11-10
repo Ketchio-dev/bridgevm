@@ -20,7 +20,10 @@ impl VirtioGpu {
         }
         self.width = width;
         self.height = height;
-        self.scanout.clear();
-        self.scanout.resize(scanout_len(width, height), 0);
+        // A new buffer, not `clear` + `resize`: those wrote every byte of the
+        // grown buffer under the platform lock, 1.4-1.5 ms at 3456x2234
+        // (SET_SCANOUT in the virtio-gpu trace). `vec![0; n]` is calloc, whose
+        // fresh pages are zeroed as the next flush, unlocked, first writes them.
+        self.scanout = vec![0; scanout_len(width, height)];
     }
 }

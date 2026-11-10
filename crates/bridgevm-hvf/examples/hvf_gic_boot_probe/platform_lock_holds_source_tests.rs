@@ -13,23 +13,30 @@ fn every_lock_site_beside_the_tick_holds_through_the_record() {
         "HoldSite::Mmio(ipa)",
         "HoldSite::Automation",
     ] {
-        // An MMIO exit holds twice when an NVMe doorbell queued reads or
+        // An MMIO exit holds again when an NVMe doorbell queued reads or
         // writes: around the doorbell, and after the unlocked transfer when
-        // the vCPU's worker finished it within the wait. A pause for a full
-        // Mac disk holds for its report and for the retry on RESUME.
+        // the vCPU's worker finished it within the wait. A virtio-gpu kick
+        // that queued a 2D copy holds again after the unlocked copy. A pause
+        // for a full Mac disk holds for its report and for the retry on RESUME.
         let sites = match site {
             "HoldSite::Automation" => 5,
-            "HoldSite::Mmio(ipa)" => 2,
+            "HoldSite::Mmio(ipa)" => 3,
             _ => 1,
         };
         assert_eq!(count(run, site), sites, "{site}");
     }
-    assert_eq!(count(run, "lock_platform("), 8);
+    assert_eq!(count(run, "lock_platform("), 9);
     assert_eq!(count(run, "nvme_io_worker.run(io, &"), 1);
+    assert_eq!(count(run, "drain_stats.run_gpu_copies("), 1);
     let secondary = include_str!("secondary_vcpu.rs");
-    assert_eq!(count(secondary, "lock_platform("), 2);
-    assert_eq!(count(secondary, "HoldSite::Mmio(ipa)"), 2);
+    assert_eq!(count(secondary, "lock_platform("), 3);
+    assert_eq!(count(secondary, "HoldSite::Mmio(ipa)"), 3);
     assert_eq!(count(secondary, "nvme_io_worker.run(io, &"), 1);
+    assert_eq!(count(secondary, "drain_stats.run_gpu_copies("), 1);
+    // The copy loop locks only through the caller's `lock_platform`.
+    let gpu = include_str!("gpu_unlocked_copy.rs");
+    assert_eq!(count(gpu, "lock();"), 1);
+    assert_eq!(count(gpu, ".lock()"), 0);
     let prepare = include_str!("interrupt_delivery/prepare.rs");
     assert_eq!(count(prepare, "lock_platform("), 2);
     assert_eq!(count(prepare, "HoldSite::PreRun"), 2);

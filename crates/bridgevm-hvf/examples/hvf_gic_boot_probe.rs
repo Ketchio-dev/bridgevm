@@ -192,6 +192,8 @@ mod cancel_stop;
 pub(crate) use cancel_stop::{cancel_stop_reason, stall_gic_report};
 #[path = "hvf_gic_boot_probe/display_checkpoints.rs"]
 mod display_checkpoints;
+#[path = "hvf_gic_boot_probe/gpu_unlocked_copy.rs"]
+mod gpu_unlocked_copy;
 #[path = "hvf_gic_boot_probe/guest_text.rs"]
 mod guest_text;
 #[path = "hvf_gic_boot_probe/open_file_limit.rs"]

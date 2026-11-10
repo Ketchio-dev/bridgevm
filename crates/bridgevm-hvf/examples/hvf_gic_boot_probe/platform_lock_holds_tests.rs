@@ -6,7 +6,9 @@
 use super::*;
 use bridgevm_hvf::dtb::VirtFdtConfig;
 use bridgevm_hvf::pcie;
-use bridgevm_hvf::platform_virt::{FlatGuestRam, MmioOp, MmioOutcome};
+use bridgevm_hvf::platform_virt::{
+    FlatGuestRam, MmioOp, MmioOutcome, VirtPlatformConfig, VirtPlatformDeviceConfig,
+};
 use std::collections::BTreeMap;
 use std::thread;
 
@@ -35,6 +37,37 @@ pub(crate) fn map_nvme(platform: &mut VirtPlatform) {
 fn nvme_platform() -> Mutex<VirtPlatform> {
     let mut platform = VirtPlatform::new(VirtFdtConfig::default());
     map_nvme(&mut platform);
+    Mutex::new(platform)
+}
+
+/// Where these tests map virtio-gpu's BAR4 (common config, ISR, notify).
+const GPU_BAR: u64 = machine::PCIE_MMIO_32.base + 0x80_000;
+
+/// A platform with virtio-gpu, its BAR4 at `GPU_BAR` and memory decode on.
+fn gpu_platform() -> Mutex<VirtPlatform> {
+    let mut platform = VirtPlatform::new_with_config(VirtPlatformConfig {
+        fdt: VirtFdtConfig::default(),
+        devices: VirtPlatformDeviceConfig {
+            virtio_gpu_present: true,
+            ..VirtPlatformDeviceConfig::default()
+        },
+    });
+    let mut mem = FlatGuestRam::new(machine::RAM_BASE, 0x1000);
+    let (_, device, function) = pcie::VIRTIO_GPU_BDF;
+    let function = (u64::from(device) << 15) | (u64::from(function) << 12);
+    let cfg = |reg: u16| machine::PCIE_ECAM.base + function + u64::from(reg);
+    let command = u64::from(pcie::CMD_MEMORY_SPACE);
+    for (address, size, value) in [
+        (cfg(pcie::REG_BAR0 + 4 * 4), 4, GPU_BAR),
+        (cfg(pcie::REG_BAR0 + 5 * 4), 4, 0),
+        (cfg(pcie::REG_COMMAND_STATUS), 2, command),
+    ] {
+        let op = MmioOp::Write { size, value };
+        assert_eq!(
+            platform.on_mmio(address, op, &mut mem),
+            MmioOutcome::WriteAck
+        );
+    }
     Mutex::new(platform)
 }
 
@@ -93,9 +126,30 @@ fn each_busy_attempt_is_charged_once_to_the_hold_it_found() {
     assert_eq!((fields["busy"], fields["unattributed"]), (7, 1));
     assert_eq!(holder(&fields, Holder::PreRun)[..2], [2, 5]);
     assert_eq!(holder(&fields, Holder::Automation)[..2], [1, 1]);
-    for other in [Holder::Nvme, Holder::Tpm, Holder::Mmio, Holder::Host] {
+    for other in [
+        Holder::Nvme,
+        Holder::Gpu,
+        Holder::Tpm,
+        Holder::Mmio,
+        Holder::Host,
+    ] {
         assert_eq!(holder(&fields, other), [0; 4], "{other:?}");
     }
+}
+
+#[test]
+fn a_virtio_gpu_exit_is_charged_to_gpu() {
+    let (holds, platform) = (PlatformHolds::new(), gpu_platform());
+    // The queue notify, where a 2D copy runs, and the common config.
+    for ipa in [GPU_BAR + 0x3000, GPU_BAR] {
+        hold_found(&holds, &platform, HoldSite::Mmio(ipa), 1);
+    }
+    // NVMe is not mapped on this platform: its address is any other device.
+    hold_found(&holds, &platform, HoldSite::Mmio(NVME_BAR), 1);
+    let fields = fields(&holds.record());
+    assert_eq!(holder(&fields, Holder::Gpu)[..2], [2, 2]);
+    assert_eq!(holder(&fields, Holder::Mmio)[..2], [1, 1]);
+    assert_eq!(holder(&fields, Holder::Nvme), [0; 4]);
 }
 
 #[test]
@@ -165,6 +219,7 @@ fn the_record_prints_every_holder_in_a_fixed_order() {
         "platform lock holds: busy=4 unattributed=1 \
          prerun_holds=0 prerun_busy=0 prerun_gt_20ms=0 prerun_max_us=0 \
          nvme_holds=0 nvme_busy=0 nvme_gt_20ms=0 nvme_max_us=0 \
+         gpu_holds=0 gpu_busy=0 gpu_gt_20ms=0 gpu_max_us=0 \
          tpm_holds=1 tpm_busy=2 tpm_gt_20ms=1 tpm_max_us=30500 \
          mmio_holds=0 mmio_busy=0 mmio_gt_20ms=0 mmio_max_us=0 \
          automation_holds=0 automation_busy=0 automation_gt_20ms=0 automation_max_us=0 \
@@ -186,7 +241,7 @@ fn storage_and_the_line_are_bounded_whatever_the_holds() {
     }
     let fields = fields(&holds.record());
     assert_eq!(holder(&fields, Holder::PreRun)[..2], [10_000, 10_000]);
-    // Every value at u64::MAX: 26 fields of at most 20 digits, under 1 KiB.
+    // Every value at u64::MAX: 30 fields of at most 20 digits, under 1 KiB.
     let widest = PlatformHolds::new();
     widest.busy.store(u64::MAX, SeqCst);
     for counts in &widest.holders {
@@ -202,8 +257,8 @@ fn storage_and_the_line_are_bounded_whatever_the_holds() {
             .iter()
             .map(|holder| 4 * holder.name().len() + "_holds_busy_gt_20ms_max_us".len())
             .sum::<usize>();
-    let bound = "platform lock holds:".len() + names + 26 * (" =".len() + 20);
-    assert_eq!(bound, 888);
+    let bound = "platform lock holds:".len() + names + 30 * (" =".len() + 20);
+    assert_eq!(bound, 1014);
     let record = widest.record();
     assert!(
         record.len() <= bound,

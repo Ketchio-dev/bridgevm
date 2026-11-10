@@ -24,6 +24,7 @@ use crate::boot_media_setup::attach_boot_media;
 use crate::final_report::persist_and_report_stop;
 use crate::gpu_shm_bar2::refresh_on_ecam_write;
 use crate::gpu_shm_setup::install_gpu_shm_port;
+use crate::gpu_unlocked_copy::configure_gpu_unlocked_copy;
 use crate::guest_ram_backing::GuestRamBacking;
 use crate::hvf_setup::{create_gic, create_vm};
 use crate::probe_config::ProbeConfig;
@@ -116,6 +117,7 @@ pub(crate) fn run() -> ExitCode {
         )
         .unwrap_or_else(|error| panic!("restore VM checkpoint: {error}"));
         install_gpu_shm_port(&mut platform);
+        configure_gpu_unlocked_copy(&mut platform);
         let platform = Arc::new(Mutex::new(platform));
         // Probe-lifetime instance, deliberately OUTSIDE the reboot loop: its
         // ticker thread keeps firing across guest reboots, and the SAME fired
@@ -573,7 +575,15 @@ pub(crate) fn run() -> ExitCode {
                                 ipa - machine::FW_CFG.base
                             );
                             }
-                            let (outcome, pending, device, pcie_target, pcie_context, nvme_io) = {
+                            let (
+                                outcome,
+                                pending,
+                                device,
+                                pcie_target,
+                                pcie_context,
+                                nvme_io,
+                                gpu_copy,
+                            ) = {
                                 let mut platform_guard = lock_platform(
                                     &platform,
                                     smp_trace.as_deref(),
@@ -643,7 +653,16 @@ pub(crate) fn run() -> ExitCode {
                                 // only after every secondary vCPU thread, and
                                 // so its worker, is joined (shutdown_and_join).
                                 let nvme_io = platform.take_nvme_io();
-                                (outcome, pending, device, pcie_target, pcie_context, nvme_io)
+                                let gpu_copy = platform.take_virtio_gpu_copy();
+                                (
+                                    outcome,
+                                    pending,
+                                    device,
+                                    pcie_target,
+                                    pcie_context,
+                                    nvme_io,
+                                    gpu_copy,
+                                )
                             };
                             recent_pcie_mmio.record_with_context(PcieMmioEventInput {
                                 device,
@@ -701,6 +720,26 @@ pub(crate) fn run() -> ExitCode {
                                         .stop_primary(&mut fatal_vcpu_run_error, &mut last_pc);
                                     break;
                                 }
+                            }
+                            // A virtio-gpu 2D copy runs here, unlocked; the
+                            // second hold posts it (gpu_unlocked_copy.rs).
+                            if let Err(error) = drain_stats.run_gpu_copies(
+                                gpu_copy,
+                                || {
+                                    lock_platform(
+                                        &platform,
+                                        smp_trace.as_deref(),
+                                        0,
+                                        HoldSite::Mmio(ipa),
+                                    )
+                                },
+                                &mut guest_ram,
+                                drain_trace,
+                                DrainContext::data_abort(exits, last_pc),
+                            ) {
+                                stop_reason =
+                                    error.stop_primary(&mut fatal_vcpu_run_error, &mut last_pc);
+                                break;
                             }
                             if trace_this_fwcfg {
                                 println!("FWCFG[{fwcfg_trace_count:03}] -> {outcome:?}");
