@@ -21,7 +21,11 @@ impl AgentConsoleHarness {
     /// child outliving that restart can still land late (not covered). A later
     /// CLIPSET OK re-advances the baseline, since that host copy overwrote it.
     pub(super) fn write_ctl_wire_line(&mut self, command: &str) -> bool {
-        write_command_wire_line_into(command, &mut self.service_line_scratch);
+        // A display verb the agent refused, or cannot take, goes as its RUN line.
+        match super::display_verbs::run_command(command, self.display_verbs_refused) {
+            Some(run) => write_command_wire_line_into(&run, &mut self.service_line_scratch),
+            None => write_command_wire_line_into(command, &mut self.service_line_scratch),
+        }
         if is_legacy_paste(command) {
             self.last_synced.rebaseline = true;
         }

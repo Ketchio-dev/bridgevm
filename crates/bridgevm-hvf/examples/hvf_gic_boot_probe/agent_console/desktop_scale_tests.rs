@@ -3,8 +3,8 @@
 
 use super::super::desktop_switch::tests::{decoded, service_harness};
 use super::super::desktop_switch::{
-    is_desktop_switch_command, request_desktop_mode, take_desktop_switch_command,
-    MAX_RUN_COMMAND_CHARS,
+    desktop_switch_run_command, is_desktop_switch_command, request_desktop_mode,
+    take_desktop_switch_command, MAX_RUN_COMMAND_CHARS,
 };
 use super::super::*;
 use super::*;
@@ -20,12 +20,12 @@ fn queued_switches(h: &AgentConsoleHarness) -> usize {
         .count()
 }
 
-/// The decoded scripts of the queued scale commands.
+/// The queued scale commands.
 fn queued_scales(h: &AgentConsoleHarness) -> Vec<String> {
     h.queue
         .iter()
         .filter_map(|req| match req {
-            ServiceReq::Ctl(c) if is_desktop_scale_command(c) => Some(decoded(c)),
+            ServiceReq::Ctl(c) if is_desktop_scale_command(c) => Some(c.clone()),
             _ => None,
         })
         .collect()
@@ -71,7 +71,7 @@ fn a_scale_waits_until_its_switch_is_done() {
     h.service_enqueue(now);
     let scales = queued_scales(&h);
     assert_eq!(scales.len(), 1, "once");
-    assert!(scales[0].ends_with("[BvS]::Run(200)"));
+    assert_eq!(scales[0], "DISPLAYSCALE 200");
 }
 
 #[test]
@@ -92,7 +92,7 @@ fn every_switch_sets_the_latest_scale_again() {
     h.service_enqueue(now);
     let scales = queued_scales(&h);
     assert_eq!(scales.len(), 1);
-    assert!(scales[0].ends_with("[BvS]::Run(200)"));
+    assert_eq!(scales[0], "DISPLAYSCALE 200");
 }
 
 #[test]
@@ -118,7 +118,7 @@ fn a_switch_requested_meanwhile_goes_first_and_the_newest_scale_wins() {
     h.service_enqueue(now);
     let scales = queued_scales(&h);
     assert_eq!(scales.len(), 1);
-    assert!(scales[0].ends_with("[BvS]::Run(175)"));
+    assert_eq!(scales[0], "DISPLAYSCALE 175");
 
     // A scale still queued when a new switch comes would set the old monitor;
     // it moves behind the switch.
@@ -150,24 +150,33 @@ fn requests_while_a_scale_runs_give_exactly_one_follow_up() {
     h.service_enqueue(now);
     let scales = queued_scales(&h);
     assert_eq!(scales.len(), 1, "exactly one follow-up");
-    assert!(scales[0].ends_with("[BvS]::Run(175)"));
+    assert_eq!(scales[0], "DISPLAYSCALE 175");
     assert!(!has_requested_scale());
 }
 
 #[test]
 fn the_script_sets_the_virtio_display_scale_only_when_it_differs() {
     for percent in DESKTOP_SCALES {
-        let command = desktop_scale_command(percent);
+        assert_eq!(
+            desktop_scale_command(percent),
+            format!("DISPLAYSCALE {percent}")
+        );
+        let command = desktop_scale_run_command(percent);
         assert!(command.len() <= 8_156, "{} chars", command.len());
         assert!(command.len() <= MAX_RUN_COMMAND_CHARS);
-        assert!(is_desktop_scale_command(&command));
-        assert!(!is_desktop_switch_command(&command));
+        for command in [command, desktop_scale_command(percent)] {
+            assert!(is_desktop_scale_command(&command));
+            assert!(!is_desktop_switch_command(&command));
+        }
     }
     request_desktop_mode((1517, 931));
     let switch = take_desktop_switch_command().expect("requested");
     assert!(!is_desktop_scale_command(&switch));
+    assert!(!is_desktop_scale_command(&desktop_switch_run_command(
+        1517, 931
+    )));
 
-    let script = decoded(&desktop_scale_command(200));
+    let script = decoded(&desktop_scale_run_command(200));
     let ladder = DESKTOP_SCALES.map(|p| p.to_string()).join(",");
     for needle in [
         format!("static int[] L={{{ladder}}};"),

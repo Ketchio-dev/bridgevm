@@ -18,6 +18,10 @@
 //! display is switched directly, as before. The script prints one
 //! `BVDISPLAY` line.
 //!
+//! The request goes to the agent as `DISPLAYMODE W H`, which runs this C#
+//! compiled once in the agent process, and as this RUN powershell line to an
+//! agent without that verb (display_verbs.rs).
+//!
 //! Only the latest request is kept: requests made before the agent's service
 //! starts become one command at `BVAGENT SERVICE start`, a queued switch takes
 //! the newest size, and requests made while one runs give one follow-up. The
@@ -44,7 +48,8 @@ const POWERSHELL: &str = "powershell -NoProfile -NonInteractive -EncodedCommand 
 /// 840 bytes (name at 4, StateFlags 324, DeviceID 328). Display-config paths
 /// are 72 bytes (target mode index at 32), modes 64 (type at 0, source mode
 /// width/height at 16/20). No line breaks: they would only cost length.
-const SCRIPT_BODY: &str = concat!(
+/// bvagent.ps1 holds the same C#, one piece per line (display_verbs_tests.rs).
+pub(super) const SCRIPT_BODY: &str = concat!(
     r#"Add-Type -TypeDefinition '"#,
     r#"using System;using System.Collections.Generic;using System.Runtime.InteropServices;using System.Threading;"#,
     r#"[module:DefaultCharSet(CharSet.Unicode)]public static class BvD{const string U="user32.dll";"#,
@@ -121,9 +126,11 @@ pub(super) fn take_desktop_switch_command() -> Option<String> {
     (mode != 0).then(|| desktop_switch_command((mode >> 32) as u32, mode as u32))
 }
 
-/// Whether `command` is a switch built here, whatever its size.
+/// Whether `command` is a switch built here, whatever its size: the verb or
+/// its RUN powershell line.
 pub(super) fn is_desktop_switch_command(command: &str) -> bool {
-    command.starts_with(command_head())
+    command.split(' ').next() == Some(super::display_verbs::MODE_VERB)
+        || command.starts_with(command_head())
 }
 
 fn command_head() -> &'static str {
@@ -153,6 +160,11 @@ pub(super) fn powershell_command(script: &str) -> String {
 }
 
 fn desktop_switch_command(width: u32, height: u32) -> String {
+    format!("{} {width} {height}", super::display_verbs::MODE_VERB)
+}
+
+/// The RUN powershell line for a switch, for an agent without `DISPLAYMODE`.
+pub(super) fn desktop_switch_run_command(width: u32, height: u32) -> String {
     powershell_command(&format!("{SCRIPT_BODY}[BvD]::Run({width},{height})"))
 }
 

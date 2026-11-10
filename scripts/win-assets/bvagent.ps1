@@ -162,6 +162,111 @@ function Get-InputCapabilities([string]$Request) {
     }
 }
 
+# >>> display verbs (DISPLAYMODE <w> <h>, DISPLAYSCALE <p>)
+# The probe's desktop switch and display scale (agent_console desktop_switch.rs
+# and desktop_scale.rs) came as RUN powershell lines, and each paid a process
+# start and a C# compile: about 0.7 s of every live resize, twice with a scale.
+# These verbs run the same C#, compiled once in this process on first use. The
+# sources below are the probe's SCRIPT_BODY, one concat! piece per line, and
+# its display_verbs_tests.rs keeps them identical. Each Run starts with a fresh
+# Scan (or path query), so a resident class behaves as a new process did. The
+# reply is framed like a RUN's, OUT 0 <b64(line + CRLF)>, the CRLF Out-String
+# added, so run.log keeps the same BVDISPLAY and BVDPI lines. ERR <verb>
+# args|unavailable|failed (details in the log) makes the host use RUN instead.
+$script:BvDisplaySource = @{
+    'DISPLAYMODE' = @'
+using System;using System.Collections.Generic;using System.Runtime.InteropServices;using System.Threading;
+[module:DefaultCharSet(CharSet.Unicode)]public static class BvD{const string U="user32.dll";
+[DllImport(U)]static extern bool EnumDisplayDevicesW(string d,int i,byte[] b,int f);
+[DllImport(U)]static extern bool EnumDisplaySettingsW(string d,int i,byte[] m);
+[DllImport(U)]static extern int ChangeDisplaySettingsExW(string d,byte[] m,IntPtr w,int f,IntPtr l);
+[DllImport(U)]static extern int QueryDisplayConfig(int f,ref int p,byte[] a,ref int m,byte[] b,IntPtr t);
+[DllImport(U)]static extern int SetDisplayConfig(int p,byte[] a,int m,byte[] b,int f);
+static string V,Pr;static bool A;static List<string> O;
+static int G(byte[] b,int o){return BitConverter.ToInt32(b,o);}
+static void P(byte[] b,int o,int v){BitConverter.GetBytes(v).CopyTo(b,o);}
+static string T(byte[] b,int o,int n){return System.Text.Encoding.Unicode.GetString(b,o,n).Split((char)0)[0];}
+static byte[] M(string d,int i){var m=new byte[220];m[68]=220;return EnumDisplaySettingsW(d,i,m)?m:null;}
+static string S(string d){var m=M(d,-1);return m==null?"none":G(m,172)+"x"+G(m,176);}
+static int C(string d,byte[] m,int f){return ChangeDisplaySettingsExW(d,m,IntPtr.Zero,f,IntPtr.Zero);}
+static void Scan(){V=null;Pr="none";A=false;O=new List<string>();
+for(int i=0;;i++){var b=new byte[840];P(b,0,840);if(!EnumDisplayDevicesW(null,i,b,0))return;
+string n=T(b,4,64);int f=G(b,324);
+if(V==null&&T(b,328,256).Contains("VEN_1AF4&DEV_1050")){V=n;A=(f&1)!=0;}else if((f&1)!=0)O.Add(n);
+if((f&4)!=0)Pr=n;}}
+static string Force(int w,int h){string s="";for(int k=A&&O.Count==0?0:1;k<2;k++){int p=16,m=32;
+var a=new byte[p*72];var b=new byte[m*64];QueryDisplayConfig(2,ref p,a,ref m,b,IntPtr.Zero);
+if(k==0){for(int i=0;i<m;i++)if(G(b,i*64)==1){P(b,i*64+16,w);P(b,i*64+20,h);}for(int i=0;i<p;i++)P(a,i*72+32,-1);}
+int r=SetDisplayConfig(p,a,m,b,0x80|0x20|0x400|0x1000);s+=r+";";if(r==0)break;}return s;}
+public static string Run(int w,int h){
+Scan();string t=V,want=w+"x"+h,before=S(t),res="not_listed",force="none",lay="none";var det=new List<string>();
+var cur=V!=null&&A?M(V,-1):null;
+if(cur!=null&&O.Count>0){P(cur,72,0x20);P(cur,76,0);P(cur,80,0);lay=""+C(V,cur,0x10000011);
+foreach(var o in O){var z=new byte[220];z[68]=220;P(z,72,0x180020);det.Add(o+"="+C(o,z,0x10000001));}
+lay+="/"+C(null,null,0);Scan();}
+var end=DateTime.Now.AddSeconds(10);
+if(t==null){res="0";if(S(t)!=want){var m=M(null,-1);P(m,72,0x180000);P(m,172,w);P(m,176,h);res=""+C(null,m,1);}}
+else while(true){byte[] f=null;for(int n=0;f==null;n++){var m=M(t,n);if(m==null)break;if(G(m,172)==w&&G(m,176)==h)f=m;}
+res=f==null?"not_listed":""+C(t,f,1);if(res=="0"&&S(t)==want||DateTime.Now>end)break;
+force=Force(w,h);Thread.Sleep(400);}
+Scan();
+return "BVDISPLAY target="+want+" before="+before+" after="+S(t)+" primary="+Pr+" layout="+lay+" detached="+(det.Count==0?"none":string.Join(",",det))+" force="+force+" result="+res;}}
+'@
+    'DISPLAYSCALE' = @'
+using System;using System.Runtime.InteropServices;
+public static class BvS{const string U="user32.dll";
+[DllImport(U)]static extern int QueryDisplayConfig(int f,ref int p,byte[] a,ref int m,byte[] b,IntPtr t);
+[DllImport(U)]static extern int DisplayConfigGetDeviceInfo(byte[] r);
+[DllImport(U)]static extern int DisplayConfigSetDeviceInfo(byte[] r);
+static int[] L={100,125,150,175,200,225,250,300,350,400,450,500};static byte[] S=new byte[12];
+static int G(byte[] b,int o){return BitConverter.ToInt32(b,o);}
+static byte[] Q(int t,int n){var r=new byte[n];BitConverter.GetBytes(t).CopyTo(r,0);BitConverter.GetBytes(n).CopyTo(r,4);S.CopyTo(r,8);return r;}
+static int[] D(){var r=Q(-3,32);return DisplayConfigGetDeviceInfo(r)==0?new[]{G(r,20),G(r,24),G(r,28)}:null;}
+static int X(int i){return L[Math.Max(0,Math.Min(i,L.Length-1))];}
+public static string Run(int w){int p=16,m=32;var a=new byte[p*72];var b=new byte[m*64];bool v=false;
+if(QueryDisplayConfig(2,ref p,a,ref m,b,IntPtr.Zero)==0)for(int i=0;i<p&&!v;i++){Array.Copy(a,i*72,S,0,12);var r=Q(4,276);
+v=DisplayConfigGetDeviceInfo(r)==0&&System.Text.Encoding.Unicode.GetString(r,20,256).ToUpperInvariant().Contains("VEN_1AF4&DEV_1050");}
+var d=v?D():null;
+if(d==null)return "BVDPI target="+w+" before=none after=none rec=none max=none result="+(v?"get_failed":"no_display");
+int z=-d[0],k=d[1],t=Math.Max(0,Math.Min(Array.IndexOf(L,w),z+d[2]));string res="0";
+if(t-z!=k){var r=Q(-4,24);BitConverter.GetBytes(t-z).CopyTo(r,20);res=""+DisplayConfigSetDeviceInfo(r);}
+var e=D();
+return "BVDPI target="+w+" before="+X(z+k)+" after="+(e==null?"none":""+X(z+e[1]))+" rec="+X(z)+" max="+X(z+d[2])+" result="+res;}}
+'@
+}
+$script:BvDisplayReady = @{}
+$script:BvDisplayScales = @('100', '125', '150', '175', '200', '225', '250', '300', '350', '400', '450', '500')
+# $Call stands in for the native Run in the contract (scripts/test-bvagent-display-verbs.ps1).
+function Invoke-BvDisplay([string]$Verb, [string]$Arg, [scriptblock]$Call = $null) {
+    $values = $null
+    if ($Verb -ceq 'DISPLAYMODE' -and $Arg -cmatch '^([1-9][0-9]{2,4}) ([1-9][0-9]{2,4})\z') {
+        $width = [int]$Matches[1]; $height = [int]$Matches[2]
+        if ($width -ge 320 -and $width -le 16384 -and $height -ge 320 -and $height -le 16384) { $values = @($width, $height) }
+    } elseif ($Verb -ceq 'DISPLAYSCALE' -and $script:BvDisplayScales -ccontains $Arg) {
+        $values = @([int]$Arg)
+    }
+    if ($null -eq $values) { return "ERR $Verb args" }
+    if ($null -eq $script:BvDisplayReady[$Verb]) {
+        try {
+            Add-Type -TypeDefinition $script:BvDisplaySource[$Verb] -ErrorAction Stop
+            $script:BvDisplayReady[$Verb] = $true
+        } catch {
+            $script:BvDisplayReady[$Verb] = $false
+            Log ("$Verb compile failed: " + $_.Exception.Message)
+        }
+    }
+    if (-not $script:BvDisplayReady[$Verb]) { return "ERR $Verb unavailable" }
+    try {
+        if ($null -eq $Call) {
+            $Call = if ($Verb -ceq 'DISPLAYMODE') { { param($v) [BvD]::Run($v[0], $v[1]) } } else { { param($v) [BvS]::Run($v[0]) } }
+        }
+        return @{ Exit = 0; Out = ([string](& $Call $values)) + "`r`n" }
+    } catch {
+        Log ("$Verb failed: " + $_.Exception.Message)
+        return "ERR $Verb failed"
+    }
+}
+
 function Gle { return [System.Runtime.InteropServices.Marshal]::GetLastWin32Error() }
 
 # CreateFile access rights as EXPLICIT [uint32] decimals. PowerShell 5.1 parses
@@ -1478,6 +1583,11 @@ while ($true) {
                     $hw = [IntPtr][long]$arg
                     if ($null -ne $W -and $W::PostMessage($hw, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)) { Write-Line $h 'OK WINCLOSE' 'OK' }
                     else { Write-Line $h 'ERR WINCLOSE' 'ERR' }
+                }
+                { $_ -cin @('DISPLAYMODE', 'DISPLAYSCALE') } {
+                    # The resident desktop switch and display scale (Invoke-BvDisplay).
+                    $r = Invoke-BvDisplay $tok $arg
+                    if ($r -is [string]) { Write-Line $h $r 'ERR' } else { Write-CommandResult $h $r }
                 }
                 'RUN'  { $r = Invoke-B64 $arg $false; Write-CommandResult $h $r }
                 'PS'   { $r = Invoke-B64 $arg $true;  Write-CommandResult $h $r }

@@ -391,6 +391,8 @@ impl AgentConsoleHarness {
     pub(super) fn note_agent_ready(&mut self, rest: &str, now: Instant) {
         self.put_data = ready_has_put_data(rest);
         self.share_big = ready_has_big_files(rest);
+        // A new agent process may have the display verbs (an update brings them).
+        self.display_verbs_refused = false;
         if let Some(share) = self.share.as_mut() {
             let limit = (!self.share_big).then_some(harness_protocol::MAX_AGENT_GET_BYTES as u64);
             share.engine.set_whole_file_limit(limit);
