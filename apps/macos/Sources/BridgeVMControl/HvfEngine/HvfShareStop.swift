@@ -27,8 +27,8 @@ extension HvfShareRootNotice {
                         "원래 폴더의 연결을 확인하세요. 다른 폴더를 쓰려면 VM을 종료한 뒤 다시 선택하세요.")
             }
             if let lowSpace {
-                let files = lowSpace.count == 1 ? "'\(lowSpace.last)'" : "'\(lowSpace.last)' 외 \(lowSpace.count - 1)개"
-                return ("Mac 디스크 공간이 부족해 \(files)을(를) 공유 폴더로 가져오지 않았습니다.",
+                let files = lowSpace.count == 1 ? "'\(lowSpace.last)'을(를)" : "'\(lowSpace.last)' 외 \(lowSpace.count - 1)개를"
+                return ("Mac 디스크 공간이 부족해 \(files) 공유 폴더로 가져오지 않았습니다.",
                         "공간을 확보하면 다시 가져옵니다.")
             }
             guard let tooLarge else { return nil }
@@ -49,13 +49,45 @@ struct HvfShareTooLarge: Equatable {
     static func name(in line: String) -> String? { hvfShareSkippedName(in: line, reason: "too-large") }
 }
 
-/// A large Windows file the Mac had no room for: its size plus 2 GiB must be free
-/// (`BVAGENT SHARE skip <name> low-space <bytes>`). The runtime asks again at each guest listing.
+/// Windows files the Mac had no room for and that have not reached it since
+/// (`BVAGENT SHARE skip <name> low-space <bytes>`): a large file needs its size plus 2 GiB free,
+/// and any write the Mac refuses for want of space is reported too. The runtime asks again at each
+/// guest listing and reports each version once; a file counts once until it arrives.
 struct HvfShareLowSpace: Equatable {
-    let count: Int
-    let last: String
+    /// Each waiting file, and when it was last reported (a running number).
+    private var waiting: [String: Int]
+    private var reports = 0
+    /// The most recently reported file still waiting.
+    private(set) var last: String
+    var count: Int { waiting.count }
+
+    init(_ name: String) {
+        waiting = [name: 0]
+        last = name
+    }
 
     static func name(in line: String) -> String? { hvfShareSkippedName(in: line, reason: "low-space") }
+
+    func reported(_ name: String) -> Self {
+        var next = self
+        next.reports += 1
+        next.waiting[name] = next.reports
+        next.last = name
+        return next
+    }
+
+    func isWaiting(for name: String) -> Bool { waiting[name] != nil }
+
+    /// Without `name`, which reached the Mac; nil once no file is left waiting.
+    func arrived(_ name: String) -> Self? {
+        var next = self
+        next.waiting[name] = nil
+        guard !next.waiting.isEmpty else { return nil }
+        if name == last, let newest = next.waiting.max(by: { $0.value < $1.value }) {
+            next.last = newest.key
+        }
+        return next
+    }
 }
 
 /// The name in `BVAGENT SHARE skip <name> <reason> <ASCII digits>`.

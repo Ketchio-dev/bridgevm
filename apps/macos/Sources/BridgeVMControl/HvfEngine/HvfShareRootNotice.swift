@@ -7,9 +7,12 @@ final class HvfShareRootNotice: ObservableObject {
     @Published private(set) var stopped: HvfShareStop?
     /// Files the runtime left out for being over the size limit, this run.
     @Published private(set) var tooLarge: HvfShareTooLarge?
-    /// Windows files left on the guest because the Mac had too little space for them, this run.
+    /// Windows files left on the guest because the Mac had too little space for them, until they
+    /// arrive.
     @Published private(set) var lowSpace: HvfShareLowSpace?
     func consume(_ event: BvAgentEvent) {
+        // A whole file's arrival; a large one logs this line too.
+        if case let .shareEvent(.guestToHost, name, _, _) = event { return arrived(name) }
         guard case let .unknown(raw) = event else { return }
         let line = raw.hasSuffix("\r") ? String(raw.dropLast()) : raw
         switch line {
@@ -22,9 +25,17 @@ final class HvfShareRootNotice: ObservableObject {
             } else if let name = HvfShareTooLarge.name(in: line) {
                 tooLarge = HvfShareTooLarge(count: (tooLarge?.count ?? 0) + 1, last: name)
             } else if let name = HvfShareLowSpace.name(in: line) {
-                lowSpace = HvfShareLowSpace(count: (lowSpace?.count ?? 0) + 1, last: name)
+                lowSpace = lowSpace?.reported(name) ?? HvfShareLowSpace(name)
+            } else if let file = BvAgentEvent.shareFile(in: line, after: "BVAGENT SHARE transfer-done guest->host ") {
+                arrived(file.name)
             }
         }
+    }
+
+    /// `name` reached the Mac. Every synced file says so: only a waiting one changes the notice.
+    private func arrived(_ name: String) {
+        guard let lowSpace, lowSpace.isWaiting(for: name) else { return }
+        self.lowSpace = lowSpace.arrived(name)
     }
 
     func reset() {
