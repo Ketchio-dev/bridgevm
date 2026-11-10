@@ -1,5 +1,8 @@
 /// A coordinate move and wheel insertion belong to one acknowledged request.
 enum HvfPointerScrollEncoding {
+    /// The agent's bound on each axis of one `scrollunits:` request (ten notches).
+    static let maxUnits = 1_200
+
     static func eventCount(_ command: String) -> Int? {
         if command.hasPrefix("scrollunits:") { return unitsEventCount(command) }
         guard command.hasPrefix("scroll:"), command.utf8.count <= 64 else { return nil }
@@ -18,7 +21,7 @@ enum HvfPointerScrollEncoding {
         guard parts.count == 2 else { return nil }
         let fields = parts[0].split(separator: ",", omittingEmptySubsequences: false)
         let axes = fields.compactMap { field in
-            Int(field).flatMap { String($0) == field && abs($0) <= HvfScrollAccumulator.maxUnitsPerEvent ? $0 : nil }
+            Int(field).flatMap { String($0) == field && abs($0) <= maxUnits ? $0 : nil }
         }
         guard fields.count == 2, axes.count == 2, axes != [0, 0],
               HvfPointerInputEncoding.eventCount("move:" + parts[1]) == 1 else { return nil }

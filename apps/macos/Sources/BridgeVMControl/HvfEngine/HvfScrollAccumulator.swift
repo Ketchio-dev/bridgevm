@@ -25,7 +25,7 @@ struct HvfScrollAccumulator {
     static let unitsPerLine = 120.0
     static let notch = 120
     /// Per axis per event (ten notches); the excess of a larger delta is dropped, not carried over.
-    static let maxUnitsPerEvent = 1_200
+    static let maxUnitsPerEvent = HvfPointerScrollEncoding.maxUnits
 
     private var vertical = 0.0, horizontal = 0.0
 
