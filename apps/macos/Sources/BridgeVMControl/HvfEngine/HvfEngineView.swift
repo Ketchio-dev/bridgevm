@@ -133,10 +133,7 @@ struct HvfEngineView: View {
                 pathRow("UEFI vars", text: $uefiVarsPath, chooseDirectory: false)
                 HvfDiskSizeSetting(session: session, config: session.config)
                 HStack(spacing: 24) {
-                    Stepper("RAM \(ramMiB) MiB", value: $ramMiB, in: 1024...65_536, step: 1024)
-                        .font(.body.monospaced())
-                    Stepper("CPU \(smpCpus)", value: $smpCpus, in: HvfEngineConfig.supportedCPURange)
-                        .font(.body.monospaced())
+                    HvfResourceSetting(session: session, ramMiB: $ramMiB, cpus: $smpCpus)
                     Spacer()
                 }
                 HStack(spacing: 18) {

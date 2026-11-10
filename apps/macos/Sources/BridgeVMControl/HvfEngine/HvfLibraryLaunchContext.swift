@@ -7,6 +7,12 @@ struct HvfLibraryLaunchContext: Equatable {
 
 
 }
+
+extension VMConfig {
+    /// The RAM and CPUs a library HVF start uses; vm.json may leave them out.
+    var hvfRAMMiB: Int { memMiB ?? 6144 }
+    var hvfCPUs: Int { cpuCount ?? 4 }
+}
 extension HvfEngineConfig {
     /// The 2D virtio-gpu rides on a guest with the signed display driver and 3D off.
     static func virtioGpu2d(for config: VMConfig) -> Bool {
@@ -24,8 +30,8 @@ extension HvfEngineConfig {
             uefiVarsPath: config.bundlePath + "/metadata/hvf-vars.fd",
             evidenceDir: evidenceDir,
             watchdogMs: nil,
-            ramMiB: config.memMiB ?? 6144,
-            smpCpus: config.cpuCount ?? 4,
+            ramMiB: config.hvfRAMMiB,
+            smpCpus: config.hvfCPUs,
             clipboardSync: config.clipboardSyncEnabled ?? true,
             shareHostDir: config.sharedFolderHostPath,
             shareGuestDir: config.sharedFolderGuestPath,
