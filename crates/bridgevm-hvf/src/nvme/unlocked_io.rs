@@ -18,6 +18,13 @@
 //! write-cache-off WRITE goes on to the flush worker's sync from there and
 //! completes after it, as inline.
 //!
+//! A Dataset Management Deallocate (Windows' TRIM, dataset_management.rs)
+//! goes the same way under the same conditions: inline, the punches of one
+//! 1 GiB delete held the lock for 12-27 ms. The doorbell reads and checks its
+//! range list under the lock, so an invalid one completes inline with its
+//! error, and the job only punches. A WRITE fetched while a punch is in flight
+//! and overlapping it runs after it (punch_order.rs); nothing else is ordered.
+//!
 //! Taking the jobs is `unsafe` ([`NvmeController::take_io`]): they run, on
 //! another thread and after the lock is dropped, through the raw host pointers
 //! that the running memory view's `host_ptr` returns, so the caller promises
@@ -37,19 +44,39 @@ use std::io;
 use std::os::fd::{AsRawFd, RawFd};
 use std::sync::Arc;
 
+use super::dataset_management::punch_unlocked;
 use super::flush_worker::{Finished, FlushJob, Shared};
+use super::punch_order::Punch;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 
-/// One READ or WRITE, checked under the platform lock.
+/// One READ, WRITE or Deallocate, checked under the platform lock.
 pub(crate) struct IoJob {
     done: FlushJob,
     file: Arc<File>,
-    write: bool,
+    kind: Kind,
     sync_next: bool,
     offset: u64,
     /// Guest-physical address and length of each contiguous segment.
     segments: Vec<(u64, usize)>,
+}
+
+enum Kind {
+    Read,
+    /// `after`: the punches in flight at its fetch that it overlaps; it runs
+    /// once they returned. Empty, without allocating, while none is in flight.
+    Write { after: Vec<Arc<Punch>> },
+    Deallocate(PunchJob),
+}
+
+/// A Deallocate job's punch, finished as soon as it returns, or when the job
+/// is dropped unrun: a WRITE waiting for it never waits forever.
+struct PunchJob(Arc<Punch>);
+
+impl Drop for PunchJob {
+    fn drop(&mut self) {
+        self.0.finish();
+    }
 }
 
 impl IoJob {
@@ -58,13 +85,14 @@ impl IoJob {
     /// straight to and from the mapped pages, as DMA would.
     fn transfer(&self, mem: &dyn GuestMemoryMut) -> u16 {
         let fd = self.file.as_raw_fd();
+        let write = matches!(self.kind, Kind::Write { .. });
         let mut offset = self.offset;
         for &(gpa, len) in &self.segments {
             let Some(ptr) = mem.host_ptr(gpa, len) else {
                 return SC_INVALID_FIELD;
             };
             // A full disk holds the WRITE (disk_full.rs); a READ never finds it.
-            if let Err(error) = copy_all(fd, ptr, len, offset, self.write) {
+            if let Err(error) = copy_all(fd, ptr, len, offset, write) {
                 return host_failure(&error, SC_INVALID_FIELD);
             }
             offset += len as u64;
@@ -110,7 +138,7 @@ fn copy_all(fd: RawFd, ptr: *mut u8, len: usize, offset: u64, write: bool) -> io
     Ok(())
 }
 
-/// The READs and WRITEs a doorbell queued, from the `unsafe`
+/// The READs, WRITEs and Deallocates a doorbell queued, from the `unsafe`
 /// [`NvmeController::take_io`] only. Run them after dropping the platform
 /// lock, on the vCPU's [`NvmeIoWorker`](super::NvmeIoWorker); the next drain
 /// under the lock posts their completions.
@@ -123,11 +151,24 @@ pub struct NvmeIo {
 }
 
 impl NvmeIo {
-    /// Run the transfers in order and publish their results. `mem` is the
-    /// calling thread's view of the guest RAM the doorbell checked them in.
+    /// Run the jobs in order and publish their results. `mem` is the calling
+    /// thread's view of the guest RAM the doorbell checked them in. A punch
+    /// waits for nothing; a WRITE first waits, here, for the punches under it.
     pub fn run(mut self, mem: &dyn GuestMemoryMut) {
         let jobs = std::mem::take(&mut self.jobs);
         self.publish(jobs, |job| {
+            let after = match &job.kind {
+                Kind::Deallocate(PunchJob(punch)) => {
+                    let status = punch_unlocked(&job.file, &punch.ranges);
+                    punch.finish();
+                    return status;
+                }
+                Kind::Write { after } => &after[..],
+                Kind::Read => &[],
+            };
+            for punch in after {
+                punch.wait();
+            }
             #[cfg(test)]
             self.gate.pass();
             job.transfer(mem)
@@ -167,10 +208,10 @@ impl NvmeController {
         self.unlocked_io = enabled;
     }
 
-    /// Queue an I/O-queue READ or WRITE to run without the platform lock.
-    /// `false` leaves it to the inline path, which reports any error: unlocked
-    /// I/O off, not a write-back raw file, no host pointers, or an invalid
-    /// range or PRP list.
+    /// Queue an I/O-queue READ, WRITE or Deallocate to run without the
+    /// platform lock. `false` leaves it to the inline path, which reports any
+    /// error: unlocked I/O off, not a write-back raw file, no host pointers,
+    /// an invalid range, PRP list or range list, or nothing to deallocate.
     pub(crate) fn defer_io(
         &mut self,
         sqid: u16,
@@ -181,16 +222,11 @@ impl NvmeController {
         let write = match cmd.opcode {
             NVM_OP_READ => false,
             NVM_OP_WRITE => true,
+            NVM_OP_DATASET_MANAGEMENT => return self.defer_deallocate(sqid, cqid, cmd, mem),
             _ => return false,
         };
-        if !self.unlocked_io || sqid == 0 || !self.direct_dma_enabled {
+        let Some((file, byte_len)) = self.unlocked_file(sqid, cmd.nsid) else {
             return false;
-        }
-        let (file, byte_len) = match self.backend_for_nsid(cmd.nsid) {
-            Some(DiskBackend::RawFile(disk)) if disk.write_back => {
-                (Arc::clone(&disk.file), disk.len)
-            }
-            _ => return false,
         };
         let Some((offset, len)) = transfer_range(cmd, byte_len) else {
             return false;
@@ -213,23 +249,81 @@ impl NvmeController {
         let Some(segments) = job_segments else {
             return false;
         };
+        let kind = if !write {
+            Kind::Read
+        } else if self.punches.is_empty() {
+            // The WRITE path's only cost for deferred punches.
+            Kind::Write { after: Vec::new() }
+        } else {
+            let after = self.punches_under(cmd.nsid, offset, offset + len as u64);
+            Kind::Write { after }
+        };
         let sync_next = write && self.write_needs_sync(cmd);
-        let worker = self.flush_worker.get_or_insert_with(FlushWorker::default);
-        worker.in_flight += 1;
-        worker.io.push(IoJob {
+        self.queue_io(IoJob {
             done: FlushJob::io(sqid, cqid, *cmd),
             file,
-            write,
+            kind,
             sync_next,
             offset,
             segments,
         });
-        self.hold_completion_slot(cqid);
         true
     }
 
-    /// The READs and WRITEs queued since the last call, for the doorbell vCPU
-    /// to run once it has dropped the platform lock.
+    /// A Deallocate whose range list checks out, under a WRITE's conditions:
+    /// listed as in flight (punch_order.rs) and queued to punch.
+    fn defer_deallocate(
+        &mut self,
+        sqid: u16,
+        cqid: u16,
+        cmd: &SubmissionEntry,
+        mem: &dyn GuestMemoryMut,
+    ) -> bool {
+        let Some((file, byte_len)) = self.unlocked_file(sqid, cmd.nsid) else {
+            return false;
+        };
+        let Some(ranges) = self.deallocation(cmd, byte_len, mem) else {
+            return false;
+        };
+        let punch = Arc::new(Punch::new(cmd.nsid, ranges));
+        self.punches.push(Arc::clone(&punch));
+        self.queue_io(IoJob {
+            done: FlushJob::io(sqid, cqid, *cmd),
+            file,
+            kind: Kind::Deallocate(PunchJob(punch)),
+            sync_next: false,
+            offset: 0,
+            segments: Vec::new(),
+        });
+        true
+    }
+
+    /// The file and length of `nsid` for a job without the lock: unlocked
+    /// I/O and direct DMA on, an I/O queue and a write-back raw file.
+    fn unlocked_file(&self, sqid: u16, nsid: u32) -> Option<(Arc<File>, u64)> {
+        if !self.unlocked_io || sqid == 0 || !self.direct_dma_enabled {
+            return None;
+        }
+        match self.backend_for_nsid(nsid) {
+            Some(DiskBackend::RawFile(disk)) if disk.write_back => {
+                Some((Arc::clone(&disk.file), disk.len))
+            }
+            _ => None,
+        }
+    }
+
+    /// Count `job` in flight, hold its completion slot and queue it for the
+    /// doorbell vCPU.
+    fn queue_io(&mut self, job: IoJob) {
+        let cqid = job.done.cqid;
+        let worker = self.flush_worker.get_or_insert_with(FlushWorker::default);
+        worker.in_flight += 1;
+        worker.io.push(job);
+        self.hold_completion_slot(cqid);
+    }
+
+    /// The READs, WRITEs and Deallocates queued since the last call, for the
+    /// doorbell vCPU to run once it has dropped the platform lock.
     ///
     /// # Safety
     ///
@@ -276,6 +370,19 @@ impl NvmeController {
     pub(super) fn fail_untaken_io(&mut self) {
         // SAFETY: dropped unrun, so the jobs fail without touching guest RAM.
         drop(unsafe { self.take_io() });
+    }
+}
+
+#[cfg(test)]
+impl NvmeIo {
+    /// Per job, the punches it waits for: none but for a WRITE fetched over
+    /// a punch in flight.
+    pub(crate) fn punch_waits(&self) -> Vec<usize> {
+        let waits = |job: &IoJob| match &job.kind {
+            Kind::Write { after } => after.len(),
+            Kind::Read | Kind::Deallocate(_) => 0,
+        };
+        self.jobs.iter().map(waits).collect()
     }
 }
 

@@ -68,11 +68,15 @@ pub struct NvmeController {
     /// FLUSH on a worker thread (flush_worker.rs); off until the VMM opts in.
     pub(crate) async_flush: bool,
     pub(crate) flush_worker: Option<FlushWorker>,
-    /// Completion slots held per CQ for flushes, READs and WRITEs in flight.
+    /// Completion slots held per CQ for flushes and unlocked jobs in flight.
     pub(crate) flush_reserved: Vec<u16>,
-    /// READ and WRITE without the platform lock (unlocked_io.rs); off until
-    /// the VMM opts in.
+    /// READ, WRITE and Deallocate without the platform lock (unlocked_io.rs);
+    /// off until the VMM opts in.
     pub(crate) unlocked_io: bool,
+    /// The Deallocates punching without the lock, of both namespaces, from
+    /// fetch until a drain after they returned (punch_order.rs). Empty but
+    /// for a punch's few ms, and a WRITE's fetch checks only that.
+    pub(crate) punches: Vec<std::sync::Arc<super::punch_order::Punch>>,
     /// WRITEs and FLUSHes waiting for host space (disk_full.rs), oldest first.
     pub(crate) held: Vec<super::disk_full::HeldCommand>,
     /// Raised while any is held; kept across a reset or disk change.
@@ -135,6 +139,7 @@ impl NvmeController {
             flush_worker: None,
             flush_reserved: Vec::new(),
             unlocked_io: false,
+            punches: Vec::new(),
             held: Vec::new(),
             storage_full: Default::default(),
             #[cfg(test)]

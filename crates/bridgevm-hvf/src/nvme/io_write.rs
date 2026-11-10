@@ -36,6 +36,11 @@ impl NvmeController {
         let Some((start, len)) = transfer_range(cmd, byte_len) else {
             return SC_INVALID_FIELD;
         };
+        // Deferred punches under these bytes, fetched before this WRITE,
+        // return first (punch_order.rs); with none in flight, one branch.
+        if !self.punches.is_empty() {
+            self.wait_for_punches(cmd.nsid, start, start + len as u64, &*mem);
+        }
         let mut spans = std::mem::take(&mut self.prp_spans_scratch);
         spans.clear();
         if !prp_spans_into(cmd, len, mem, &mut spans, &mut self.io_scratch) {

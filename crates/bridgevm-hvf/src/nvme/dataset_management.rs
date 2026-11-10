@@ -70,25 +70,61 @@ impl NvmeController {
             return SC_SUCCESS;
         }
         let started = Instant::now();
-        let count = cmd.cdw10 as usize + 1;
-        let mut list = [0u8; MAX_RANGES * RANGE_BYTES];
-        let list = &mut list[..count * RANGE_BYTES];
         let mut ranges = [(0u64, 0u64); MAX_RANGES];
-        let ranges = &mut ranges[..count];
+        let ranges = &mut ranges[..cmd.cdw10 as usize + 1];
         let mut outcome = Deallocated::default();
-        let status = if !self.read_host_data(cmd, list, mem) {
-            SC_INVALID_FIELD
-        } else if !parse_ranges(list, byte_len, ranges) {
-            outcome.rejected = true;
-            SC_LBA_OUT_OF_RANGE | SC_DNR
-        } else {
-            let backend = self.backend_for_nsid_mut(cmd.nsid);
-            outcome.ranges = ranges;
-            outcome.punched = backend.map_or(0, |disk| disk.deallocate(ranges));
-            SC_SUCCESS
+        let status = match self.read_ranges(cmd, byte_len, mem, ranges) {
+            Err(status) => {
+                outcome.rejected = status != SC_INVALID_FIELD;
+                status
+            }
+            Ok(()) => {
+                let backend = self.backend_for_nsid_mut(cmd.nsid);
+                outcome.ranges = ranges;
+                outcome.punched = backend.map_or(0, |disk| disk.deallocate(ranges));
+                SC_SUCCESS
+            }
         };
         DSM_STATS.note(&outcome, started);
         status
+    }
+
+    /// A Deallocate's byte ranges, read and checked under the lock for a
+    /// vCPU's NVMe worker to punch ([`punch_unlocked`]). `None` leaves the
+    /// command to the inline path: no Deallocate attribute, or an invalid
+    /// command, whose status that path reports.
+    pub(super) fn deallocation(
+        &mut self,
+        cmd: &SubmissionEntry,
+        byte_len: u64,
+        mem: &dyn GuestMemoryMut,
+    ) -> Option<Vec<(u64, u64)>> {
+        if cmd.cdw10 > 0xff || cmd.cdw11 & ATTR_DEALLOCATE == 0 {
+            return None;
+        }
+        let mut ranges = vec![(0, 0); cmd.cdw10 as usize + 1];
+        self.read_ranges(cmd, byte_len, mem, &mut ranges).ok()?;
+        Some(ranges)
+    }
+
+    /// Read one range per slot of `ranges` through the command's PRP entries
+    /// and decode them, or the status the command fails with.
+    fn read_ranges(
+        &mut self,
+        cmd: &SubmissionEntry,
+        byte_len: u64,
+        mem: &dyn GuestMemoryMut,
+        ranges: &mut [(u64, u64)],
+    ) -> Result<(), u16> {
+        let mut list = [0u8; MAX_RANGES * RANGE_BYTES];
+        let list = &mut list[..ranges.len() * RANGE_BYTES];
+        if !self.read_host_data(cmd, list, mem) {
+            return Err(SC_INVALID_FIELD);
+        }
+        if !parse_ranges(list, byte_len, ranges) {
+            return Err(SC_LBA_OUT_OF_RANGE | SC_DNR);
+        }
+        Ok(())
     }
 
     /// Copy the command's data (host to controller) out of guest memory
@@ -147,6 +183,22 @@ impl DiskBackend {
             _ => 0,
         }
     }
+}
+
+/// A Deallocate on a vCPU's NVMe worker, without the platform lock
+/// (unlocked_io.rs): punch its ranges and count it as the inline path does.
+pub(super) fn punch_unlocked(file: &File, ranges: &[(u64, u64)]) -> u16 {
+    #[cfg(all(test, target_os = "macos"))]
+    test_punch::pass_gate();
+    let started = Instant::now();
+    let punched = punch_ranges(file, ranges);
+    let outcome = Deallocated {
+        rejected: false,
+        ranges,
+        punched,
+    };
+    DSM_STATS.note(&outcome, started);
+    SC_SUCCESS
 }
 
 /// Punch the whole file-system blocks inside each range. A failure ends the
@@ -328,13 +380,27 @@ pub fn dsm_record() -> String {
 }
 
 /// Make this thread's punches fail with an errno, as a file system that
-/// cannot punch does.
+/// cannot punch does, or hold its unlocked ones at a gate.
 #[cfg(all(test, target_os = "macos"))]
 pub(crate) mod test_punch {
-    use std::cell::Cell;
+    use crate::nvme::unlocked_io::test_gate::IoGate;
+    use std::cell::{Cell, RefCell};
+    use std::sync::Arc;
 
     thread_local! {
         static ERRNO: Cell<Option<i32>> = const { Cell::new(None) };
+        static GATE: RefCell<Option<Arc<IoGate>>> = const { RefCell::new(None) };
+    }
+
+    /// Hold this thread's unlocked punches at `gate`.
+    pub(crate) fn hold_at(gate: Arc<IoGate>) {
+        GATE.with(|held| *held.borrow_mut() = Some(gate));
+    }
+
+    pub(crate) fn pass_gate() {
+        if let Some(gate) = GATE.with(|held| held.borrow().clone()) {
+            gate.pass();
+        }
     }
 
     pub(crate) fn fail_with(code: Option<i32>) {

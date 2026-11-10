@@ -15,8 +15,8 @@
 //! A controller register write, any admin command and a reset first wait for
 //! the flushes in flight, so queue deletion and reset never meet a pending
 //! completion; a reset drops their completions with the queues they targeted.
-//! READs and WRITEs run without the platform lock (unlocked_io.rs) are counted
-//! and completed here too.
+//! READs, WRITEs and Deallocates run without the platform lock
+//! (unlocked_io.rs) are counted and completed here too.
 
 use std::fs::File;
 use std::io;
@@ -94,9 +94,9 @@ pub(crate) struct FlushWorker {
     /// until the next FLUSH starts one on the current disks.
     jobs: Option<Sender<FlushJob>>,
     pub(super) shared: Arc<Shared>,
-    /// Flushes, READs and WRITEs not yet taken by `take_finished`.
+    /// Flushes and unlocked jobs not yet taken by `take_finished`.
     pub(super) in_flight: usize,
-    /// READs and WRITEs that the doorbell vCPU has not taken yet.
+    /// Unlocked jobs that the doorbell vCPU has not taken yet.
     pub(super) io: Vec<IoJob>,
 }
 
@@ -309,7 +309,7 @@ impl NvmeController {
             .is_some_and(|worker| worker.shared.ready.load(Ordering::Acquire) > 0)
     }
 
-    /// Post the completions of finished flushes, READs and WRITEs. With
+    /// Post the completions of finished flushes and unlocked jobs. With
     /// `wait`, first wait until none is in flight, and return only when none
     /// is: a finished FUA write goes on to its sync.
     pub fn complete_flushes(
@@ -400,7 +400,7 @@ impl NvmeController {
         completion
     }
 
-    /// Wait for the flushes, READs and WRITEs in flight; their completions
+    /// Wait for the flushes and unlocked jobs in flight; their completions
     /// stay queued for `complete_flushes`.
     pub(crate) fn wait_for_flushes(&mut self) {
         self.fail_untaken_io();
@@ -447,6 +447,9 @@ impl NvmeController {
             if let Some(slot) = self.flush_reserved.get_mut(usize::from(done.job.cqid)) {
                 *slot = slot.saturating_sub(1);
             }
+        }
+        if !self.punches.is_empty() {
+            self.forget_finished_punches();
         }
         taken
     }
