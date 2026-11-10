@@ -3,7 +3,7 @@
 //! Split from wake_coordinator.rs: the coordinator owns claims and
 //! generations; this renders them, once, from the owning thread.
 
-use crate::{report_wake_attribution, CancelClaim, WakeCoordinator};
+use crate::{report_wake_attribution, ClaimTally, WakeCoordinator};
 use crate::{HvVcpuT, SmpTrace};
 
 /// Everything the stop path reports about wakes, timer state and the trace.
@@ -17,7 +17,7 @@ use crate::{HvVcpuT, SmpTrace};
 pub(crate) unsafe fn report_stall_diagnostics(
     vcpu: HvVcpuT,
     coordinator: &WakeCoordinator,
-    claims: &[CancelClaim],
+    claims: &ClaimTally,
     smp_trace: Option<&SmpTrace>,
 ) {
     report_wake_attribution(coordinator, claims);

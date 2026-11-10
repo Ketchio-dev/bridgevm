@@ -301,7 +301,7 @@ pub(crate) fn run() -> ExitCode {
             let mut exits = 0u64;
             let mut vtimer_exits = 0u64;
             let mut surplus_canceled_exits = 0u64;
-            let mut wake_cancel_claims: Vec<CancelClaim> = Vec::new();
+            let mut wake_cancel_claims = crate::wake_coordinator::ClaimTally::default();
             let mut psci_calls = 0u64;
             let mut last_pc = 0u64;
             let mut last_pre_run_pc: u64;
@@ -483,7 +483,7 @@ pub(crate) fn run() -> ExitCode {
                     || service_wake_canceled
                     || vblank_wake_canceled;
                 if reason == EXIT_CANCELED {
-                    wake_cancel_claims.push(wake_coordinator.attribute_cancel(&[
+                    wake_cancel_claims.add(wake_coordinator.attribute_cancel(&[
                         (sample_tick_canceled, WakeReason::RamfbSample),
                         (setup_input_wake_canceled, WakeReason::SetupInput),
                         (service_wake_canceled, WakeReason::AgentConsole),
