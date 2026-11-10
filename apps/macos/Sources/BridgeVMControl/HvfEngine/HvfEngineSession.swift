@@ -16,6 +16,7 @@ final class HvfEngineSession: ObservableObject {
     let agentUpdateNotice = HvfAgentUpdateNotice()
     let fileDrops = HvfFileDropQueue() // Finder drops copied to the guest Desktop
     let clipboardImageNotice = HvfClipboardImageNotice()
+    let agentSilenceNotice = HvfAgentSilenceNotice() // the guest agent is not there (HvfEngineSessionAgentSilence)
     @Published var events: [BvAgentEvent] = []
     @Published var displayDriverFlagMessage: String? // why HvfDisplayDriverFlag could not save yet
     var repoRoot: URL
@@ -353,6 +354,7 @@ final class HvfEngineSession: ObservableObject {
         }
         expireUnacknowledgedReset()
         expireUnansweredPause()
+        refreshAgentSilence()
         if let lastHeartbeatDate {
             lastHeartbeatAge = Date().timeIntervalSince(lastHeartbeatDate)
         }

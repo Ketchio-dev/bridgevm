@@ -41,6 +41,7 @@ struct LibraryDashboardRuntimeControls: View {
             if let failure = session.guiStartFailureText {
                 Text(failure).font(.caption).foregroundStyle(.red).textSelection(.enabled)
             }
+            HvfAgentSilenceNoticeView(notice: session.agentSilenceNotice)
             HvfShareRootNoticeView(notice: session.shareRootNotice)
             HvfMicrophoneNoticeView(session: session)
             HvfAgentUpdateNoticeView(notice: session.agentUpdateNotice)
