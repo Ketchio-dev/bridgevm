@@ -89,3 +89,23 @@ fn driver_ok_does_not_override_disabled_queues() {
     tx_notify(&mut dev, &mut mem);
     assert_quiet(&mut dev, &mem);
 }
+
+#[test]
+fn run_stats_keep_the_counters_and_features_from_before_a_reset() {
+    let (mut dev, mut mem) = fixture();
+    ready(&mut dev, &mut mem);
+    dev.backend_mut().push_receive(FRAME);
+    assert!(dev.pump_receive(&mut mem));
+    tx_notify(&mut dev, &mut mem);
+    let features = dev.stats().driver_features;
+    assert_ne!(features, 0);
+    // Windows resets the device as it shuts down; the stop report runs after.
+    initialize(&mut dev, &mut mem);
+    assert_eq!((dev.stats().rx_count, dev.stats().tx_count), (0, 0));
+    let run = dev.run_stats();
+    assert_eq!((run.rx_count, run.tx_count), (1, 1));
+    assert_eq!(run.driver_features & features, features);
+    ready(&mut dev, &mut mem);
+    tx_notify(&mut dev, &mut mem);
+    assert_eq!(dev.run_stats().tx_count, 2);
+}

@@ -13,6 +13,11 @@ impl VirtPlatform {
         self.virtio_net.as_ref().map(VirtioPciNet::stats)
     }
 
+    /// The stop report's view: counters over the whole run, every reset included.
+    pub fn virtio_net_run_stats(&self) -> Option<VirtioNetStats> {
+        self.virtio_net.as_ref().map(VirtioPciNet::run_stats)
+    }
+
     pub fn virtio_net_nat_stats(&self) -> Option<NatStats> {
         self.virtio_net
             .as_ref()
