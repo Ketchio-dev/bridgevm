@@ -121,9 +121,11 @@ struct HvfAgentSilenceStrip: View {
     var body: some View {
         if let text = notice.text, !notice.dismissedInWindow {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Label(text, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                Label {
+                    Text(text).fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                }
                 Button { notice.dismissInWindow() } label: { Image(systemName: "xmark") }
                     .buttonStyle(.plain)
                     .help("닫기")
