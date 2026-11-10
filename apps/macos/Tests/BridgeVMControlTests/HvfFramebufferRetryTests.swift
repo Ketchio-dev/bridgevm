@@ -46,6 +46,7 @@ final class HvfFramebufferRetryTests: XCTestCase {
             ctlFilePath: root.appendingPathComponent("agent.ctl").path)
         let session = HvfEngineSession(config: config, repoRoot: root) { _ in false }
         let view = FBLayerView(session: session, imageFactory: factory)
+        view.surfaces = nil // the CGImage path
         defer { view.teardown() }
         let layer = try XCTUnwrap(view.layer)
         view.refreshFrame(at: 0)

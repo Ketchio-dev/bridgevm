@@ -98,6 +98,7 @@ final class HvfFramebufferSeqlockRetryTests: XCTestCase {
             ctlFilePath: root.appendingPathComponent("agent.ctl").path)
         let session = HvfEngineSession(config: config, repoRoot: root) { _ in false }
         let view = FBLayerView(session: session, imageFactory: factory)
+        view.surfaces = nil // the CGImage path, whose factory counts frames
         defer { view.teardown() }
         try body(view, path) { made }
         withExtendedLifetime(session) {}
