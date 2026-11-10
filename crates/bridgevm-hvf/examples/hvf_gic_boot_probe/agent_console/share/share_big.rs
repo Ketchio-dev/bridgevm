@@ -112,7 +112,7 @@ impl AgentConsoleHarness {
             share.low_space_seen.clear();
         }
         if share.low_space_seen.insert(version) {
-            println!("BVAGENT SHARE skip {name} low-space {size}");
+            bridgevm_hvf::host_log::out(format_args!("BVAGENT SHARE skip {name} low-space {size}"));
         }
         true
     }
@@ -387,11 +387,12 @@ impl AgentConsoleHarness {
         let exhausted = share
             .engine
             .on_host_write_error(name, super::guest_write_refusal::is_persistent(error));
-        println!("BVAGENT SHARE write-refused {name} {error}");
+        // A full Mac disk fails these writes; run.log may be on it (host_log).
+        bridgevm_hvf::host_log::out(format_args!("BVAGENT SHARE write-refused {name} {error}"));
         if exhausted {
             self.share = None;
             self.queue.retain(|request| !is_share_req(request));
-            println!("BVAGENT SHARE disabled failed-destination-limit");
+            bridgevm_hvf::host_log::out("BVAGENT SHARE disabled failed-destination-limit");
         }
     }
 

@@ -64,11 +64,12 @@ impl AgentConsoleHarness {
             }
             Err(e) => {
                 let exhausted = share.engine.on_host_write_error(name, is_persistent(&e));
-                println!("BVAGENT SHARE write-refused {name} {e}");
+                // A full Mac disk fails these writes; run.log may be on it (host_log).
+                bridgevm_hvf::host_log::out(format_args!("BVAGENT SHARE write-refused {name} {e}"));
                 if exhausted {
                     self.share = None;
                     self.queue.retain(|request| !is_share_req(request));
-                    println!("BVAGENT SHARE disabled failed-destination-limit");
+                    bridgevm_hvf::host_log::out("BVAGENT SHARE disabled failed-destination-limit");
                 }
             }
         }
