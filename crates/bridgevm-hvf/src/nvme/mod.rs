@@ -25,6 +25,7 @@ mod log_page;
 mod namespace;
 mod protocol;
 mod prp;
+mod punch_order;
 mod queue;
 mod queue_create;
 mod queue_geometry;

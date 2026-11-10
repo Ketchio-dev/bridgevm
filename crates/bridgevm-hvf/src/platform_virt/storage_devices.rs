@@ -249,16 +249,17 @@ impl VirtPlatform {
         self.nvme.set_async_flush(enabled);
     }
 
-    /// NVMe READ and WRITE run without the platform lock (live VMM only).
+    /// NVMe READ, WRITE and Deallocate run without the platform lock (live
+    /// VMM only).
     pub fn set_nvme_unlocked_io(&mut self, enabled: bool) {
         self.nvme.set_unlocked_io(enabled);
     }
 
-    /// The NVMe READs and WRITEs the last doorbell queued. The vCPU takes them
-    /// before it unlocks the platform and runs them on its `NvmeIoWorker`. If
-    /// they finish within `NVME_IO_WAIT` it locks again and that hold's drain
-    /// (`poll_nvme_flushes`) posts their completions; otherwise the drain that
-    /// `FLUSH_DONE_HOOK` asks for does.
+    /// The NVMe READs, WRITEs and Deallocates the last doorbell queued. The
+    /// vCPU takes them before it unlocks the platform and runs them on its
+    /// `NvmeIoWorker`. If they finish within `NVME_IO_WAIT` it locks again and
+    /// that hold's drain (`poll_nvme_flushes`) posts their completions;
+    /// otherwise the drain that `FLUSH_DONE_HOOK` asks for does.
     ///
     /// # Safety
     ///
