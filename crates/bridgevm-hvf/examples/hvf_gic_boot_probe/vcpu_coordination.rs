@@ -252,6 +252,7 @@ impl SecondaryVcpuSet {
                 thread::Builder::new()
                     .name(format!("bridgevm-hvf-vcpu{}", control.index))
                     .spawn(move || {
+                        raise_vcpu_qos();
                         secondary_vcpu_thread(
                             control,
                             SecondaryVcpuThreadContext {
@@ -289,3 +290,37 @@ impl SecondaryVcpuSet {
 #[cfg(test)]
 #[path = "vcpu_coordination_tests.rs"]
 mod tests;
+
+/// User-initiated QoS for a vCPU thread: the guest's own work, which the user
+/// is waiting on. At the default QoS macOS may run it on an efficiency core
+/// while the Mac is busy; this keeps it on performance cores and still below
+/// the Mac's own interface (user-interactive). A failure leaves the default.
+pub(crate) fn raise_vcpu_qos() {
+    use libc::qos_class_t::QOS_CLASS_USER_INITIATED;
+    // SAFETY: sets only the calling thread's own QoS class; no pointers.
+    let status = unsafe { libc::pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0) };
+    if status != 0 {
+        eprintln!("vCPU thread: QoS not raised: {status}");
+    }
+}
+
+#[cfg(test)]
+mod qos_tests {
+    #[test]
+    fn a_vcpu_thread_runs_at_user_initiated_qos() {
+        let qos = std::thread::spawn(|| {
+            super::raise_vcpu_qos();
+            let mut class = libc::qos_class_t::QOS_CLASS_UNSPECIFIED;
+            let mut relative = 0;
+            // SAFETY: reads the calling thread's own QoS into two locals.
+            let status = unsafe {
+                libc::pthread_get_qos_class_np(libc::pthread_self(), &mut class, &mut relative)
+            };
+            assert_eq!(status, 0);
+            class as u32
+        })
+        .join()
+        .unwrap();
+        assert_eq!(qos, libc::qos_class_t::QOS_CLASS_USER_INITIATED as u32);
+    }
+}

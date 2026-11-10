@@ -85,6 +85,8 @@ pub(crate) fn run() -> ExitCode {
         );
         let _vcpu_guard = HvVcpuGuard { vcpu };
         crate::usgic_bridge::register_vcpu(0, vcpu);
+        // vCPU0 runs on this thread.
+        raise_vcpu_qos();
 
         let (watch_addr, watch_target) = watchpoint_config();
         attach_boot_media(&mut platform, &media, platform_cfg, ram_size, &vars_data);
