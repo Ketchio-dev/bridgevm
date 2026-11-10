@@ -1,11 +1,11 @@
-param([ValidateSet('all', 'current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'base', 'enter-only', 'space-only')][string]$Mode = 'all')
+param([ValidateSet('all', 'current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'base', 'enter-only', 'space-only', 'no-scroll-units')][string]$Mode = 'all')
 $ErrorActionPreference = 'Stop'
 if ($Mode -eq 'all') {
-    foreach ($variant in @('current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'base', 'enter-only', 'space-only')) {
+    foreach ($variant in @('current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'base', 'enter-only', 'space-only', 'no-scroll-units')) {
         & (Get-Process -Id $PID).Path -NoProfile -File $PSCommandPath -Mode $variant
         if ($LASTEXITCODE -ne 0) { throw "key capability variant failed: $variant" }
     }
-    Write-Output 'PASS: resident base/expanded key capabilities (no SendInput)'
+    Write-Output 'PASS: resident base/expanded key and scroll-unit capabilities (no SendInput)'
     return
 }
 $assets = Join-Path $PSScriptRoot 'win-assets'
@@ -31,12 +31,20 @@ if ($Mode -eq 'no-taps') {
     $set = '        private static readonly HashSet<string> ResidentKeys = new HashSet<string>(new string[] { "' + ($resident -join '", "') + '" }, StringComparer.Ordinal);' + "`r`n"
     $keySource = $keySource.Replace($anchor, $set + $anchor + "`r`n            if (!ResidentKeys.Contains(command)) { throw new ArgumentException(""unsupported-key-input""); }")
 }
+$pointerSource = [IO.File]::ReadAllText((Join-Path $assets 'bvagent-pointer-input.cs'))
+if ($Mode -eq 'no-scroll-units') {
+    # An older resident pointer module: scrollunits falls through to the coordinate verbs and is refused.
+    if (-not $pointerSource.Contains('fields[0] == "scrollunits"')) { throw 'missing scroll-units builder' }
+    $pointerSource = $pointerSource.Replace('fields[0] == "scrollunits"', 'fields[0] == "scrollunits-unsupported"')
+}
 # Fresh child processes model resident compiled modules; Add-Type cannot replace a loaded type.
 $temporary = Join-Path ([IO.Path]::GetTempPath()) (([guid]::NewGuid().ToString()) + '.cs')
+$pointerTemporary = Join-Path ([IO.Path]::GetTempPath()) (([guid]::NewGuid().ToString()) + '.cs')
 try {
     [IO.File]::WriteAllText($temporary, $keySource)
-    Add-Type -Path (Join-Path $assets 'bvagent-unicode-input.cs'),$temporary,(Join-Path $assets 'bvagent-pointer-input.cs')
-} finally { Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue }
+    [IO.File]::WriteAllText($pointerTemporary, $pointerSource)
+    Add-Type -Path (Join-Path $assets 'bvagent-unicode-input.cs'),$temporary,$pointerTemporary
+} finally { Remove-Item -LiteralPath $temporary,$pointerTemporary -Force -ErrorAction SilentlyContinue }
 . (Join-Path $assets 'bvagent-input.ps1')
 $tokens = $null; $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $assets 'bvagent.ps1'), [ref]$tokens, [ref]$errors)
@@ -48,12 +56,14 @@ if ($null -eq $definition) { throw 'missing resident capability function' }
 . ([scriptblock]::Create($definition.Extent.Text))
 $id = '12345678-1234-1234-1234-123456789abc'
 $expected = "BVINPUT_CAPS $id 3 TEXTINPUT KEYINPUT POINTERINPUT 65536"
-if ($Mode -in @('current', 'no-taps', 'chords', 'shift-only', 'partial-chords')) { $expected += "`nBVINPUT_KEYS $id SHIFT_ENTER_SPACE" }
-if ($Mode -in @('current', 'no-taps', 'chords')) { $expected += "`nBVINPUT_CHORDS $id CTRL_SHIFT_CHORDS" }
-if ($Mode -eq 'current') { $expected += "`nBVINPUT_CHORDS $id MODIFIER_CHORDS" }
+if ($Mode -in @('current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'no-scroll-units')) { $expected += "`nBVINPUT_KEYS $id SHIFT_ENTER_SPACE" }
+if ($Mode -in @('current', 'no-taps', 'chords', 'no-scroll-units')) { $expected += "`nBVINPUT_CHORDS $id CTRL_SHIFT_CHORDS" }
+if ($Mode -in @('current', 'no-scroll-units')) { $expected += "`nBVINPUT_CHORDS $id MODIFIER_CHORDS" }
+if ($Mode -ne 'no-scroll-units') { $expected += "`nBVINPUT_POINTER $id SCROLL_UNITS" }
 $result = Get-InputCapabilities $id
 if ($result.Exit -ne 0 -or $result.Out -cne $expected) { throw "incorrect advertised keyset: $Mode" }
 $ordinary = Invoke-UnicodeInput "$id YQ==" { param($text) [uint32]2 }
 if ($ordinary.Exit -ne 0 -or $ordinary.Out -cne "BVINPUT_INSERTED $id 2") { throw 'ordinary input was disabled' }
 if ([BridgeVM.BvUnicodeInput]::BuildKey('enter').Length -ne 2) { throw 'base key support lost' }
-Write-Output "PASS: $Mode resident module advertises only its complete keyset"
+if ([BridgeVM.BvUnicodeInput]::BuildPointer('scroll:-1@0x0').Length -ne 2) { throw 'notch scroll support lost' }
+Write-Output "PASS: $Mode resident module advertises only its complete keyset and scroll units"
