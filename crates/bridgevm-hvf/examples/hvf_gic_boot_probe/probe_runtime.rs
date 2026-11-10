@@ -361,6 +361,16 @@ pub(crate) fn run() -> ExitCode {
             let mut requested_system_reset = false;
             let mut cpu0_offset_version = 0u64;
             let mut pause_requested = false;
+            // A host stop (TERM, a diagnostic stop) ends a pause and the run.
+            let host_stop = || {
+                cancel_stop_reason(
+                    &watchdog_fired,
+                    stall_kill_fired.as_ref(),
+                    diagnostic_stop_fired.as_ref(),
+                    &HOST_TERM_REQUESTED,
+                )
+                .is_some()
+            };
 
             loop {
                 let mut drain_pc = 0u64;
@@ -368,8 +378,9 @@ pub(crate) fn run() -> ExitCode {
                 last_pre_run_pc = drain_pc;
                 // An input.ctl PAUSE read at the end of the last pass, or guest
                 // disk writes held for a full Mac disk (nvme disk_full.rs).
-                let disk_full = nvme_storage_full
-                    .load(Ordering::Acquire)
+                // Not while a host stop is pending: the held writes stay held,
+                // and vCPU0 runs on to the cancel exit that ends the run.
+                let disk_full = (nvme_storage_full.load(Ordering::Acquire) && !host_stop())
                     .then(|| {
                         lock_platform(&platform, smp_trace.as_deref(), 0, HoldSite::Automation)
                             .nvme_disk_full()
@@ -385,15 +396,7 @@ pub(crate) fn run() -> ExitCode {
                     let paused = crate::pause_gate::pause_and_wait(
                         &mut live_input,
                         secondary_vcpus.as_ref(),
-                        || {
-                            cancel_stop_reason(
-                                &watchdog_fired,
-                                stall_kill_fired.as_ref(),
-                                diagnostic_stop_fired.as_ref(),
-                                &HOST_TERM_REQUESTED,
-                            )
-                            .is_some()
-                        },
+                        host_stop,
                         // The held writes complete before any vCPU runs.
                         || {
                             lock_platform(&platform, smp_trace.as_deref(), 0, HoldSite::Automation)
