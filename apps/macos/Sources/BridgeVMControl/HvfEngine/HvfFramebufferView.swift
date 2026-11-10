@@ -242,7 +242,8 @@ final class FBLayerView: HvfFramebufferTextInput {
         notePress(session.sendPointerPress(
             location: point(event),
             viewSize: bounds.size,
-            imageSize: guestSize
+            imageSize: guestSize,
+            modifiers: guestModifiers(event)
         ))
         if let release = pointerRelease(at: point(event)) { pointerCapture.arm(window: window, release: release) }
     }
@@ -256,7 +257,7 @@ final class FBLayerView: HvfFramebufferTextInput {
 
     override func mouseUp(with event: NSEvent) {
         pointerMoves.reset()
-        if let release = pointerRelease(at: point(event)) {
+        if let release = pointerRelease(at: point(event), modifiers: guestModifiers(event)) {
             pointerCapture.disarm()
             release()
         } else {
@@ -277,7 +278,8 @@ final class FBLayerView: HvfFramebufferTextInput {
         session.sendPointerRightPress(
             location: point(event),
             viewSize: bounds.size,
-            imageSize: guestSize
+            imageSize: guestSize,
+            modifiers: guestModifiers(event)
         )
         if let release = pointerRelease(at: point(event)) { pointerCapture.arm(window: window, release: release) }
     }
@@ -286,11 +288,43 @@ final class FBLayerView: HvfFramebufferTextInput {
         mouseUp(with: event)
     }
 
+    /// The middle button (2) reaches an agent that takes it; other buttons, and every button without it, stay
+    /// with the Mac as before. Its release is the common one (`releaseall` lifts the middle button too).
+    override func otherMouseDown(with event: NSEvent) {
+        cancelModifierTap()
+        guard event.buttonNumber == 2, let session, hasGuestSize, session.guestMiddleButton else {
+            return super.otherMouseDown(with: event)
+        }
+        settleCompositionForClick()
+        window?.makeFirstResponder(self)
+        pointerMoves.reset()
+        session.sendPointerMiddlePress(location: point(event), viewSize: bounds.size, imageSize: guestSize,
+                                       modifiers: guestModifiers(event))
+        if let release = pointerRelease(at: point(event)) { pointerCapture.arm(window: window, release: release) }
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        guard event.buttonNumber == 2, session?.guestMiddleButton == true else { return super.otherMouseUp(with: event) }
+        mouseUp(with: event)
+    }
+
+    override func otherMouseDragged(with event: NSEvent) {
+        guard event.buttonNumber == 2, session?.guestMiddleButton == true else { return super.otherMouseDragged(with: event) }
+        mouseDragged(with: event)
+    }
+
+    /// The guest modifiers held for a button or scroll event, mapped as keys are (HvfHostKeyMapping.pointerModifiers).
+    /// Each request carries its own and the guest releases them with it; moves, a drag's included, carry none.
+    private func guestModifiers(_ event: NSEvent) -> String {
+        session?.keyMapping.pointerModifiers(event.modifierFlags) ?? ""
+    }
+
     override func scrollWheel(with event: NSEvent) {
         cancelModifierTap()
         guard let session, hasGuestSize,
               session.sendPointerScroll(HvfScrollAccumulator.Delta(event), location: point(event),
-                                        viewSize: bounds.size, imageSize: guestSize) else { return }
+                                        viewSize: bounds.size, imageSize: guestSize,
+                                        modifiers: guestModifiers(event)) else { return }
         // The scroll moved the guest pointer to its own position; an older coalesced move must not follow.
         pointerMoves.reset()
     }
@@ -367,14 +401,15 @@ final class FBLayerView: HvfFramebufferTextInput {
         guestCursor.apply(presentation, fit: fit, in: layer)
     }
 
-    private func pointerRelease(at location: CGPoint) -> (() -> Void)? {
+    /// `modifiers` are those held at the button's release; a release from focus loss or a drag's update has none.
+    private func pointerRelease(at location: CGPoint, modifiers: String = "") -> (() -> Void)? {
         let viewSize = bounds.size, imageSize = guestSize
         guard let session, HvfDisplayCoordinates.absolutePointer(
             location: location, viewSize: viewSize, imageSize: imageSize
         ) != nil else { return nil }
         return { [weak self, weak session] in
             self?.pointerMoves.reset()
-            session?.sendPointerRelease(location: location, viewSize: viewSize, imageSize: imageSize)
+            session?.sendPointerRelease(location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
         }
     }
 

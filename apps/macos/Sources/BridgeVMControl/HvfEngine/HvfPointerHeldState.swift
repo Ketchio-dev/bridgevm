@@ -6,11 +6,13 @@ struct HvfPointerHeldState {
 
     mutating func sent(_ event: HvfOrderedInputQueue.Event) {
         guard case let .pointer(command) = event else { return }
-        let fields = command.split(separator: ":", maxSplits: 1)
-        guard fields.count == 2 else { return }
+        // `<verb>:<args>[:<held modifiers>]`; the release needs only the position.
+        let fields = command.split(separator: ":")
+        guard fields.count >= 2 else { return }
         switch fields[0] {
         case "press", "click": buttons |= 1
         case "rightpress", "rightclick": buttons |= 2
+        case "middlepress", "middleclick": buttons |= 4
         default: break
         }
         guard buttons != 0, fields[0] != "wheel" else { return }
@@ -22,6 +24,7 @@ struct HvfPointerHeldState {
         switch command.split(separator: ":", maxSplits: 1).first {
         case "release", "click": buttons &= ~1
         case "rightrelease", "rightclick": buttons &= ~2
+        case "middlerelease", "middleclick": buttons &= ~4
         case "releaseall": buttons = 0
         default: break
         }

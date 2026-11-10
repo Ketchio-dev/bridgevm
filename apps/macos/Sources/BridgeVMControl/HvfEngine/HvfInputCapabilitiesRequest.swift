@@ -18,6 +18,8 @@ struct HvfInputCapabilitiesRequest {
     func supports(_ event: HvfOrderedInputQueue.Event) -> Bool { supported && receipt.supports(event) }
     var modifierChords: Bool { supported && receipt.modifierChords }
     var scrollUnits: Bool { supported && receipt.scrollUnits }
+    var pointerModifiers: Bool { supported && receipt.pointerModifiers }
+    var middleButton: Bool { supported && receipt.middleButton }
 
     mutating func consume(lines: [String], now: Date) -> Outcome? {
         guard !finished else { return nil }

@@ -1,11 +1,11 @@
-param([ValidateSet('all', 'current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'base', 'enter-only', 'space-only', 'no-scroll-units')][string]$Mode = 'all')
+param([ValidateSet('all', 'current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'base', 'enter-only', 'space-only', 'no-scroll-units', 'no-pointer-modifiers', 'no-middle')][string]$Mode = 'all')
 $ErrorActionPreference = 'Stop'
 if ($Mode -eq 'all') {
-    foreach ($variant in @('current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'base', 'enter-only', 'space-only', 'no-scroll-units')) {
+    foreach ($variant in @('current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'base', 'enter-only', 'space-only', 'no-scroll-units', 'no-pointer-modifiers', 'no-middle')) {
         & (Get-Process -Id $PID).Path -NoProfile -File $PSCommandPath -Mode $variant
         if ($LASTEXITCODE -ne 0) { throw "key capability variant failed: $variant" }
     }
-    Write-Output 'PASS: resident base/expanded key and scroll-unit capabilities (no SendInput)'
+    Write-Output 'PASS: resident base/expanded key, scroll-unit, pointer-modifier and middle-button capabilities (no SendInput)'
     return
 }
 $assets = Join-Path $PSScriptRoot 'win-assets'
@@ -36,6 +36,14 @@ if ($Mode -eq 'no-scroll-units') {
     # An older resident pointer module: scrollunits falls through to the coordinate verbs and is refused.
     if (-not $pointerSource.Contains('fields[0] == "scrollunits"')) { throw 'missing scroll-units builder' }
     $pointerSource = $pointerSource.Replace('fields[0] == "scrollunits"', 'fields[0] == "scrollunits-unsupported"')
+} elseif ($Mode -eq 'no-pointer-modifiers') {
+    # An older resident pointer module: a third field is a format error.
+    if (-not $pointerSource.Contains('fields.Length == 3')) { throw 'missing held-modifier builder' }
+    $pointerSource = $pointerSource.Replace('fields.Length == 3', 'fields.Length == -3')
+} elseif ($Mode -eq 'no-middle') {
+    # An older resident pointer module: no middle verbs, and releaseall lifts left and right only.
+    if (-not $pointerSource.Contains('case "middle') -or -not $pointerSource.Contains('0x8055')) { throw 'missing middle button builder' }
+    $pointerSource = $pointerSource.Replace('case "middle', 'case "unsupported-middle').Replace('0x8055', '0x8015')
 }
 # Fresh child processes model resident compiled modules; Add-Type cannot replace a loaded type.
 $temporary = Join-Path ([IO.Path]::GetTempPath()) (([guid]::NewGuid().ToString()) + '.cs')
@@ -56,14 +64,16 @@ if ($null -eq $definition) { throw 'missing resident capability function' }
 . ([scriptblock]::Create($definition.Extent.Text))
 $id = '12345678-1234-1234-1234-123456789abc'
 $expected = "BVINPUT_CAPS $id 3 TEXTINPUT KEYINPUT POINTERINPUT 65536"
-if ($Mode -in @('current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'no-scroll-units')) { $expected += "`nBVINPUT_KEYS $id SHIFT_ENTER_SPACE" }
-if ($Mode -in @('current', 'no-taps', 'chords', 'no-scroll-units')) { $expected += "`nBVINPUT_CHORDS $id CTRL_SHIFT_CHORDS" }
-if ($Mode -in @('current', 'no-scroll-units')) { $expected += "`nBVINPUT_CHORDS $id MODIFIER_CHORDS" }
+if ($Mode -in @('current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'no-scroll-units', 'no-pointer-modifiers', 'no-middle')) { $expected += "`nBVINPUT_KEYS $id SHIFT_ENTER_SPACE" }
+if ($Mode -in @('current', 'no-taps', 'chords', 'no-scroll-units', 'no-pointer-modifiers', 'no-middle')) { $expected += "`nBVINPUT_CHORDS $id CTRL_SHIFT_CHORDS" }
+if ($Mode -in @('current', 'no-scroll-units', 'no-pointer-modifiers', 'no-middle')) { $expected += "`nBVINPUT_CHORDS $id MODIFIER_CHORDS" }
 if ($Mode -ne 'no-scroll-units') { $expected += "`nBVINPUT_POINTER $id SCROLL_UNITS" }
+if ($Mode -ne 'no-pointer-modifiers') { $expected += "`nBVINPUT_POINTER $id MODIFIERS" }
+if ($Mode -ne 'no-middle') { $expected += "`nBVINPUT_POINTER $id MIDDLE" }
 $result = Get-InputCapabilities $id
 if ($result.Exit -ne 0 -or $result.Out -cne $expected) { throw "incorrect advertised keyset: $Mode" }
 $ordinary = Invoke-UnicodeInput "$id YQ==" { param($text) [uint32]2 }
 if ($ordinary.Exit -ne 0 -or $ordinary.Out -cne "BVINPUT_INSERTED $id 2") { throw 'ordinary input was disabled' }
 if ([BridgeVM.BvUnicodeInput]::BuildKey('enter').Length -ne 2) { throw 'base key support lost' }
 if ([BridgeVM.BvUnicodeInput]::BuildPointer('scroll:-1@0x0').Length -ne 2) { throw 'notch scroll support lost' }
-Write-Output "PASS: $Mode resident module advertises only its complete keyset and scroll units"
+Write-Output "PASS: $Mode resident module advertises only its complete keyset and pointer extensions"

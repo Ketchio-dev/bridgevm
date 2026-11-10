@@ -15,6 +15,10 @@ struct HvfSessionInputRouter {
     var modifierChords: Bool { !eligible || stream.modifierChords }
     /// Whether a scroll goes as raw units (`scrollunits:`) rather than `scroll:` notches.
     var scrollUnits: Bool { eligible && stream.scrollUnits }
+    /// Whether a pointer action may carry held modifiers (`:<wcas>`) and whether the middle button reaches the
+    /// guest: only an agent with the markers takes them; the VMM's HID path drops modifiers and has no middle button.
+    var pointerModifiers: Bool { eligible && stream.pointerModifiers }
+    var middleButton: Bool { eligible && stream.middleButton }
 
     mutating func beginOwnedBoot(binding: [String]) {
         self = Self()

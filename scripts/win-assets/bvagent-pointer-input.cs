@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text.RegularExpressions;
 namespace BridgeVM {
@@ -6,6 +7,25 @@ namespace BridgeVM {
         public static Input[] BuildPointer(string command) {
             if (String.IsNullOrEmpty(command) || command.Length > 64) throw new ArgumentException("pointer-input-length");
             string[] fields = command.Split(':');
+            if (fields.Length == 3) {
+                // Modifiers held for this one action: w Win, c Ctrl, a Alt, s Shift, each at most once and in the
+                // key builder's order. They go down before the pointer events and up after them in reverse, in
+                // the same batch, so nothing interleaves and the guest never keeps one down.
+                List<ushort> held = new List<ushort>();
+                int next = 0;
+                foreach (char name in fields[2]) {
+                    int index = "wcas".IndexOf(name, next);
+                    if (index < 0) throw new ArgumentException("pointer-input-modifiers");
+                    held.Add(ModifierKeys[index]);
+                    next = index + 1;
+                }
+                if (held.Count == 0) throw new ArgumentException("pointer-input-modifiers");
+                List<Input> inputs = new List<Input>();
+                foreach (ushort key in held) inputs.Add(KeyEvent(key, false, key == 0x5B));
+                inputs.AddRange(BuildPointer(fields[0] + ":" + fields[1]));
+                for (int i = held.Count - 1; i >= 0; i--) inputs.Add(KeyEvent(held[i], true, held[i] == 0x5B));
+                return inputs.ToArray();
+            }
             if (fields.Length != 2) throw new ArgumentException("pointer-input-format");
             if (fields[0] == "wheel" || fields[0] == "scroll") {
                 bool scroll = fields[0] == "scroll";
@@ -41,11 +61,15 @@ namespace BridgeVM {
                 case "move": return new Input[] { MouseEvent(x, y, 0x8001) };
                 case "press": return new Input[] { MouseEvent(x, y, 0x8003) };
                 case "release": return new Input[] { MouseEvent(x, y, 0x8005) };
-                case "releaseall": return new Input[] { MouseEvent(x, y, 0x8015) };
+                // Every button this builder presses: left, right and middle up.
+                case "releaseall": return new Input[] { MouseEvent(x, y, 0x8055) };
                 case "rightpress": return new Input[] { MouseEvent(x, y, 0x8009) };
                 case "rightrelease": return new Input[] { MouseEvent(x, y, 0x8011) };
+                case "middlepress": return new Input[] { MouseEvent(x, y, 0x8021) };
+                case "middlerelease": return new Input[] { MouseEvent(x, y, 0x8041) };
                 case "click": down = 0x8003; up = 0x8005; break;
                 case "rightclick": down = 0x8009; up = 0x8011; break;
+                case "middleclick": down = 0x8021; up = 0x8041; break;
                 default: throw new ArgumentException("unsupported-pointer-input");
             }
             return new Input[] { MouseEvent(x, y, down), MouseEvent(x, y, up) };
