@@ -1,0 +1,17 @@
+name: Guest agent Windows links contract
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/win-assets/bvagent.ps1', 'scripts/test-bvagent-guest-links.ps1', 'apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestLinks.swift', '.github/workflows/agent-guest-links-contract.yml']}}
+permissions:
+  contents: read
+jobs:
+  guest-links:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the link handler and the agent's link watch with Windows PowerShell 5.1
+        shell: powershell
+        run: scripts/test-bvagent-guest-links.ps1
+      - name: Check the link handler and the agent's link watch with PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: scripts/test-bvagent-guest-links.ps1

@@ -799,11 +799,18 @@ function Resolve-DropTarget([string]$Root, [string]$Rel, [bool]$IsDir) {
 # inRead covers nothing else, and the lock keeps a cancel from reaching later
 # I/O. vioser marks a waiting read cancelable, and a cancelled read takes no
 # bytes. Compiled on the first CLIPCAPS PUSH, so boot does not pay for it.
+# LINKWATCH (the app's "open Windows links on the Mac") has the same thread watch
+# the link file alone, without the clipboard: see "link watch" below.
 $script:BvClipPush = $false
+$script:BvLinkWatch = $false
 $script:BvClipWatchReady = $null
 $script:BvClipWatchSource = @'
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 namespace BridgeVM {
     public static class BvClipWatch {
@@ -828,34 +835,69 @@ namespace BridgeVM {
         static bool pending;
         static Thread watcher;
         public static long Notices;
+        static volatile bool clip;
+        static uint seen;
+        // The link file (StartLinks): its size as last seen, the next unread byte, and a wake.
+        static volatile string links;
+        static long linkSeen;
+        static long linkOffset;
+        static bool linkPending;
+        public const int MaxLinksPerWake = 4;
+        // base64 of a 2048-byte URL.
+        const int MaxLinkLine = 2732;
 
         public static void Start() {
             lock (Gate) {
-                if (watcher != null) { return; }
-                watcher = new Thread(Watch);
-                watcher.IsBackground = true;
-                watcher.Name = "BvClipWatch";
-                watcher.Start();
+                if (!clip) { seen = GetClipboardSequenceNumber(); clip = true; }
+                StartThread();
             }
         }
 
+        // Watch `path` for appended links. Only read here: the file is the user's.
+        public static void StartLinks(string path) {
+            lock (Gate) {
+                if (links == null) {
+                    linkSeen = LinkLength(path);
+                    // Lines already there were for an earlier agent: never replayed.
+                    linkOffset = Math.Max(linkSeen, 0);
+                    links = path;
+                }
+                StartThread();
+            }
+        }
+
+        static void StartThread() {
+            if (watcher != null) { return; }
+            watcher = new Thread(Watch);
+            watcher.IsBackground = true;
+            watcher.Name = "BvClipWatch";
+            watcher.Start();
+        }
+
+        static long LinkLength(string path) {
+            FileInfo file = new FileInfo(path);
+            return file.Exists ? file.Length : -1;
+        }
+
         static void Watch() {
-            uint seen = GetClipboardSequenceNumber();
             while (true) {
                 Thread.Sleep(100);
                 // An exception here would end the agent process, not just the watcher.
                 try {
-                    uint seq = GetClipboardSequenceNumber();
+                    uint seq = clip ? GetClipboardSequenceNumber() : 0;
+                    string path = links;
+                    long length = path == null ? 0 : LinkLength(path);
                     lock (Gate) {
-                        if (seq != seen) { seen = seq; pending = true; }
-                        if (pending && inRead) { CancelSynchronousIo(reader); }
+                        if (clip && seq != seen) { seen = seq; pending = true; }
+                        if (path != null && length != linkSeen) { linkSeen = length; linkPending = true; }
+                        if ((pending || linkPending) && inRead) { CancelSynchronousIo(reader); }
                     }
                 } catch (Exception) { }
             }
         }
 
-        // Bytes read, 0 when the read failed, or -1 when it was cancelled for a
-        // clipboard change.
+        // Bytes read, 0 when the read failed, -1 when it was cancelled for a
+        // clipboard change, or -2 for new lines in the link file (TakeLinks).
         public static int Read(IntPtr h, byte[] buf) {
             lock (Gate) {
                 uint id = GetCurrentThreadId();
@@ -876,8 +918,67 @@ namespace BridgeVM {
                     Notices++;
                     return -1;
                 }
+                if (!ok && error == OperationAborted && linkPending) {
+                    linkPending = false;
+                    return -2;
+                }
             }
             return ok ? (int)read : 0;
+        }
+
+        // Up to MaxLinksPerWake new links (base64 of an http(s) URL, as bv-open-url.ps1 appends
+        // them). The file and its folder are user-writable and this agent is elevated: it opens
+        // the file for reading only, never through a reparse point, never deletes or renames it,
+        // and passes on only lines that are links, so another file's lines cannot leave the guest.
+        public static string[] TakeLinks() {
+            List<string> taken = new List<string>();
+            string path = links;
+            if (path == null) { return taken.ToArray(); }
+            try {
+                if (!File.Exists(path) ||
+                    (File.GetAttributes(Path.GetDirectoryName(path)) & FileAttributes.ReparsePoint) != 0 ||
+                    (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) { return taken.ToArray(); }
+                using (FileStream file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)) {
+                    long length = file.Length;
+                    lock (Gate) {
+                        // Shorter: the handler started the file again. A backlog this large is no clicks.
+                        if (length < linkOffset) { linkOffset = 0; }
+                        if (length - linkOffset > 65536) { linkOffset = length; }
+                    }
+                    byte[] buffer = new byte[(int)Math.Min(length - linkOffset, MaxLinksPerWake * (MaxLinkLine + 2))];
+                    file.Seek(linkOffset, SeekOrigin.Begin);
+                    int filled = 0;
+                    while (filled < buffer.Length) {
+                        int n = file.Read(buffer, filled, buffer.Length - filled);
+                        if (n <= 0) { break; }
+                        filled += n;
+                    }
+                    int start = 0;
+                    for (int i = 0; i < filled && taken.Count < MaxLinksPerWake; i++) {
+                        if (buffer[i] != 10) { continue; }
+                        string line = Encoding.ASCII.GetString(buffer, start, i - start).TrimEnd((char)13);
+                        if (IsLink(line)) { taken.Add(line); }
+                        start = i + 1;
+                    }
+                    // No line end in a full buffer: a line longer than any link, skipped.
+                    if (start == 0 && filled == buffer.Length && filled > MaxLinkLine + 2) { start = filled; }
+                    lock (Gate) {
+                        linkOffset += start;
+                        if (start > 0 && linkOffset < length) { linkPending = true; }
+                    }
+                }
+            } catch (Exception) { }
+            return taken.ToArray();
+        }
+
+        static bool IsLink(string line) {
+            if (line.Length == 0 || line.Length > MaxLinkLine || line.Length % 4 != 0 ||
+                !Regex.IsMatch(line, @"\A[A-Za-z0-9+/]+={0,2}\z")) { return false; }
+            try {
+                byte[] bytes = Convert.FromBase64String(line);
+                string url = new UTF8Encoding(false, true).GetString(bytes);
+                return bytes.Length <= 2048 && Regex.IsMatch(url, @"\A(?i:https?)://[^\s\x00-\x1f\x7f]+\z");
+            } catch (Exception) { return false; }
         }
     }
 }
@@ -885,7 +986,8 @@ namespace BridgeVM {
 function Initialize-ClipWatch {
     if ($null -eq $script:BvClipWatchReady) {
         try {
-            Add-Type -TypeDefinition $script:BvClipWatchSource -ErrorAction Stop
+            # LINKWATCH may have compiled it already.
+            if (-not ('BridgeVM.BvClipWatch' -as [type])) { Add-Type -TypeDefinition $script:BvClipWatchSource -ErrorAction Stop }
             [BridgeVM.BvClipWatch]::Start()
             $script:BvClipWatchReady = $true
         } catch {
@@ -896,6 +998,26 @@ function Initialize-ClipWatch {
     return $script:BvClipWatchReady
 }
 # <<< clipboard watch
+
+# >>> link watch
+# LINKWATCH: the app turned on "open Windows links on the Mac" and registered the per-user
+# BridgeVM browser, whose handler (bv-open-url.ps1, written by the app) appends each link
+# as base64 + CRLF to this file. The clipboard watch thread then also checks the file's
+# size every 100 ms, with or without CLIPCAPS PUSH, and Read-Line sends OPENURL <b64> for
+# each new link between replies. Never started otherwise, so the clipboard path is as before.
+function Start-LinkWatch {
+    try {
+        if (-not ('BridgeVM.BvClipWatch' -as [type])) { Add-Type -TypeDefinition $script:BvClipWatchSource -ErrorAction Stop }
+        $dir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'BridgeVM'
+        [BridgeVM.BvClipWatch]::StartLinks((Join-Path $dir 'open-links.txt'))
+        $script:BvLinkWatch = $true
+        return @{ Exit = 0; Out = 'BVLINKS watch=on' }
+    } catch {
+        Log ('LINK WATCH unavailable: ' + $_.Exception.Message)
+        return @{ Exit = 1; Out = 'BVLINKS watch=unavailable' }
+    }
+}
+# <<< link watch
 
 # >>> share watch
 # The host lists the shared folder (LSR) every 2 s. Enumerating it costs the guest about
@@ -994,9 +1116,13 @@ function Read-Line($handle) {
     while ($true) {
         if (Is-BadHandle $handle) { return $null }
         $read = 0
-        if ($script:BvClipPush) {
+        if ($script:BvClipPush -or $script:BvLinkWatch) {
             $read = [BridgeVM.BvClipWatch]::Read($handle, $script:BvReadBuffer)
-            if ($read -lt 0) { Write-Line $handle 'CLIPCHANGED' 'CLIPCHANGED'; continue }
+            if ($read -eq -2) {
+                foreach ($link in [BridgeVM.BvClipWatch]::TakeLinks()) { Write-Line $handle ('OPENURL ' + $link) 'OPENURL' }
+                continue
+            }
+            if ($read -lt 0) { if ($script:BvClipPush) { Write-Line $handle 'CLIPCHANGED' 'CLIPCHANGED' }; continue }
             $ok = $read -gt 0
         } else {
             $ok = $K::ReadFile($handle, $script:BvReadBuffer, [uint32]$script:BvReadBuffer.Length, [ref]$read, [IntPtr]::Zero)
@@ -1595,6 +1721,7 @@ while ($true) {
                     if ($null -ne $W -and $W::PostMessage($hw, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)) { Write-Line $h 'OK WINCLOSE' 'OK' }
                     else { Write-Line $h 'ERR WINCLOSE' 'ERR' }
                 }
+                'LINKWATCH' { Write-CommandResult $h (Start-LinkWatch) }
                 { $_ -cin @('DISPLAYMODE', 'DISPLAYSCALE') } {
                     # The resident desktop switch and display scale (Invoke-BvDisplay).
                     $r = Invoke-BvDisplay $tok $arg
