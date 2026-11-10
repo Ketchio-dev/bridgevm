@@ -12,10 +12,21 @@
 //! writer of the file stamps its frames, so a time left by an earlier writer
 //! never labels another writer's frame. Only the host reads it; the guest
 //! never sees the file.
+//!
+//! The damage words say which pixels the frame changed against the file's
+//! previous frame (the one at sequence - 2): bytes 56..64 hold x, y, width and
+//! height as little-endian u16, and bytes 44..48 the low 32 bits of the even
+//! sequence they belong to. Both are written inside the seqlock, by every
+//! writer of the file (`write_inner`): a damaged publish stores its clipped
+//! rectangle (0x0 when nothing changed), a full one the whole frame. A reader
+//! trusts the rectangle only when the tag is the frame's own sequence and it
+//! showed the frame just before (sequence - 2); bytes an older writer left
+//! carry another tag. A frame too large for u16 stores an odd tag, which no
+//! frame has, so readers copy it whole.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::FbSink;
+use super::{FbSink, Rect};
 
 /// Byte offset of the publish-time word.
 pub(crate) const PUBLISH_TIME_OFFSET: usize = 48;
@@ -24,6 +35,17 @@ const _: () = assert!(
     PUBLISH_TIME_OFFSET >= crate::display_fb::requests::FRAME_REQUEST_MARKER_OFFSET + 4
         && PUBLISH_TIME_OFFSET % 8 == 0
         && PUBLISH_TIME_OFFSET + 8 <= 64
+);
+/// Byte offset of the damage tag: the low 32 bits of the sequence the damage belongs to.
+pub(crate) const DAMAGE_TAG_OFFSET: usize = 44;
+/// Byte offset of the damage rectangle: x, y, width, height as u16.
+pub(crate) const DAMAGE_RECT_OFFSET: usize = 56;
+// The tag sits after the frame-request marker (40..44), the rectangle after the publish time.
+const _: () = assert!(
+    DAMAGE_TAG_OFFSET == crate::display_fb::requests::FRAME_REQUEST_MARKER_OFFSET + 4
+        && DAMAGE_TAG_OFFSET + 4 <= PUBLISH_TIME_OFFSET
+        && DAMAGE_RECT_OFFSET == PUBLISH_TIME_OFFSET + 8
+        && DAMAGE_RECT_OFFSET + 8 <= 64
 );
 
 impl FbSink {
@@ -36,6 +58,30 @@ impl FbSink {
         // SAFETY: the mapping is page-aligned and at least the 64-byte header.
         let word = unsafe { &*(self.map.add(PUBLISH_TIME_OFFSET) as *const AtomicU64) };
         word.store(uptime_ns().to_le(), Ordering::Relaxed);
+    }
+
+    /// Store what the frame being written changed. `odd` is the frame's open sequence; the frame
+    /// publishes `odd + 1`.
+    pub(super) fn stamp_damage(&self, odd: u64, changed: Rect) {
+        let even = odd.wrapping_add(1) as u32;
+        let fields = [changed.x, changed.y, changed.width, changed.height].map(u16::try_from);
+        let (tag, rect) = match fields {
+            [Ok(x), Ok(y), Ok(width), Ok(height)] => (even, [x, y, width, height]),
+            _ => (even | 1, [0; 4]),
+        };
+        let mut words = [0u8; 8];
+        for (slot, value) in words.chunks_exact_mut(2).zip(rect) {
+            slot.copy_from_slice(&value.to_le_bytes());
+        }
+        // SAFETY: the mapping is page-aligned and at least the 64-byte header.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                tag.to_le_bytes().as_ptr(),
+                self.map.add(DAMAGE_TAG_OFFSET),
+                4,
+            );
+            std::ptr::copy_nonoverlapping(words.as_ptr(), self.map.add(DAMAGE_RECT_OFFSET), 8);
+        }
     }
 }
 

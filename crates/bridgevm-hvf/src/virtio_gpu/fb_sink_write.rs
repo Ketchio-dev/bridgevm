@@ -79,10 +79,14 @@ impl FbSink {
         let same_layout =
             ours && !new_mapping && self.layout_matches(width, height, stride, fourcc);
         self.begin_frame(&mut shared.seq, width, height, stride, fourcc);
-        match damage.filter(|_| same_layout) {
+        let changed = match damage.filter(|_| same_layout) {
             Some(rect) => self.copy_damage(bytes, width, height, stride, rect),
-            None => self.copy_full(bytes, frame_len),
-        }
+            None => {
+                self.copy_full(bytes, frame_len);
+                full_frame(width, height)
+            }
+        };
+        self.stamp_damage(shared.seq, changed);
         self.finish_frame(&mut shared.seq);
         shared.newest = Some((self.writer, Instant::now()));
         Ok(Wrote::Frame)
@@ -182,13 +186,26 @@ impl FbSink {
         };
     }
 
-    fn copy_damage(&mut self, bytes: &[u8], width: u32, height: u32, stride: u32, rect: Rect) {
+    /// Copies the rows of `rect` clipped to the frame; returns that clipped rect (empty: nothing changed).
+    fn copy_damage(
+        &mut self,
+        bytes: &[u8],
+        width: u32,
+        height: u32,
+        stride: u32,
+        rect: Rect,
+    ) -> Rect {
         let x0 = rect.x.min(width) as usize;
         let x1 = rect.x.saturating_add(rect.width).min(width) as usize;
         let y0 = rect.y.min(height) as usize;
         let y1 = rect.y.saturating_add(rect.height).min(height) as usize;
         if x1 <= x0 || y1 <= y0 {
-            return;
+            return Rect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            };
         }
         let row_len = (x1 - x0) * PIXEL_BYTES;
         for y in y0..y1 {
@@ -201,6 +218,12 @@ impl FbSink {
                 )
             };
         }
+        Rect {
+            x: x0 as u32,
+            y: y0 as u32,
+            width: (x1 - x0) as u32,
+            height: (y1 - y0) as u32,
+        }
     }
 
     fn finish_frame(&mut self, seq: &mut u64) {
@@ -208,6 +231,15 @@ impl FbSink {
         std::sync::atomic::fence(Ordering::Release);
         *seq = seq.wrapping_add(1);
         self.sequence().store(*seq, Ordering::Release);
+    }
+}
+
+fn full_frame(width: u32, height: u32) -> Rect {
+    Rect {
+        x: 0,
+        y: 0,
+        width,
+        height,
     }
 }
 

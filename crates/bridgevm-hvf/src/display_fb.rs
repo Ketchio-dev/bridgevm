@@ -21,7 +21,8 @@ pub mod requests;
 
 /// Owner of one BVFB display file: magic `0x42564642`, version 1, width, height, stride and
 /// fourcc as little-endian u32 at bytes 0..24, a seqlock u64 at byte 24 (odd while a frame is
-/// being written), the publish time at byte 48 (fb_sink_header.rs) and pixels from byte 64.
+/// being written), the damage tag at 44, the publish time at 48, the damage rectangle at 56
+/// (fb_sink_header.rs) and pixels from byte 64.
 #[derive(Debug)]
 pub struct DisplayFramebuffer {
     sink: FbSink,
