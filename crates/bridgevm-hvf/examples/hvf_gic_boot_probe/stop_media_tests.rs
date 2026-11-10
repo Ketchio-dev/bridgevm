@@ -68,6 +68,35 @@ fn stop_records_are_the_completed_writes_in_order() {
 }
 
 #[test]
+fn a_failed_vars_write_still_writes_the_disk_back_before_it_panics() {
+    use std::os::unix::fs::PermissionsExt;
+    let scratch = Scratch::new();
+    let vars_folder = scratch.0.join("vars-folder");
+    fs::create_dir(&vars_folder).unwrap();
+    let mut media = VirtBootMediaConfig::qemu_defaults();
+    media.flash_vars = scratch.media("vars-folder/vars");
+    media.nvme_disk = Some(scratch.media("primary"));
+    let mut owner = acquire(&mut media).unwrap();
+    let mut platform = VirtPlatform::new(VirtFdtConfig::default());
+    platform.load_flash_vars(b"vars changed by the guest");
+    platform.load_nvme_disk(vec![0x6b; 512]);
+    // The vars replacement's temporary file cannot be created there.
+    let mode = |m| fs::Permissions::from_mode(m);
+    fs::set_permissions(&vars_folder, mode(0o555)).unwrap();
+
+    let stop = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        persist_stop_media(&mut platform, &media, &mut owner)
+    }));
+    fs::set_permissions(&vars_folder, mode(0o755)).unwrap();
+
+    let message = stop.unwrap_err();
+    let message = message.downcast_ref::<String>().unwrap();
+    assert!(message.starts_with("persist UEFI vars: "), "{message}");
+    let disk = fs::read(&media.nvme_disk.as_ref().unwrap().path).unwrap();
+    assert_eq!(disk, vec![0x6b; 512]);
+}
+
+#[test]
 fn sigterm_ends_the_run_through_stop_persistence() {
     install_host_term_handler();
     // Without the handler TERM's default action ends this test process.
