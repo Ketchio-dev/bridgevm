@@ -38,6 +38,8 @@ mod media_lease;
 pub(crate) fn run() -> ExitCode {
     // Before any media is leased: from here TERM ends the run through persistence.
     install_host_term_handler();
+    // run.log keeps room for the disk-full pause's lines (pause_gate.rs).
+    crate::pause_gate::keep_log_reserve();
     let mut fatal_vcpu_run_error = false;
     let mut fatal_reset_error = false;
     let mut exit_for_recreate = false;

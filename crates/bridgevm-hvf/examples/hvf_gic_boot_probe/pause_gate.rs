@@ -304,6 +304,30 @@ pub(crate) fn report_storage_full(full: &DiskFull) {
     host_log::out(storage_full_line(full));
 }
 
+/// Space kept allocated past the end of run.log (stdout) so that the lines
+/// above still land when its volume is full. A boot prints a few hundred KB;
+/// a running VM about 15 KB an hour of agent heartbeats.
+const LOG_RESERVE: u64 = 4 << 20;
+
+/// At the probe's start: reserve the end of run.log now and top it up every
+/// 30 s, so whatever the probe printed meanwhile is back before the disk can
+/// fill. Ends when stdout is not a regular file (a pipe, a terminal).
+pub(crate) fn keep_log_reserve() {
+    let spawned = std::thread::Builder::new()
+        .name("run-log-reserve".into())
+        .spawn(|| {
+            while !matches!(top_up_log_reserve(), Ok(false)) {
+                std::thread::sleep(Duration::from_secs(30));
+            }
+        });
+    drop(spawned);
+}
+
+/// Fails, and changes nothing, while the volume is full.
+fn top_up_log_reserve() -> std::io::Result<bool> {
+    host_log::reserve_tail(libc::STDOUT_FILENO, LOG_RESERVE)
+}
+
 /// A RESUME for a running VM: nothing was paused.
 pub(crate) fn answer_running() {
     host_log::out(resumed_line(0, GATE.offset()));
@@ -348,7 +372,11 @@ pub(crate) fn pause_and_wait(
         }
         match request(live_input.take_host_pause(), true) {
             Request::Resume => match retry_held() {
-                None => break PausedExit::Resumed(Duration::ZERO),
+                None => {
+                    // There is space again: what the pause's lines used is back.
+                    let _ = top_up_log_reserve();
+                    break PausedExit::Resumed(Duration::ZERO);
+                }
                 Some(full) => {
                     report_storage_full(&full);
                     host_log::out("BVPAUSE paused");
