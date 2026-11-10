@@ -1,6 +1,6 @@
 import Foundation
 
-/// A library VM's runtime-view launch preferences (clipboard sync, network, durable disk writes,
+/// A library VM's runtime-view launch preferences (RAM and CPUs, clipboard sync, network, durable disk writes,
 /// microphone, display resolution, Retina resolution, Command key, shared folder, port forwards, display driver) are saved in vm.json, so every start path (runtime view,
 /// dashboard, native CLI, relaunch) uses them. The experimental non-library entry keeps
 /// view-local options.
@@ -64,6 +64,8 @@ extension VMConfig {
     /// exactly when only those keys differ.
     func keepingRuntimePreferences(of other: VMConfig) -> VMConfig {
         var copy = self
+        copy.memMiB = other.memMiB
+        copy.cpuCount = other.cpuCount
         copy.clipboardSyncEnabled = other.clipboardSyncEnabled
         copy.networkEnabled = other.networkEnabled
         copy.durableDiskWritesEnabled = other.durableDiskWritesEnabled
@@ -86,6 +88,8 @@ extension HvfEngineConfig {
     func adoptingSavedPreferences(_ launch: HvfEngineConfig, previous: VMConfig, saved: VMConfig) -> HvfEngineConfig {
         var rebound = self
         rebound.libraryContext = launch.libraryContext
+        if saved.memMiB != previous.memMiB { rebound.ramMiB = launch.ramMiB }
+        if saved.cpuCount != previous.cpuCount { rebound.smpCpus = launch.smpCpus }
         if saved.clipboardSyncEnabled != previous.clipboardSyncEnabled { rebound.clipboardSync = launch.clipboardSync }
         if saved.networkEnabled != previous.networkEnabled { rebound.virtioNet = launch.virtioNet }
         if saved.durableDiskWritesEnabled != previous.durableDiskWritesEnabled { rebound.durableDiskWrites = launch.durableDiskWrites }
