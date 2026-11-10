@@ -54,6 +54,10 @@ impl<B: NetBackend> VirtioPciNet<B> {
         self.net.stats()
     }
 
+    pub fn run_stats(&self) -> VirtioNetStats {
+        self.net.run_stats()
+    }
+
     pub fn interrupt_line_level(&self) -> bool {
         self.net.interrupt_line_level()
     }

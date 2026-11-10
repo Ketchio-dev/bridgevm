@@ -6,6 +6,10 @@ use super::*;
 pub struct VirtioNet<B: NetBackend> {
     pub(crate) backend: B,
     pub(crate) stats: VirtioNetStats,
+    /// Counters and negotiated features from before the last reset, so the
+    /// stop report covers the whole run (Windows resets the device as it
+    /// shuts down).
+    pub(crate) carried: VirtioNetStats,
     pub(crate) mac: [u8; 6],
     pub(crate) device_features_sel: u32,
     pub(crate) driver_features_sel: u32,
@@ -62,6 +66,20 @@ pub struct VirtioNetStats {
     pub queues: [VirtioNetQueueStats; QUEUE_COUNT],
 }
 
+impl VirtioNetStats {
+    fn add_counters(&mut self, other: &Self) {
+        for (total, part) in [
+            (&mut self.notify_count, other.notify_count),
+            (&mut self.tx_count, other.tx_count),
+            (&mut self.rx_count, other.rx_count),
+            (&mut self.tx_bytes, other.tx_bytes),
+            (&mut self.rx_bytes, other.rx_bytes),
+        ] {
+            *total = total.saturating_add(part);
+        }
+    }
+}
+
 impl VirtioNetQueue {
     pub(crate) const fn new(notify_off: u16) -> Self {
         Self {
@@ -88,6 +106,7 @@ impl<B: NetBackend> VirtioNet<B> {
         Self {
             backend,
             stats: VirtioNetStats::default(),
+            carried: VirtioNetStats::default(),
             mac: DEFAULT_MAC,
             device_features_sel: 0,
             driver_features_sel: 0,
@@ -136,11 +155,23 @@ impl<B: NetBackend> VirtioNet<B> {
         stats
     }
 
+    /// `stats()` with the counters summed over every reset of the run and
+    /// `driver_features` as every feature negotiated in it.
+    pub fn run_stats(&self) -> VirtioNetStats {
+        let mut stats = self.stats();
+        stats.add_counters(&self.carried);
+        stats.driver_features |= self.carried.driver_features;
+        stats
+    }
+
     pub fn interrupt_line_level(&self) -> bool {
         self.interrupt_status != 0
     }
 
     pub fn reset_runtime_state(&mut self) {
+        let features = self.stats().driver_features;
+        self.carried.add_counters(&self.stats);
+        self.carried.driver_features |= features;
         self.stats = VirtioNetStats::default();
         self.device_features_sel = 0;
         self.driver_features_sel = 0;

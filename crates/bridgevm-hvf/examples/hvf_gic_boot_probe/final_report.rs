@@ -275,7 +275,7 @@ macro_rules! persist_and_report_stop {
         if let Some(stats) = $platform.virtio_iso_stats() {
             print_block_media_stats("legacy virtio-mmio ISO stats", stats);
         }
-        if let Some(stats) = $platform.virtio_net_stats() {
+        if let Some(stats) = $platform.virtio_net_run_stats() {
             println!(
                 "virtio-net stats: notify={} tx={} rx={} tx_bytes={} rx_bytes={} status={:#x} driver_features={:#x} interrupt_status={:#x} pending_rx={}",
                 stats.notify_count,
