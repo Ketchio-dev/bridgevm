@@ -371,6 +371,9 @@ mod share_hash;
 pub mod share_mtime;
 #[path = "share_adopt.rs"]
 mod share_adopt;
+#[path = "share_excluded.rs"]
+mod share_excluded;
+pub use share_excluded::is_share_excluded;
 #[path = "share_synced.rs"]
 pub mod share_synced;
 pub use share_hash::{fnv1a64, fnv1a64_continue, FNV1A64_START};
