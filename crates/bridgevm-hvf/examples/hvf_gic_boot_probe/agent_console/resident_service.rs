@@ -549,6 +549,7 @@ impl AgentConsoleHarness {
             InFlightSnapshot::ClipImagePull => self.handle_clip_image_pull_reply(line, now),
             InFlightSnapshot::ClipFilesPull => self.handle_clip_files_pull_reply(line, now),
             InFlightSnapshot::ClipFilesPush => self.handle_clip_files_push_reply(line, now, send),
+            InFlightSnapshot::Ctl(command) if self.display_verb_refused(line, &command, now) => {}
             InFlightSnapshot::Ctl(command) => match self.handle_reply_line(line, &command) {
                 ReplyProgress::Complete => self.complete_in_flight(),
                 ReplyProgress::Incomplete | ReplyProgress::Ignored => {}

@@ -40,6 +40,7 @@ pub(super) mod tests {
             clip_push: false,
             put_data: false,
             share_big: false,
+            display_verbs_refused: false,
             clip_html: false,
             clip_files: false,
             clip_files_push: false,
@@ -177,7 +178,7 @@ pub(super) mod tests {
     fn is_raw_verb_covers_protocol_verbs_only() {
         for v in [
             "CLIPGET", "CLIPSET", "LS", "LSR", "GET", "PUT", "PUTBEG", "PUTCHUNK", "PUTEND", "DEL",
-            "PING", "WINLIST", "WINBOUNDS", "WINFOCUS", "WINCLOSE",
+            "PING", "WINLIST", "WINBOUNDS", "WINFOCUS", "WINCLOSE", "DISPLAYMODE", "DISPLAYSCALE",
         ] {
             assert!(is_raw_verb(v), "{v} should be raw");
         }

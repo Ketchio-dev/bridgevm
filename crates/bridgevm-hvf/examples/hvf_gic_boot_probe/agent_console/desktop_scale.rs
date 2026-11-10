@@ -7,6 +7,9 @@
 //! from the scale Windows recommends. If the requested scale, clamped to that
 //! maximum, differs, it sets it with DisplayConfigSetDeviceInfo type -4 (the
 //! call the Settings app makes) and reads it back. It prints one `BVDPI` line.
+//! The request goes to the agent as `DISPLAYSCALE P`, which runs this C#
+//! compiled once in the agent process, and as this RUN powershell line to an
+//! agent without that verb (display_verbs.rs).
 //!
 //! Windows keeps the scale per monitor, relative to its recommendation, and
 //! our EDID changes with each size, so the latest scale is applied again after
@@ -32,7 +35,8 @@ const PENDING: u32 = 1 << 31;
 /// (bytes 8-20). Type 4 answers the adapter's device path (276 bytes, the path
 /// from 20); type -3 the minimum, current and maximum steps (32 bytes, at 20,
 /// 24 and 28); type -4 takes one step (24 bytes, at 20).
-const SCRIPT_BODY: &str = concat!(
+/// bvagent.ps1 holds the same C#, one piece per line (display_verbs_tests.rs).
+pub(super) const SCRIPT_BODY: &str = concat!(
     r#"Add-Type -TypeDefinition '"#,
     r#"using System;using System.Runtime.InteropServices;"#,
     r#"public static class BvS{const string U="user32.dll";"#,
@@ -99,13 +103,20 @@ pub(super) fn take_desktop_scale_command() -> Option<String> {
     (scale & PENDING != 0).then(|| desktop_scale_command(scale & !PENDING))
 }
 
-/// Whether `command` is a scale command built here.
+/// Whether `command` is a scale command built here: the verb or its RUN
+/// powershell line.
 pub(super) fn is_desktop_scale_command(command: &str) -> bool {
     static HEAD: OnceLock<String> = OnceLock::new();
-    command.starts_with(HEAD.get_or_init(|| powershell_command_head(SCRIPT_BODY)))
+    command.split(' ').next() == Some(super::display_verbs::SCALE_VERB)
+        || command.starts_with(HEAD.get_or_init(|| powershell_command_head(SCRIPT_BODY)))
 }
 
 fn desktop_scale_command(percent: u32) -> String {
+    format!("{} {percent}", super::display_verbs::SCALE_VERB)
+}
+
+/// The RUN powershell line for a scale, for an agent without `DISPLAYSCALE`.
+pub(super) fn desktop_scale_run_command(percent: u32) -> String {
     powershell_command(&format!("{SCRIPT_BODY}[BvS]::Run({percent})"))
 }
 

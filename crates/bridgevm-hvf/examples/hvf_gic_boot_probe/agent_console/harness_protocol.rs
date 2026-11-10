@@ -19,6 +19,20 @@ pub(super) const MAX_AGENT_GET_BYTES: usize = 64 * 1024 * 1024;
 /// Longest guest-agent reply line kept while waiting for its newline.
 pub(super) const MAX_AGENT_LINE_BYTES: usize = 32 * 1024 * 1024;
 
+/// What run.log gets for an `OUT <exit> <b64>` reply: the output between the
+/// CMD and END lines, so a line it printed (BVDISPLAY, BVDPI) starts a log line.
+pub(super) fn command_result_text(command: &str, exit_code: i32, output: &str) -> String {
+    match base64_decode(output) {
+        Ok(bytes) => format!(
+            "BVAGENT CMD {command} exit={exit_code}\n{}\nBVAGENT END {command}",
+            String::from_utf8_lossy(&bytes)
+        ),
+        Err(error) => format!(
+            "BVAGENT CMD {command} exit={exit_code}\n<base64 decode error: {error:?}>\nBVAGENT END {command}"
+        ),
+    }
+}
+
 impl AgentConsoleHarness {
     /// Milliseconds since boot for the BVAGENT evidence prints, so live-run
     /// latencies are measurable straight from run.log.
@@ -98,6 +112,7 @@ impl AgentConsoleHarness {
             clip_push: false,
             put_data: false,
             share_big: false,
+            display_verbs_refused: false,
             clip_html: false,
             clip_files: false,
             clip_files_push: false,
@@ -273,19 +288,7 @@ impl AgentConsoleHarness {
             return ReplyProgress::Complete;
         }
         if let Some((exit_code, output)) = parse_out_line(line) {
-            match base64_decode(output) {
-                Ok(bytes) => {
-                    let text = String::from_utf8_lossy(&bytes);
-                    println!(
-                        "BVAGENT CMD {command} exit={exit_code}\n{text}\nBVAGENT END {command}"
-                    );
-                }
-                Err(error) => {
-                    println!(
-                        "BVAGENT CMD {command} exit={exit_code}\n<base64 decode error: {error:?}>\nBVAGENT END {command}"
-                    );
-                }
-            }
+            println!("{}", command_result_text(command, exit_code, output));
             return ReplyProgress::Complete;
         }
         if let Some(b64) = line.strip_prefix("CLIP ") {

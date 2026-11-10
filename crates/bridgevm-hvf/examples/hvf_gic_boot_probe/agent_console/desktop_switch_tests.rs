@@ -15,12 +15,12 @@ pub(crate) fn decoded(command: &str) -> String {
     String::from_utf16(&units).unwrap()
 }
 
-/// The decoded scripts of the queued desktop switches.
+/// The queued desktop switches.
 fn queued_switches(h: &AgentConsoleHarness) -> Vec<String> {
     h.queue
         .iter()
         .filter_map(|req| match req {
-            ServiceReq::Ctl(c) if is_desktop_switch_command(c) => Some(decoded(c)),
+            ServiceReq::Ctl(c) if is_desktop_switch_command(c) => Some(c.clone()),
             _ => None,
         })
         .collect()
@@ -44,14 +44,14 @@ fn requests_before_the_service_start_become_one_switch_with_the_last_size() {
     h.service_enqueue(now);
     let switches = queued_switches(&h);
     assert_eq!(switches.len(), 1, "one switch at service start");
-    assert!(switches[0].ends_with("[BvD]::Run(1920,1080)"));
+    assert_eq!(switches[0], "DISPLAYMODE 1920 1080");
 
     // A request before that one is sent replaces it.
     request_desktop_mode((1517, 931));
     h.service_enqueue(now);
     let switches = queued_switches(&h);
     assert_eq!(switches.len(), 1);
-    assert!(switches[0].ends_with("[BvD]::Run(1517,931)"));
+    assert_eq!(switches[0], "DISPLAYMODE 1517 931");
 }
 
 #[test]
@@ -74,15 +74,22 @@ fn requests_while_a_switch_runs_give_exactly_one_follow_up() {
     h.service_enqueue(now);
     let switches = queued_switches(&h);
     assert_eq!(switches.len(), 1, "exactly one follow-up");
-    assert!(switches[0].ends_with("[BvD]::Run(1517,931)"));
+    assert_eq!(switches[0], "DISPLAYMODE 1517 931");
     assert!(!has_requested_mode());
 }
 
 #[test]
 fn the_script_targets_the_virtio_display_fixes_the_layout_and_retries() {
     request_desktop_mode((1517, 931));
-    let command = take_desktop_switch_command().expect("requested");
+    assert_eq!(
+        take_desktop_switch_command().as_deref(),
+        Some("DISPLAYMODE 1517 931")
+    );
     assert_eq!(take_desktop_switch_command(), None, "only once");
+    assert!(is_desktop_switch_command("DISPLAYMODE 1517 931"));
+    assert!(!is_desktop_switch_command("DISPLAYMODES 1517 931"));
+    // The RUN line for an agent without the verb.
+    let command = desktop_switch_run_command(1517, 931);
     assert!(command.starts_with("powershell -NoProfile -NonInteractive"));
     assert!(command.len() <= 8_156, "{} chars", command.len());
     assert!(is_desktop_switch_command(&command));
@@ -118,6 +125,6 @@ fn the_longest_switch_fits_cmd_exe_with_the_agent_wrapper() {
     // cmd.exe takes 8,191 characters, 35 of them the agent's
     // `"C:\Windows\system32\cmd.exe" /c "..."` around the command.
     assert_eq!(MAX_RUN_COMMAND_CHARS, 8_156);
-    let command = desktop_switch_command(u32::MAX, u32::MAX);
+    let command = desktop_switch_run_command(u32::MAX, u32::MAX);
     assert!(command.len() <= 8_156, "{} chars", command.len());
 }

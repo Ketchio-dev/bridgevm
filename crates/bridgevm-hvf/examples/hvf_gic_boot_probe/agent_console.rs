@@ -65,6 +65,8 @@ mod ctl_verb_reply_tests;
 mod desktop_scale;
 #[path = "agent_console/desktop_switch.rs"]
 mod desktop_switch;
+#[path = "agent_console/display_verbs.rs"]
+mod display_verbs;
 #[path = "agent_console/dns_flush.rs"]
 mod dns_flush;
 #[path = "agent_console/file_drop.rs"]
