@@ -65,7 +65,9 @@ enum Kind {
     Read,
     /// `after`: the punches in flight at its fetch that it overlaps; it runs
     /// once they returned. Empty, without allocating, while none is in flight.
-    Write { after: Vec<Arc<Punch>> },
+    Write {
+        after: Vec<Arc<Punch>>,
+    },
     Deallocate(PunchJob),
 }
 

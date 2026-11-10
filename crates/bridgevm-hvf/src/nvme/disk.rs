@@ -33,8 +33,8 @@ pub(crate) enum DiskBackend {
 
 #[derive(Debug)]
 pub(crate) struct RawFileDisk {
-    /// Shared with READs and WRITEs that run without the platform lock
-    /// (unlocked_io.rs).
+    /// Shared with READs, WRITEs and Deallocates that run without the
+    /// platform lock (unlocked_io.rs).
     pub(crate) file: Arc<File>,
     pub(crate) len: u64,
     pub(crate) overlay: BTreeMap<u64, Vec<u8>>,

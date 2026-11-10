@@ -26,9 +26,40 @@
 //!   punch as they cover a write; the DSM itself promises no durability. A
 //!   host power loss before them can only undo the punch, and the old data
 //!   then reads back, which DLFEAT 0 allows.
-//! - Cost: the punches run inline in the I/O path, under the platform lock.
-//!   The final report's `nvme dsm:` record ([`dsm_record`]) says how many
-//!   commands ran and how long they took.
+//! - Where: with unlocked I/O (the live VMM's default) a Deallocate whose
+//!   range list checks out punches on the doorbell vCPU's NVMe worker,
+//!   without the platform lock, under a WRITE's conditions (unlocked_io.rs):
+//!   its completion slot is held, it counts in flight, and a drain posts its
+//!   completion once its punches returned. Every other case, an invalid list
+//!   among them, runs inline under the lock, as before.
+//! - Ordering: NVMe orders no commands in flight together; inline, the punch
+//!   ran at fetch. Only whole host blocks inside the ranges are punched, so a
+//!   punch changes no byte outside them, and per host block a punch and a
+//!   write land in one order or the other.
+//!   - A WRITE fetched before the Deallocate and still running may land after
+//!     the punch. Each of its LBAs inside the ranges then reads its data, and
+//!     the rest of a punched block it partly rewrote reads zeros, where landing
+//!     first would have left zeros: either is a deallocated or last-written
+//!     value, which DLFEAT 0 allows, and each stays until the next write.
+//!   - A READ fetched before the Deallocate completes may still read the old
+//!     data; every read after the completion reads the punched result.
+//!   - A WRITE fetched after the Deallocate and overlapping its ranges must not
+//!     run before the punch returned, or the punch could erase newer data
+//!     whose completion the guest may have seen. That is the one rule
+//!     (punch_order.rs); it keeps the fetch order of the inline path and of
+//!     QEMU's block layer. It checks the command's ranges, which hold the
+//!     punched blocks, so at a range's edge it may wait for nothing.
+//!   - READs and other WRITEs are not ordered. A FLUSH covers a Deallocate
+//!     completed before it was submitted, as it does a WRITE: its punches
+//!     returned before the completion was posted. A reset, shutdown, admin
+//!     command, export, restore and the disk-full RESUME wait for the punches
+//!     in flight with the other jobs in flight.
+//! - Cost: while no punch is in flight, which is all the time but a punch's
+//!   few ms, a WRITE's fetch only checks that the controller's list of them
+//!   is empty. The final report's `nvme dsm:` record ([`dsm_record`]) counts
+//!   every command; for one punched on a worker its time is the punch's
+//!   there, not a lock hold. Inline (`BRIDGEVM_NVME_UNLOCKED_IO=0`,
+//!   checkpoints) the punches still hold the lock.
 
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
@@ -358,8 +389,8 @@ impl DsmStats {
 /// The `nvme dsm:` record: Deallocate commands, those rejected for a range
 /// outside the namespace, the valid ranges and their bytes, the bytes punched
 /// on the host, and the commands' total and longest time and how many took
-/// over 20 ms. They run under the platform lock, so each is a lock hold at
-/// least that long.
+/// over 20 ms. With unlocked I/O the time is the punches' on a vCPU's NVMe
+/// worker; inline, each command is a platform-lock hold at least that long.
 pub fn dsm_record() -> String {
     let s = &DSM_STATS;
     let [commands, rejected, ranges, bytes, punched, total_us, max_us, long] = [
