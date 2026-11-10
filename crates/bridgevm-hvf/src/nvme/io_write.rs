@@ -88,8 +88,8 @@ impl NvmeController {
             let Some(backend) = self.backend_for_nsid_mut(nsid) else {
                 return Some(SC_INVALID_FIELD);
             };
-            if backend.write_at(disk_off, src).is_err() {
-                return Some(SC_INVALID_FIELD);
+            if let Err(error) = backend.write_at(disk_off, src) {
+                return Some(host_failure(&error, SC_INVALID_FIELD));
             }
             disk_off += seg_len as u64;
         }
@@ -126,10 +126,9 @@ impl NvmeController {
         let status = if !gathered {
             SC_INVALID_FIELD
         } else if let Some(backend) = self.backend_for_nsid_mut(nsid) {
-            if backend.write_at(start, &scratch[..len]).is_ok() {
-                SC_SUCCESS
-            } else {
-                SC_INVALID_FIELD
+            match backend.write_at(start, &scratch[..len]) {
+                Ok(()) => SC_SUCCESS,
+                Err(error) => host_failure(&error, SC_INVALID_FIELD),
             }
         } else {
             SC_INVALID_FIELD

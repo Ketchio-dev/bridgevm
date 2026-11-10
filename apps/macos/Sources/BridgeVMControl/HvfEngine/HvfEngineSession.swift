@@ -45,7 +45,8 @@ final class HvfEngineSession: ObservableObject {
     }
     var hostNow: () -> Date = Date.init // the host clock behind guestNow()
     var guestRunClock = HvfGuestRunClock()
-    @Published var pauseNotice: String? // a Pause or Resume that did not happen
+    @Published var pauseNotice: String? // a Pause or Resume that did not happen, or a full Mac disk's pause
+    var diskFullReported = false // `BVSTORAGE full`: the `BVPAUSE paused` that follows is for a full Mac disk
     var runtimeTransitionInProgress = false
     var timer: Timer?
     var tailReader = TailOffsetReader()

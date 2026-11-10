@@ -4,6 +4,8 @@ import Foundation
 /// `RESUME` runs them again, with guest time continuing where it stopped (the probe's pause_gate).
 /// The probe answers on run.log (`BVPAUSE paused`, `BVPAUSE resumed …`, `BVPAUSE refused: …`), and
 /// the session shows what it last said, so a reattached app reads the helper's real state too.
+/// A full Mac disk pauses the VM on its own (`BVSTORAGE full …` first): Windows' writes wait instead
+/// of failing, and a Resume while the disk is still full is answered paused again.
 enum HvfPauseState: Equatable {
     case running
     /// `PAUSE` sent at `sentAt` (`ownedStartNow`); the probe has not answered yet.
@@ -59,6 +61,7 @@ extension HvfEngineSession {
     /// The probe parks every vCPU within 2 s (`PARK_TIMEOUT`) or refuses; one it never answers (a
     /// helper without Pause, or one that ended) is dropped after this long.
     static let pauseAnswerTimeout: TimeInterval = 5
+    static let diskFullNotice = "Mac 디스크 공간이 가득 차서 Windows를 일시 정지했습니다. Mac에서 공간을 확보한 뒤 재개하세요."
 
     /// The clock for the app's deadlines on guest answers (HvfGuestRunClock).
     func guestNow() -> Date { guestRunClock.now(host: hostNow()) }
@@ -121,12 +124,17 @@ extension HvfEngineSession {
         let words = line.split(separator: " ", maxSplits: 2)
         guard words.count >= 2, words[0] == "BVPAUSE" else { return }
         switch words[1] {
+        case "paused" where diskFullReported: // also the answer to a RESUME while the disk is still full
+            diskFullReported = false
+            pause = .paused
+            pauseNotice = Self.diskFullNotice
         case "paused":
             if case .resuming = pause { return } // a RESUME already went after it
             pause = .paused
         case "resumed":
             pause = .running
         case "refused:":
+            diskFullReported = false
             pause = .running
             pauseNotice = "VM을 일시 정지하지 못해 계속 실행합니다."
         default:
@@ -134,8 +142,14 @@ extension HvfEngineSession {
         }
     }
 
+    /// `BVSTORAGE full errno=… free=… path=…`: the probe pauses the VM for a full Mac disk next.
+    func storageReported(_ line: String) {
+        if line.hasPrefix("BVSTORAGE full ") { diskFullReported = true }
+    }
+
     /// A guest reset or a run's start or end: nothing is paused any more.
     func pauseEnded() {
+        diskFullReported = false
         if pause != .running { pause = .running }
         if pauseNotice != nil { pauseNotice = nil }
     }

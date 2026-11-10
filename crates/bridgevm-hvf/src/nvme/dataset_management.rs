@@ -189,16 +189,17 @@ fn report_unpunched(error: &io::Error) {
     if REPORTED.swap(true, Relaxed) {
         return;
     }
+    // Punching fails with ENOSPC on a full volume, which may hold run.log.
     if cannot_punch(error) {
-        eprintln!(
+        crate::host_log::err(format_args!(
             "nvme: the disk image's file system cannot free blocks ({error}); \
              space Windows frees stays allocated on the Mac (APFS gives it back)"
-        );
+        ));
     } else {
-        eprintln!(
+        crate::host_log::err(format_args!(
             "nvme: freeing blocks in the disk image failed ({error}); \
              space Windows frees stays allocated on the Mac"
-        );
+        ));
     }
 }
 

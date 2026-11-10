@@ -187,3 +187,64 @@ fn a_resume_for_a_running_vm_and_a_repeated_pause_are_answered() {
     assert_eq!(request(None, false), Request::None);
     assert_eq!(super::resumed_line(0, 0x2b), "BVPAUSE resumed paused_ms=0 vtimer_offset=0x2b");
 }
+
+/// A pause for a full Mac disk says why first, in the line the app reads
+/// (HvfGuestPause.swift): the errno, the bytes free and the volume.
+#[test]
+fn a_disk_full_pause_names_the_errno_free_space_and_volume() {
+    let full = bridgevm_hvf::nvme::DiskFull {
+        errno: libc::ENOSPC,
+        free_bytes: 4096,
+        volume: "/Volumes/Mac SSD".into(),
+    };
+    assert_eq!(
+        super::storage_full_line(&full),
+        "BVSTORAGE full errno=28 free=4096 path=/Volumes/Mac SSD"
+    );
+}
+
+/// Review on #576 (P1): run.log can sit on the volume that just filled, and a
+/// failed `println!` panics, which ended the VMM before the pause. Here the
+/// disk-full report and the pause lines go to a stdout that refuses every
+/// write (a pipe nobody reads, so EPIPE where a full volume gives ENOSPC;
+/// macOS has no /dev/full), in a child process, which must carry on.
+#[test]
+fn the_disk_full_lines_survive_a_stdout_that_refuses_them() {
+    const CHILD: &str = "BV_PAUSE_GATE_REFUSING_STDOUT";
+    if std::env::var_os(CHILD).is_some() {
+        let mut pipe = [0; 2];
+        // SAFETY: plain descriptor calls on descriptors this test owns; fd 1
+        // is put back before the test returns.
+        let saved = unsafe {
+            assert_eq!(libc::pipe(pipe.as_mut_ptr()), 0);
+            libc::close(pipe[0]);
+            let saved = libc::dup(1);
+            assert_eq!(libc::dup2(pipe[1], 1), 1);
+            saved
+        };
+        let full = bridgevm_hvf::nvme::DiskFull {
+            errno: libc::ENOSPC,
+            free_bytes: 0,
+            volume: "/".into(),
+        };
+        super::report_storage_full(&full);
+        super::answer_running();
+        bridgevm_hvf::host_log::out("BVPAUSE paused");
+        // SAFETY: as above.
+        unsafe {
+            libc::dup2(saved, 1);
+            libc::close(saved);
+            libc::close(pipe[1]);
+        }
+        return;
+    }
+    let module = module_path!().split_once("::").expect("crate::module").1;
+    let name = format!("{module}::the_disk_full_lines_survive_a_stdout_that_refuses_them");
+    let child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", &name, "--nocapture", "--test-threads=1"])
+        .env(CHILD, "1")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&child.stdout);
+    assert!(stdout.contains("1 passed"), "{stdout}{}", String::from_utf8_lossy(&child.stderr));
+}

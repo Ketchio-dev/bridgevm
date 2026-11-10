@@ -3,6 +3,7 @@
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 use crate::machine;
+use crate::nvme::DiskFull;
 use crate::nvme::NvmeCommandTrace;
 use crate::nvme::NvmeIo;
 use crate::virtio_blk::VirtioBlockRequestTrace;
@@ -13,6 +14,8 @@ use crate::virtio_blk::VirtioPciBlock;
 use crate::virtio_blk::VirtioPciBlockOp;
 use std::io;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NvmePcieLiveness {
@@ -280,6 +283,28 @@ impl VirtPlatform {
             .complete_flushes(mem, &mut self.nvme_completion_scratch, false);
         self.queue_nvme_completion_msix();
         self.flush_nvme_pending_msix();
+    }
+
+    /// Raised while NVMe commands wait for host space (nvme disk_full.rs):
+    /// vCPU0 polls it before each run and pauses the VM.
+    pub fn nvme_storage_full_flag(&self) -> Arc<AtomicBool> {
+        self.nvme.storage_full_flag()
+    }
+
+    /// The host volume the held NVMe commands wait on, while any is held.
+    pub fn nvme_disk_full(&self) -> Option<DiskFull> {
+        self.nvme.disk_full()
+    }
+
+    /// RESUME, before any vCPU runs: retry the NVMe commands held for host
+    /// space and post their completions with MSI-X. While the disk is still
+    /// full the rest stay held, and this says where.
+    pub fn retry_nvme_held(&mut self, mem: &mut dyn GuestMemoryMut) -> Option<DiskFull> {
+        self.nvme_completion_scratch.clear();
+        self.nvme.retry_held(mem, &mut self.nvme_completion_scratch);
+        self.queue_nvme_completion_msix();
+        self.flush_nvme_pending_msix();
+        self.nvme.disk_full()
     }
 
     pub(crate) fn nvme_access(

@@ -29,6 +29,8 @@ extension HvfEngineSession {
             resetAcknowledged()
         case let .unknown(line) where line.hasPrefix("BVPAUSE "):
             pauseReported(line)
+        case let .unknown(line) where line.hasPrefix("BVSTORAGE "):
+            storageReported(line)
         case .aliveHeartbeat:
             lastHeartbeatDate = Date()
             lastHeartbeatAge = 0

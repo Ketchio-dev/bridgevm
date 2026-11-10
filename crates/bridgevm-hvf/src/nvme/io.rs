@@ -24,40 +24,42 @@ impl NvmeController {
     /// FLUSH and disabling the write cache both promise durability, so both
     /// must cover every namespace and surface a failure instead of success.
     pub(crate) fn flush_all_namespaces(&mut self) -> u16 {
-        self.flush_all_namespaces_with(DiskBackend::flush)
+        match self.flush_all_namespaces_with(DiskBackend::flush) {
+            Ok(()) => SC_SUCCESS,
+            Err(_) => SC_INTERNAL_DEVICE_ERROR,
+        }
     }
 
     /// A clean guest shutdown leaves every namespace durable in any mode.
     pub(crate) fn flush_all_namespaces_durable(&mut self) -> u16 {
-        self.flush_all_namespaces_with(DiskBackend::flush_durable)
+        match self.flush_all_namespaces_with(DiskBackend::flush_durable) {
+            Ok(()) => SC_SUCCESS,
+            Err(_) => SC_INTERNAL_DEVICE_ERROR,
+        }
     }
 
+    /// Both namespaces are flushed; the first failure is the result.
     fn flush_all_namespaces_with(
         &mut self,
         flush: fn(&mut DiskBackend) -> std::io::Result<()>,
-    ) -> u16 {
-        let mut ok = flush(&mut self.disk).is_ok();
-        if let Some(disk2) = self.disk2.as_mut() {
-            ok &= flush(disk2).is_ok();
-        }
-        if ok {
-            SC_SUCCESS
-        } else {
-            SC_INTERNAL_DEVICE_ERROR
-        }
+    ) -> std::io::Result<()> {
+        let first = flush(&mut self.disk);
+        first.and(self.disk2.as_mut().map_or(Ok(()), flush))
     }
 
     /// NVM FLUSH (0x00). Accept an allocated NSID or the broadcast NSID.
     pub(crate) fn io_flush(&mut self, cmd: &SubmissionEntry) -> u16 {
-        if cmd.nsid == u32::MAX {
-            return self.flush_all_namespaces();
-        }
-        let Some(backend) = self.backend_for_nsid_mut(cmd.nsid) else {
-            return SC_INVALID_FIELD;
+        let synced = if cmd.nsid == u32::MAX {
+            self.flush_all_namespaces_with(DiskBackend::flush)
+        } else {
+            let Some(backend) = self.backend_for_nsid_mut(cmd.nsid) else {
+                return SC_INVALID_FIELD;
+            };
+            backend.flush()
         };
-        match backend.flush() {
+        match synced {
             Ok(()) => SC_SUCCESS,
-            Err(_) => SC_INTERNAL_DEVICE_ERROR,
+            Err(error) => host_failure(&error, SC_INTERNAL_DEVICE_ERROR),
         }
     }
 

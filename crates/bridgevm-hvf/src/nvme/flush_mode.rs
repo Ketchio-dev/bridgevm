@@ -68,6 +68,8 @@ pub fn host_sync_label(inline: bool) -> &'static str {
 /// exit. No timer would follow a barrier here with the promised full sync, so
 /// only the fast mode skips it.
 pub(crate) fn sync_inline(file: &File, durable: bool) -> io::Result<()> {
+    #[cfg(test)]
+    super::disk_full::faults::check(file.as_raw_fd(), super::disk_full::faults::Op::Sync)?;
     if mode() == FlushMode::Fast && !durable {
         fsync(file)
     } else {
@@ -95,6 +97,8 @@ impl DiskSync {
 
     /// Sync for guest FLUSH or FUA writes, in the configured mode.
     pub(crate) fn sync(&mut self, clock: &Clock) -> io::Result<()> {
+        #[cfg(test)]
+        super::disk_full::faults::check(self.file.as_raw_fd(), super::disk_full::faults::Op::Sync)?;
         match mode() {
             FlushMode::Ordered if barrier_suffices(self.last_full, clock.now()) => {
                 barrier_sync(&self.file)?;

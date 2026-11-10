@@ -31,7 +31,9 @@ use super::*;
 use crate::fwcfg::GuestMemoryMut;
 
 /// Called by the worker after each batch of syncs; the live VMM kicks a vCPU
-/// so its pre-run drain posts the completions.
+/// so its pre-run drain posts the completions. The controller also calls it
+/// when it holds a command for a full disk (disk_full.rs): vCPU0 then pauses
+/// the VM before it runs again.
 pub static FLUSH_DONE_HOOK: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
 
 #[derive(Clone, Copy)]
@@ -130,16 +132,22 @@ impl FlushWorker {
                     if let Ok(first) = next {
                         let mut batch = vec![first];
                         batch.extend(inbox.try_iter());
-                        let sync = |disk: &mut Option<DiskSync>, needed: bool| {
-                            !needed || disk.as_mut().is_some_and(|d| d.sync(clock).is_ok())
+                        // A full disk holds every flush of the batch (disk_full.rs).
+                        let sync = |disk: &mut Option<DiskSync>, needed: bool| match disk {
+                            _ if !needed => SC_SUCCESS,
+                            Some(disk) => disk.sync(clock).map_or_else(
+                                |error| host_failure(&error, SC_INTERNAL_DEVICE_ERROR),
+                                |()| SC_SUCCESS,
+                            ),
+                            None => SC_INTERNAL_DEVICE_ERROR,
                         };
-                        let ok = sync(&mut disks[0], batch.iter().any(|job| job.disk));
-                        let ok2 = sync(&mut disks[1], batch.iter().any(|job| job.disk2));
+                        let status = sync(&mut disks[0], batch.iter().any(|job| job.disk));
+                        let status2 = sync(&mut disks[1], batch.iter().any(|job| job.disk2));
                         worker.publish(batch.into_iter().map(|job| Finished {
-                            status: if (!job.disk || ok) && (!job.disk2 || ok2) {
-                                SC_SUCCESS
-                            } else {
-                                SC_INTERNAL_DEVICE_ERROR
+                            status: match (job.disk, job.disk2) {
+                                (true, _) if status != SC_SUCCESS => status,
+                                (_, true) => status2,
+                                _ => SC_SUCCESS,
                             },
                             sync_next: false,
                             job,
@@ -338,39 +346,58 @@ impl NvmeController {
             } else {
                 done.status
             };
-            let queues_live = matches!(self.sqs.get(usize::from(sqid)), Some(Some(_)))
-                && matches!(self.cqs.get(usize::from(cqid)), Some(Some(_)));
-            let (posted, completion) = if queues_live {
-                self.post_completion(cqid, sqid, &cmd, status, mem)
-            } else {
-                (false, None)
-            };
-            self.record_command_trace(NvmeCommandTrace {
-                sqid,
-                cqid,
-                sq_head: 0,
-                sq_tail: 0,
-                sq_entry_gpa: 0,
-                opcode: cmd.opcode,
-                command_id: cmd.command_id,
-                nsid: cmd.nsid,
-                prp1: cmd.prp1,
-                prp2: cmd.prp2,
-                cdw10: cmd.cdw10,
-                cdw11: cmd.cdw11,
-                cdw12: cmd.cdw12,
-                cdw13: cmd.cdw13,
-                cdw14: cmd.cdw14,
-                cdw15: cmd.cdw15,
-                status,
-                completion_posted: posted,
-                completion: completion.map(|c| NvmeCompletionTrace {
-                    cqid: c.cqid,
-                    vector: c.vector,
-                }),
-            });
-            completions.extend(completion);
+            if self.queues_live(sqid, cqid) && self.hold_if_full(sqid, cqid, &cmd, status) {
+                continue;
+            }
+            completions.extend(self.complete_taken(sqid, cqid, &cmd, status, mem));
         }
+    }
+
+    fn queues_live(&self, sqid: u16, cqid: u16) -> bool {
+        matches!(self.sqs.get(usize::from(sqid)), Some(Some(_)))
+            && matches!(self.cqs.get(usize::from(cqid)), Some(Some(_)))
+    }
+
+    /// Post a completion for a command taken off its SQ earlier, unless its
+    /// queues went meanwhile, and trace it.
+    pub(super) fn complete_taken(
+        &mut self,
+        sqid: u16,
+        cqid: u16,
+        cmd: &SubmissionEntry,
+        status: u16,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> Option<NvmeCompletionEvent> {
+        let (posted, completion) = if self.queues_live(sqid, cqid) {
+            self.post_completion(cqid, sqid, cmd, status, mem)
+        } else {
+            (false, None)
+        };
+        self.record_command_trace(NvmeCommandTrace {
+            sqid,
+            cqid,
+            sq_head: 0,
+            sq_tail: 0,
+            sq_entry_gpa: 0,
+            opcode: cmd.opcode,
+            command_id: cmd.command_id,
+            nsid: cmd.nsid,
+            prp1: cmd.prp1,
+            prp2: cmd.prp2,
+            cdw10: cmd.cdw10,
+            cdw11: cmd.cdw11,
+            cdw12: cmd.cdw12,
+            cdw13: cmd.cdw13,
+            cdw14: cmd.cdw14,
+            cdw15: cmd.cdw15,
+            status,
+            completion_posted: posted,
+            completion: completion.map(|c| NvmeCompletionTrace {
+                cqid: c.cqid,
+                vector: c.vector,
+            }),
+        });
+        completion
     }
 
     /// Wait for the flushes, READs and WRITEs in flight; their completions
@@ -394,6 +421,7 @@ impl NvmeController {
     /// takes the queues they would post to.
     pub(crate) fn discard_flushes(&mut self) {
         drop(self.take_finished(true));
+        self.drop_held(|_| true);
     }
 
     fn take_finished(&mut self, wait: bool) -> Vec<Finished> {

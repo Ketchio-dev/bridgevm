@@ -9,7 +9,15 @@
 //! before it runs again, as QEMU's `hvf_vm_state_change` does. The guest's
 //! counter, and every timer deadline it programmed, continue where they
 //! stopped. A vCPU created later takes the same offset before its first run.
+//!
+//! A full Mac disk pauses the VM the same way (the NVMe controller holds the
+//! guest's writes, nvme disk_full.rs): vCPU0 says so in a `BVSTORAGE full`
+//! line first, and RESUME retries the held writes before any vCPU runs. While
+//! the disk is still full the VM stays paused and says so again. The lines
+//! here never panic (`host_log`): run.log may sit on the volume that filled.
 
+use bridgevm_hvf::host_log;
+use bridgevm_hvf::nvme::DiskFull;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::Duration;
@@ -208,7 +216,9 @@ pub(crate) unsafe fn set_vtimer_offset(vcpu: crate::HvVcpuT, offset: u64) -> u64
     let mut read = 0u64;
     let get = crate::hv_vcpu_get_vtimer_offset(vcpu, &mut read);
     if set != 0 || get != 0 || read != offset {
-        println!("BVPAUSE vtimer offset: set={set:#x} get={get:#x} read={read:#x} wanted={offset:#x}");
+        host_log::out(format_args!(
+            "BVPAUSE vtimer offset: set={set:#x} get={get:#x} read={read:#x} wanted={offset:#x}"
+        ));
     }
     read
 }
@@ -279,16 +289,56 @@ pub(crate) fn resumed_line(paused_ms: u128, offset: u64) -> String {
     format!("BVPAUSE resumed paused_ms={paused_ms} vtimer_offset={offset:#x}")
 }
 
-/// A RESUME for a running VM: nothing was paused.
-pub(crate) fn answer_running() {
-    println!("{}", resumed_line(0, GATE.offset()));
-    flush_stdout();
+/// The line before a pause for a full Mac disk; the app shows its notice for
+/// the `BVPAUSE paused` that follows.
+pub(crate) fn storage_full_line(full: &DiskFull) -> String {
+    format!(
+        "BVSTORAGE full errno={} free={} path={}",
+        full.errno,
+        full.free_bytes,
+        full.volume.display()
+    )
 }
 
-/// vCPU0, outside `hv_vcpu_run`, after a PAUSE line: stop every vCPU, then
-/// read input.ctl until RESUME or RESET. A host stop (SIGTERM when the app
-/// went away, a diagnostic stop) resumes too, so the run loop ends the run as
-/// it does for a running VM. Every exit resumes before it returns.
+pub(crate) fn report_storage_full(full: &DiskFull) {
+    host_log::out(storage_full_line(full));
+}
+
+/// Space kept allocated past the end of run.log (stdout) so that the lines
+/// above still land when its volume is full. A boot prints a few hundred KB;
+/// a running VM about 15 KB an hour of agent heartbeats.
+const LOG_RESERVE: u64 = 4 << 20;
+
+/// At the probe's start: reserve the end of run.log now and top it up every
+/// 30 s, so whatever the probe printed meanwhile is back before the disk can
+/// fill. Ends when stdout is not a regular file (a pipe, a terminal).
+pub(crate) fn keep_log_reserve() {
+    let spawned = std::thread::Builder::new()
+        .name("run-log-reserve".into())
+        .spawn(|| {
+            while !matches!(top_up_log_reserve(), Ok(false)) {
+                std::thread::sleep(Duration::from_secs(30));
+            }
+        });
+    drop(spawned);
+}
+
+/// Fails, and changes nothing, while the volume is full.
+fn top_up_log_reserve() -> std::io::Result<bool> {
+    host_log::reserve_tail(libc::STDOUT_FILENO, LOG_RESERVE)
+}
+
+/// A RESUME for a running VM: nothing was paused.
+pub(crate) fn answer_running() {
+    host_log::out(resumed_line(0, GATE.offset()));
+}
+
+/// vCPU0, outside `hv_vcpu_run`, after a PAUSE line or with disk writes held:
+/// stop every vCPU, then read input.ctl until RESUME or RESET. A RESUME first
+/// runs `retry_held`, still under the pause; while it finds the disk full the
+/// VM stays paused. A host stop (SIGTERM when the app went away, a diagnostic
+/// stop) resumes too, so the run loop ends the run as it does for a running
+/// VM. Every exit resumes before it returns.
 ///
 /// The diagnostic watchdog (`--watchdog-ms`) and the stall kill count wall
 /// time, a pause included: a diagnostic run paused longer than its watchdog
@@ -297,6 +347,7 @@ pub(crate) fn pause_and_wait(
     live_input: &mut crate::LiveInputController,
     secondaries: Option<&crate::SecondaryVcpuSet>,
     host_stop: impl Fn() -> bool,
+    mut retry_held: impl FnMut() -> Option<DiskFull>,
 ) -> PausedExit {
     let kick = || {
         for control in secondaries.map_or(&[][..], |set| set.controls.as_slice()) {
@@ -306,12 +357,13 @@ pub(crate) fn pause_and_wait(
     };
     let started = std::time::Instant::now();
     if let PauseOutcome::Abandoned = GATE.pause(kick, &Host) {
-        println!("BVPAUSE refused: a vCPU did not stop within {PARK_TIMEOUT:?}; the VM runs on");
+        host_log::out(format_args!(
+            "BVPAUSE refused: a vCPU did not stop within {PARK_TIMEOUT:?}; the VM runs on"
+        ));
         return PausedExit::Resumed(Duration::ZERO);
     }
     bridgevm_hvf::vm_clock::pause();
-    println!("BVPAUSE paused");
-    flush_stdout();
+    host_log::out("BVPAUSE paused");
     let exit = loop {
         GATE.wait_for_input(Duration::from_millis(250));
         live_input.prepare_tick(std::time::Instant::now(), true);
@@ -319,11 +371,18 @@ pub(crate) fn pause_and_wait(
             break PausedExit::Reset;
         }
         match request(live_input.take_host_pause(), true) {
-            Request::Resume => break PausedExit::Resumed(Duration::ZERO),
-            Request::AlreadyPaused => {
-                println!("BVPAUSE paused");
-                flush_stdout();
-            }
+            Request::Resume => match retry_held() {
+                None => {
+                    // There is space again: what the pause's lines used is back.
+                    let _ = top_up_log_reserve();
+                    break PausedExit::Resumed(Duration::ZERO);
+                }
+                Some(full) => {
+                    report_storage_full(&full);
+                    host_log::out("BVPAUSE paused");
+                }
+            },
+            Request::AlreadyPaused => host_log::out("BVPAUSE paused"),
             _ => {}
         }
         if host_stop() {
@@ -333,21 +392,15 @@ pub(crate) fn pause_and_wait(
     // Device time first, so nothing a vCPU starts sees the pause as elapsed.
     let paused = bridgevm_hvf::vm_clock::resume();
     let resumed = GATE.resume(&Host).unwrap_or_default();
-    println!(
+    host_log::out(format_args!(
         "{} host_slept_ticks={}",
         resumed_line(started.elapsed().as_millis(), resumed.offset),
         resumed.slept
-    );
-    flush_stdout();
+    ));
     match exit {
         PausedExit::Resumed(_) => PausedExit::Resumed(paused),
         PausedExit::Reset => PausedExit::Reset,
     }
-}
-
-fn flush_stdout() {
-    use std::io::Write as _;
-    let _ = std::io::stdout().flush();
 }
 
 pub(crate) struct InRunLoop<'a>(&'a PauseGate);

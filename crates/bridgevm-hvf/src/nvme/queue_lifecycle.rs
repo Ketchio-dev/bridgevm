@@ -21,6 +21,7 @@ impl NvmeController {
                 // aborts it before the admin delete completion is posted.
                 self.sqs[qid] = None;
                 self.clear_sq_pending(qid);
+                self.drop_held(|sqid| usize::from(sqid) == qid);
             }
             ADMIN_OP_DELETE_IO_CQ => {
                 if !self.cqs.get(qid).is_some_and(Option::is_some) {

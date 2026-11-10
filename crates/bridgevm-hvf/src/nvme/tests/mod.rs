@@ -7,6 +7,7 @@ mod completion_backpressure;
 mod completion_order;
 mod create_queue_identity;
 mod dataset_management;
+mod disk_full;
 mod export_case;
 mod export_collision;
 mod export_failure;
