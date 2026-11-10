@@ -28,11 +28,14 @@ pub(crate) fn persist_stop_media(
     media: &VirtBootMediaConfig,
     owner: &mut RuntimeLease,
 ) -> Vec<String> {
-    let vars = owner.persist(RuntimeMediaSlot::Vars, platform.flash_vars_image());
-    let mut records = match &vars {
-        Ok(writes) => report_media_writes("UEFI vars", writes),
-        Err(_) => Vec::new(),
-    };
+    let mut vars_error = None;
+    let vars = owner
+        .persist(RuntimeMediaSlot::Vars, platform.flash_vars_image())
+        .unwrap_or_else(|e| {
+            vars_error = Some(e);
+            Vec::new()
+        });
+    let mut records = report_media_writes("UEFI vars", &vars);
     for (disk, namespace) in [
         (media.nvme_disk.as_ref(), NvmePersistNamespace::Primary),
         (media.nvme_target.as_ref(), NvmePersistNamespace::Target),
@@ -42,7 +45,7 @@ pub(crate) fn persist_stop_media(
             records.extend(report_media_writes(namespace.subject(), &writes));
         }
     }
-    if let Err(e) = vars {
+    if let Some(e) = vars_error {
         panic!("persist UEFI vars: {e} (the disks were written back first)");
     }
     records
