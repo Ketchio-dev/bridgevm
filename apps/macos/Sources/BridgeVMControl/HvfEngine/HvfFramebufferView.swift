@@ -288,20 +288,11 @@ final class FBLayerView: HvfFramebufferTextInput {
 
     override func scrollWheel(with event: NSEvent) {
         cancelModifierTap()
-        guard let session, hasGuestSize else {
-            return
-        }
-
-        guard let delta = HvfScrollDelta.hid(from: event.scrollingDeltaY) else {
-            return
-        }
+        guard let session, hasGuestSize,
+              session.sendPointerScroll(HvfScrollAccumulator.Delta(event), location: point(event),
+                                        viewSize: bounds.size, imageSize: guestSize) else { return }
+        // The scroll moved the guest pointer to its own position; an older coalesced move must not follow.
         pointerMoves.reset()
-        session.sendPointerScroll(
-            delta,
-            location: point(event),
-            viewSize: bounds.size,
-            imageSize: guestSize
-        )
     }
 
     // Finder drops: files and folders are copied to the guest Desktop (HvfEngineSessionFileDrop.swift).

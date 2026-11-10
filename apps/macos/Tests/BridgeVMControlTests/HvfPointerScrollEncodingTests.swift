@@ -23,6 +23,22 @@ final class HvfPointerScrollEncodingTests: XCTestCase {
         }
     }
 
+    /// The agent's BuildPointer counts the same INPUTs (scripts/test-bvagent-pointer-scroll.ps1).
+    func testScrollUnitsEncodeAMoveAndOneWheelPerNonzeroAxis() {
+        for (command, count) in [("scrollunits:-1200,1200@32767x0", 3), ("scrollunits:7,0@0x32767", 2), ("scrollunits:0,-3@0x0", 2)] {
+            let encoding = HvfGuestInputEncoding(.pointer(command))
+            XCTAssertEqual(encoding?.verb, "POINTERINPUT", command)
+            XCTAssertEqual(encoding?.insertedEventCount, count, command)
+            XCTAssertEqual(encoding.flatMap { Data(base64Encoded: $0.base64) }, Data(command.utf8))
+        }
+        for command in ["scrollunits:0,0@0x0", "scrollunits:1201,0@0x0", "scrollunits:0,-1201@0x0", "scrollunits:1@0x0",
+                        "scrollunits:1,2", "scrollunits:1,2,3@0x0", "scrollunits:+1,0@0x0", "scrollunits:01,0@0x0",
+                        "scrollunits:-0,1@0x0", "scrollunits:,1@0x0", "scrollunits:1,2@32768x0", "scrollunits:1,2@0x0@0x0",
+                        "scrollunits:1,2@0x0\n", "scrollunits:1.5,0@0x0", "scrollunits:1,2@0x" + String(repeating: "0", count: 50)] {
+            XCTAssertNil(HvfGuestInputEncoding(.pointer(command)), command)
+        }
+    }
+
     func testPartialScrollCancelsFollowingKeyWithoutReplay() {
         var stream = HvfAcknowledgedInputStream()
         XCTAssertTrue(stream.enqueue(.pointer("scroll:-128@32767x0"), now: now))

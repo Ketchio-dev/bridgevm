@@ -12,6 +12,8 @@ struct HvfNegotiatedInputStream {
     var count: Int { stream.count }
     /// Generic chords reach the guest through the VMM until this stream is ready, then only with the agent's marker.
     var modifierChords: Bool { state != .ready || capability?.modifierChords == true }
+    /// Only a ready stream to an agent with the marker takes raw-unit scrolls; everything else gets notches.
+    var scrollUnits: Bool { state == .ready && capability?.scrollUnits == true }
 
     mutating func enqueue(_ event: HvfOrderedInputQueue.Event, now: Date) -> Admission {
         switch state {

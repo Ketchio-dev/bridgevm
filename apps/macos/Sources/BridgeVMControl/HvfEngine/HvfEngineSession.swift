@@ -58,6 +58,7 @@ final class HvfEngineSession: ObservableObject {
     var diskExtendInFlight = false
     var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it
     let inputDriver = HvfSessionInputDriver()
+    private var scrollAccumulator = HvfScrollAccumulator() // the scroll fraction not yet sent to the guest
     let appPacing = HvfAppPacingRecords() // the session's app-side display and input records
     var textInputTarget: HvfTextInputTargetIdentity { .init(owner: ObjectIdentifier(self), generation: inputDriver.textInputGeneration, binding: inputBinding) }
     var stopCommandSent = false
@@ -242,11 +243,22 @@ final class HvfEngineSession: ObservableObject {
         sendPointerAction(.rightPress, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
-    func sendPointerScroll(_ delta: Int8, location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
-        guard delta != 0, !pause.holdsInput,
-              let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return }
-        if inputDriver.route(.pointer("scroll:\(delta)@\(point.x)x\(point.y)"), binding: inputBinding) != .legacy { return }
-        appendLiveInput("POINTER scroll:\(delta)@\(point.x)x\(point.y)")
+    /// An agent that advertised SCROLL_UNITS gets raw wheel units on both axes; an older agent and the
+    /// VMM's HID wheel get whole vertical notches. True when a scroll request was formed.
+    @discardableResult
+    func sendPointerScroll(_ delta: HvfScrollAccumulator.Delta, location: CGPoint, viewSize: CGSize, imageSize: CGSize) -> Bool {
+        guard !pause.holdsInput, let fit = HvfDisplayFit(viewSize: viewSize, imageSize: imageSize),
+              let point = mappedPointer(location, viewSize: viewSize, imageSize: imageSize) else { return false }
+        let units = inputDriver.router.scrollUnits
+        guard let scroll = scrollAccumulator.add(delta, guestPixelsPerPoint: 1 / fit.scale, wholeNotches: !units) else { return false }
+        let at = "@\(point.x)x\(point.y)"
+        if units {
+            _ = inputDriver.route(.pointer("scrollunits:\(scroll.vertical),\(scroll.horizontal)" + at), binding: inputBinding)
+            return true
+        }
+        let command = "scroll:\(scroll.vertical / HvfScrollAccumulator.notch)" + at
+        if inputDriver.route(.pointer(command), binding: inputBinding) == .legacy { appendLiveInput("POINTER " + command) }
+        return true
     }
 
     /// Returns where the event went (queued, legacy, refused or unmapped) for the display's diagnostic.
