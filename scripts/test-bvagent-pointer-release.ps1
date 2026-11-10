@@ -1,8 +1,9 @@
 $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'test-bvagent-pointer-scroll.ps1')
+& (Join-Path $PSScriptRoot 'test-bvagent-pointer-modifiers.ps1')
 . (Join-Path $PSScriptRoot 'win-assets/bvagent-input.ps1')
 $events = [BridgeVM.BvUnicodeInput]::BuildPointer('releaseall:32767x0')
-if ($events.Length -ne 1 -or $events[0].Type -ne 0 -or $events[0].Data.Mouse.Flags -ne 0x8015 -or
+if ($events.Length -ne 1 -or $events[0].Type -ne 0 -or $events[0].Data.Mouse.Flags -ne 0x8055 -or
     $events[0].Data.Mouse.X -ne 65535 -or $events[0].Data.Mouse.Y -ne 0) { throw 'common release mismatch' }
 if ([BridgeVM.BvUnicodeInput]::BuildPointer('release:0x0')[0].Data.Mouse.Flags -ne 0x8005 -or
     [BridgeVM.BvUnicodeInput]::BuildPointer('rightrelease:0x0')[0].Data.Mouse.Flags -ne 0x8011) {
@@ -20,4 +21,4 @@ foreach ($inserted in @(0, 2)) {
     $result = Invoke-UnicodeInput ($id + ' ' + $encoded) { param($text) $script:calls++; return $inserted } $false $true
     if ($result.Exit -eq 0 -or $script:calls -ne 1) { throw 'incomplete common release accepted or replayed' }
 }
-Write-Output 'PASS: common left/right release flags, preserved separate releases and exact correlated count (no SendInput)'
+Write-Output 'PASS: common left/right/middle release flags, preserved separate releases and exact correlated count (no SendInput)'

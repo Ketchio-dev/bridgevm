@@ -128,7 +128,7 @@ try {
 function Get-InputCapabilities([string]$Request) {
     try {
         $probe = Invoke-UnicodeInput ($Request + ' YQ==') { param($text) [uint32]2 }
-        if ($probe.Exit -ne 0 -or [BridgeVM.BvUnicodeInput]::BuildKey('enter').Length -ne 2 -or [BridgeVM.BvUnicodeInput]::BuildPointer('click:0x0').Length -ne 2 -or [BridgeVM.BvUnicodeInput]::BuildPointer('wheel:-1').Length -ne 1 -or [BridgeVM.BvUnicodeInput]::BuildPointer('scroll:-128@32767x0').Length -ne 2 -or [BridgeVM.BvUnicodeInput]::BuildPointer('releaseall:0x0')[0].Data.Mouse.Flags -ne 0x8015) {
+        if ($probe.Exit -ne 0 -or [BridgeVM.BvUnicodeInput]::BuildKey('enter').Length -ne 2 -or [BridgeVM.BvUnicodeInput]::BuildPointer('click:0x0').Length -ne 2 -or [BridgeVM.BvUnicodeInput]::BuildPointer('wheel:-1').Length -ne 1 -or [BridgeVM.BvUnicodeInput]::BuildPointer('scroll:-128@32767x0').Length -ne 2 -or ([BridgeVM.BvUnicodeInput]::BuildPointer('releaseall:0x0')[0].Data.Mouse.Flags -band 0x8015) -ne 0x8015) {
             throw 'input-support-unavailable'
         }
         $keySupport = ''
@@ -155,6 +155,17 @@ function Get-InputCapabilities([string]$Request) {
         try {
             $units = [BridgeVM.BvUnicodeInput]::BuildPointer('scrollunits:-1200,1200@32767x0')
             if ($units.Length -eq 3 -and $units[1].Data.Mouse.Flags -eq 0x0800 -and $units[2].Data.Mouse.Flags -eq 0x1000) { $keySupport += "`nBVINPUT_POINTER $Request SCROLL_UNITS" }
+        } catch { }
+        # Modifiers held for one pointer action (<verb>:<args>:<wcas subset>): down, the pointer events, up in reverse.
+        try {
+            $held = [BridgeVM.BvUnicodeInput]::BuildPointer('click:32767x0:wcas')
+            $order = ($held | ForEach-Object { if ($_.Type -eq 1) { '{0}:{1}' -f $_.Data.Keyboard.VirtualKey, $_.Data.Keyboard.Flags } else { 'm{0}' -f $_.Data.Mouse.Flags } }) -join ','
+            if ($order -ceq '91:1,17:0,18:0,16:0,m32771,m32773,16:2,18:2,17:2,91:3' -and [BridgeVM.BvUnicodeInput]::BuildPointer('scroll:-1@0x0:s').Length -eq 4) { $keySupport += "`nBVINPUT_POINTER $Request MODIFIERS" }
+        } catch { }
+        # Middle button verbs; releaseall then also lifts the middle button.
+        try {
+            $middle = @('middlepress:0x0', 'middlerelease:0x0', 'middleclick:0x0', 'releaseall:0x0' | ForEach-Object { [BridgeVM.BvUnicodeInput]::BuildPointer($_) | ForEach-Object { $_.Data.Mouse.Flags } }) -join ','
+            if ($middle -ceq '32801,32833,32801,32833,32853') { $keySupport += "`nBVINPUT_POINTER $Request MIDDLE" }
         } catch { }
         return @{ Exit = 0; Out = (('BVINPUT_CAPS {0} 3 TEXTINPUT KEYINPUT POINTERINPUT 65536' -f $Request) + $keySupport) }
     } catch {
