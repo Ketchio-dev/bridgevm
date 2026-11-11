@@ -34,10 +34,10 @@ final class HvfSessionInputRouterTests: XCTestCase {
         Array(repeating: "live input accepted: command=Key(<redacted>)", count: count)
     }
 
-    private func inserted(_ command: String) -> [String] {
+    private func inserted(_ command: String, count: Int = 1) -> [String] {
         let words = command.split(separator: " "), label = words.prefix(2).joined(separator: " ")
         guard words.count >= 2 else { XCTFail("no command sent"); return [] }
-        return ["BVAGENT CMD \(label) exit=0", "BVINPUT_INSERTED \(words[1]) 1", "BVAGENT END \(label)"]
+        return ["BVAGENT CMD \(label) exit=0", "BVINPUT_INSERTED \(words[1]) \(count)", "BVAGENT END \(label)"]
     }
 
     /// `VERB payload` of an agent command, its base64 decoded.
@@ -207,25 +207,30 @@ final class HvfSessionInputRouterTests: XCTestCase {
         XCTAssertEqual(router.route(.key("enter"), binding: binding, now: now), .refused)
     }
 
-    func testCtrlAltDeleteTakesTheVMMKeyboardWhateverTheRoute() {
+    func testCtrlAltDeleteTakesTheVMMKeyboardWhateverTheRouteAndNothingOvertakesIt() {
         var router = HvfSessionInputRouter()
         router.beginOwnedBoot(binding: binding)
         negotiate(&router)
-        XCTAssertEqual(router.route(.text("queued"), binding: binding, now: now), .queued)
-        for key in ["ctrl+alt+delete", "ctrl+alt+shift+delete"] {
-            XCTAssertEqual(router.route(.key(key), binding: binding, now: now), .legacy, key)
-            wrote(&router, "KEY " + key)
-        }
-        XCTAssertEqual(router.count, 1, "the ordered queue is untouched")
-        XCTAssertFalse(router.fallback)
-        XCTAssertFalse(router.allowLegacyWrite("KEY enter", binding: binding, now: now))
-        _ = poll(&router, at: 0) { _ in }
-        XCTAssertEqual(poll(&router, at: 0), .waiting, "the sent text is still awaited, not failed")
-        XCTAssertEqual(router.cancelTarget(now: now), .cancelled(.targetChanged, discarded: 1))
+        XCTAssertEqual(router.route(.key("tab"), binding: binding, now: now), .queued)
+        var tab = ""
+        _ = poll(&router, at: 0) { tab = $0 }
+        let behind: [HvfOrderedInputQueue.Event] = [.key("ctrl+alt+delete"), .key("enter"), .pointer("move:1x2"),
+                                                    .pointer("move:3x4"), .key("ctrl+alt+shift+delete")]
+        for event in behind { XCTAssertEqual(router.route(event, binding: binding, now: now), .queued, "\(event)") }
+        XCTAssertEqual(router.count, 5, "the tab going in, the chords and the input after them (one move)")
+        XCTAssertEqual(poll(&router, at: 0), .waiting)
+        XCTAssertEqual(router.takeSecureAttention(), [])
+        _ = poll(&router, at: 0.1, lines: inserted(tab, count: 2))
+        XCTAssertEqual(router.takeSecureAttention(), [.key("ctrl+alt+delete"), .key("enter"), .pointer("move:3x4"),
+                                                      .key("ctrl+alt+shift+delete")], "once the tab went in, in order")
+        XCTAssertTrue(router.fallback, "later input follows them on input.ctl")
+        XCTAssertEqual(router.count, 0)
+        XCTAssertEqual(router.route(.key("esc"), binding: binding, now: now), .legacy)
         _ = router.poll(binding: binding, serviceReady: false, lines: [], now: now) { _ in false }
         XCTAssertTrue(router.failed)
         XCTAssertEqual(router.route(.key("ctrl+alt+delete"), binding: binding, now: now), .legacy, "a failed route too")
         wrote(&router, "KEY ctrl+alt+delete")
+        XCTAssertFalse(router.fallback, "a failed route stays failed")
         XCTAssertEqual(router.route(.key("ctrl+alt+delete"), binding: ["other"], now: now), .refused, "never another VM's")
     }
 

@@ -8,7 +8,8 @@ final class HvfSessionInputDriver {
     /// `app ordered input:` record (HvfOrderedInputRecord.swift); observing never changes the routing.
     var onAdmission: ((HvfNegotiatedInputStream.Admission, _ held: Int, _ depth: Int) -> Void)?
     var onUpdate: ((HvfAcknowledgedInputStream.Update?) -> Void)?
-    /// Writes events the guest inserted nothing of to input.ctl, in this order, before any later input is routed.
+    /// Writes events the guest inserted nothing of, or Ctrl+Alt+Delete held behind ordered input and the input after
+    /// it, to input.ctl, in this order, before any later input is routed.
     var onLegacyReplay: (([HvfOrderedInputQueue.Event]) -> Void)?
     /// Writes one input.ctl line the switch waits on (HvfLegacyInputActivity.barrier), after any replay.
     var onLegacyBarrier: ((String) -> Void)?
@@ -75,6 +76,8 @@ final class HvfSessionInputDriver {
             }
             onLegacyReplay?(replay)
         }
+        let secureAttention = router.takeSecureAttention()
+        if !secureAttention.isEmpty { onLegacyReplay?(secureAttention) }
         if let barrier = router.takeLegacyBarrier() { onLegacyBarrier?(barrier) }
         if router.count == 0 { timer?.invalidate(); timer = nil }
     }

@@ -169,13 +169,41 @@ final class HvfInputRouteSwitchTests: XCTestCase {
         }
     }
 
-    func testCtrlAltDeleteUsesTheVMMKeyboardOnAnActiveOrderedRoute() throws {
-        try withClockedSession(negotiated: true) { session, fixture, _ in
+    /// Ctrl+Alt+Delete takes the VMM keyboard, and nothing typed after it may overtake it on the agent route (an
+    /// Enter or a password reaching the current app before Windows switches desktops): later input follows it on
+    /// input.ctl until the VMM has taken it and input.ctl is quiet, then the ordered route is back.
+    func testCtrlAltDeleteUsesTheVMMKeyboardAndLaterInputFollowsItThere() throws {
+        try withClockedSession(negotiated: true) { session, fixture, clock in
             XCTAssertTrue(session.sendToolbarKey("ctrl+alt+delete"), "the menu item reports it as sent")
-            XCTAssertEqual(try legacy(fixture), ["KEY ctrl+alt+delete"])
-            XCTAssertEqual(try fixture.commands().count, 1, "only INPUTCAPS went to the agent")
             XCTAssertTrue(session.sendKey("enter"))
-            XCTAssertEqual(try payload(try fixture.commands().last), "KEYINPUT enter", "the ordered route stays active")
+            XCTAssertEqual(try legacy(fixture), ["KEY ctrl+alt+delete", "KEY enter"], "Enter follows the chord")
+            XCTAssertEqual(try fixture.commands().count, 1, "only INPUTCAPS went to the agent")
+            clock.advance(5); session.poll()
+            XCTAssertTrue(session.sendKey("tab"))
+            XCTAssertEqual(try legacy(fixture).last, "KEY tab", "the VMM has not taken the chord yet")
+            try fixture.probeTakes(); session.poll()
+            clock.advance(1); session.poll()
+            XCTAssertTrue(session.sendKey("esc"))
+            XCTAssertEqual(try payload(try fixture.commands().last), "KEYINPUT esc", "then the ordered route is back")
+            XCTAssertEqual(try legacy(fixture).count, 3)
+        }
+    }
+
+    /// Behind a key still going in on the agent route the chord waits for that key's receipt, then goes to input.ctl,
+    /// and an Enter typed meanwhile follows it there instead of reaching the agent first.
+    func testCtrlAltDeleteWaitsForOrderedInputAheadAndInputTypedMeanwhileFollowsIt() throws {
+        try withClockedSession(negotiated: true) { session, fixture, _ in
+            XCTAssertTrue(session.sendKey("tab"))
+            let ahead = try XCTUnwrap(try fixture.commands().last)
+            XCTAssertEqual(try payload(ahead), "KEYINPUT tab")
+            XCTAssertTrue(session.sendToolbarKey("ctrl+alt+delete"), "the menu item reports it as sent")
+            XCTAssertTrue(session.sendKey("enter"))
+            session.poll()
+            XCTAssertEqual(try legacy(fixture), [], "the chord does not overtake the key still going in")
+            XCTAssertEqual(try fixture.commands().last, ahead, "the Enter never goes to the agent")
+            try fixture.appendLog(inserted(ahead, count: 2)); session.poll()
+            XCTAssertEqual(try legacy(fixture), ["KEY ctrl+alt+delete", "KEY enter"])
+            XCTAssertEqual(try fixture.commands().last, ahead)
         }
     }
 

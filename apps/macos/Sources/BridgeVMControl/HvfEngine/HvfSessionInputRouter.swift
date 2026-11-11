@@ -6,7 +6,9 @@ import Foundation
 /// inserted nothing of an event (a Windows secure desktop), that event and everything queued behind it are handed
 /// back for input.ctl in their original order (`takeLegacyReplay`), later input follows them there, and once
 /// input.ctl is quiet again (and Windows inserted the release an ordered press still owes) the next event tries
-/// the ordered route. Ctrl+Alt+Delete always takes the VMM keyboard.
+/// the ordered route. Ctrl+Alt+Delete always takes the VMM keyboard, and on an active route nothing overtakes it
+/// there: input after it follows it on input.ctl (`fallback`), and behind ordered input still going in it waits,
+/// with input after it, until that input has gone in (`takeSecureAttention`).
 struct HvfSessionInputRouter {
     private(set) var binding: [String]?
     private(set) var eligible = false
@@ -19,8 +21,11 @@ struct HvfSessionInputRouter {
     private var legacy = HvfLegacyInputActivity()
     private var replay: [HvfOrderedInputQueue.Event] = []
     private var barrier: String?
+    /// Ctrl+Alt+Delete routed behind ordered input still going in, and input routed after it; then, once that input
+    /// has gone in, the same events for input.ctl.
+    private var held: [HvfOrderedInputQueue.Event] = [], heldOut: [HvfOrderedInputQueue.Event] = []
     var state: HvfNegotiatedInputStream.State { failed ? .failed : stream.state }
-    var count: Int { stream.count }
+    var count: Int { stream.count + held.count }
     /// Whether a generic chord (HvfModifierChord) can reach the guest now: on the legacy route the VMM
     /// shipped with this app builds it; on the ordered route only an agent with the marker does.
     var modifierChords: Bool { !eligible || fallback || stream.modifierChords }
@@ -55,7 +60,15 @@ struct HvfSessionInputRouter {
 
     mutating func route(_ event: HvfOrderedInputQueue.Event, binding: [String], now: Date) -> HvfNegotiatedInputStream.Admission {
         guard matches(binding) else { return .refused }
-        if case let .key(key) = event, HvfGuestInputEncoding.isSecureAttention(key) { return .legacy }
+        var secureAttention = false
+        if case let .key(key) = event { secureAttention = HvfGuestInputEncoding.isSecureAttention(key) }
+        if !held.isEmpty || (secureAttention && activated && !failed && !fallback && stream.count > 0) {
+            if event.isPointerMove, held.last?.isPointerMove == true { held.removeLast() } // a newer move supersedes it
+            guard held.count < HvfOrderedInputQueue.maximumEvents else { return .refused }
+            held.append(event)
+            return .queued
+        }
+        if secureAttention { return .legacy }
         guard !failed else { return .refused }
         guard eligible, !fallback else { return .legacy }
         let admission = stream.enqueue(event, now: now)
@@ -67,6 +80,9 @@ struct HvfSessionInputRouter {
         guard matches(binding) else { return false }
         let secureAttention = line.hasPrefix("KEY ") && HvfGuestInputEncoding.isSecureAttention(String(line.dropFirst(4)))
         guard secureAttention || (!failed && (!activated || fallback)) else { return false }
+        // Input after the chord follows it on input.ctl (Windows may switch desktops only once the VMM's keyboard
+        // queue moves), until the VMM has taken it and input.ctl is quiet.
+        if secureAttention, activated, !failed, stream.count == 0, stream.state == .ready { fallback = true }
         legacy.wrote(line, now: now)
         return true
     }
@@ -103,6 +119,11 @@ struct HvfSessionInputRouter {
         if stream.state == .unavailable {
             if activated { failure = .unavailable } else { eligible = false }
         }
+        if !held.isEmpty, stream.count == 0 { // the ordered input ahead of the chord has gone in or was handed back
+            if activated, !failed, stream.state == .ready { fallback = true; legacy.restart(now: now) }
+            heldOut += held
+            held.removeAll()
+        }
         // A switch that waits on input.ctl after a move gets the move's barrier line (HvfLegacyInputActivity.barrier).
         let waiting = eligible && !failed && (fallback || stream.state == .waitingForLegacy)
         barrier = waiting && !legacyPending ? legacy.barrier(now: now) : nil
@@ -113,6 +134,13 @@ struct HvfSessionInputRouter {
     mutating func takeLegacyBarrier() -> String? {
         defer { barrier = nil }
         return barrier
+    }
+
+    /// Ctrl+Alt+Delete and the input routed after it, once the ordered input ahead of it has gone in: for input.ctl
+    /// in this order, after any `takeLegacyReplay`, before any later input.
+    mutating func takeSecureAttention() -> [HvfOrderedInputQueue.Event] {
+        defer { heldOut.removeAll() }
+        return heldOut
     }
 
     /// The events of the last fallback, for input.ctl in this order before any later input.
@@ -139,6 +167,10 @@ struct HvfSessionInputRouter {
         fallback = false
         replay.removeAll()
         barrier = nil
-        return stream.reset(.sessionChanged)
+        let dropped = held.count
+        held.removeAll(); heldOut.removeAll()
+        let update = stream.reset(.sessionChanged)
+        guard dropped > 0, case let .cancelled(reason, discarded) = update else { return update }
+        return .cancelled(reason, discarded: discarded + dropped)
     }
 }
