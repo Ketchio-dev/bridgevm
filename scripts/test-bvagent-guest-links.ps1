@@ -135,7 +135,10 @@ try {
     if ((Invoke-Handler 'https://example.com/again') -ne 0 -or (@(Get-Links) -join ',') -cne (B64 'https://example.com/again')) { throw 'link file not started again' }
 
     # As Windows runs it: powershell.exe -File "<handler>" "%1". A quote in %1 changes the arguments.
+    # Windows runs the handler under Windows PowerShell 5.1, the exe the registration names, whose
+    # Environment.CommandLine is the raw line the quote check reads (pwsh 7 rebuilds it from its arguments).
     $exe = (Get-Process -Id $PID).Path
+    if ($onWindows) { $exe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe' }
     function Invoke-Real([string]$tail) {
         $info = New-Object System.Diagnostics.ProcessStartInfo $exe
         $info.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $handler + '" ' + $tail
