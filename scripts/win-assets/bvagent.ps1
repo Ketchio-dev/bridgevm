@@ -167,6 +167,8 @@ function Get-InputCapabilities([string]$Request) {
             $middle = @('middlepress:0x0', 'middlerelease:0x0', 'middleclick:0x0', 'releaseall:0x0' | ForEach-Object { [BridgeVM.BvUnicodeInput]::BuildPointer($_) | ForEach-Object { $_.Data.Mouse.Flags } }) -join ','
             if ($middle -ceq '32801,32833,32801,32833,32853') { $keySupport += "`nBVINPUT_POINTER $Request MIDDLE" }
         } catch { }
+        # The text caret query (CARET, Get-BvCaret), once its helper compiled.
+        try { if (Initialize-BvCaret) { $keySupport += "`nBVINPUT_TEXT $Request CARET" } } catch { }
         return @{ Exit = 0; Out = (('BVINPUT_CAPS {0} 3 TEXTINPUT KEYINPUT POINTERINPUT 65536' -f $Request) + $keySupport) }
     } catch {
         return @{ Exit = 1; Out = 'BVINPUT_CAPS_FAILED unavailable' }
@@ -275,6 +277,133 @@ function Invoke-BvDisplay([string]$Verb, [string]$Arg, [scriptblock]$Call = $nul
     } catch {
         Log ("$Verb failed: " + $_.Exception.Message)
         return "ERR $Verb failed"
+    }
+}
+
+# >>> guest text caret (CARET)
+# Where the foreground app's text caret is, so the host can put its composing-
+# text window and the Mac IME's candidates there (HvfGuestCaret.swift). One
+# reply line, BVCARET <x> <y> <w> <h> in physical virtual-desktop pixels, or
+# BVCARET none: the system caret (GetGUIThreadInfo, mapped in the caret
+# window's own DPI context), else the focus window's MSAA caret object
+# (OBJID_CARET: Chromium and other apps without a system caret). The query
+# runs on a worker joined for 200 ms, at most one at a time, so a hung app
+# cannot hold this loop. Compiled once in this process on the first INPUTCAPS
+# or CARET; INPUTCAPS advertises BVINPUT_TEXT <id> CARET only once it compiled.
+$script:BvCaretSource = @'
+using System;
+using System.Runtime.InteropServices;
+using System.Threading;
+namespace BridgeVM {
+    public static class BvCaret {
+        [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
+        [StructLayout(LayoutKind.Sequential)] public struct Point { public int X, Y; }
+        [StructLayout(LayoutKind.Sequential)] public struct GuiThreadInfo {
+            public int Size, Flags;
+            public IntPtr Active, Focus, Capture, MenuOwner, MoveSize, Caret;
+            public Rect CaretRect;
+        }
+        // IAccessible's vtable up to accLocation, its 16th method after IDispatch's; the slots before it are never called.
+        [ComImport, Guid("618736E0-3C3D-11CF-810C-00AA00389B71"), InterfaceType(ComInterfaceType.InterfaceIsDual)]
+        public interface IAccessible {
+            void Slot0(); void Slot1(); void Slot2(); void Slot3(); void Slot4(); void Slot5(); void Slot6(); void Slot7();
+            void Slot8(); void Slot9(); void Slot10(); void Slot11(); void Slot12(); void Slot13(); void Slot14();
+            void accLocation(out int left, out int top, out int width, out int height, [MarshalAs(UnmanagedType.Struct)] object child);
+        }
+        [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
+        [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr hwnd, ref Point point);
+        [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+        [DllImport("user32.dll")] static extern IntPtr GetWindowDpiAwarenessContext(IntPtr hwnd);
+        [DllImport("user32.dll")] static extern bool LogicalToPhysicalPointForPerMonitorDPI(IntPtr hwnd, ref Point point);
+        [DllImport("oleacc.dll")] static extern int AccessibleObjectFromWindow(IntPtr hwnd, uint id, ref Guid iid, [MarshalAs(UnmanagedType.IUnknown)] out object accessible);
+        static Thread worker;
+
+        public static string Find(int timeoutMs) {
+            if (worker != null && worker.IsAlive) return "BVCARET none";
+            string found = null;
+            Thread thread = new Thread(delegate () { try { found = Locate(); } catch (Exception) { } });
+            thread.IsBackground = true;
+            worker = thread;
+            thread.Start();
+            if (!thread.Join(timeoutMs)) return "BVCARET none";
+            return found ?? "BVCARET none";
+        }
+
+        static string Locate() {
+            // Physical pixels, the guest framebuffer's: per-monitor aware v2 (Windows 10 1703 and later).
+            try { SetThreadDpiAwarenessContext(new IntPtr(-4)); } catch (Exception) { }
+            GuiThreadInfo info = new GuiThreadInfo();
+            info.Size = Marshal.SizeOf(typeof(GuiThreadInfo));
+            if (!GetGUIThreadInfo(0, ref info)) return null;
+            if (info.Caret != IntPtr.Zero) {
+                string line = FromClient(info.Caret, info.CaretRect);
+                if (line != null) return line;
+            }
+            IntPtr focus = info.Focus != IntPtr.Zero ? info.Focus : info.Active;
+            return focus == IntPtr.Zero ? null : FromAccessible(focus);
+        }
+
+        // rcCaret is in the caret window's client coordinates, as that app sees them: map them to the screen in the
+        // window's DPI context, then to physical pixels (no change for a per-monitor aware app).
+        static string FromClient(IntPtr hwnd, Rect rect) {
+            Point a = new Point(), b = new Point();
+            a.X = rect.Left; a.Y = rect.Top; b.X = rect.Right; b.Y = rect.Bottom;
+            IntPtr previous = IntPtr.Zero;
+            try { previous = SetThreadDpiAwarenessContext(GetWindowDpiAwarenessContext(hwnd)); } catch (Exception) { }
+            bool mapped = ClientToScreen(hwnd, ref a) && ClientToScreen(hwnd, ref b);
+            if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous);
+            if (!mapped) return null;
+            Point pa = a, pb = b;
+            try {
+                if (LogicalToPhysicalPointForPerMonitorDPI(hwnd, ref pa) && LogicalToPhysicalPointForPerMonitorDPI(hwnd, ref pb)) { a = pa; b = pb; }
+            } catch (Exception) { }
+            return Line(a.X, a.Y, b.X - a.X, b.Y - a.Y);
+        }
+
+        static string FromAccessible(IntPtr hwnd) {
+            Guid iid = typeof(IAccessible).GUID;
+            object found;
+            if (AccessibleObjectFromWindow(hwnd, 0xFFFFFFF8, ref iid, out found) != 0 || found == null) return null;
+            try {
+                IAccessible caret = found as IAccessible;
+                if (caret == null) return null;
+                int x, y, w, h;
+                caret.accLocation(out x, out y, out w, out h, 0);
+                return Line(x, y, w, h);
+            } finally { Marshal.ReleaseComObject(found); }
+        }
+
+        static string Line(int x, int y, int w, int h) {
+            if (x < 0 || y < 0 || w < 0 || h <= 0 || x > 16384 || y > 16384 || w > 16384 || h > 16384) return null;
+            return "BVCARET " + x + " " + y + " " + w + " " + h;
+        }
+    }
+}
+'@
+$script:BvCaretReady = $null
+function Initialize-BvCaret {
+    if ($null -eq $script:BvCaretReady) {
+        try {
+            Add-Type -TypeDefinition $script:BvCaretSource -ErrorAction Stop
+            $script:BvCaretReady = $true
+        } catch {
+            $script:BvCaretReady = $false
+            Log ('CARET compile failed: ' + $_.Exception.Message)
+        }
+    }
+    return $script:BvCaretReady
+}
+# $Call stands in for the native Find in the contract (tests/integration/agent-caret-contract.ps1).
+function Get-BvCaret([scriptblock]$Call = $null) {
+    if (-not (Initialize-BvCaret)) { return @{ Exit = 1; Out = 'BVCARET unavailable' } }
+    try {
+        if ($null -eq $Call) { $Call = { [BridgeVM.BvCaret]::Find(200) } }
+        $line = [string](& $Call)
+        if ($line -cmatch '^BVCARET (none|[0-9]{1,5} [0-9]{1,5} [0-9]{1,5} [0-9]{1,5})\z') { return @{ Exit = 0; Out = $line } }
+        return @{ Exit = 0; Out = 'BVCARET none' }
+    } catch {
+        Log ('CARET failed: ' + $_.Exception.Message)
+        return @{ Exit = 1; Out = 'BVCARET unavailable' }
     }
 }
 
@@ -1685,6 +1814,7 @@ while ($true) {
                 'PING' { Write-Line $h 'PONG' 'PONG' }
                 { $_ -in @('TEXTINPUT', 'KEYINPUT', 'POINTERINPUT') } { Write-CommandResult $h (Invoke-UnicodeInput $arg $null ($tok -eq 'KEYINPUT') ($tok -eq 'POINTERINPUT')) }
             'INPUTCAPS' { Write-CommandResult $h (Get-InputCapabilities $arg) }
+                'CARET' { Write-CommandResult $h (Get-BvCaret) }
                 'WINLIST' {
                     # Materialize before writing: a provider failure must not
                     # publish a partial list. ERR alone is the failure terminal.
