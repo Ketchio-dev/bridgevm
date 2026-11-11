@@ -154,14 +154,15 @@ impl ChangeWait {
         Self { source }
     }
 
-    /// Until macOS posts a power-source change or `timeout` passes.
-    pub(super) fn wait(&self, timeout: Duration) {
+    /// Until macOS posts a power-source change (true) or `timeout` passes.
+    pub(super) fn wait(&self, timeout: Duration) -> bool {
         if self.source.is_null() {
             std::thread::sleep(timeout);
-            return;
+            return true;
         }
         // SAFETY: runs this thread's run loop, which holds our source.
-        unsafe { CFRunLoopRunInMode(kCFRunLoopDefaultMode, timeout.as_secs_f64(), 1) };
+        let result = unsafe { CFRunLoopRunInMode(kCFRunLoopDefaultMode, timeout.as_secs_f64(), 1) };
+        result == RUN_LOOP_HANDLED_SOURCE
     }
 }
 
@@ -180,6 +181,8 @@ impl Drop for ChangeWait {
 /// The run loop returning is the signal; the read happens on the loop's thread.
 extern "C" fn on_change(_context: *mut c_void) {}
 
+/// `kCFRunLoopRunHandledSource`: our source fired.
+const RUN_LOOP_HANDLED_SOURCE: i32 = 4;
 const UTF8: u32 = 0x0800_0100;
 const NUMBER_SINT64: isize = 4;
 

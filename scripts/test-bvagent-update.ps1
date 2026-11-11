@@ -132,7 +132,9 @@ function New-FakeTask([string]$Arguments, [string]$Xml, $Settings = $null) {
     [pscustomobject]@{ Actions = @([pscustomobject]@{ Arguments = $Arguments }); State = 'Ready'; Principal = [pscustomobject]@{ UserId = 'bridge' }; Settings = $Settings; Xml = $Xml }
 }
 
-# 2. READY says update=pending only while update\pending.txt holds the agent's own ID.
+# 2. READY says update=pending only while update\pending.txt holds the agent's own ID,
+#    and onbattery: the host shows Windows the Mac on battery only to an agent
+#    whose task keeps running then (bvagent-task.ps1).
 . ([scriptblock]::Create((Get-ScriptFunction (Join-Path $assets 'bvagent.ps1') 'Get-BvReady')))
 $readyRoot = Join-Path ([IO.Path]::GetTempPath()) ('bvagent-ready-' + [guid]::NewGuid())
 $readyDir = Join-Path $readyRoot '0123456789abcdef'
@@ -142,10 +144,10 @@ try {
     Assert-True (-not (Get-BvReady $readyDir '0123456789abcdef').Contains('update=pending')) 'READY says pending without pending.txt'
     [IO.File]::WriteAllText((Join-Path $readyRoot 'update/pending.txt'), "0123456789abcdef`r`n")
     $ready = Get-BvReady $readyDir '0123456789abcdef'
-    Assert-True ($ready.EndsWith(' v3-share2 putdata bigfile lssame startapps openfile agent=0123456789abcdef update=pending')) ('READY with its update pending: ' + $ready)
+    Assert-True ($ready.EndsWith(' v3-share2 putdata bigfile lssame startapps openfile onbattery agent=0123456789abcdef update=pending')) ('READY with its update pending: ' + $ready)
     [IO.File]::WriteAllText((Join-Path $readyRoot 'update/pending.txt'), 'fedcba9876543210')
     Assert-True (-not (Get-BvReady $readyDir '0123456789abcdef').Contains('update=pending')) 'READY says pending for another version'
-    Assert-True ((Get-BvReady $readyDir '').EndsWith(' v3-share2 putdata bigfile lssame startapps openfile')) 'READY without an ID'
+    Assert-True ((Get-BvReady $readyDir '').EndsWith(' v3-share2 putdata bigfile lssame startapps openfile onbattery')) 'READY without an ID'
 } finally { Remove-Item -LiteralPath $readyRoot -Recurse -Force }
 
 $base = Join-Path ([IO.Path]::GetTempPath()) ('bvagent-update-' + [guid]::NewGuid())

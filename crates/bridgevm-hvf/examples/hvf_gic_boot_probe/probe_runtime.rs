@@ -123,9 +123,17 @@ pub(crate) fn run() -> ExitCode {
         configure_gpu_unlocked_copy(&mut platform);
         let platform = Arc::new(Mutex::new(platform));
         // Probe-lifetime: follows the Mac's battery off the vCPUs and ends
-        // with the platform (host_power.rs).
+        // with the platform (host_power.rs). Each boot's agent console says
+        // whether the running agent's task survives battery.
+        let agent_survives_battery = Arc::new(AtomicBool::new(false));
         if let Some(shown) = platform_cfg.devices.host_power {
-            crate::host_power::start_monitor(power_source, shown, Arc::downgrade(&platform), vcpu);
+            crate::host_power::start_monitor(
+                power_source,
+                shown,
+                Arc::clone(&agent_survives_battery),
+                Arc::downgrade(&platform),
+                vcpu,
+            );
         }
         // Probe-lifetime instance, deliberately OUTSIDE the reboot loop: its
         // ticker thread keeps firing across guest reboots, and the SAME fired
@@ -326,7 +334,10 @@ pub(crate) fn run() -> ExitCode {
             // The agent console runs on VM time, from this boot's start (boot_clocks).
             let boot_started = crate::boot_clocks::agent_origin(&crate::boot_clocks::Live);
             let mut boot_timer = BootTimer::from_env();
-            let agent_harness = AgentConsoleHarness::from_env(boot_started);
+            let agent_harness = AgentConsoleHarness::from_env(boot_started).map(|mut harness| {
+                harness.share_agent_survives_battery(&agent_survives_battery);
+                harness
+            });
             let automation_always_check = !uart_triggers.is_empty()
                 || !xhci_hid_boot_key_triggers.is_empty()
                 || !xhci_setup_input_triggers.is_empty()

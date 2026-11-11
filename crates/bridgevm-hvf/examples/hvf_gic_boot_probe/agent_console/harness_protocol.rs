@@ -140,6 +140,8 @@ impl AgentConsoleHarness {
             dns_flush: DnsFlush::default(),
             drops: FileDrops::default(),
             agent_update: service.then(AgentUpdate::from_env).flatten(),
+            ready_survives_battery: false,
+            agent_survives_battery: Arc::default(),
         })
     }
     /// Frame drained agent bytes into `line_scratch`. An unterminated reply

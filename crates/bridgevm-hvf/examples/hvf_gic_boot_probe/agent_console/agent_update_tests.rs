@@ -299,6 +299,63 @@ fn an_older_agent_gets_every_file_then_the_new_one_is_confirmed() {
     assert_eq!(guest.verbs.len(), expected.len() + 1);
 }
 
+/// Windows sees the Mac on battery only once the running agent's READY says
+/// `onbattery` and the update that brought it is confirmed: an older agent's
+/// task does not start on battery (host_power.rs `for_guest`).
+#[test]
+fn windows_sees_the_mac_on_battery_only_once_the_agent_task_survives_it() {
+    use bridgevm_hvf::acpi_ged::{GED_EVENT_AC_ADAPTER, GED_EVENT_BATTERY_STATUS};
+    use bridgevm_hvf::host_power::{
+        encode, HostBattery, HostPower, HostPowerPage, FLAG_AC_ONLINE, REG_FLAGS,
+        REG_REMAINING_MWH, REG_STATE, STATE_DISCHARGING,
+    };
+    let mac = HostPower {
+        ac_online: false,
+        battery: Some(HostBattery {
+            percent: 35,
+            charging: false,
+            minutes_to_empty: Some(120),
+            minutes_to_full: None,
+        }),
+    };
+    let bundle = Bundle::new("on-battery");
+    let mut h = resident(&bundle, "session-1");
+    let flag = Arc::new(AtomicBool::new(true));
+    h.share_agent_survives_battery(&flag);
+    let shown = || crate::host_power::for_guest(mac, flag.load(Ordering::Relaxed));
+    let on_ac = |power: HostPower| {
+        let regs = encode(&power);
+        (regs[REG_FLAGS] & FLAG_AC_ONLINE != 0, regs[REG_STATE] & STATE_DISCHARGING != 0)
+    };
+    let mut page = HostPowerPage::new(shown());
+    assert_eq!(on_ac(shown()), (true, false), "a new boot's agent has not spoken");
+    assert_eq!(encode(&shown())[REG_REMAINING_MWH], 21_000, "the percentage is the Mac's");
+
+    // The old agent, then its update up to the new agent's READY: still AC.
+    let mut guest = Guest::default();
+    let t0 = h.start;
+    h.note_agent_ready(OLD_READY, t0);
+    run(&mut h, &mut guest, t0 + SETTLE);
+    assert!(matches!(phase(&h), UpdatePhase::Armed { .. }));
+    assert_eq!(on_ac(shown()), (true, false));
+    let id = bundled_id(&h);
+    let t2 = t0 + SETTLE + Duration::from_secs(8);
+    h.handle_service_reply_with_sender(&format!("READY BRIDGEVM v3-share2 onbattery agent={id}"), t2, &mut |_| {});
+    assert_eq!(phase(&h), UpdatePhase::Confirming);
+    assert_eq!(on_ac(shown()), (true, false), "the guard may still put the old task back");
+
+    // Confirmed: the real state, and Windows re-reads the adapter and battery.
+    run(&mut h, &mut guest, t2);
+    assert_eq!(phase(&h), UpdatePhase::Done);
+    assert_eq!(on_ac(shown()), (false, true));
+    assert_eq!(page.update(shown()), GED_EVENT_AC_ADAPTER | GED_EVENT_BATTERY_STATUS);
+
+    // An agent without the marker (an older one after a rollback): AC again.
+    h.handle_service_reply_with_sender("READY BRIDGEVM v3-share2", t2 + Duration::from_secs(60), &mut |_| {});
+    assert_eq!(on_ac(shown()), (true, false));
+    assert_eq!(page.update(shown()), GED_EVENT_AC_ADAPTER | GED_EVENT_BATTERY_STATUS);
+}
+
 #[test]
 fn the_bundled_agent_is_left_alone() {
     let bundle = Bundle::new("current");
