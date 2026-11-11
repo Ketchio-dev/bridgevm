@@ -20,7 +20,10 @@ final class HvfGuestPrintTests: XCTestCase {
             return true
         }
         /// The user prints or cancels the open panel.
-        func finish() { pending.removeFirst()() }
+        func finish() {
+            guard !pending.isEmpty else { return XCTFail("no print panel open") }
+            pending.removeFirst()()
+        }
     }
 
     private func session(_ fixture: HvfRuntimeSessionStoreFixture) throws -> (HvfEngineSession, Presenter, LibraryModel, VMConfig) {
@@ -37,9 +40,9 @@ final class HvfGuestPrintTests: XCTestCase {
 
     private func sha(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
 
-    /// A job file as the probe publishes it, and its line.
-    private func job(_ session: HvfEngineSession, _ n: Int, _ data: Data) throws -> (URL, String) {
-        let url = session.printDirectory.appendingPathComponent("\(n).pdf")
+    /// A job file as the probe publishes it (`<probe start, Unix ms>-<n>.pdf`), and its line.
+    private func job(_ session: HvfEngineSession, _ n: Int, _ data: Data, start: Int = 1_762_880_000_000) throws -> (URL, String) {
+        let url = session.printDirectory.appendingPathComponent("\(start)-\(n).pdf")
         try data.write(to: url)
         return (url, "BVPRINT job bytes=\(data.count) sha256=\(sha(data)) path=\(url.path)")
     }
@@ -54,29 +57,63 @@ final class HvfGuestPrintTests: XCTestCase {
     func testOnlyAJobFileDirectlyInTheProbesPrintFolderCounts() {
         let dir = URL(fileURLWithPath: "/Users/u/Library/Application Support/BridgeVM/vms/w/bundle/logs/hvf/print")
         let hex = String(repeating: "ab", count: 32)
-        let good = "BVPRINT job bytes=12 sha256=\(hex) path=\(dir.path)/3.pdf"
+        let good = "BVPRINT job bytes=12 sha256=\(hex) path=\(dir.path)/1762880000000-3.pdf"
         XCTAssertEqual(HvfGuestPrint.job(from: good, directory: dir),
-                       HvfGuestPrint.Job(url: dir.appendingPathComponent("3.pdf"), bytes: 12, sha256: hex))
+                       HvfGuestPrint.Job(url: dir.appendingPathComponent("1762880000000-3.pdf"), bytes: 12, sha256: hex))
         XCTAssertNotNil(HvfGuestPrint.job(from: good + "\r", directory: dir))
         for bad in [
-            "BVPRINT job bytes=12 sha256=\(hex) path=/Users/u/Documents/3.pdf",
-            "BVPRINT job bytes=12 sha256=\(hex) path=\(dir.path)/../../../../../../../Documents/3.pdf",
-            "BVPRINT job bytes=12 sha256=\(hex) path=\(dir.path)/sub/3.pdf",
+            "BVPRINT job bytes=12 sha256=\(hex) path=/Users/u/Documents/1762880000000-3.pdf",
+            "BVPRINT job bytes=12 sha256=\(hex) path=\(dir.path)/../../../../../../../Documents/1762880000000-3.pdf",
+            "BVPRINT job bytes=12 sha256=\(hex) path=\(dir.path)/../print/../../1762880000000-3.pdf",
+            "BVPRINT job bytes=12 sha256=\(hex) path=\(dir.path)/sub/1762880000000-3.pdf",
+            "BVPRINT job bytes=12 sha256=\(hex) path=\(dir.path)/3.pdf",  // the earlier probe's name form
             "BVPRINT job bytes=12 sha256=\(hex) path=\(dir.path)/report.pdf",
-            "BVPRINT job bytes=12 sha256=\(hex) path=\(dir.path)/3.pdf.part",
+            "BVPRINT job bytes=12 sha256=\(hex) path=\(dir.path)/1762880000000-3.pdf.part",
+            "BVPRINT job bytes=12 sha256=\(hex) path=\(dir.path)/-3.pdf",
+            "BVPRINT job bytes=12 sha256=\(hex) path=\(dir.path)/1762880000000-.pdf",
+            "BVPRINT job bytes=12 sha256=\(hex) path=\(dir.path)/1-2-3.pdf",
+            "BVPRINT job bytes=12 sha256=\(hex) path=\(dir.path)/1762880000000-3a.pdf",
             "BVPRINT job bytes=12 sha256=\(hex) path=\(dir.path)/.pdf",
-            "BVPRINT job bytes=12 sha256=\(hex) path=print/3.pdf",
-            "BVPRINT job bytes=0 sha256=\(hex) path=\(dir.path)/3.pdf",
-            "BVPRINT job bytes=\(HvfGuestPrint.maxJobBytes + 1) sha256=\(hex) path=\(dir.path)/3.pdf",
-            "BVPRINT job bytes=x sha256=\(hex) path=\(dir.path)/3.pdf",
-            "BVPRINT job bytes=12 sha256=\(hex.uppercased()) path=\(dir.path)/3.pdf",
-            "BVPRINT job bytes=12 sha256=abc path=\(dir.path)/3.pdf",
-            "BVPRINT job bytes=12 extra=1 sha256=\(hex) path=\(dir.path)/3.pdf",
+            "BVPRINT job bytes=12 sha256=\(hex) path=print/1762880000000-3.pdf",
+            "BVPRINT job bytes=0 sha256=\(hex) path=\(dir.path)/1762880000000-3.pdf",
+            "BVPRINT job bytes=\(HvfGuestPrint.maxJobBytes + 1) sha256=\(hex) path=\(dir.path)/1762880000000-3.pdf",
+            "BVPRINT job bytes=x sha256=\(hex) path=\(dir.path)/1762880000000-3.pdf",
+            "BVPRINT job bytes=12 sha256=\(hex.uppercased()) path=\(dir.path)/1762880000000-3.pdf",
+            "BVPRINT job bytes=12 sha256=abc path=\(dir.path)/1762880000000-3.pdf",
+            "BVPRINT job bytes=12 extra=1 sha256=\(hex) path=\(dir.path)/1762880000000-3.pdf",
             "BVPRINT job bytes=12 sha256=\(hex)",
             "BVPRINT refused reason=too-large bytes=999",
         ] {
             XCTAssertNil(HvfGuestPrint.job(from: bad, directory: dir), bad)
         }
+    }
+
+    /// Jobs an earlier probe published that never reached a print panel (the app quit or the VM stopped first;
+    /// a restarted probe keeps them) open at the next agent start, oldest first, each once.
+    func testJobsLeftByAnEarlierProbeOpenAtTheAgentStart() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        let (session, presenter, _, _) = try session(fixture)
+        let control = URL(fileURLWithPath: session.config.ctlFilePath)
+        try FileManager.default.createDirectory(at: control.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let (later, _) = try job(session, 1, pdf("later"), start: 1_762_890_000_000)
+        let (tenth, tenthLine) = try job(session, 10, pdf("tenth"))
+        let (second, _) = try job(session, 2, pdf("second"))
+        let others = ["1762890000000-2.pdf.part", "3.pdf", "notes.txt"].map { session.printDirectory.appendingPathComponent($0) }
+        for url in others { try pdf("other").write(to: url) }
+        func agentStarts() { session.connectionState = .connected(host: "guest"); session.handle(.serviceStart(tMs: 1)) }
+        agentStarts()
+        XCTAssertEqual(presenter.shown, [second], "one panel at a time, oldest first")
+        session.handle(.unknown(tenthLine))  // its line read again: still one panel for it
+        agentStarts()                        // the next boot: the same jobs, not again
+        presenter.finish()
+        presenter.finish()
+        presenter.finish()
+        XCTAssertEqual(presenter.shown, [second, tenth, later])
+        XCTAssertTrue(presenter.pending.isEmpty)
+        XCTAssertFalse(exists(second) || exists(tenth) || exists(later), "each deleted after its panel")
+        XCTAssertTrue(others.allSatisfy(exists), "nothing else is opened or deleted")
+        XCTAssertNil(session.printNotice.shown)
     }
 
     /// Each job opens one print panel, the next only after it, and its file goes once its panel is over.
@@ -114,7 +151,7 @@ final class HvfGuestPrintTests: XCTestCase {
         let (changed, changedLine) = try job(session, 1, pdf("one"))
         try pdf("One").write(to: changed)
         let (_, sizeLine) = try job(session, 2, pdf("two"))
-        let link = session.printDirectory.appendingPathComponent("3.pdf")
+        let link = session.printDirectory.appendingPathComponent("1762880000000-3.pdf")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: secret)
         let linkLine = "BVPRINT job bytes=\(pdf("secret").count) sha256=\(sha(pdf("secret"))) path=\(link.path)"
         let (_, zipLine) = try job(session, 4, Data("PK\u{3}\u{4} not a pdf".utf8))

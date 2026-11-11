@@ -201,7 +201,13 @@ fn a_job_comes_over_in_ranges_hashed_as_it_comes_and_ends_in_one_line_then_the_g
     assert_eq!(sha, hex_lower(&Sha256::digest(&bytes)));
     assert_eq!(mac.parent(), Some(rig.dir.as_path()), "the probe's own folder");
     let name = mac.file_name().unwrap().to_str().unwrap();
-    assert!(name.strip_suffix(".pdf").unwrap().bytes().all(|b| b.is_ascii_digit()), "named by the probe: {name}");
+    // Named by this probe: its start (Unix ms) and its counter, so no name of an earlier probe's job
+    // still waiting for its print panel comes again.
+    let (start, n) = name.strip_suffix(".pdf").unwrap().split_once('-').unwrap();
+    assert_eq!(start, print_generation().to_string(), "{name}");
+    assert!(!n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()), "{name}");
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+    assert!(print_generation() <= now && now - print_generation() < 3_600_000, "{name}");
     assert!(std::fs::read(&mac).unwrap() == bytes);
     assert_eq!(files_in(&rig.dir), [name], "no temporary left");
     use std::os::unix::fs::PermissionsExt;
@@ -405,15 +411,17 @@ fn a_job_announced_again_after_its_delete_was_lost_is_deleted_not_printed_twice(
 }
 
 #[test]
-fn the_first_harness_clears_only_files_named_as_jobs() {
+fn a_restarted_probe_keeps_the_jobs_an_earlier_one_published_and_removes_only_its_temporaries() {
+    // Windows restarted while jobs waited behind an open Mac print panel: the app still has them
+    // queued and their guest copies are gone, so they are the only copies.
     let dir = std::env::temp_dir().join(format!("bridgevm-print-clear-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(dir.join("12.pdf.d")).unwrap();
-    for name in ["1.pdf", "22.pdf.part", "notes.txt", "x1.pdf", ".pdf", "3.PDF"] {
+    std::fs::create_dir_all(dir.join("12.pdf.part.d")).unwrap();
+    for name in ["1762880000000-1.pdf", "1762880000000-2.pdf.part", "1.pdf", "22.pdf.part", "notes.txt", "x1.pdf.part"] {
         std::fs::write(dir.join(name), b"x").unwrap();
     }
     clear_jobs(&dir);
-    assert_eq!(files_in(&dir), [".pdf", "12.pdf.d", "3.PDF", "notes.txt", "x1.pdf"]);
+    assert_eq!(files_in(&dir), ["1.pdf", "12.pdf.part.d", "1762880000000-1.pdf", "notes.txt", "x1.pdf.part"]);
     let _ = std::fs::remove_dir_all(&dir);
 }
 

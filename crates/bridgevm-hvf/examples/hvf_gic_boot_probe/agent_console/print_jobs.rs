@@ -4,9 +4,10 @@
 //! then writes `PRINTJOB <b64(utf8 path)> <bytes>` between replies for each finished job
 //! (bvagent.ps1, print). Those lines are guest data. They are taken only after the app's PRINTWATCH
 //! went through this harness, bounded in size and number, and their path only ever goes back to
-//! the guest (GETRANGE, DEL): the Mac file is named by this probe's own counter. A job comes over
-//! in GETRANGE ranges, each chunk written to `<dir>/<n>.pdf.part` and hashed as it comes, so memory
-//! holds one chunk; only a whole job that begins with `%PDF-` becomes `<dir>/<n>.pdf`. Each job ends
+//! the guest (GETRANGE, DEL): the Mac file is named by this probe's start and its own counter. A job
+//! comes over in GETRANGE ranges, each chunk written to `<dir>/<start>-<n>.pdf.part` and hashed as it
+//! comes, so memory holds one chunk; only a whole job that begins with `%PDF-` becomes
+//! `<dir>/<start>-<n>.pdf`, which the app deletes once its print panel is over. Each job ends
 //! in one line the app reads from run.log, then the guest file is deleted:
 //! `BVPRINT job bytes=<n> sha256=<hex> path=<mac path>` (the path last: it may hold spaces), or
 //! `BVPRINT refused reason=<r> bytes=<n>`. An agent restart abandons the job under way without a
@@ -35,9 +36,19 @@ const MAX_PRINT_PATH_BYTES: usize = 1024;
 /// Guest paths of jobs that ended here, kept so that one announced again is deleted, not printed twice.
 const DONE_KEPT: usize = 32;
 
-/// The Mac files' names, unique within this process (harnesses are re-created per boot).
+/// The Mac files' names: this process's start (Unix ms) and a counter (harnesses are re-created per
+/// boot), so a job an earlier probe published, still waiting for its print panel, keeps its name.
 static NEXT_JOB: AtomicU64 = AtomicU64::new(1);
+static GENERATION: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
 static CLEARED: AtomicBool = AtomicBool::new(false);
+
+fn print_generation() -> u64 {
+    *GENERATION.get_or_init(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_millis() as u64)
+    })
+}
 
 #[cfg(test)]
 thread_local! {
@@ -124,11 +135,12 @@ impl PrintJobs {
         Self { dir, ..Self::default() }
     }
 
-    /// From the environment; the first harness of this process removes the jobs an earlier probe
-    /// left (only files named as this module names them).
+    /// From the environment; the first harness of this process removes the temporaries an earlier
+    /// probe left.
     pub(super) fn from_env() -> Self {
         let dir = std::env::var_os(PRINT_DIR_ENV).filter(|dir| !dir.is_empty()).map(PathBuf::from);
         if let Some(dir) = dir.as_deref() {
+            print_generation();
             if !CLEARED.swap(true, Ordering::Relaxed) {
                 clear_jobs(dir);
             }
@@ -164,27 +176,29 @@ impl PrintJobs {
     }
 }
 
-/// `<n>.pdf` and `<n>.pdf.part` in `dir`, as an earlier probe left them.
+/// The `.pdf.part` temporaries an earlier probe left in `dir`. Its published `.pdf` jobs stay: the app
+/// may still have them queued for a print panel, and their guest copies are deleted.
 fn clear_jobs(dir: &Path) {
     for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
         let name = entry.file_name();
         let Some(name) = name.to_str() else { continue };
-        let stem = name.strip_suffix(".part").unwrap_or(name);
-        let ours = stem.strip_suffix(".pdf").is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+        let ours = name
+            .strip_suffix(".pdf.part")
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit() || b == b'-'));
         if ours && entry.file_type().is_ok_and(|kind| kind.is_file()) {
             let _ = std::fs::remove_file(entry.path());
         }
     }
 }
 
-/// A fresh `<dir>/<n>.pdf.part` in a 0700 directory that is no link.
+/// A fresh `<dir>/<start>-<n>.pdf.part` in a 0700 directory that is no link.
 fn create_part(dir: &Path) -> std::io::Result<(PathBuf, std::fs::File)> {
     std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
     if !std::fs::symlink_metadata(dir)?.is_dir() {
         return Err(std::io::ErrorKind::InvalidInput.into());
     }
     let n = NEXT_JOB.fetch_add(1, Ordering::Relaxed);
-    let part = dir.join(format!("{n}.pdf.part"));
+    let part = dir.join(format!("{}-{n}.pdf.part", print_generation()));
     let file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)

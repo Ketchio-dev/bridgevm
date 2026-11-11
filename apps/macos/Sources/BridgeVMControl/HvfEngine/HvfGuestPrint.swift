@@ -20,11 +20,21 @@ enum HvfGuestPrint {
     struct Job: Equatable {
         let url: URL
         let bytes: Int
-        let sha256: String
+        /// The line's digest; nil for a job an earlier probe left (`leftovers`).
+        let sha256: String?
     }
 
-    /// The job a probe line names, only as a file named `<digits>.pdf` directly in `directory` (the probe's print
-    /// folder): run.log also holds the guest's output, so no line chooses another Mac file.
+    /// `<start>-<n>.pdf`, as the probe names a job (its start in Unix ms, its counter), in that order.
+    static func jobOrder(_ name: String) -> (UInt64, UInt64)? {
+        guard name.hasSuffix(".pdf") else { return nil }
+        let parts = name.dropLast(4).split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts.allSatisfy({ (1...19).contains($0.count) && $0.allSatisfy { $0.isASCII && $0.isNumber } }),
+              let start = UInt64(parts[0]), let n = UInt64(parts[1]) else { return nil }
+        return (start, n)
+    }
+
+    /// The job a probe line names, only as a file named `<start>-<n>.pdf` directly in `directory` (the probe's
+    /// print folder): run.log also holds the guest's output, so no line chooses another Mac file.
     static func job(from line: String, directory: URL) -> Job? {
         let line = line.hasSuffix("\r") ? String(line.dropLast()) : line
         guard line.hasPrefix(jobPrefix + "bytes="), let pathRange = line.range(of: " path=") else { return nil }
@@ -36,21 +46,35 @@ enum HvfGuestPrint {
         let path = String(line[pathRange.upperBound...])
         let url = URL(fileURLWithPath: path)
         let name = url.lastPathComponent
-        guard path.hasPrefix("/"), name.hasSuffix(".pdf"), name.count > 4, name.count <= 24,
-              name.dropLast(4).allSatisfy({ $0.isASCII && $0.isNumber }),
+        guard path.hasPrefix("/"), jobOrder(name) != nil,
               url.deletingLastPathComponent().resolvingSymlinksInPath().path == directory.resolvingSymlinksInPath().path
         else { return nil }
         return Job(url: url, bytes: bytes, sha256: sha)
     }
 
-    /// The file is there, a regular file (not a link) of the line's size and SHA-256 that begins as a PDF does.
+    /// The jobs in the print folder, oldest first: at an agent start, those an earlier probe published that no
+    /// print panel showed (the app quit or the VM stopped first). Only the probe writes there (0700).
+    static func leftovers(in directory: URL) -> [Job] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        return names.compactMap { name -> (UInt64, UInt64, Job)? in
+            let url = directory.appendingPathComponent(name)
+            guard let order = jobOrder(name), let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+                  attributes[.type] as? FileAttributeType == .typeRegular,
+                  let bytes = (attributes[.size] as? NSNumber)?.intValue, bytes > 0, bytes <= maxJobBytes else { return nil }
+            return (order.0, order.1, Job(url: url, bytes: bytes, sha256: nil))
+        }.sorted { ($0.0, $0.1) < ($1.0, $1.1) }.map(\.2)
+    }
+
+    /// The file is there, a regular file (not a link) of the line's size and SHA-256 (when it had a line) that
+    /// begins as a PDF does.
     static func verified(_ job: Job) -> Bool {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: job.url.path),
               attributes[.type] as? FileAttributeType == .typeRegular,
               (attributes[.size] as? NSNumber)?.intValue == job.bytes,
               let data = try? Data(contentsOf: job.url, options: .mappedIfSafe),
               data.count == job.bytes, data.starts(with: Data("%PDF-".utf8)) else { return false }
-        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() == job.sha256
+        guard let sha256 = job.sha256 else { return true }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() == sha256
     }
 
     /// Whether the job file is still there at all: a line read again (a reattached session reads run.log from
@@ -135,11 +159,14 @@ extension HvfEngineSession {
     var printDirectory: URL { URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("print", isDirectory: true) }
 
     /// At `BVAGENT SERVICE start`. On: the agent makes the printer (only what is missing) and watches it, every
-    /// boot. Turned off: the printer's removal once per app session.
+    /// boot, and jobs an earlier probe left join the print panels. Turned off: the printer's removal once per app
+    /// session.
     func applyPrintSetting() {
         if printToMacWanted {
             printOffSent = false
             _ = sendCtl(HvfGuestPrint.watchCommand)
+            HvfGuestPrint.leftovers(in: printDirectory).forEach(queuePrintJob)
+            presentNextPrintJob()
         } else if printToMacSetting == false, !printOffSent {
             printOffSent = sendCtl(HvfGuestPrint.offCommand)
         }
@@ -158,10 +185,15 @@ extension HvfEngineSession {
         if line.hasPrefix(HvfGuestPrint.refusedPrefix) {
             return printNotice.show(line.contains(" reason=too-large ") ? .tooLarge : .notReceived)
         }
-        guard let job = HvfGuestPrint.job(from: line, directory: printDirectory), HvfGuestPrint.exists(job),
-              printShowing != job.url, !printQueue.contains(job) else { return }
-        printQueue.append(job)
+        guard let job = HvfGuestPrint.job(from: line, directory: printDirectory), HvfGuestPrint.exists(job) else { return }
+        queuePrintJob(job)
         presentNextPrintJob()
+    }
+
+    /// Each job file once: its line read again, or found again at an agent start, adds nothing.
+    private func queuePrintJob(_ job: HvfGuestPrint.Job) {
+        guard printShowing != job.url, !printQueue.contains(where: { $0.url == job.url }) else { return }
+        printQueue.append(job)
     }
 
     /// One print panel at a time; each job's file goes once its panel is over, or at once when it cannot be shown.
