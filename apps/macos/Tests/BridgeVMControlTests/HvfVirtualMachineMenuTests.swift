@@ -23,7 +23,7 @@ final class HvfVirtualMachineMenuTests: XCTestCase {
 
     func testItemsFollowTheSessionInFront() throws {
         let off = HvfVirtualMachineMenuState(session: nil)
-        XCTAssertEqual(off, HvfVirtualMachineMenuState(sendsCtrlAltDelete: false, pauses: false, paused: false,
+        XCTAssertEqual(off, HvfVirtualMachineMenuState(sendsKeys: false, pauses: false, paused: false,
                                                        restarts: false, stops: false, listsWindows: false))
         let root = URL(fileURLWithPath: "/tmp/bridgevm-menu-" + UUID().uuidString)
         XCTAssertEqual(HvfVirtualMachineMenuState(session: HvfEngineSession(config: config(root), repoRoot: root) { _ in false }),
@@ -35,7 +35,7 @@ final class HvfVirtualMachineMenuTests: XCTestCase {
         session.beginOwnedInputBoot()
         session.connectionState = .booting
         var state = HvfVirtualMachineMenuState(session: session)
-        XCTAssertTrue(state.sendsCtrlAltDelete && state.pauses && state.restarts && state.stops)
+        XCTAssertTrue(state.sendsKeys && state.pauses && state.restarts && state.stops)
         XCTAssertFalse(state.paused)
         XCTAssertFalse(state.listsWindows, "no agent yet to list windows")
 
@@ -45,7 +45,7 @@ final class HvfVirtualMachineMenuTests: XCTestCase {
         session.pause = .paused
         state = HvfVirtualMachineMenuState(session: session)
         XCTAssertTrue(state.pauses && state.paused, "재개")
-        XCTAssertFalse(state.sendsCtrlAltDelete || state.listsWindows, "a paused guest takes no input")
+        XCTAssertFalse(state.sendsKeys || state.listsWindows, "a paused guest takes no input")
         session.pause = .running
 
         XCTAssertEqual(session.stopOwned(expectedToken: f.controller.identity.token), .requested(deadline: nil))
@@ -70,6 +70,21 @@ final class HvfVirtualMachineMenuTests: XCTestCase {
         a.perform(.windows)
         XCTAssertTrue(a.showsWindowInventory, "Guest windows… opens the window's sheet")
         XCTAssertFalse(b.showsWindowInventory)
+    }
+
+    /// 화면 캡처 (Snipping Tool) sends Windows+Shift+S, the capture bar's own chord, in both Command key
+    /// settings: a Mac keyboard has no PrtSc key and ⌘⇧S is Ctrl+Shift+S in the default one.
+    func testScreenCaptureSendsWindowsShiftSInBothCommandKeyModes() throws {
+        for mode in [HvfCommandKeyMode.mac, .windows] {
+            let root = URL(fileURLWithPath: "/tmp/bridgevm-menu-" + UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            var config = config(root)
+            config.commandKeyMode = mode
+            HvfDisplayWindowState(session: HvfEngineSession(config: config, repoRoot: root) { _ in false }).perform(.screenCapture)
+            XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("input.ctl"), encoding: .utf8),
+                           "KEY win+shift+s\n", mode.rawValue)
+        }
     }
 
     private func config(_ root: URL) -> HvfEngineConfig {

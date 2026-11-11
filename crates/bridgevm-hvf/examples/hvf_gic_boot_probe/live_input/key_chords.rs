@@ -15,6 +15,7 @@ const NAMED: &[(&str, u8)] = &[
     ("backspace", 0x2a),
     ("tab", 0x2b),
     ("space", 0x2c),
+    ("printscreen", 0x46),
     ("insert", 0x49),
     ("home", 0x4a),
     ("pageup", 0x4b),
@@ -140,6 +141,9 @@ mod tests {
             ("shift+backspace", 0x02, 0x2a),
             ("shift+esc", 0x02, 0x29),
             ("insert", 0x00, 0x49),
+            ("printscreen", 0x00, 0x46),
+            ("alt+printscreen", 0x04, 0x46),
+            ("win+printscreen", 0x08, 0x46),
             (" WIN+E ", 0x08, 0x08),
         ] {
             assert_eq!(report(token), Some((modifier, usage)), "{token}");

@@ -1,7 +1,7 @@
-param([ValidateSet('all', 'current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'base', 'enter-only', 'space-only', 'no-scroll-units', 'no-pointer-modifiers', 'no-middle')][string]$Mode = 'all')
+param([ValidateSet('all', 'current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'base', 'enter-only', 'space-only', 'no-printscreen', 'no-scroll-units', 'no-pointer-modifiers', 'no-middle')][string]$Mode = 'all')
 $ErrorActionPreference = 'Stop'
 if ($Mode -eq 'all') {
-    foreach ($variant in @('current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'base', 'enter-only', 'space-only', 'no-scroll-units', 'no-pointer-modifiers', 'no-middle')) {
+    foreach ($variant in @('current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'base', 'enter-only', 'space-only', 'no-printscreen', 'no-scroll-units', 'no-pointer-modifiers', 'no-middle')) {
         & (Get-Process -Id $PID).Path -NoProfile -File $PSCommandPath -Mode $variant
         if ($LASTEXITCODE -ne 0) { throw "key capability variant failed: $variant" }
     }
@@ -24,7 +24,11 @@ $resident = switch ($Mode) {
     'base' { $base }; 'enter-only' { $base + 'shift+enter' }; 'space-only' { $base + 'shift+space' }; 'shift-only' { $base + $shift }
     'partial-chords' { $base + $shift + $chords }; 'chords' { $base + $shift + $chords + $functions }; default { $null }
 }
-if ($Mode -eq 'no-taps') {
+if ($Mode -eq 'no-printscreen') {
+    # Every chord, but no Print Screen key (the resident before it).
+    if (-not $keySource.Contains('{ "printscreen", 0x2C }, ')) { throw 'missing Print Screen key' }
+    $keySource = $keySource.Replace('{ "printscreen", 0x2C }, ', '')
+} elseif ($Mode -eq 'no-taps') {
     # Every chord, but not a bare modifier tap.
     $keySource = $keySource.Replace($anchor, $anchor + "`r`n            if (command.IndexOf('+') < 0 && !NamedKeys.ContainsKey(command)) { throw new ArgumentException(""unsupported-key-input""); }")
 } elseif ($null -ne $resident) {
@@ -64,9 +68,10 @@ if ($null -eq $definition) { throw 'missing resident capability function' }
 . ([scriptblock]::Create($definition.Extent.Text))
 $id = '12345678-1234-1234-1234-123456789abc'
 $expected = "BVINPUT_CAPS $id 3 TEXTINPUT KEYINPUT POINTERINPUT 65536"
-if ($Mode -in @('current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'no-scroll-units', 'no-pointer-modifiers', 'no-middle')) { $expected += "`nBVINPUT_KEYS $id SHIFT_ENTER_SPACE" }
-if ($Mode -in @('current', 'no-taps', 'chords', 'no-scroll-units', 'no-pointer-modifiers', 'no-middle')) { $expected += "`nBVINPUT_CHORDS $id CTRL_SHIFT_CHORDS" }
-if ($Mode -in @('current', 'no-scroll-units', 'no-pointer-modifiers', 'no-middle')) { $expected += "`nBVINPUT_CHORDS $id MODIFIER_CHORDS" }
+if ($Mode -in @('current', 'no-taps', 'chords', 'shift-only', 'partial-chords', 'no-printscreen', 'no-scroll-units', 'no-pointer-modifiers', 'no-middle')) { $expected += "`nBVINPUT_KEYS $id SHIFT_ENTER_SPACE" }
+if ($Mode -in @('current', 'no-taps', 'chords', 'no-printscreen', 'no-scroll-units', 'no-pointer-modifiers', 'no-middle')) { $expected += "`nBVINPUT_CHORDS $id CTRL_SHIFT_CHORDS" }
+if ($Mode -in @('current', 'no-printscreen', 'no-scroll-units', 'no-pointer-modifiers', 'no-middle')) { $expected += "`nBVINPUT_CHORDS $id MODIFIER_CHORDS" }
+if ($Mode -in @('current', 'no-taps', 'no-scroll-units', 'no-pointer-modifiers', 'no-middle')) { $expected += "`nBVINPUT_KEYS $id PRINTSCREEN" }
 if ($Mode -ne 'no-scroll-units') { $expected += "`nBVINPUT_POINTER $id SCROLL_UNITS" }
 if ($Mode -ne 'no-pointer-modifiers') { $expected += "`nBVINPUT_POINTER $id MODIFIERS" }
 if ($Mode -ne 'no-middle') { $expected += "`nBVINPUT_POINTER $id MIDDLE" }

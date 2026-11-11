@@ -13,7 +13,7 @@ namespace BridgeVM {
             { "esc", 0x1B }, { "escape", 0x1B }, { "space", 0x20 },
             { "pageup", 0x21 }, { "pagedown", 0x22 }, { "end", 0x23 }, { "home", 0x24 },
             { "left", 0x25 }, { "up", 0x26 }, { "right", 0x27 }, { "down", 0x28 },
-            { "insert", 0x2D }, { "delete", 0x2E },
+            { "printscreen", 0x2C }, { "insert", 0x2D }, { "delete", 0x2E },
             { "f1", 0x70 }, { "f2", 0x71 }, { "f3", 0x72 }, { "f4", 0x73 },
             { "f5", 0x74 }, { "f6", 0x75 }, { "f7", 0x76 }, { "f8", 0x77 },
             { "f9", 0x78 }, { "f10", 0x79 }, { "f11", 0x7A }, { "f12", 0x7B }
@@ -55,7 +55,8 @@ namespace BridgeVM {
             if (code == 0x2E && modifiers.Contains(0x11) && modifiers.Contains(0x12)) {
                 throw new ArgumentException("unsupported-key-input");
             }
-            bool extended = (code >= 0x21 && code <= 0x28) || code == 0x2D || code == 0x2E || code == 0x5B;
+            // Like the physical keys: the navigation block, Print Screen (E0 37), Insert, Delete and the Windows key.
+            bool extended = (code >= 0x21 && code <= 0x28) || code == 0x2C || code == 0x2D || code == 0x2E || code == 0x5B;
             List<Input> inputs = new List<Input>();
             foreach (ushort modifier in modifiers) { inputs.Add(KeyEvent(modifier, false, modifier == 0x5B)); }
             inputs.Add(KeyEvent(code, false, extended));

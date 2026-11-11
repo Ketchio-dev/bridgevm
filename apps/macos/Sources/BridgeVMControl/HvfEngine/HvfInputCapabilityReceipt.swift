@@ -7,11 +7,13 @@ struct HvfInputCapabilityReceipt {
     private let id: String
     private var accepted: [String] = [], phase = Phase.header
     /// Shift+Enter/Space, the Ctrl/Shift chord set, every generic chord, raw-unit scrolling, modifiers held
-    /// for a pointer action, the middle button and the text caret query, in any order after BVINPUT_CAPS.
+    /// for a pointer action, the middle button, the text caret query and the Print Screen key, in any order
+    /// after BVINPUT_CAPS.
     private var markers: [String] {
         ["BVINPUT_KEYS \(id) SHIFT_ENTER_SPACE", "BVINPUT_CHORDS \(id) \(HvfControlChordKeys.token)",
          "BVINPUT_CHORDS \(id) \(HvfModifierChord.token)", "BVINPUT_POINTER \(id) SCROLL_UNITS",
-         "BVINPUT_POINTER \(id) MODIFIERS", "BVINPUT_POINTER \(id) MIDDLE", "BVINPUT_TEXT \(id) CARET"]
+         "BVINPUT_POINTER \(id) MODIFIERS", "BVINPUT_POINTER \(id) MIDDLE", "BVINPUT_TEXT \(id) CARET",
+         "BVINPUT_KEYS \(id) PRINTSCREEN"]
     }
     /// Any modifiers plus a key and a bare modifier tap (HvfModifierChord); the agent builds every key then.
     var modifierChords: Bool { accepted.contains(markers[2]) }
@@ -32,7 +34,12 @@ struct HvfInputCapabilityReceipt {
             return (scrollUnits || fields[0] != "scrollunits") && (pointerModifiers || fields.count < 3)
                 && (middleButton || !fields[0].hasPrefix("middle"))
         }
-        guard case let .key(key) = event, !modifierChords else { return true }
+        guard case let .key(key) = event else { return true }
+        // An agent without the marker refuses Print Screen, so it never gets it; in a chord the generic marker too.
+        if key.split(separator: "+").last.map(String.init) == HvfModifierChord.printScreen {
+            return accepted.contains(markers[7]) && (modifierChords || key == HvfModifierChord.printScreen)
+        }
+        guard !modifierChords else { return true }
         if ["shift+enter", "shift+space"].contains(key) { return accepted.contains(markers[0]) }
         if HvfControlChordKeys.extended.contains(key) { return accepted.contains(markers[1]) }
         return HvfModifierChord.isBase(key)

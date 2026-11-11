@@ -15,6 +15,9 @@ enum HvfModifierChord {
     /// The US-layout punctuation keys, by name.
     static let punctuation: Set<String> = ["minus", "equal", "lbracket", "rbracket", "backslash", "semicolon",
                                            "quote", "grave", "comma", "period", "slash"]
+    /// The Print Screen key (the Mac's F13). The VMM builds it; an agent only after its
+    /// `BVINPUT_KEYS <uuid> PRINTSCREEN` marker (HvfInputCapabilityReceipt).
+    static let printScreen = "printscreen"
 
     /// How many key events (each part pressed and released) a valid action inserts; nil if invalid.
     static func eventCount(_ action: String) -> Int? {
@@ -27,7 +30,8 @@ enum HvfModifierChord {
             next = index + 1
             chord = chord || part != "shift"
         }
-        let valid = parts.count == 1 && modifiers.contains(key) || named.contains(key) || chord && isCharacter(key)
+        let valid = parts.count == 1 && modifiers.contains(key) || named.contains(key) || key == printScreen
+            || chord && isCharacter(key)
         return valid ? parts.count * 2 : nil
     }
 
@@ -68,7 +72,7 @@ enum HvfModifierChord {
         0x24: "enter", 0x4c: "enter", 0x30: "tab", 0x31: "space", 0x33: "backspace", 0x35: "esc", 0x75: "delete",
         0x73: "home", 0x77: "end", 0x74: "pageup", 0x79: "pagedown", 0x7b: "left", 0x7c: "right", 0x7d: "down", 0x7e: "up",
         0x7a: "f1", 0x78: "f2", 0x63: "f3", 0x76: "f4", 0x60: "f5", 0x61: "f6",
-        0x62: "f7", 0x64: "f8", 0x65: "f9", 0x6d: "f10", 0x67: "f11", 0x6f: "f12"
+        0x62: "f7", 0x64: "f8", 0x65: "f9", 0x6d: "f10", 0x67: "f11", 0x6f: "f12", 0x69: printScreen
     ]
     /// The ANSI digit and punctuation key positions (kVK_ANSI_*).
     private static let characterKeyCodes: [UInt16: String] = [

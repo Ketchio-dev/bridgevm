@@ -42,6 +42,8 @@ enum HvfHostKeyCommand: Equatable {
         case "\u{f70d}": return .key("f10")
         case "\u{f70e}": return .key("f11")
         case "\u{f70f}": return .key("f12")
+        // F13 (U+F710) sits where a PC keyboard has Print Screen; a Mac keyboard has no PrtSc key.
+        case "\u{f710}": return .key(HvfModifierChord.printScreen)
         default:
             guard !characters.isEmpty,
                   !modifiers.contains(.control),

@@ -16,6 +16,7 @@ $cases = @{
     'ctrl+shift+a' = '17:0,16:0,65:0,65:2,16:2,17:2'; 'ctrl+1' = '17:0,49:0,49:2,17:2'; 'ctrl+0' = '17:0,48:0,48:2,17:2'; 'ctrl+f4' = '17:0,115:0,115:2,17:2'
     'ctrl+equal' = '17:0,187:0,187:2,17:2'; 'ctrl+minus' = '17:0,189:0,189:2,17:2'; 'ctrl+slash' = '17:0,191:0,191:2,17:2'; 'ctrl+alt+shift+grave' = '17:0,18:0,16:0,192:0,192:2,16:2,18:2,17:2'
     'win+ctrl+alt+shift+f12' = '91:1,17:0,18:0,16:0,123:0,123:2,16:2,18:2,17:2,91:3'; 'shift+backspace' = '16:0,8:0,8:2,16:2'; 'ctrl+shift+enter' = '17:0,16:0,13:0,13:2,16:2,17:2'; 'insert' = '45:1,45:3'
+    'printscreen' = '44:1,44:3'; 'alt+printscreen' = '18:0,44:1,44:3,18:2'; 'win+printscreen' = '91:1,44:1,44:3,91:3'
 }
 foreach ($command in $cases.Keys) {
     $events = [BridgeVM.BvUnicodeInput]::BuildKey($command)
