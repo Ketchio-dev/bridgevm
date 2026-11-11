@@ -311,6 +311,10 @@ assert_block_before "$staged_reboot" "if errorlevel 1116 exit /b 1" "if errorlev
 task_create_count="$(grep -Fc 'schtasks /Create /TN "%TASK_NAME%" /SC ONSTART' "$FIRSTBOOT")"
 [[ "$task_create_count" == "1" ]] || fail "expected exactly one persistent ONSTART task creation, got $task_create_count"
 task_delete_count="$(grep -Fc 'schtasks /Delete /TN "%TASK_NAME%"' "$FIRSTBOOT")"
+# Task Scheduler's battery defaults would hold the task while the Mac is unplugged.
+task_battery_count="$(grep -Fc 'call :run_on_battery' "$FIRSTBOOT")"
+[[ "$task_battery_count" == "2" ]] || fail "expected both firstboot task creations to let the task run on battery, got $task_battery_count"
+assert_file_contains "$FIRSTBOOT" '$t.Settings.DisallowStartIfOnBatteries = $false; $t.Settings.StopIfGoingOnBatteries = $false; Set-ScheduledTask -InputObject $t' "firstboot task battery settings"
 [[ "$task_delete_count" == "1" ]] || fail "expected exactly one success-only task deletion, got $task_delete_count"
 
 assert_file_contains "$INJECTOR" "del /f /q %WIN%\BridgeVM\stage1.flag" "injector stale stage1 cleanup"

@@ -391,9 +391,33 @@ pub(super) fn is_clip_image_req(req: &ServiceReq) -> bool {
     )
 }
 
+/// READY's marker of an agent whose scheduled task keeps running on battery
+/// (bvagent-task.ps1).
+pub(super) const SURVIVES_BATTERY_MARKER: &str = "onbattery";
+
 impl AgentConsoleHarness {
+    /// This boot's agent tells the host power monitor whether Windows may see
+    /// the Mac on battery; nothing has said so yet.
+    pub fn share_agent_survives_battery(&mut self, flag: &Arc<AtomicBool>) {
+        flag.store(false, Ordering::Relaxed);
+        self.agent_survives_battery = Arc::clone(flag);
+    }
+
+    /// Windows sees the Mac on battery only once the running agent's task
+    /// survives it, and not while an update may still put an older task back
+    /// (from Arm until the new agent is confirmed): Task Scheduler would not
+    /// start that one on battery.
+    fn publish_agent_survives_battery(&self) {
+        let settled = !self.agent_update.as_ref().is_some_and(|update| {
+            matches!(update.phase, UpdatePhase::Armed { .. } | UpdatePhase::Confirming)
+        });
+        self.agent_survives_battery
+            .store(self.ready_survives_battery && settled, Ordering::Relaxed);
+    }
+
     /// READY or re-READY: an Armed update learns whether the new agent came up.
     pub(super) fn note_agent_ready(&mut self, rest: &str, now: Instant) {
+        self.ready_survives_battery = rest.split(' ').any(|token| token == SURVIVES_BATTERY_MARKER);
         self.put_data = ready_has_put_data(rest);
         self.share_big = ready_has_big_files(rest);
         self.drops.agent_opens = rest.split(' ').any(|token| token == "openfile");
@@ -406,6 +430,7 @@ impl AgentConsoleHarness {
         }
         let t = self.t_ms(now);
         let Some(update) = self.agent_update.as_mut() else {
+            self.publish_agent_survives_battery();
             return;
         };
         let id = ready_agent_id(rest).map(str::to_string);
@@ -428,6 +453,7 @@ impl AgentConsoleHarness {
             _ if pending => self.queue_agent_update_confirm(),
             _ => {}
         }
+        self.publish_agent_survives_battery();
     }
 
     fn queue_agent_update_confirm(&mut self) {
@@ -723,10 +749,12 @@ impl AgentConsoleHarness {
                     update.write_marker("ok", "");
                     update.phase = UpdatePhase::Done;
                 } else if code == 0 && reply.starts_with("BVUPDATE rolled-back") {
-                    // The guard was already putting the old agent back.
+                    // The guard was already putting the old agent back; its
+                    // READY speaks for its task.
                     println!("BVAGENT UPDATE rolled-back to={} t={t}", if update.from.is_empty() { "earlier" } else { update.from.as_str() });
                     update.write_marker("rolled-back", &update.from);
                     update.phase = UpdatePhase::Done;
+                    self.ready_survives_battery = false;
                 } else if code == 0 && reply.starts_with("BVUPDATE nothing-pending") {
                     // The guest has no update of this version waiting: nothing to report.
                     println!("BVAGENT UPDATE confirm-noop t={t}");
@@ -745,6 +773,7 @@ impl AgentConsoleHarness {
             }
             UpdateStep::Put { .. } => {}
         }
+        self.publish_agent_survives_battery();
     }
 
     fn handle_agent_update_put_reply(

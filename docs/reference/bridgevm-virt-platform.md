@@ -45,7 +45,8 @@ the program that first published the interface.
 | PL031 RTC | `0x0901_0000` | `0x0000_1000` | wall-clock device |
 | firmware configuration | `0x0902_0000` | `0x0000_0018` | firmware data channel |
 | PL061 GPIO | `0x0903_0000` | `0x0000_1000` | reserved; no device model |
-| ACPI GED | `0x0908_0000` | `0x0000_0004` | power-button event selector |
+| ACPI GED | `0x0908_0000` | `0x0000_0004` | power-button and power-source event selector |
+| host power page | `0x090c_0000` | `0x0000_1000` | read-only battery/AC registers for ACPI `BAT0`/`ADP0`; only with a Mac battery |
 | virtio-mmio transports | `0x0a00_0000` | `0x0000_4000` | 32 slots, `0x200` bytes each |
 | TPM TIS localities | `0x0c00_0000` | `0x0000_5000` | TPM 2.0 FIFO/TIS |
 | TPM PPI page | `0x0c00_5000` | `0x0000_0400` | physical-presence handoff |
@@ -59,7 +60,7 @@ the program that first published the interface.
 
 GIC SPIs use absolute INTID `SPI + 32`. PL011 uses SPI 1, PL031 uses SPI 2,
 PCI INTx uses SPIs 3 through 6, PL061 uses SPI 7, the ACPI Generic Event
-Device (power button) uses SPI 9, and virtio-mmio slot `i` uses SPI `16 + i`. The Arm generic timer PPIs are 13 (secure physical), 14
+Device (power button, battery and AC adapter) uses SPI 9, and virtio-mmio slot `i` uses SPI `16 + i`. The Arm generic timer PPIs are 13 (secure physical), 14
 (non-secure physical), 11 (virtual), and 10 (hypervisor). The PMU uses PPI 7.
 
 ## Change control

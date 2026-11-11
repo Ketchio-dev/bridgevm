@@ -175,6 +175,7 @@ fn optional_tpm_emits_tpm2_table_and_relocated_event_log() {
         2,
         AcpiDeviceConfig {
             tpm_tis_present: true,
+            ..AcpiDeviceConfig::default()
         },
     );
     let log = blobs.tpm_log.as_ref().expect("TPM log must be present");

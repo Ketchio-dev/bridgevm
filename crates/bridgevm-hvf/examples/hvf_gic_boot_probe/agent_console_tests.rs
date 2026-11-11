@@ -64,6 +64,8 @@ pub(super) mod tests {
             dns_flush: DnsFlush::default(),
             drops: FileDrops::default(),
             agent_update: None,
+            ready_survives_battery: false,
+            agent_survives_battery: Arc::default(),
         }
     }
 

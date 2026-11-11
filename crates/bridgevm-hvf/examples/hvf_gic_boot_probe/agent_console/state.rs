@@ -181,6 +181,11 @@ pub struct AgentConsoleHarness {
     pub(super) drops: FileDrops,
     /// Installs the app's copy of the guest agent over an older one.
     pub(super) agent_update: Option<AgentUpdate>,
+    /// The last READY said `onbattery`: that agent's task survives battery.
+    pub(super) ready_survives_battery: bool,
+    /// Read by the host power monitor (host_power.rs): Windows sees the Mac's
+    /// real power state only while this is set.
+    pub(super) agent_survives_battery: Arc<AtomicBool>,
 }
 
 /// Reassembly state for a chunked GET reply (GETBEG -> GETCHUNK* -> GETEND).

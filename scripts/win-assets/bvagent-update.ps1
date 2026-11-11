@@ -254,7 +254,11 @@ function Invoke-Guard {
     $agent = Join-Path $PSScriptRoot 'bvagent.ps1'
     try {
         $task = Get-ScheduledTask -TaskName $AgentTask -ErrorAction SilentlyContinue
-        if ((Get-TaskAgentPath $task) -ne $agent) {
+        # A task from before the battery settings stops the agent when the Mac
+        # is unplugged: the bundled definition replaces it even at this path.
+        # It says false to both, so a later run of the guard leaves it be.
+        $onBattery = $task.Settings.DisallowStartIfOnBatteries -or $task.Settings.StopIfGoingOnBatteries
+        if ((Get-TaskAgentPath $task) -ne $agent -or $onBattery) {
             Write-GuardLog 'switching the agent task'
             Disable-LegacyLaunchers
             # The bundled definition starts the agent at logon and every

@@ -248,7 +248,9 @@ pub(crate) fn build_pci_root_osc_method() -> Vec<u8> {
 /// Generic Event Device that turns a host power-button press into
 /// `Notify (PWRB, 0x80)`, with the name, address, SPI and `_EVT` shape of the
 /// GED that QEMU virt describes. The register model is [`crate::acpi_ged`].
-pub(crate) fn build_ged_dsdt_device() -> Vec<u8> {
+/// With `host_power`, `_EVT` also notifies `ADP0`/`BAT0` on the power-source
+/// events.
+pub(crate) fn build_ged_dsdt_device(host_power: bool) -> Vec<u8> {
     let mut crs = resource_edge_interrupt(machine::spi_to_intid(machine::SPI_ACPI_GED));
     crs.extend(resource_end_tag());
 
@@ -263,6 +265,9 @@ pub(crate) fn build_ged_dsdt_device() -> Vec<u8> {
         ),
         &aml_notify(&aml_name_ref(b"PWRB"), &aml_byte(0x80)),
     ));
+    if host_power {
+        evt.extend(build_host_power_ged_events(&local0));
+    }
 
     let mut body = Vec::new();
     body.extend(aml_name_string(b"_HID", "ACPI0013"));
@@ -524,7 +529,8 @@ pub(crate) fn build_tpm2() -> Vec<u8> {
 /// MADT/GTDT/MCFG/SPCR/DBG2 carry the architectural tables, while this AML names
 /// the platform devices the OS driver core expects to bind (`ACPI0007` CPU
 /// devices, `ARMH0011` PL011, `PNP0A08` PCI root bridge, and a power button
-/// with the `ACPI0013` Generic Event Device that signals it).
+/// with the `ACPI0013` Generic Event Device that signals it), and, when the Mac
+/// has a battery, its `ACPI0003` AC adapter and `PNP0C0A` battery.
 pub(crate) fn build_dsdt(cpu_count: u64, devices: AcpiDeviceConfig) -> Vec<u8> {
     let mut sb = Vec::new();
     for cpu in 0..cpu_count {
@@ -533,8 +539,11 @@ pub(crate) fn build_dsdt(cpu_count: u64, devices: AcpiDeviceConfig) -> Vec<u8> {
     sb.extend(build_pl011_dsdt_device());
     sb.extend(build_pci_root_dsdt_device());
     sb.extend(build_ecam_reserved_dsdt_device());
-    sb.extend(build_ged_dsdt_device());
+    sb.extend(build_ged_dsdt_device(devices.host_power_present));
     sb.extend(build_power_button_dsdt_device());
+    if devices.host_power_present {
+        sb.extend(build_host_power_dsdt_devices());
+    }
     if devices.tpm_tis_present {
         sb.extend(build_tpm_tis_dsdt_device());
     }

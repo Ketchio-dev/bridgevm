@@ -70,6 +70,8 @@ static const wchar_t TASK_XML[] =
     L"  </Principals>\r\n"
     L"  <Settings>\r\n"
     L"    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\r\n"
+    L"    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\r\n"
+    L"    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\r\n"
     L"    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>\r\n"
     L"    <RestartOnFailure>\r\n"
     L"      <Interval>PT1M</Interval>\r\n"

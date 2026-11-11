@@ -2,7 +2,7 @@
 # Desktop like a drop, then open each item the drop put there. The agent takes one name that
 # Test-DropName takes, directly below Get-DropRoot, that exists and is no reparse point, and hands
 # its full path to explorer.exe as one quoted argument; anything else is refused before any process
-# starts. READY ends with `openfile`, and the resident dispatch answers on its own line. Get-DropRoot
+# starts. READY carries `openfile`, and the resident dispatch answers on its own line. Get-DropRoot
 # is a temporary folder and Start-Process is stubbed.
 $ErrorActionPreference = 'Stop'
 $tokens = $null; $errors = $null
@@ -94,9 +94,9 @@ try {
     $script:startFails = $false
     $cases++
 
-    # 6. READY's last capability marker, before any agent= field.
+    # 6. READY's capability markers, before any agent= field.
     $readyTokens = (Get-BvReady $PSScriptRoot '') -split ' '
-    if ($readyTokens[-1] -cne 'openfile') { throw 'READY does not end with openfile' }
+    if (-not ($readyTokens -ccontains 'openfile')) { throw 'READY does not carry openfile' }
     $cases++
 
     # 7. The resident dispatch answers OPENFILE on its own line.

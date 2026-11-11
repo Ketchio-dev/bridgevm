@@ -46,6 +46,7 @@ set STAGE=setup-deferred
 echo [setup-deferred] Windows setup is incomplete; wait for the first OOBE logon >> "%LOG%"
 schtasks /Create /TN "%TASK_NAME%" /SC ONLOGON /DELAY 0000:30 /RU SYSTEM /RL HIGHEST /TR "%ComSpec% /d /c C:\BridgeVM\bvgpu-firstboot.cmd" /F >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
+call :run_on_battery
 goto :done
 
 :stage1
@@ -65,6 +66,7 @@ if errorlevel 1 goto :fail
 echo [stage1] create delayed SYSTEM ONSTART continuation task >> "%LOG%"
 schtasks /Create /TN "%TASK_NAME%" /SC ONSTART /DELAY 0000:15 /RU SYSTEM /RL HIGHEST /TR "%ComSpec% /d /c C:\BridgeVM\bvgpu-firstboot.cmd" /F >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail
+call :run_on_battery
 call :write_boot_identity C:\BridgeVM\stage1.boot
 if errorlevel 1 goto :fail
 echo done > C:\BridgeVM\stage1.flag
@@ -323,4 +325,14 @@ if not defined CURRENT_BOOT_ID (
   echo [boot-identity] failed to read PrefetchParameters\BootId >> "%LOG%"
   exit /b 1
 )
+exit /b 0
+
+:run_on_battery
+rem schtasks /Create cannot set the power conditions, and Task Scheduler's
+rem defaults keep a task from starting on battery and stop it when the
+rem machine goes on battery: a guest that sees the Mac's battery would stall
+rem here while the Mac is unplugged. A failure only logs; the task then runs
+rem on AC power as before.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$t = Get-ScheduledTask -TaskName '%TASK_NAME%'; $t.Settings.DisallowStartIfOnBatteries = $false; $t.Settings.StopIfGoingOnBatteries = $false; Set-ScheduledTask -InputObject $t | Out-Null" >> "%LOG%" 2>&1
+if errorlevel 1 echo [battery] %TASK_NAME% keeps the battery defaults and runs on AC power only >> "%LOG%"
 exit /b 0

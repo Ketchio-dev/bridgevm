@@ -129,6 +129,15 @@ fn device_shape_lines(
     } else {
         "tpm2-tis: disabled".to_string()
     };
+    let host_power = match devices.host_power {
+        Some(power) => format!(
+            "acpi battery: ADP0/ACPI0003 + BAT0/PNP0C0A page={:#x} ged_intid={} reading={}",
+            machine::HOST_POWER.base,
+            machine::spi_to_intid(machine::SPI_ACPI_GED),
+            crate::host_power::describe(&power)
+        ),
+        None => "acpi battery: disabled (no Mac battery)".to_string(),
+    };
 
     vec![
         format!(
@@ -151,6 +160,7 @@ fn device_shape_lines(
         virtio_net,
         virtio_gpu,
         tpm,
+        host_power,
         legacy_slot.to_string(),
     ]
 }
@@ -205,6 +215,20 @@ mod tests {
         assert!(lines.iter().any(|line| line == "virtio-net-pci: disabled"));
         assert!(lines.iter().any(|line| line == "virtio-gpu-pci: disabled"));
         assert!(lines.iter().any(|line| line == "tpm2-tis: disabled"));
+        assert!(lines
+            .iter()
+            .any(|line| line == "acpi battery: disabled (no Mac battery)"));
+        let battery_lines = super::device_shape_lines(
+            VirtPlatformDeviceConfig {
+                host_power: crate::host_power::parse_fake("80,0,0"),
+                ..VirtPlatformDeviceConfig::default()
+            },
+            false,
+            false,
+            16 * 1024 * 1024,
+        );
+        assert!(battery_lines.iter().any(|line| line
+            == "acpi battery: ADP0/ACPI0003 + BAT0/PNP0C0A page=0x90c0000 ged_intid=41 reading=80% not charging on battery to_empty=? to_full=?"));
         let net_lines = super::device_shape_lines(
             VirtPlatformDeviceConfig {
                 virtio_net_present: true,
@@ -260,6 +284,7 @@ mod tests {
                 legacy_virtio_mmio_present: false,
                 ramfb_present: false,
                 tpm_tis_present: false,
+                host_power: None,
             },
             true,
             true,

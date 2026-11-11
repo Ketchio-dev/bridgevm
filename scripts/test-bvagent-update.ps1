@@ -86,7 +86,7 @@ function Register-ScheduledTask { [CmdletBinding()] param([string]$TaskName, $In
         [void]($Xml -match '<Arguments>([^<]*)</Arguments>')
         $global:BvTasks[$TaskName] = New-FakeTask ([System.Net.WebUtility]::HtmlDecode($Matches[1])) $Xml
     } else {
-        $global:BvTasks[$TaskName] = New-FakeTask $InputObject.Action.Argument ''
+        $global:BvTasks[$TaskName] = New-FakeTask $InputObject.Action.Argument '' $InputObject.Settings
     }
 }
 function Start-ScheduledTask { [CmdletBinding()] param([string]$TaskName) $global:BvCalls += ('start ' + $TaskName) }
@@ -97,8 +97,10 @@ function Unregister-ScheduledTask { [CmdletBinding()] param([string]$TaskName, [
 function New-ScheduledTaskAction { [CmdletBinding()] param([string]$Execute, [string]$Argument) @{ Execute = $Execute; Argument = $Argument } }
 function New-ScheduledTaskTrigger { [CmdletBinding()] param([switch]$AtLogOn, [string]$User) @{ User = $User } }
 function New-ScheduledTaskPrincipal { [CmdletBinding()] param([string]$UserId, [string]$LogonType, [string]$RunLevel) @{ UserId = $UserId; RunLevel = $RunLevel } }
-function New-ScheduledTaskSettingsSet { [CmdletBinding()] param($ExecutionTimeLimit, [switch]$AllowStartIfOnBatteries, [switch]$DontStopIfGoingOnBatteries, [string]$MultipleInstances) @{} }
-function New-ScheduledTask { [CmdletBinding()] param($Action, $Trigger, $Principal, $Settings) @{ Action = $Action; Trigger = $Trigger; Principal = $Principal } }
+function New-ScheduledTaskSettingsSet { [CmdletBinding()] param($ExecutionTimeLimit, [switch]$AllowStartIfOnBatteries, [switch]$DontStopIfGoingOnBatteries, [string]$MultipleInstances)
+    [pscustomobject]@{ DisallowStartIfOnBatteries = -not $AllowStartIfOnBatteries; StopIfGoingOnBatteries = -not $DontStopIfGoingOnBatteries }
+}
+function New-ScheduledTask { [CmdletBinding()] param($Action, $Trigger, $Principal, $Settings) @{ Action = $Action; Trigger = $Trigger; Principal = $Principal; Settings = $Settings } }
 function Get-CimInstance { [CmdletBinding()] param([Parameter(Position = 0)][string]$ClassName, [string]$Filter) $global:BvProcesses }
 function Stop-Process { [CmdletBinding()] param([int]$Id, [switch]$Force) $global:BvCalls += ('kill ' + $Id) }
 function Get-ItemProperty { [CmdletBinding()] param([string]$LiteralPath, [string]$Name)
@@ -118,11 +120,21 @@ function Start-Sleep { [CmdletBinding()] param([int]$Seconds, [int]$Milliseconds
         [IO.File]::WriteAllText((Join-Path $global:BvState 'confirmed.txt'), $global:BvId)
     }
 }
-function New-FakeTask([string]$Arguments, [string]$Xml) {
-    [pscustomobject]@{ Actions = @([pscustomobject]@{ Arguments = $Arguments }); State = 'Ready'; Principal = [pscustomobject]@{ UserId = 'bridge' }; Xml = $Xml }
+# Settings as Get-ScheduledTask reports them: a definition that does not say
+# false to a battery setting gets Task Scheduler's default, true.
+function New-FakeTask([string]$Arguments, [string]$Xml, $Settings = $null) {
+    if ($null -eq $Settings) {
+        $Settings = [pscustomobject]@{
+            DisallowStartIfOnBatteries = -not $Xml.Contains('<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>')
+            StopIfGoingOnBatteries = -not $Xml.Contains('<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>')
+        }
+    }
+    [pscustomobject]@{ Actions = @([pscustomobject]@{ Arguments = $Arguments }); State = 'Ready'; Principal = [pscustomobject]@{ UserId = 'bridge' }; Settings = $Settings; Xml = $Xml }
 }
 
-# 2. READY says update=pending only while update\pending.txt holds the agent's own ID.
+# 2. READY says update=pending only while update\pending.txt holds the agent's own ID,
+#    and onbattery: the host shows Windows the Mac on battery only to an agent
+#    whose task keeps running then (bvagent-task.ps1).
 . ([scriptblock]::Create((Get-ScriptFunction (Join-Path $assets 'bvagent.ps1') 'Get-BvReady')))
 $readyRoot = Join-Path ([IO.Path]::GetTempPath()) ('bvagent-ready-' + [guid]::NewGuid())
 $readyDir = Join-Path $readyRoot '0123456789abcdef'
@@ -132,10 +144,10 @@ try {
     Assert-True (-not (Get-BvReady $readyDir '0123456789abcdef').Contains('update=pending')) 'READY says pending without pending.txt'
     [IO.File]::WriteAllText((Join-Path $readyRoot 'update/pending.txt'), "0123456789abcdef`r`n")
     $ready = Get-BvReady $readyDir '0123456789abcdef'
-    Assert-True ($ready.EndsWith(' v3-share2 putdata bigfile lssame startapps openfile agent=0123456789abcdef update=pending')) ('READY with its update pending: ' + $ready)
+    Assert-True ($ready.EndsWith(' v3-share2 putdata bigfile lssame startapps openfile onbattery agent=0123456789abcdef update=pending')) ('READY with its update pending: ' + $ready)
     [IO.File]::WriteAllText((Join-Path $readyRoot 'update/pending.txt'), 'fedcba9876543210')
     Assert-True (-not (Get-BvReady $readyDir '0123456789abcdef').Contains('update=pending')) 'READY says pending for another version'
-    Assert-True ((Get-BvReady $readyDir '').EndsWith(' v3-share2 putdata bigfile lssame startapps openfile')) 'READY without an ID'
+    Assert-True ((Get-BvReady $readyDir '').EndsWith(' v3-share2 putdata bigfile lssame startapps openfile onbattery')) 'READY without an ID'
 } finally { Remove-Item -LiteralPath $readyRoot -Recurse -Force }
 
 $base = Join-Path ([IO.Path]::GetTempPath()) ('bvagent-update-' + [guid]::NewGuid())
@@ -290,6 +302,8 @@ try {
     Assert-True (($global:BvCalls -join ',') -ceq 'register BridgeVM Guest Tools Update,start BridgeVM Guest Tools Update') ('Arm calls: ' + ($global:BvCalls -join ', '))
     Assert-True ($global:BvTasks['BridgeVM Guest Agent'].Actions[0].Arguments.Contains('C:\bvagent.ps1')) 'Arm changed the agent task'
     Assert-True ($global:BvTasks['BridgeVM Guest Tools Update'].Actions[0].Arguments.Contains('-Guard -Id ' + $id)) 'the guard task action'
+    $guardSettings = $global:BvTasks['BridgeVM Guest Tools Update'].Settings
+    Assert-True (-not $guardSettings.DisallowStartIfOnBatteries -and -not $guardSettings.StopIfGoingOnBatteries) 'the guard task does not run on battery'
     $older = Join-Path $global:BvRoot 'fedcba9876543210'
     [void](New-Item -ItemType Directory -Path $older)
     $global:BvCalls = @()
@@ -302,6 +316,8 @@ try {
     $switched = $global:BvTasks['BridgeVM Guest Agent'].Xml
     Assert-True ($switched -ceq (Get-GuestAgentTaskXml 'bridge' (Join-Path $version 'bvagent.ps1'))) 'the agent task is not the bundled bvagent-task.ps1 definition'
     Assert-True ($switched.Contains('<Interval>PT1M</Interval>')) 'the updated agent task has no per-minute start'
+    $switchedSettings = $global:BvTasks['BridgeVM Guest Agent'].Settings
+    Assert-True (-not $switchedSettings.DisallowStartIfOnBatteries -and -not $switchedSettings.StopIfGoingOnBatteries) 'the updated agent task stops on battery'
     Assert-True ((Read-State 'result.txt') -ceq ('ok ' + $id)) 'result.txt after Confirm'
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $global:BvState 'pending.txt'))) 'pending.txt left after Confirm'
     Assert-True (-not $global:BvRunValue -and -not (Test-Path -LiteralPath (Join-Path $startupDir 'bvagent.bat'))) 'the legacy launchers were left'
@@ -397,6 +413,34 @@ try {
     Assert-True ((Read-State 'result.txt') -ceq ('ok ' + $id)) 'not confirmed after a reboot'
     Assert-True ($global:BvTasks['BridgeVM Guest Agent'].Actions[0].Arguments.Contains($version)) 'the new task was replaced'
 
+    # A task already at the new path but with Task Scheduler's battery defaults
+    # (registered before the battery settings existed) is re-registered once:
+    # the agent died whenever the Mac was unplugged. A fixed one is left be.
+    Reset-Guest 'battery-defaults'
+    $staged = New-Staged; $id = $staged[0]
+    [void](Invoke-ArmStep $id $staged[1])
+    $version = Join-Path $global:BvRoot $id
+    $unfixed = (Get-GuestAgentTaskXml 'bridge' (Join-Path $version 'bvagent.ps1')) -replace '(?m)^\s*<(DisallowStartIfOnBatteries|StopIfGoingOnBatteries)>false</\1>\r?\n', ''
+    Assert-True (-not $unfixed.Contains('Batteries')) 'the battery-default fixture still names a battery setting'
+    Register-ScheduledTask -TaskName 'BridgeVM Guest Agent' -Xml $unfixed -Force
+    Assert-True ($global:BvTasks['BridgeVM Guest Agent'].Settings.DisallowStartIfOnBatteries -and $global:BvTasks['BridgeVM Guest Agent'].Settings.StopIfGoingOnBatteries) 'the fixture task does not have the battery defaults'
+    $global:BvCalls = @()
+    $global:BvConfirmAtSleep = 3
+    [void](Invoke-Update $version @{ Guard = $true; Id = $id })
+    $calls = $global:BvCalls -join ','
+    Assert-True ($calls -ceq 'register BridgeVM Guest Agent,stop BridgeVM Guest Agent,kill 4100,start BridgeVM Guest Agent,unregister BridgeVM Guest Tools Update') ('a task with the battery defaults was not re-registered: ' + $calls)
+    Assert-True ($global:BvTasks['BridgeVM Guest Agent'].Xml -ceq (Get-GuestAgentTaskXml 'bridge' (Join-Path $version 'bvagent.ps1'))) 'the re-registered task is not the bundled definition'
+    Assert-True ((Read-State 'result.txt') -ceq ('ok ' + $id)) 'the re-registered update did not complete'
+    # The guard running again (a logon while the update is still pending)
+    # finds the fixed task and only starts the agent.
+    foreach ($name in @('result.txt', 'confirmed.txt')) { Remove-Item -LiteralPath (Join-Path $global:BvState $name) -Force -ErrorAction SilentlyContinue }
+    [IO.File]::WriteAllText((Join-Path $global:BvState 'pending.txt'), $id)
+    $global:BvCalls = @()
+    $global:BvSleeps = 0
+    [void](Invoke-Update $version @{ Guard = $true; Id = $id })
+    $calls = $global:BvCalls -join ','
+    Assert-True ($calls -ceq 'start BridgeVM Guest Agent,unregister BridgeVM Guest Tools Update') ('a fixed task was registered again: ' + $calls)
+
     # 6. Windows: the same ACL checks against real folders.
     if ($onWindows) {
         Remove-Item function:Get-Acl, function:Set-Acl
@@ -464,4 +508,4 @@ try {
     $env:ProgramData = $savedProgramData
     Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
 }
-Write-Output 'PASS: guest tools update (ID, Arm refusals, switch, Confirm, rollback, reboot)'
+Write-Output 'PASS: guest tools update (ID, Arm refusals, switch, Confirm, rollback, reboot, battery settings)'

@@ -1886,8 +1886,11 @@ function Get-BvAgentId([string]$Dir) {
 # READY carries the ID, and update=pending while an update to this agent waits
 # for the host's Confirm (bvagent-update.ps1 keeps update\pending.txt beside
 # the version folders): the host then confirms it whatever it recorded itself.
+# 'onbattery': this agent's task keeps running on battery (bvagent-task.ps1).
+# Until an agent says so, the host shows Windows the Mac on AC power, since
+# Task Scheduler would not start an older agent's task on battery.
 function Get-BvReady([string]$Dir, [string]$Id) {
-    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame startapps openfile'
+    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame startapps openfile onbattery'
     if (-not $Id) { return $ready }
     $ready += ' agent=' + $Id
     $root = Split-Path -Parent $Dir

@@ -379,6 +379,9 @@ build_installed_boot_env_args() {
   # Test-only: the CoreAudio sink rebuilds its queue as on a default-output change.
   [[ -z "${BRIDGEVM_HDA_COREAUDIO_TEST_REBUILD_MS:-}" ]] || ENV_ARGS+=("BRIDGEVM_HDA_COREAUDIO_TEST_REBUILD_MS=$BRIDGEVM_HDA_COREAUDIO_TEST_REBUILD_MS")
   [[ -z "${BRIDGEVM_TRACE_HDA:-}" ]] || ENV_ARGS+=("BRIDGEVM_TRACE_HDA=$BRIDGEVM_TRACE_HDA")
+  # Test-only: a fake Mac battery (percent,charging,ac or a file holding it) for
+  # the guest's ACPI battery on a Mac without one (probe host_power.rs).
+  [[ -z "${BRIDGEVM_HVF_FAKE_BATTERY:-}" ]] || ENV_ARGS+=("BRIDGEVM_HVF_FAKE_BATTERY=$BRIDGEVM_HVF_FAKE_BATTERY")
   # PL011 UART register + KD serial bridge byte-flow trace (pl011.rs /
   # kd_serial_bridge.rs gate on BRIDGEVM_TRACE_PL011; absent = no trace).
   [[ -z "${BRIDGEVM_TRACE_PL011:-}" ]] || ENV_ARGS+=("BRIDGEVM_TRACE_PL011=$BRIDGEVM_TRACE_PL011")

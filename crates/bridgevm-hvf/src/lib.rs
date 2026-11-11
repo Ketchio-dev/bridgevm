@@ -28,6 +28,7 @@ mod guest_memory;
 pub mod hda;
 pub mod host_entropy;
 pub mod host_log;
+pub mod host_power;
 pub mod machine;
 pub mod media;
 pub mod media_lease;

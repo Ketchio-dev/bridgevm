@@ -85,6 +85,11 @@ pub const GPIO: Region = Region::new(0x0903_0000, 0x1000);
 /// `VIRT_ACPI_GED` slot. One 32-bit read-to-clear register; see
 /// [`crate::acpi_ged`].
 pub const ACPI_GED: Region = Region::new(0x0908_0000, 0x4);
+/// The Mac's battery and AC adapter as read-only registers for the DSDT's
+/// `BAT0`/`ADP0` methods; see [`crate::host_power`]. A BridgeVM slot past QEMU
+/// virt's last one in this block (`VIRT_SECURE_GPIO`, 0x090B_0000); unmapped
+/// when the VM has no battery.
+pub const HOST_POWER: Region = Region::new(0x090C_0000, 0x1000);
 
 /// Size of a single virtio-mmio transport slot.
 pub const VIRTIO_MMIO_SLOT_SIZE: u64 = 0x200;
@@ -193,7 +198,7 @@ pub fn virtio_mmio_slot(i: u64) -> Region {
 
 /// The fixed MMIO device regions, in ascending base order. RAM is intentionally
 /// excluded because it is system memory, not a device aperture.
-pub fn mmio_regions() -> [(&'static str, Region); 17] {
+pub fn mmio_regions() -> [(&'static str, Region); 18] {
     [
         ("flash-code", FLASH_CODE),
         ("flash-vars", FLASH_VARS),
@@ -205,6 +210,7 @@ pub fn mmio_regions() -> [(&'static str, Region); 17] {
         ("fw-cfg", FW_CFG),
         ("gpio", GPIO),
         ("acpi-ged", ACPI_GED),
+        ("host-power", HOST_POWER),
         ("virtio-mmio", VIRTIO_MMIO),
         ("tpm-tis", TPM_TIS),
         ("tpm-ppi", TPM_PPI),
@@ -254,6 +260,7 @@ mod tests {
         assert_eq!(FW_CFG.base, 0x0902_0000);
         assert_eq!(GPIO.base, 0x0903_0000);
         assert_eq!(ACPI_GED, Region::new(0x0908_0000, 4));
+        assert_eq!(HOST_POWER, Region::new(0x090C_0000, 0x1000));
         assert_eq!(VIRTIO_MMIO.base, 0x0A00_0000);
         assert_eq!(TPM_TIS.base, 0x0C00_0000);
         assert_eq!(TPM_TIS.size, crate::tpm_tis::MMIO_SIZE);
@@ -359,6 +366,7 @@ mod tests {
         assert_eq!(device_at(UART.base), Some("uart"));
         assert_eq!(device_at(ACPI_GED.base), Some("acpi-ged"));
         assert_eq!(device_at(ACPI_GED.end()), None);
+        assert_eq!(device_at(HOST_POWER.base + 0x24), Some("host-power"));
         assert_eq!(device_at(FW_CFG.base + 0x8), Some("fw-cfg"));
         assert_eq!(device_at(0x0A00_3E10), Some("virtio-mmio"));
         assert_eq!(device_at(TPM_TIS.base + 0x24), Some("tpm-tis"));

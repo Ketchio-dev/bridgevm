@@ -1,6 +1,7 @@
 //! Caller-facing machine shape: which devices are present and which net backend to use.
 
 use crate::dtb::VirtFdtConfig;
+use crate::host_power::HostPower;
 use crate::pcie::VIRTIO_GPU_DEVICE_ID;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,6 +17,10 @@ pub struct VirtPlatformDeviceConfig {
     pub legacy_virtio_mmio_present: bool,
     pub ramfb_present: bool,
     pub tpm_tis_present: bool,
+    /// `Some`: the VM has the Mac's AC adapter and battery (ACPI `ADP0`/`BAT0`
+    /// and the [`crate::machine::HOST_POWER`] page), starting from this
+    /// reading. `None` on a Mac without a battery: no device, DSDT unchanged.
+    pub host_power: Option<HostPower>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +49,7 @@ impl Default for VirtPlatformDeviceConfig {
             legacy_virtio_mmio_present: true,
             ramfb_present: false,
             tpm_tis_present: false,
+            host_power: None,
         }
     }
 }

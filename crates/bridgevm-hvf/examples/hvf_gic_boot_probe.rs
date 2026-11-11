@@ -37,6 +37,9 @@
 //!   BRIDGEVM_AARCH64_UEFI_VARS_OUT=/path/to/vars-out.fd ...
 //!   BRIDGEVM_AARCH64_UEFI_VARS_WRITABLE=1 ...        # write back to vars path
 //!   BRIDGEVM_SWTPM_DATA_SOCKET=/path/to/swtpm.sock ... # opt-in TPM2 TIS backend; supervisor owns swtpm lifecycle
+//!
+//! The Mac's battery reaches Windows on its own when the Mac has one (host_power.rs). Test override:
+//!   BRIDGEVM_HVF_FAKE_BATTERY=80,0,0 ...                 # percent,charging,ac; or /path/to/file holding it, re-read every 5 s
 
 use std::path::{Path, PathBuf};
 use std::sync::{
@@ -114,6 +117,7 @@ probe_modules!(
     "hvf_gic_boot_probe/guest_diagnostics.rs" => guest_diagnostics,
     "hvf_gic_boot_probe/guest_memory.rs" => guest_memory,
     "hvf_gic_boot_probe/guest_ram_backing.rs" => guest_ram_backing,
+    "hvf_gic_boot_probe/host_power.rs" => host_power,
     "hvf_gic_boot_probe/host_support.rs" => host_support,
     "hvf_gic_boot_probe/hvf_abi.rs" => hvf_abi,
     "hvf_gic_boot_probe/interrupt_delivery.rs" => interrupt_delivery,

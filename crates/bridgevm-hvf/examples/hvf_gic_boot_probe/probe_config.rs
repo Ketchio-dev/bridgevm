@@ -6,6 +6,8 @@ pub(crate) struct ProbeConfig {
     pub(crate) swtpm_data_socket: Option<PathBuf>,
     pub(crate) swtpm_control_socket: Option<PathBuf>,
     pub(crate) platform_cfg: VirtPlatformConfig,
+    /// Where the battery reading comes from; followed when the VM has one.
+    pub(crate) power_source: crate::host_power::PowerSource,
     pub(crate) ram_size: usize,
     pub(crate) watchdog_ms: u64,
     pub(crate) watchdog_enabled: bool,
@@ -33,6 +35,8 @@ impl ProbeConfig {
             std::env::var_os("BRIDGEVM_SWTPM_CONTROL_SOCKET").map(PathBuf::from);
         let mut platform_devices = media.platform_devices;
         platform_devices.tpm_tis_present = swtpm_data_socket.is_some();
+        let power_source = crate::host_power::PowerSource::from_env();
+        platform_devices.host_power = crate::host_power::initial_reading(&power_source);
         let platform_cfg = VirtPlatformConfig {
             fdt: VirtFdtConfig {
                 cpu_count: smp_cpus,
@@ -68,6 +72,7 @@ impl ProbeConfig {
             swtpm_data_socket,
             swtpm_control_socket,
             platform_cfg,
+            power_source,
             ram_size,
             watchdog_ms,
             watchdog_enabled,

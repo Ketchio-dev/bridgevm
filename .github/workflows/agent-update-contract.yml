@@ -1,5 +1,5 @@
 name: Guest tools update contract
-on: {push: {branches: [main]}, pull_request: {paths: ['scripts/test-bvagent-update.ps1', 'scripts/win-assets/bvagent-update.ps1', 'scripts/win-assets/bvagent.ps1', '.github/workflows/agent-update-contract.yml']}}
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/test-bvagent-update.ps1', 'scripts/win-assets/bvagent-update.ps1', 'scripts/win-assets/bvagent.ps1', 'scripts/win-assets/bvagent-task.ps1', '.github/workflows/agent-update-contract.yml']}}
 permissions:
   contents: read
 jobs:
