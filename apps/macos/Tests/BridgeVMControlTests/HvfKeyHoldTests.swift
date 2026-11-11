@@ -63,6 +63,24 @@ final class HvfKeyHoldTests: XCTestCase {
         }
     }
 
+    /// A held key's release is never refused for room: behind a full queue it waits its turn and goes in once.
+    func testAKeyUpBehindAFullQueueReachesTheAgentOnceItDrains() throws {
+        try withClockedSession(hold: true) { session, fixture, _ in
+            try press(left, session) // in flight
+            let texts = HvfOrderedInputQueue.maximumEvents - 1
+            for _ in 0..<texts { XCTAssertEqual(session.sendText("a"), .acceptedForProcessing) }
+            XCTAssertEqual(session.sendText("a"), .refused, "the queue is full")
+            try release(left, session)
+            try insert(fixture, session, count: 1)
+            for _ in 0..<texts { try insert(fixture, session, count: 2) }
+            try insert(fixture, session, count: 1)
+            session.poll()
+            XCTAssertEqual(try payloads(fixture), ["KEYINPUT down:left"] + Array(repeating: "TEXTINPUT a", count: texts)
+                + ["KEYINPUT up:left"])
+            XCTAssertNil(try fixture.bytes(fixture.input))
+        }
+    }
+
     func testAnAgentWithoutTheHoldMarkerGetsTapsAsBefore() throws {
         try withClockedSession(hold: false) { session, fixture, _ in
             try press(left, session)

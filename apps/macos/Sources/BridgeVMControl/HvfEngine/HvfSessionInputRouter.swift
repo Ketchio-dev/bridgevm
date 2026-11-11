@@ -86,9 +86,9 @@ struct HvfSessionInputRouter {
     }
 
     /// A held key goes up where it went down: `.legacy` while input.ctl holds it (whatever the state), `.queued` behind
-    /// its press on an ordered route taking input, and `.refused` when neither has anything to send now (a press the
-    /// ordered route still owes a release for goes up through its cleanup: leaving a fallback, a request failure or the
-    /// next target change).
+    /// its press on an ordered route taking input (even a full queue takes it), and `.refused` when neither has anything
+    /// to send now (a press the ordered route still owes a release for goes up through its cleanup: leaving a
+    /// fallback, a request failure or the next target change).
     mutating func routeKeyUp(_ action: String, binding: [String], now: Date) -> HvfNegotiatedInputStream.Admission {
         guard matches(binding) else { return .refused }
         if legacy.keys.contains(action) { return .legacy }
