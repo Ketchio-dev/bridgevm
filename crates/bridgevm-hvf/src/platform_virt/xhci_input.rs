@@ -127,6 +127,21 @@ impl VirtPlatform {
         Ok(())
     }
 
+    /// Holds one key down (`down`) or releases it (XhciController::queue_setup_input_hold).
+    pub fn queue_xhci_setup_input_hold_with_mem(
+        &mut self,
+        action: SetupInputAction,
+        down: bool,
+        mem: &mut dyn GuestMemoryMut,
+    ) -> Result<(), XhciSetupInputQueueError> {
+        if !self.devices.xhci_present {
+            return Err(XhciSetupInputQueueError::Busy);
+        }
+        self.xhci.queue_setup_input_hold(action, down)?;
+        self.drain_xhci_setup_input_reports(mem);
+        Ok(())
+    }
+
     pub fn drain_xhci_setup_input_reports(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
         if !self.devices.xhci_present {
             return false;
