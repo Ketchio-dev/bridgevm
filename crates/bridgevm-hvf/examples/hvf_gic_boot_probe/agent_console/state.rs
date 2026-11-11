@@ -131,6 +131,9 @@ pub struct AgentConsoleHarness {
     /// The agent refused DISPLAYMODE or DISPLAYSCALE since its READY: display requests go as
     /// RUN powershell lines (display_verbs.rs).
     pub(super) display_verbs_refused: bool,
+    /// The app sent LINKWATCH to this harness's agent: a restarted agent gets it again
+    /// (guest_link.rs).
+    pub(super) link_watch: bool,
     /// The agent answered CLIPCAPS with CF_HTML (and IMAGE_PNG): rich text moves
     /// as CLIPXH polls and CLIPSETH pushes (clip_html.rs).
     pub(super) clip_html: bool,

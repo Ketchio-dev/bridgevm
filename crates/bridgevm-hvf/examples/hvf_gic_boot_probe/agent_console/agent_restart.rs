@@ -73,5 +73,6 @@ impl AgentConsoleHarness {
             self.queue.retain(|req| !matches!(req, ServiceReq::ClipCaps));
             self.queue.push_front(ServiceReq::ClipCaps);
         }
+        self.resume_link_watch();
     }
 }

@@ -516,6 +516,10 @@ impl AgentConsoleHarness {
             }
             return;
         }
+        // A Windows link for the Mac browser (guest_link.rs), written like CLIPCHANGED.
+        if self.guest_link(line) {
+            return;
+        }
         // A large shared-folder copy takes its own GETBEG/GETCHUNK/GETEND (share_big.rs).
         if self.handle_big_get_line(line, now) {
             return;
