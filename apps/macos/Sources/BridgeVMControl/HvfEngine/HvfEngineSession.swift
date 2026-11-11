@@ -478,7 +478,7 @@ final class HvfEngineSession: ObservableObject {
         lastHeartbeatDate = nil
         lastHeartbeatAge = nil
         serviceStarted = false
-        shareRootNotice.reset()
+        shareRootNotice.reset(missingFolder: config.missingShareFolder())
         agentUpdateNotice.reset()
         fileDrops.reset()
         clipboardImageNotice.reset()

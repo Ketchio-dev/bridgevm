@@ -73,7 +73,7 @@ impl ShareState {
         interval: Duration,
     ) -> Self {
         let root = root::ShareRoot::new(&host_dir);
-        Self {
+        let mut share = Self {
             engine,
             host_dir,
             guest_dir,
@@ -102,7 +102,11 @@ impl ShareState {
             sync_stuck_told: false,
             #[cfg(test)]
             host_scans: 0,
-        }
+        };
+        // A root missing at the start (an unplugged drive) is reported at once, so the first scan
+        // that finds it prints `ready`, however early it comes back.
+        share.root_matches();
+        share
     }
 
     /// Keep the synced state beside the VM's UEFI vars at `vars`, and take what it holds.

@@ -12,6 +12,10 @@ final class HvfShareRootNotice: ObservableObject {
     /// Windows files left on the guest because the Mac had too little space for them, until they
     /// arrive.
     @Published private(set) var lowSpace: HvfShareLowSpace?
+    /// The shared folder's name when its Mac folder was missing at Start: the VM started with the share,
+    /// and the runtime shares the folder once it appears (`root-state ready`). A guest restart clears it;
+    /// the next boot reports a still missing folder as blocked.
+    @Published private(set) var missingFolder: String?
     func consume(_ event: BvAgentEvent) {
         // A whole file's arrival; a large one logs this line too.
         if case let .shareEvent(.guestToHost, name, _, _) = event { return arrived(name) }
@@ -20,7 +24,9 @@ final class HvfShareRootNotice: ObservableObject {
         switch line {
         case _ where HvfGuestResetRecord.matches(line): reset()
         case "BVAGENT SHARE root-state blocked": update(true)
-        case "BVAGENT SHARE root-state ready": update(false)
+        case "BVAGENT SHARE root-state ready":
+            update(false)
+            if missingFolder != nil { missingFolder = nil }
         case "BVAGENT SHARE resumed": if paused != nil { paused = nil }
         default:
             if stopped == nil, let stop = HvfShareStop(line: line) {
@@ -43,7 +49,9 @@ final class HvfShareRootNotice: ObservableObject {
         self.lowSpace = lowSpace.arrived(name)
     }
 
-    func reset() {
+    /// A new run or boot generation; at Start, `missingFolder` names a shared folder missing then.
+    func reset(missingFolder folder: String? = nil) {
+        if missingFolder != folder { missingFolder = folder }
         update(false)
         if stopped != nil { stopped = nil }
         if paused != nil { paused = nil }

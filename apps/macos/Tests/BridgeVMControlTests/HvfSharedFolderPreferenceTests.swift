@@ -97,9 +97,10 @@ final class HvfSharedFolderPreferenceTests: XCTestCase {
         XCTAssertNil(try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved)).config.shareHostDir)
     }
 
-    /// A relaunched app shares the saved folder, and a saved folder that has since disappeared is
-    /// refused by launch readiness rather than dropped or replaced by another folder.
-    func testRelaunchKeepsSavedFolderAndMissingFolderFailsReadiness() throws {
+    /// A relaunched app shares the saved folder. One that has since gone (an unplugged drive) no longer
+    /// blocks Start (6ebec8d0 refused it, `share-invalid`): the VM starts with that same folder, which
+    /// the runtime shares once it appears, and the notice names it until the folder is back.
+    func testRelaunchKeepsSavedFolderAndAMissingFolderStartsWithItAndANotice() throws {
         let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
         defer { fixture.clean() }
         let saved = fixture.config(); fixture.save(saved)
@@ -115,7 +116,22 @@ final class HvfSharedFolderPreferenceTests: XCTestCase {
         try FileManager.default.removeItem(atPath: selection.hostPath)
         let launch = try XCTUnwrap(HvfEngineConfig.libraryVM(relaunched.latestConfiguration(for: saved), rootURL: fixture.root))
         XCTAssertEqual(launch.shareHostDir, selection.hostPath, "Never another folder, never silently dropped")
-        XCTAssertTrue(launch.readiness(repoRoot: fixture.root).launchBlockers.map(\.code).contains("share-invalid"))
+        let codes = launch.readiness(repoRoot: fixture.root).launchBlockers.map(\.code)
+        XCTAssertFalse(codes.contains { $0.hasPrefix("share-") }, "\(codes)")
+        let arguments = launch.runnerArguments(manifestPath: "m", runnerPath: "r", firmwareCodePath: "f",
+            probePath: "p", ownedRuntime: true)
+        XCTAssertEqual(value(after: "--agent-share-host", in: arguments), selection.hostPath)
+        XCTAssertEqual(value(after: "--agent-share-guest", in: arguments), selection.guestPath)
+
+        let missing = "공유 폴더(chosen-share)를 찾을 수 없어 공유 없이 시작했습니다."
+        session.resetObservedRuntimeState(clearEvents: true) // what every start and attach does first
+        XCTAssertEqual(session.shareRootNotice.displayed?.text, missing)
+        XCTAssertEqual(session.shareRootNotice.displayed?.help, "폴더를 다시 연결하면 자동으로 공유됩니다.")
+        session.append(.unknown("BVAGENT SHARE root-state blocked")) // the runtime reports the missing root at once
+        XCTAssertEqual(session.shareRootNotice.displayed?.text, missing)
+        try FileManager.default.createDirectory(atPath: selection.hostPath, withIntermediateDirectories: false)
+        session.append(.unknown("BVAGENT SHARE root-state ready"))
+        XCTAssertNil(session.shareRootNotice.displayed, "the runtime shares the folder")
 
         var incomplete = relaunched.latestConfiguration(for: saved); incomplete.sharedFolderGuestPath = nil
         XCTAssertNil(incomplete.sharedFolder)
