@@ -41,6 +41,13 @@ impl Wire {
         self.tick()
     }
 
+    fn submit_open(&mut self, id: &str, root: &Path) -> Vec<String> {
+        self.h
+            .drops
+            .submit(&format!("{id} {} open", b64(root.to_str().unwrap().as_bytes())));
+        self.tick()
+    }
+
     fn tick(&mut self) -> Vec<String> {
         let mut sent = Vec::new();
         self.h.advance(self.now, &mut |bytes| {
@@ -264,6 +271,84 @@ fn a_second_drop_waits_for_the_first() {
     );
     let _ = std::fs::remove_dir_all(&first);
     let _ = std::fs::remove_dir_all(&second);
+}
+
+/// Finder's Open With and a Dock drop: everything is copied first, then each top-level item opens
+/// by the final name the guest gave it (a folder too, never what is inside one). A failed open
+/// (the item went missing, an agent that turns out not to know OPENFILE) ends nothing but itself.
+#[test]
+fn an_open_drop_opens_each_top_level_item_by_its_final_name_once_all_are_copied() {
+    let root = staging("open");
+    std::fs::create_dir(root.join("A")).unwrap();
+    std::fs::write(root.join("A/b.txt"), b"hi").unwrap();
+    std::fs::write(root.join("c.txt"), b"").unwrap();
+    std::fs::write(root.join("d.txt"), b"").unwrap();
+    let mut wire = Wire::new();
+    wire.h
+        .note_agent_ready("host v3-share2 putdata bigfile lssame openfile agent=0123456789abcdef", wire.now);
+    assert_eq!(wire.submit_open("job-10", &root), ["DROPCAPS"]);
+    assert_eq!(wire.reply("BVDROP_CAPS 1"), [format!("DROPDIR {}", b64(b"A"))]);
+    wire.reply(&format!("OK DROPDIR {}", b64(b"A (2)")));
+    wire.reply(&format!("OK DROPBEG {}", b64(b"b.txt")));
+    wire.reply("OK DROPCHUNK 0");
+    assert_eq!(wire.reply("OK DROPEND 2"), [format!("DROPBEG {} 0", b64(b"c.txt"))]);
+    // The Desktop already has a c.txt: the guest's name is the one that opens.
+    wire.reply(&format!("OK DROPBEG {}", b64(b"c (2).txt")));
+    assert_eq!(wire.reply("OK DROPEND 0"), [format!("DROPBEG {} 0", b64(b"d.txt"))]);
+    wire.reply(&format!("OK DROPBEG {}", b64(b"d.txt")));
+    assert_eq!(wire.reply("OK DROPEND 0"), [format!("OPENFILE {}", b64(b"A (2)"))]);
+    assert_eq!(wire.reply("OK OPENFILE"), [format!("OPENFILE {}", b64(b"c (2).txt"))]);
+    assert_eq!(wire.reply("ERR OPENFILE missing"), [format!("OPENFILE {}", b64(b"d.txt"))]);
+    let active = wire.h.drops.active.as_ref().unwrap();
+    assert_eq!(opened_field(active), " opened=1/3");
+    assert!(wire.reply(&format!("OUT 255 {}", b64(b"unknown token: OPENFILE"))).is_empty());
+    assert!(wire.h.drops.active.is_none());
+    assert!(wire.h.queue.is_empty() && wire.h.in_flight.is_none());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// An agent without OPENFILE (no `openfile` in READY) still gets the files, and is never asked to
+/// open them; a plain drop never opens anything, whatever the agent takes.
+#[test]
+fn an_old_agent_only_copies_an_open_drop_and_a_plain_drop_never_opens() {
+    let root = staging("open-old");
+    std::fs::write(root.join("a.txt"), b"").unwrap();
+    let mut wire = Wire::new();
+    wire.h
+        .note_agent_ready("host v3-share2 putdata bigfile lssame agent=0123456789abcdef", wire.now);
+    wire.submit_open("job-11", &root);
+    wire.reply("BVDROP_CAPS 1");
+    wire.reply(&format!("OK DROPBEG {}", b64(b"a.txt")));
+    assert_eq!(opened_field(wire.h.drops.active.as_ref().unwrap()), " opened=old-agent");
+    assert!(wire.reply("OK DROPEND 0").is_empty());
+    assert!(wire.h.drops.active.is_none());
+
+    wire.h.note_agent_ready("host v3-share2 openfile", wire.now);
+    wire.submit("job-12", &root);
+    wire.reply("BVDROP_CAPS 1");
+    wire.reply(&format!("OK DROPBEG {}", b64(b"a (2).txt")));
+    assert_eq!(opened_field(wire.h.drops.active.as_ref().unwrap()), "");
+    assert!(wire.reply("OK DROPEND 0").is_empty());
+    assert!(wire.h.drops.active.is_none());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_bvdrop_line_opens_only_with_the_open_field_and_ignores_unknown_ones() {
+    let path = b64(b"/tmp/staging");
+    let mut drops = FileDrops::default();
+    for (line, open) in [
+        (format!("j1 {path}"), false),
+        (format!("j2 {path} open"), true),
+        (format!("j3 {path} later open"), true),
+        (format!("j4 {path} opened"), false),
+    ] {
+        drops.submit(&line);
+        let (_, staged, opens) = drops.waiting.pop_back().unwrap();
+        assert_eq!((staged, opens), (PathBuf::from("/tmp/staging"), open), "{line}");
+    }
+    drops.submit("j5 not-base64! open");
+    assert!(drops.waiting.is_empty());
 }
 
 #[test]

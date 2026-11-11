@@ -396,6 +396,7 @@ impl AgentConsoleHarness {
     pub(super) fn note_agent_ready(&mut self, rest: &str, now: Instant) {
         self.put_data = ready_has_put_data(rest);
         self.share_big = ready_has_big_files(rest);
+        self.drops.agent_opens = rest.split(' ').any(|token| token == "openfile");
         // A new agent process may have the display verbs (an update brings them).
         self.display_verbs_refused = false;
         if let Some(share) = self.share.as_mut() {
