@@ -2,7 +2,7 @@
 //! Refcounts, internal snapshots and header extensions are not needed to
 //! read the current disk and are ignored, as `qemu-img convert` does.
 
-use super::{be32, be64, within, Refusal, Result, Run, MAX_VIRTUAL_BYTES};
+use super::{be32, be64, read_padded, within, Refusal, Result, Run, MAX_VIRTUAL_BYTES};
 use std::fs::File;
 use std::os::unix::fs::FileExt;
 
@@ -133,10 +133,11 @@ impl Qcow2 {
                 })?;
                 continue;
             }
-            if table % cluster != 0 || !within(table, cluster, self.file_len) {
+            if table % cluster != 0 || table >= self.file_len {
                 return Err(Refusal::Damaged("QCOW2 L2 table is outside the file").into());
             }
-            file.read_exact_at(&mut l2, table)?;
+            // Like a data cluster, a table the file ends inside reads as zeros past the end.
+            read_padded(file, &mut l2, table)?;
             for slot in 0..span.div_ceil(cluster) {
                 let entry = be64(&l2, slot as usize * 8);
                 let virt = base + slot * cluster;

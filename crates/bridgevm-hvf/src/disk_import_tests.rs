@@ -269,10 +269,7 @@ fn malformed_qcow2_headers_and_tables_fail_cleanly() {
             patched(q::L1_OFFSET, len + (64 << 10), 8),
             "L1 past the end",
         ),
-        (
-            patched(q::L1_OFFSET, !0xffff, 8),
-            "L1 offset overflows",
-        ),
+        (patched(q::L1_OFFSET, !0xffff, 8), "L1 offset overflows"),
         (patched(q::L1_OFFSET, 4096, 8), "L1 not cluster aligned"),
         (patched(q::L1_OFFSET, 0, 8), "L1 overlapping the header"),
         (patched(q::L1_SIZE, 0, 4), "L1 smaller than the disk"),
