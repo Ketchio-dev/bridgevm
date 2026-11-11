@@ -2,7 +2,9 @@ $ErrorActionPreference = 'Stop'
 # The guest agent's scheduled task. Get-GuestAgentTaskXml (bvagent-task.ps1, product VMs) and the
 # XML compiled into bvagent-install-service.c (bvinject images) must be one definition: a logon
 # trigger plus an every-minute trigger that starts the agent again after it exits, the user's
-# interactive token, IgnoreNew and no execution time limit. On Windows, Start-VerifiedGuestAgentTask
+# interactive token, IgnoreNew, no execution time limit, and running on battery (Task Scheduler's
+# defaults would keep the agent from starting on battery and stop it when the Mac is unplugged).
+# On Windows, Start-VerifiedGuestAgentTask
 # also registers it with Task Scheduler twice, the second time over the task the first left (the
 # re-registration an existing VM gets), and reads the definition back each time.
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
@@ -66,6 +68,9 @@ function Assert-AgentTask($Task, [string]$User, [string]$AgentPath, [string]$Lab
     Assert-Equal (Get-Nodes $Task '/t:Task/t:Actions')[0].GetAttribute('Context') $id "$Label action Context"
     $settings = '/t:Task/t:Settings'
     Assert-Equal (Get-Text $Task "$settings/t:MultipleInstancesPolicy" 'IgnoreNew') 'IgnoreNew' "$Label MultipleInstances"
+    # Both default to true when the definition leaves them out.
+    Assert-Equal (Get-Text $Task "$settings/t:DisallowStartIfOnBatteries" 'true') 'false' "$Label DisallowStartIfOnBatteries"
+    Assert-Equal (Get-Text $Task "$settings/t:StopIfGoingOnBatteries" 'true') 'false' "$Label StopIfGoingOnBatteries"
     Assert-Equal (Get-Text $Task "$settings/t:ExecutionTimeLimit") 'PT0S' "$Label ExecutionTimeLimit"
     Assert-Equal (Get-Text $Task "$settings/t:RestartOnFailure/t:Count") '3' "$Label RestartCount"
     Assert-Equal (Get-Text $Task "$settings/t:RestartOnFailure/t:Interval") 'PT1M' "$Label RestartInterval"

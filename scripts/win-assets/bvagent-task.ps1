@@ -6,6 +6,9 @@
 # the next tick starts it again. A start that races a dying agent exits on the singleton mutex,
 # and the next tick retries. The principal is the user's interactive token, so a tick with
 # nobody logged on runs nothing. ExecutionTimeLimit PT0S: Task Scheduler never stops the agent.
+# The two battery settings say false because Task Scheduler's default (true) keeps a task from
+# starting on battery and stops it when the machine goes on battery: a guest that sees the Mac's
+# battery would lose its agent whenever the Mac is unplugged.
 #
 # Registering replaces the whole definition (triggers, settings, principal and action), so
 # running Start-VerifiedGuestAgentTask again on a VM that already has the task brings it up to
@@ -39,6 +42,8 @@ function Get-GuestAgentTaskXml([string]$UserId, [string]$AgentPath) {
         "  </Principals>",
         "  <Settings>",
         "    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>",
+        "    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>",
+        "    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>",
         "    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>",
         "    <RestartOnFailure>",
         "      <Interval>PT1M</Interval>",
