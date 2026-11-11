@@ -15,7 +15,7 @@ const MAX_REFUSED_WRITES: usize = 1024;
 /// Guest path -> the refused version's size, the FNV-1a hash of its listed
 /// mtime (the guest picks that string, so it is not kept), and the order in
 /// which it was refused.
-#[derive(Default)]
+#[derive(Default, Clone, PartialEq)]
 pub(super) struct RefusedWrites {
     versions: HashMap<String, (u64, u64, u64)>,
     refused: u64,
@@ -36,6 +36,8 @@ impl RefusedWrites {
 
 impl ShareSync {
     pub fn forget_absent_failed(&mut self, mut is_absent: impl FnMut(&str) -> bool) {
+        let lens = |sync: &Self| (sync.records.len(), sync.pending_guest_mtime.len(), sync.pending_host_changed.len());
+        let before = lens(self);
         let guest = &self.present_scratch;
         self.records.retain(|name, record| {
             !(record.host_write_failed && !guest.contains(name) && is_absent(name))
@@ -44,6 +46,7 @@ impl ShareSync {
             .retain(|name, _| guest.contains(name));
         self.pending_host_changed
             .retain(|name| self.records.contains_key(name));
+        self.pass_changed |= lens(self) != before;
     }
 
     /// Retry a failed write on the next guest listing. Never turn its missing,
@@ -85,6 +88,7 @@ impl ShareSync {
     /// refusals whose file changed size or mtime or left the listing.
     pub(super) fn drop_refused_writes(&mut self) {
         let listed = &mut self.guest_file_entries_scratch;
+        let before = self.refused_writes.versions.len();
         self.refused_writes
             .versions
             .retain(|name, (size, mtime, _)| {
@@ -92,6 +96,7 @@ impl ShareSync {
                     entry.size == *size && fnv1a64(entry.mtime.as_bytes()) == *mtime
                 })
             });
+        self.pass_changed |= self.refused_writes.versions.len() != before;
         for name in self.refused_writes.versions.keys() {
             listed.remove(name);
         }

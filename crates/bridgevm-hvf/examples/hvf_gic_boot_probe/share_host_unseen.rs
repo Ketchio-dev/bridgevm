@@ -21,9 +21,9 @@ pub(super) fn unseen_key(name: &str) -> String {
 impl ShareSync {
     /// Replace the unseen names with those reported by the latest host scan.
     pub fn set_host_unseen(&mut self, names: impl IntoIterator<Item = String>) {
-        self.host_unseen.clear();
-        self.host_unseen
-            .extend(names.into_iter().map(|name| unseen_key(&name)));
+        let unseen: HashSet<String> = names.into_iter().map(|name| unseen_key(&name)).collect();
+        self.pass_changed |= unseen != self.host_unseen;
+        self.host_unseen = unseen;
     }
 
     /// The name is unseen itself or lies below an unseen directory.

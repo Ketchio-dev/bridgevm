@@ -45,8 +45,9 @@ impl HostWatch {
 }
 
 /// A complete walk: its files, the names it could not read, and the watch's
-/// count, the time and the wall clock when it began.
+/// count, the time and the wall clock when it began; its serial (share_idle.rs).
 pub(in crate::agent_console) struct HostWalk {
+    serial: u64,
     files: Vec<HostFile>,
     unseen: Vec<String>,
     changes: u64,
@@ -55,18 +56,32 @@ pub(in crate::agent_console) struct HostWalk {
 }
 
 impl ShareState {
-    /// The last walk's files in `host_scan_work` and its unreadable names,
-    /// when nothing can have changed since it began.
-    pub(in crate::agent_console) fn reuse_host_walk(&mut self, now: Instant) -> Option<Vec<String>> {
+    /// The last walk's serial, when nothing can have changed since it began.
+    pub(in crate::agent_console) fn kept_host_walk(&self, now: Instant) -> Option<u64> {
         let current = self.host_watch.changes()?;
         let walk = self.host_walk.as_ref()?;
-        if walk.changes != current || now.duration_since(walk.at) >= HOST_WALK_MAX_AGE {
-            return None;
-        }
+        (walk.changes == current && now.duration_since(walk.at) < HOST_WALK_MAX_AGE).then_some(walk.serial)
+    }
+
+    /// The kept walk's files in `host_scan_work`, and its unreadable names (kept_host_walk).
+    pub(in crate::agent_console) fn reuse_host_walk(&mut self) -> Vec<String> {
+        let Some(walk) = self.host_walk.as_ref() else {
+            return Vec::new();
+        };
         self.host_scan_work.clear();
         self.host_scan_work.extend(walk.files.iter().cloned());
         self.host_actions_scanned = walk.wall;
-        Some(walk.unseen.clone())
+        walk.unseen.clone()
+    }
+
+    /// The serial of the walk the next plan comes from, when it is kept.
+    pub(in crate::agent_console) fn host_walk_serial(&self) -> Option<u64> {
+        self.host_walk.as_ref().map(|walk| walk.serial)
+    }
+
+    /// The kept walk's files and unreadable names.
+    pub(in crate::agent_console) fn kept_host_walk_files(&self) -> Option<(&[HostFile], &[String])> {
+        self.host_walk.as_ref().map(|walk| (walk.files.as_slice(), walk.unseen.as_slice()))
     }
 
     /// Before a walk: start a pending watch and note its count.
@@ -84,6 +99,7 @@ impl ShareState {
     pub(in crate::agent_console) fn keep_host_walk(&mut self, changes: Option<u64>, unseen: &[String], now: Instant) {
         if let Some(changes) = changes {
             self.host_walk = Some(HostWalk {
+                serial: self.new_idle_input(),
                 files: self.host_scan_work.clone(),
                 unseen: unseen.to_vec(),
                 changes,

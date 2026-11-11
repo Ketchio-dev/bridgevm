@@ -17,10 +17,12 @@ pub(in crate::agent_console) mod listing_same;
 pub(in crate::agent_console) mod host_watch;
 #[path = "share_sync_file.rs"]
 pub(in crate::agent_console) mod sync_file;
+#[path = "share_idle.rs"]
+mod idle;
 use host_watch::{HostWalk, HostWatch};
 
 pub(in crate::agent_console) struct ShareState {
-    pub(in crate::agent_console) engine: ShareSync,
+    pub(in crate::agent_console) engine: idle::Engine,
     pub(in crate::agent_console) host_dir: PathBuf,
     pub(in crate::agent_console) guest_dir: String,
     pub(in crate::agent_console) interval: Duration,
@@ -62,8 +64,14 @@ pub(in crate::agent_console) struct ShareState {
     /// A state turned off whose files are not removed yet: no PUT goes out until they are.
     sync_off: Option<sync_file::SyncStateFile>,
     sync_stuck_told: bool,
+    /// The last idle passes, which an unchanged poll skips (share_idle.rs).
+    idle: idle::IdlePasses,
     #[cfg(test)]
     pub(in crate::agent_console) host_scans: usize,
+    #[cfg(test)]
+    pub(in crate::agent_console) host_passes: usize,
+    #[cfg(test)]
+    pub(in crate::agent_console) guest_passes: usize,
 }
 
 /// A PUT waits at most this long for its marks; then the state turns off and the PUT goes.
@@ -78,7 +86,7 @@ impl ShareState {
     ) -> Self {
         let root = root::ShareRoot::new(&host_dir);
         let mut share = Self {
-            engine,
+            engine: engine.into(),
             host_dir,
             guest_dir,
             interval,
@@ -105,8 +113,13 @@ impl ShareState {
             held_put: None,
             sync_off: None,
             sync_stuck_told: false,
+            idle: idle::IdlePasses::default(),
             #[cfg(test)]
             host_scans: 0,
+            #[cfg(test)]
+            host_passes: 0,
+            #[cfg(test)]
+            guest_passes: 0,
         };
         // The runtime's first word on its root, so the app's notice from Start (a folder missing
         // then) settles either way: `blocked` now (the first scan that finds it prints `ready`), or
@@ -253,7 +266,8 @@ impl ShareState {
         let Some(file) = self.sync_file.as_mut() else {
             return;
         };
-        if !file.flush(&mut self.engine, now) {
+        // Marks and synced versions: no pass reads them after the first listing (share_idle.rs).
+        if !file.flush(self.engine.for_pass(), now) {
             self.sync_state_off("a mark could not be written");
         }
     }

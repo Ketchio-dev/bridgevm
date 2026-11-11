@@ -12,8 +12,7 @@ mod get_reply;
 #[path = "share_get_test_fixture.rs"]
 pub(in crate::agent_console) mod get_test_fixture;
 
+/// Part of the host pass's setup (share_idle.rs).
 pub(in crate::agent_console) fn forget_absent_share_failures(share: &mut ShareState) {
-    share
-        .engine
-        .forget_absent_failed(|name| Destination::absent(&share.host_dir, name));
+    (share.engine.for_pass()).forget_absent_failed(|name| Destination::absent(&share.host_dir, name));
 }

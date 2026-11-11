@@ -64,6 +64,7 @@ impl ShareSync {
             return;
         }
         for (new, old) in renamed_pairs(host.keys(), records, |name| host.contains_key(name)) {
+            self.pass_changed = true;
             if let Some(record) = self.records.remove(&old) {
                 self.records.insert(new.clone(), record);
             }

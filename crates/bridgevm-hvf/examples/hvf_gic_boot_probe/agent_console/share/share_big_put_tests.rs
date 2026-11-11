@@ -193,7 +193,7 @@ fn a_new_session_adopts_a_large_guest_copy_of_the_same_size_and_time_without_sen
         mtime: "2026-11-08T00:05:12.1230000Z".into(),
     };
     // A new session: the scan holds the unrecorded Mac file until the first listing.
-    rig.h.share.as_mut().unwrap().engine = ShareSync::new(1 << 30);
+    rig.h.share.as_mut().unwrap().engine = ShareSync::new(1 << 30).into();
     assert!(!rig.scan());
     let engine = &mut rig.h.share.as_mut().unwrap().engine;
     assert!(engine.on_guest_listing_normalized([entry]).is_empty());

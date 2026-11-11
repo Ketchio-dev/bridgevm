@@ -44,8 +44,9 @@ impl ShareSync {
     /// drop such a name sooner (on_host_file clears its pending mark, and a name new this
     /// session has no record until PUTOK), and a PUT can wait long now (share_state.rs).
     pub fn set_puts_under_way(&mut self, names: impl IntoIterator<Item = String>) {
-        self.puts_under_way.clear();
-        self.puts_under_way.extend(names.into_iter().map(|name| normalize_rel(&name)));
+        let names: HashSet<String> = names.into_iter().map(|name| normalize_rel(&name)).collect();
+        self.pass_changed |= names != self.puts_under_way;
+        self.puts_under_way = names;
     }
 
     /// Windows keys, because the guest may store a held host name in another case.

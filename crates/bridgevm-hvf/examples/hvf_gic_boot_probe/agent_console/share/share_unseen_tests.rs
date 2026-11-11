@@ -23,7 +23,7 @@ impl Drop for Unreadable {
 
 fn rig_with(label: &str, max_kb: u64, files: &[(&str, &[u8])]) -> Rig {
     let mut rig = Rig::new(label);
-    rig.h.share.as_mut().unwrap().engine = ShareSync::new(max_kb);
+    rig.h.share.as_mut().unwrap().engine = ShareSync::new(max_kb).into();
     for (name, bytes) in files {
         let path = rig.dir.join(name);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

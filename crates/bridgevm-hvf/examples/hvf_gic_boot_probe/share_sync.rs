@@ -50,7 +50,7 @@ pub struct PushGuest {
     pub hash: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct FileRecord {
     size: u64,
     /// None for a large file recorded from its size and time alone (share_adopt.rs).
@@ -68,13 +68,14 @@ struct HostFileStat {
     mtime_ms: u128,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct GuestFileStat {
     size: u64,
     mtime: String,
 }
 
-#[derive(Default)]
+/// Clone and PartialEq for the debug check of a skipped pass (share_sync_idle.rs).
+#[derive(Default, Clone, PartialEq)]
 pub struct ShareSync {
     records: HashMap<String, FileRecord>,
     max_bytes: u64,
@@ -106,6 +107,10 @@ pub struct ShareSync {
     guest_changed: HashMap<String, HostFileStat>,
     /// Names with a PUT held, queued or in flight, as the service holds them at each listing.
     puts_under_way: HashSet<String>,
+    /// A pass, or the setup before it, changed what a later pass reads (share_sync_idle.rs).
+    pass_changed: bool,
+    /// The last pass was idle: run again on the same input it would plan and change nothing.
+    idle: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -213,6 +218,7 @@ impl ShareSync {
                     // PUTOK is our write landing, not a guest edit to pull back.
                     record.guest_mtime = Some(entry.mtime.clone());
                     record.awaiting_guest_stamp = false;
+                    self.pass_changed = true;
                     false
                 }
                 Some(record) => record.guest_mtime.as_deref() != Some(entry.mtime.as_str()),
@@ -230,7 +236,9 @@ impl ShareSync {
         }
         self.retain_guest_skips();
 
+        let mut flagged = false;
         for (name, record) in &self.records {
+            flagged |= record.flagged();
             if self.present_scratch.contains(name) {
                 continue;
             }
@@ -244,6 +252,7 @@ impl ShareSync {
         }
         self.listed = true;
         self.listings = self.listings.saturating_add(1);
+        self.end_pass(&actions, flagged);
 
         actions
     }
@@ -392,6 +401,8 @@ mod share_put_outcome;
 mod share_size_cap;
 #[path = "share_sync_host.rs"]
 mod share_sync_host;
+#[path = "share_sync_idle.rs"]
+mod share_sync_idle;
 #[path = "share_win_alias.rs"]
 mod share_win_alias;
 #[path = "share_win_names.rs"]

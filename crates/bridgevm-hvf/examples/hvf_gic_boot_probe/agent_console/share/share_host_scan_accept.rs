@@ -7,9 +7,10 @@ pub(super) fn accept_scan(share: &mut ShareState, listed: bool, unseen: Vec<Stri
         share.report_root_state(true);
         return false;
     }
+    // Setup of the host pass, which notes its own changes (share_idle.rs).
     share_host_write::forget_absent_share_failures(share);
     std::mem::swap(&mut share.host_scan_scratch, &mut share.host_scan_work);
-    share.engine.set_host_unseen(unseen);
+    share.engine.for_pass().set_host_unseen(unseen);
     share.report_root_state(false);
     true
 }

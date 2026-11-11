@@ -8,15 +8,31 @@ mod accept;
 #[path = "share_host_scan_walk.rs"]
 mod walk;
 
-/// None when the bound root is unavailable, replaced, or incompletely listed;
-/// else whether the folder was walked (false: the kept walk was reused).
-pub(in crate::agent_console) fn scan_share_host_dir(share: &mut ShareState, now: Instant) -> Option<bool> {
+/// A scan of the Mac folder for the host pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::agent_console) enum HostScan {
+    /// The folder was walked.
+    Walked,
+    /// The kept walk is planned from again.
+    Kept,
+    /// The kept walk's last plan was idle and stands (share_idle.rs): no pass.
+    Unchanged,
+}
+
+/// None when the bound root is unavailable, replaced, or incompletely listed.
+pub(in crate::agent_console) fn scan_share_host_dir(share: &mut ShareState, now: Instant) -> Option<HostScan> {
     if !share.root_matches() {
         return None;
     }
     // Nothing below the root changed since the last complete walk (share_host_watch.rs).
-    if let Some(unseen) = share.reuse_host_walk(now) {
-        return accept::accept_scan(share, true, unseen).then_some(false);
+    if let Some(walk) = share.kept_host_walk(now) {
+        if share.host_plan_unchanged(walk) {
+            share.check_skipped_host_pass(&|name: &str| host_destination::Destination::absent(&share.host_dir, name));
+            share.report_root_state(false);
+            return Some(HostScan::Unchanged);
+        }
+        let unseen = share.reuse_host_walk();
+        return accept::accept_scan(share, true, unseen).then_some(HostScan::Kept);
     }
     #[cfg(test)]
     {
@@ -41,5 +57,5 @@ pub(in crate::agent_console) fn scan_share_host_dir(share: &mut ShareState, now:
     if !accepted {
         share.forget_host_walk();
     }
-    accepted.then_some(true)
+    accepted.then_some(HostScan::Walked)
 }

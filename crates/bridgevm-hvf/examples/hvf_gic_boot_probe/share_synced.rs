@@ -136,6 +136,7 @@ impl ShareSync {
             .filter(|name| !listed.contains_key(*name))
             .cloned()
             .collect();
+        self.pass_changed |= !gone.is_empty();
         for name in gone {
             self.on_host_copy_kept(&name);
         }
