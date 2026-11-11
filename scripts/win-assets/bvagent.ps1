@@ -151,6 +151,8 @@ function Get-InputCapabilities([string]$Request) {
             }
             $keySupport += "`nBVINPUT_CHORDS $Request MODIFIER_CHORDS"
         } catch { }
+        # The Print Screen key (VK_SNAPSHOT); a resident older key module refuses it, so hosts send it to the VMM or not at all.
+        try { if ([BridgeVM.BvUnicodeInput]::BuildKey('printscreen').Length -eq 2) { $keySupport += "`nBVINPUT_KEYS $Request PRINTSCREEN" } } catch { }
         # Raw wheel units on both axes (scrollunits:<v>,<h>@XxY); a resident older pointer module refuses the probe.
         try {
             $units = [BridgeVM.BvUnicodeInput]::BuildPointer('scrollunits:-1200,1200@32767x0')
