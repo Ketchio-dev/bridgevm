@@ -9,6 +9,7 @@ extension HvfEngineSession {
         append(event)
         switch event {
         case let .ready(host, _):
+            guestStartApps = HvfGuestStartApps.advertised(host)
             if connectionState != .stopping, ownedController?.failure == nil {
                 connectionState = .connected(host: host)
             }
@@ -35,6 +36,9 @@ extension HvfEngineSession {
             storageReported(line)
         case let .unknown(line) where line.hasPrefix(HvfGuestLinks.linePrefix):
             guestLinkReported(line)
+        case let .unknown(line) where line.hasPrefix("BVAGENT re-READY "):
+            // The agent restarted (a guest tools update): the new one says what it takes.
+            guestStartApps = HvfGuestStartApps.advertised(line)
         case .aliveHeartbeat:
             lastHeartbeatDate = Date()
             lastHeartbeatAge = 0
