@@ -14,15 +14,25 @@ final class FirstRunImportDiskFormatTests: XCTestCase {
         defer { fixture.remove() }
         let (image, raw) = HvfQCOW2TestImage.make()
         try image.write(to: fixture.disk)
+        // UTM keeps efi_vars.fd beside the disk; a linked vars path must still give an independent copy.
+        let linkedVars = fixture.root.appendingPathComponent("efi_vars.fd")
+        try FileManager.default.createSymbolicLink(at: linkedVars, withDestinationURL: fixture.vars)
+        let sourceMode = try FileManager.default.attributesOfItem(atPath: fixture.vars.path)[.posixPermissions] as? NSNumber
+        var inputs = fixture.inputs()
+        inputs.varsPath = linkedVars.path
         let stages = Stages()
 
-        let result = FirstRunImportWorker.run(fixture.inputs(), libraryRoot: fixture.library,
+        let result = FirstRunImportWorker.run(inputs, libraryRoot: fixture.library,
             snapshotHelper: HvfMediaImportTestSupport.helper, progress: { stages.append($0) })
 
         guard case .committed(let config) = result else { return XCTFail("a QCOW2 disk must import: \(result)") }
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: XCTUnwrap(config.diskPath))), raw)
         let layout = FirstRunImport.BundleLayout(bundleURL: URL(fileURLWithPath: config.bundlePath))
         XCTAssertEqual(try Data(contentsOf: layout.varsURL), try Data(contentsOf: fixture.vars))
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: layout.varsURL.path)[.type] as? FileAttributeType,
+                       .typeRegular)
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: fixture.vars.path)[.posixPermissions] as? NSNumber,
+                       sourceMode)
         let mode = try FileManager.default.attributesOfItem(atPath: XCTUnwrap(config.diskPath))[.posixPermissions]
         XCTAssertEqual((mode as? NSNumber)?.intValue, 0o600)
         XCTAssertEqual(try Data(contentsOf: fixture.disk), image, "the source is not modified")

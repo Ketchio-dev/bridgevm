@@ -24,7 +24,9 @@ enum HvfMediaImport {
             try HvfMediaImportHelper.invoke(helper, arguments: ["convert-to-raw", disk, converted.path]) {
                 converting(format, $0)
             }
-            try fileManager.copyItem(at: URL(fileURLWithPath: vars), to: copiedVars)
+            // Resolved first: copyItem copies a symlink as a link, which would leave the bundle
+            // sharing the source's vars.
+            try fileManager.copyItem(at: URL(fileURLWithPath: vars).resolvingSymlinksInPath(), to: copiedVars)
             members = [(converted, toDisk), (copiedVars, toVars)]
         } else {
             let snapshot = workspace.appendingPathComponent("selected.snapshot", isDirectory: true)
