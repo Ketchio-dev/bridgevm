@@ -39,6 +39,7 @@ mod tests {
             ("ctrl+v", 0x01, 0x19),
             ("alt+f4", 0x04, 0x3d),
             ("alt+tab", 0x04, 0x2b),
+            ("printscreen", 0x00, 0x46),
         ] {
             let actions = parse(token).unwrap();
             assert_eq!(actions.len(), 1);
