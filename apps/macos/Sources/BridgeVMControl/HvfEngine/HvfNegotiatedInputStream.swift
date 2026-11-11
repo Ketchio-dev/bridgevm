@@ -1,6 +1,7 @@
 import Foundation
 
-/// The owner must prove legacy input is drained before enabling this stream.
+/// The owner must prove legacy input is drained before enabling this stream (`legacyQuiescent`); once ready, the
+/// owner keeps the two routes apart itself (HvfSessionInputRouter).
 struct HvfNegotiatedInputStream {
     enum State: Equatable {
         case disconnected, negotiating, waitingForLegacy, ready, unavailable, failed
@@ -60,12 +61,9 @@ struct HvfNegotiatedInputStream {
         case .waitingForLegacy:
             if legacyQuiescent { state = .ready }
         case .ready:
-            guard legacyQuiescent else {
-                state = .failed
-                return stream.cancel(.transportFailed)
-            }
             let update = stream.advance(lines: lines, now: now, send: send)
-            if case .cancelled = update { state = .failed }
+            // Nothing of a not-inserted event reached Windows: the stream stays usable for a later retry.
+            if case let .cancelled(reason, _) = update, reason != .notInserted { state = .failed }
             return update
         case .unavailable, .failed:
             break
@@ -77,7 +75,7 @@ struct HvfNegotiatedInputStream {
     /// target change keeps the negotiated encodings, which describe the guest agent (T17 r54).
     @discardableResult
     mutating func reset(_ reason: HvfOrderedInputQueue.Failure) -> HvfAcknowledgedInputStream.Update {
-        if reason == .targetChanged, state == .ready { return stream.cancel(reason) }
+        if reason == .targetChanged, state == .ready || state == .waitingForLegacy { return stream.cancel(reason) }
         capability = nil; state = .disconnected
         return stream.cancel(reason)
     }

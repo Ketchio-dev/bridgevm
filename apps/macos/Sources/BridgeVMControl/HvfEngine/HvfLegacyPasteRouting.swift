@@ -33,7 +33,7 @@ extension HvfEngineSession {
     /// route, or as HID keys in input.ctl. A clipboard paste completes later and a press cancels it.
     func displayTextPrecedesPointer(_ text: String) -> Bool {
         guard legacyPaste.pending == nil else { return false }
-        if inputDriver.router.eligible, inputDriver.router.state == .ready { return true }
+        if inputDriver.router.eligible, !inputDriver.router.fallback, inputDriver.router.state == .ready { return true }
         return HvfTextInputPlan.clipboardBase64(for: text) == nil
     }
 

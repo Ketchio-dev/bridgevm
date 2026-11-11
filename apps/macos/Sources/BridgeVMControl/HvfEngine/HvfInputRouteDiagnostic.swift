@@ -5,15 +5,18 @@ import Foundation
 /// once and it went "legacy" with no INPUTCAPS exchange in the run log; this records whether the
 /// router was owned, how far negotiation got and whether the session was an attachment.
 enum HvfInputRouteDiagnostic {
-    static func label(owned: Bool, state: HvfNegotiatedInputStream.State, activated: Bool, failed: Bool, attached: Bool) -> String {
-        [owned ? "owned" : "unowned", "\(state)", activated ? "active" : "inactive", failed ? "failed" : nil,
-         attached ? "attached" : nil].compactMap { $0 }.joined(separator: "-")
+    /// `fallback`: an active route sending to input.ctl after Windows inserted nothing (HvfSessionInputRouter).
+    static func label(owned: Bool, state: HvfNegotiatedInputStream.State, activated: Bool, failed: Bool, attached: Bool,
+                      fallback: Bool = false) -> String {
+        [owned ? "owned" : "unowned", "\(state)", activated ? "active" : "inactive", fallback ? "fallback" : nil,
+         failed ? "failed" : nil, attached ? "attached" : nil].compactMap { $0 }.joined(separator: "-")
     }
 }
 
 extension HvfSessionInputRouter {
     func routeDiagnostic(attached: Bool) -> String {
-        HvfInputRouteDiagnostic.label(owned: eligible, state: state, activated: activated, failed: failed, attached: attached)
+        HvfInputRouteDiagnostic.label(owned: eligible, state: state, activated: activated, failed: failed, attached: attached,
+                                      fallback: fallback)
     }
 }
 

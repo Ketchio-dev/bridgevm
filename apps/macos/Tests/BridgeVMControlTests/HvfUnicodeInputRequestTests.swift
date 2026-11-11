@@ -47,7 +47,42 @@ final class HvfUnicodeInputRequestTests: XCTestCase {
             XCTAssertEqual(request.consume(lines: input, now: now), .failed(.invalidReceipt))
         }
         var rejected = base
-        XCTAssertEqual(rejected.consume(lines: ["BVAGENT CMD \(base.command) exit=1"], now: now), .failed(.guestRejected))
+        XCTAssertNil(rejected.consume(lines: ["BVAGENT CMD \(base.command) exit=1"], now: now), "its output says why")
+        XCTAssertEqual(rejected.consume(lines: ["BVAGENT END \(base.command)"], now: now), .failed(.guestRejected))
+    }
+
+    /// bvagent-input.ps1 reports SendInput's shortfall as `BVINPUT_FAILED <id> <message>`; only "nothing at all"
+    /// (the secure desktop) is `notInserted`, every other failure may have inserted a prefix.
+    func testAReceiptThatInsertedNothingIsNotInsertedAndAnyOtherFailureIsRejected() throws {
+        let base = try makeRequest()
+        let label = "TEXTINPUT \(id.uuidString)"
+        func failed(_ message: String) -> [String] {
+            ["BVAGENT CMD \(label) exit=1", "BVINPUT_FAILED \(id.uuidString) \(message)", "BVAGENT END \(label)"]
+        }
+        let nothing = "Exception calling \"Insert\" with \"1\" argument(s): \"unicode-input-incomplete inserted=0 requested=2\""
+        for (message, outcome) in [
+            (nothing, HvfUnicodeInputRequest.Failure.notInserted),
+            (nothing + "\r", .notInserted),
+            ("Exception calling \"RequireComplete\" with \"2\" argument(s): \"unicode-input-incomplete inserted=0 requested=6\"",
+             .notInserted),
+            (nothing.replacingOccurrences(of: "inserted=0", with: "inserted=1"), .guestRejected),
+            (nothing.replacingOccurrences(of: "inserted=0", with: "inserted=10"), .guestRejected),
+            (nothing.replacingOccurrences(of: "requested=2", with: "requested=0"), .guestRejected),
+            ("unicode-request-format", .guestRejected),
+        ] {
+            var request = base
+            XCTAssertEqual(request.consume(lines: failed(message), now: now), .failed(outcome), message)
+        }
+        var split = base
+        let lines = failed(nothing)
+        XCTAssertNil(split.consume(lines: [lines[0]], now: now))
+        XCTAssertEqual(split.consume(lines: Array(lines[1...]), now: now), .failed(.notInserted), "across polls")
+        var foreign = base
+        XCTAssertNil(foreign.consume(lines: [lines[0], "BVINPUT_FAILED 00000000-0000-0000-0000-000000000000 " + nothing], now: now))
+        XCTAssertEqual(foreign.consume(lines: [lines[2]], now: now), .failed(.guestRejected), "another request's receipt")
+        var unclaimed = base
+        XCTAssertEqual(unclaimed.consume(lines: ["BVINPUT_FAILED \(id.uuidString) " + nothing] + receipt(base), now: now), .inserted,
+                       "a failure line outside a failed envelope claims nothing")
     }
 
     func testRestartInCompletionBatchAndTimeoutCancelInsteadOfAdvancingInput() throws {

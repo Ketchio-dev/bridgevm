@@ -1,26 +1,36 @@
 import Foundation
 
-/// Owns one UI input channel; file emptiness is never used as drain evidence.
+/// Owns one UI input channel; file emptiness is never used as drain evidence. Input goes to input.ctl, the VMM's
+/// HID route, until the agent's ordered route is ready and input.ctl is quiet (HvfLegacyInputActivity); an owned
+/// boot then activates. After activation the router uses input.ctl again only in `fallback`: when the guest
+/// inserted nothing of an event (a Windows secure desktop), that event and everything queued behind it are handed
+/// back for input.ctl in their original order (`takeLegacyReplay`), later input follows them there, and the next
+/// event once input.ctl is quiet again tries the ordered route. Ctrl+Alt+Delete always takes the VMM keyboard.
 struct HvfSessionInputRouter {
     private(set) var binding: [String]?
     private(set) var eligible = false
     private(set) var activated = false
+    /// An activated router writing input to input.ctl; the ordered queue is empty whenever this is set.
+    private(set) var fallback = false
     private(set) var failure: HvfSessionInputFailure? // see `endsAtGuestReset` for re-arming
     var failed: Bool { failure != nil }
     private var stream = HvfRecoverableInputStream()
+    private var legacy = HvfLegacyInputActivity()
+    private var replay: [HvfOrderedInputQueue.Event] = []
     var state: HvfNegotiatedInputStream.State { failed ? .failed : stream.state }
     var count: Int { stream.count }
     /// Whether a generic chord (HvfModifierChord) can reach the guest now: on the legacy route the VMM
     /// shipped with this app builds it; on the ordered route only an agent with the marker does.
-    var modifierChords: Bool { !eligible || stream.modifierChords }
+    var modifierChords: Bool { !eligible || fallback || stream.modifierChords }
     /// Whether a scroll goes as raw units (`scrollunits:`) rather than `scroll:` notches.
-    var scrollUnits: Bool { eligible && stream.scrollUnits }
+    var scrollUnits: Bool { eligible && !fallback && stream.scrollUnits }
     /// Whether a pointer action may carry held modifiers (`:<wcas>`) and whether the middle button reaches the
     /// guest: only an agent with the markers takes them; the VMM's HID path drops modifiers and has no middle button.
-    var pointerModifiers: Bool { eligible && stream.pointerModifiers }
-    var middleButton: Bool { eligible && stream.middleButton }
-    /// Whether the agent answers `CARET` (the INPUTCAPS marker); the VMM's HID path cannot.
-    var caret: Bool { eligible && stream.caret }
+    var pointerModifiers: Bool { eligible && !fallback && stream.pointerModifiers }
+    var middleButton: Bool { eligible && !fallback && stream.middleButton }
+    /// Whether the agent answers `CARET` (the INPUTCAPS marker); the VMM's HID path cannot, and on a secure
+    /// desktop (fallback) the agent sees only the user desktop's caret.
+    var caret: Bool { eligible && !fallback && stream.caret }
 
     mutating func beginOwnedBoot(binding: [String]) {
         self = Self()
@@ -34,40 +44,56 @@ struct HvfSessionInputRouter {
     }
 
     mutating func route(_ event: HvfOrderedInputQueue.Event, binding: [String], now: Date) -> HvfNegotiatedInputStream.Admission {
-        guard matches(binding), !failed else { return .refused }
-        guard eligible else { return .legacy }
+        guard matches(binding) else { return .refused }
+        if case let .key(key) = event, HvfGuestInputEncoding.isSecureAttention(key) { return .legacy }
+        guard !failed else { return .refused }
+        guard eligible, !fallback else { return .legacy }
         let admission = stream.enqueue(event, now: now)
-        if admission == .legacy {
-            if activated { return .refused }
-            eligible = false
-            stream.reset(.targetChanged)
-        }
-        return admission
+        return admission == .legacy && activated ? .refused : admission
     }
 
-    /// Called before every legacy write, including clipboard-backed paste.
-    mutating func allowLegacyWrite(binding: [String]) -> Bool {
-        guard matches(binding), !failed, !activated else { return false }
-        eligible = false
-        stream.reset(.targetChanged)
+    /// Called with the line before every input.ctl write of guest input, clipboard-backed paste included.
+    mutating func allowLegacyWrite(_ line: String, binding: [String], now: Date) -> Bool {
+        guard matches(binding) else { return false }
+        let secureAttention = line.hasPrefix("KEY ") && HvfGuestInputEncoding.isSecureAttention(String(line.dropFirst(4)))
+        guard secureAttention || (!failed && (!activated || fallback)) else { return false }
+        legacy.wrote(line, now: now)
         return true
     }
 
-    mutating func poll(binding: [String], serviceReady: Bool, lines: [String], now: Date,
+    /// `legacyPending`: a legacy clipboard paste still has its `KEY ctrl+v` to write, so input.ctl is not quiet.
+    mutating func poll(binding: [String], serviceReady: Bool, lines: [String], now: Date, legacyPending: Bool = false,
                        send: (String) -> Bool) -> HvfAcknowledgedInputStream.Update? {
         guard matches(binding), eligible, !failed || (failure == .requestFailed && stream.isRecovering) else { return nil }
         let reset = lines.contains { HvfGuestResetRecord.matches($0) }
         if activated, let reason = HvfSessionInputFailure(reset: reset, serviceReady: serviceReady, lines: lines) {
             return fail(reason)
         }
-        let update = stream.poll(serviceReady: serviceReady, legacyQuiescent: true,
+        let quiet = !legacyPending && legacy.quiescent(now: now)
+        if fallback, quiet, !stream.isRecovering { fallback = false }
+        var update = stream.poll(serviceReady: serviceReady, legacyQuiescent: quiet,
                                  lines: lines, now: now, send: send)
         if stream.state == .ready { activated = true }
-        if case .cancelled = update, activated { failure = .requestFailed }
+        if case let .cancelled(reason, _) = update, activated {
+            if reason == .notInserted {
+                // Not discarded: the caller writes them to input.ctl (takeLegacyReplay).
+                replay += stream.takeNotInserted()
+                fallback = true
+                update = .cancelled(.notInserted, discarded: 0)
+            } else {
+                failure = .requestFailed
+            }
+        }
         if stream.state == .unavailable {
             if activated { failure = .unavailable } else { eligible = false }
         }
         return update
+    }
+
+    /// The events of the last fallback, for input.ctl in this order before any later input.
+    mutating func takeLegacyReplay() -> [HvfOrderedInputQueue.Event] {
+        defer { replay.removeAll() }
+        return replay
     }
 
     mutating func cancelTarget(now: Date = Date()) -> HvfAcknowledgedInputStream.Update {
@@ -85,6 +111,8 @@ struct HvfSessionInputRouter {
     private mutating func fail(_ reason: HvfSessionInputFailure) -> HvfAcknowledgedInputStream.Update {
         failure = reason
         eligible = false
+        fallback = false
+        replay.removeAll()
         return stream.reset(.sessionChanged)
     }
 }

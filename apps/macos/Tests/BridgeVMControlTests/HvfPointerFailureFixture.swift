@@ -63,6 +63,6 @@ struct HvfPointerFailureFixture {
         XCTAssertTrue(router.failed)
         XCTAssertEqual(router.state, .failed)
         XCTAssertEqual(router.route(.text("refused"), binding: binding, now: now), .refused)
-        XCTAssertFalse(router.allowLegacyWrite(binding: binding))
+        XCTAssertFalse(router.allowLegacyWrite("KEY enter", binding: binding, now: now))
     }
 }

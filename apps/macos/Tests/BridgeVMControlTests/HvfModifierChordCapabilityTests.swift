@@ -48,7 +48,7 @@ final class HvfModifierChordCapabilityTests: XCTestCase {
             XCTAssertEqual(router.route(.key(key), binding: binding, now: now), .queued, key)
             try deliverNext(&router, value: key, count: try XCTUnwrap(HvfModifierChord.eventCount(key)))
         }
-        XCTAssertEqual(router.route(.key("ctrl+alt+delete"), binding: binding, now: now), .refused)
+        XCTAssertEqual(router.route(.key("ctrl+alt+delete"), binding: binding, now: now), .legacy, "the VMM keyboard raises it")
         XCTAssertFalse(router.failed)
         XCTAssertEqual(router.state, .ready)
     }

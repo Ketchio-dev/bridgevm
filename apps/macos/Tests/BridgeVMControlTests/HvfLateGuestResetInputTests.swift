@@ -77,7 +77,7 @@ final class HvfLateGuestResetInputTests: XCTestCase {
                 }
                 XCTAssertEqual(changed.failure, .bindingChanged, reset)
                 XCTAssertEqual(changed.route(.key("a"), binding: next, now: now), .refused, reset)
-                XCTAssertFalse(changed.allowLegacyWrite(binding: next), reset)
+                XCTAssertFalse(changed.allowLegacyWrite("KEY enter", binding: next, now: now), reset)
             }
             // A guest without the capability leaves its owned boot legacy; a reset does not renegotiate it.
             var missing = HvfSessionInputRouter()
