@@ -18,6 +18,9 @@ impl AgentConsoleHarness {
         if due {
             self.last_alive = Some(now);
             println!("BVAGENT SERVICE alive t={}", self.t_ms(now));
+            if let Some(line) = self.share.as_mut().and_then(|share| share.listing_same.report()) {
+                println!("{line} t={}", self.t_ms(now));
+            }
         }
         self.service_enqueue(now);
         self.service_pump_with_sender(now, send);
@@ -323,6 +326,7 @@ impl AgentConsoleHarness {
                 share.last_poll = Some(now);
                 self.service_line_scratch.push_str("LSR ");
                 base64_encode_into(share.guest_dir.as_bytes(), &mut self.service_line_scratch);
+                share.listing_same.write_lsr_gen(&mut self.service_line_scratch);
                 self.service_line_scratch.push('\n');
                 true
             }

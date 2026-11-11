@@ -85,6 +85,11 @@ pub(super) fn ready_has_big_files(rest: &str) -> bool {
     rest.split(' ').any(|token| token == "bigfile")
 }
 
+/// Whether the READY agent answers an unchanged shared folder with LSSAME (share_listing_same.rs).
+pub(super) fn ready_has_listing_same(rest: &str) -> bool {
+    rest.split(' ').any(|token| token == "lssame")
+}
+
 /// Whether the READY agent has the chunked file verbs (PUTBEG/PUTCHUNK/PUTEND).
 pub(super) fn ready_has_file_verbs(rest: &str) -> bool {
     rest.split(' ').any(|token| token == "v3-share2")
@@ -396,6 +401,7 @@ impl AgentConsoleHarness {
         if let Some(share) = self.share.as_mut() {
             let limit = (!self.share_big).then_some(harness_protocol::MAX_AGENT_GET_BYTES as u64);
             share.engine.set_whole_file_limit(limit);
+            share.listing_same.ready(ready_has_listing_same(rest));
         }
         let t = self.t_ms(now);
         let Some(update) = self.agent_update.as_mut() else {

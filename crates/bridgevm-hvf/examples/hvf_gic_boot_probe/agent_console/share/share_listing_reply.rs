@@ -1,19 +1,36 @@
 //! Bounded guest directory snapshots; a refused snapshot never implies deletion, and only an
 //! applied one ends a new session's wait (share_adopt.rs). One refused for its size pauses the
-//! share (share_listing_pause.rs).
+//! share (share_listing_pause.rs). An unchanged one comes as LSSAME (share_listing_same.rs).
 
 use super::share_listing_report::refused_name_lines;
 use super::*;
+use crate::agent_console::harness_protocol::MAX_AGENT_LINE_BYTES;
+use crate::agent_console::listing_same::{usable_gen, MAX_LISTING_GEN_BYTES};
 #[path = "share_listing_refusal.rs"]
 mod refusal;
 use refusal::report_listing_limit;
 
+// A listing at its byte bound, in base64 after `LSOK ` and with its gen, fits one agent line:
+// one past the bound is refused for its length below, not discarded unread.
+const _: () = assert!(
+    "LSOK ".len() + share_sync::MAX_LISTING_BYTES.div_ceil(3) * 4 + 1 + MAX_LISTING_GEN_BYTES
+        < MAX_AGENT_LINE_BYTES
+);
+
 impl AgentConsoleHarness {
     pub(in crate::agent_console) fn handle_share_listing_reply(&mut self, line: &str) {
-        if let Some(b64) = line.strip_prefix("LSOK ") {
-            self.apply_share_listing(b64);
+        if let Some(rest) = line.strip_prefix("LSOK ") {
+            // `LSOK <b64> <gen>` from an agent asked with a gen (share_listing_same.rs).
+            let (b64, gen) = rest.split_once(' ').map_or((rest, None), |(b64, gen)| (b64, Some(gen)));
+            self.apply_share_listing(b64, gen);
+            self.complete_in_flight();
+        } else if let Some(gen) = line.strip_prefix("LSSAME ") {
+            self.reapply_share_listing(gen);
             self.complete_in_flight();
         } else if line.starts_with("ERR") {
+            if let Some(share) = self.share.as_mut() {
+                share.listing_same.forget();
+            }
             // A folder that is there but cannot be listed may hold newer Windows copies: the
             // waiting Mac files stay back. A missing one is created; its empty listing ends the wait.
             println!("BVAGENT SHARE ls-error {line}");
@@ -28,6 +45,22 @@ impl AgentConsoleHarness {
             self.queue.retain(|req| !is_share_req(req));
             self.complete_in_flight();
         }
+    }
+
+    /// A reply past the line bound is discarded unread (harness_protocol.rs). The reply to a
+    /// listing is then one too large: it pauses the share like any listing refused for its
+    /// size, and the request ends instead of waiting for a reply that never comes.
+    pub(in crate::agent_console) fn share_listing_line_too_long(&mut self) {
+        if !matches!(self.in_flight, Some((ServiceReq::ShareLs, _))) {
+            return;
+        }
+        println!("BVAGENT SHARE ls-error <listing-line-limit limit={MAX_AGENT_LINE_BYTES}>");
+        if let Some(share) = self.share.as_mut() {
+            share.listing_same.note_whole();
+            let bytes = MAX_AGENT_LINE_BYTES / 4 * 3;
+            share.note_listing_refused(share_sync::ListingLimitError::TooManyBytes { bytes });
+        }
+        self.complete_in_flight();
     }
 
     /// Only a PUT made the guest folder, so with an empty Mac folder Windows
@@ -71,7 +104,10 @@ impl AgentConsoleHarness {
         names
     }
 
-    fn apply_share_listing(&mut self, b64: &str) {
+    fn apply_share_listing(&mut self, b64: &str, gen: Option<&str>) {
+        if let Some(share) = self.share.as_mut() {
+            share.listing_same.note_whole();
+        }
         let max_encoded = share_sync::MAX_LISTING_BYTES.div_ceil(3) * 4;
         if b64.len() > max_encoded {
             println!(
@@ -99,23 +135,49 @@ impl AgentConsoleHarness {
             }
             return;
         }
-        let listing = match std::str::from_utf8(&bytes) {
+        let gen = gen.filter(|gen| usable_gen(gen)).map(str::to_owned);
+        if self.apply_listing_bytes(&bytes) {
+            if let (Some(share), Some(gen)) = (self.share.as_mut(), gen) {
+                share.listing_same.keep(gen, bytes);
+            }
+        }
+    }
+
+    /// LSSAME: the agent would send the kept listing's line again; it is applied again.
+    fn reapply_share_listing(&mut self, gen: &str) {
+        let Some(share) = self.share.as_mut() else {
+            return;
+        };
+        let Some((gen, bytes)) = share.listing_same.take(gen) else {
+            println!("BVAGENT SHARE ls-error <listing-same-unknown>");
+            return;
+        };
+        if self.apply_listing_bytes(&bytes) {
+            if let Some(share) = self.share.as_mut() {
+                share.listing_same.keep(gen, bytes);
+            }
+        }
+    }
+
+    /// Parse and apply a decoded listing within its byte bound; whether it was applied.
+    fn apply_listing_bytes(&mut self, bytes: &[u8]) -> bool {
+        let listing = match std::str::from_utf8(bytes) {
             Ok(listing) => listing,
             Err(_) => {
                 println!("BVAGENT SHARE ls-error <listing-invalid-utf8>");
-                return;
+                return false;
             }
         };
         let puts = self.share_puts_under_way();
         let Some(share) = self.share.as_mut() else {
-            return;
+            return false;
         };
         let refused = match share_sync::parse_ls_into(listing, &mut share.guest_ls_scratch) {
             Ok(refused) => refused,
             Err(error) => {
                 report_listing_limit(error);
                 share.note_listing_refused(error);
-                return;
+                return false;
             }
         };
         share.note_listing_applied();
@@ -147,5 +209,6 @@ impl AgentConsoleHarness {
                 SyncAction::Skip { name, reason } => print_share_skip(&name, reason),
             }
         }
+        true
     }
 }
