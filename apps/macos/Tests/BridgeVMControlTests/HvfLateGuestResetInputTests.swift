@@ -74,6 +74,16 @@ final class HvfLateGuestResetInputTests: XCTestCase {
                 assertFreshGeneration(&router, servicePending: false, "\(lines) expired=\(expired)")
             }
         }
+        // Ctrl+Alt+Delete held behind the awaited key, and the Enter after it, go with it: counted, never sent later.
+        var held = readyRouter()
+        XCTAssertEqual(held.route(.key("tab"), binding: binding, now: now), .queued)
+        _ = held.pollBatch(binding: binding, serviceReady: true, lines: [], now: now) { _ in true }
+        for key in ["ctrl+alt+delete", "enter"] { XCTAssertEqual(held.route(.key(key), binding: binding, now: now), .queued) }
+        XCTAssertEqual(held.pollBatch(binding: binding, serviceReady: true, lines: ["BVAGENT re-READY t t=40"], now: now) {
+            _ in XCTFail("sent across the restart"); return true
+        }, .cancelled(.sessionChanged, discarded: 3))
+        XCTAssertEqual(held.takeSecureAttention(), [])
+        assertFreshGeneration(&held, servicePending: false, "held")
     }
 
     func testChangedBindingStaysFailedAcrossALaterResetAndAMissingCapabilityIsAskedAgain() {
