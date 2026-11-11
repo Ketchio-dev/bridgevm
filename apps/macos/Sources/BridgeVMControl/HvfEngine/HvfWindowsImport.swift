@@ -1,13 +1,15 @@
 import Foundation
 
 extension VMLibrary {
-    /// Import an installed raw disk and matching writable UEFI vars.
+    /// Import an installed disk and matching writable UEFI vars. A QCOW2 or VHDX disk is converted
+    /// to RAW; `converting` sees its percent, and a refused conversion returns the helper's sentence.
     static func createWindowsHVF(name: String, targetDiskPath: String, varsPath: String,
                                  storageDir: URL? = nil, width: Int = 1280, height: Int = 800,
                                  memMiB: Int = 6144, cpuCount: Int = 4,
                                  networkEnabled: Bool = true, injectViogpu3d: Bool = false,
                                  libraryRoot: URL = root,
                                  persist: Bool = true, snapshotHelper: URL = HvfMediaImportHelper.bundled,
+                                 converting: @escaping (HvfImportedDiskFormat, Int) -> Void = { _, _ in },
                                  publish: (VMConfig, URL) -> VMRegistrationCommitOutcome = { VMLibrary.createOutcome($0, rootURL: $1) }) -> HVFCreationOutcome? {
         let fm = FileManager.default
         guard windowsHVFInjectionError(requested: injectViogpu3d) == nil,
@@ -35,8 +37,11 @@ extension VMLibrary {
             }
         } catch { return nil }
         do { try HvfMediaImport.copy(disk: sourceDisk.path, vars: sourceVars.path,
-            toDisk: URL(fileURLWithPath: disk), toVars: URL(fileURLWithPath: vars), helper: snapshotHelper)
-        } catch { return nil }
+            toDisk: URL(fileURLWithPath: disk), toVars: URL(fileURLWithPath: vars), helper: snapshotHelper,
+            converting: converting)
+        } catch {
+            return HvfImportedDiskFormat.detect(path: sourceDisk.path) == nil ? nil : .refused(error.localizedDescription)
+        }
         let minimumDiskBytes = minimumImportedWindowsHVFDiskGiB * 1024 * 1024 * 1024
         let importedDiskSize = ((try? fm.attributesOfItem(atPath: disk)[.size] as? NSNumber)?.uint64Value) ?? 0
         guard growSparseFileIfNeeded(at: disk, minimumBytes: minimumDiskBytes) else { return nil }

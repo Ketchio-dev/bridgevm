@@ -1,11 +1,28 @@
 import Foundation
 
-enum FirstRunImportStage: Int, Sendable {
-    case validating, copying, saving, readingLibrary, complete
+enum FirstRunImportStage: Equatable, Sendable {
+    case validating, copying
+    /// A QCOW2 or VHDX disk becoming the bundle's RAW disk, with the percent converted.
+    case converting(HvfImportedDiskFormat, percent: Int)
+    case saving, readingLibrary, complete
+
+    /// Stages only move forward, and a conversion's percent only rises.
+    var order: (Int, Int) {
+        switch self {
+        case .validating: return (0, 0)
+        case .copying: return (1, 0)
+        case .converting(_, let percent): return (1, percent)
+        case .saving: return (2, 0)
+        case .readingLibrary: return (3, 0)
+        case .complete: return (4, 0)
+        }
+    }
+
     var label: String {
         switch self {
         case .validating: return "입력 파일 확인 중…"
         case .copying: return "VM 파일 복사 중…"
+        case .converting(let format, let percent): return format.conversionLabel(percent: percent)
         case .saving: return "등록 정보 저장 중…"
         case .readingLibrary: return "라이브러리 확인 중…"
         case .complete: return "라이브러리에서 VM을 확인했습니다."
@@ -45,7 +62,7 @@ struct FirstRunImportProgress {
     }
 
     mutating func advance(_ next: FirstRunImportStage, operation: UUID) {
-        guard operationID == operation, next.rawValue >= (stage?.rawValue ?? -1) else { return }
+        guard operationID == operation, stage.map({ next.order >= $0.order }) ?? true else { return }
         stage = next
     }
 

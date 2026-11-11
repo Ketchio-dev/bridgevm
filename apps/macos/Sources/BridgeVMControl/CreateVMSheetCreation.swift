@@ -34,6 +34,7 @@ extension CreateVMSheet {
             return
         }
         let storage = storageDir
+        conversion = selectedMode == .windowsHVF ? HvfImportedDiskFormat.detect(path: target).map { ($0, 0) } : nil
         let width = resolutions[resIndex].0
         let height = resolutions[resIndex].1
         let disk = diskGiB
@@ -63,7 +64,11 @@ extension CreateVMSheet {
                     name: normalizedName, targetDiskPath: target, varsPath: vars,
                     storageDir: storage, width: width, height: height,
                     memMiB: memory, cpuCount: cpu, networkEnabled: network,
-                    injectViogpu3d: false, libraryRoot: libraryRoot)
+                    injectViogpu3d: false, libraryRoot: libraryRoot, converting: { format, percent in
+                        Task { @MainActor in
+                            if percent > conversion?.percent ?? -1 { conversion = (format, percent) }
+                        }
+                    })
             case .windowsHVFInstall:
                 config = VMLibrary.createWindowsHVFInstall(
                     name: normalizedName, isoPath: selectedISO, diskGiB: disk,

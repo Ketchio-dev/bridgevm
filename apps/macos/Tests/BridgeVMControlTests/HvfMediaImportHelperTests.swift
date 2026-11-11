@@ -32,6 +32,17 @@ final class HvfMediaImportHelperTests: XCTestCase {
         }
     }
 
+    func testProgressLinesAreReportedAndKeptOutOfTheDiagnostic() throws {
+        let percents = Percents()
+        let script = "printf 'progress 3\\nprogress 4'; sleep 0.2; printf '0\\nnot progress 5\\n' >&2; "
+            + "printf 'progress 100\\nprogress 101\\n'; printf 'refusal sentence\\n' >&2; exit 1"
+        let result = try XCTUnwrap(try invokeStandIn(script, progress: { percents.append($0) }), Self.blocked)
+        XCTAssertThrowsError(try result.get()) { error in
+            XCTAssertEqual(error.localizedDescription, "not progress 5\nprogress 101\nrefusal sentence")
+        }
+        XCTAssertEqual(percents.snapshot, [3, 40, 100])
+    }
+
     func testSmallFailuresKeepTheirMessageAndSignalsFail() throws {
         let refusal = try XCTUnwrap(try invokeStandIn("printf 'precise refusal\\n' >&2; exit 9"), Self.blocked)
         XCTAssertThrowsError(try refusal.get()) { error in
@@ -47,7 +58,15 @@ final class HvfMediaImportHelperTests: XCTestCase {
 
     /// nil when invoke is still blocked at the deadline. The blocked child is left
     /// behind and dies of a broken pipe when this test process exits.
-    private func invokeStandIn(_ script: String, seconds: Int = 15) throws -> Result<Void, Error>? {
+    private final class Percents: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [Int] = []
+        func append(_ value: Int) { lock.lock(); values.append(value); lock.unlock() }
+        var snapshot: [Int] { lock.lock(); defer { lock.unlock() }; return values }
+    }
+
+    private func invokeStandIn(_ script: String, seconds: Int = 15,
+                               progress: (@Sendable (Int) -> Void)? = nil) throws -> Result<Void, Error>? {
         let directory = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
             .appendingPathComponent("hvf-import-helper-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
@@ -58,7 +77,7 @@ final class HvfMediaImportHelperTests: XCTestCase {
         let outcome = Outcome()
         let done = DispatchSemaphore(value: 0)
         Thread.detachNewThread {
-            outcome.set(Result { try HvfMediaImportHelper.invoke(helper, arguments: []) })
+            outcome.set(Result { try HvfMediaImportHelper.invoke(helper, arguments: [], progress: progress) })
             done.signal()
         }
         guard done.wait(timeout: .now() + .seconds(seconds)) == .success else { return nil }

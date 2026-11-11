@@ -1,13 +1,14 @@
 import Foundation
 
-/// Known container formats that cannot be imported as an installed RAW disk.
-/// This signature check is shared by both Windows HVF import entry points.
+/// Container disks both Windows HVF import entry points convert to the bundle's sparse RAW disk
+/// with the helper's `convert-to-raw` (UTM stores QCOW2, Hyper-V VHDX). Any other file is a RAW
+/// disk and keeps the clone-or-copy path. The helper reads and checks the whole image itself.
 enum HvfImportedDiskFormat: String {
     case qcow2 = "QCOW2"
     case vhdx = "VHDX"
 
-    var importError: String {
-        "\(rawValue) 이미지는 가져올 수 없습니다. 설치된 RAW 디스크를 선택하세요."
+    func conversionLabel(percent: Int) -> String {
+        "\(rawValue) 디스크를 변환하는 중…" + (percent > 0 ? " \(percent)%" : "")
     }
 
     static func detect(path: String) -> Self? {

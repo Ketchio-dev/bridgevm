@@ -61,7 +61,7 @@ final class HvfWindowsImportTests: XCTestCase {
         )
     }
 
-    func testRejectsWrongVarsSizeAndContainerDiskFormats() throws {
+    func testRejectsWrongVarsSizeAndLeavesContainerDisksToTheConverter() throws {
         let temp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: temp) }
         let raw = temp.appendingPathComponent("installed.raw")
@@ -74,9 +74,50 @@ final class HvfWindowsImportTests: XCTestCase {
         try varsHandle.truncate(atOffset: VMLibrary.windowsHVFVarsBytes)
         try varsHandle.close()
         try Data([0x51, 0x46, 0x49, 0xfb, 0, 0, 0, 3]).write(to: raw)
-        XCTAssertTrue(VMLibrary.windowsHVFImportError(targetDiskPath: raw.path, varsPath: vars.path)?.contains("QCOW2") == true)
+        XCTAssertNil(VMLibrary.windowsHVFImportError(targetDiskPath: raw.path, varsPath: vars.path))
         try Data("vhdxfile".utf8).write(to: raw)
-        XCTAssertTrue(VMLibrary.windowsHVFImportError(targetDiskPath: raw.path, varsPath: vars.path)?.contains("VHDX") == true)
+        XCTAssertNil(VMLibrary.windowsHVFImportError(targetDiskPath: raw.path, varsPath: vars.path))
+    }
+
+    func testQCOW2IsConvertedAndARefusalReturnsTheConvertersSentence() throws {
+        let temp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let storage = temp.appendingPathComponent("library", isDirectory: true)
+        try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
+        let disk = temp.appendingPathComponent("windows.qcow2")
+        let vars = temp.appendingPathComponent("efi_vars.fd")
+        XCTAssertTrue(FileManager.default.createFile(atPath: vars.path, contents: Data("utm-vars".utf8)))
+        let varsHandle = try FileHandle(forWritingTo: vars)
+        try varsHandle.truncate(atOffset: VMLibrary.windowsHVFVarsBytes)
+        try varsHandle.close()
+
+        let (image, raw) = HvfQCOW2TestImage.make()
+        try image.write(to: disk)
+        var percents: [Int] = []
+        guard case .created(let config)? = VMLibrary.createWindowsHVF(
+            name: "UTM \(UUID().uuidString)", targetDiskPath: disk.path, varsPath: vars.path,
+            storageDir: storage, persist: false, snapshotHelper: HvfMediaImportTestSupport.helper,
+            converting: { format, percent in XCTAssertEqual(format, .qcow2); percents.append(percent) }
+        ) else { return XCTFail("a QCOW2 disk must import") }
+        let imported = try FileHandle(forReadingFrom: URL(fileURLWithPath: XCTUnwrap(config.diskPath)))
+        defer { try? imported.close() }
+        XCTAssertEqual(try imported.read(upToCount: raw.count), raw)
+        XCTAssertEqual(try imported.seekToEnd(), VMLibrary.minimumImportedWindowsHVFDiskGiB << 30)
+        XCTAssertEqual(percents.first, 0)
+        XCTAssertEqual(percents.last, 100)
+        let importedVars = URL(fileURLWithPath: config.bundlePath).appendingPathComponent("metadata/hvf-vars.fd")
+        XCTAssertEqual(try Data(contentsOf: importedVars), try Data(contentsOf: vars))
+        XCTAssertEqual(try Data(contentsOf: disk), image)
+
+        try FileManager.default.removeItem(at: storage)
+        try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
+        try HvfQCOW2TestImage.make(backingFile: true).image.write(to: disk)
+        guard case .refused(let message)? = VMLibrary.createWindowsHVF(
+            name: "Overlay", targetDiskPath: disk.path, varsPath: vars.path,
+            storageDir: storage, persist: false, snapshotHelper: HvfMediaImportTestSupport.helper
+        ) else { return XCTFail("a QCOW2 with a backing file must be refused with a sentence") }
+        XCTAssertEqual(message, "이 디스크는 다른 디스크를 기반으로 하니 UTM이나 qemu-img로 하나의 디스크로 합친 뒤 다시 가져오세요.")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: storage.path), [])
     }
 
     func testRejectsSameResolvedFileForDiskAndVars() throws {

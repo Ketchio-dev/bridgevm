@@ -4,6 +4,7 @@ extension CreateVMSheet {
     var creationFooter: some View {
         CreateVMCreationFooter(working: working, error: displayedCreationError, failureCode: displayedCreationFailureCode,
             canCreate: canCreate, cancel: { dismiss() }, create: create,
-            recoveryAvailable: !creationState.permitsCreation, recover: recoverCreatedVM)
+            recoveryAvailable: !creationState.permitsCreation, recover: recoverCreatedVM,
+            workingLabel: conversion.map { $0.format.conversionLabel(percent: $0.percent) } ?? "")
     }
 }

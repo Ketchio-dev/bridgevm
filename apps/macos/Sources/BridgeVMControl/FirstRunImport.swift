@@ -1,7 +1,7 @@
 import Foundation
 
 /// D2 first-run import: register an existing HVF Windows VM bundle (an installed
-/// raw disk + 64 MiB UEFI vars + optional vTPM state dir) into the library so a
+/// disk + 64 MiB UEFI vars + optional vTPM state dir) into the library so a
 /// cold GUI start can boot it. Import-only: no ISO install, no from-scratch VM
 /// creation — those stay separate flows. Validation is fail-closed at the
 /// system boundary (user-picked paths), mirroring VTPMStateSecurity's stance.
@@ -23,7 +23,6 @@ enum FirstRunImport {
         case diskMissing(String)
         case diskNotAFile(String)
         case diskEmpty(String)
-        case unsupportedDiskFormat(HvfImportedDiskFormat)
         case varsMissing(String)
         case varsWrongSize(path: String, bytes: UInt64)
         case vtpmNotADirectory(String); case vtpmRecoveryMissing(String); case vtpmRecoveryWithoutState
@@ -35,7 +34,6 @@ enum FirstRunImport {
             case .diskMissing(let p): return "디스크 이미지를 찾을 수 없습니다: \(p)"
             case .diskNotAFile(let p): return "디스크 경로가 파일이 아닙니다: \(p)"
             case .diskEmpty(let p): return "디스크 이미지가 비어 있습니다: \(p)"
-            case .unsupportedDiskFormat(let format): return format.importError
             case .varsMissing(let p): return "UEFI vars 파일을 찾을 수 없습니다: \(p)"
             case .varsWrongSize(let p, let b):
                 return "UEFI vars 파일은 정확히 64 MiB여야 합니다 (\(p): \(b) bytes)."
@@ -71,7 +69,6 @@ enum FirstRunImport {
         let diskBytes = (try? fileManager.attributesOfItem(atPath:
             URL(fileURLWithPath: inputs.diskPath).resolvingSymlinksInPath().path)[.size] as? NSNumber)?.uint64Value ?? 0
         if diskBytes == 0 { return .diskEmpty(inputs.diskPath) }
-        if let format = HvfImportedDiskFormat.detect(path: inputs.diskPath) { return .unsupportedDiskFormat(format) }
 
         var varsIsDir: ObjCBool = false
         guard fileManager.fileExists(atPath: inputs.varsPath, isDirectory: &varsIsDir),
@@ -99,7 +96,8 @@ enum FirstRunImport {
 
     /// Materialize the bundle for `slug` under `libraryRoot` and place the
     /// selected inputs into it. Disk and vars are independent copies so guest
-    /// writes cannot modify the source or another imported VM.
+    /// writes cannot modify the source or another imported VM; a QCOW2 or VHDX
+    /// disk becomes a RAW copy.
     /// Returns the configuration for the caller to persist.
     static func register(
         _ inputs: Inputs,

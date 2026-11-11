@@ -55,6 +55,19 @@ final class FirstRunImportProgressTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.entry.path))
     }
 
+    func testConversionPercentOnlyRisesAndSavingFollows() {
+        var state = FirstRunImportProgress()
+        let operation = state.begin()
+        state.advance(.converting(.qcow2, percent: 0), operation: operation)
+        state.advance(.converting(.qcow2, percent: 40), operation: operation)
+        state.advance(.converting(.qcow2, percent: 12), operation: operation)
+        XCTAssertEqual(state.stage, .converting(.qcow2, percent: 40))
+        XCTAssertEqual(state.stage?.label, "QCOW2 디스크를 변환하는 중… 40%")
+        state.advance(.saving, operation: operation)
+        state.advance(.converting(.qcow2, percent: 100), operation: operation)
+        XCTAssertEqual(state.stage, .saving)
+    }
+
     func testProgressIsMonotonicAndIgnoresFinishedAndPreviousOperations() {
         var state = FirstRunImportProgress()
         let first = state.begin()

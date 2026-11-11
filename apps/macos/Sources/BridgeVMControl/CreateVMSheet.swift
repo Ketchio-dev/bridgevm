@@ -27,6 +27,8 @@ struct CreateVMSheet: View {
     @State var error = ""
     @State var creationFailureCode = ""
     @State var creationState = CreateVMCreationState()
+    /// The QCOW2 or VHDX import being converted, and its percent.
+    @State var conversion: (format: HvfImportedDiskFormat, percent: Int)?
     let resolutions = [(1280, 800), (1440, 900), (1920, 1080), (2560, 1440)]
     enum OSFamily: Equatable { case windows, linux }
     enum Mode: Equatable {
@@ -111,10 +113,10 @@ struct CreateVMSheet: View {
                 Text("기본 Ubuntu 데스크톱을 즉시 복제합니다 (APFS 클론, 추가 용량 없음).")
                     .font(.callout).foregroundColor(.secondary)
             } else if mode == .windowsHVF {
-                Text("이미 설치되어 정상 부팅한 Windows ARM RAW 디스크와 그 부팅에 사용한 UEFI vars를 가져옵니다. 원본은 변경하지 않고 라이브러리에 복제합니다.")
+                Text("이미 설치되어 정상 부팅한 Windows ARM 디스크(RAW, UTM의 QCOW2, Hyper-V의 VHDX)와 그 부팅에 사용한 UEFI vars를 가져옵니다. QCOW2와 VHDX는 RAW로 변환하고, 원본은 변경하지 않고 라이브러리에 복제합니다.")
                     .font(.callout).foregroundColor(.secondary)
                 HStack {
-                    Button("설치된 RAW 선택…") { pickHVFTarget() }
+                    Button("설치된 디스크 선택…") { pickHVFTarget() }
                     Text(hvfTargetPath.isEmpty ? "선택된 디스크 없음" : (hvfTargetPath as NSString).lastPathComponent)
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
                 }
@@ -253,7 +255,7 @@ struct CreateVMSheet: View {
     }
 
     private func pickHVFTarget() {
-        FileSelection.choose(directories: false, extensions: ["raw", "img"]) { hvfTargetPath = $0.path }
+        FileSelection.choose(directories: false, extensions: ["raw", "img", "qcow2", "vhdx"]) { hvfTargetPath = $0.path }
     }
 
     private func pickHVFVars() {
