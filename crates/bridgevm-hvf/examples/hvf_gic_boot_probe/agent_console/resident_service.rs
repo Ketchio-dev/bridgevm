@@ -196,6 +196,10 @@ impl AgentConsoleHarness {
                             self.stalled_large_clip_files(req, now);
                         } else if is_drop_req(&req) {
                             self.fail_drop("stalled", now);
+                        } else if matches!(req, ServiceReq::PrintRange) {
+                            // A range continues one already written: the job ends.
+                            println!("BVAGENT SERVICE dropped {} t={}", req_kind(&req), self.t_ms(now));
+                            self.fail_print_job("stalled");
                         } else {
                             println!(
                                 "BVAGENT SERVICE retransmit {} t={}",
@@ -430,6 +434,8 @@ impl AgentConsoleHarness {
                 true
             }
             ServiceReq::AgentUpdate(step) => self.write_agent_update_line(step),
+            ServiceReq::PrintRange => self.write_print_range_line(),
+            ServiceReq::PrintDel { path } => self.write_print_del_line(path),
         }
     }
     /// Whether any queued OR in-flight request satisfies `pred`.
@@ -537,8 +543,13 @@ impl AgentConsoleHarness {
             }
             return;
         }
-        // A Windows link for the Mac browser (guest_link.rs), written like CLIPCHANGED.
-        if self.guest_link(line) {
+        // A Windows link for the Mac browser (guest_link.rs) and a finished print job
+        // (print_jobs.rs), written like CLIPCHANGED.
+        if self.guest_link(line) || self.print_job_announced(line) {
+            return;
+        }
+        // The print job under way comes in GETRANGE replies of its own.
+        if self.handle_print_line(line) {
             return;
         }
         // A large shared-folder copy takes its own GETBEG/GETCHUNK/GETEND (share_big.rs), as
@@ -595,6 +606,8 @@ impl AgentConsoleHarness {
             InFlightSnapshot::TimeSync => self.handle_time_resync_reply(line),
             InFlightSnapshot::Drop => self.handle_drop_reply(line, now),
             InFlightSnapshot::AgentUpdate => self.handle_agent_update_reply_with_sender(line, now, send),
+            InFlightSnapshot::PrintRange => {}
+            InFlightSnapshot::PrintDel => self.handle_print_del_reply(line),
             InFlightSnapshot::ShareDel { name, direction } => {
                 if line.starts_with("OK DEL") {
                     if direction == ShareDelDirection::HostToGuest {

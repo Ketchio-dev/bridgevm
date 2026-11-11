@@ -1,6 +1,6 @@
 //! User/control and clipboard traffic keeps its order ahead of background file transfer:
-//! shared-folder sync, Finder drops and large clipboard file copies, which take turns in arrival
-//! order.
+//! shared-folder sync, Finder drops, large clipboard file copies and print jobs, which take turns
+//! in arrival order.
 
 use super::*;
 
@@ -13,7 +13,11 @@ pub(super) fn pop_next_request(
     let position = queue
         .iter()
         .position(|request| {
-            !held(request) && !is_share_req(request) && !is_drop_req(request) && !is_large_clip_files_req(request)
+            !held(request)
+                && !is_share_req(request)
+                && !is_drop_req(request)
+                && !is_large_clip_files_req(request)
+                && !is_print_req(request)
         })
         .or_else(|| queue.iter().position(|request| !held(request)))?;
     queue.remove(position)
