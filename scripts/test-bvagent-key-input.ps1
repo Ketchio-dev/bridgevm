@@ -83,7 +83,7 @@ function Assert-Held([string]$command, [string]$expected, $send = $stub) {
 Assert-Held 'down:ctrl+left' '17:0,37:1'
 Assert-Held 'down:ctrl+right' '17:0,39:1'
 Assert-Held 'down:ctrl+right' '17:0,39:1'
-Assert-Held 'ctrl+v' '17:0,86:0,86:2,17:2'
+Assert-Held 'ctrl+v' '17:0,86:0,86:2,17:0'
 Assert-Held 'up:ctrl+left' '37:3,17:0'
 Assert-Held 'up:ctrl+left' '37:3,17:0'
 Assert-Held 'up:ctrl+right' '39:3,17:2'

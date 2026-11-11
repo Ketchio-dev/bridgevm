@@ -39,7 +39,8 @@ namespace BridgeVM {
 
         // `held`: the actions held now. An `up:` presses a modifier another of them still needs again in place of its
         // release (a repeat, as a keyboard's typematic sends): up:ctrl+left leaves Ctrl down for a held ctrl+right, and
-        // every half keeps the event count the host's receipt checks. A plain tap is the same whatever is held.
+        // every half keeps the event count the host's receipt checks. A whole tap keeps them the same way (the host taps
+        // when it cannot hold, e.g. a seventh key): ctrl+v under a held ctrl+left leaves Ctrl down.
         private static Input[] BuildKey(string command, List<string> held) {
             int phase = 0;
             if (command != null && command.StartsWith("down:", StringComparison.Ordinal)) { phase = 1; command = command.Substring(5); }
@@ -47,7 +48,7 @@ namespace BridgeVM {
             List<ushort> modifiers;
             bool extended;
             ushort code = ParseKey(command, out modifiers, out extended);
-            List<ushort> kept = phase == 2 ? HeldModifiers(held, command) : new List<ushort>();
+            List<ushort> kept = phase == 2 ? HeldModifiers(held, command) : phase == 0 ? HeldModifiers(held, null) : new List<ushort>();
             List<Input> inputs = new List<Input>();
             if (phase != 2) {
                 foreach (ushort modifier in modifiers) { inputs.Add(KeyEvent(modifier, false, modifier == 0x5B)); }
