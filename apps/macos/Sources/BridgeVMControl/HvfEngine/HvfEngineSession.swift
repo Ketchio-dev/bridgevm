@@ -100,6 +100,7 @@ final class HvfEngineSession: ObservableObject {
         inputDriver.now = { [weak self] in self?.guestNow() ?? Date() }
         inputDriver.onDiagnostic = { [weak self] in self?.append(.unknown($0)) }
         inputDriver.onLegacyReplay = { [weak self] in self?.resendOnLegacy($0) }
+        inputDriver.onLegacyBarrier = { [weak self] in _ = self?.appendLiveInput($0) }
         appPacing.observe(inputDriver)
     }
 

@@ -5,34 +5,50 @@ import Foundation
 /// written to input.ctl can still be ahead of it. Elapsed time is no evidence of that: the VMM takes at most one
 /// command per tick and keeps it queued, everything behind it too, while its xHCI queue is busy. So the switch
 /// waits until the VMM has taken every KEY and non-move POINTER line off its queue (its run.log line for each,
-/// `observe`), and then a second after the last such line or write, for the guest to read the reports; a
-/// quarter second after the last absolute move, which only has to land before the first ordered event (that
-/// event carries its own position; a late move would drag an ordered press back), while the VMM reads
-/// input.ctl every 16 ms; and never while a button pressed there is still down (its release must take the
-/// same route: the HID mouse cannot release a SendInput press, nor SendInput an HID one). A VMM that prints no
-/// such lines (an older one) never lets the switch happen after HID input: the HID route stays.
+/// `observe`), and then a second after the last such line or write, for the guest to read the reports. A move
+/// prints no such line (a late one would drag an ordered press back), so one written after the last counted line
+/// needs a `barrier`; and never while a button pressed there is still down (its release must take the same
+/// route: the HID mouse cannot release a SendInput press, nor SendInput an HID one). A VMM that prints no such
+/// lines (an older one) never lets the switch happen after HID input: the HID route stays.
 struct HvfLegacyInputActivity {
     static let settle: TimeInterval = 1
-    static let moveSettle: TimeInterval = 0.25
-    private var last = Date.distantPast, lastMove = Date.distantPast
+    private var last = Date.distantPast
     /// The VMM's HID button state (bridgevm-hvf xhci/pointer_input_report.rs): a press replaces it, a release
     /// or right click clears it, a left click leaves it.
     private var buttons = 0
     /// KEY and non-move POINTER lines written, and how many of them the VMM has taken off its queue.
     private var written = 0, taken = 0
+    /// The position of a move written after the last counted line: nothing shows yet that it left the VMM's queue.
+    private var unconfirmedMove: String?
 
     mutating func wrote(_ line: String, now: Date) {
         if line.hasPrefix("POINTER ") { // KEY lines are whole taps
-            switch line.dropFirst(8).prefix(while: { $0 != ":" }) {
-            case "move": lastMove = now; return
+            let verb = line.dropFirst(8).prefix(while: { $0 != ":" })
+            switch verb {
+            case "move":
+                unconfirmedMove = String(line.dropFirst(8 + verb.count + 1).prefix(while: { $0 != ":" }))
+                return
             case "press": buttons = 1
             case "right-press": buttons = 2
             case "release", "right-click": buttons = 0
             default: break
             }
         }
+        // The VMM takes this line only after it queued the move before it (one FIFO), a pointer line only once the
+        // move's reports drained (queue_actions is busy until then); the second after it covers the rest.
+        unconfirmedMove = nil
         written += 1
         last = now
+    }
+
+    /// The line to write behind an unconfirmed move once input.ctl is otherwise quiet: a release at the move's own
+    /// position, with no button down a report the guest already has. The VMM takes it only after the move's reports
+    /// drained, and it is counted like any line, so the switch then waits for its run.log line and the second. A
+    /// later move needs another; nil while one is still untaken.
+    func barrier(now: Date) -> String? {
+        guard let move = unconfirmedMove, taken == written, buttons == 0,
+              now.timeIntervalSince(last) >= Self.settle else { return nil }
+        return "POINTER release:" + move
     }
 
     /// One run.log batch in order. A helper recreated for a guest reset starts at input.ctl's end and its
@@ -50,8 +66,7 @@ struct HvfLegacyInputActivity {
     }
 
     func quiescent(now: Date) -> Bool {
-        taken == written && buttons == 0
-            && now.timeIntervalSince(last) >= Self.settle && now.timeIntervalSince(lastMove) >= Self.moveSettle
+        taken == written && buttons == 0 && unconfirmedMove == nil && now.timeIntervalSince(last) >= Self.settle
     }
 
     /// Nothing was written, but the next switch waits a full second from now: a fallback whose cleanup release

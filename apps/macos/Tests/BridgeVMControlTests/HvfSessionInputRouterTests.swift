@@ -94,7 +94,7 @@ final class HvfSessionInputRouterTests: XCTestCase {
         }
     }
 
-    func testAHeldHIDButtonBlocksTheSwitchAndAMoveSettlesInAQuarterSecond() {
+    func testAHeldHIDButtonBlocksTheSwitch() {
         var router = HvfSessionInputRouter()
         router.beginOwnedBoot(binding: binding)
         wrote(&router, "POINTER right-press:1x2")
@@ -103,21 +103,16 @@ final class HvfSessionInputRouterTests: XCTestCase {
         _ = poll(&router, at: 60, lines: ["live input accepted: command=Pointer(\"right-press:1x2\")",
                                           "live input rejected: command=Pointer(\"click:1x2\") queue_error=invalid"])
         XCTAssertEqual(router.state, .waitingForLegacy, "a left click leaves the right button down")
-        wrote(&router, "POINTER release:3x4", at: 60)
-        _ = poll(&router, at: 60, lines: ["live input rejected: kind=pointer parse_error=invalid"])
-        wrote(&router, "POINTER move:5x6", at: 60.875)
+        wrote(&router, "POINTER move:5x6", at: 60)
         _ = poll(&router, at: 61)
-        XCTAssertEqual(router.state, .waitingForLegacy, "a move an eighth of a second ago")
-        _ = poll(&router, at: 61.125)
-        XCTAssertEqual(router.state, .ready)
-
-        var moved = HvfSessionInputRouter()
-        moved.beginOwnedBoot(binding: binding)
-        wrote(&moved, "POINTER move:1x2")
-        negotiate(&moved)
-        XCTAssertEqual(moved.state, .waitingForLegacy)
-        _ = poll(&moved, at: 0.25)
-        XCTAssertEqual(moved.state, .ready, "moves alone need no quiet second")
+        XCTAssertNil(router.takeLegacyBarrier(), "no barrier while the button is down")
+        wrote(&router, "POINTER release:3x4", at: 61)
+        _ = poll(&router, at: 61, lines: ["live input rejected: kind=pointer parse_error=invalid"])
+        _ = poll(&router, at: 61.875)
+        XCTAssertEqual(router.state, .waitingForLegacy, "within a second of the VMM taking the release")
+        _ = poll(&router, at: 62)
+        XCTAssertEqual(router.state, .ready, "the release behind the move confirms it: no barrier")
+        XCTAssertNil(router.takeLegacyBarrier())
     }
 
     func testNothingInsertedHandsTheEventAndItsBacklogBackInOrderAndRetriesOrderedOnceQuiet() throws {
@@ -184,7 +179,6 @@ final class HvfSessionInputRouterTests: XCTestCase {
         _ = poll(&router, at: 1.2) { cleanup = $0 }
         XCTAssertEqual(payload(cleanup), "POINTERINPUT releaseall:1x2", "the owed release goes to the agent first")
         XCTAssertEqual(router.route(.pointer("move:3x4"), binding: binding, now: now), .legacy, "nothing ordered before it")
-        wrote(&router, "POINTER move:3x4", at: 1.2)
         XCTAssertEqual(poll(&router, at: 1.3, lines: shortfall(cleanup)), .cancelled(.notInserted, discarded: 0))
         XCTAssertTrue(router.fallback, "still owed, so input stays on the HID route")
         _ = poll(&router, at: 2.2)

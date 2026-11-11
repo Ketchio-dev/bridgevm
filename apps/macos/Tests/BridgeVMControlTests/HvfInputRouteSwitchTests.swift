@@ -56,7 +56,41 @@ final class HvfInputRouteSwitchTests: XCTestCase {
         }
     }
 
-    func testAHeldHIDButtonBlocksTheSwitchButMovesNeedOnlyAShortPause() throws {
+    /// A move prints no line when the VMM takes it, and a busy xHCI pointer queue keeps it queued, so time after a
+    /// move is no evidence either: the session writes one no-op `POINTER release:` at the last move's position behind
+    /// it, and the switch waits for the VMM to take that (only after the move's reports drained), then the second.
+    func testMovesAloneSwitchOnlyOnceTheVMMHasTakenABarrierBehindThem() throws {
+        try withClockedSession(negotiated: false) { session, fixture, clock in
+            session.beginOwnedInputBoot()
+            session.sendPointerMove(location: CGPoint(x: 10, y: 20), viewSize: size, imageSize: size)
+            session.sendPointerMove(location: point, viewSize: size, imageSize: size)
+            session.poll()
+            let query = try XCTUnwrap(try fixture.commands().first)
+            try answer(query, fixture); session.poll()
+            clock.advance(5); session.poll()
+            XCTAssertFalse(session.events.contains(.unknown(active)), "the VMM has not taken the barrier")
+            var lines = try legacy(fixture)
+            XCTAssertEqual(lines.count, 3, "one barrier at a time"); guard lines.count == 3 else { return }
+            XCTAssertEqual(lines.last, barrier(after: lines[1]), "one barrier at the last move's position")
+            session.sendPointerMove(location: CGPoint(x: 70, y: 80), viewSize: size, imageSize: size)
+            try fixture.probeTakes(); session.poll()
+            clock.advance(1); session.poll()
+            XCTAssertFalse(session.events.contains(.unknown(active)), "a move after the barrier")
+            lines = try legacy(fixture)
+            XCTAssertEqual(lines.count, 5); guard lines.count == 5 else { return }
+            XCTAssertEqual(lines.last, barrier(after: lines[3]), "a second barrier behind that move")
+            try fixture.probeTakes(); session.poll()
+            clock.advance(0.75); session.poll()
+            XCTAssertFalse(session.events.contains(.unknown(active)), "within a second of the VMM taking it")
+            clock.advance(0.25); session.poll()
+            XCTAssertTrue(session.events.contains(.unknown(active)))
+            session.sendPointerClick(location: point, viewSize: size, imageSize: size)
+            XCTAssertEqual(try payload(try fixture.commands().last)?.prefix(18), "POINTERINPUT click")
+            XCTAssertEqual(try legacy(fixture).count, 5)
+        }
+    }
+
+    func testAHeldHIDButtonBlocksTheSwitch() throws {
         try withClockedSession(negotiated: false) { session, fixture, clock in
             session.beginOwnedInputBoot()
             session.sendPointerPress(location: point, viewSize: size, imageSize: size)
@@ -70,14 +104,13 @@ final class HvfInputRouteSwitchTests: XCTestCase {
             session.sendPointerRelease(location: point, viewSize: size, imageSize: size)
             try fixture.probeTakes(); session.poll()
             clock.advance(0.875); session.poll()
-            session.sendPointerMove(location: point, viewSize: size, imageSize: size)
+            XCTAssertEqual(try fixture.commands(), [query], "within a second of the VMM taking the release")
             clock.advance(0.125); session.poll()
-            XCTAssertEqual(try fixture.commands(), [query], "a move right before the switch keeps it waiting")
-            clock.advance(0.25); session.poll()
             session.sendPointerClick(location: point, viewSize: size, imageSize: size)
             XCTAssertEqual(try payload(try fixture.commands().last)?.prefix(18), "POINTERINPUT click")
             let lines = try legacy(fixture).map { String($0.prefix { $0 != ":" }) }
-            XCTAssertEqual(lines, ["POINTER press", "POINTER move", "POINTER release", "POINTER move"])
+            XCTAssertEqual(lines, ["POINTER press", "POINTER move", "POINTER release"],
+                           "no barrier while the button is down; the release behind the move confirms it")
         }
     }
 
@@ -181,6 +214,12 @@ final class HvfInputRouteSwitchTests: XCTestCase {
         guard let words = command?.split(separator: " "), words.count == 3,
               let data = Data(base64Encoded: String(words[2])) else { return nil }
         return "\(words[0]) " + String(decoding: data, as: UTF8.self)
+    }
+
+    /// `POINTER release:` at a `POINTER move:` line's position.
+    private func barrier(after move: String) -> String {
+        XCTAssertTrue(move.hasPrefix("POINTER move:"), move)
+        return "POINTER release:" + move.dropFirst("POINTER move:".count)
     }
 
     private func legacy(_ fixture: HvfRuntimeKeyboardDraftFixture) throws -> [String] {

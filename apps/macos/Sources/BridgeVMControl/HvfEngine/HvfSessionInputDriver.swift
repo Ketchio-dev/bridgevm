@@ -10,6 +10,8 @@ final class HvfSessionInputDriver {
     var onUpdate: ((HvfAcknowledgedInputStream.Update?) -> Void)?
     /// Writes events the guest inserted nothing of to input.ctl, in this order, before any later input is routed.
     var onLegacyReplay: (([HvfOrderedInputQueue.Event]) -> Void)?
+    /// Writes one input.ctl line the switch waits on (HvfLegacyInputActivity.barrier), after any replay.
+    var onLegacyBarrier: ((String) -> Void)?
     /// The clock of the receipt deadlines; the session's leaves paused time out (HvfGuestRunClock).
     var now: () -> Date = Date.init
     private(set) var router = HvfSessionInputRouter()
@@ -73,6 +75,7 @@ final class HvfSessionInputDriver {
             }
             onLegacyReplay?(replay)
         }
+        if let barrier = router.takeLegacyBarrier() { onLegacyBarrier?(barrier) }
         if router.count == 0 { timer?.invalidate(); timer = nil }
     }
 

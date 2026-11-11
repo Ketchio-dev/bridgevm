@@ -18,6 +18,7 @@ struct HvfSessionInputRouter {
     private var stream = HvfRecoverableInputStream()
     private var legacy = HvfLegacyInputActivity()
     private var replay: [HvfOrderedInputQueue.Event] = []
+    private var barrier: String?
     var state: HvfNegotiatedInputStream.State { failed ? .failed : stream.state }
     var count: Int { stream.count }
     /// Whether a generic chord (HvfModifierChord) can reach the guest now: on the legacy route the VMM
@@ -102,7 +103,16 @@ struct HvfSessionInputRouter {
         if stream.state == .unavailable {
             if activated { failure = .unavailable } else { eligible = false }
         }
+        // A switch that waits on input.ctl after a move gets the move's barrier line (HvfLegacyInputActivity.barrier).
+        let waiting = eligible && !failed && (fallback || stream.state == .waitingForLegacy)
+        barrier = waiting && !legacyPending ? legacy.barrier(now: now) : nil
         return update
+    }
+
+    /// The line to write to input.ctl now, through the session's legacy write path like any other.
+    mutating func takeLegacyBarrier() -> String? {
+        defer { barrier = nil }
+        return barrier
     }
 
     /// The events of the last fallback, for input.ctl in this order before any later input.
@@ -128,6 +138,7 @@ struct HvfSessionInputRouter {
         eligible = false
         fallback = false
         replay.removeAll()
+        barrier = nil
         return stream.reset(.sessionChanged)
     }
 }
