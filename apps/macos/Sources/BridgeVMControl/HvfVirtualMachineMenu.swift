@@ -33,7 +33,7 @@ final class HvfVirtualMachineMenuTarget: ObservableObject {
         menuBarTracking = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification,
                                                                  object: nil, queue: .main) { [weak self] note in
             MainActor.assumeIsolated {
-                guard let self, let menu = note.object as? NSMenu, menu === NSApp.mainMenu else { return }
+                guard let self, let menu = note.object as? NSMenu, menu === NSApp?.mainMenu else { return }
                 self.menuBarOpened()
             }
         }
