@@ -1061,6 +1061,118 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 namespace BridgeVM {
+    // A print job as the print gate sees it (BvClipWatch.PrintGate): its id and JOB_STATUS_* flags.
+    public struct BvPrintJob {
+        public int Id;
+        public int Status;
+        public BvPrintJob(int id, int status) { Id = id; Status = status; }
+    }
+
+    // The printer's queue for the print gate: winspool here, a model in the contract test.
+    public interface IBvPrintQueue {
+        // Its jobs in queue order; null when they cannot be read.
+        BvPrintJob[] Jobs();
+        // Whether the printer is paused; null when that cannot be read.
+        bool? Paused();
+        bool PausePrinter(bool pause);
+        bool PauseJob(int id, bool pause);
+        void Close();
+    }
+
+    // winspool: the printer opened with administer rights (the agent is an elevated administrator,
+    // and Administrators manage printers and documents), opened again after a failure.
+    public sealed class BvWinSpool : IBvPrintQueue {
+        [StructLayout(LayoutKind.Sequential)]
+        struct PrinterDefaults { public IntPtr Datatype; public IntPtr DevMode; public int Access; }
+        // JOB_INFO_1W; only JobId and Status are read.
+        [StructLayout(LayoutKind.Sequential)]
+        struct JobInfo1 {
+            public int JobId;
+            public IntPtr PrinterName, MachineName, UserName, Document, Datatype, StatusText;
+            public int Status, Priority, Position, TotalPages, PagesPrinted;
+            public short Year, Month, DayOfWeek, Day, Hour, Minute, Second, Milliseconds;
+        }
+        [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern bool OpenPrinter(string name, out IntPtr printer, ref PrinterDefaults defaults);
+        [DllImport("winspool.drv", SetLastError = true)]
+        static extern bool ClosePrinter(IntPtr printer);
+        [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern bool EnumJobs(IntPtr printer, int first, int count, int level, IntPtr jobs, int size, out int needed, out int returned);
+        [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern bool GetPrinter(IntPtr printer, int level, IntPtr info, int size, out int needed);
+        [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern bool SetPrinter(IntPtr printer, int level, IntPtr info, int command);
+        [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern bool SetJob(IntPtr printer, int id, int level, IntPtr info, int command);
+        const int PrinterAllAccess = 0x000F000C;
+        const int InsufficientBuffer = 122;
+        readonly string name;
+        IntPtr handle = IntPtr.Zero;
+
+        public BvWinSpool(string name) { this.name = name; }
+
+        bool Open() {
+            if (handle != IntPtr.Zero) { return true; }
+            PrinterDefaults defaults = new PrinterDefaults();
+            defaults.Access = PrinterAllAccess;
+            IntPtr opened;
+            if (!OpenPrinter(name, out opened, ref defaults)) { return false; }
+            handle = opened;
+            return true;
+        }
+
+        public void Close() {
+            if (handle != IntPtr.Zero) { ClosePrinter(handle); handle = IntPtr.Zero; }
+        }
+
+        public BvPrintJob[] Jobs() {
+            if (!Open()) { return null; }
+            int needed, returned;
+            if (EnumJobs(handle, 0, 256, 1, IntPtr.Zero, 0, out needed, out returned)) { return new BvPrintJob[0]; }
+            if (Marshal.GetLastWin32Error() != InsufficientBuffer || needed <= 0) { Close(); return null; }
+            IntPtr buffer = Marshal.AllocHGlobal(needed);
+            try {
+                // More jobs since the first call: this look is skipped.
+                if (!EnumJobs(handle, 0, 256, 1, buffer, needed, out needed, out returned)) { return null; }
+                int size = Marshal.SizeOf(typeof(JobInfo1));
+                BvPrintJob[] jobs = new BvPrintJob[returned];
+                for (int i = 0; i < returned; i++) {
+                    JobInfo1 info = (JobInfo1)Marshal.PtrToStructure(new IntPtr(buffer.ToInt64() + (long)i * size), typeof(JobInfo1));
+                    jobs[i] = new BvPrintJob(info.JobId, info.Status);
+                }
+                return jobs;
+            } finally {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+
+        public bool? Paused() {
+            if (!Open()) { return null; }
+            // PRINTER_INFO_6: the printer's status alone; PRINTER_STATUS_PAUSED is 1.
+            IntPtr info = Marshal.AllocHGlobal(4);
+            try {
+                int needed;
+                if (!GetPrinter(handle, 6, info, 4, out needed)) { Close(); return null; }
+                return (Marshal.ReadInt32(info) & 1) != 0;
+            } finally {
+                Marshal.FreeHGlobal(info);
+            }
+        }
+
+        // PRINTER_CONTROL_PAUSE or PRINTER_CONTROL_RESUME.
+        public bool PausePrinter(bool pause) {
+            if (!Open()) { return false; }
+            if (SetPrinter(handle, 0, IntPtr.Zero, pause ? 1 : 2)) { return true; }
+            Close();
+            return false;
+        }
+
+        // JOB_CONTROL_PAUSE or JOB_CONTROL_RESUME; a job that has just left fails, and that is all.
+        public bool PauseJob(int id, bool pause) {
+            return Open() && SetJob(handle, id, 0, IntPtr.Zero, pause ? 1 : 2);
+        }
+    }
+
     public static class BvClipWatch {
         [DllImport("kernel32.dll", SetLastError = true)]
         static extern bool ReadFile(IntPtr h, byte[] buf, uint toRead, out uint read, IntPtr overlapped);
@@ -1099,8 +1211,21 @@ namespace BridgeVM {
         static bool printPending;
         static int printRetry;
         static readonly Dictionary<string, bool> printSent = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-        // Renamed jobs kept beside the port file at most: past this a finished job.pdf waits.
+        // Renamed jobs waiting for the host at most: at this many the printer stays paused, and new
+        // jobs wait in its queue.
         public const int MaxPrintJobs = 8;
+        // The print gate (PrintGate): the printer's queue, the job let out (0: none), until when the
+        // watch looks every 10 ms (a job just let out), and the idle looks.
+        static readonly object PrintLock = new object();
+        static IBvPrintQueue printQueue;
+        static int printReleased;
+        static int printFastUntil;
+        static int printTicks;
+        // The queue of a printer by its name: winspool; the contract test substitutes a model.
+        public static Func<string, IBvPrintQueue> OpenPrintQueue = delegate (string printer) { return new BvWinSpool(printer); };
+        const int JobPaused = 0x1;
+        // JOB_STATUS_DELETING, PRINTING, PRINTED, DELETED, COMPLETE, RETAINED: under way or done.
+        const int JobStarted = 0x4 | 0x10 | 0x80 | 0x100 | 0x1000 | 0x2000;
 
         public static void Start() {
             lock (Gate) {
@@ -1122,9 +1247,18 @@ namespace BridgeVM {
             }
         }
 
-        // Watch the printer's port file for finished jobs. Jobs renamed beside it earlier (an
-        // earlier agent's, not deleted by the host yet) are announced again.
-        public static void StartPrint(string port) {
+        // Watch the printer's port file for finished jobs, the printer paused first: it runs for one
+        // job at a time (PrintGate). Jobs renamed beside the port earlier (an earlier agent's, not
+        // deleted by the host yet) are announced again. False: the printer could not be paused.
+        public static bool StartPrint(string port, string printer) {
+            lock (PrintLock) {
+                if (printQueue != null) { printQueue.Close(); }
+                printQueue = null;
+                printReleased = 0;
+                IBvPrintQueue queue = OpenPrintQueue(printer);
+                if (!Hold(queue)) { queue.Close(); return false; }
+                printQueue = queue;
+            }
             lock (Gate) {
                 printSent.Clear();
                 printPort = port;
@@ -1132,10 +1266,34 @@ namespace BridgeVM {
                 printRetry = 0;
                 StartThread();
             }
+            return true;
         }
 
         public static void StopPrint() {
             lock (Gate) { printPort = null; printPending = false; printRetry = 0; }
+            lock (PrintLock) {
+                if (printQueue != null) { printQueue.Close(); }
+                printQueue = null;
+                printReleased = 0;
+            }
+        }
+
+        // At agent start: a printer left running (an agent that stopped while it had let a job out,
+        // then perhaps a reboot) is paused again, so jobs wait in its queue until the watch is back.
+        public static bool HoldPrinter(string printer) {
+            IBvPrintQueue queue = OpenPrintQueue(printer);
+            try { return Hold(queue); } finally { queue.Close(); }
+        }
+
+        static bool Hold(IBvPrintQueue queue) {
+            bool? paused = queue.Paused();
+            return paused == true || (paused == false && queue.PausePrinter(true));
+        }
+
+        // A job just let out: the watch looks every 10 ms until it has started, so the printer is
+        // paused again long before anything after it could start.
+        static bool PrintFast() {
+            return printReleased != 0 && unchecked(Environment.TickCount - printFastUntil) < 0;
         }
 
         static void StartThread() {
@@ -1153,7 +1311,7 @@ namespace BridgeVM {
 
         static void Watch() {
             while (true) {
-                Thread.Sleep(100);
+                Thread.Sleep(PrintFast() ? 10 : 100);
                 // An exception here would end the agent process, not just the watcher.
                 try {
                     uint seq = clip ? GetClipboardSequenceNumber() : 0;
@@ -1161,6 +1319,7 @@ namespace BridgeVM {
                     long length = path == null ? 0 : LinkLength(path);
                     string port = printPort;
                     bool claimed = port != null && ClaimPrint(port);
+                    if (port != null) { PrintGate(); }
                     lock (Gate) {
                         if (clip && seq != seen) { seen = seq; pending = true; }
                         if (path != null && length != linkSeen) { linkSeen = length; linkPending = true; }
@@ -1271,7 +1430,6 @@ namespace BridgeVM {
             string dir = Path.GetDirectoryName(port);
             if ((File.GetAttributes(dir) & FileAttributes.ReparsePoint) != 0 ||
                 (File.GetAttributes(port) & FileAttributes.ReparsePoint) != 0) { return false; }
-            if (Directory.GetFiles(dir, "*.pdf").Length > MaxPrintJobs) { return false; }
             try {
                 File.Move(port, Path.Combine(dir, DateTime.UtcNow.Ticks.ToString("D19") + ".pdf"));
                 return true;
@@ -1280,6 +1438,62 @@ namespace BridgeVM {
             } catch (UnauthorizedAccessException) {
                 return false;
             }
+        }
+
+        // The spooler writes every job to the one port file, and a job that starts truncates whatever
+        // job.pdf holds. So the printer stays paused, new jobs wait in its queue as spool files (also
+        // while no agent runs), and one job at a time is let out: every other job paused, the printer
+        // resumed; once it has started, the printer is paused again and the others wait unpaused in
+        // the paused queue. The next one goes once the last one has left the queue and its job.pdf
+        // was renamed, and only while fewer than MaxPrintJobs renamed jobs wait for the host: at the
+        // cap the printer simply stays paused.
+        static void PrintGate() {
+            lock (PrintLock) {
+                IBvPrintQueue queue = printQueue;
+                string port = printPort;
+                // Idle, twice a second; with a job let out, at every look.
+                if (queue == null || port == null || (printReleased == 0 && ++printTicks % 5 != 0)) { return; }
+                BvPrintJob[] jobs = queue.Jobs();
+                if (jobs == null) { return; }
+                bool present = false, started = false;
+                foreach (BvPrintJob job in jobs) {
+                    if (job.Id == printReleased) { present = true; started = (job.Status & JobStarted) != 0; }
+                }
+                if (present && !started) {
+                    // Not started yet: a job that came in meanwhile waits behind it, paused.
+                    foreach (BvPrintJob job in jobs) {
+                        if (job.Id != printReleased && (job.Status & JobPaused) == 0) { queue.PauseJob(job.Id, true); }
+                    }
+                    return;
+                }
+                printFastUntil = Environment.TickCount;
+                // Paused again (or still, or after someone resumed it by hand), so nothing starts after
+                // the job let out.
+                if (!Hold(queue)) { return; }
+                int next = 0;
+                if (!present && jobs.Length > 0 && !File.Exists(port) && Renamed(Path.GetDirectoryName(port)) < MaxPrintJobs) {
+                    next = jobs[0].Id;
+                }
+                foreach (BvPrintJob job in jobs) {
+                    // Letting one out: the others paused; otherwise all wait unpaused in the paused queue.
+                    bool hold = next != 0 && job.Id != next;
+                    if (job.Id != printReleased && ((job.Status & JobPaused) != 0) != hold) { queue.PauseJob(job.Id, hold); }
+                }
+                if (present) { return; }
+                printReleased = 0;
+                if (next != 0 && queue.PausePrinter(false)) {
+                    printReleased = next;
+                    printFastUntil = Environment.TickCount + 2000;
+                }
+            }
+        }
+
+        static int Renamed(string dir) {
+            int count = 0;
+            foreach (string file in Directory.GetFiles(dir, "*.pdf")) {
+                if (Regex.IsMatch(Path.GetFileName(file), @"\A[0-9]{19}\.pdf\z")) { count++; }
+            }
+            return count;
         }
 
         // The renamed jobs not announced yet, oldest first, as "<b64(utf8 path)> <bytes>": each a
@@ -1356,8 +1570,11 @@ function Start-LinkWatch {
 # PRINTWATCH: the app's "print to the Mac". The printer 'Mac (BridgeVM)' is the inbox
 # Microsoft Print To PDF driver on a Local Port whose name is a file path, so the spooler
 # writes each job there as a PDF, with no Save dialog. The spooler opens that file as the
-# user who printed, so it lies in this user's own folder. The clipboard watch thread renames
-# a finished job.pdf to <ticks>.pdf (BvClipWatch.ClaimPrint), and Read-Line writes
+# user who printed, so it lies in this user's own folder. Every job goes to that one file, so
+# the printer stays paused and the clipboard watch thread lets one job out at a time
+# (BvClipWatch.PrintGate); at agent start a printer left running is paused before anything
+# else (Suspend-BvPrinter). The thread renames a finished job.pdf to <ticks>.pdf
+# (BvClipWatch.ClaimPrint), and Read-Line writes
 # PRINTJOB <b64(path)> <bytes> between replies for each one nothing holds open any more; the
 # host fetches it (GETRANGE) and deletes it (DEL). Every step runs only when missing, so a
 # later boot changes nothing. PRINTWATCH off stops the watch and removes the printer and its
@@ -1380,6 +1597,20 @@ function Install-BvPrinter([string]$Port) {
     }
     if ($null -eq $printer) { Add-Printer -Name $script:BvPrinterName -DriverName $script:BvPrintDriver -PortName $Port -ErrorAction Stop }
 }
+# The spooler keeps each local printer under this key: a VM without the printer pays nothing at start.
+function Test-BvPrinterExists {
+    $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\CurrentControlSet\Control\Print\Printers\' + $script:BvPrinterName)
+    if ($null -eq $key) { return $false }
+    $key.Close()
+    return $true
+}
+function Suspend-BvPrinter {
+    try {
+        if (-not (Test-BvPrinterExists)) { return }
+        if (-not ('BridgeVM.BvClipWatch' -as [type])) { Add-Type -TypeDefinition $script:BvClipWatchSource -ErrorAction Stop }
+        if (-not [BridgeVM.BvClipWatch]::HoldPrinter($script:BvPrinterName)) { Log 'PRINT HOLD failed' }
+    } catch { Log ('PRINT HOLD unavailable: ' + $_.Exception.Message) }
+}
 function Start-PrintWatch([string]$Arg) {
     $port = Get-BvPrintPort
     if ($Arg -ceq 'off') {
@@ -1398,9 +1629,16 @@ function Start-PrintWatch([string]$Arg) {
         $dir = [System.IO.Path]::GetDirectoryName($port)
         [void][System.IO.Directory]::CreateDirectory($dir)
         if (([System.IO.File]::GetAttributes($dir) -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'the print folder is a reparse point' }
-        Install-BvPrinter $port
         if (-not ('BridgeVM.BvClipWatch' -as [type])) { Add-Type -TypeDefinition $script:BvClipWatchSource -ErrorAction Stop }
-        [BridgeVM.BvClipWatch]::StartPrint($port)
+        # The gate's printer handle goes first: Install-BvPrinter may make the printer again.
+        [BridgeVM.BvClipWatch]::StopPrint()
+        $script:BvPrintWatch = $false
+        Install-BvPrinter $port
+        if (-not [BridgeVM.BvClipWatch]::StartPrint($port, $script:BvPrinterName)) {
+            # A printer that cannot be paused would lose jobs (each one truncates job.pdf): it goes.
+            Remove-Printer -Name $script:BvPrinterName -ErrorAction SilentlyContinue
+            throw 'the printer cannot be paused'
+        }
         $script:BvPrintWatch = $true
         return @{ Exit = 0; Out = 'BVPRINT printer=ready' }
     } catch {
@@ -2132,6 +2370,8 @@ function Get-BvReady([string]$Dir, [string]$Id) {
 $bvAgentId = ''
 try { $bvAgentId = Get-BvAgentId $PSScriptRoot } catch { Log ('AGENT ID unavailable: ' + $_.Exception.Message) }
 Log ('AGENT ID ' + $bvAgentId)
+# A printer left running holds again before anything else (print).
+Suspend-BvPrinter
 
 # Open the port (retry forever; throwing would kill the process and release the
 # singleton mutex, reviving churn). Try-OpenPort logs every candidate tried.

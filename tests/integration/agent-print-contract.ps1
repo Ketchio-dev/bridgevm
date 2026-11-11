@@ -2,13 +2,17 @@
 # 1. Setup with mocked printer cmdlets: 'Mac (BridgeVM)' on the inbox Microsoft Print To PDF driver and a
 #    Local Port named with a file path in the user's folder, each made only when missing, a printer on
 #    another port or driver made again, a failure reported as one BVPRINT printer=failed line with the
-#    watch off, and PRINTWATCH off removing the printer and its port.
+#    watch off, a printer that cannot be paused removed, and PRINTWATCH off removing the printer and port.
 # 2. Job detection by the watch thread as compiled in bvagent.ps1 (BvClipWatch ClaimPrint/TakePrintJobs)
 #    on a temporary folder: a finished job.pdf is renamed and announced once with its size, a job still
-#    being written is never announced, nothing is read through a reparse point, at most MaxPrintJobs
-#    wait, and a restarted watch announces the jobs still there.
-# 3. Read-Line writes PRINTJOB between replies only while printing is watched.
-# No spooler and no printer: the printer cmdlets are functions here.
+#    being written is never announced, nothing is read through a reparse point, and a restarted watch
+#    announces the jobs still there.
+# 3. The print gate (BvClipWatch.PrintGate) against a model of the spooler (SpoolerModel below: a queue,
+#    the printer's pause, one port file that each job starting truncates): the printer is paused at
+#    watch start and at agent start; jobs go out one at a time, none while job.pdf holds one not renamed,
+#    none at MaxPrintJobs renamed; bursts and jobs arriving while one is out all arrive, none lost.
+# 4. Read-Line writes PRINTJOB between replies only while printing is watched.
+# No spooler and no printer: the printer cmdlets are functions here, the queue a model.
 param([ValidateSet('all', 'readline')][string]$Mode = 'all')
 $ErrorActionPreference = 'Stop'
 $agentPath = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../../scripts/win-assets/bvagent.ps1')).Path
@@ -83,7 +87,106 @@ namespace BridgeVM {
 }
 
 $assign = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$script:BvClipWatchSource' }, $true)
-$watchSource = $assign.Right.Expression.Value
+# The watch thread as bvagent.ps1 compiles it, with a model of the spooler in the same assembly: no
+# printer, no winspool. The model's own thread is the spooler: while the printer runs, the first job not
+# paused starts, opens the port file CREATE_ALWAYS as localmon does (a job.pdf still there is a job
+# lost), writes half its document, waits PrintMs, writes the rest, closes the file and leaves the queue.
+$modelSource = @'
+namespace BridgeVM {
+    public sealed class SpoolerModel : IBvPrintQueue {
+        public static SpoolerModel Current;
+        public static int Opened;
+        public static void Install(SpoolerModel model) {
+            Current = model;
+            BvClipWatch.OpenPrintQueue = delegate (string printer) { Opened++; return Current; };
+        }
+        readonly object gate = new object();
+        readonly System.Collections.Generic.List<int[]> queue = new System.Collections.Generic.List<int[]>();
+        readonly System.Collections.Generic.Dictionary<int, byte[]> docs = new System.Collections.Generic.Dictionary<int, byte[]>();
+        public readonly System.Collections.Generic.List<int> Started = new System.Collections.Generic.List<int>();
+        public volatile bool PrinterPaused;
+        public volatile bool Readable = true;
+        public volatile bool Pausable = true;
+        public volatile string Port;
+        public volatile int PrintMs = 30;
+        public int Lost, Printed, Closes;
+        int nextId = 1;
+        volatile bool stopped;
+
+        public int Add(byte[] doc) {
+            lock (gate) { int id = nextId++; queue.Add(new int[] { id, 0 }); docs[id] = doc; return id; }
+        }
+        public int Queued { get { lock (gate) { return queue.Count; } } }
+        public int PausedJobs {
+            get { lock (gate) { int n = 0; foreach (int[] job in queue) { if ((job[1] & 1) != 0) { n++; } } return n; } }
+        }
+        public string StartOrder { get { lock (gate) { return string.Join(",", Started.ToArray()); } } }
+        public BvPrintJob[] Jobs() {
+            lock (gate) {
+                if (!Readable) { return null; }
+                BvPrintJob[] jobs = new BvPrintJob[queue.Count];
+                for (int i = 0; i < queue.Count; i++) { jobs[i] = new BvPrintJob(queue[i][0], queue[i][1]); }
+                return jobs;
+            }
+        }
+        public bool? Paused() {
+            lock (gate) { if (!Readable) { return null; } return PrinterPaused; }
+        }
+        public bool PausePrinter(bool pause) {
+            lock (gate) {
+                if (pause && !Pausable) { return false; }
+                PrinterPaused = pause;
+                return true;
+            }
+        }
+        public bool PauseJob(int id, bool pause) {
+            lock (gate) {
+                foreach (int[] job in queue) {
+                    if (job[0] == id) { job[1] = pause ? job[1] | 1 : job[1] & ~1; return true; }
+                }
+                return false;
+            }
+        }
+        public void Close() { lock (gate) { Closes++; } }
+        public void Start() {
+            System.Threading.Thread thread = new System.Threading.Thread(Run);
+            thread.IsBackground = true;
+            thread.Start();
+        }
+        public void Stop() { stopped = true; }
+
+        void Run() {
+            while (!stopped) {
+                System.Threading.Thread.Sleep(2);
+                int id = 0;
+                byte[] doc = null;
+                string port = Port;
+                lock (gate) {
+                    if (PrinterPaused || port == null) { continue; }
+                    foreach (int[] job in queue) {
+                        if ((job[1] & 1) == 0) { id = job[0]; job[1] |= 0x10; doc = docs[id]; break; }
+                    }
+                    if (id == 0) { continue; }
+                    Started.Add(id);
+                    if (System.IO.File.Exists(port)) { Lost++; }
+                }
+                using (System.IO.FileStream stream = new System.IO.FileStream(port, System.IO.FileMode.Create, System.IO.FileAccess.Write, System.IO.FileShare.Read)) {
+                    stream.Write(doc, 0, doc.Length / 2);
+                    stream.Flush();
+                    System.Threading.Thread.Sleep(PrintMs);
+                    stream.Write(doc, doc.Length / 2, doc.Length - doc.Length / 2);
+                }
+                lock (gate) {
+                    queue.RemoveAll(delegate (int[] job) { return job[0] == id; });
+                    docs.Remove(id);
+                    Printed++;
+                }
+            }
+        }
+    }
+}
+'@
+$watchSource = $assign.Right.Expression.Value + "`n" + $modelSource
 if ($PSVersionTable.PSEdition -eq 'Core') {
     # Windows PowerShell 5.1 compiles C# 5; prove the watch thread does too.
     Add-Type -TypeDefinition $watchSource -CompilerOptions '/langversion:5' -ErrorAction Stop
@@ -102,6 +205,10 @@ $work = Join-Path ([IO.Path]::GetTempPath()) ('bv-print-' + [guid]::NewGuid().To
 $dir = Join-Path $work 'BridgeVM/Print'
 $port = Join-Path $dir 'job.pdf'
 function Get-BvPrintPort { return $port }
+$script:printerKnown = $false
+function Test-BvPrinterExists { return $script:printerKnown }
+$spool = New-Object BridgeVM.SpoolerModel
+[BridgeVM.SpoolerModel]::Install($spool)
 try {
     # 1. Setup, against a model of the spooler's drivers, ports and printers.
     $script:model = $null
@@ -141,6 +248,7 @@ try {
     Reset-Model
     Expect-Watch '' 0 'BVPRINT printer=ready' @("Add-PrinterPort $port", $add) $true 'first boot'
     Assert ([IO.Directory]::Exists($dir)) 'the print folder is made'
+    Assert ($spool.PrinterPaused) 'the new printer is paused before the watch takes it'
     Expect-Watch '' 0 'BVPRINT printer=ready' @() $true 'a later boot changes nothing'
     Reset-Model -Ports @($port, 'C:\old\job.pdf') -Printers (& $printer 'Microsoft Print To PDF' 'C:\old\job.pdf')
     Expect-Watch '' 0 'BVPRINT printer=ready' @('Remove-Printer Mac (BridgeVM)', $add) $true 'a printer on another port is made again'
@@ -160,19 +268,24 @@ try {
     Reset-Model
     $script:fail['Add-PrinterPort'] = 'The spooler service is not reachable.'
     Expect-Watch '' 1 'BVPRINT printer=failed detail=The spooler service is not reachable.' @("Add-PrinterPort $port") $false 'no spooler'
+    # A printer the watch cannot pause would lose jobs: it goes.
+    Reset-Model
+    $spool.PrinterPaused = $false; $spool.Pausable = $false
+    Expect-Watch '' 1 'BVPRINT printer=failed detail=the printer cannot be paused' @("Add-PrinterPort $port", $add, 'Remove-Printer Mac (BridgeVM)') $false 'a printer that cannot be paused'
+    $spool.Pausable = $true
     Reset-Model
     Expect-Watch 'off' 0 'BVPRINT printer=absent' @() $false 'off with nothing there'
     Reset-Model -Ports @($port) -Printers (& $printer 'Microsoft Print To PDF' $port)
     $script:fail['Remove-PrinterPort'] = 'The port is in use.'
     Expect-Watch 'off' 1 'BVPRINT printer=remove-failed detail=The port is in use.' @('Remove-Printer Mac (BridgeVM)', "Remove-PrinterPort $port") $false 'off, port still in use'
-    Write-Output 'PASS: PRINTWATCH makes only what is missing, makes a wrong printer again, reports a failure as one line with the watch off, and off removes printer and port'
+    Write-Output 'PASS: PRINTWATCH makes only what is missing, makes a wrong printer again, pauses it, reports a failure as one line with the watch off, removes a printer it cannot pause, and off removes printer and port'
 
     # 2. Job detection: the watch thread renames, TakePrintJobs announces.
     $watch = [BridgeVM.BvClipWatch]
     function Take { @($watch::TakePrintJobs()) }
-    function Wait-Jobs([int]$Count, [string]$What) {
+    function Wait-Jobs([int]$Count, [string]$What, [int]$Seconds = 5) {
         $got = @()
-        $end = [DateTime]::UtcNow.AddSeconds(5)
+        $end = [DateTime]::UtcNow.AddSeconds($Seconds)
         while ($got.Count -lt $Count -and [DateTime]::UtcNow -lt $end) { Start-Sleep -Milliseconds 50; $got += @(Take) }
         Assert ($got.Count -eq $Count) "$What`: $($got.Count) jobs, wanted $Count"
         return , $got
@@ -183,7 +296,11 @@ try {
         return @{ Path = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($fields[0])); Bytes = [long]$fields[1] }
     }
     function Write-Job([string]$Path, [byte[]]$Bytes) { [IO.File]::WriteAllBytes($Path, $Bytes) }
-    function Get-Pdf([int]$Length) { $b = New-Object byte[] $Length; [Text.Encoding]::ASCII.GetBytes('%PDF-1.7').CopyTo($b, 0); return , $b }
+    function Get-Pdf([int]$Length, [string]$Text = '') {
+        $b = New-Object byte[] $Length
+        [Text.Encoding]::ASCII.GetBytes('%PDF-1.7 ' + $Text).CopyTo($b, 0)
+        return , $b
+    }
     $watch::StopPrint()
     Reset-Model
     Expect-Watch '' 0 'BVPRINT printer=ready' @("Add-PrinterPort $port", $add) $true 'watch on'
@@ -206,7 +323,7 @@ try {
     Assert ($second.Bytes -eq 5000 -and $second.Path -cne $first.Path) "the whole job: $($second.Bytes) bytes"
 
     # A restarted watch (a new agent) announces the jobs still there, oldest first.
-    $watch::StartPrint($port)
+    Assert ($watch::StartPrint($port, 'Mac (BridgeVM)')) 'watch restarted'
     $jobs = Wait-Jobs 2 'after a restart'
     $again = @($jobs | ForEach-Object { (Get-Job $_).Path })
     Assert (($again -join '|') -ceq ((@($first.Path, $second.Path) | Sort-Object) -join '|')) "again: $($again -join '|')"
@@ -226,36 +343,129 @@ try {
     Write-Job (Join-Path $other 'job.pdf') (Get-Pdf 11)
     [IO.Directory]::Move($dir, $dir + '.real')
     if ($onWindows) { [void](New-Item -ItemType Junction -Path $dir -Value $other) } else { [void](New-Item -ItemType SymbolicLink -Path $dir -Value $other) }
-    $watch::StartPrint($port)
+    [void]$watch::StartPrint($port, 'Mac (BridgeVM)')
     Start-Sleep -Milliseconds 600
     Assert ((Take).Count -eq 0 -and [IO.File]::Exists((Join-Path $other 'job.pdf'))) 'a linked folder is never read or renamed in'
     [IO.Directory]::Delete($dir)
     [IO.Directory]::Move($dir + '.real', $dir)
-    $watch::StartPrint($port)
+    [void]$watch::StartPrint($port, 'Mac (BridgeVM)')
     [void](Wait-Jobs 2 'the real folder again')
-
-    # At most MaxPrintJobs wait beside the port; the next one stays job.pdf until the host takes some.
-    $max = $watch::MaxPrintJobs
-    for ($i = 2; $i -lt $max; $i++) { Write-Job (Join-Path $dir ('{0:D19}.pdf' -f (100 + $i))) (Get-Pdf 9) }
-    Assert ((Wait-Jobs ($max - 2) 'filling up').Count -eq $max - 2) 'filled'
-    Write-Job $port (Get-Pdf 12)
-    Start-Sleep -Milliseconds 600
-    Assert ([IO.File]::Exists($port) -and (Take).Count -eq 0) 'past MaxPrintJobs job.pdf waits'
-    [IO.File]::Delete($first.Path)
-    $last = Get-Job (Wait-Jobs 1 'room again')[0]
-    Assert ($last.Bytes -eq 12) 'taken once there is room'
+    foreach ($f in [IO.Directory]::GetFiles($dir)) { [IO.File]::Delete($f) }
 
     # Stopped: nothing is renamed or announced.
     $watch::StopPrint()
     Write-Job $port (Get-Pdf 13)
     Start-Sleep -Milliseconds 600
     Assert ([IO.File]::Exists($port) -and (Take).Count -eq 0) 'stopped'
-    Write-Output 'PASS: a finished job is renamed and announced once with its size, never while written, never through a reparse point, at most MaxPrintJobs wait, a restarted watch announces the rest, a stopped one nothing'
+    [IO.File]::Delete($port)
+    Write-Output 'PASS: a finished job is renamed and announced once with its size, never while written, never through a reparse point, a restarted watch announces the rest, a stopped one nothing'
+
+    # 3. The print gate, against the spooler model. Each job's document names it, so a job lost or
+    # printed twice shows in the renamed files.
+    function Wait-Until([scriptblock]$Done, [string]$What, [int]$Seconds = 10) {
+        $end = [DateTime]::UtcNow.AddSeconds($Seconds)
+        while (-not (& $Done) -and [DateTime]::UtcNow -lt $end) { Start-Sleep -Milliseconds 20 }
+        Assert (& $Done) $What
+    }
+    function Get-Renamed { @([IO.Directory]::GetFiles($dir, '*.pdf') | Where-Object { [IO.Path]::GetFileName($_) -match '\A\d{19}\.pdf\z' } | Sort-Object) }
+    function Get-Texts { @(Get-Renamed | ForEach-Object { ([Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($_)) -split "`0")[0] }) }
+    # Off Windows a rename does not wait for the spooler model to close the file: wait for its queue.
+    function Clear-Renamed {
+        Wait-Until { $spool.Queued -eq 0 } 'the queue empties'
+        foreach ($f in Get-Renamed) { [IO.File]::Delete($f) }
+        [void](Take)
+    }
+    function Hold-Steady([scriptblock]$Same, [string]$What, [int]$Ms = 1200) {
+        $end = [DateTime]::UtcNow.AddMilliseconds($Ms)
+        while ([DateTime]::UtcNow -lt $end) { Assert (& $Same) $What; Start-Sleep -Milliseconds 20 }
+    }
+    $spool.Port = $port
+    $spool.Start()
+
+    # The watch starts with the printer paused, and the agent start pauses a printer left running.
+    $spool.PrinterPaused = $false
+    Assert ($watch::StartPrint($port, 'Mac (BridgeVM)') -and $spool.PrinterPaused) 'the watch start pauses the printer'
+    $watch::StopPrint()
+    $spool.PrinterPaused = $false
+    $opened = [BridgeVM.SpoolerModel]::Opened; $closes = $spool.Closes
+    $script:printerKnown = $false
+    Suspend-BvPrinter
+    Assert ([BridgeVM.SpoolerModel]::Opened -eq $opened -and -not $spool.PrinterPaused) 'no printer made here: the agent start opens nothing'
+    $script:printerKnown = $true
+    Suspend-BvPrinter
+    Assert ($spool.PrinterPaused -and $spool.Closes -eq $closes + 1) 'the agent start pauses the printer it made, and lets go of it'
+    $text = $ast.Extent.Text
+    $hold = $text.IndexOf("`nSuspend-BvPrinter`r`n"); $open = $text.IndexOf('$h = Try-OpenPort')
+    Assert ($hold -gt 0 -and $open -gt $hold) 'the agent start pauses the printer before it opens the port'
+    # While the agent is away the paused printer keeps every job in its queue.
+    [void]$spool.Add((Get-Pdf 400 'away-1')); [void]$spool.Add((Get-Pdf 400 'away-2'))
+    Hold-Steady { $spool.Printed -eq 0 -and $spool.Queued -eq 2 } 'jobs wait in the paused queue while no watch runs' 600
+
+    # They go out one at a time once the watch runs, oldest first, none lost.
+    Assert ($watch::StartPrint($port, 'Mac (BridgeVM)')) 'watch on'
+    Wait-Until { (Get-Renamed).Count -eq 2 } 'the jobs queued while away arrive'
+    Assert ((Get-Texts) -join '|' -ceq '%PDF-1.7 away-1|%PDF-1.7 away-2' -and $spool.Lost -eq 0) "away: $((Get-Texts) -join '|') lost=$($spool.Lost)"
+    Wait-Until { $spool.PrinterPaused -and $spool.PausedJobs -eq 0 } 'idle again: the printer paused, no job paused'
+    Clear-Renamed
+
+    # A second job is not let out until the first one's job.pdf is renamed (here a link, which the
+    # watch never renames, stands for a job.pdf not renamed yet).
+    [void](New-Item -ItemType SymbolicLink -Path $port -Value $secret)
+    $printed = $spool.Printed
+    $spool.Add((Get-Pdf 400 'held')) | Out-Null
+    Hold-Steady { $spool.Printed -eq $printed -and $spool.PrinterPaused } 'no job goes out while job.pdf holds one'
+    [IO.File]::Delete($port)
+    Wait-Until { (Get-Renamed).Count -eq 1 } 'out once job.pdf is renamed'
+    Clear-Renamed
+
+    # At MaxPrintJobs renamed jobs waiting for the host the printer simply stays paused.
+    $max = $watch::MaxPrintJobs
+    for ($i = 0; $i -lt $max; $i++) { Write-Job (Join-Path $dir ('{0:D19}.pdf' -f (100 + $i))) (Get-Pdf 64 "old-$i") }
+    $printed = $spool.Printed
+    $spool.Add((Get-Pdf 400 'cap-1')) | Out-Null; $spool.Add((Get-Pdf 400 'cap-2')) | Out-Null
+    Hold-Steady { $spool.Printed -eq $printed -and $spool.PrinterPaused -and $spool.Queued -eq 2 } 'at the cap nothing is let out'
+    [IO.File]::Delete((Get-Renamed)[0])
+    Wait-Until { $spool.Printed -eq $printed + 1 } 'one out once the host took one'
+    Hold-Steady { $spool.Printed -eq $printed + 1 -and $spool.Queued -eq 1 } 'the cap again: the next one waits'
+    [IO.File]::Delete((Get-Renamed)[0])
+    Wait-Until { $spool.Printed -eq $printed + 2 } 'the next one out'
+    Assert ($spool.Lost -eq 0) "cap: lost=$($spool.Lost)"
+    Clear-Renamed
+
+    # A burst of five that print in no time: without the others paused the spooler would print them
+    # back to back into job.pdf faster than the watch renames it.
+    $spool.PrintMs = 0
+    $start = $spool.Started.Count
+    foreach ($n in 1..5) { $spool.Add((Get-Pdf 600 "burst-$n")) | Out-Null }
+    Wait-Until { (Get-Renamed).Count -eq 5 } 'a burst of five all arrive' 20
+    Assert ((Get-Texts) -join '|' -ceq ((1..5 | ForEach-Object { "%PDF-1.7 burst-$_" }) -join '|')) "burst: $((Get-Texts) -join '|')"
+    Assert ($spool.Lost -eq 0 -and $spool.Started.Count -eq $start + 5) "burst: lost=$($spool.Lost) started=$($spool.StartOrder)"
+    Clear-Renamed
+
+    # Jobs that arrive while one is out wait behind it.
+    $spool.PrintMs = 30
+    foreach ($n in 1..2) { $spool.Add((Get-Pdf 600 "wave-$n")) | Out-Null }
+    Start-Sleep -Milliseconds 600
+    foreach ($n in 3..5) { $spool.Add((Get-Pdf 600 "wave-$n")) | Out-Null; Start-Sleep -Milliseconds 15 }
+    Wait-Until { (Get-Renamed).Count -eq 5 } 'jobs arriving while one is out all arrive' 20
+    Assert ((Get-Texts) -join '|' -ceq ((1..5 | ForEach-Object { "%PDF-1.7 wave-$_" }) -join '|') -and $spool.Lost -eq 0) "wave: $((Get-Texts) -join '|') lost=$($spool.Lost)"
+    Wait-Until { $spool.PrinterPaused -and $spool.PausedJobs -eq 0 -and $spool.Queued -eq 0 } 'idle again after the wave'
+    Clear-Renamed
+
+    # A printer someone resumed by hand is paused again within half a second.
+    $spool.PrinterPaused = $false
+    Wait-Until { $spool.PrinterPaused } 'a printer resumed by hand is paused again' 3
+    $spool.Add((Get-Pdf 600 'resumed-1')) | Out-Null; $spool.Add((Get-Pdf 600 'resumed-2')) | Out-Null
+    Wait-Until { (Get-Renamed).Count -eq 2 } 'both arrive after the printer was resumed by hand'
+    Assert ($spool.Lost -eq 0) "resumed: lost=$($spool.Lost)"
+    Clear-Renamed
+    Write-Output 'PASS: the printer is paused at watch and agent start, one job goes out at a time, none while job.pdf holds one, none at MaxPrintJobs; bursts and arrivals all arrive, none lost'
 } finally {
     [BridgeVM.BvClipWatch]::StopPrint()
+    $spool.Stop()
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 & (Get-Process -Id $PID).Path -NoProfile -File $PSCommandPath -Mode readline
 if ($LASTEXITCODE -ne 0) { throw 'Read-Line dispatch failed' }
-Write-Output 'PASS: the agent printer to the Mac (setup, job detection, PRINTJOB dispatch)'
+Write-Output 'PASS: the agent printer to the Mac (setup, job detection, print gate, PRINTJOB dispatch)'
