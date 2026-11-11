@@ -26,7 +26,7 @@ final class HvfVirtualMachineMenuTarget: ObservableObject {
 /// Which items the session in front takes now, by the rules of the dashboard's own controls; all
 /// off without a VM window in front.
 struct HvfVirtualMachineMenuState: Equatable {
-    var sendsCtrlAltDelete = false
+    var sendsKeys = false
     var pauses = false
     var paused = false
     var restarts = false
@@ -39,7 +39,7 @@ extension HvfVirtualMachineMenuState {
         self.init()
         guard let session else { return }
         let running = session.vmmControlAvailable && !session.runtimeStartupWorkerPending
-        sendsCtrlAltDelete = running && !session.pause.holdsInput
+        sendsKeys = running && !session.pause.holdsInput
         paused = session.pause.showsResume
         pauses = paused || session.pauseAvailable // HvfPauseControl
         restarts = running // HvfRestartControl
@@ -49,13 +49,16 @@ extension HvfVirtualMachineMenuState {
     }
 }
 
-enum HvfVirtualMachineMenuAction { case ctrlAltDelete, pause, restart, stop, windows }
+enum HvfVirtualMachineMenuAction { case ctrlAltDelete, screenCapture, pause, restart, stop, windows }
 
 extension HvfDisplayWindowState {
     func perform(_ action: HvfVirtualMachineMenuAction) {
         switch action {
         case .ctrlAltDelete:
             if !session.sendToolbarKey("ctrl+alt+delete") { tell("Windows에 Ctrl+Alt+Delete를 보내지 못했습니다. 잠시 뒤 다시 시도하세요.") }
+        case .screenCapture:
+            // Windows+Shift+S opens the Snipping Tool's capture bar, whatever the Command key setting.
+            if !session.sendToolbarKey("win+shift+s") { tell("Windows에 화면 캡처 키(Windows+Shift+S)를 보내지 못했습니다. 잠시 뒤 다시 시도하세요.") }
         case .pause:
             tell(session.togglePause().message)
         case .restart:
@@ -137,7 +140,8 @@ struct HvfVirtualMachineMenuItems: View {
     let perform: @MainActor (HvfVirtualMachineMenuAction) -> Void
 
     var body: some View {
-        Button("Ctrl+Alt+Delete 보내기") { perform(.ctrlAltDelete) }.disabled(!state.sendsCtrlAltDelete)
+        Button("Ctrl+Alt+Delete 보내기") { perform(.ctrlAltDelete) }.disabled(!state.sendsKeys)
+        Button("화면 캡처 (Snipping Tool)") { perform(.screenCapture) }.disabled(!state.sendsKeys)
         Divider()
         Button(HvfPauseControl<EmptyView>.title(paused: state.paused)) { perform(.pause) }.disabled(!state.pauses)
         Button("다시 시작") { perform(.restart) }.disabled(!state.restarts)

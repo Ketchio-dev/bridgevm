@@ -147,7 +147,7 @@ final class HvfModifierChordResolverTests: XCTestCase {
 
     func testUnknownKeysAreIgnoredAndShiftOrUnmodifiedKeysKeepTheEarlierResolver() {
         XCTAssertEqual(chord(0x53, "1", .control, mac), .ignored, "keypad digits have no chord name")
-        XCTAssertEqual(chord(0x69, "\u{f710}", .command, mac), .ignored, "F13")
+        XCTAssertEqual(chord(0x6b, "\u{f711}", .command, mac), .ignored, "F14")
         for modifiers in [EventModifiers(), .shift] {
             XCTAssertNil(chord(0x00, "a", modifiers, mac))
             XCTAssertNil(chord(0x7a, "\u{f704}", modifiers, mac))
