@@ -8,9 +8,37 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
 
     private let sessionIdentifier: ObjectIdentifier
     private let state: HvfDisplayWindowState
+    let placement: HvfDisplayWindowPlacement
 
-    private init(window: NSWindow, sessionIdentifier: ObjectIdentifier, state: HvfDisplayWindowState) {
-        self.sessionIdentifier = sessionIdentifier
+    /// A new display window for the session, not shown yet: where this VM's window was last
+    /// (HvfDisplayWindowPlacement), or 1280x800 centred.
+    init(session: HvfEngineSession, title: String) {
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: NSSize(width: 1280, height: 800)),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = title
+        let state = HvfDisplayWindowState(session: session)
+        state.window = window
+        let hostingController = NSHostingController(
+            rootView: HvfLiveDisplaySurface(session: session, window: state)
+                .frame(minWidth: 640, minHeight: 400)
+        )
+        if #available(macOS 13.0, *) {
+            hostingController.sizingOptions = []
+        }
+        window.contentViewController = hostingController
+        window.setContentSize(NSSize(width: 1280, height: 800))
+        window.center()
+        placement = HvfDisplayWindowPlacement(config: session.config)
+        placement.restore(window)
+        window.collectionBehavior.insert(.fullScreenPrimary)
+        window.backgroundColor = .black
+        window.isReleasedWhenClosed = false
+
+        sessionIdentifier = ObjectIdentifier(session)
         self.state = state
         super.init(window: window)
         window.delegate = self
@@ -29,38 +57,11 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
             return
         }
 
-        let contentRect = NSRect(origin: .zero, size: NSSize(width: 1280, height: 800))
-        let window = NSWindow(
-            contentRect: contentRect,
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = title
-        let state = HvfDisplayWindowState(session: session)
-        state.window = window
-        let hostingController = NSHostingController(
-            rootView: HvfLiveDisplaySurface(session: session, window: state)
-                .frame(minWidth: 640, minHeight: 400)
-        )
-        if #available(macOS 13.0, *) {
-            hostingController.sizingOptions = []
-        }
-        window.contentViewController = hostingController
-        window.setContentSize(NSSize(width: 1280, height: 800))
-        window.center()
-        window.collectionBehavior.insert(.fullScreenPrimary)
-        window.backgroundColor = .black
-        window.isReleasedWhenClosed = false
-
-        let controller = HvfDisplayWindowController(
-            window: window,
-            sessionIdentifier: identifier,
-            state: state
-        )
+        let controller = HvfDisplayWindowController(session: session, title: title)
         controllers[identifier] = controller
-
+        guard let window = controller.window else { return }
         reveal(window)
+        controller.placement.reenterFullScreen(window)
     }
 
     /// `makeKeyAndOrderFront` can leave an already-open auxiliary window behind
@@ -79,7 +80,20 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidResignMain(_ notification: Notification) { HvfVirtualMachineMenuTarget.shared.resigned(state) }
 
+    func windowDidMove(_ notification: Notification) { if let window { placement.frameChanged(window) } }
+
+    func windowDidResize(_ notification: Notification) { if let window { placement.frameChanged(window) } }
+
+    func windowWillEnterFullScreen(_ notification: Notification) { placement.willEnterFullScreen() }
+
+    func windowDidEnterFullScreen(_ notification: Notification) { placement.didEnterFullScreen() }
+
+    func windowDidExitFullScreen(_ notification: Notification) { if let window { placement.didExitFullScreen(window) } }
+
+    func windowDidFailToEnterFullScreen(_ window: NSWindow) { placement.didExitFullScreen(window) }
+
     func windowWillClose(_ notification: Notification) {
+        if let window { placement.willClose(window) }
         HvfVirtualMachineMenuTarget.shared.resigned(state)
         if HvfDisplayWindowController.controllers[sessionIdentifier] === self {
             HvfDisplayWindowController.controllers[sessionIdentifier] = nil
