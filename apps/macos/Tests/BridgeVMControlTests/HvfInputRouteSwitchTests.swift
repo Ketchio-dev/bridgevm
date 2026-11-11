@@ -207,6 +207,20 @@ final class HvfInputRouteSwitchTests: XCTestCase {
         }
     }
 
+    func testATargetChangeDiscardsACtrlAltDeleteHeldBehindOrderedInput() throws {
+        try withClockedSession(negotiated: true) { session, fixture, _ in
+            XCTAssertTrue(session.sendKey("tab"))
+            let ahead = try XCTUnwrap(try fixture.commands().last)
+            XCTAssertTrue(session.sendToolbarKey("ctrl+alt+delete"))
+            XCTAssertTrue(session.sendKey("enter"))
+            session.cancelOrderedInputTarget() // the display window lost focus
+            XCTAssertEqual(session.inputDriver.router.count, 0, "nothing waits for the old target")
+            try fixture.appendLog(inserted(ahead, count: 2)); session.poll()
+            session.poll()
+            XCTAssertEqual(try legacy(fixture), [], "the cancelled chord and Enter never reach the guest")
+        }
+    }
+
     // MARK: - Fixture
 
     final class Clock {

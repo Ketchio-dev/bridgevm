@@ -149,8 +149,15 @@ struct HvfSessionInputRouter {
         return replay
     }
 
+    /// A changed target discards what waits for the old one: the stream's queue, and input held behind a
+    /// Ctrl+Alt+Delete, which must never reach the guest later.
     mutating func cancelTarget(now: Date = Date()) -> HvfAcknowledgedInputStream.Update {
-        stream.reset(.targetChanged, now: now)
+        let dropped = held.count + heldOut.count
+        held.removeAll(); heldOut.removeAll()
+        let update = stream.reset(.targetChanged, now: now)
+        guard dropped > 0 else { return update }
+        if case let .cancelled(reason, discarded) = update { return .cancelled(reason, discarded: discarded + dropped) }
+        return .cancelled(.targetChanged, discarded: dropped)
     }
 
     private mutating func matches(_ next: [String]) -> Bool {
