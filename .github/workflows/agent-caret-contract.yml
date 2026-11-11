@@ -1,0 +1,17 @@
+name: Guest agent caret contract
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/win-assets/bvagent.ps1', 'scripts/win-assets/bvagent-input.ps1', 'tests/integration/agent-caret-contract.ps1', '.github/workflows/agent-caret-contract.yml']}}
+permissions:
+  contents: read
+jobs:
+  caret:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check CARET with Windows PowerShell 5.1
+        shell: powershell
+        run: tests/integration/agent-caret-contract.ps1
+      - name: Check CARET with PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: tests/integration/agent-caret-contract.ps1
