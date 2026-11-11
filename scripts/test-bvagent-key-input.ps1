@@ -66,6 +66,45 @@ $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('ctrl+alt+de
 $script:keySenderCalled = $false
 $result = Invoke-UnicodeInput "$id $payload" { $script:keySenderCalled = $true; return [uint32]6 } $true
 if ($result.Exit -eq 0 -or $script:keySenderCalled) { throw 'unsupported key reached sender' }
+# Held keys overlap like on the VMM's HID report: an up releases only the modifiers no other held action needs (one
+# still needed is pressed again instead, so every half keeps its count); a repeat holds once; an up for an action not
+# held still releases it (a restarted agent); a down that inserted nothing holds nothing; at most six are held.
+$sent = New-Object 'System.Collections.Generic.List[string]'
+$stub = [Func[BridgeVM.BvUnicodeInput+Input[], uint32]]({ param($events) $sent.Add((($events | ForEach-Object { '{0}:{1}' -f $_.Data.Keyboard.VirtualKey, $_.Data.Keyboard.Flags }) -join ',')); return [uint32]$events.Length }.GetNewClosure())
+$none = [Func[BridgeVM.BvUnicodeInput+Input[], uint32]]{ param($events) return [uint32]0 }
+function Assert-Held([string]$command, [string]$expected, [Func[BridgeVM.BvUnicodeInput+Input[], uint32]]$send = $stub) {
+    $sent.Clear()
+    [void][BridgeVM.BvUnicodeInput]::InsertKey($command, $send)
+    if ($sent[0] -cne $expected) { throw "wrong held key events: $command => $($sent[0]) (expected $expected)" }
+}
+Assert-Held 'down:ctrl+left' '17:0,37:1'
+Assert-Held 'down:ctrl+right' '17:0,39:1'
+Assert-Held 'down:ctrl+right' '17:0,39:1'
+Assert-Held 'ctrl+v' '17:0,86:0,86:2,17:2'
+Assert-Held 'up:ctrl+left' '37:3,17:0'
+Assert-Held 'up:ctrl+left' '37:3,17:0'
+Assert-Held 'up:ctrl+right' '39:3,17:2'
+Assert-Held 'up:ctrl+left' '37:3,17:2'
+Assert-Held 'down:ctrl+shift+left' '17:0,16:0,37:1'
+Assert-Held 'down:shift' '16:0'
+Assert-Held 'up:shift' '16:0'
+Assert-Held 'up:ctrl+shift+left' '37:3,16:2,17:2'
+$failed = $false
+try { [void][BridgeVM.BvUnicodeInput]::InsertKey('down:ctrl+up', $none) } catch { $failed = $true }
+if (-not $failed) { throw 'a down that inserted nothing was accepted' }
+Assert-Held 'down:ctrl+down' '17:0,40:1'
+Assert-Held 'up:ctrl+down' '40:3,17:2'
+foreach ($n in 1..7) { Assert-Held "down:ctrl+f$n" "17:0,$(111 + $n):0" }
+foreach ($n in 1..5) { Assert-Held "up:ctrl+f$n" "$(111 + $n):2,17:0" }
+Assert-Held 'up:ctrl+f6' '117:2,17:2'
+Assert-Held 'up:ctrl+f7' '118:2,17:2'
+Assert-Held 'enter' '13:0,13:2'
+$payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('up:ctrl+left'))
+Assert-Held 'down:ctrl+right' '17:0,39:1'
+$sent.Clear()
+$result = Invoke-UnicodeInput "$id $payload" { param($key) return [BridgeVM.BvUnicodeInput]::InsertKey($key, $stub) } $true
+if ($result.Exit -ne 0 -or $result.Out -cne "BVINPUT_INSERTED $id 2" -or $sent.Count -ne 1 -or $sent[0] -cne '37:3,17:0') { throw 'overlapping release receipt mismatch' }
+Assert-Held 'up:ctrl+right' '39:3,17:2'
 $agent = [IO.File]::ReadAllText((Join-Path $root 'bvagent.ps1'))
 if (-not $agent.Contains("{ `$_ -in @('TEXTINPUT', 'KEYINPUT', 'POINTERINPUT') } { Write-CommandResult `$h (Invoke-UnicodeInput `$arg `$null (`$tok -eq 'KEYINPUT') (`$tok -eq 'POINTERINPUT')) }")) { throw 'key dispatch missing' }
 Write-Output 'Guest key chord contracts: PASS (no native input injected)'
