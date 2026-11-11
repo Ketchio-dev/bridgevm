@@ -6,7 +6,8 @@ enum HvfGuestCommand {
     /// input verbs); it matches case-sensitively after splitting on Unicode whitespace.
     static let relayProtocolVerbs: Set<String> = [
         "CLIPGET", "CLIPSET", "LS", "LSR", "GET", "PUT", "PUTBEG", "PUTCHUNK", "PUTEND", "DEL", "PING",
-        "WINLIST", "WINBOUNDS", "WINFOCUS", "WINCLOSE", "TEXTINPUT", "KEYINPUT", "POINTERINPUT", "INPUTCAPS", "LINKWATCH"
+        "WINLIST", "WINBOUNDS", "WINFOCUS", "WINCLOSE", "TEXTINPUT", "KEYINPUT", "POINTERINPUT", "INPUTCAPS", "LINKWATCH",
+        "CARET"
     ]
 
     /// One control-file line; the diagnostics box and window inventory send verbs on purpose.

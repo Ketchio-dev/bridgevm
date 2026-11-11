@@ -384,6 +384,13 @@ final class FBLayerView: HvfFramebufferTextInput {
         session.map { HvfFramebufferKeyInput.send(event, to: $0) } ?? false
     }
     override func sendGuestText(_ text: String) -> Bool { session?.sendDisplayInput(.text(text)) ?? false }
+    /// The agent's caret is in guest pixels; it is mapped as the frame is shown when the answer comes.
+    override func askGuestCaret(_ found: @escaping (NSRect?) -> Void) -> Bool {
+        session?.requestGuestCaret { [weak self] caret in
+            guard let self else { return }
+            found(caret.flatMap { HvfGuestCaret.viewRect($0, viewSize: self.bounds.size, imageSize: self.guestSize) })
+        } ?? false
+    }
     override var guestModifierChords: Bool { session?.keyMapping.modifierChords ?? false }
     override func sendGuestModifierTap(_ action: String) {
         if let session { HvfFramebufferKeyInput.sendTap(action, to: session) }

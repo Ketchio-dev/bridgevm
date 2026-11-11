@@ -19,6 +19,8 @@ struct HvfSessionInputRouter {
     /// guest: only an agent with the markers takes them; the VMM's HID path drops modifiers and has no middle button.
     var pointerModifiers: Bool { eligible && stream.pointerModifiers }
     var middleButton: Bool { eligible && stream.middleButton }
+    /// Whether the agent answers `CARET` (the INPUTCAPS marker); the VMM's HID path cannot.
+    var caret: Bool { eligible && stream.caret }
 
     mutating func beginOwnedBoot(binding: [String]) {
         self = Self()

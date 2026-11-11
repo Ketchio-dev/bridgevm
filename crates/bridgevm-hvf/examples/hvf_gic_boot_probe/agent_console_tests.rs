@@ -180,12 +180,25 @@ pub(super) mod tests {
         for v in [
             "CLIPGET", "CLIPSET", "LS", "LSR", "GET", "PUT", "PUTBEG", "PUTCHUNK", "PUTEND", "DEL",
             "PING", "WINLIST", "WINBOUNDS", "WINFOCUS", "WINCLOSE", "DISPLAYMODE", "DISPLAYSCALE",
+            "CARET",
         ] {
             assert!(is_raw_verb(v), "{v} should be raw");
         }
-        for v in ["whoami", "PS", "RUN", "ipconfig", ""] {
+        for v in ["whoami", "PS", "RUN", "ipconfig", "", "caret"] {
             assert!(!is_raw_verb(v), "{v} should be RUN-wrapped");
         }
+    }
+
+    /// The app's caret question reaches the agent as its own verb, never as a cmd.exe line, and the
+    /// agent's OUT reply completes it (logged under the question's ID, the frame the app waits for).
+    #[test]
+    fn caret_question_goes_raw_and_its_reply_completes_it() {
+        let command = "CARET 12345678-1234-1234-1234-123456789abc";
+        assert_eq!(command_wire_line(command), format!("{command}\n"));
+        assert_eq!(command_wire_line("CARET"), "CARET\n");
+        let mut h = harness();
+        let reply = format!("OUT 0 {}", base64_encode(b"BVCARET 120 340 2 18"));
+        assert!(matches!(h.handle_reply_line(&reply, command), ReplyProgress::Complete));
     }
 
     #[test]

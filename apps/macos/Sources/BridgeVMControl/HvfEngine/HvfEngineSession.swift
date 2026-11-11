@@ -67,6 +67,7 @@ final class HvfEngineSession: ObservableObject {
     @Published var diskGrowNotice: String? // the guest's report on extending C: after a disk grow (HvfDiskGrow)
     var diskExtendInFlight = false
     var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it
+    var guestCaretQuery: HvfGuestCaretQuery? // where the guest's text caret is, asked once per composition
     let inputDriver = HvfSessionInputDriver()
     private var scrollAccumulator = HvfScrollAccumulator() // the scroll fraction not yet sent to the guest
     let appPacing = HvfAppPacingRecords() // the session's app-side display and input records
@@ -387,6 +388,7 @@ final class HvfEngineSession: ObservableObject {
         let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")
         let lines = tailReader.readNewLines(from: logURL)
         finishLegacyPaste(lines: lines)
+        answerGuestCaret(lines: lines)
         for event in agentEvents.parse(lines) {
             handle(event)
         }
@@ -416,6 +418,7 @@ final class HvfEngineSession: ObservableObject {
                   !command.contains("\r"), !command.contains("\0") else { return false }
             return appendControlCommand(command)
         }
+        sendDueGuestCaret()
         if ownedController == nil, case .stopping = connectionState {
             sendGracefulStopIfReady()
             if let stopDeadline, Date() >= stopDeadline {
