@@ -33,10 +33,11 @@ struct HvfLegacyInputActivity {
             case "release", "right-click": buttons = 0
             default: break
             }
+            // The VMM takes a pointer line only after it queued the move before it (one FIFO) and once the move's
+            // reports drained (queue_actions is busy until then); the second after it covers the rest. A KEY line
+            // proves nothing about the mouse: the keyboard's reports have their own queue.
+            unconfirmedMove = nil
         }
-        // The VMM takes this line only after it queued the move before it (one FIFO), a pointer line only once the
-        // move's reports drained (queue_actions is busy until then); the second after it covers the rest.
-        unconfirmedMove = nil
         written += 1
         last = now
     }

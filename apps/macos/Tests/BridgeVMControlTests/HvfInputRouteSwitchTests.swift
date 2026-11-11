@@ -26,10 +26,16 @@ final class HvfInputRouteSwitchTests: XCTestCase {
             clock.advance(0.75); session.poll()
             XCTAssertEqual(try fixture.commands(), [query])
             clock.advance(0.25); session.poll()
+            // The move before the keys still needs its barrier: the keyboard's queue says nothing about the mouse's.
+            XCTAssertEqual(try legacy(fixture).last, "POINTER release:16384x16384")
+            XCTAssertFalse(session.events.contains(.unknown(active)))
+            try fixture.probeTakes(); session.poll()
+            clock.advance(1); session.poll()
             XCTAssertTrue(session.events.contains(.unknown(active)))
             XCTAssertTrue(session.sendKey("left"))
             XCTAssertEqual(try payload(try fixture.commands().last), "KEYINPUT left")
-            XCTAssertEqual(try legacy(fixture).filter { !$0.hasPrefix("POINTER move:") }, ["KEY enter", "KEY tab", "KEY esc"])
+            XCTAssertEqual(try legacy(fixture).filter { !$0.hasPrefix("POINTER move:") },
+                           ["KEY enter", "KEY tab", "KEY esc", "POINTER release:16384x16384"])
         }
     }
 
@@ -205,6 +211,17 @@ final class HvfInputRouteSwitchTests: XCTestCase {
             XCTAssertEqual(try legacy(fixture), ["KEY ctrl+alt+delete", "KEY enter"])
             XCTAssertEqual(try fixture.commands().last, ahead)
         }
+    }
+
+    func testAKeyAfterAMoveDoesNotStandInForTheMovesBarrier() {
+        var activity = HvfLegacyInputActivity()
+        let start = Date(timeIntervalSince1970: 1000)
+        activity.wrote("POINTER move:100x200", now: start)
+        activity.wrote("KEY enter", now: start)
+        activity.observe(["live input accepted: command=Key(<redacted>)"], now: start)
+        let later = start.addingTimeInterval(5)
+        XCTAssertFalse(activity.quiescent(now: later), "the keyboard's queue says nothing about the mouse's")
+        XCTAssertEqual(activity.barrier(now: later), "POINTER release:100x200")
     }
 
     func testATargetChangeDiscardsACtrlAltDeleteHeldBehindOrderedInput() throws {
