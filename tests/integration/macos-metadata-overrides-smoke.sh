@@ -95,6 +95,10 @@ usage_keys="$(plutil -convert json -o - "$CONTROL_INFO_PLIST" |
 for key in $usage_keys; do
   assert_hvf_lab_plist_value "$key" "$(plutil -extract "$key" raw -o - "$CONTROL_INFO_PLIST")"
 done
+# Finder's Open With and the Dock icon hand files to the nested app, as to the standalone one.
+[[ "$(plutil -extract CFBundleDocumentTypes json -o - "$APP/Contents/Applications/BridgeVMControl.app/Contents/Info.plist")" ==
+   "$(plutil -extract CFBundleDocumentTypes json -o - "$CONTROL_INFO_PLIST")" ]] ||
+  fail "Windows HVF Lab Info.plist CFBundleDocumentTypes differ from $CONTROL_INFO_PLIST"
 [[ -f "$APP/Contents/Resources/$(basename "$ICON_FILE")" ]] || {
   fail "icon file was not copied into app resources"
 }

@@ -34,6 +34,9 @@ assert metadata['CFBundleIconFile'] == 'BridgeVM.icns'
 assert metadata['NSLocalNetworkUsageDescription'].strip()
 # Without it macOS ends the app when it asks for microphone access.
 assert metadata['NSMicrophoneUsageDescription'].strip()
+# Finder's Open With and the Dock icon offer BridgeVM for any file, never as its default app.
+assert [(d['CFBundleTypeRole'], d['LSHandlerRank'], d['LSItemContentTypes'])
+        for d in metadata['CFBundleDocumentTypes']] == [('Viewer', 'Alternate', ['public.data', 'public.item'])]
 assert (app / 'Contents/Resources' / metadata['CFBundleIconFile']).is_file()
 expected = {f'icon_{p}x{p}{"@2x" if s == 2 else ""}.png': p*s
             for p in (16, 32, 128, 256, 512) for s in (1, 2)}

@@ -4,6 +4,24 @@
 <dict>
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
+    <!-- Finder's Open With and the Dock icon take any file or folder, which goes to the running
+         Windows and opens there (ControlAppDelegate). Alternate: BridgeVM is never the default app. -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Any file</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.data</string>
+                <string>public.item</string>
+            </array>
+        </dict>
+    </array>
     <key>CFBundleExecutable</key>
     <string>BridgeVMControl</string>
     <key>CFBundleIdentifier</key>
