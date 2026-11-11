@@ -291,12 +291,14 @@ try {
     $script:BvLsrMaxAgeTicks = $maxAge
     $cases++
 
-    # The compiled listing gives the Get-ChildItem walk's rows, in its order: in each folder the
-    # folders, then the files, each sorted by name in the current culture ignoring case, then
-    # each folder below in the file system's order. Names that sort apart by culture and by code
-    # point, hidden and system files, an empty folder, a large PUT's temporary (never listed) and
-    # look-alikes (listed), a long path and a junction (Windows PowerShell follows it) on Windows.
-    # A folder neither can list fails both.
+    # The compiled listing gives the Get-ChildItem walk's rows. Under Windows PowerShell 5.1, the
+    # agent's runtime, also its order: in each folder the folders, then the files, each in NTFS
+    # order, then each folder below in that order (Windows CI, 2026-11-11). PowerShell 7 sorts
+    # each folder by name instead, so there the rows are compared sorted. Names that sort apart
+    # by culture and by code point, hidden and system files, an empty folder, a large PUT's
+    # temporary (never listed) and look-alikes (listed), a long path on Windows, and a junction
+    # (Windows) or a folder link (elsewhere), which is listed but not entered. A folder neither
+    # can list fails both.
     $walkRoot = Join-Path ([IO.Path]::GetTempPath()) ('bv-walk-' + [Guid]::NewGuid().ToString('N'))
     $windows = [IO.Path]::DirectorySeparatorChar -eq '\'
     try {
@@ -324,18 +326,35 @@ try {
             $deepDir = Join-Path $walkRoot ((@(('w' * 60)) * 5) -join '\')
             [void][IO.Directory]::CreateDirectory('\\?\' + $deepDir)
             [IO.File]::WriteAllBytes('\\?\' + $deepDir + '\long.bin', [byte[]](4))
-            if ($PSVersionTable.PSEdition -eq 'Desktop') {
-                # Windows PowerShell 5.1 recurses into a junction (PowerShell 7 does not).
-                [void](New-Item -ItemType Junction -Path (Join-Path $walkRoot 'link') -Value (Join-Path $walkRoot 'A/_u'))
-            }
+            [void](New-Item -ItemType Junction -Path (Join-Path $walkRoot 'link') -Value (Join-Path $walkRoot 'A/_u'))
+        } else {
+            [void](New-Item -ItemType SymbolicLink -Path (Join-Path $walkRoot 'link') -Value (Join-Path $walkRoot 'A/_u'))
         }
         $rootFull = [IO.Path]::GetFullPath($walkRoot) + [IO.Path]::DirectorySeparatorChar
         $listRoot = Get-IoPath $rootFull $true
-        $script:BvShareWatchReady = $true
-        $compiled = & $listShare $listRoot
-        $script:BvShareWatchReady = $false
-        $walked = & $listShare $listRoot
-        $script:BvShareWatchReady = $true
+        function Listing([bool]$compiled) {
+            $script:BvShareWatchReady = $compiled
+            try { & $listShare $listRoot } finally { $script:BvShareWatchReady = $true }
+        }
+        # A listing shows a folder's time from its parent's entry, which NTFS brings up to date
+        # only after the folder changed and was opened: the first listing after the tree was made
+        # (whichever way) moved the times of folders the test had just filled (CI: A, the long
+        # path's folders, Z\deep\er, about 2 ms). The agent lists a folder its watcher saw settle;
+        # here the tree is listed until two walks agree, then compared.
+        $walked = Listing $false
+        for ($i = 0; $i -lt 10; $i++) {
+            $again = Listing $false
+            if ($again -ceq $walked) { break }
+            $walked = $again
+            Start-Sleep -Milliseconds 200
+        }
+        $compiled = Listing $true
+        Assert ((Listing $false) -ceq $walked) 'the tree held still while it was compared'
+        if ($PSVersionTable.PSEdition -ne 'Desktop') {
+            $sort = { param($text) $rows = [string[]]($text -split "`r?`n"); [Array]::Sort($rows, [StringComparer]::Ordinal); $rows -join "`n" }
+            $compiled = & $sort $compiled
+            $walked = & $sort $walked
+        }
         $a = $compiled -split "`r?`n"; $b = $walked -split "`r?`n"
         $at = 0; while ($at -lt [Math]::Min($a.Count, $b.Count) -and $a[$at] -ceq $b[$at]) { $at++ }
         if (-not ($compiled -ceq $walked)) {
@@ -348,6 +367,7 @@ try {
         }
         Assert ($compiled -ceq $walked) "compiled and walked listings differ at row $at of $($a.Count)/$($b.Count): '$(if ($at -lt $a.Count) { $a[$at] })' vs '$(if ($at -lt $b.Count) { $b[$at] })'"
         Assert ($a.Count -gt 60 -and $compiled -cmatch '\.bridgevm-part-notes\|2\|0\|' -and $compiled -cnotmatch 'bridgevm-part-[0-9a-f]{32}\|') "the compiled listing: $($a.Count) rows"
+        Assert ($compiled -cmatch '(?m)^link\|0\|1\|' -and $compiled -cnotmatch '(?m)^link[\\/]') 'the link is listed, not entered'
         $cases++
 
         $locked = Join-Path $walkRoot 'A/locked'
@@ -368,7 +388,9 @@ try {
         $cases++
     } finally {
         $script:BvShareWatchReady = $true
-        if ($windows -and (Test-Path -LiteralPath (Join-Path $walkRoot 'link'))) { [IO.Directory]::Delete((Join-Path $walkRoot 'link')) }
+        # The link itself, before the tree, which must not be emptied through it.
+        $link = Join-Path $walkRoot 'link'
+        if ($windows -and [IO.Directory]::Exists($link)) { [IO.Directory]::Delete($link) } elseif (-not $windows) { [IO.File]::Delete($link) }
         Remove-Item -LiteralPath (Get-IoPath $walkRoot $true) -Recurse -Force -ErrorAction SilentlyContinue
     }
 

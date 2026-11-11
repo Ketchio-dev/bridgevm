@@ -1319,11 +1319,11 @@ namespace BridgeVM {
 
         // The rows `relpath|size|isDir|mtimeUtc` below `listRoot` (which ends in a separator) as
         // Get-ChildItem -Recurse -Force under Windows PowerShell 5.1 gives them: in each folder its
-        // folders, then its files, each by name in the current culture ignoring case (a stable
-        // sort), then each folder below in the order the file system gave it, junctions and links
-        // followed. A large PUT's temporary is never listed; one no PUT holds (`held`), five
-        // minutes old, is removed. Any error (access denied, a folder gone) fails the listing, as
-        // -ErrorAction Stop did. A folder stack, not recursion: a junction loop ends in an error.
+        // folders, then its files, each in the order the file system gives them (NTFS: by upcased
+        // name), then each folder below in that order. A reparse point (a junction, a link) is
+        // listed but not entered. A large PUT's temporary is never listed; one no PUT holds
+        // (`held`), five minutes old, is removed. Any error (access denied, a folder gone) fails
+        // the listing, as -ErrorAction Stop did. A folder stack, not recursion, for deep trees.
         public static string List(string listRoot, string held) {
             StringBuilder sb = new StringBuilder();
             Stack<DirectoryInfo> pending = new Stack<DirectoryInfo>();
@@ -1336,8 +1336,8 @@ namespace BridgeVM {
                 foreach (FileSystemInfo e in pending.Pop().EnumerateFileSystemInfos()) {
                     if (e is DirectoryInfo) { dirs.Add(e); } else { files.Add(e); }
                 }
-                foreach (FileSystemInfo e in Sorted(dirs)) { Row(sb, listRoot, e, 0, 1); }
-                foreach (FileSystemInfo e in Sorted(files)) {
+                foreach (FileSystemInfo e in dirs) { Row(sb, listRoot, e, 0, 1); }
+                foreach (FileSystemInfo e in files) {
                     if (Part.IsMatch(e.Name)) {
                         bool kept = held != null && string.Equals(held, e.Name, StringComparison.OrdinalIgnoreCase);
                         if (!kept && e.LastWriteTimeUtc < DateTime.UtcNow.AddMinutes(-5)) { try { e.Delete(); } catch { } }
@@ -1345,22 +1345,11 @@ namespace BridgeVM {
                     }
                     Row(sb, listRoot, e, ((FileInfo)e).Length, 0);
                 }
-                for (int i = dirs.Count - 1; i >= 0; i--) { pending.Push((DirectoryInfo)dirs[i]); }
+                for (int i = dirs.Count - 1; i >= 0; i--) {
+                    if ((dirs[i].Attributes & FileAttributes.ReparsePoint) == 0) { pending.Push((DirectoryInfo)dirs[i]); }
+                }
             }
             return sb.ToString();
-        }
-
-        static FileSystemInfo[] Sorted(List<FileSystemInfo> items) {
-            int[] order = new int[items.Count];
-            for (int i = 0; i < order.Length; i++) { order[i] = i; }
-            StringComparer names = StringComparer.CurrentCultureIgnoreCase;
-            Array.Sort(order, delegate (int a, int b) {
-                int byName = names.Compare(items[a].Name, items[b].Name);
-                return byName != 0 ? byName : a.CompareTo(b);
-            });
-            FileSystemInfo[] sorted = new FileSystemInfo[order.Length];
-            for (int i = 0; i < order.Length; i++) { sorted[i] = items[order[i]]; }
-            return sorted;
         }
 
         static void Row(StringBuilder sb, string listRoot, FileSystemInfo e, long size, int dir) {
