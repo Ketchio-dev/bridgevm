@@ -1047,7 +1047,8 @@ function Open-BvDropItem([string]$Arg) {
 # I/O. vioser marks a waiting read cancelable, and a cancelled read takes no
 # bytes. Compiled on the first CLIPCAPS PUSH, so boot does not pay for it.
 # LINKWATCH (the app's "open Windows links on the Mac") has the same thread watch
-# the link file alone, without the clipboard: see "link watch" below.
+# the link file alone, without the clipboard: see "link watch" below. PRINTWATCH has
+# it watch the printer's port file: see "print" below.
 $script:BvClipPush = $false
 $script:BvLinkWatch = $false
 $script:BvClipWatchReady = $null
@@ -1092,6 +1093,14 @@ namespace BridgeVM {
         public const int MaxLinksPerWake = 4;
         // base64 of a 2048-byte URL.
         const int MaxLinkLine = 2732;
+        // Print jobs (StartPrint): the printer's port file, the jobs already announced, a wake,
+        // and when to look again at a renamed job something still holds open (0: never).
+        static volatile string printPort;
+        static bool printPending;
+        static int printRetry;
+        static readonly Dictionary<string, bool> printSent = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        // Renamed jobs kept beside the port file at most: past this a finished job.pdf waits.
+        public const int MaxPrintJobs = 8;
 
         public static void Start() {
             lock (Gate) {
@@ -1111,6 +1120,22 @@ namespace BridgeVM {
                 }
                 StartThread();
             }
+        }
+
+        // Watch the printer's port file for finished jobs. Jobs renamed beside it earlier (an
+        // earlier agent's, not deleted by the host yet) are announced again.
+        public static void StartPrint(string port) {
+            lock (Gate) {
+                printSent.Clear();
+                printPort = port;
+                printPending = true;
+                printRetry = 0;
+                StartThread();
+            }
+        }
+
+        public static void StopPrint() {
+            lock (Gate) { printPort = null; printPending = false; printRetry = 0; }
         }
 
         static void StartThread() {
@@ -1134,17 +1159,22 @@ namespace BridgeVM {
                     uint seq = clip ? GetClipboardSequenceNumber() : 0;
                     string path = links;
                     long length = path == null ? 0 : LinkLength(path);
+                    string port = printPort;
+                    bool claimed = port != null && ClaimPrint(port);
                     lock (Gate) {
                         if (clip && seq != seen) { seen = seq; pending = true; }
                         if (path != null && length != linkSeen) { linkSeen = length; linkPending = true; }
-                        if ((pending || linkPending) && inRead) { CancelSynchronousIo(reader); }
+                        bool retry = printRetry != 0 && unchecked(Environment.TickCount - printRetry) >= 0;
+                        if (port != null && port == printPort && (claimed || retry)) { printRetry = 0; printPending = true; }
+                        if ((pending || linkPending || printPending) && inRead) { CancelSynchronousIo(reader); }
                     }
                 } catch (Exception) { }
             }
         }
 
         // Bytes read, 0 when the read failed, -1 when it was cancelled for a
-        // clipboard change, or -2 for new lines in the link file (TakeLinks).
+        // clipboard change, -2 for new lines in the link file (TakeLinks), or -3
+        // for finished print jobs (TakePrintJobs).
         public static int Read(IntPtr h, byte[] buf) {
             lock (Gate) {
                 uint id = GetCurrentThreadId();
@@ -1168,6 +1198,10 @@ namespace BridgeVM {
                 if (!ok && error == OperationAborted && linkPending) {
                     linkPending = false;
                     return -2;
+                }
+                if (!ok && error == OperationAborted && printPending) {
+                    printPending = false;
+                    return -3;
                 }
             }
             return ok ? (int)read : 0;
@@ -1227,6 +1261,58 @@ namespace BridgeVM {
                 return bytes.Length <= 2048 && Regex.IsMatch(url, @"\A(?i:https?)://[^\s\x00-\x1f\x7f]+\z");
             } catch (Exception) { return false; }
         }
+
+        // A finished job: the spooler's job.pdf renamed to <ticks>.pdf beside it. The spooler
+        // holds the file open from the job's start to its end, so the rename fails until then.
+        // The folder is the user's and this agent is elevated: never through a reparse point,
+        // and only a rename within the folder (never a copy, a write or a delete here).
+        static bool ClaimPrint(string port) {
+            if (!File.Exists(port)) { return false; }
+            string dir = Path.GetDirectoryName(port);
+            if ((File.GetAttributes(dir) & FileAttributes.ReparsePoint) != 0 ||
+                (File.GetAttributes(port) & FileAttributes.ReparsePoint) != 0) { return false; }
+            if (Directory.GetFiles(dir, "*.pdf").Length > MaxPrintJobs) { return false; }
+            try {
+                File.Move(port, Path.Combine(dir, DateTime.UtcNow.Ticks.ToString("D19") + ".pdf"));
+                return true;
+            } catch (IOException) {
+                return false;
+            } catch (UnauthorizedAccessException) {
+                return false;
+            }
+        }
+
+        // The renamed jobs not announced yet, oldest first, as "<b64(utf8 path)> <bytes>": each a
+        // regular file that nothing holds open any more, so a job is never announced half-written.
+        // One still held (a spooler share mode that allowed the rename) is looked at again in a
+        // second. The host fetches each by this path (GETRANGE) and deletes it (DEL).
+        public static string[] TakePrintJobs() {
+            List<string> jobs = new List<string>();
+            string port = printPort;
+            if (port == null) { return jobs.ToArray(); }
+            bool held = false;
+            try {
+                string dir = Path.GetDirectoryName(port);
+                if ((File.GetAttributes(dir) & FileAttributes.ReparsePoint) != 0) { return jobs.ToArray(); }
+                string[] files = Directory.GetFiles(dir, "*.pdf");
+                Array.Sort(files, StringComparer.Ordinal);
+                foreach (string file in files) {
+                    if (!Regex.IsMatch(Path.GetFileName(file), @"\A[0-9]{19}\.pdf\z") || printSent.ContainsKey(file)) { continue; }
+                    if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0) { continue; }
+                    long length;
+                    try {
+                        using (FileStream stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.None)) { length = stream.Length; }
+                    } catch (IOException) {
+                        held = true;
+                        continue;
+                    }
+                    printSent[file] = true;
+                    jobs.Add(Convert.ToBase64String(Encoding.UTF8.GetBytes(file)) + " " + length);
+                }
+            } catch (Exception) { }
+            if (held) { lock (Gate) { printRetry = (Environment.TickCount + 1000) | 1; } }
+            return jobs.ToArray();
+        }
     }
 }
 '@
@@ -1265,6 +1351,65 @@ function Start-LinkWatch {
     }
 }
 # <<< link watch
+
+# >>> print
+# PRINTWATCH: the app's "print to the Mac". The printer 'Mac (BridgeVM)' is the inbox
+# Microsoft Print To PDF driver on a Local Port whose name is a file path, so the spooler
+# writes each job there as a PDF, with no Save dialog. The spooler opens that file as the
+# user who printed, so it lies in this user's own folder. The clipboard watch thread renames
+# a finished job.pdf to <ticks>.pdf (BvClipWatch.ClaimPrint), and Read-Line writes
+# PRINTJOB <b64(path)> <bytes> between replies for each one nothing holds open any more; the
+# host fetches it (GETRANGE) and deletes it (DEL). Every step runs only when missing, so a
+# later boot changes nothing. PRINTWATCH off stops the watch and removes the printer and its
+# port. A failure is one line the app shows once: BVPRINT printer=failed detail=<why>.
+$script:BvPrintWatch = $false
+$script:BvPrinterName = 'Mac (BridgeVM)'
+$script:BvPrintDriver = 'Microsoft Print To PDF'
+function Get-BvPrintPort {
+    return [System.IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'BridgeVM', 'Print', 'job.pdf')
+}
+function Install-BvPrinter([string]$Port) {
+    if ($null -eq (Get-PrinterDriver -Name $script:BvPrintDriver -ErrorAction SilentlyContinue)) {
+        Add-PrinterDriver -Name $script:BvPrintDriver -ErrorAction Stop
+    }
+    if ($null -eq (Get-PrinterPort -Name $Port -ErrorAction SilentlyContinue)) { Add-PrinterPort -Name $Port -ErrorAction Stop }
+    $printer = Get-Printer -Name $script:BvPrinterName -ErrorAction SilentlyContinue
+    if ($null -ne $printer -and ($printer.DriverName -cne $script:BvPrintDriver -or $printer.PortName -cne $Port)) {
+        Remove-Printer -Name $script:BvPrinterName -ErrorAction Stop
+        $printer = $null
+    }
+    if ($null -eq $printer) { Add-Printer -Name $script:BvPrinterName -DriverName $script:BvPrintDriver -PortName $Port -ErrorAction Stop }
+}
+function Start-PrintWatch([string]$Arg) {
+    $port = Get-BvPrintPort
+    if ($Arg -ceq 'off') {
+        if ($script:BvPrintWatch) { [BridgeVM.BvClipWatch]::StopPrint(); $script:BvPrintWatch = $false }
+        try {
+            $removed = $false
+            if ($null -ne (Get-Printer -Name $script:BvPrinterName -ErrorAction SilentlyContinue)) { Remove-Printer -Name $script:BvPrinterName -ErrorAction Stop; $removed = $true }
+            if ($null -ne (Get-PrinterPort -Name $port -ErrorAction SilentlyContinue)) { Remove-PrinterPort -Name $port -ErrorAction Stop; $removed = $true }
+            if ($removed) { return @{ Exit = 0; Out = 'BVPRINT printer=removed' } }
+            return @{ Exit = 0; Out = 'BVPRINT printer=absent' }
+        } catch {
+            return @{ Exit = 1; Out = 'BVPRINT printer=remove-failed detail=' + (($_.Exception.Message -replace '\s+', ' ').Trim()) }
+        }
+    }
+    try {
+        $dir = [System.IO.Path]::GetDirectoryName($port)
+        [void][System.IO.Directory]::CreateDirectory($dir)
+        if (([System.IO.File]::GetAttributes($dir) -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'the print folder is a reparse point' }
+        Install-BvPrinter $port
+        if (-not ('BridgeVM.BvClipWatch' -as [type])) { Add-Type -TypeDefinition $script:BvClipWatchSource -ErrorAction Stop }
+        [BridgeVM.BvClipWatch]::StartPrint($port)
+        $script:BvPrintWatch = $true
+        return @{ Exit = 0; Out = 'BVPRINT printer=ready' }
+    } catch {
+        $detail = ($_.Exception.Message -replace '\s+', ' ').Trim()
+        Log ('PRINT WATCH unavailable: ' + $detail)
+        return @{ Exit = 1; Out = 'BVPRINT printer=failed detail=' + $detail }
+    }
+}
+# <<< print
 
 # >>> share watch
 # The host lists the shared folder (LSR) every 2 s. Enumerating it with Get-ChildItem cost the
@@ -1444,10 +1589,14 @@ function Read-Line($handle) {
     while ($true) {
         if (Is-BadHandle $handle) { return $null }
         $read = 0
-        if ($script:BvClipPush -or $script:BvLinkWatch) {
+        if ($script:BvClipPush -or $script:BvLinkWatch -or $script:BvPrintWatch) {
             $read = [BridgeVM.BvClipWatch]::Read($handle, $script:BvReadBuffer)
             if ($read -eq -2) {
                 foreach ($link in [BridgeVM.BvClipWatch]::TakeLinks()) { Write-Line $handle ('OPENURL ' + $link) 'OPENURL' }
+                continue
+            }
+            if ($read -eq -3) {
+                foreach ($job in [BridgeVM.BvClipWatch]::TakePrintJobs()) { Write-Line $handle ('PRINTJOB ' + $job) 'PRINTJOB' }
                 continue
             }
             if ($read -lt 0) { if ($script:BvClipPush) { Write-Line $handle 'CLIPCHANGED' 'CLIPCHANGED' }; continue }
@@ -1968,7 +2117,7 @@ function Get-BvAgentId([string]$Dir) {
 # Until an agent says so, the host shows Windows the Mac on AC power, since
 # Task Scheduler would not start an older agent's task on battery.
 function Get-BvReady([string]$Dir, [string]$Id) {
-    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame startapps openfile onbattery'
+    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame startapps openfile onbattery print'
     if (-not $Id) { return $ready }
     $ready += ' agent=' + $Id
     $root = Split-Path -Parent $Dir
@@ -2056,6 +2205,7 @@ while ($true) {
                     else { Write-Line $h 'ERR WINCLOSE' 'ERR' }
                 }
                 'LINKWATCH' { Write-CommandResult $h (Start-LinkWatch) }
+                'PRINTWATCH' { Write-CommandResult $h (Start-PrintWatch $arg) }
                 { $_ -cin @('DISPLAYMODE', 'DISPLAYSCALE') } {
                     # The resident desktop switch and display scale (Invoke-BvDisplay).
                     $r = Invoke-BvDisplay $tok $arg
