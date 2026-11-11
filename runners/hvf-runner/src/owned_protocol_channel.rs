@@ -64,12 +64,13 @@ impl Channel {
             self.state.lock().unwrap().broken();
         }
     }
-    pub fn requested(&self) -> bool {
+    /// The latched cancellation cause, if any.
+    pub fn requested(&self) -> Option<&'static str> {
         let mut state = self.state.lock().unwrap();
         if super::signals::requested() {
             state.latch("signal");
         }
-        state.cause.is_some()
+        state.cause
     }
     pub fn finish(&mut self, mut complete: Complete) -> bool {
         {

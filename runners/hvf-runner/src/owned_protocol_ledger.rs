@@ -120,6 +120,9 @@ impl Ledger {
             && self.swtpm.spawned_count == self.swtpm.reaped_count
             && self.directory != Some(DirectoryDisposition::Created)
     }
+    pub fn helper_running(&self) -> bool {
+        self.live_helper.is_some()
+    }
     pub fn directory_name(&self) -> &'static str {
         match self.directory {
             None => "notCreated",
