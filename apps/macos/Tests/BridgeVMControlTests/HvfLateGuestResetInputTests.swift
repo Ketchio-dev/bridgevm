@@ -3,9 +3,10 @@ import XCTest
 @testable import BridgeVMControl
 
 /// A slow Windows restart can fail an activated router before its reset record arrives: the agent is
-/// gone, so queued input expires, or the agent restarts or the service is lost first. The later reset
-/// record still replaces the harness and its agent.ctl queue, so the same owned binding then starts
-/// the next generation as a fresh owned boot. A changed binding or a missing capability stays failed.
+/// gone, so queued input expires, or the service is lost first. The later reset record still replaces
+/// the harness and its agent.ctl queue, so the same owned binding then starts the next generation as a
+/// fresh owned boot; an agent restart in the same harness does so at once. A changed binding stays
+/// failed; an agent without the capability is asked again by the next agent instance.
 @MainActor
 final class HvfLateGuestResetInputTests: XCTestCase {
     private typealias Gate = HvfEngineSessionGuestResetGateTests
@@ -38,33 +39,44 @@ final class HvfLateGuestResetInputTests: XCTestCase {
         }
     }
 
-    func testAgentRestartOrServiceLossIsEndedByTheLaterResetRecord() {
-        let causes: [(HvfSessionInputFailure, Bool, [String])] = [
-            (.agentRestarted, true, ["BVAGENT re-READY t t=40"]), (.agentRestarted, true, ["BVAGENT READY host=t t=1"]),
-            (.agentRestarted, true, ["BVAGENT SERVICE start t=2"]), (.serviceLost, false, []),
-        ]
+    func testServiceLossIsEndedByTheLaterResetRecordAndAnAgentRestartAtOnce() {
         for reset in records {
-            for (reason, ready, lines) in causes {
+            var router = readyRouter()
+            XCTAssertEqual(router.route(.text("pending"), binding: binding, now: now), .queued)
+            _ = router.pollBatch(binding: binding, serviceReady: true, lines: [], now: now) { _ in true }
+            XCTAssertEqual(router.pollBatch(binding: binding, serviceReady: false, lines: [], now: now) {
+                _ in XCTFail("sent without the service"); return true
+            }, .cancelled(.sessionChanged, discarded: 1), reset)
+            XCTAssertEqual(router.failure, .serviceLost, reset)
+            _ = router.pollBatch(binding: binding, serviceReady: true, lines: ["BVAGENT SERVICE start t=3"], now: now) {
+                _ in XCTFail("a lost service is the host's, not re-armed by an agent line: \(reset)"); return true
+            }
+            XCTAssertEqual(router.route(.text("x"), binding: binding, now: now), .refused, reset)
+            _ = router.pollBatch(binding: binding, serviceReady: false, lines: [reset], now: now) {
+                _ in XCTFail("sent in the reset batch: \(reset)"); return true
+            }
+            assertFreshGeneration(&router, servicePending: true, "serviceLost \(reset)")
+        }
+        // A new agent instance in the same harness (crash, update) negotiates again; the old one's request is never
+        // resent, whether it was still awaited or had already failed (expired).
+        for lines in [["BVAGENT re-READY t t=40"], ["BVAGENT READY host=t t=1"], ["BVAGENT SERVICE start t=2"]] {
+            for expired in [false, true] {
                 var router = readyRouter()
                 XCTAssertEqual(router.route(.text("pending"), binding: binding, now: now), .queued)
                 _ = router.pollBatch(binding: binding, serviceReady: true, lines: [], now: now) { _ in true }
-                XCTAssertEqual(router.pollBatch(binding: binding, serviceReady: ready, lines: lines, now: now) {
+                if expired {
+                    _ = router.pollBatch(binding: binding, serviceReady: true, lines: [], now: now + 31) { _ in true }
+                    XCTAssertEqual(router.failure, .requestFailed, "\(lines)")
+                }
+                XCTAssertEqual(router.pollBatch(binding: binding, serviceReady: true, lines: lines, now: now + 40) {
                     _ in XCTFail("sent across \(lines)"); return true
-                }, .cancelled(.sessionChanged, discarded: 1), "\(lines)")
-                XCTAssertEqual(router.failure, reason, "\(lines)")
-                _ = router.pollBatch(binding: binding, serviceReady: ready, lines: ["BVAGENT SERVICE start t=3"], now: now) {
-                    _ in XCTFail("sent without a reset record: \(lines)"); return true
-                }
-                XCTAssertEqual(router.route(.text("x"), binding: binding, now: now), .refused, "\(lines)")
-                _ = router.pollBatch(binding: binding, serviceReady: false, lines: [reset], now: now) {
-                    _ in XCTFail("sent in the reset batch: \(lines)"); return true
-                }
-                assertFreshGeneration(&router, servicePending: true, "\(reason) \(lines) \(reset)")
+                }, expired ? nil : .cancelled(.sessionChanged, discarded: 1), "\(lines)")
+                assertFreshGeneration(&router, servicePending: false, "\(lines) expired=\(expired)")
             }
         }
     }
 
-    func testChangedBindingAndMissingCapabilityStayAsTheyWereAcrossALaterReset() {
+    func testChangedBindingStaysFailedAcrossALaterResetAndAMissingCapabilityIsAskedAgain() {
         for reset in records {
             var changed = readyRouter()
             _ = changed.pollBatch(binding: ["other"], serviceReady: true, lines: [], now: now) { _ in false }
@@ -79,7 +91,8 @@ final class HvfLateGuestResetInputTests: XCTestCase {
                 XCTAssertEqual(changed.route(.key("a"), binding: next, now: now), .refused, reset)
                 XCTAssertFalse(changed.allowLegacyWrite("KEY enter", binding: next, now: now), reset)
             }
-            // A guest without the capability leaves its owned boot legacy; a reset does not renegotiate it.
+            // An agent without the capability leaves its owned boot legacy until the next agent instance, which is
+            // asked again once its service started (an updated agent may have it).
             var missing = HvfSessionInputRouter()
             missing.beginOwnedBoot(binding: binding)
             var query = ""
@@ -87,13 +100,17 @@ final class HvfLateGuestResetInputTests: XCTestCase {
             _ = missing.pollBatch(binding: binding, serviceReady: true, lines: ["BVAGENT CMD \(query) exit=1"], now: now) {
                 _ in false
             }
-            XCTAssertEqual([missing.eligible, missing.activated, missing.failed], [false, false, false], reset)
-            for (ready, lines) in [(false, [reset]), (true, ["BVAGENT SERVICE start t=2"]), (true, [])] {
+            XCTAssertEqual([missing.eligible, missing.activated, missing.failed], [true, false, false], reset)
+            XCTAssertEqual(missing.state, .unavailable, reset)
+            for (ready, lines) in [(true, []), (false, [reset]), (true, ["BVAGENT SERVICE start t=2"])] {
                 _ = missing.pollBatch(binding: binding, serviceReady: ready, lines: lines, now: now) {
-                    _ in XCTFail("renegotiated a guest without the capability"); return true
+                    _ in XCTFail("asked before the next agent's service started: \(lines)"); return true
                 }
+                XCTAssertEqual(missing.route(.key("a"), binding: binding, now: now), .legacy, reset)
             }
-            XCTAssertEqual(missing.route(.key("a"), binding: binding, now: now), .legacy, reset)
+            var again = ""
+            _ = missing.pollBatch(binding: binding, serviceReady: true, lines: [], now: now) { again = $0; return true }
+            XCTAssertTrue(again.hasPrefix("INPUTCAPS ") && again != query, "the next agent is asked again: \(reset)")
         }
     }
 
@@ -111,24 +128,19 @@ final class HvfLateGuestResetInputTests: XCTestCase {
         }
     }
 
-    func testSessionResetRecordEndsAnEarlierAgentRestartOrRejectedRequest() throws {
-        let failures: [(String) -> String] = [
-            { _ in "BVAGENT re-READY t t=40\n" },
-            { "BVAGENT CMD \($0) exit=1\nBVAGENT END \($0)\n" },
-        ]
+    func testSessionResetRecordEndsAnEarlierRejectedRequest() throws {
         for reset in Gate.resets {
-            for failure in failures {
-                let fixture = try HvfRuntimeKeyboardDraftFixture(); defer { fixture.remove() }
-                try fixture.withSession { session in
-                    try fixture.negotiateOrderedInput(session)
-                    XCTAssertEqual(session.sendText("old"), .acceptedForProcessing, reset)
-                    try append(failure(try fixture.commands().last ?? ""), fixture); session.poll()
-                    XCTAssertEqual(session.sendText("lost"), .refused, "failed until the reset record: \(reset)")
-                    session.sendKey("a")
-                    try append(reset, fixture); session.poll()
-                    try append(Gate.boot, fixture); session.poll(); session.poll()
-                    try assertNextGenerationWorks(session, fixture, reset)
-                }
+            let fixture = try HvfRuntimeKeyboardDraftFixture(); defer { fixture.remove() }
+            try fixture.withSession { session in
+                try fixture.negotiateOrderedInput(session)
+                XCTAssertEqual(session.sendText("old"), .acceptedForProcessing, reset)
+                let rejected = try fixture.commands().last ?? ""
+                try append("BVAGENT CMD \(rejected) exit=1\nBVAGENT END \(rejected)\n", fixture); session.poll()
+                XCTAssertEqual(session.sendText("lost"), .refused, "failed until the reset record: \(reset)")
+                session.sendKey("a")
+                try append(reset, fixture); session.poll()
+                try append(Gate.boot, fixture); session.poll(); session.poll()
+                try assertNextGenerationWorks(session, fixture, reset)
             }
         }
     }

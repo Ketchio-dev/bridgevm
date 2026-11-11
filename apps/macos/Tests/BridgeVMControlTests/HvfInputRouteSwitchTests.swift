@@ -238,6 +238,78 @@ final class HvfInputRouteSwitchTests: XCTestCase {
         }
     }
 
+    /// The first boot after an app update that ships a new agent (live run 20261111-021640): the old agent answers
+    /// INPUTCAPS with `unknown token`, the probe updates it in the same boot, and the new agent instance is asked
+    /// again; the switch then waits for the HID route like at boot.
+    func testAnAgentUpdatedInTheSameBootIsAskedForInputCapsAgainAndActivatesOnceTheHIDRouteIsQuiet() throws {
+        try withClockedSession(negotiated: false) { session, fixture, clock in
+            session.beginOwnedInputBoot()
+            session.poll()
+            let old = try XCTUnwrap(try fixture.commands().first)
+            try fixture.appendLog("BVAGENT CMD \(old) exit=255\nunknown token: INPUTCAPS\nBVAGENT END \(old)\n")
+            session.poll()
+            XCTAssertTrue(session.sendKey("a"), "an agent without INPUTCAPS leaves input on the VMM keyboard")
+            try fixture.appendLog("BVAGENT UPDATE begin from=none to=0fa116181ff15fec t=32859\n"
+                + "BVAGENT UPDATE staged files=9 bytes=169019 t=36920\nBVAGENT UPDATE armed to=0fa116181ff15fec t=39195\n")
+            session.poll()
+            XCTAssertEqual(try fixture.commands(), [old])
+            try fixture.appendLog("BVAGENT re-READY BRIDGEVM v3-share2 putdata bigfile agent=0fa116181ff15fec update=pending t=45286\n")
+            session.poll()
+            try fixture.appendLog("BVAGENT UPDATE ok from=none to=0fa116181ff15fec t=48191\n")
+            session.poll()
+            let commands = try fixture.commands()
+            XCTAssertEqual(commands.count, 2, "the updated agent is asked again"); guard commands.count == 2 else { return }
+            XCTAssertTrue(commands[1].hasPrefix("INPUTCAPS ")); XCTAssertNotEqual(commands[1], old)
+            XCTAssertTrue(session.sendKey("b"), "HID while the new agent negotiates")
+            try answer(commands[1], fixture, markers: ["BVINPUT_POINTER %@ SCROLL_UNITS", "BVINPUT_POINTER %@ MIDDLE"])
+            session.poll()
+            clock.advance(5); session.poll()
+            XCTAssertFalse(session.events.contains(.unknown(active)), "the VMM has not taken the HID keys")
+            try fixture.probeTakes(); session.poll()
+            clock.advance(0.75); session.poll()
+            XCTAssertFalse(session.events.contains(.unknown(active)), "within a second of the VMM taking them")
+            clock.advance(0.25); session.poll()
+            XCTAssertTrue(session.events.contains(.unknown(active)))
+            XCTAssertTrue(session.inputDriver.router.scrollUnits && session.inputDriver.router.middleButton)
+            XCTAssertEqual(session.sendText("\u{E9}"), .acceptedForProcessing)
+            XCTAssertEqual(try payload(try fixture.commands().last), "TEXTINPUT \u{E9}")
+            XCTAssertEqual(try legacy(fixture), ["KEY a", "KEY b"])
+        }
+    }
+
+    /// An agent restart within the boot (crash, update) on an active route: what the old instance still owed is
+    /// dropped with its count, never sent again on either route (the harness drops the request it had on the wire,
+    /// and one it still queues reaches the new agent ahead of the new INPUTCAPS); input goes HID until the new
+    /// instance answers INPUTCAPS and the HID route is quiet. The old instance's press owes no release any more.
+    func testAnAgentRestartOnAnActiveRouteRenegotiatesAndDeliversNothingTwice() throws {
+        try withClockedSession(negotiated: true) { session, fixture, clock in
+            session.sendPointerPress(location: point, viewSize: size, imageSize: size)
+            let press = try XCTUnwrap(try fixture.commands().last)
+            try fixture.appendLog(inserted(press, count: 1)); session.poll()
+            XCTAssertTrue(session.sendKey("tab"))
+            let awaited = try XCTUnwrap(try fixture.commands().last)
+            XCTAssertEqual(try payload(awaited), "KEYINPUT tab")
+            XCTAssertEqual(session.sendText("bc"), .acceptedForProcessing)
+            try fixture.appendLog("BVAGENT re-READY BRIDGEVM t=40\n"); session.poll()
+            XCTAssertTrue(session.events.contains(.unknown("ordered input cancelled: sessionChanged, discarded=2")))
+            XCTAssertTrue(session.sendKey("enter"), "HID while the restarted agent negotiates")
+            session.poll()
+            let query = try XCTUnwrap(try fixture.commands().last)
+            XCTAssertTrue(query.hasPrefix("INPUTCAPS "), "the restarted agent is asked again")
+            try fixture.appendLog(inserted(awaited, count: 2)); session.poll() // the old request, run by the new agent
+            XCTAssertTrue(session.sendKey("esc"))
+            try answer(query, fixture); session.poll()
+            try fixture.probeTakes(); session.poll()
+            clock.advance(1); session.poll()
+            XCTAssertEqual(session.events.filter { $0 == .unknown(active) }.count, 2)
+            session.cancelOrderedInputTarget() // owes no release for the old instance's press
+            XCTAssertTrue(session.sendKey("left"))
+            XCTAssertEqual(try fixture.commands().dropFirst(2).map { try payload($0) ?? String($0.prefix(9)) },
+                           ["KEYINPUT tab", "INPUTCAPS", "KEYINPUT left"], "nothing resent, no release owed")
+            XCTAssertEqual(try legacy(fixture), ["KEY enter", "KEY esc"], "nothing of the old agent's on HID")
+        }
+    }
+
     // MARK: - Fixture
 
     final class Clock {
@@ -258,10 +330,11 @@ final class HvfInputRouteSwitchTests: XCTestCase {
         }
     }
 
-    private func answer(_ query: String, _ fixture: HvfRuntimeKeyboardDraftFixture) throws {
-        let id = query.split(separator: " ")[1]
+    /// `markers`: optional marker lines, `%@` standing for the request id.
+    private func answer(_ query: String, _ fixture: HvfRuntimeKeyboardDraftFixture, markers: [String] = []) throws {
+        let id = String(query.split(separator: " ")[1])
         try fixture.appendLog("BVAGENT CMD \(query) exit=0\nBVINPUT_CAPS \(id) 3 TEXTINPUT KEYINPUT POINTERINPUT 65536\n"
-            + "BVAGENT END \(query)\n")
+            + markers.map { $0.replacingOccurrences(of: "%@", with: id) + "\n" }.joined() + "BVAGENT END \(query)\n")
     }
 
     private func label(_ command: String) -> (label: String, id: Substring) {

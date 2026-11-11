@@ -116,18 +116,20 @@ final class HvfGuestResetInputGenerationTests: XCTestCase {
     }
 
     func testOnlyAWholeResetRecordReArmsAndNeverAChangedBinding() {
+        // A lost service is the host's: an agent line does not end it either (an agent restart ends only the old
+        // agent instance's failures, HvfLateGuestResetInputTests).
         let inert = ["PSCI SYSTEM_RESET: requested", "guest " + HvfGuestResetRecord.processRecreation, "BVAGENT READY host=t t=1"]
-        for (lines, serviceReady) in [(["BVAGENT re-READY t t=40"], true), ([], false)] {
-            var router = readyRouter()
-            _ = router.pollBatch(binding: binding, serviceReady: serviceReady, lines: lines, now: now) { _ in false }
-            _ = router.pollBatch(binding: binding, serviceReady: true, lines: inert, now: now) {
-                _ in XCTFail("sent without a reset record: \(lines)"); return true
-            }
-            XCTAssertTrue(router.failed, "\(lines)")
-            XCTAssertEqual(router.route(.key("enter"), binding: binding, now: now), .refused, "\(lines)")
+        var router = readyRouter()
+        _ = router.pollBatch(binding: binding, serviceReady: false, lines: [], now: now) { _ in false }
+        _ = router.pollBatch(binding: binding, serviceReady: true, lines: inert, now: now) {
+            _ in XCTFail("sent without a reset record"); return true
         }
-        XCTAssertEqual([HvfSessionInputFailure.guestReset, .agentRestarted, .serviceLost, .requestFailed, .bindingChanged,
-                        .unavailable].map(\.endsAtGuestReset), [true, true, true, true, false, false])
+        XCTAssertTrue(router.failed)
+        XCTAssertEqual(router.route(.key("enter"), binding: binding, now: now), .refused)
+        let failures: [HvfSessionInputFailure] = [.guestReset, .agentRestarted, .serviceLost, .requestFailed, .bindingChanged,
+                                                  .unavailable]
+        XCTAssertEqual(failures.map(\.endsAtGuestReset), [true, true, true, true, false, false])
+        XCTAssertEqual(failures.map(\.endsAtAgentRestart), [false, true, false, true, false, true])
         var changed = readyRouter()
         _ = changed.pollBatch(binding: ["other"], serviceReady: false, lines: [records[0]], now: now) { _ in false }
         XCTAssertEqual(changed.failure, .bindingChanged)
