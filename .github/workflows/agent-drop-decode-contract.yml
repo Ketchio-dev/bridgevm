@@ -1,5 +1,5 @@
 name: Guest agent drop decode contract
-on: {push: {branches: [main]}, pull_request: {paths: ['scripts/win-assets/bvagent.ps1', 'tests/integration/agent-drop-decode-contract.ps1', 'tests/integration/agent-drop-path-contract.ps1', '.github/workflows/agent-drop-decode-contract.yml']}}
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/win-assets/bvagent.ps1', 'tests/integration/agent-drop-decode-contract.ps1', 'tests/integration/agent-drop-path-contract.ps1', 'tests/integration/agent-open-file-contract.ps1', '.github/workflows/agent-drop-decode-contract.yml']}}
 permissions:
   contents: read
 jobs:
@@ -16,3 +16,11 @@ jobs:
       - name: Drop verbs on paths past 260 characters (Windows PowerShell 5.1)
         shell: powershell
         run: tests/integration/agent-drop-path-contract.ps1
+      - name: OPENFILE opens only a dropped Desktop item, one explorer argument (Windows PowerShell 5.1)
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: tests/integration/agent-open-file-contract.ps1
+      - name: The same with PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: tests/integration/agent-open-file-contract.ps1
