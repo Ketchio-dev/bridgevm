@@ -130,14 +130,15 @@ try {
     }
 
     /// What a probe `BVAGENT OPENURL ...` line asks for; nil for any other line.
-    static func outcome(of line: String, now: Date) -> Outcome? {
+    static func outcome(of line: String, now: Date, notBefore: Date = .distantPast) -> Outcome? {
         let line = line.hasSuffix("\r") ? String(line.dropLast()) : line
         guard line.hasPrefix(linePrefix) else { return nil }
         let fields = line.dropFirst(linePrefix.count).split(separator: " ", omittingEmptySubsequences: false)
         guard fields.count == 2, fields[0].hasPrefix("at="), let ms = Int64(fields[0].dropFirst(3)),
               String(ms) == fields[0].dropFirst(3) else { return .refused(host: nil) }
         let age = now.timeIntervalSince1970 - Double(ms) / 1000
-        guard age <= 5, age >= -1 else { return .stale }
+        // The probe logs whole milliseconds: a link from the millisecond the session began is the session's.
+        guard age <= 5, age >= -1, ms >= Int64((notBefore.timeIntervalSince1970 * 1000).rounded(.down)) else { return .stale }
         guard let data = Data(base64Encoded: String(fields[1])), data.count <= maxURLBytes,
               let text = String(data: data, encoding: .utf8) else { return .refused(host: nil) }
         return checked(text)
@@ -215,7 +216,7 @@ extension HvfEngineSession {
 
     /// A probe `BVAGENT OPENURL` line: opened at most once a second while the setting is on, else ignored.
     func guestLinkReported(_ line: String, now: Date = Date()) {
-        guard guestLinksWanted, let outcome = HvfGuestLinks.outcome(of: line, now: now) else { return }
+        guard guestLinksWanted, let outcome = HvfGuestLinks.outcome(of: line, now: now, notBefore: guestLinksNotBefore) else { return }
         switch outcome {
         case .stale:
             return

@@ -80,7 +80,7 @@ namespace BridgeVM {
 }
 
 # 1. The handler, run as written by the app with a stub Start-Process and a private LOCALAPPDATA.
-$swift = [IO.File]::ReadAllText((Join-Path $root 'apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestLinks.swift')) -split "`n"
+$swift = [IO.File]::ReadAllText((Join-Path $root 'apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestLinks.swift')) -split '\r?\n'
 $first = [array]::FindIndex($swift, [Predicate[string]] { param($l) $l.Trim() -ceq 'static let handlerScript = #"""' })
 $last = [array]::FindIndex($swift, [int]($first + 1), [Predicate[string]] { param($l) $l -ceq '"""#' })
 if ($first -lt 0 -or $last -lt 0) { throw 'missing handler script' }

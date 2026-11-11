@@ -157,6 +157,26 @@ final class HvfGuestLinksTests: XCTestCase {
         XCTAssertNil(Links.handlerScript.range(of: "Invoke-Expression|-Command|cmd\\b|param\\(", options: [.regularExpression, .caseInsensitive]))
     }
 
+    /// A reattached session reads run.log from its start: a link logged before the session existed is never
+    /// opened, even inside the freshness window.
+    func testALinkLoggedBeforeTheSessionIsNeverOpened() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
+        defer { fixture.clean() }
+        let saved = fixture.config(); fixture.save(saved)
+        let library = fixture.library(probe: probe)
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+        let opener = Opener()
+        session.guestLinkOpener = opener
+        XCTAssertTrue(session.applyGuestLinksToggle(true) == (true, nil))
+        let start = session.guestLinksNotBefore
+        session.guestLinkReported(line("https://example.com/once", at: start.addingTimeInterval(-0.5)),
+                                  now: start.addingTimeInterval(1))
+        XCTAssertTrue(opener.opened.isEmpty, "logged before this session: run.log read again, not a click")
+        session.guestLinkReported(line("https://example.com/new", at: start.addingTimeInterval(0.5)),
+                                  now: start.addingTimeInterval(1))
+        XCTAssertEqual(opener.opened.map(\.absoluteString), ["https://example.com/new"])
+    }
+
     func testLinksOpenAtMostOncePerSecondAndOnlyWithTheSettingOn() throws {
         let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
         defer { fixture.clean() }

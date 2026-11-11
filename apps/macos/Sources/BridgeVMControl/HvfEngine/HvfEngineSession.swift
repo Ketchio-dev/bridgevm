@@ -59,6 +59,9 @@ final class HvfEngineSession: ObservableObject {
     // turned off, the last link opened, and what opens it.
     var guestLinksOffSent = false
     var lastGuestLinkOpen: Date?
+    /// Links the probe logged before this session existed are never opened: a reattached session reads run.log
+    /// from its start, and a link younger than the freshness window would open a second time.
+    let guestLinksNotBefore = Date()
     var guestLinkOpener: any HvfURLOpener = HvfWorkspaceURLOpener()
     let guestLinkNotice = HvfGuestLinkNotice()
     @Published var diskGrowNotice: String? // the guest's report on extending C: after a disk grow (HvfDiskGrow)
