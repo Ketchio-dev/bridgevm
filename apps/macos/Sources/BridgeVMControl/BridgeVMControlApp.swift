@@ -18,6 +18,8 @@ struct BridgeVMControlApp: App {
                 .appUIHostSceneObservation()
         }
         .controlWindowPresentation()
+        // Files opened from Finder or the Dock go to ControlAppDelegate, never to a new library window.
+        .handlesExternalEvents(matching: [])
         #if canImport(AppKit)
         .commands { HvfVirtualMachineCommands() }
         #endif

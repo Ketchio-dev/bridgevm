@@ -64,6 +64,12 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
         controller.placement.reenterFullScreen(window)
     }
 
+    /// The sessions of the open display windows, frontmost first; it holds while another app is
+    /// active (Finder, when it opens files here), when no window of this app is main.
+    static func sessionsFrontToBack() -> [HvfEngineSession] {
+        (NSApp?.orderedWindows ?? []).compactMap { window in controllers.values.first { $0.window === window }?.state.session }
+    }
+
     /// `makeKeyAndOrderFront` can leave an already-open auxiliary window behind
     /// the SwiftUI dashboard when the action originates in that dashboard.  The
     /// display is explicitly user-requested, so restore it and raise it even when
