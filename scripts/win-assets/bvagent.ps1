@@ -409,6 +409,80 @@ function Get-BvCaret([scriptblock]$Call = $null) {
     }
 }
 
+# >>> Windows apps (STARTAPPS [<id>], STARTAPP <b64(appid)>)
+# The app's 'Windows apps' menu lists the Start menu's apps and launches one in
+# the user's desktop. STARTAPPS answers like a RUN, OUT 0 with one line per app,
+# <b64(utf8 name)>|<b64(utf8 AppID)> (Get-StartApps, Windows PowerShell 5.1 on
+# Windows 10/11), one per AppID, sorted by name, at most BvStartAppsMax apps and
+# BvStartAppsMaxBytes bytes, and only IDs STARTAPP takes; a failure answers
+# 'BVSTARTAPPS unavailable' with exit 1 (details in the log). STARTAPP hands
+# shell:AppsFolder\<AppID> to explorer.exe as one quoted argument, never to
+# cmd.exe: the agent's task runs at HighestAvailable, so it is elevated for an
+# administrator, and explorer passes the request to the session's running
+# shell, so the app starts un-elevated as the shell's child (a packaged app is
+# activated by the system either way). It answers 'BVSTARTAPP ok', or with exit
+# 1 'BVSTARTAPP refused' (not an AppID) or 'BVSTARTAPP failed'. READY carries
+# 'startapps' for both verbs.
+$script:BvStartAppsMax = 2000
+$script:BvStartAppsMaxBytes = 512KB
+# An ID shaped like those Get-StartApps returns: a packaged app's AUMID
+# (Microsoft.WindowsCalculator_8wekyb3d8bbwe!App), a registered AppUserModelID
+# (Microsoft.Windows.Explorer) or a known folder's {GUID}\relative\path.exe.
+# Letters, digits, spaces and ._+-()[]{}~#@!\ only: no quote, control, comma
+# (explorer's switch separator), colon, slash, percent or shell metacharacter,
+# no '..' or '\\', and no space or backslash at either end.
+function Test-BvStartAppId([string]$Id) {
+    if ([string]::IsNullOrEmpty($Id) -or $Id.Length -gt 1024) { return $false }
+    if ($Id.Contains('..') -or $Id.Contains('\\') -or $Id.StartsWith(' ') -or $Id.EndsWith(' ') -or $Id.StartsWith('\') -or $Id.EndsWith('\')) { return $false }
+    return $Id -cmatch '^[\p{L}\p{M}\p{N} ._+()\[\]{}~#@!\\-]+\z'
+}
+function Get-BvStartApps {
+    try {
+        $apps = @(Get-StartApps -ErrorAction Stop)
+    } catch {
+        Log ('STARTAPPS failed: ' + $_.Exception.Message)
+        return @{ Exit = 1; Out = 'BVSTARTAPPS unavailable' }
+    }
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    $rows = New-Object 'System.Collections.Generic.List[object]'
+    foreach ($app in $apps) {
+        $name = ([string]$app.Name).Trim()
+        $id = [string]$app.AppID
+        if ($name.Length -eq 0 -or $name.Length -gt 256 -or -not (Test-BvStartAppId $id) -or -not $seen.Add($id)) { continue }
+        $rows.Add([pscustomobject]@{ Name = $name; AppID = $id })
+    }
+    $out = New-Object System.Text.StringBuilder
+    $count = 0
+    foreach ($row in @($rows | Sort-Object Name, AppID)) {
+        $line = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($row.Name)) + '|' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($row.AppID))
+        if ($count -ge $script:BvStartAppsMax -or $out.Length + 1 + $line.Length -gt $script:BvStartAppsMaxBytes) { break }
+        if ($count -gt 0) { [void]$out.Append("`n") }
+        [void]$out.Append($line)
+        $count++
+    }
+    Log ('STARTAPPS ' + $count + ' of ' + $apps.Count)
+    return @{ Exit = 0; Out = $out.ToString() }
+}
+function Start-BvStartApp([string]$Arg) {
+    $id = $null
+    if ($Arg.Length -le 4096 -and $Arg -cmatch '^[A-Za-z0-9+/]+={0,2}\z') {
+        try { $id = (New-Object System.Text.UTF8Encoding($false, $true)).GetString([System.Convert]::FromBase64String($Arg)) } catch { $id = $null }
+    }
+    if (-not (Test-BvStartAppId $id)) {
+        Log 'STARTAPP refused'
+        return @{ Exit = 1; Out = 'BVSTARTAPP refused' }
+    }
+    try {
+        $explorer = [System.IO.Path]::Combine([Environment]::GetFolderPath('Windows'), 'explorer.exe')
+        Start-Process -FilePath $explorer -ArgumentList ('"shell:AppsFolder\' + $id + '"') -ErrorAction Stop
+        Log ('STARTAPP ' + $id)
+        return @{ Exit = 0; Out = 'BVSTARTAPP ok' }
+    } catch {
+        Log ('STARTAPP failed: ' + $_.Exception.Message)
+        return @{ Exit = 1; Out = 'BVSTARTAPP failed' }
+    }
+}
+
 function Gle { return [System.Runtime.InteropServices.Marshal]::GetLastWin32Error() }
 
 # CreateFile access rights as EXPLICIT [uint32] decimals. PowerShell 5.1 parses
@@ -1771,7 +1845,7 @@ function Get-BvAgentId([string]$Dir) {
 # for the host's Confirm (bvagent-update.ps1 keeps update\pending.txt beside
 # the version folders): the host then confirms it whatever it recorded itself.
 function Get-BvReady([string]$Dir, [string]$Id) {
-    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame'
+    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame startapps'
     if (-not $Id) { return $ready }
     $ready += ' agent=' + $Id
     $root = Split-Path -Parent $Dir
@@ -1820,6 +1894,8 @@ while ($true) {
                 { $_ -in @('TEXTINPUT', 'KEYINPUT', 'POINTERINPUT') } { Write-CommandResult $h (Invoke-UnicodeInput $arg $null ($tok -eq 'KEYINPUT') ($tok -eq 'POINTERINPUT')) }
             'INPUTCAPS' { Write-CommandResult $h (Get-InputCapabilities $arg) }
                 'CARET' { Write-CommandResult $h (Get-BvCaret) }
+                'STARTAPPS' { Write-CommandResult $h (Get-BvStartApps) }
+                'STARTAPP' { Write-CommandResult $h (Start-BvStartApp $arg) }
                 'WINLIST' {
                     # Materialize before writing: a provider failure must not
                     # publish a partial list. ERR alone is the failure terminal.

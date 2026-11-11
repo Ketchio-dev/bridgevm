@@ -1,0 +1,17 @@
+name: Guest agent Windows apps contract
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/win-assets/bvagent.ps1', 'tests/integration/agent-start-apps-contract.ps1', '.github/workflows/agent-start-apps-contract.yml']}}
+permissions:
+  contents: read
+jobs:
+  start-apps:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check STARTAPPS and STARTAPP with Windows PowerShell 5.1
+        shell: powershell
+        run: tests/integration/agent-start-apps-contract.ps1
+      - name: Check STARTAPPS and STARTAPP with PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: tests/integration/agent-start-apps-contract.ps1
