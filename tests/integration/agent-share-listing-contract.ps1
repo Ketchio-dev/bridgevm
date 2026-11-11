@@ -1,7 +1,10 @@
 # The guest agent's shared-folder listing (LSR) with its change watcher (BridgeVM.BvShareWatch):
 # an unchanged folder gets the last listing again without being enumerated, and any change
 # below the root (a new, grown, deleted or renamed file, a new folder, a change made while the
-# folder was being listed) gets a fresh, correct listing. A file the host writes (PUT, or
+# folder was being listed) gets a fresh, correct listing. A host that names the listing's gen
+# (READY lssame) gets LSSAME for it while it holds, and the listing with a new gen after any
+# change, at the age limit, after a lost watcher event and after its own write; a host without
+# a gen gets the reply as before. A file the host writes (PUT, or
 # PUTBEG/PUTCHUNK/PUTEND) keeps the Mac file's modification time when the host sends one. Runs
 # the agent's own verb cases and share watch block against a temporary folder. On Windows, a
 # path longer than 260 characters is written, listed and deleted, and its listing does not fail.
@@ -12,7 +15,15 @@ $block = [regex]::Match($source, '(?s)# >>> share watch.*?# <<< share watch')
 if (-not $block.Success) { throw 'share watch block not found' }
 $found = [regex]::Matches($source, "(?s)\n                'LSR' \{(?<body>.*?)\r?\n                \}\r?\n")
 if ($found.Count -ne 1) { throw 'expected exactly one LSR implementation' }
-$lsr = [scriptblock]::Create($found[0].Groups['body'].Value)
+$body = $found[0].Groups['body'].Value
+if ([IO.Path]::DirectorySeparatorChar -ne '\') {
+    # LSR roots its listing at <root>\, which only Windows paths match: elsewhere (pwsh on
+    # macOS) the test gives it the host's separator, or it lists nothing.
+    $windowsRoot = "if (-not `$rootFull.EndsWith('\')) { `$rootFull = `$rootFull + '\' }"
+    if (-not $body.Contains($windowsRoot)) { throw 'LSR root separator not found' }
+    $body = $body.Replace($windowsRoot, $windowsRoot.Replace("'\'", "'/'"))
+}
+$lsr = [scriptblock]::Create($body)
 $verbs = @{}
 foreach ($verb in @('PUT', 'DEL', 'PUTBEG', 'PUTCHUNK', 'PUTEND')) {
     $one = [regex]::Matches($source, "(?s)\n                '$verb' \{(?<body>.*?)\r?\n                \}\r?\n")
@@ -46,18 +57,40 @@ $h = [IntPtr]::Zero
 $root = Join-Path ([IO.Path]::GetTempPath()) ('bv-lsr-' + [Guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory((Join-Path $root 'sub'))
 
-function List {
+# LSR, naming `gen` when given: Same is LSSAME's gen, Gen the listing's.
+function List([string]$gen) {
     $before = $script:enumerations
     $arg = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($root))
+    if ($gen) { $arg += ' ' + $gen }
     & $lsr
+    $reply = @{ Enumerated = ($script:enumerations -gt $before); Same = $null; Gen = $null; Entries = @{} }
+    if ($gen -and $script:sent -clike 'LSSAME *') {
+        $reply.Same = $script:sent.Substring(7)
+        return $reply
+    }
     Assert ($script:sent -clike 'LSOK *') "LSR reply: $script:sent"
-    $text = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($script:sent.Substring(5)))
-    $entries = @{}
+    $fields = $script:sent.Substring(5).Split(' ')
+    if ($gen) {
+        Assert ($fields.Count -eq 2 -and $fields[1] -cmatch '^[0-9a-f]{32}$') "LSOK with its gen: $($script:sent.Substring(0, [Math]::Min(80, $script:sent.Length)))"
+        $reply.Gen = $fields[1]
+    } else {
+        Assert ($fields.Count -eq 1) 'LSR without a gen: the reply as before'
+    }
+    $text = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($fields[0]))
     foreach ($row in ($text -split "`r?`n" | Where-Object { $_ })) {
         $f = $row.Split('|')
-        $entries[$f[0].Replace('\', '/')] = $f[1]
+        $reply.Entries[$f[0].Replace('\', '/')] = $f[1]
     }
-    return @{ Enumerated = ($script:enumerations -gt $before); Entries = $entries }
+    return $reply
+}
+# The gen of the listing the agent would send again, which LSSAME then names.
+function Named {
+    Quiet
+    $listing = List '0'
+    Assert ($listing.Gen) 'a host without the gen gets the listing with it'
+    $same = List $listing.Gen
+    Assert ($same.Same -ceq $listing.Gen -and -not $same.Enumerated) "LSSAME for an unchanged folder: $script:sent"
+    return $listing.Gen
 }
 # Wait for the watcher to see a change, then for it to be quiet for 500 ms: one change can
 # arrive as several events, some late (seen on Windows for files written just before the
@@ -122,6 +155,7 @@ try {
     Quiet
     $from = [BridgeVM.BvShareWatch]::Changes
     $script:during = { [IO.File]::WriteAllBytes((Join-Path $root 'late.txt'), [byte[]](4, 4)) }
+    $b64 = { param($text) [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)) }
     $script:BvLsrChanges = [long]-1
     $racing = List
     Assert (-not $racing.Entries.ContainsKey('late.txt')) 'the racing write is not in the listing it raced'
@@ -130,9 +164,41 @@ try {
     Assert ($after.Enumerated -and $after.Entries['late.txt'] -eq '2') 'a write during a listing is listed next time'
     $cases++
 
+    # LSSAME (READY lssame): the unchanged folder is not sent; LSR without a gen is answered as
+    # before; any change gets the listing with a new gen.
+    $gen = Named
+    $plain = List
+    Assert (-not $plain.Enumerated -and $plain.Entries['late.txt'] -eq '2') 'without a gen: the cached listing as before'
+    Assert ((List $gen).Same -ceq $gen) 'LSSAME again'
+    $cases++
+    Change { [IO.File]::WriteAllBytes((Join-Path $root 'same.bin'), [byte[]](1)) }
+    $changed = List $gen
+    Assert ($changed.Enumerated -and $changed.Gen -and $changed.Gen -cne $gen -and $changed.Entries['same.bin'] -eq '1') 'a change: the listing with a new gen'
+    $cases++
+    $gen = Named
+    $script:BvLsrMaxAgeTicks = [long]1
+    Start-Sleep -Milliseconds 5
+    $aged = List $gen
+    $script:BvLsrMaxAgeTicks = [long](60 * [Diagnostics.Stopwatch]::Frequency)
+    Assert ($aged.Enumerated -and $aged.Gen -and $aged.Gen -cne $gen) 'past the age limit: the listing with a new gen'
+    $cases++
+    # A lost event (buffer overflow) or a dead watcher: its Error handler marks it broken.
+    $gen = Named
+    [BridgeVM.BvShareWatch].GetField('broken', [Reflection.BindingFlags]'NonPublic, Static').SetValue($null, $true)
+    $lost = List $gen
+    Assert ($lost.Enumerated -and $lost.Gen -and $lost.Gen -cne $gen) 'after a lost watcher event: the listing with a new gen'
+    $cases++
+    $gen = Named
+    $arg = (& $b64 (Join-Path $root 'same.bin')) + ' ' + [Convert]::ToBase64String([byte[]](1))
+    & $verbs['PUT']
+    Assert ($script:sent -clike 'PUTOK *') "PUT reply: $script:sent"
+    $written = List $gen
+    Assert ($written.Enumerated -and $written.Gen -and $written.Gen -cne $gen) 'after its own write: the listing with a new gen'
+    [IO.File]::Delete((Join-Path $root 'same.bin'))
+    $cases++
+
     # The agent's own writes (the host's PUT and DEL) are listed by the very next LSR, before
     # the watcher's events for them arrive: the host takes that listing as its write landing.
-    $b64 = { param($text) [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)) }
     $putPath = Join-Path $root 'put.bin'
     foreach ($bytes in @([byte[]](1, 2, 3), [byte[]](7, 8, 9))) {
         Quiet; [void](List); Assert (-not (List).Enumerated) 'cached before the PUT'
@@ -221,9 +287,12 @@ try {
     $script:BvLsrMaxAgeTicks = [long](60 * [Diagnostics.Stopwatch]::Frequency)
     $cases++
 
-    # Without the watcher every listing enumerates, as before.
+    # Without the watcher every listing enumerates, as before, and a gen never comes back as LSSAME.
     $script:BvShareWatchReady = $false
     Assert ((List).Enumerated -and (List).Enumerated) 'without the watcher every LSR enumerates'
+    $unwatched = List '0'
+    $again = List $unwatched.Gen
+    Assert ($again.Enumerated -and $again.Gen -and $again.Gen -cne $unwatched.Gen) 'without the watcher a gen gets the listing again'
     $cases++
 } finally {
     Remove-Item -LiteralPath (Get-IoPath $root $true) -Recurse -Force -ErrorAction SilentlyContinue

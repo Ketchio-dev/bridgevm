@@ -1155,6 +1155,8 @@ function Start-LinkWatch {
 # 35 us per file each time (8,000 files: 111 ms/s while idle), so LSR re-sends its last
 # listing while this watcher saw no change below the root. Events arrive on pool threads;
 # the counter is read before each listing, so a change made during one is listed next time.
+# A host that names that listing's gen (READY lssame) gets LSSAME instead: at 100,000 files
+# the listing is about 13 MB.
 $script:BvShareWatchSource = @'
 using System;
 using System.IO;
@@ -1200,6 +1202,7 @@ $script:BvLsrRoot = $null
 $script:BvLsrChanges = [long]-1
 $script:BvLsrAt = [long]0
 $script:BvLsrLine = $null
+$script:BvLsrGen = $null
 # Re-sent for at most this long without a fresh enumeration, whatever the watcher says.
 $script:BvLsrMaxAgeTicks = [long](60 * [System.Diagnostics.Stopwatch]::Frequency)
 
@@ -1768,7 +1771,7 @@ function Get-BvAgentId([string]$Dir) {
 # for the host's Confirm (bvagent-update.ps1 keeps update\pending.txt beside
 # the version folders): the host then confirms it whatever it recorded itself.
 function Get-BvReady([string]$Dir, [string]$Id) {
-    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile'
+    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame'
     if (-not $Id) { return $ready }
     $ready += ' agent=' + $Id
     $root = Split-Path -Parent $Dir
@@ -2070,8 +2073,12 @@ while ($true) {
                     # LSR <b64(root)> -> LSOK <b64(listing)>; recursive entries
                     # are relpath|size|isDir(0/1)|mtimeUtc(ISO), with relpath
                     # rooted below <root> and using backslash separators.
+                    # LSR <b64(root)> <gen> (READY lssame) -> LSSAME <gen> while the listing
+                    # sent with that gen would be sent again, else LSOK <b64(listing)> <its gen>.
                     try {
-                        $root = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg))
+                        $lsrArgs = $arg.Split(' ')
+                        $lsrGen = if ($lsrArgs.Count -gt 1) { $lsrArgs[1] } else { $null }
+                        $root = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($lsrArgs[0]))
                         $rootFull = [System.IO.Path]::GetFullPath($root)
                         if (-not $rootFull.EndsWith('\')) { $rootFull = $rootFull + '\' }
                         # Unchanged since the last listing (share watch): the same reply again.
@@ -2080,6 +2087,7 @@ while ($true) {
                         $now = [System.Diagnostics.Stopwatch]::GetTimestamp()
                         if ($watched -and $script:BvLsrRoot -eq $rootFull -and $script:BvLsrChanges -eq $changes -and ($now - $script:BvLsrAt) -lt $script:BvLsrMaxAgeTicks) {
                             $line = $script:BvLsrLine
+                            $lineGen = $script:BvLsrGen
                         } else {
                             $sb = New-Object System.Text.StringBuilder
                             # Listed below \\?\ so a path past 260 characters is listed, not an error
@@ -2102,14 +2110,22 @@ while ($true) {
                                 [void]$sb.AppendLine(('{0}|{1}|{2}|{3}' -f $rel, $sz, [int]$e.PSIsContainer, $e.LastWriteTimeUtc.ToString('o')))
                             }
                             $line = 'LSOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($sb.ToString()))
+                            $lineGen = [System.Guid]::NewGuid().ToString('N')
                             if ($watched) {
                                 $script:BvLsrRoot = $rootFull
                                 $script:BvLsrChanges = $changes
                                 $script:BvLsrAt = $now
                                 $script:BvLsrLine = $line
+                                $script:BvLsrGen = $lineGen
                             }
                         }
-                        Write-Line $h $line 'LSOK'
+                        if ($null -eq $lsrGen) {
+                            Write-Line $h $line 'LSOK'
+                        } elseif ($lsrGen -ceq $lineGen) {
+                            Write-Line $h ('LSSAME ' + $lineGen) 'LSSAME'
+                        } else {
+                            Write-Line $h ($line + ' ' + $lineGen) 'LSOK'
+                        }
                     } catch { Write-Line $h ('ERR LSR ' + $_.Exception.Message) 'ERR' }
                 }
                 'GET' {
