@@ -5,6 +5,8 @@ import Combine
 final class HvfShareRootNotice: ObservableObject {
     @Published private(set) var isBlocked = false
     @Published private(set) var stopped: HvfShareStop?
+    /// The runtime holds every change while the guest folder's listing is over its limit.
+    @Published private(set) var paused: HvfSharePaused?
     /// Files the runtime left out for being over the size limit, this run.
     @Published private(set) var tooLarge: HvfShareTooLarge?
     /// Windows files left on the guest because the Mac had too little space for them, until they
@@ -19,9 +21,12 @@ final class HvfShareRootNotice: ObservableObject {
         case _ where HvfGuestResetRecord.matches(line): reset()
         case "BVAGENT SHARE root-state blocked": update(true)
         case "BVAGENT SHARE root-state ready": update(false)
+        case "BVAGENT SHARE resumed": if paused != nil { paused = nil }
         default:
             if stopped == nil, let stop = HvfShareStop(line: line) {
                 stopped = stop
+            } else if let pause = HvfSharePaused(line: line) {
+                if paused != pause { paused = pause }
             } else if let name = HvfShareTooLarge.name(in: line) {
                 tooLarge = HvfShareTooLarge(count: (tooLarge?.count ?? 0) + 1, last: name)
             } else if let name = HvfShareLowSpace.name(in: line) {
@@ -41,6 +46,7 @@ final class HvfShareRootNotice: ObservableObject {
     func reset() {
         update(false)
         if stopped != nil { stopped = nil }
+        if paused != nil { paused = nil }
         if tooLarge != nil { tooLarge = nil }
         if lowSpace != nil { lowSpace = nil }
     }

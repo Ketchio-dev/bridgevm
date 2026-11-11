@@ -1,3 +1,5 @@
+import Foundation
+
 /// The runtime stops sharing for the rest of a boot generation on these exact lines; a stop
 /// outranks a root deferral in the notice. Wording promises nothing beyond this run.
 enum HvfShareStop: Equatable {
@@ -22,6 +24,17 @@ extension HvfShareRootNotice {
             return ("Mac 폴더에 쓰기가 반복해서 실패해 이번 실행에서 공유 폴더 동기화를 중지했습니다.",
                     "폴더 권한과 남은 공간을 확인한 뒤 VM을 다시 시작하세요.")
         case nil:
+            if let paused {
+                let text: String
+                switch paused.reason {
+                case .tooManyEntries:
+                    let limit = paused.limit.formatted(.number.locale(Locale(identifier: "ko_KR")))
+                    text = "공유 폴더에 항목이 너무 많아(\(limit)개 초과) 동기화를 멈추었습니다."
+                case .tooManyBytes:
+                    text = "공유 폴더에 항목이 너무 많거나 이름이 너무 길어 동기화를 멈추었습니다."
+                }
+                return (text, "VM을 종료한 뒤 Mac과 Windows 모두 항목이 더 적은 폴더를 고르면 다시 동기화됩니다.")
+            }
             if isBlocked {
                 return ("공유 폴더를 확인할 수 없어 일부 동기화를 기다리고 있습니다.",
                         "원래 폴더의 연결을 확인하세요. 다른 폴더를 쓰려면 VM을 종료한 뒤 다시 선택하세요.")
@@ -38,6 +51,38 @@ extension HvfShareRootNotice {
             return ("\(limit)보다 큰 파일은 공유 폴더로 옮기지 않습니다: \(files)",
                     "Mac의 파일은 VM 창에 끌어다 놓으면 Windows 바탕 화면으로 옮겨집니다.")
         }
+    }
+}
+
+/// The guest folder's listing is over the runtime's limit (`BVAGENT SHARE paused
+/// too-many-entries limit=<entries>`, or `too-many-bytes limit=<bytes>`): without a listing the
+/// runtime cannot tell a newer Windows edit, so it sends, deletes and fetches nothing until
+/// `BVAGENT SHARE resumed` (a listing within the limit).
+struct HvfSharePaused: Equatable {
+    enum Reason: Equatable { case tooManyEntries, tooManyBytes }
+    let reason: Reason
+    let limit: Int
+
+    init(reason: Reason, limit: Int) {
+        self.reason = reason
+        self.limit = limit
+    }
+
+    init?(line: String) {
+        let prefix = "BVAGENT SHARE paused "
+        guard line.hasPrefix(prefix) else { return nil }
+        let words = line.dropFirst(prefix.count).split(separator: " ", omittingEmptySubsequences: false)
+        // Words after the limit are ignored (a later runtime may add some).
+        guard words.count >= 2, words[1].hasPrefix("limit=") else { return nil }
+        let digits = words[1].dropFirst("limit=".count)
+        guard !digits.isEmpty, digits.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }),
+              let limit = Int(digits), limit > 0 else { return nil }
+        switch words[0] {
+        case "too-many-entries": reason = .tooManyEntries
+        case "too-many-bytes": reason = .tooManyBytes
+        default: return nil
+        }
+        self.limit = limit
     }
 }
 

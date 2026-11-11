@@ -15,6 +15,11 @@
 //! drops the name's listed entry, for the same case within the first pass, and
 //! so does a PUT: the guest truncates before it writes, so a failed one leaves
 //! a copy the listing does not describe.
+//!
+//! Only an applied listing ends the wait. Live (share-bigloss-20261111), a
+//! listing refused for its size ended it, and every Mac file went over a newer
+//! Windows edit. A refused, malformed or failed listing leaves the Mac files
+//! waiting; a missing guest folder is created and its empty listing ends it.
 
 use super::*;
 
@@ -24,8 +29,8 @@ impl ShareSync {
         !self.listed && !self.records.contains_key(name)
     }
 
-    /// A refused or failed listing ends the wait too: nothing is recorded,
-    /// so every file is sent, as before.
+    /// As after an applied listing: tests that send without one.
+    #[cfg(test)]
     pub fn end_first_listing_wait(&mut self) {
         self.listed = true;
     }

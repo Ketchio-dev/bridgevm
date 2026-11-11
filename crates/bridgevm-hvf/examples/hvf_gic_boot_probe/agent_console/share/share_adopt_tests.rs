@@ -37,10 +37,14 @@ fn a_new_session_sends_only_what_changed_while_the_vm_was_off() {
 }
 
 #[test]
-fn a_failed_first_listing_still_lets_the_mac_files_go() {
+fn a_failed_first_listing_holds_the_mac_files_until_a_listing_is_applied() {
+    // A folder the guest cannot list may hold newer Windows copies: nothing goes over them.
     let mut rig = Rig::new("first-listing-fails");
     rig.guest.ls_error = true;
     std::fs::write(rig.dir.join("a.txt"), b"alpha").unwrap();
+    rig.run(8);
+    assert!(rig.guest.puts.is_empty(), "{:?}", rig.guest.puts);
+    rig.guest.ls_error = false;
     rig.run(8);
     assert_eq!(rig.guest.puts, ["a.txt"]);
 }
