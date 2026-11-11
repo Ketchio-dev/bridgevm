@@ -1148,11 +1148,14 @@ namespace BridgeVM {
 
         public bool? Paused() {
             if (!Open()) { return null; }
-            // PRINTER_INFO_6: the printer's status alone; PRINTER_STATUS_PAUSED is 1.
-            IntPtr info = Marshal.AllocHGlobal(4);
+            // PRINTER_INFO_6: the printer's status alone; PRINTER_STATUS_PAUSED is 1. The spooler asks for
+            // more than the one DWORD (8 bytes on 64-bit Windows, measured), so the size comes from it.
+            int needed;
+            GetPrinter(handle, 6, IntPtr.Zero, 0, out needed);
+            if (needed < 4 || needed > 4096) { Close(); return null; }
+            IntPtr info = Marshal.AllocHGlobal(needed);
             try {
-                int needed;
-                if (!GetPrinter(handle, 6, info, 4, out needed)) { Close(); return null; }
+                if (!GetPrinter(handle, 6, info, needed, out needed)) { Close(); return null; }
                 return (Marshal.ReadInt32(info) & 1) != 0;
             } finally {
                 Marshal.FreeHGlobal(info);
