@@ -250,13 +250,13 @@ try {
     Copy-Files @($file)
     $again = (Run 'CLIPXF' '')[0]
     Assert ($again -ceq ('CLIPXF 0 0 0 - - 0 - 1 {0} ' -f [Convert]::ToBase64String($u8.GetBytes("0|1|5|$(& $tick $file)|$file`n")))) "a same-size edit lists its new mtime: $again"
-    # Past FilesMax entries the listing stops and names the count only.
+    # Past FilesMax (4096) entries the listing stops and names the count only.
     $many = Join-Path $filesDir 'many'
     [void][IO.Directory]::CreateDirectory($many)
-    for ($i = 0; $i -lt 300; $i++) { [IO.File]::WriteAllBytes((Join-Path $many "$i.txt"), [byte[]]@()) }
+    for ($i = 0; $i -lt 4100; $i++) { [IO.File]::WriteAllBytes((Join-Path $many "$i.txt"), [byte[]]@()) }
     Copy-Files @($many)
     $got = (Run 'CLIPXF' '')[0]
-    Assert ($got -ceq 'CLIPXF 0 0 0 - - 0 - 257 - ') "past FilesMax: $got"
+    Assert ($got -ceq 'CLIPXF 0 0 0 - - 0 - 4097 - ') "past FilesMax: $got"
     Copy-Text 'plain'
     Assert ((Run 'CLIPXF' '')[0] -ceq ('CLIPXF 0 0 0 - - 0 - 0 - ' + (B64 'plain'))) 'a text copy has no files part'
 
@@ -278,10 +278,21 @@ try {
     [void][IO.Directory]::CreateDirectory($root + '\a folder')
     [IO.File]::WriteAllBytes($root + '\' + $name, [byte[]](1, 2, 3))
     [IO.File]::WriteAllBytes($root + '\a folder\inner.txt', [byte[]](4, 5))
+    # Large PUT temporaries an agent stopped mid-file left in the copy's folders; a user's file of
+    # another name stays.
+    $stale = @(($root + '\.bridgevm-part-' + ('0' * 32)), ($root + '\a folder\.bridgevm-part-' + ('ab' * 16)))
+    $users = $root + '\a folder\.bridgevm-part-' + ('CD' * 16)
+    foreach ($path in $stale + $users) { [IO.File]::WriteAllBytes($path, [byte[]](0)) }
     $names = "$name`r`na folder"
     $reply = Run 'CLIPSETFILES' ('7 ' + (B64 "0|$name`n1|a folder`n0|a folder\inner.txt`n1|a folder\empty`n") + ' ' + (B64 $names))
     Assert ($reply.Count -eq 1 -and $reply[0] -ceq 'OK CLIPSETFILES 2') "CLIPSETFILES reply: $reply"
     Assert ([IO.Directory]::Exists($root + '\a folder\empty')) 'the listed empty folder exists'
+    if ($win) {
+        $left = @($stale | Where-Object { [IO.File]::Exists($_) })
+        Assert ($left.Count -eq 0) "a large PUT's temporary stays in the pasted copy: $left"
+        Assert ([IO.File]::Exists($users)) "a user's file of another name was deleted"
+        [IO.File]::Delete($users)
+    }
     if ($desktop) {
         $drop = @([Windows.Forms.Clipboard]::GetFileDropList())
         $effect = [Windows.Forms.Clipboard]::GetData('Preferred DropEffect').ToArray()

@@ -322,7 +322,8 @@ impl AgentConsoleHarness {
         }
         // A Mac file copy we pushed (clip_files_push.rs) coming back: known, never pulled. An
         // agent that lists fewer entries than a push brought names only their count.
-        if listed.as_ref().map_or(echo, |list| self.lists_own_push(list)) {
+        let pushed_back = echo && self.last_synced.files.is_some();
+        if listed.as_ref().map_or(pushed_back, |list| self.lists_own_push(list)) {
             self.abandon_files_pull();
             self.last_synced.files = Some(digest);
             self.last_synced.rebaseline = false;
