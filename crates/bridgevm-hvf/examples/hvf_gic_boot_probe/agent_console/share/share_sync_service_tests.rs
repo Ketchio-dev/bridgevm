@@ -37,6 +37,8 @@ mod adopt_tests;
 mod host_watch_tests;
 #[path = "share_listing_pause_tests.rs"]
 mod listing_pause_tests;
+#[path = "share_listing_scale_tests.rs"]
+mod listing_scale_tests;
 
 const ROOT: &str = "C:\\share";
 
@@ -65,6 +67,8 @@ struct NtfsGuest {
     root_missing: bool,
     /// Runs as a GET is served (its name): a Mac edit made while the guest's copy is fetched.
     on_get: Option<Box<dyn FnMut(&str)>>,
+    /// Rows listed after the files: the other entries of a large folder, written out once.
+    bulk: String,
 }
 
 impl NtfsGuest {
@@ -135,6 +139,7 @@ impl NtfsGuest {
                 for folder in folders {
                     listing.push_str(&format!("{folder}|0|1|m0\n"));
                 }
+                listing.push_str(&self.bulk);
                 vec![format!("LSOK {}", b64(listing.as_bytes()))]
             }
             "GET" => {

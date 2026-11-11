@@ -4,9 +4,16 @@
 
 use super::share_listing_report::refused_name_lines;
 use super::*;
+use crate::agent_console::harness_protocol::MAX_AGENT_LINE_BYTES;
 #[path = "share_listing_refusal.rs"]
 mod refusal;
 use refusal::report_listing_limit;
+
+// A listing at its byte bound, in base64 after `LSOK ` and with room for a gen, fits one agent
+// line: one past the bound is refused for its length below, not discarded unread.
+const _: () = assert!(
+    "LSOK ".len() + share_sync::MAX_LISTING_BYTES.div_ceil(3) * 4 + 1 + 64 < MAX_AGENT_LINE_BYTES
+);
 
 impl AgentConsoleHarness {
     pub(in crate::agent_console) fn handle_share_listing_reply(&mut self, line: &str) {
@@ -28,6 +35,21 @@ impl AgentConsoleHarness {
             self.queue.retain(|req| !is_share_req(req));
             self.complete_in_flight();
         }
+    }
+
+    /// A reply past the line bound is discarded unread (harness_protocol.rs). The reply to a
+    /// listing is then one too large: it pauses the share like any listing refused for its
+    /// size, and the request ends instead of waiting for a reply that never comes.
+    pub(in crate::agent_console) fn share_listing_line_too_long(&mut self) {
+        if !matches!(self.in_flight, Some((ServiceReq::ShareLs, _))) {
+            return;
+        }
+        println!("BVAGENT SHARE ls-error <listing-line-limit limit={MAX_AGENT_LINE_BYTES}>");
+        if let Some(share) = self.share.as_mut() {
+            let bytes = MAX_AGENT_LINE_BYTES / 4 * 3;
+            share.note_listing_refused(share_sync::ListingLimitError::TooManyBytes { bytes });
+        }
+        self.complete_in_flight();
     }
 
     /// Only a PUT made the guest folder, so with an empty Mac folder Windows

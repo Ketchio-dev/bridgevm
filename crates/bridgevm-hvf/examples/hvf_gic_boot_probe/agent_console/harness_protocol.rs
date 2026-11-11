@@ -143,8 +143,9 @@ impl AgentConsoleHarness {
         })
     }
     /// Frame drained agent bytes into `line_scratch`. An unterminated reply
-    /// longer than `MAX_AGENT_LINE_BYTES` is discarded up to its newline.
-    pub(super) fn frame_inbound_lines(&mut self) {
+    /// longer than `MAX_AGENT_LINE_BYTES` is discarded up to its newline; returns
+    /// how many were (a listing's ends as one too large, share_listing_reply.rs).
+    pub(super) fn frame_inbound_lines(&mut self) -> u64 {
         self.line_scratch.clear();
         let oversized = self.framer.push_bounded_into(
             &self.inbound_scratch,
@@ -155,6 +156,7 @@ impl AgentConsoleHarness {
             eprintln!("BVAGENT rejected reason=line_too_long count={oversized}");
         }
         self.inbound_scratch.clear();
+        oversized
     }
 
     pub(super) fn handle_line_with_sender(

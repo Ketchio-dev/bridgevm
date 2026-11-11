@@ -27,12 +27,15 @@ impl AgentConsoleHarness {
         }
         self.observe_host_clock();
 
-        self.frame_inbound_lines();
+        let oversized = self.frame_inbound_lines();
         let mut lines = std::mem::take(&mut self.line_scratch);
         for line in lines.drain(..) {
             self.handle_line_with_sender(&line, now, send);
         }
         self.line_scratch = lines;
+        if oversized > 0 {
+            self.share_listing_line_too_long();
+        }
 
         // Proactively PING while waiting to connect. The agent may have sent
         // its one-shot READY before the guest driver's host-open latched (that
