@@ -15,8 +15,19 @@ extension VMConfig {
     }
 }
 
+extension HvfEngineConfig {
+    /// The shared folder's name while its Mac folder is missing or unreachable (an unplugged drive, a
+    /// deleted folder). Such a VM still starts with that same folder: the runtime shares it once it
+    /// appears (HvfShareRootNotice tells the user).
+    func missingShareFolder(fileManager: FileManager = .default) -> String? {
+        guard let host = shareHostDir, host.hasPrefix("/"), shareGuestDir?.isEmpty == false,
+              !fileManager.fileExists(atPath: host) else { return nil }
+        return (host as NSString).lastPathComponent
+    }
+}
+
 /// Sharing is never enabled by default and only a user's selection is saved. A saved folder
-/// that is missing at launch fails readiness; no other folder is substituted for it.
+/// that is missing at launch is still the one shared once it appears; no other folder is substituted for it.
 extension HvfEngineSession {
     /// vm.json's pair for a library VM after the attempt (the selection itself otherwise), plus any message.
     func applySharedFolderSelection(_ selection: HvfSharedFolderSelection?,

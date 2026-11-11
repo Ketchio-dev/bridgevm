@@ -353,10 +353,14 @@ extension HvfEngineConfig {
         switch (shareHostDir, shareGuestDir) {
         case (nil, nil): break
         case let (.some(host), .some(guest)):
+            // A missing or unreachable folder (an unplugged drive, a deleted folder) starts the VM with
+            // the share: the runtime shares the folder once it appears, and the app says so
+            // (missingShareFolder). Not a relative one: the runtime resolves it from another directory
+            // than this check does, so the folder it would wait for is not this one.
             isDirectory = false
-            if guest.isEmpty || !fileManager.fileExists(atPath: host, isDirectory: &isDirectory)
-                || !isDirectory.boolValue {
-                launch("share-invalid", "공유 폴더를 쓰려면 존재하는 호스트 디렉터리와 게스트 경로가 모두 필요합니다.")
+            let exists = fileManager.fileExists(atPath: host, isDirectory: &isDirectory)
+            if guest.isEmpty || (exists ? !isDirectory.boolValue : !host.hasPrefix("/")) {
+                launch("share-invalid", "공유 폴더 경로가 올바르지 않습니다. 설정에서 공유 폴더를 다시 선택하세요.")
             }
         default:
             launch("share-incomplete", "호스트/게스트 공유 폴더 경로는 함께 설정해야 합니다.")

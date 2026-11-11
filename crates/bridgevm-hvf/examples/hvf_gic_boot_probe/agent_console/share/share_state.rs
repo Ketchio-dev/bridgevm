@@ -73,7 +73,7 @@ impl ShareState {
         interval: Duration,
     ) -> Self {
         let root = root::ShareRoot::new(&host_dir);
-        Self {
+        let mut share = Self {
             engine,
             host_dir,
             guest_dir,
@@ -102,7 +102,14 @@ impl ShareState {
             sync_stuck_told: false,
             #[cfg(test)]
             host_scans: 0,
-        }
+        };
+        // The runtime's first word on its root, so the app's notice from Start (a folder missing
+        // then) settles either way: `blocked` now (the first scan that finds it prints `ready`), or
+        // `ready` for a folder that came back between the app's check and this.
+        let blocked = !share.root.matches(&share.host_dir);
+        share.root_blocked = !blocked;
+        share.report_root_state(blocked);
+        share
     }
 
     /// Keep the synced state beside the VM's UEFI vars at `vars`, and take what it holds.

@@ -624,8 +624,23 @@ missing_share_dir_output="$(
     --agent-share-host "$MISSING_SHARE" \
     --agent-share-guest 'C:\missing' \
     --print-policy 2>&1
-)" && fail "installed boot unexpectedly accepted a missing host share directory: $missing_share_dir_output"
-assert_contains "$missing_share_dir_output" "agent share host directory not found" "missing host share directory policy"
+)" || fail "installed boot refused a missing host share directory (it is shared once it appears): $missing_share_dir_output"
+assert_contains "$missing_share_dir_output" "NOTE: agent share host directory not found; it is shared once it appears" "missing host share directory policy"
+
+SHARE_FILE="$STORE/share-is-a-file"
+: > "$SHARE_FILE"
+share_file_output="$(
+  scripts/run-hvf-windows-installed-boot.sh \
+    --target "$TARGET" \
+    --vars "$VARS" \
+    --evidence-dir "$EVIDENCE" \
+    --agent-service-control "$CONTROL" \
+    --agent-share-host "$SHARE_FILE" \
+    --agent-share-guest 'C:\missing' \
+    --print-policy 2>&1
+)" && fail "installed boot unexpectedly accepted a host share path that is a file: $share_file_output"
+assert_contains "$share_file_output" "agent share host path is not a directory" "host share path that is a file"
+rm -f "$SHARE_FILE"
 
 huge_boot_timer_ms_output="$(
   scripts/run-hvf-windows-installed-boot.sh \

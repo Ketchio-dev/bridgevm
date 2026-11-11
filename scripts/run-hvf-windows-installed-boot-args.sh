@@ -516,7 +516,12 @@ validate_installed_boot_required_paths() {
     done
   fi
   if [[ -n "$AGENT_SHARE_HOST" ]]; then
-    [[ -d "$AGENT_SHARE_HOST" ]] || { echo "FAIL: agent share host directory not found: $AGENT_SHARE_HOST" >&2; exit 1; }
+    # A missing folder (an unplugged drive) does not stop the boot: the VMM shares it once it appears.
+    if [[ -e "$AGENT_SHARE_HOST" && ! -d "$AGENT_SHARE_HOST" ]]; then
+      echo "FAIL: agent share host path is not a directory: $AGENT_SHARE_HOST" >&2
+      exit 1
+    fi
+    [[ -d "$AGENT_SHARE_HOST" ]] || echo "NOTE: agent share host directory not found; it is shared once it appears: $AGENT_SHARE_HOST" >&2
   fi
   if [[ -n "$VTPM_STATE_DIR" ]]; then
     if [[ -e "$VTPM_STATE_DIR" && ! -d "$VTPM_STATE_DIR" ]]; then

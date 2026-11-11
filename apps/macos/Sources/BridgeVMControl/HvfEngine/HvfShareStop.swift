@@ -35,6 +35,10 @@ extension HvfShareRootNotice {
                 }
                 return (text, "VM을 종료한 뒤 Mac과 Windows 모두 항목이 더 적은 폴더를 고르면 다시 동기화됩니다.")
             }
+            if let missingFolder {
+                return ("공유 폴더(\(missingFolder))를 찾을 수 없어 공유 없이 시작했습니다.",
+                        "폴더를 다시 연결하면 자동으로 공유됩니다.")
+            }
             if isBlocked {
                 return ("공유 폴더를 확인할 수 없어 일부 동기화를 기다리고 있습니다.",
                         "원래 폴더의 연결을 확인하세요. 다른 폴더를 쓰려면 VM을 종료한 뒤 다시 선택하세요.")
