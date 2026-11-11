@@ -212,6 +212,25 @@ final class HvfGuestStartAppsMenuTests: XCTestCase {
         XCTAssertEqual(notices.count, 1, "an opened app says nothing")
     }
 
+    /// AppKit tracks an open menu in the event-tracking run-loop mode: the reply is read there too, so the menu
+    /// that asked fills in while it stays open.
+    func testTheListArrivesWhileTheMenuThatAskedIsStillOpen() throws {
+        // As NSApplication does: the menu's tracking mode is one of the main run loop's common modes.
+        CFRunLoopAddCommonMode(CFRunLoopGetMain(), CFRunLoopMode(RunLoop.Mode.eventTracking.rawValue as CFString))
+        let session = makeSession(marker: true)
+        let controller = HvfGuestStartAppsController(session: session)
+        XCTAssertTrue(controller.refresh())
+        let question = try XCTUnwrap(sent().last)
+        try log(["BVAGENT CMD \(question) exit=0",
+                 Data("Calculator".utf8).base64EncodedString() + "|" + Data("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App".utf8).base64EncodedString(),
+                 "BVAGENT END \(question)"], session)
+        let end = Date().addingTimeInterval(2)
+        while controller.status != .loaded, Date() < end {
+            _ = RunLoop.main.run(mode: .eventTracking, before: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertEqual(controller.status, .loaded, "read during menu tracking, without a manual poll")
+    }
+
     func testTheMenuOpensTheAllAppsSheet() {
         let display = HvfDisplayWindowState(session: makeSession())
         display.perform(.allApps)

@@ -99,9 +99,13 @@ final class HvfGuestStartAppsController: ObservableObject {
         guard reader == nil else { return }
         let size = (try? FileManager.default.attributesOfItem(atPath: Self.logURL(session).path)[.size] as? NSNumber)?.uint64Value
         reader = TailOffsetReader(startingAt: size ?? 0)
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.poll() }
+        // The common modes include the menu's event tracking: the list fills in while the menu that asked is open.
+        // A main run-loop timer fires on the main thread, so it reads at once (a Task would wait for the menu).
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.poll() }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     private func endReadingIfIdle() {
