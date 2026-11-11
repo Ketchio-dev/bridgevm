@@ -28,6 +28,20 @@ foreach ($command in $cases.Keys) {
         }
     }
 }
+# A held key: `down:` is a tap's first half (no KEYEVENTF_KEYUP), `up:` its second (all KEYEVENTF_KEYUP); together they are the tap.
+foreach ($command in $cases.Keys) {
+    $tap = ([BridgeVM.BvUnicodeInput]::BuildKey($command) | ForEach-Object { '{0}:{1}' -f $_.Data.Keyboard.VirtualKey, $_.Data.Keyboard.Flags }) -join ','
+    $down = @([BridgeVM.BvUnicodeInput]::BuildKey('down:' + $command)); $up = @([BridgeVM.BvUnicodeInput]::BuildKey('up:' + $command))
+    $halves = (@($down) + @($up) | ForEach-Object { '{0}:{1}' -f $_.Data.Keyboard.VirtualKey, $_.Data.Keyboard.Flags }) -join ','
+    if ($halves -cne $tap -or $down.Length -ne $up.Length) { throw "held key halves differ from the tap: $command => $halves" }
+    if (@($down | Where-Object { $_.Data.Keyboard.Flags -band 2 }).Count -ne 0 -or @($up | Where-Object { -not ($_.Data.Keyboard.Flags -band 2) }).Count -ne 0) { throw "key-up flag outside up: $command" }
+}
+if ((([BridgeVM.BvUnicodeInput]::BuildKey('down:ctrl+left') + [BridgeVM.BvUnicodeInput]::BuildKey('up:ctrl+left')) | ForEach-Object { '{0}:{1}' -f $_.Data.Keyboard.VirtualKey, $_.Data.Keyboard.Flags }) -join ',' -cne '17:0,37:1,37:3,17:2') { throw 'wrong held chord order' }
+foreach ($bad in @('down:', 'up:', 'down:a', 'up:shift+s', 'down:ctrl+alt+delete', 'up:ctrl+alt+delete', 'down:up:left', 'up:down:left', 'hold:left', 'DOWN:left', 'Up:left', 'down: left', 'down:left ', ('down:ctrl+' + 'a' * 28))) {
+    $blocked = $false
+    try { [BridgeVM.BvUnicodeInput]::BuildKey($bad) | Out-Null } catch { $blocked = $true }
+    if (-not $blocked) { throw "unsupported held key accepted: $bad" }
+}
 # Text keys alone or with only Shift, unknown or non-canonical names, and the secure attention sequence stay refused.
 foreach ($bad in @('', 'a', '1', 'CTRL+V', 'Win', 'ctrl+alt+delete', 'win+ctrl+alt+shift+delete', 'shift+ctrl+left', 'ctrl+win+e', 'shift+alt+s', 'ctrl+ctrl+v', 'win+win', 'ctrl+win', 'command+c', 'cmd', "enter`n", 'shift+s', 'shift+1', 'shift+slash', 'shift+f13', 'ctrl+f13', 'ctrl+f0', 'ctrl+', '+', 'ctrl+,', 'ctrl+aa', ('ctrl+' + 'a' * 28))) {
     $blocked = $false
@@ -38,6 +52,11 @@ foreach ($letter in [char[]]'abcdefghijklmnopqrstuvwxyz') { $vk = [int][char]::T
 $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('ctrl+shift+left'))
 $result = Invoke-UnicodeInput "$id $payload" { param($key) return [uint32]([BridgeVM.BvUnicodeInput]::BuildKey($key).Length) } $true
 if ($result.Exit -ne 0 -or $result.Out -cne "BVINPUT_INSERTED $id 6") { throw 'key receipt mismatch' }
+foreach ($held in @(@('down:ctrl+shift+left', 3), @('up:ctrl+shift+left', 3), @('down:left', 1), @('up:f5', 1))) {
+    $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($held[0]))
+    $result = Invoke-UnicodeInput "$id $payload" { param($key) return [uint32]([BridgeVM.BvUnicodeInput]::BuildKey($key).Length) } $true
+    if ($result.Exit -ne 0 -or $result.Out -cne "BVINPUT_INSERTED $id $($held[1])") { throw "held key receipt mismatch: $($held[0])" }
+}
 $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('win'))
 $result = Invoke-UnicodeInput "$id $payload" { param($key) return [uint32]([BridgeVM.BvUnicodeInput]::BuildKey($key).Length) } $true
 if ($result.Exit -ne 0 -or $result.Out -cne "BVINPUT_INSERTED $id 2") { throw 'bare Windows key receipt mismatch' }

@@ -12,7 +12,7 @@ if ($null -eq $definition) { throw 'missing resident capability function' }
 . (Join-Path $PSScriptRoot 'win-assets/bvagent-input.ps1')
 $id = '12345678-1234-1234-1234-123456789abc'
 $result = Get-InputCapabilities $id
-if ($result.Exit -ne 0 -or $result.Out -cne ('BVINPUT_CAPS ' + $id + ' 3 TEXTINPUT KEYINPUT POINTERINPUT 65536' + "`nBVINPUT_KEYS $id SHIFT_ENTER_SPACE`nBVINPUT_CHORDS $id CTRL_SHIFT_CHORDS`nBVINPUT_CHORDS $id MODIFIER_CHORDS`nBVINPUT_KEYS $id PRINTSCREEN`nBVINPUT_POINTER $id SCROLL_UNITS`nBVINPUT_POINTER $id MODIFIERS`nBVINPUT_POINTER $id MIDDLE")) {
+if ($result.Exit -ne 0 -or $result.Out -cne ('BVINPUT_CAPS ' + $id + ' 3 TEXTINPUT KEYINPUT POINTERINPUT 65536' + "`nBVINPUT_KEYS $id SHIFT_ENTER_SPACE`nBVINPUT_CHORDS $id CTRL_SHIFT_CHORDS`nBVINPUT_CHORDS $id MODIFIER_CHORDS`nBVINPUT_KEYS $id PRINTSCREEN`nBVINPUT_KEYS $id HOLD`nBVINPUT_POINTER $id SCROLL_UNITS`nBVINPUT_POINTER $id MODIFIERS`nBVINPUT_POINTER $id MIDDLE")) {
     throw 'resident capability response mismatch'
 }
 foreach ($invalid in @('', 'invalid', ($id + ' extra'), ($id + "`n"), ($id + "`r`n"))) {

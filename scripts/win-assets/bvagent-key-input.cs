@@ -24,7 +24,12 @@ namespace BridgeVM {
             { "semicolon", 0xBA }, { "quote", 0xDE }, { "grave", 0xC0 }, { "comma", 0xBC }, { "period", 0xBE }, { "slash", 0xBF }
         };
 
+        // `down:<key>` is the first half of a key's events (modifiers and key down) and `up:<key>` the second
+        // (key and modifiers up, in reverse): a key held from the Mac's key-down to its key-up.
         public static Input[] BuildKey(string command) {
+            int phase = 0;
+            if (command != null && command.StartsWith("down:", StringComparison.Ordinal)) { phase = 1; command = command.Substring(5); }
+            else if (command != null && command.StartsWith("up:", StringComparison.Ordinal)) { phase = 2; command = command.Substring(3); }
             if (String.IsNullOrEmpty(command) || command.Length > 32) {
                 throw new ArgumentException("key-input-length");
             }
@@ -58,10 +63,14 @@ namespace BridgeVM {
             // Like the physical keys: the navigation block, Print Screen (E0 37), Insert, Delete and the Windows key.
             bool extended = (code >= 0x21 && code <= 0x28) || code == 0x2C || code == 0x2D || code == 0x2E || code == 0x5B;
             List<Input> inputs = new List<Input>();
-            foreach (ushort modifier in modifiers) { inputs.Add(KeyEvent(modifier, false, modifier == 0x5B)); }
-            inputs.Add(KeyEvent(code, false, extended));
-            inputs.Add(KeyEvent(code, true, extended));
-            for (int i = modifiers.Count - 1; i >= 0; i--) { inputs.Add(KeyEvent(modifiers[i], true, modifiers[i] == 0x5B)); }
+            if (phase != 2) {
+                foreach (ushort modifier in modifiers) { inputs.Add(KeyEvent(modifier, false, modifier == 0x5B)); }
+                inputs.Add(KeyEvent(code, false, extended));
+            }
+            if (phase != 1) {
+                inputs.Add(KeyEvent(code, true, extended));
+                for (int i = modifiers.Count - 1; i >= 0; i--) { inputs.Add(KeyEvent(modifiers[i], true, modifiers[i] == 0x5B)); }
+            }
             return inputs.ToArray();
         }
 

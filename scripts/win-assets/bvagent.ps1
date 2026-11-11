@@ -153,6 +153,11 @@ function Get-InputCapabilities([string]$Request) {
         } catch { }
         # The Print Screen key (VK_SNAPSHOT); a resident older key module refuses it, so hosts send it to the VMM or not at all.
         try { if ([BridgeVM.BvUnicodeInput]::BuildKey('printscreen').Length -eq 2) { $keySupport += "`nBVINPUT_KEYS $Request PRINTSCREEN" } } catch { }
+        # Keys held from the Mac's key-down to its key-up (down:<key>, up:<key>); a resident older key module refuses the probe.
+        try {
+            $hold = @([BridgeVM.BvUnicodeInput]::BuildKey('down:ctrl+left')) + @([BridgeVM.BvUnicodeInput]::BuildKey('up:ctrl+left'))
+            if ((($hold | ForEach-Object { '{0}:{1}' -f $_.Data.Keyboard.VirtualKey, $_.Data.Keyboard.Flags }) -join ',') -ceq '17:0,37:1,37:3,17:2') { $keySupport += "`nBVINPUT_KEYS $Request HOLD" }
+        } catch { }
         # Raw wheel units on both axes (scrollunits:<v>,<h>@XxY); a resident older pointer module refuses the probe.
         try {
             $units = [BridgeVM.BvUnicodeInput]::BuildPointer('scrollunits:-1200,1200@32767x0')
