@@ -46,7 +46,8 @@ final class HvfGuestResetInputGenerationTests: XCTestCase {
         }
     }
 
-    func testNextGenerationUsesLegacyInputBeforeItsHandshakeLikeAFreshOwnedBoot() throws {
+    /// Like a fresh owned boot, HID input before the handshake only delays the switch (HvfLegacyInputActivity).
+    func testNextGenerationUsesLegacyInputUntilItsHandshakeLikeAFreshOwnedBoot() throws {
         for reset in Gate.resets {
             let fixture = try HvfRuntimeKeyboardDraftFixture(); defer { fixture.remove() }
             try fixture.withSession { session in
@@ -55,9 +56,11 @@ final class HvfGuestResetInputGenerationTests: XCTestCase {
                 session.sendKey("a") // e.g. the next boot's sign-in screen
                 XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY a\n".utf8), reset)
                 try append(Gate.boot, fixture); session.poll(); session.poll()
-                XCTAssertEqual(try fixture.commands().count, 1, "a legacy generation never negotiates: \(reset)")
+                let commands = try fixture.commands()
+                XCTAssertEqual(commands.count, 2, "the next generation negotiates despite that key: \(reset)")
+                XCTAssertTrue(commands.last?.hasPrefix("INPUTCAPS ") == true, reset)
                 session.sendKey("b")
-                XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY a\nKEY b\n".utf8), reset)
+                XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY a\nKEY b\n".utf8), "HID until the handshake: \(reset)")
             }
         }
     }
@@ -131,10 +134,10 @@ final class HvfGuestResetInputGenerationTests: XCTestCase {
         changed.beginNextGeneration(binding: binding, lines: [records[0]])
         XCTAssertTrue(changed.failed)
         XCTAssertEqual(changed.route(.key("enter"), binding: binding, now: now), .refused)
-        XCTAssertFalse(changed.allowLegacyWrite(binding: binding))
+        XCTAssertFalse(changed.allowLegacyWrite("KEY enter", binding: binding, now: now))
     }
 
-    func testUnownedAndLegacyBootsAreNotReArmedByAReset() {
+    func testUnownedBootsAreNotReArmedAndHIDInputOnlyDelaysAnOwnedBootsSwitch() {
         let reset = records[0]
         var attached = HvfSessionInputRouter()
         attached.attachUnknown(binding: binding)
@@ -146,12 +149,19 @@ final class HvfGuestResetInputGenerationTests: XCTestCase {
         var legacy = HvfSessionInputRouter()
         legacy.beginOwnedBoot(binding: binding)
         XCTAssertEqual(legacy.route(.key("a"), binding: binding, now: now), .legacy)
+        XCTAssertTrue(legacy.allowLegacyWrite("KEY a", binding: binding, now: now))
         _ = legacy.pollBatch(binding: binding, serviceReady: false, lines: [reset], now: now) { _ in false }
-        _ = legacy.pollBatch(binding: binding, serviceReady: true, lines: [], now: now) {
-            _ in XCTFail("a legacy boot's input.ctl may still be unconsumed"); return true
-        }
-        XCTAssertFalse(legacy.eligible)
-        XCTAssertEqual(legacy.route(.key("b"), binding: binding, now: now), .legacy)
+        var query = ""
+        _ = legacy.pollBatch(binding: binding, serviceReady: true, lines: [], now: now) { query = $0; return true }
+        XCTAssertTrue(query.hasPrefix("INPUTCAPS "), "an owned boot negotiates despite earlier HID input")
+        let id = query.split(separator: " ").last ?? "missing"
+        _ = legacy.pollBatch(binding: binding, serviceReady: true, lines: [
+            "BVAGENT CMD \(query) exit=0", "BVINPUT_CAPS \(id) 3 TEXTINPUT KEYINPUT POINTERINPUT 65536", "BVAGENT END \(query)",
+        ], now: now) { _ in false }
+        XCTAssertTrue(legacy.eligible)
+        XCTAssertEqual(legacy.route(.key("b"), binding: binding, now: now), .legacy, "input.ctl may still be unconsumed")
+        _ = legacy.pollBatch(binding: binding, serviceReady: true, lines: [], now: now.addingTimeInterval(1)) { _ in false }
+        XCTAssertEqual(legacy.route(.key("enter"), binding: binding, now: now), .queued, "a quiet second later")
     }
 
     private func readyRouter() -> HvfSessionInputRouter {

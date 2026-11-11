@@ -99,6 +99,8 @@ final class HvfEngineSession: ObservableObject {
         inputDriver.onPoll = { [weak self] in if self?.pause == .running { self?.poll() } }
         inputDriver.now = { [weak self] in self?.guestNow() ?? Date() }
         inputDriver.onDiagnostic = { [weak self] in self?.append(.unknown($0)) }
+        inputDriver.onLegacyReplay = { [weak self] in self?.resendOnLegacy($0) }
+        inputDriver.onLegacyBarrier = { [weak self] in _ = self?.appendLiveInput($0) }
         appPacing.observe(inputDriver)
     }
 
@@ -211,8 +213,12 @@ final class HvfEngineSession: ObservableObject {
         switch inputDriver.route(.text(value), binding: inputBinding) {
         case .queued: return .acceptedForProcessing
         case .refused: return .refused
-        case .legacy: break
+        case .legacy: return sendLegacyText(value)
         }
+    }
+
+    /// Text on input.ctl: HID keys for printable ASCII, a clipboard paste for anything else.
+    @discardableResult func sendLegacyText(_ value: String) -> HvfTextInputSubmission {
         let plan = HvfTextInputPlan.make(for: value)
         for chunk in plan.hidChunks {
             guard appendLiveInput("KEY text-hex:\(chunk)") else { return .refused }
@@ -305,7 +311,7 @@ final class HvfEngineSession: ObservableObject {
     #endif
 
     @discardableResult func appendLiveInput(_ line: String) -> Bool {
-        guard !guiStartCleanupOnly, inputDriver.allowLegacyWrite(binding: inputBinding) else { return false }
+        guard !guiStartCleanupOnly, inputDriver.allowLegacyWrite(line, binding: inputBinding) else { return false }
         return writeLiveInput(line)
     }
 
@@ -413,7 +419,8 @@ final class HvfEngineSession: ObservableObject {
             }
         }
         flushDisplayResize()
-        inputDriver.poll(binding: inputBinding, serviceReady: serviceStarted && guestTakesInput, lines: lines) { [self] command in
+        inputDriver.poll(binding: inputBinding, serviceReady: serviceStarted && guestTakesInput,
+                         legacyPending: legacyPaste.pending != nil, lines: lines) { [self] command in
             guard command.utf8.count <= 87_434, !command.contains("\n"),
                   !command.contains("\r"), !command.contains("\0") else { return false }
             return appendControlCommand(command)
@@ -515,7 +522,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     /// Drops a legacy paste before its delayed `KEY ctrl+v` can reach a different guest target.
-    private func cancelPendingPaste(_ reason: String) {
+    func cancelPendingPaste(_ reason: String) {
         if let message = legacyPaste.cancel(reason) { append(.unknown(message)) }
     }
 }

@@ -52,6 +52,7 @@ struct HvfAcknowledgedInputStream {
                 case .expired: return cancel(.expired)
                 case .restarted: return cancel(.sessionChanged)
                 case .guestRejected, .invalidReceipt: return cancel(.transportFailed)
+                case .notInserted: return cancel(.notInserted)
                 }
             }
         case let .cancelled(reason, discarded):

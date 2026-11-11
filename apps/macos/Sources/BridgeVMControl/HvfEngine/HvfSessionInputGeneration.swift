@@ -37,20 +37,22 @@ enum HvfSessionInputFailure: Equatable {
 extension HvfSessionInputRouter {
     /// The owner's poll of one run.log batch. `poll` first cancels the generation a reset record in
     /// this batch ends; a failed router may retain only its bounded pointer cleanup.
-    mutating func pollBatch(binding: [String], serviceReady: Bool, lines: [String], now: Date,
+    mutating func pollBatch(binding: [String], serviceReady: Bool, lines: [String], now: Date, legacyPending: Bool = false,
                             send: (String) -> Bool) -> HvfAcknowledgedInputStream.Update? {
-        let update = poll(binding: binding, serviceReady: serviceReady, lines: lines, now: now, send: send)
+        let update = poll(binding: binding, serviceReady: serviceReady, lines: lines, now: now,
+                          legacyPending: legacyPending, send: send)
         beginNextGeneration(binding: binding, lines: lines)
         return update
     }
 
     /// Re-arms a failed router when `lines` contain a guest reset record, for the same binding only,
-    /// exactly as a fresh owned boot: legacy input until the next generation's own INPUTCAPS handshake,
-    /// which the stream sends only after that generation's SERVICE start. No old request is replayed.
+    /// as a fresh owned boot (what input.ctl still owes carries over): legacy input until the next
+    /// generation's own INPUTCAPS handshake, which the stream sends only after that generation's SERVICE
+    /// start. No old request is replayed.
     /// Only an activated owned boot fails for such a reason, so attached or legacy routers never re-arm.
     mutating func beginNextGeneration(binding next: [String], lines: [String]) {
         guard failure?.endsAtGuestReset == true, binding == next,
               lines.contains(where: { HvfGuestResetRecord.matches($0) }) else { return }
-        beginOwnedBoot(binding: next)
+        beginNextOwnedBoot(binding: next)
     }
 }

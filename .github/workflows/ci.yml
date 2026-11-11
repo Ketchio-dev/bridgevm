@@ -61,7 +61,7 @@ jobs:
           # fixed file lists and fails when an include target is missing.
           rust_build=false
           printf '%s\n' "$files" | grep -qE '\.rs$|^(crates|runners|tools)/|(^|/)(Cargo\.(toml|lock)|rust-toolchain(\.toml)?|\.?clippy\.toml)$|(^|/)\.cargo/|^\.github/workflows/ci\.yml$' && rust_build=true
-          printf '%s\n' "$files" | grep -qxE 'apps/macos/Sources/BridgeVMControl/HvfEngine/(BvAgentEvent|HvfClipboardPaste)\.swift|apps/macos/Sources/BridgeVMControl/WindowsTimeZones\.swift|capabilities/windows-hvf\.json|scripts/win-assets/bvagent\.ps1' && rust_build=true
+          printf '%s\n' "$files" | grep -qxE 'apps/macos/Sources/BridgeVMControl/HvfEngine/(BvAgentEvent|HvfClipboardPaste|HvfLegacyInputActivity)\.swift|apps/macos/Sources/BridgeVMControl/WindowsTimeZones\.swift|capabilities/windows-hvf\.json|scripts/win-assets/bvagent\.ps1' && rust_build=true
           # The macOS host contracts run with `rust`, and also when a file they
           # read that `rust` ignores changes: these workflows and documents
           # (found by tracing every file the four suites read).

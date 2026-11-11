@@ -6,6 +6,7 @@ fn input_receipt_cross_language_transcript() {
         ("chunked", "TEXTINPUT", "private-input-fixture", 1),
         ("key", "KEYINPUT", "ctrl+v", 0),
         ("missing-begin", "TEXTINPUT", "private-input-fixture", 2),
+        ("not-inserted", "KEYINPUT", "ctrl+v", 3),
     ] {
         let mut h = harness();
         let command = format!("{verb} {id} {}", base64_encode(value.as_bytes()));
@@ -22,6 +23,12 @@ fn input_receipt_cross_language_transcript() {
                     &format!("OUTCHUNK 0 {}", base64_encode(marker.as_bytes())), &command
                 ), ReplyProgress::Incomplete));
                 h.handle_reply_line("OUTEND 1", &command)
+            }
+            // bvagent-input.ps1 when SendInput inserted nothing (a Windows secure desktop).
+            3 => {
+                let failed = format!("BVINPUT_FAILED {id} Exception calling \"InsertKey\" with \"1\" argument(s): \
+                                      \"unicode-input-incomplete inserted=0 requested={count}\"");
+                h.handle_reply_line(&format!("OUT 1 {}", base64_encode(failed.as_bytes())), &command)
             }
             _ => h.handle_reply_line("OUTEND 1", &command),
         };

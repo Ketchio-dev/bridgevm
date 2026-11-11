@@ -9,8 +9,10 @@ struct HvfOrderedInputQueue {
         let event: Event
     }
 
+    /// `notInserted`: the guest inserted nothing of the awaited event (HvfUnicodeInputRequest), so it and
+    /// every event behind it are still undelivered.
     enum Failure: Equatable {
-        case expired, transportFailed, sessionChanged, targetChanged
+        case expired, transportFailed, sessionChanged, targetChanged, notInserted
     }
 
     enum Transition: Equatable {

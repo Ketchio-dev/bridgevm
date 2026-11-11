@@ -41,6 +41,8 @@ RUN_BUILD = {
     "build.rs": ["crates/bridgevm-hvf/build.rs"],
     "include_str! BvAgentEvent.swift": ["apps/macos/Sources/BridgeVMControl/HvfEngine/BvAgentEvent.swift"],
     "include_str! HvfClipboardPaste.swift": ["apps/macos/Sources/BridgeVMControl/HvfEngine/HvfClipboardPaste.swift"],
+    "include_str! HvfLegacyInputActivity.swift": [
+        "apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLegacyInputActivity.swift"],
     "include_str! windows-hvf.json": ["capabilities/windows-hvf.json"],
     "include_str! bvagent.ps1": ["scripts/win-assets/bvagent.ps1"],
     "Swift plus one .rs": ["apps/macos/Sources/BridgeVMControl/AppUIHost.swift", "crates/bridgevm-core/src/lib.rs"],

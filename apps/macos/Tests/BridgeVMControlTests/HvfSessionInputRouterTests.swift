@@ -6,14 +6,53 @@ final class HvfSessionInputRouterTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 2_000)
     private let binding = ["disk", "vars", "evidence", "control"]
 
-    private func negotiate(_ router: inout HvfSessionInputRouter) {
+    private func negotiate(_ router: inout HvfSessionInputRouter, at time: Date? = nil) {
+        let time = time ?? now
         var command = ""
-        _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { command = $0; return true }
+        _ = router.poll(binding: binding, serviceReady: true, lines: [], now: time) { command = $0; return true }
         let id = command.split(separator: " ").last ?? "missing"
         let lines = ["BVAGENT CMD \(command) exit=0", "BVINPUT_CAPS \(id) 3 TEXTINPUT KEYINPUT POINTERINPUT 65536",
                      "BVAGENT END \(command)"]
-        _ = router.poll(binding: binding, serviceReady: true, lines: lines, now: now) { _ in false }
-        _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { _ in false }
+        _ = router.poll(binding: binding, serviceReady: true, lines: lines, now: time) { _ in false }
+        _ = router.poll(binding: binding, serviceReady: true, lines: [], now: time) { _ in false }
+    }
+
+    private func poll(_ router: inout HvfSessionInputRouter, at seconds: TimeInterval, lines: [String] = [],
+                      sent: ((String) -> Void)? = nil) -> HvfAcknowledgedInputStream.Update? {
+        router.poll(binding: binding, serviceReady: true, lines: lines, now: now.addingTimeInterval(seconds)) {
+            if let sent { sent($0); return true }
+            XCTFail("unexpected send \($0)"); return false
+        }
+    }
+
+    private func wrote(_ router: inout HvfSessionInputRouter, _ line: String, at seconds: TimeInterval = 0) {
+        XCTAssertTrue(router.allowLegacyWrite(line, binding: binding, now: now.addingTimeInterval(seconds)), line)
+    }
+
+    /// The VMM's run.log lines when it took `count` KEY commands off its queue (hvf_gic_boot_probe device_apply.rs).
+    private func taken(_ count: Int) -> [String] {
+        Array(repeating: "live input accepted: command=Key(<redacted>)", count: count)
+    }
+
+    private func inserted(_ command: String, count: Int = 1) -> [String] {
+        let words = command.split(separator: " "), label = words.prefix(2).joined(separator: " ")
+        guard words.count >= 2 else { XCTFail("no command sent"); return [] }
+        return ["BVAGENT CMD \(label) exit=0", "BVINPUT_INSERTED \(words[1]) \(count)", "BVAGENT END \(label)"]
+    }
+
+    /// `VERB payload` of an agent command, its base64 decoded.
+    private func payload(_ command: String) -> String? {
+        let words = command.split(separator: " ")
+        guard words.count == 3, let data = Data(base64Encoded: String(words[2])) else { return nil }
+        return "\(words[0]) " + String(decoding: data, as: UTF8.self)
+    }
+
+    /// bvagent-input.ps1's receipt when SendInput inserted `inserted` of 2 events.
+    private func shortfall(_ command: String, inserted: Int = 0) -> [String] {
+        let words = command.split(separator: " "), label = words.prefix(2).joined(separator: " ")
+        guard words.count >= 2 else { XCTFail("no command sent"); return [] }
+        return ["BVAGENT CMD \(label) exit=1", "BVINPUT_FAILED \(words[1]) Exception calling \"InsertPointer\" with \"1\" "
+                + "argument(s): \"unicode-input-incomplete inserted=\(inserted) requested=2\"", "BVAGENT END \(label)"]
     }
 
     func testOwnedUntaintedBootCanActivateButUnknownAttachmentCannot() {
@@ -27,20 +66,172 @@ final class HvfSessionInputRouterTests: XCTestCase {
         negotiate(&router)
         XCTAssertEqual(router.state, .ready)
         XCTAssertEqual(router.route(.text("a"), binding: binding, now: now), .queued)
-        XCTAssertFalse(router.allowLegacyWrite(binding: binding))
+        XCTAssertFalse(router.allowLegacyWrite("KEY enter", binding: binding, now: now))
     }
 
-    func testAnyLegacyAdmissionPreventsLaterSwitchForThatBoot() {
+    func testLegacyInputBeforeActivationOnlyDelaysTheSwitchUntilTheHIDRouteIsQuiet() {
         for directWrite in [false, true] {
             var router = HvfSessionInputRouter()
             router.beginOwnedBoot(binding: binding)
-            if directWrite { XCTAssertTrue(router.allowLegacyWrite(binding: binding)) }
-            else { XCTAssertEqual(router.route(.key("enter"), binding: binding, now: now), .legacy) }
-            _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) {
-                _ in XCTFail("legacy admission was forgotten"); return true
-            }
+            if !directWrite { XCTAssertEqual(router.route(.key("enter"), binding: binding, now: now), .legacy) }
+            wrote(&router, directWrite ? "KEY ctrl+v" : "KEY enter")
+            negotiate(&router)
+            XCTAssertEqual(router.state, .waitingForLegacy, "INPUTCAPS still went out")
+            _ = router.cancelTarget(now: now)
+            _ = poll(&router, at: 0.25)
+            XCTAssertEqual(router.state, .waitingForLegacy, "a target change keeps the agent's answer, no new INPUTCAPS")
             XCTAssertEqual(router.route(.pointer("click:0x0"), binding: binding, now: now), .legacy)
+            wrote(&router, "POINTER click:0x0", at: 0.5)
+            _ = poll(&router, at: 0.5, lines: taken(2))
+            _ = poll(&router, at: 1.25)
+            XCTAssertEqual(router.state, .waitingForLegacy, "within a second of the last HID click")
+            XCTAssertFalse(router.activated)
+            _ = poll(&router, at: 1.5)
+            XCTAssertEqual(router.state, .ready)
+            XCTAssertTrue(router.activated)
+            XCTAssertEqual(router.route(.pointer("click:0x0"), binding: binding, now: now), .queued)
+            XCTAssertFalse(router.allowLegacyWrite("KEY enter", binding: binding, now: now), "the active route never mixes")
         }
+    }
+
+    func testAHeldHIDButtonBlocksTheSwitch() {
+        var router = HvfSessionInputRouter()
+        router.beginOwnedBoot(binding: binding)
+        wrote(&router, "POINTER right-press:1x2")
+        negotiate(&router)
+        wrote(&router, "POINTER click:1x2", at: 1)
+        _ = poll(&router, at: 60, lines: ["live input accepted: command=Pointer(\"right-press:1x2\")",
+                                          "live input rejected: command=Pointer(\"click:1x2\") queue_error=invalid"])
+        XCTAssertEqual(router.state, .waitingForLegacy, "a left click leaves the right button down")
+        wrote(&router, "POINTER move:5x6", at: 60)
+        _ = poll(&router, at: 61)
+        XCTAssertNil(router.takeLegacyBarrier(), "no barrier while the button is down")
+        wrote(&router, "POINTER release:3x4", at: 61)
+        _ = poll(&router, at: 61, lines: ["live input rejected: kind=pointer parse_error=invalid"])
+        _ = poll(&router, at: 61.875)
+        XCTAssertEqual(router.state, .waitingForLegacy, "within a second of the VMM taking the release")
+        _ = poll(&router, at: 62)
+        XCTAssertEqual(router.state, .ready, "the release behind the move confirms it: no barrier")
+        XCTAssertNil(router.takeLegacyBarrier())
+    }
+
+    func testNothingInsertedHandsTheEventAndItsBacklogBackInOrderAndRetriesOrderedOnceQuiet() throws {
+        var router = HvfSessionInputRouter()
+        router.beginOwnedBoot(binding: binding)
+        negotiate(&router)
+        XCTAssertEqual(router.route(.pointer("press:1x2"), binding: binding, now: now), .queued)
+        var press = ""
+        _ = poll(&router, at: 0) { press = $0 }
+        for event: HvfOrderedInputQueue.Event in [.text("ab"), .pointer("move:3x4"), .pointer("move:5x6"),
+                                                  .pointer("releaseall:5x6")] {
+            XCTAssertEqual(router.route(event, binding: binding, now: now), .queued)
+        }
+        XCTAssertEqual(poll(&router, at: 0.1, lines: shortfall(press)), .cancelled(.notInserted, discarded: 0))
+        XCTAssertEqual(router.takeLegacyReplay(), [.pointer("press:1x2"), .text("ab"), .pointer("move:5x6"),
+                                                   .pointer("releaseall:5x6")], "the coalesced move once, in order")
+        XCTAssertEqual(router.takeLegacyReplay(), [])
+        XCTAssertFalse(router.failed)
+        XCTAssertTrue(router.fallback)
+        XCTAssertEqual(router.count, 0)
+        XCTAssertEqual(router.state, .ready, "the agent's negotiated encodings stay")
+        XCTAssertFalse(router.scrollUnits || router.pointerModifiers || router.middleButton)
+        XCTAssertTrue(router.modifierChords)
+        for (line, at) in [("POINTER press:1x2", 0.1), ("KEY text-hex:6162", 0.1), ("POINTER move:5x6", 0.1),
+                           ("POINTER release:5x6", 0.1)] { wrote(&router, line, at: at) }
+        XCTAssertEqual(router.route(.key("enter"), binding: binding, now: now), .legacy)
+        wrote(&router, "KEY enter", at: 0.5)
+        _ = poll(&router, at: 0.5, lines: taken(4))
+        XCTAssertEqual(router.cancelTarget(now: now), .cancelled(.targetChanged, discarded: 0))
+        XCTAssertEqual(router.count, 0, "the press inserted nothing, so the agent owes no release")
+        _ = poll(&router, at: 1.25)
+        XCTAssertTrue(router.fallback)
+        _ = poll(&router, at: 1.5)
+        XCTAssertFalse(router.fallback, "a quiet second later the next event tries the agent again")
+        XCTAssertEqual(router.route(.key("tab"), binding: binding, now: now), .queued)
+        var retry = ""
+        _ = poll(&router, at: 1.5) { retry = $0 }
+        _ = poll(&router, at: 1.6, lines: shortfall(retry))
+        XCTAssertEqual(router.takeLegacyReplay(), [.key("tab")])
+        XCTAssertTrue(router.fallback)
+        XCTAssertEqual(router.route(.key("esc"), binding: binding, now: now), .legacy)
+    }
+
+    /// An ordered press Windows inserted still owes its release when that release inserts nothing (a secure desktop
+    /// appeared), and the HID re-send cannot release a SendInput press: leaving the fallback sends the cleanup release
+    /// first, ordered events follow only once Windows inserted it, and one that inserts nothing again keeps the HID
+    /// route until the next quiet second.
+    func testLeavingTheFallbackFirstReleasesAnOrderedPressThatIsStillHeld() {
+        var router = HvfSessionInputRouter()
+        router.beginOwnedBoot(binding: binding)
+        negotiate(&router)
+        XCTAssertEqual(router.route(.pointer("press:1x2"), binding: binding, now: now), .queued)
+        var press = ""
+        _ = poll(&router, at: 0) { press = $0 }
+        _ = poll(&router, at: 0.1, lines: inserted(press))
+        XCTAssertEqual(router.route(.pointer("releaseall:1x2"), binding: binding, now: now), .queued)
+        var release = ""
+        _ = poll(&router, at: 0.1) { release = $0 }
+        XCTAssertEqual(poll(&router, at: 0.2, lines: shortfall(release)), .cancelled(.notInserted, discarded: 0))
+        XCTAssertEqual(router.takeLegacyReplay(), [.pointer("releaseall:1x2")])
+        wrote(&router, "POINTER release:1x2", at: 0.2)
+        _ = poll(&router, at: 0.2, lines: ["live input accepted: command=Pointer(\"release:1x2\")"])
+        var cleanup = ""
+        _ = poll(&router, at: 1.2) { cleanup = $0 }
+        XCTAssertEqual(payload(cleanup), "POINTERINPUT releaseall:1x2", "the owed release goes to the agent first")
+        XCTAssertEqual(router.route(.pointer("move:3x4"), binding: binding, now: now), .legacy, "nothing ordered before it")
+        XCTAssertEqual(poll(&router, at: 1.3, lines: shortfall(cleanup)), .cancelled(.notInserted, discarded: 0))
+        XCTAssertTrue(router.fallback, "still owed, so input stays on the HID route")
+        _ = poll(&router, at: 2.2)
+        var again = ""
+        _ = poll(&router, at: 2.3) { again = $0 }
+        XCTAssertEqual(payload(again), "POINTERINPUT releaseall:1x2", "retried after the next quiet second")
+        guard case .inserted = poll(&router, at: 2.4, lines: inserted(again)) else { return XCTFail("not inserted") }
+        XCTAssertFalse(router.fallback)
+        XCTAssertEqual(router.route(.pointer("move:3x4"), binding: binding, now: now), .queued)
+        var move = ""
+        _ = poll(&router, at: 2.4) { move = $0 }
+        XCTAssertEqual(payload(move), "POINTERINPUT move:3x4")
+    }
+
+    func testAPartlyInsertedEventStillFailsTheRouteWithoutAReplay() {
+        var router = HvfSessionInputRouter()
+        router.beginOwnedBoot(binding: binding)
+        negotiate(&router)
+        XCTAssertEqual(router.route(.pointer("click:1x2"), binding: binding, now: now), .queued)
+        var click = ""
+        _ = poll(&router, at: 0) { click = $0 }
+        XCTAssertEqual(router.route(.key("enter"), binding: binding, now: now), .queued)
+        XCTAssertEqual(poll(&router, at: 0.1, lines: shortfall(click, inserted: 1)), .cancelled(.transportFailed, discarded: 2))
+        XCTAssertTrue(router.failed)
+        XCTAssertEqual(router.takeLegacyReplay(), [])
+        XCTAssertEqual(router.route(.key("enter"), binding: binding, now: now), .refused)
+    }
+
+    func testCtrlAltDeleteTakesTheVMMKeyboardWhateverTheRouteAndNothingOvertakesIt() {
+        var router = HvfSessionInputRouter()
+        router.beginOwnedBoot(binding: binding)
+        negotiate(&router)
+        XCTAssertEqual(router.route(.key("tab"), binding: binding, now: now), .queued)
+        var tab = ""
+        _ = poll(&router, at: 0) { tab = $0 }
+        let behind: [HvfOrderedInputQueue.Event] = [.key("ctrl+alt+delete"), .key("enter"), .pointer("move:1x2"),
+                                                    .pointer("move:3x4"), .key("ctrl+alt+shift+delete")]
+        for event in behind { XCTAssertEqual(router.route(event, binding: binding, now: now), .queued, "\(event)") }
+        XCTAssertEqual(router.count, 5, "the tab going in, the chords and the input after them (one move)")
+        XCTAssertEqual(poll(&router, at: 0), .waiting)
+        XCTAssertEqual(router.takeSecureAttention(), [])
+        _ = poll(&router, at: 0.1, lines: inserted(tab, count: 2))
+        XCTAssertEqual(router.takeSecureAttention(), [.key("ctrl+alt+delete"), .key("enter"), .pointer("move:3x4"),
+                                                      .key("ctrl+alt+shift+delete")], "once the tab went in, in order")
+        XCTAssertTrue(router.fallback, "later input follows them on input.ctl")
+        XCTAssertEqual(router.count, 0)
+        XCTAssertEqual(router.route(.key("esc"), binding: binding, now: now), .legacy)
+        _ = router.poll(binding: binding, serviceReady: false, lines: [], now: now) { _ in false }
+        XCTAssertTrue(router.failed)
+        XCTAssertEqual(router.route(.key("ctrl+alt+delete"), binding: binding, now: now), .legacy, "a failed route too")
+        wrote(&router, "KEY ctrl+alt+delete")
+        XCTAssertFalse(router.fallback, "a failed route stays failed")
+        XCTAssertEqual(router.route(.key("ctrl+alt+delete"), binding: ["other"], now: now), .refused, "never another VM's")
     }
 
     func testTargetChangeCancelsPendingInputKeepsNegotiationAndNeverFallsBackToHID() {
@@ -49,7 +240,7 @@ final class HvfSessionInputRouterTests: XCTestCase {
         negotiate(&router)
         XCTAssertEqual(router.route(.text("old target"), binding: binding, now: now), .queued)
         XCTAssertEqual(router.cancelTarget(), .cancelled(.targetChanged, discarded: 1))
-        XCTAssertFalse(router.allowLegacyWrite(binding: binding))
+        XCTAssertFalse(router.allowLegacyWrite("KEY enter", binding: binding, now: now))
         XCTAssertEqual(router.route(.pointer("click:1x2"), binding: binding, now: now), .queued, "the focusing click")
         var sent = ""; _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { sent = $0; return true }
         XCTAssertTrue(sent.hasPrefix("POINTERINPUT "), "no renegotiation for a host target change")
@@ -83,6 +274,6 @@ final class HvfSessionInputRouterTests: XCTestCase {
                        .cancelled(.transportFailed, discarded: 1))
         XCTAssertTrue(router.failed)
         XCTAssertEqual(router.route(.text("do not replay"), binding: binding, now: now), .refused)
-        XCTAssertFalse(router.allowLegacyWrite(binding: binding))
+        XCTAssertFalse(router.allowLegacyWrite("KEY enter", binding: binding, now: now))
     }
 }

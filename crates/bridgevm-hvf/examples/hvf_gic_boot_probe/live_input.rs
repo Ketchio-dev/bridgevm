@@ -27,6 +27,9 @@ mod host_prepare_tests;
 #[cfg(test)]
 #[path = "live_input/identity_tests.rs"]
 mod identity_tests;
+#[cfg(test)]
+#[path = "live_input/drain_line_tests.rs"]
+mod drain_line_tests;
 #[path = "live_input/key_actions.rs"]
 mod key_actions;
 #[path = "live_input/line_frames.rs"]

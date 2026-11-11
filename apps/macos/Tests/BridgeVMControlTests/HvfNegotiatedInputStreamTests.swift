@@ -81,12 +81,19 @@ final class HvfNegotiatedInputStreamTests: XCTestCase {
         XCTAssertEqual(stream.state, .disconnected)
     }
 
-    func testLegacyActivityAfterActivationFailsClosed() {
+    func testLegacyQuiescenceGatesOnlyTheSwitchAndANotInsertedEventKeepsTheStreamReady() {
         var stream = readyStream()
         XCTAssertEqual(stream.enqueue(.key("enter"), now: now), .queued)
-        XCTAssertEqual(stream.poll(serviceReady: true, legacyQuiescent: false, lines: [], now: now) {
-            _ in XCTFail("mixed legacy and acknowledged transports"); return true
-        }, .cancelled(.transportFailed, discarded: 1))
-        XCTAssertEqual(stream.enqueue(.text("next"), now: now), .refused)
+        var sent = ""
+        guard case .sent? = stream.poll(serviceReady: true, legacyQuiescent: false, lines: [], now: now, send: {
+            sent = $0; return true
+        }) else { return XCTFail("the owner keeps a ready stream apart from legacy input (HvfSessionInputRouter)") }
+        let id = sent.split(separator: " ")[1]
+        let shortfall = ["BVAGENT CMD KEYINPUT \(id) exit=1", "BVINPUT_FAILED \(id) Exception calling \"InsertKey\" with "
+                         + "\"1\" argument(s): \"unicode-input-incomplete inserted=0 requested=2\"", "BVAGENT END KEYINPUT \(id)"]
+        XCTAssertEqual(stream.poll(serviceReady: true, legacyQuiescent: true, lines: shortfall, now: now) { _ in false },
+                       .cancelled(.notInserted, discarded: 1))
+        XCTAssertEqual(stream.state, .ready)
+        XCTAssertEqual(stream.enqueue(.key("tab"), now: now), .queued)
     }
 }

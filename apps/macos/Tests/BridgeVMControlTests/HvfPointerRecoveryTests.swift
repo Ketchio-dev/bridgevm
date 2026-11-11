@@ -64,8 +64,39 @@ final class HvfPointerRecoveryTests: XCTestCase {
             _ in XCTFail("cleanup replay"); return true
         }, .cancelled(.transportFailed, discarded: 1))
         XCTAssertTrue(router.failed)
-        XCTAssertFalse(router.allowLegacyWrite(binding: binding))
+        XCTAssertFalse(router.allowLegacyWrite("KEY enter", binding: binding, now: now))
         XCTAssertEqual(router.route(.text("blocked"), binding: binding, now: now), .refused)
+    }
+
+    /// On a Windows secure desktop the agent inserts nothing, the cleanup's release included: it stays owed for the
+    /// next target change instead of failing the route, and input meanwhile takes the HID route.
+    func testACleanupReleaseThatInsertsNothingStaysOwedInsteadOfFailingTheRoute() {
+        var router = ready()
+        XCTAssertEqual(router.route(.pointer("press:1x2"), binding: binding, now: now), .queued)
+        var press = ""
+        _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { press = $0; return true }
+        XCTAssertNotNil(router.poll(binding: binding, serviceReady: true, lines: receipt(press, count: 1), now: now) { _ in false })
+        _ = router.cancelTarget(now: now)
+        var cleanup = ""
+        _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { cleanup = $0; return true }
+        let id = cleanup.split(separator: " ")[1]
+        let nothing = ["BVAGENT CMD POINTERINPUT \(id) exit=1", "BVINPUT_FAILED \(id) Exception calling \"InsertPointer\" with "
+                       + "\"1\" argument(s): \"unicode-input-incomplete inserted=0 requested=1\"", "BVAGENT END POINTERINPUT \(id)"]
+        XCTAssertEqual(router.poll(binding: binding, serviceReady: true, lines: nothing, now: now) {
+            _ in XCTFail("cleanup replay"); return true
+        }, .cancelled(.notInserted, discarded: 0))
+        XCTAssertFalse(router.failed)
+        XCTAssertTrue(router.fallback)
+        XCTAssertEqual(router.takeLegacyReplay(), [], "a cleanup is never re-sent as user input")
+        XCTAssertEqual(router.route(.key("enter"), binding: binding, now: now), .legacy)
+        _ = router.cancelTarget(now: now)
+        var again = ""
+        _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { again = $0; return true }
+        XCTAssertNotEqual(again, cleanup)
+        XCTAssertEqual(Data(base64Encoded: String(again.split(separator: " ")[2])), Data("releaseall:1x2".utf8))
+        _ = router.poll(binding: binding, serviceReady: true, lines: receipt(again, count: 1), now: now) { _ in false }
+        XCTAssertEqual(router.count, 0)
+        XCTAssertFalse(router.failed)
     }
 
     func testUnsentPressDoesNotProduceCleanupAndHeldSidesRemainIndependent() {

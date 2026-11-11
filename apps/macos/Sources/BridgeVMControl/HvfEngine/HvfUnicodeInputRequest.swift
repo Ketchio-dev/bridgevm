@@ -2,15 +2,18 @@ import Foundation
 
 /// Confirms guest input-stream insertion, not application text consumption.
 struct HvfUnicodeInputRequest {
-    enum Failure: Equatable { case expired, restarted, guestRejected, invalidReceipt }
+    /// `notInserted`: the agent's SendInput inserted none of the request's events, as on a Windows secure
+    /// desktop (lock or sign-in screen, UAC prompt); unlike any other failure nothing of it reached Windows.
+    enum Failure: Equatable { case expired, restarted, guestRejected, invalidReceipt, notInserted }
     enum Outcome: Equatable { case inserted, failed(Failure) }
-    private enum Phase { case header, marker, end, finished }
+    private enum Phase { case header, marker, end, rejected, finished }
 
     let command: String
     let insertedEventCount: Int
     private let deadline: Date
     private let marker: String
     private let markerPrefix: String
+    private let failurePrefix: String
     private var phase = Phase.header
     private var envelope: HvfInputReceiptEnvelope
 
@@ -21,6 +24,7 @@ struct HvfUnicodeInputRequest {
         insertedEventCount = encoding.insertedEventCount
         markerPrefix = "BVINPUT_INSERTED \(id.uuidString) "
         marker = markerPrefix + String(insertedEventCount)
+        failurePrefix = "BVINPUT_FAILED \(id.uuidString) "
         deadline = now.addingTimeInterval(30)
     }
 
@@ -36,8 +40,14 @@ struct HvfUnicodeInputRequest {
         for line in lines {
             if let accepted = envelope.header(line) {
                 guard phase == .header else { return finish(.failed(.invalidReceipt)) }
-                guard accepted else { return finish(.failed(.guestRejected)) }
-                phase = .marker
+                phase = accepted ? .marker : .rejected
+            } else if phase == .rejected {
+                // bvagent-input.ps1: `BVINPUT_FAILED <id> <exception message>`, then END; SendInput's shortfall
+                // reads `... unicode-input-incomplete inserted=<n> requested=<m>` (bvagent-unicode-input.cs).
+                if line.hasPrefix(failurePrefix) {
+                    return finish(.failed(Self.insertedNothing(line) ? .notInserted : .guestRejected))
+                }
+                if envelope.isEnd(line) { return finish(.failed(.guestRejected)) }
             } else if line.hasPrefix(markerPrefix) {
                 guard phase == .marker, line == marker else { return finish(.failed(.invalidReceipt)) }
                 phase = .end
@@ -47,6 +57,12 @@ struct HvfUnicodeInputRequest {
             }
         }
         return nil
+    }
+
+    private static func insertedNothing(_ line: String) -> Bool {
+        guard let range = line.range(of: "unicode-input-incomplete inserted=0 requested=") else { return false }
+        let requested = line[range.upperBound...].prefix { $0.isASCII && $0.isNumber }
+        return Int(requested).map { $0 > 0 } ?? false
     }
 
     private mutating func finish(_ result: Outcome) -> Outcome {

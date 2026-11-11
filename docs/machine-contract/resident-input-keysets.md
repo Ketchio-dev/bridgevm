@@ -27,7 +27,10 @@ or expiry invalidates the pending receipt. Future keysets use a new keyword.
 A new host connected to an older resident refuses chords outside its
 advertised keysets before queueing or sending them, with existing refusal
 feedback; pending and later ordinary input remain available, without legacy HID
-after ordered activation. An older host ignores marker keywords it predates and
+after ordered activation unless Windows inserts nothing of an event (a lock, sign-in
+or UAC screen), when that event and the input behind it go to the VMM's HID route
+until it has been quiet for a second (HvfSessionInputRouter). Ctrl+Alt+Delete
+always takes the VMM keyboard. An older host ignores marker keywords it predates and
 keeps v3. A new agent with an older C# module loaded advertises only what that
 module builds. Before ordered activation the VMM's HID route sends these chords
 itself. Target cancellation keeps the keyset; a service restart or new owned
