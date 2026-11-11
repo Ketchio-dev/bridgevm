@@ -424,12 +424,11 @@ pub(super) fn is_host_push(req: &ServiceReq) -> bool {
 }
 
 /// A step of a clipboard file copy past the old limits: background traffic, as a shared-folder
-/// file's (service_queue.rs).
+/// file's (service_queue.rs). Its LPUTABORT goes first, as clipboard traffic.
 pub(super) fn is_large_clip_files_req(req: &ServiceReq) -> bool {
     match req {
         ServiceReq::ClipFilesPull { ranged } => *ranged,
         ServiceReq::ClipFilesPush(push) => push.large,
-        ServiceReq::ClipFilesAbort => true,
         _ => false,
     }
 }
