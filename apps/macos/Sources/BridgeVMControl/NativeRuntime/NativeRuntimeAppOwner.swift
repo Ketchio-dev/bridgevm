@@ -51,10 +51,10 @@ final class NativeRuntimeAppOwner {
         return startup
     }
 
-    /// The sessions a quit must stop first; none before the library model exists.
-    static var terminationSessions: [ControlAppTerminationSession] {
-        prepared?.cache.retainedValue?.appTerminationSessions() ?? []
-    }
+    /// The library's VM sessions: those a quit must stop first, and where opened files go; none
+    /// before the library model exists.
+    static var sessions: [HvfEngineSession] { prepared?.cache.retainedValue?.appTerminationSessions() ?? [] }
+    static var terminationSessions: [ControlAppTerminationSession] { sessions }
 
     static func shutdown() {
         if let startup = prepared?.startup { startup.close() }

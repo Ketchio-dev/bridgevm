@@ -2,10 +2,11 @@ import Foundation
 
 extension HvfEngineSession {
     /// A Finder drop onto the display: stage the items next to the control file, then hand the
-    /// folder to the runtime, which copies it to the guest user's Desktop (file_drop.rs). Returns
-    /// the staging work so tests can wait for it.
+    /// folder to the runtime, which copies it to the guest user's Desktop (file_drop.rs); with
+    /// `open` (Finder's Open With, a drop on the Dock icon, HvfOpenFiles) it then opens each item
+    /// there with its default Windows app. Returns the staging work so tests can wait for it.
     @discardableResult
-    func copyDroppedFiles(_ items: [URL]) -> Task<Void, Never>? {
+    func copyDroppedFiles(_ items: [URL], open: Bool = false) -> Task<Void, Never>? {
         guard !items.isEmpty else { return nil }
         guard serviceStarted, case .connected = connectionState else {
             fileDrops.refuse(HvfFileDropQueue.notReadyText)
@@ -13,16 +14,16 @@ extension HvfEngineSession {
         }
         let root = URL(fileURLWithPath: (config.ctlFilePath as NSString).deletingLastPathComponent)
             .appendingPathComponent("drops", isDirectory: true)
-        let (id, staging) = fileDrops.begin(in: root)
+        let (id, staging) = fileDrops.begin(in: root, open: open)
         return Task { [weak self] in
             let outcome = await Task.detached(priority: .userInitiated) {
                 Result(catching: { try HvfFileDropStaging.stage(items, into: staging) })
             }.value
-            self?.finishStaging(id: id, staging: staging, outcome: outcome)
+            self?.finishStaging(id: id, staging: staging, open: open, outcome: outcome)
         }
     }
 
-    private func finishStaging(id: String, staging: URL, outcome: Result<HvfFileDropStaging.Summary, Error>) {
+    private func finishStaging(id: String, staging: URL, open: Bool, outcome: Result<HvfFileDropStaging.Summary, Error>) {
         // The VM stopped while this drop was staging: never hand it to a later run.
         guard fileDrops.isPending(id) else {
             try? FileManager.default.removeItem(at: staging)
@@ -37,7 +38,7 @@ extension HvfEngineSession {
             append(.unknown("file drop \(id) staged: files=\(summary.files) folders=\(summary.folders) "
                 + "bytes=\(summary.bytes) cloned=\(summary.cloned) copied=\(summary.copied) skipped=\(summary.skipped)"))
             guard summary.files + summary.folders > 0 else { return fileDrops.nothingToCopy(id) }
-            let sent = sendCtl("BVDROP \(id) \(Data(staging.path.utf8).base64EncodedString())")
+            let sent = sendCtl("BVDROP \(id) \(Data(staging.path.utf8).base64EncodedString())" + (open ? " open" : ""))
             fileDrops.staged(id, summary, sent: sent)
         }
     }

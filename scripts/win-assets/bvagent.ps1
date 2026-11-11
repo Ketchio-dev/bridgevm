@@ -996,6 +996,48 @@ function Resolve-DropTarget([string]$Root, [string]$Rel, [bool]$IsDir) {
     return Get-FreeDropPath $dir $parts[$parts.Length - 1] $IsDir
 }
 
+# >>> open a dropped item (OPENFILE <b64(name)>)
+# Finder's Open With > BridgeVM and a drop on the Dock icon copy files like a
+# drop on the VM window; then the host asks, for each item the drop put on the
+# Desktop, OPENFILE <b64(utf8 name)> -> 'OK OPENFILE', or 'ERR OPENFILE
+# refused' (not one name Test-DropName takes, or a reparse point), 'ERR
+# OPENFILE missing' or 'ERR OPENFILE failed'. The name is the final one OK
+# DROPBEG or OK DROPDIR gave, so the item is directly below Get-DropRoot, the
+# Desktop the drop wrote: with no separator, quote or control character it
+# cannot name anything else. explorer.exe gets the full path as its one quoted
+# argument, never cmd.exe: the agent's task is elevated for an administrator,
+# and explorer hands the request to the session's running shell, so the item's
+# default app starts un-elevated (as for STARTAPP). READY carries 'openfile'.
+function Open-BvDropItem([string]$Arg) {
+    $name = $null
+    if ($Arg.Length -le 4096 -and $Arg -cmatch '^[A-Za-z0-9+/]+={0,2}\z') {
+        try { $name = (New-Object System.Text.UTF8Encoding($false, $true)).GetString([System.Convert]::FromBase64String($Arg)) } catch { $name = $null }
+    }
+    if (-not (Test-DropName $name)) {
+        Log 'OPENFILE refused'
+        return 'ERR OPENFILE refused'
+    }
+    try {
+        $path = [System.IO.Path]::Combine((Get-DropRoot), $name)
+        $io = Get-IoPath $path
+        if (-not ([System.IO.File]::Exists($io) -or [System.IO.Directory]::Exists($io))) {
+            Log ('OPENFILE missing ' + $path)
+            return 'ERR OPENFILE missing'
+        }
+        if (([System.IO.File]::GetAttributes($io) -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Log ('OPENFILE refused ' + $path)
+            return 'ERR OPENFILE refused'
+        }
+        $explorer = [System.IO.Path]::Combine([Environment]::GetFolderPath('Windows'), 'explorer.exe')
+        Start-Process -FilePath $explorer -ArgumentList ('"' + $path + '"') -ErrorAction Stop
+        Log ('OPENFILE ' + $path)
+        return 'OK OPENFILE'
+    } catch {
+        Log ('OPENFILE failed: ' + $_.Exception.Message)
+        return 'ERR OPENFILE failed'
+    }
+}
+
 # >>> clipboard watch
 # CLIPCAPS PUSH: a background thread checks the clipboard sequence number every
 # 100 ms. On a change it cancels the main thread's ReadFile on the port, and
@@ -1845,7 +1887,7 @@ function Get-BvAgentId([string]$Dir) {
 # for the host's Confirm (bvagent-update.ps1 keeps update\pending.txt beside
 # the version folders): the host then confirms it whatever it recorded itself.
 function Get-BvReady([string]$Dir, [string]$Id) {
-    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame startapps'
+    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame startapps openfile'
     if (-not $Id) { return $ready }
     $ready += ' agent=' + $Id
     $root = Split-Path -Parent $Dir
@@ -2504,7 +2546,8 @@ while ($true) {
                     }
                 }
                 'DROPEND' {
-                    # DROPEND <chunks> -> OK DROPEND <bytes> once every byte is written.
+                    # DROPEND <chunks> -> OK DROPEND <bytes> once every byte is written, plus
+                    # <b64(final name)> when a file made at the name since DROPBEG moved it.
                     try {
                         if ($null -eq $script:BvDropStream) { throw 'no-open-drop' }
                         if ([int64]$arg -ne $script:BvDropSeq) { throw 'seq' }
@@ -2526,14 +2569,17 @@ while ($true) {
                         $readMs = 0; $decodeMs = 0
                         if ($script:BvDropReader -eq $true) { $readMs = [BridgeVM.BvDropReader]::ReadTicks / $tick; $decodeMs = [BridgeVM.BvDropReader]::DecodeTicks / $tick }
                         Log ('DROP END {0} bytes={1} chunks={2} ms={3:F0} read_ms={4:F0} decode_ms={5:F0} write_ms={6:F0}' -f $final, $written, $script:BvDropSeq, (([System.Diagnostics.Stopwatch]::GetTimestamp() - $script:BvDropStart) / $tick), $readMs, $decodeMs, ($script:BvDropWriteTicks / $tick))
+                        $reply = 'OK DROPEND ' + $written
+                        if ($final -ne $script:BvDropPath) { $reply += ' ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([System.IO.Path]::GetFileName($final))) }
                         Close-DropStream $true
-                        Write-Line $h ('OK DROPEND ' + $written) 'OK'
+                        Write-Line $h $reply 'OK'
                     } catch {
                         Close-DropStream $false
                         Write-Line $h ('ERR DROPEND ' + $_.Exception.Message) 'ERR'
                     }
                 }
                 'DROPABORT' { Close-DropStream $false; Write-Line $h 'OK DROPABORT' 'OK' }
+                'OPENFILE' { Write-Line $h (Open-BvDropItem $arg) 'OPEN' }
                 'DEL' {
                     # DEL <b64(path)> deletes files only. Directories are never
                     # removed recursively by the shared-folder protocol.

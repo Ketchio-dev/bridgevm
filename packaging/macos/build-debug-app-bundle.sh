@@ -437,6 +437,9 @@ for key in NSMicrophoneUsageDescription NSLocalNetworkUsageDescription; do
   value="$(plutil -extract "$key" raw -o - "$CONTROL_INFO_PLIST")"
   plutil -replace "$key" -string "$value" "$HVF_LAB_CONTENTS/Info.plist"
 done
+# It is also the app Finder's Open With and the Dock icon hand files to (ControlAppDelegate).
+plutil -replace CFBundleDocumentTypes -json "$(plutil -extract CFBundleDocumentTypes json -o - "$CONTROL_INFO_PLIST")" \
+  "$HVF_LAB_CONTENTS/Info.plist"
 
 source "$ROOT/apps/macos/scripts/install-installed-boot-modules.sh"
 install_installed_boot_modules "$HVF_LAB_RESOURCES"

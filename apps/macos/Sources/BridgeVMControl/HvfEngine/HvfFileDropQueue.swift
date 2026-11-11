@@ -20,6 +20,8 @@ final class HvfFileDropQueue: ObservableObject {
     private struct Job {
         let id: String
         let staging: URL
+        /// Open each item in Windows once copied (Finder's Open With, a drop on the Dock icon).
+        let open: Bool
         var skipped = 0
         var sent = false
         var started = false
@@ -37,11 +39,11 @@ final class HvfFileDropQueue: ObservableObject {
 
     /// A new job and its staging folder below `root`. With no other job in flight, whatever an
     /// earlier run left in `root` goes first.
-    func begin(in root: URL) -> (id: String, staging: URL) {
+    func begin(in root: URL, open: Bool = false) -> (id: String, staging: URL) {
         if jobs.isEmpty { try? FileManager.default.removeItem(at: root) }
         let id = UUID().uuidString
         let staging = root.appendingPathComponent(id, isDirectory: true)
-        jobs.append(Job(id: id, staging: staging))
+        jobs.append(Job(id: id, staging: staging, open: open))
         show()
         return (id, staging)
     }
@@ -92,9 +94,20 @@ final class HvfFileDropQueue: ObservableObject {
             show()
         case "done":
             let job = jobs[index]
-            var text = "파일 \(job.files.done)개(\(Self.size(job.bytes.done)))를 Windows 바탕 화면에 복사했습니다."
-            if job.skipped > 0 { text += " 바로가기와 특수 파일 \(job.skipped)개는 건너뛰었습니다." }
-            finish(index, Notice(text: text, failed: false))
+            let copied = "파일 \(job.files.done)개(\(Self.size(job.bytes.done)))"
+            var done = Notice(text: "\(copied)를 Windows 바탕 화면에 복사했습니다.", failed: false)
+            // `opened=<ok>/<asked>`, or `opened=old-agent` (file_drop.rs); a plain drop has neither.
+            if job.open, let opened = values["opened"] {
+                if opened == "old-agent" {
+                    done = Notice(text: "이 VM의 게스트 에이전트는 파일을 열 수 없어 \(copied)를 Windows 바탕 화면에 복사만 했습니다.", failed: true)
+                } else if let counts = Self.counts(opened), let ok = counts.done {
+                    done = ok < counts.total
+                        ? Notice(text: "\(copied)를 Windows 바탕 화면에 복사했지만 \(counts.total - ok)개는 열지 못했으니 바탕 화면에서 직접 여세요.", failed: true)
+                        : Notice(text: "\(copied)를 Windows 바탕 화면에 복사하고 열었습니다.", failed: false)
+                }
+            }
+            let skipped = job.skipped > 0 ? " 바로가기와 특수 파일 \(job.skipped)개는 건너뛰었습니다." : ""
+            finish(index, Notice(text: done.text + skipped, failed: done.failed))
         case "failed":
             let job = jobs[index]
             let reason = fields.count > 4 ? fields[4] : ""
