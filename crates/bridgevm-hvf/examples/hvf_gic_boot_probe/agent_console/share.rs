@@ -16,8 +16,9 @@ pub(super) fn req_kind(req: &ServiceReq) -> &'static str {
         ServiceReq::ClipCaps => "clip-caps",
         ServiceReq::ClipImagePush(_) => "clip-image-push",
         ServiceReq::ClipImagePull { .. } => "clip-image-pull",
-        ServiceReq::ClipFilesPull => "clip-files-pull",
+        ServiceReq::ClipFilesPull { .. } => "clip-files-pull",
         ServiceReq::ClipFilesPush(_) => "clip-files-push",
+        ServiceReq::ClipFilesAbort => "clip-files-abort",
         ServiceReq::Ctl(_) => "ctl",
         ServiceReq::Ping => "ping",
         ServiceReq::ShareLs => "share-ls",
@@ -86,7 +87,7 @@ pub(super) use share_host_scan::*;
 mod share_delete_wire;
 #[path = "share/share_big.rs"]
 mod share_big;
-pub(super) use share_big::{BigTransfer, SHARE_RANGE_BYTES};
+pub(super) use share_big::{is_out_of_space, parse_range_beg, BigTransfer, SHARE_FREE_MARGIN, SHARE_RANGE_BYTES};
 #[path = "share/share_big_put.rs"]
 mod share_big_put;
 pub(super) use share_big_put::{start_big_put, BigPutStart, BigPutStep};
@@ -174,6 +175,8 @@ mod guest_write_refusal;
 mod harness_get_end;
 #[path = "share/host_destination.rs"]
 mod host_destination;
+pub(super) use host_destination::free_bytes;
+pub(super) use host_destination::snapshot::{version as source_version, SourceVersion};
 #[path = "share/share_host_snapshot.rs"]
 mod share_host_snapshot;
 pub(super) use share_host_snapshot::*;

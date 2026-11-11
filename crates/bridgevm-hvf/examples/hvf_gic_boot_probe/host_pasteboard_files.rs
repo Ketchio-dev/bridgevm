@@ -5,14 +5,18 @@
 //! read. Names go as Windows stores them (share_guest_names.rs: composed, with
 //! stand-ins for the characters Windows refuses); one with a control character
 //! (Finder's custom-icon file is `Icon\r`) is left out.
+//!
+//! No file is read here: the walk opens each one (so an unreadable file fails
+//! the copy now) and keeps its size and times, and the push reads it a chunk at
+//! a time (clip_files_push.rs), so a copy of many GB never sits in memory.
 
 use super::image::{class, has_type};
 use super::{msg_send_cstr, msg_send_id, msg_send_id_id, ns_string_from_utf8, sel, ObjcId, Sel};
-use crate::agent_console::clip_files::{CLIP_FILES_MAX_BYTES, CLIP_FILES_MAX_ENTRIES};
+use crate::agent_console::clip_files::{CLIP_FILES_BIG_MAX_BYTES, CLIP_FILES_BIG_MAX_ENTRIES};
+use crate::agent_console::share::{source_version, SourceVersion};
 use crate::agent_console::share_sync::{composed, guest_char};
 use sha2::{Digest, Sha256};
 use std::ffi::CStr;
-use std::io::Read as _;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
@@ -31,14 +35,15 @@ pub enum HostFiles {
     Unreadable { entries: usize, bytes: u64 },
 }
 
-/// A copy within the limits, read whole.
+/// A copy within the walk's limits (the largest any agent takes).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HostFileCopy {
     /// Each folder before what is in it, by its Windows path in the copy
-    /// (`\` between names); a file with its bytes.
+    /// (`\` between names); a file with where it is read from.
     pub entries: Vec<HostFileEntry>,
     pub bytes: u64,
-    /// SHA-256 of the paths and bytes: the copy's identity for echo suppression.
+    /// SHA-256 of the paths and each file's size and times: the copy's identity
+    /// for echo suppression.
     pub digest: [u8; 32],
 }
 
@@ -46,7 +51,21 @@ pub struct HostFileCopy {
 pub struct HostFileEntry {
     pub rel: String,
     /// None for a folder.
-    pub data: Option<Vec<u8>>,
+    pub file: Option<HostFileSource>,
+}
+
+/// A regular file of the copy as the walk found it; sent only while it stays so.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HostFileSource {
+    pub path: PathBuf,
+    /// Its size and modification and change times when the walk opened it.
+    pub version: SourceVersion,
+}
+
+impl HostFileSource {
+    pub fn bytes(&self) -> u64 {
+        self.version.0
+    }
 }
 
 /// A path in composed form (NFC): AppKit hands out file URL paths decomposed,
@@ -148,35 +167,38 @@ pub fn host_files(tops: &[PathBuf]) -> Option<HostFiles> {
             continue;
         }
         found.push((rel, path, meta.is_dir()));
-        if found.len() > CLIP_FILES_MAX_ENTRIES || bytes > CLIP_FILES_MAX_BYTES {
+        if found.len() > CLIP_FILES_BIG_MAX_ENTRIES || bytes > CLIP_FILES_BIG_MAX_BYTES {
             return Some(HostFiles::TooLarge { entries: found.len(), bytes });
         }
     }
     if found.is_empty() {
         return None;
     }
-    // Read only now, each file at most to the limit: one may have grown since.
+    // Opened only now, so an unreadable file fails the copy here; one may have grown since.
     let (mut entries, mut bytes, mut digest) = (Vec::with_capacity(found.len()), 0u64, Sha256::new());
     for (rel, path, dir) in found {
-        let data = if dir {
+        let file = if dir {
             None
         } else {
-            let Some(data) = read_regular(&path, CLIP_FILES_MAX_BYTES - bytes) else {
+            let Some(version) = open_regular(&path) else {
                 return Some(HostFiles::Unreadable { entries: entries.len() + 1, bytes });
             };
-            bytes += data.len() as u64;
-            if bytes > CLIP_FILES_MAX_BYTES {
+            bytes = bytes.saturating_add(version.0);
+            if bytes > CLIP_FILES_BIG_MAX_BYTES {
                 return Some(HostFiles::TooLarge { entries: entries.len() + 1, bytes });
             }
-            Some(data)
+            Some(HostFileSource { path, version })
         };
         digest.update(rel.as_bytes());
         digest.update([0]);
-        if let Some(data) = data.as_deref() {
-            digest.update((data.len() as u64).to_le_bytes());
-            digest.update(data);
+        if let Some(file) = file.as_ref() {
+            let (size, mtime, mtime_ns, ctime, ctime_ns) = file.version;
+            digest.update(size.to_le_bytes());
+            for time in [mtime, mtime_ns, ctime, ctime_ns] {
+                digest.update(time.to_le_bytes());
+            }
         }
-        entries.push(HostFileEntry { rel, data });
+        entries.push(HostFileEntry { rel, file });
     }
     Some(HostFiles::Read(HostFileCopy {
         entries,
@@ -185,20 +207,22 @@ pub fn host_files(tops: &[PathBuf]) -> Option<HostFiles> {
     }))
 }
 
-/// A regular file's bytes, at most `limit + 1` of them; None when it cannot
-/// be read or is a link now.
-fn read_regular(path: &Path, limit: u64) -> Option<Vec<u8>> {
+/// A regular file opened for reading (never through a link): its version.
+fn open_regular(path: &Path) -> Option<SourceVersion> {
+    open_source(path).ok().map(|(_, version)| version)
+}
+
+/// `path` opened for reading without following a link, when it is a regular file.
+pub fn open_source(path: &Path) -> std::io::Result<(std::fs::File, SourceVersion)> {
     let file = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-        .ok()?;
-    if !file.metadata().ok()?.is_file() {
-        return None;
+        .open(path)?;
+    let meta = file.metadata()?;
+    if !meta.is_file() {
+        return Err(std::io::ErrorKind::InvalidInput.into());
     }
-    let mut data = Vec::new();
-    file.take(limit.saturating_add(1)).read_to_end(&mut data).ok()?;
-    Some(data)
+    Ok((file, source_version(&meta)))
 }
 
 /// The pasteboard's file URLs as composed paths, in pasteboard order (a Finder

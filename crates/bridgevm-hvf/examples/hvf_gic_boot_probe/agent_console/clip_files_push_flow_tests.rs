@@ -145,7 +145,7 @@ fn a_copy_over_the_limits_goes_as_its_names_without_files_or_icon() {
     assert_eq!(
         take_lines(&mut Vec::new()),
         [
-            "BVAGENT CLIPSYNC skip host-files too-large files=257 bytes=0 copy=a",
+            "BVAGENT CLIPSYNC skip host-files too-large files=257 bytes=0 limit-files=256 limit-bytes=67108864 copy=a",
             "BVAGENT CLIPSYNC host->guest bytes=4 copy=a",
         ]
     );

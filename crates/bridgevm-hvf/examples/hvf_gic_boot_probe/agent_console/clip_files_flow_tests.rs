@@ -214,9 +214,10 @@ fn a_guest_file_copy_over_a_limit_leaves_the_mac_alone() {
     assert_eq!(
         take_lines(&mut names),
         [
-            "BVAGENT CLIPSYNC refused guest-files too-large files=257 bytes=0 copy=a".to_owned(),
+            "BVAGENT CLIPSYNC refused guest-files too-large files=257 bytes=0 limit-files=256 limit-bytes=67108864 copy=a"
+                .to_owned(),
             format!(
-                "BVAGENT CLIPSYNC refused guest-files too-large files=1 bytes={} copy=b",
+                "BVAGENT CLIPSYNC refused guest-files too-large files=1 bytes={} limit-files=256 limit-bytes=67108864 copy=b",
                 CLIP_FILES_MAX_BYTES + 1
             ),
         ]
