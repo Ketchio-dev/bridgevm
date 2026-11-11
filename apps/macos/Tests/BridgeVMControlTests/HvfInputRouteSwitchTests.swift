@@ -146,6 +146,19 @@ final class HvfInputRouteSwitchTests: XCTestCase {
         }
     }
 
+    func testAFallbackReplayStopsAtTextItCannotResendSoALaterEnterNeverActsOnIt() throws {
+        try withClockedSession(negotiated: true) { session, fixture, _ in
+            XCTAssertTrue(session.sendKey("esc"))
+            let failed = try XCTUnwrap(try fixture.commands().last)
+            XCTAssertEqual(try payload(failed), "KEYINPUT esc")
+            // Ordered text takes 64 KiB; the legacy clipboard command stays under cmd.exe's 8191 characters.
+            XCTAssertEqual(session.sendText(String(repeating: "\u{D55C}", count: 4000)), .acceptedForProcessing)
+            XCTAssertTrue(session.sendKey("enter"))
+            try fixture.appendLog(notInserted(failed, verb: "InsertKey")); session.poll()
+            XCTAssertEqual(try legacy(fixture), ["KEY esc"], "the Enter behind the paste is not sent without it")
+        }
+    }
+
     func testAPartialInsertionKeepsTheLatchedFailure() throws {
         try withClockedSession(negotiated: true) { session, fixture, _ in
             XCTAssertTrue(session.sendKey("enter"))
