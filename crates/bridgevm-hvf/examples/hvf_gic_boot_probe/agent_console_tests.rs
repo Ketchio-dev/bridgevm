@@ -66,6 +66,7 @@ pub(super) mod tests {
             agent_update: None,
             ready_survives_battery: false,
             agent_survives_battery: Arc::default(),
+            print: PrintJobs::default(),
         }
     }
 

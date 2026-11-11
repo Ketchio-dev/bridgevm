@@ -21,6 +21,10 @@ impl AgentConsoleHarness {
     /// child outliving that restart can still land late (not covered). A later
     /// CLIPSET OK re-advances the baseline, since that host copy overwrote it.
     pub(super) fn write_ctl_wire_line(&mut self, command: &str) -> bool {
+        // PRINTWATCH waits for an agent that has it (print_jobs.rs).
+        if !self.note_print_watch(command) {
+            return false;
+        }
         // A display verb the agent refused, or cannot take, goes as its RUN line.
         match super::display_verbs::run_command(command, self.display_verbs_refused) {
             Some(run) => write_command_wire_line_into(&run, &mut self.service_line_scratch),

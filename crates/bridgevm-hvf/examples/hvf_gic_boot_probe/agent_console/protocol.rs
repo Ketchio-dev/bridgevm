@@ -103,6 +103,7 @@ pub(super) fn is_raw_verb(token: &str) -> bool {
             | "PING" | "WINLIST" | "WINBOUNDS" | "WINFOCUS" | "WINCLOSE"
             | "DISPLAYMODE" | "DISPLAYSCALE"
             | "LINKWATCH"
+            | "PRINTWATCH"
             | "CARET"
             | "STARTAPPS"
             | "STARTAPP"

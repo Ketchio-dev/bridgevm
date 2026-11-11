@@ -65,6 +65,15 @@ final class HvfEngineSession: ObservableObject {
     let guestLinksNotBefore = Date()
     var guestLinkOpener: any HvfURLOpener = HvfWorkspaceURLOpener()
     let guestLinkNotice = HvfGuestLinkNotice()
+    // Windows printing (HvfGuestPrint.swift): the printer's removal went to the guest after the setting was
+    // turned off, the printer-failed notice was shown, the jobs waiting for a print panel, the one shown, and
+    // what shows it.
+    var printOffSent = false
+    var printSetupFailureShown = false
+    var printQueue: [HvfGuestPrint.Job] = []
+    var printShowing: URL?
+    var printPresenter: any HvfPrintPresenter = HvfPDFPrintPresenter()
+    let printNotice = HvfGuestPrintNotice()
     @Published var diskGrowNotice: String? // the guest's report on extending C: after a disk grow (HvfDiskGrow)
     var diskExtendInFlight = false
     var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it

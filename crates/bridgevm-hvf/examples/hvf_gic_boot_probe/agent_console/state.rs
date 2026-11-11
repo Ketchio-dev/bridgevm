@@ -186,6 +186,8 @@ pub struct AgentConsoleHarness {
     /// Read by the host power monitor (host_power.rs): Windows sees the Mac's
     /// real power state only while this is set.
     pub(super) agent_survives_battery: Arc<AtomicBool>,
+    /// Windows print jobs for the Mac (print_jobs.rs).
+    pub(super) print: PrintJobs,
 }
 
 /// Reassembly state for a chunked GET reply (GETBEG -> GETCHUNK* -> GETEND).
@@ -356,6 +358,10 @@ pub(super) enum ServiceReq {
     Drop(DropReq),
     /// One step of a guest tools update (agent_update.rs).
     AgentUpdate(UpdateStep),
+    /// The next range of the print job under way (print_jobs.rs).
+    PrintRange,
+    /// Delete the guest's copy of a print job that ended here.
+    PrintDel { path: String },
 }
 
 /// Outcome of interpreting one guest reply line against the in-flight request.
@@ -394,6 +400,8 @@ pub(super) enum InFlightSnapshot {
     TimeSync,
     Drop,
     AgentUpdate,
+    PrintRange,
+    PrintDel,
 }
 
 impl InFlightSnapshot {
@@ -424,6 +432,8 @@ impl InFlightSnapshot {
             ServiceReq::TimeSync => Self::TimeSync,
             ServiceReq::Drop(_) => Self::Drop,
             ServiceReq::AgentUpdate(_) => Self::AgentUpdate,
+            ServiceReq::PrintRange => Self::PrintRange,
+            ServiceReq::PrintDel { .. } => Self::PrintDel,
         }
     }
 }

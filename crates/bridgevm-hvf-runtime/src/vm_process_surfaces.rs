@@ -30,6 +30,8 @@ pub(super) fn env(surfaces: &DeviceSurfaces) -> Vec<(&'static str, String)> {
     if surfaces.clipboard_sync {
         env.push(("BRIDGEVM_VIRTIO_CONSOLE_CLIPSYNC", "1".to_string()));
     }
+    // Windows print jobs for the Mac land here; the app prints and deletes them.
+    env.push(("BRIDGEVM_VIRTIO_CONSOLE_PRINT_DIR", evidence("print")));
     if let Some(share) = &surfaces.share {
         env.push((
             "BRIDGEVM_VIRTIO_CONSOLE_SHARE",

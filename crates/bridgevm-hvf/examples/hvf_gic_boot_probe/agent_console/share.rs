@@ -30,6 +30,8 @@ pub(super) fn req_kind(req: &ServiceReq) -> &'static str {
         ServiceReq::TimeSync => "time-sync",
         ServiceReq::Drop(_) => "drop",
         ServiceReq::AgentUpdate(_) => "agent-update",
+        ServiceReq::PrintRange => "print-range",
+        ServiceReq::PrintDel { .. } => "print-del",
     }
 }
 

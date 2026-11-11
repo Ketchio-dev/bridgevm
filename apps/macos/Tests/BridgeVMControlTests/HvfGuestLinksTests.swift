@@ -97,7 +97,11 @@ final class HvfGuestLinksTests: XCTestCase {
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
         let control = URL(fileURLWithPath: session.config.ctlFilePath)
         try FileManager.default.createDirectory(at: control.deletingLastPathComponent(), withIntermediateDirectories: true)
-        func sent() -> [String] { ((try? String(contentsOf: control, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init) }
+        // Printing to the Mac is on by default and sends its own line at each agent start (HvfGuestPrintTests).
+        func sent() -> [String] {
+            ((try? String(contentsOf: control, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+                .filter { !$0.hasPrefix(HvfGuestPrint.watchCommand) }
+        }
         func agentStarts() { session.connectionState = .connected(host: "guest"); session.handle(.serviceStart(tMs: 1)) }
         func change(_ enabled: Bool) {
             session.connectionState = .stopped

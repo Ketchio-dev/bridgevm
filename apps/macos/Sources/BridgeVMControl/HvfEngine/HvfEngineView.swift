@@ -142,6 +142,7 @@ struct HvfEngineView: View {
                     HvfDurableDiskWritesToggle(session: session, isOn: $durableDiskWrites)
                     HvfMicrophoneToggle(session: session, isOn: $microphoneEnabled)
                     HvfGuestLinksToggle(session: session)
+                    HvfGuestPrintToggle(session: session)
                     HvfGuestResolutionPicker(session: session, selection: $guestResolution)
                     if session.config.offersRetinaResolution && !virtioGpu3d {
                         HvfRetinaResolutionToggle(session: session, setting: $retinaResolution)

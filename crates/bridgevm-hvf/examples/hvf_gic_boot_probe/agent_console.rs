@@ -77,6 +77,8 @@ mod guest_link;
 mod harness_protocol;
 #[path = "agent_console/pointer_cleanup_order_tests.rs"]
 mod pointer_cleanup_order_tests;
+#[path = "agent_console/print_jobs.rs"]
+mod print_jobs;
 #[path = "agent_console/protocol.rs"]
 mod protocol;
 #[path = "agent_console/resident_service.rs"]
@@ -115,6 +117,7 @@ use config::*;
 use control_file::*;
 use dns_flush::*;
 use file_drop::*;
+use print_jobs::*;
 use protocol::*;
 pub use desktop_scale::{request_desktop_scale, DESKTOP_SCALES};
 pub use desktop_switch::request_desktop_mode;

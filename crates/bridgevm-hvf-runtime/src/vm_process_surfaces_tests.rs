@@ -65,6 +65,14 @@ fn values(surfaces: &DeviceSurfaces, key: &str) -> Vec<String> {
 }
 
 #[test]
+fn print_jobs_land_in_the_evidence_folder() {
+    assert_eq!(
+        values(&surfaces(), "BRIDGEVM_VIRTIO_CONSOLE_PRINT_DIR"),
+        ["/ev/print"]
+    );
+}
+
+#[test]
 fn guest_tools_update_reaches_the_agent_console() {
     let mut surfaces = surfaces();
     assert!(values(&surfaces, "BRIDGEVM_VIRTIO_CONSOLE_AGENT_UPDATE").is_empty());
