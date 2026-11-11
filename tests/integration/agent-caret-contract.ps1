@@ -46,8 +46,11 @@ if ([BridgeVM.BvCaret].GetMethod('Find', [type[]]@([int])).ReturnType -ne [strin
 $accessible = [BridgeVM.BvCaret+IAccessible]
 if ($accessible.GUID -ne [guid]'618736E0-3C3D-11CF-810C-00AA00389B71' -or $accessible.GetMethods()[15].Name -cne 'accLocation') { throw 'IAccessible declaration changed' }
 if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') {
-    $slot = [Runtime.InteropServices.Marshal]::GetComSlotForMethodInfo($accessible.GetMethod('accLocation'))
-    if ($slot -ne 22) { throw "accLocation is in COM slot $slot, not 22" }
+    # .NET Framework only (Windows PowerShell 5.1, where the agent runs); .NET Core has no GetComSlotForMethodInfo.
+    if ($PSVersionTable.PSEdition -eq 'Desktop') {
+        $slot = [Runtime.InteropServices.Marshal]::GetComSlotForMethodInfo($accessible.GetMethod('accLocation'))
+        if ($slot -ne 22) { throw "accLocation is in COM slot $slot, not 22" }
+    }
     $native = Get-BvCaretCore
     if ($native.Exit -ne 0 -or $native.Out -cnotmatch '^BVCARET (none|[0-9]+ [0-9]+ [0-9]+ [0-9]+)\z') { throw "native caret reply malformed: $($native.Out)" }
     Write-Output "native: $($native.Out)"

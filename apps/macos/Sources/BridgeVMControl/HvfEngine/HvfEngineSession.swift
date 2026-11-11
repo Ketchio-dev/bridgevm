@@ -418,6 +418,7 @@ final class HvfEngineSession: ObservableObject {
                   !command.contains("\r"), !command.contains("\0") else { return false }
             return appendControlCommand(command)
         }
+        sendDueGuestCaret()
         if ownedController == nil, case .stopping = connectionState {
             sendGracefulStopIfReady()
             if let stopDeadline, Date() >= stopDeadline {

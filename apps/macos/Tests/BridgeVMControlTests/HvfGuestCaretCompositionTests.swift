@@ -28,12 +28,18 @@ final class HvfGuestCaretCompositionTests: XCTestCase {
             XCTAssertEqual(overlay.frame.minY, 62, accuracy: 0.5)
             XCTAssertNil(session.guestCaretQuery)
 
-            // Composing on keeps the caret without asking again; committing ends it, and the next composition asks.
+            // Composing on keeps the caret without asking again; committing ends it, and the next composition asks,
+            // but only once the committed text has gone in: it moves the caret.
             mark("하", in: view)
             XCTAssertEqual(try anchorRect(view).minY, 62, accuracy: 0.5)
             view.unmarkText()
             mark("ㄱ", in: view)
+            session.poll()
+            XCTAssertEqual(try fixture.commands().filter { $0.hasPrefix("CARET ") }.count, 1,
+                           "asked while the committed syllable was still on its way: the old caret")
+            try acknowledgeText(fixture, session)
             XCTAssertEqual(try fixture.commands().filter { $0.hasPrefix("CARET ") }.count, 2)
+            XCTAssertEqual(try fixture.commands().last?.hasPrefix("CARET "), true)
             XCTAssertGreaterThan(try anchorRect(view).minY, 150, "until it is answered: the bottom-left")
         }
     }
@@ -58,7 +64,8 @@ final class HvfGuestCaretCompositionTests: XCTestCase {
             XCTAssertGreaterThan(try anchorRect(view).minY, 150)
             view.cancelTextComposition()
 
-            // An answer for a composition cancelled meanwhile is dropped; one question is in flight at a time.
+            // Asked again while a question is on the wire: one question at a time, its answer (which may predate
+            // input sent since) is dropped, and the question goes once more for the latest composition.
             mark("ㅎ", in: view)
             question = try XCTUnwrap(try fixture.commands().last)
             view.cancelTextComposition()
@@ -67,6 +74,12 @@ final class HvfGuestCaretCompositionTests: XCTestCase {
             try fixture.appendLog("BVAGENT CMD \(question) exit=0\nBVCARET 10 8 1 4\nBVAGENT END \(question)\n")
             session.poll()
             XCTAssertGreaterThan(try anchorRect(view).minY, 150)
+            let again = try XCTUnwrap(try fixture.commands().last)
+            XCTAssertTrue(again.hasPrefix("CARET ") && again != question, again)
+            try fixture.appendLog("BVAGENT CMD \(again) exit=0\nBVCARET 20 8 1 4\nBVAGENT END \(again)\n")
+            session.poll()
+            XCTAssertEqual(try anchorRect(view).minX, 100, accuracy: 0.5, "the fresh answer counts")
+            XCTAssertNil(session.guestCaretQuery)
             view.cancelTextComposition()
 
             // No answer: the question ends at its deadline, and the next composition asks again.
@@ -82,6 +95,17 @@ final class HvfGuestCaretCompositionTests: XCTestCase {
             XCTAssertNotEqual(try fixture.commands().last, question)
             XCTAssertEqual(try fixture.commands().last?.hasPrefix("CARET "), true)
         }
+    }
+
+    /// The ordered TEXTINPUT on the wire acknowledged as inserted, as the agent would.
+    private func acknowledgeText(_ fixture: HvfRuntimeKeyboardDraftFixture, _ session: HvfEngineSession) throws {
+        session.poll()
+        let line = try XCTUnwrap(try fixture.commands().last { $0.hasPrefix("TEXTINPUT ") })
+        let words = line.split(separator: " ").map(String.init)
+        let data = try XCTUnwrap(Data(base64Encoded: words[2]))
+        let count = try XCTUnwrap(HvfGuestInputEncoding(.text(String(decoding: data, as: UTF8.self)))?.insertedEventCount)
+        try fixture.appendLog("BVAGENT CMD TEXTINPUT \(words[1]) exit=0\nBVINPUT_INSERTED \(words[1]) \(count)\nBVAGENT END TEXTINPUT \(words[1])\n")
+        session.poll()
     }
 
     private func anchorRect(_ view: NSView & NSTextInputClient) throws -> NSRect {
