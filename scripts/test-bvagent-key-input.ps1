@@ -70,9 +70,12 @@ if ($result.Exit -eq 0 -or $script:keySenderCalled) { throw 'unsupported key rea
 # still needed is pressed again instead, so every half keeps its count); a repeat holds once; an up for an action not
 # held still releases it (a restarted agent); a down that inserted nothing holds nothing; at most six are held.
 $sent = New-Object 'System.Collections.Generic.List[string]'
-$stub = [Func[BridgeVM.BvUnicodeInput+Input[], uint32]]({ param($events) $sent.Add((($events | ForEach-Object { '{0}:{1}' -f $_.Data.Keyboard.VirtualKey, $_.Data.Keyboard.Flags }) -join ',')); return [uint32]$events.Length }.GetNewClosure())
-$none = [Func[BridgeVM.BvUnicodeInput+Input[], uint32]]{ param($events) return [uint32]0 }
-function Assert-Held([string]$command, [string]$expected, [Func[BridgeVM.BvUnicodeInput+Input[], uint32]]$send = $stub) {
+# The stand-in sender is the agent's own non-generic delegate type: Windows PowerShell 5.1 rejected a generic Func
+# literal over the nested Input[] (TypeNotFound), and nested type literals work there (test-bvagent-unicode-input.ps1).
+# Pointer events read m<MOUSEEVENTF flags>.
+$stub = [BridgeVM.BvUnicodeInput+Sender]({ param($events) $sent.Add((($events | ForEach-Object { if ($_.Type -eq 1) { '{0}:{1}' -f $_.Data.Keyboard.VirtualKey, $_.Data.Keyboard.Flags } else { 'm{0}' -f $_.Data.Mouse.Flags } }) -join ',')); return [uint32]$events.Length }.GetNewClosure())
+$none = [BridgeVM.BvUnicodeInput+Sender]{ param($events) return [uint32]0 }
+function Assert-Held([string]$command, [string]$expected, $send = $stub) {
     $sent.Clear()
     [void][BridgeVM.BvUnicodeInput]::InsertKey($command, $send)
     if ($sent[0] -cne $expected) { throw "wrong held key events: $command => $($sent[0]) (expected $expected)" }
@@ -105,6 +108,20 @@ $sent.Clear()
 $result = Invoke-UnicodeInput "$id $payload" { param($key) return [BridgeVM.BvUnicodeInput]::InsertKey($key, $stub) } $true
 if ($result.Exit -ne 0 -or $result.Out -cne "BVINPUT_INSERTED $id 2" -or $sent.Count -ne 1 -or $sent[0] -cne '37:3,17:0') { throw 'overlapping release receipt mismatch' }
 Assert-Held 'up:ctrl+right' '39:3,17:2'
+# A modified pointer action leaves down the modifiers a held key needs (pressed again in place of the release), the
+# others go up; a plain scroll is unchanged; once the key is up the same scroll releases Ctrl.
+function Assert-Pointer([string]$command, [string]$expected) {
+    $sent.Clear()
+    [void][BridgeVM.BvUnicodeInput]::InsertPointer($command, $stub)
+    if ($sent[0] -cne $expected) { throw "wrong pointer events: $command => $($sent[0]) (expected $expected)" }
+}
+Assert-Held 'down:ctrl+left' '17:0,37:1'
+Assert-Pointer 'scroll:-1@0x0:c' '17:0,m32769,m2048,17:0'
+Assert-Pointer 'scroll:1@0x0:cs' '17:0,16:0,m32769,m2048,16:2,17:0'
+Assert-Pointer 'scroll:-1@0x0' 'm32769,m2048'
+Assert-Pointer 'click:0x0:c' '17:0,m32771,m32773,17:0'
+Assert-Held 'up:ctrl+left' '37:3,17:2'
+Assert-Pointer 'scroll:-1@0x0:c' '17:0,m32769,m2048,17:2'
 $agent = [IO.File]::ReadAllText((Join-Path $root 'bvagent.ps1'))
 if (-not $agent.Contains("{ `$_ -in @('TEXTINPUT', 'KEYINPUT', 'POINTERINPUT') } { Write-CommandResult `$h (Invoke-UnicodeInput `$arg `$null (`$tok -eq 'KEYINPUT') (`$tok -eq 'POINTERINPUT')) }")) { throw 'key dispatch missing' }
 Write-Output 'Guest key chord contracts: PASS (no native input injected)'

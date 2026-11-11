@@ -28,6 +28,9 @@ namespace BridgeVM {
         // like the host's. As in the VMM's HID report, a modifier stays down while a held action still needs it.
         private static readonly List<string> HeldActions = new List<string>();
 
+        // Inserts the events and returns how many Windows took: SendInput (InsertEvents) or a contract test's stand-in.
+        public delegate uint Sender(Input[] inputs);
+
         // `down:<key>` is the first half of a key's events (modifiers and key down) and `up:<key>` the second
         // (key and modifiers up, in reverse): a key held from the Mac's key-down to its key-up.
         public static Input[] BuildKey(string command) {
@@ -44,17 +47,7 @@ namespace BridgeVM {
             List<ushort> modifiers;
             bool extended;
             ushort code = ParseKey(command, out modifiers, out extended);
-            List<ushort> kept = new List<ushort>();
-            if (phase == 2 && held != null) {
-                foreach (string other in held) {
-                    if (String.Equals(other, command, StringComparison.Ordinal)) { continue; }
-                    List<ushort> its;
-                    bool ignored;
-                    ushort key = ParseKey(other, out its, out ignored);
-                    kept.AddRange(its);
-                    if (Array.IndexOf(ModifierKeys, key) >= 0) { kept.Add(key); }
-                }
-            }
+            List<ushort> kept = phase == 2 ? HeldModifiers(held, command) : new List<ushort>();
             List<Input> inputs = new List<Input>();
             if (phase != 2) {
                 foreach (ushort modifier in modifiers) { inputs.Add(KeyEvent(modifier, false, modifier == 0x5B)); }
@@ -65,6 +58,21 @@ namespace BridgeVM {
                 for (int i = modifiers.Count - 1; i >= 0; i--) { inputs.Add(KeyEvent(modifiers[i], !kept.Contains(modifiers[i]), modifiers[i] == 0x5B)); }
             }
             return inputs.ToArray();
+        }
+
+        // The modifier keys the held `actions` other than `except` need down (none for null).
+        private static List<ushort> HeldModifiers(List<string> actions, string except) {
+            List<ushort> kept = new List<ushort>();
+            if (actions == null) { return kept; }
+            foreach (string other in actions) {
+                if (String.Equals(other, except, StringComparison.Ordinal)) { continue; }
+                List<ushort> its;
+                bool ignored;
+                ushort key = ParseKey(other, out its, out ignored);
+                kept.AddRange(its);
+                if (Array.IndexOf(ModifierKeys, key) >= 0) { kept.Add(key); }
+            }
+            return kept;
         }
 
         // One generic chord's modifiers and key; anything else throws.
@@ -116,11 +124,11 @@ namespace BridgeVM {
             return InsertKey(command, InsertEvents);
         }
 
-        // `send` inserts the events (SendInput; a contract test's stand-in). A `down:` holds its action once Windows
+        // A `down:` holds its action once Windows
         // took all of its events, a repeat holding it once; an `up:` forgets it whatever it inserts. An `up:` for an
         // action not held still releases it, but for what a held action needs: a restarted agent gets the releases of
         // the keys its predecessor pressed, which Windows still holds down.
-        public static uint InsertKey(string command, Func<Input[], uint> send) {
+        public static uint InsertKey(string command, Sender send) {
             Input[] inputs = BuildKey(command, HeldActions);
             if (command.StartsWith("up:", StringComparison.Ordinal)) { HeldActions.Remove(command.Substring(3)); }
             uint inserted = send(inputs);

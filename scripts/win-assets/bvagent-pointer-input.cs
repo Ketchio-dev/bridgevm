@@ -5,12 +5,19 @@ using System.Text.RegularExpressions;
 namespace BridgeVM {
     public static partial class BvUnicodeInput {
         public static Input[] BuildPointer(string command) {
+            return BuildPointer(command, null);
+        }
+
+        // `actions`: the key actions held now (HeldActions, bvagent-key-input.cs). A modifier one of them needs is
+        // pressed again after the pointer events instead of released, as a key's `up:` does, so Ctrl-scrolling keeps
+        // a held Ctrl+Left's Ctrl down and the action keeps its event count.
+        private static Input[] BuildPointer(string command, List<string> actions) {
             if (String.IsNullOrEmpty(command) || command.Length > 64) throw new ArgumentException("pointer-input-length");
             string[] fields = command.Split(':');
             if (fields.Length == 3) {
                 // Modifiers held for this one action: w Win, c Ctrl, a Alt, s Shift, each at most once and in the
                 // key builder's order. They go down before the pointer events and up after them in reverse, in
-                // the same batch, so nothing interleaves and the guest never keeps one down.
+                // the same batch, so nothing interleaves and the guest keeps none down that no held key needs.
                 List<ushort> held = new List<ushort>();
                 int next = 0;
                 foreach (char name in fields[2]) {
@@ -23,7 +30,8 @@ namespace BridgeVM {
                 List<Input> inputs = new List<Input>();
                 foreach (ushort key in held) inputs.Add(KeyEvent(key, false, key == 0x5B));
                 inputs.AddRange(BuildPointer(fields[0] + ":" + fields[1]));
-                for (int i = held.Count - 1; i >= 0; i--) inputs.Add(KeyEvent(held[i], true, held[i] == 0x5B));
+                List<ushort> kept = HeldModifiers(actions, null);
+                for (int i = held.Count - 1; i >= 0; i--) inputs.Add(KeyEvent(held[i], !kept.Contains(held[i]), held[i] == 0x5B));
                 return inputs.ToArray();
             }
             if (fields.Length != 2) throw new ArgumentException("pointer-input-format");
@@ -83,7 +91,13 @@ namespace BridgeVM {
             normalized = (int)(((long)coordinate * 65535 + 16383) / 32767);
             return true;
         }
-        public static uint InsertPointer(string command) { return InsertEvents(BuildPointer(command)); }
+        public static uint InsertPointer(string command) { return InsertPointer(command, InsertEvents); }
+        public static uint InsertPointer(string command, Sender send) {
+            Input[] inputs = BuildPointer(command, HeldActions);
+            uint inserted = send(inputs);
+            RequireComplete(inserted, (uint)inputs.Length);
+            return inserted;
+        }
         private static Input Wheel(uint flags, int units) {
             Input wheel = MouseEvent(0, 0, flags);
             wheel.Data.Mouse.MouseData = unchecked((uint)units);
