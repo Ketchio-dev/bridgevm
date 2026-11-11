@@ -30,6 +30,14 @@ fn owner_eof_cancels_with_output_pipe_still_open() {
     run("eof");
 }
 #[test]
+fn owner_eof_presses_the_guest_power_button_and_lets_windows_turn_off() {
+    run("eof-shutdown");
+}
+#[test]
+fn a_signal_while_windows_shuts_down_after_owner_eof_stops_at_once() {
+    run("eof-signal");
+}
+#[test]
 fn every_reset_generation_has_a_matching_child_receipt() {
     run("reset");
 }

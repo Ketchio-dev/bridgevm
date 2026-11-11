@@ -17,6 +17,8 @@ mod dto;
 mod ledger;
 #[path = "owned_protocol_outcome.rs"]
 mod outcome;
+#[path = "owned_protocol_owner_eof.rs"]
+mod owner_eof;
 #[path = "owned_protocol_io.rs"]
 mod pipe_io;
 #[path = "owned_protocol_state.rs"]
@@ -36,6 +38,13 @@ pub(super) fn run(spec: &str, args: &crate::Args) -> Result<()> {
         .helper
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("owned helper missing"))?;
+    // The helper's live input file, which the app creates (launch_spec_options.rs).
+    let input_control = args
+        .typed
+        .helper_evidence_dir
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("owned evidence directory missing"))?
+        .join("input.ctl");
     let _signals =
         signals::CancellationSignals::install().context("install runtime cancellation")?;
     let bytes = super::manifest_input::read_owned(spec)?;
@@ -51,7 +60,18 @@ pub(super) fn run(spec: &str, args: &crate::Args) -> Result<()> {
             .context("owned runtime handshake failed")?;
     let mut state_key = codec::take_key(&mut hello);
     let ledger = RefCell::new(ledger::Ledger::default());
-    let requested = || channel.requested();
+    let owner_eof = owner_eof::OwnerEof::new(
+        || owner_eof::press_power_button(&input_control),
+        owner_eof::BUDGET,
+    );
+    let requested = || {
+        owner_eof.cancel(
+            channel.requested(),
+            signals::requested(),
+            ledger.borrow().helper_running(),
+            std::time::Instant::now(),
+        )
+    };
     let unconfirmed = |value: bridgevm_hvf_runtime::CleanupUnconfirmed| {
         eprintln!(
             "owned cleanup unconfirmed: {:?} pid={}; retaining ownership",

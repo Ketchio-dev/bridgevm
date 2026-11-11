@@ -4,7 +4,18 @@ import argparse
 import fcntl
 import json
 import select
+import signal
+import time
 from owned_protocol_fixture_support import Fixture, encode
+
+
+def await_power_button(path):
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if path.read_bytes() == b"RESUME\nPOWERBUTTON\n":
+            return
+        time.sleep(0.01)
+    raise AssertionError("owner EOF did not press the guest power button: %r" % path.read_bytes())
 
 
 def validate(fixture, events):
@@ -34,7 +45,7 @@ def validate(fixture, events):
     assert complete["runtimeDirectoryDisposition"] == "removed"
     for role in counts:
         assert counts[role][0] == counts[role][1] == complete[role]["spawnedCount"] == complete[role]["reapedCount"]
-    expected = "ownerEOF" if fixture.scenario == "eof" else "stopRequested"
+    expected = "ownerEOF" if fixture.scenario.startswith("eof") else "stopRequested"
     assert complete["cause"] == expected
     assert complete["outcome"] == "cancelled" and complete["failureCode"] is None
     acks = [e for e in events if e["kind"] == "stopAck"]
@@ -87,6 +98,10 @@ def run(executable, scenario):
             fixture.verified = True
             print(json.dumps({"scenario": scenario, "result": "PASS", "effects": 0}))
             return
+        if scenario in ["eof-shutdown", "eof-signal"]:
+            # The app creates the helper's live input file before it starts the runner.
+            (fixture.work / "surfaces").mkdir(mode=0o700)
+            (fixture.work / "surfaces" / "input.ctl").write_bytes(b"")
         fixture.launch()
         tpm = fixture.accept()
         assert tpm.role == "swtpm"
@@ -101,7 +116,20 @@ def run(executable, scenario):
             assert helper.role == "helper" and not tpm.watch.wait(0)
         fixture.leases(True)
         if scenario == "eof":
+            # No input file: no press is possible, so the stop follows at once as before.
             fixture.close_input()
+        elif scenario in ["eof-shutdown", "eof-signal"]:
+            fixture.close_input()
+            await_power_button(fixture.work / "surfaces" / "input.ctl")
+            assert not select.select([helper.connection], [], [], 0.5)[0], "helper signalled before Windows shut down"
+            fixture.leases(True)
+            if scenario == "eof-signal":
+                fixture.runner.send_signal(signal.SIGTERM)
+            else:
+                helper.finish()  # Windows turned off: the helper ends its run by itself.
+                assert helper.watch.wait(2)
+                assert not helper.connection.recv(256), "the helper got no TERM"
+                helper = None
         elif scenario == "output":
             fixture.runner.stdout.close()
         elif scenario == "partial":
@@ -148,6 +176,6 @@ def run(executable, scenario):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--runner", required=True)
-    parser.add_argument("--scenario", choices=["stop", "eof", "reset", "readiness", "invalid", "output", "partial", "admission", "handshake"], required=True)
+    parser.add_argument("--scenario", choices=["stop", "eof", "eof-shutdown", "eof-signal", "reset", "readiness", "invalid", "output", "partial", "admission", "handshake"], required=True)
     args = parser.parse_args()
     run(args.runner, args.scenario)
