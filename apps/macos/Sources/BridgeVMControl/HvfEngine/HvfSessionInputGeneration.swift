@@ -46,12 +46,13 @@ extension HvfSessionInputRouter {
     }
 
     /// Re-arms a failed router when `lines` contain a guest reset record, for the same binding only,
-    /// exactly as a fresh owned boot: legacy input until the next generation's own INPUTCAPS handshake,
-    /// which the stream sends only after that generation's SERVICE start. No old request is replayed.
+    /// as a fresh owned boot (what input.ctl still owes carries over): legacy input until the next
+    /// generation's own INPUTCAPS handshake, which the stream sends only after that generation's SERVICE
+    /// start. No old request is replayed.
     /// Only an activated owned boot fails for such a reason, so attached or legacy routers never re-arm.
     mutating func beginNextGeneration(binding next: [String], lines: [String]) {
         guard failure?.endsAtGuestReset == true, binding == next,
               lines.contains(where: { HvfGuestResetRecord.matches($0) }) else { return }
-        beginOwnedBoot(binding: next)
+        beginNextOwnedBoot(binding: next)
     }
 }

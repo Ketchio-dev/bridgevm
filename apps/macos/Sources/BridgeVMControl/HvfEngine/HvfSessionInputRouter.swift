@@ -38,6 +38,14 @@ struct HvfSessionInputRouter {
         eligible = true
     }
 
+    /// A guest reset's next generation: a fresh owned boot, but what input.ctl still owes carries over (the VMM's
+    /// queue survives an in-process reboot; HvfLegacyInputActivity.observe ends it at a process recreation).
+    mutating func beginNextOwnedBoot(binding: [String]) {
+        let legacy = self.legacy
+        beginOwnedBoot(binding: binding)
+        self.legacy = legacy
+    }
+
     mutating func attachUnknown(binding: [String]) {
         self = Self()
         self.binding = binding
@@ -64,6 +72,7 @@ struct HvfSessionInputRouter {
     /// `legacyPending`: a legacy clipboard paste still has its `KEY ctrl+v` to write, so input.ctl is not quiet.
     mutating func poll(binding: [String], serviceReady: Bool, lines: [String], now: Date, legacyPending: Bool = false,
                        send: (String) -> Bool) -> HvfAcknowledgedInputStream.Update? {
+        legacy.observe(lines, now: now)
         guard matches(binding), eligible, !failed || (failure == .requestFailed && stream.isRecovering) else { return nil }
         let reset = lines.contains { HvfGuestResetRecord.matches($0) }
         if activated, let reason = HvfSessionInputFailure(reset: reset, serviceReady: serviceReady, lines: lines) {

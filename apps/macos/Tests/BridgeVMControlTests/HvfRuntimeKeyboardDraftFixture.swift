@@ -20,6 +20,7 @@ final class HvfRuntimeKeyboardDraftFixture {
     let control: URL
     let input: URL
     private let access = HvfKeyboardDraftAccess()
+    private var taken = 0
 
     init() throws {
         root = LibraryDeletionTestDirectory.temporary
@@ -115,6 +116,19 @@ final class HvfRuntimeKeyboardDraftFixture {
     func bytes(_ url: URL) throws -> Data? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         return try Data(contentsOf: url)
+    }
+
+    /// The VMM taking up to `limit` more of input.ctl's KEY and non-move POINTER lines off its queue: one run.log
+    /// line each, as hvf_gic_boot_probe live_input/device_apply.rs prints them (moves print no such line).
+    func probeTakes(_ limit: Int = .max) throws {
+        let lines = try bytes(input).map { String(decoding: $0, as: UTF8.self).split(separator: "\n") } ?? []
+        let next = lines.filter { $0.hasPrefix("KEY ") || ($0.hasPrefix("POINTER ") && !$0.hasPrefix("POINTER move:")) }
+            .dropFirst(taken).prefix(limit)
+        taken += next.count
+        try appendLog(next.map { line in
+            line.hasPrefix("KEY ") ? "live input accepted: command=Key(<redacted>)\n"
+                : "live input accepted: command=Pointer(\"\(line.dropFirst(8))\")\n"
+        }.joined())
     }
 
     /// Appends synthetic guest output (receipts, markers) to the session's run.log.

@@ -8,6 +8,7 @@ import XCTest
 @MainActor
 final class HvfInputRouteSwitchTests: XCTestCase {
     private let point = CGPoint(x: 50, y: 50), size = CGSize(width: 100, height: 100)
+    private let active = "ordered input active: receipts confirm insertion, not application consumption"
 
     func testInputBeforeInputCapsNoLongerPreventsTheSwitchOnceTheHIDRouteIsQuiet() throws {
         try withClockedSession(negotiated: false) { session, fixture, clock in
@@ -18,15 +19,40 @@ final class HvfInputRouteSwitchTests: XCTestCase {
             let query = try XCTUnwrap(try fixture.commands().first, "INPUTCAPS still goes out after early input")
             try answer(query, fixture); session.poll()
             XCTAssertTrue(session.sendKey("tab"), "within 1 s of the last HID key the route stays HID")
+            try fixture.probeTakes(); session.poll()
             clock.advance(0.5); session.poll()
             XCTAssertTrue(session.sendKey("esc"), "each HID key restarts the quiet second")
+            try fixture.probeTakes(); session.poll()
             clock.advance(0.75); session.poll()
             XCTAssertEqual(try fixture.commands(), [query])
             clock.advance(0.25); session.poll()
-            XCTAssertTrue(session.events.contains(.unknown("ordered input active: receipts confirm insertion, not application consumption")))
+            XCTAssertTrue(session.events.contains(.unknown(active)))
             XCTAssertTrue(session.sendKey("left"))
             XCTAssertEqual(try payload(try fixture.commands().last), "KEYINPUT left")
             XCTAssertEqual(try legacy(fixture).filter { !$0.hasPrefix("POINTER move:") }, ["KEY enter", "KEY tab", "KEY esc"])
+        }
+    }
+
+    /// A long ASCII paste is many `KEY text-hex:` lines, and the VMM takes at most one per tick and none while its
+    /// xHCI queue is busy: elapsed time alone is no evidence, its run.log line for each of them is.
+    func testTheSwitchWaitsUntilTheVMMHasTakenEveryHIDLine() throws {
+        try withClockedSession(negotiated: false) { session, fixture, clock in
+            session.beginOwnedInputBoot()
+            XCTAssertEqual(session.sendText(String(repeating: "abcdefgh", count: 80)), .legacyAttempted)
+            XCTAssertEqual(try legacy(fixture).filter { $0.hasPrefix("KEY text-hex:") }.count, 20)
+            session.poll()
+            let query = try XCTUnwrap(try fixture.commands().first)
+            try answer(query, fixture); session.poll()
+            try fixture.probeTakes(19)
+            clock.advance(5); session.poll()
+            XCTAssertFalse(session.events.contains(.unknown(active)), "one line is still queued in the VMM")
+            try fixture.probeTakes(); session.poll()
+            clock.advance(0.75); session.poll()
+            XCTAssertFalse(session.events.contains(.unknown(active)), "within a second of the VMM taking the last one")
+            clock.advance(0.25); session.poll()
+            XCTAssertTrue(session.events.contains(.unknown(active)))
+            XCTAssertTrue(session.sendKey("enter"))
+            XCTAssertEqual(try payload(try fixture.commands().last), "KEYINPUT enter")
         }
     }
 
@@ -34,7 +60,7 @@ final class HvfInputRouteSwitchTests: XCTestCase {
         try withClockedSession(negotiated: false) { session, fixture, clock in
             session.beginOwnedInputBoot()
             session.sendPointerPress(location: point, viewSize: size, imageSize: size)
-            session.poll()
+            try fixture.probeTakes(); session.poll()
             let query = try XCTUnwrap(try fixture.commands().first)
             try answer(query, fixture); session.poll()
             clock.advance(5); session.poll()
@@ -42,6 +68,7 @@ final class HvfInputRouteSwitchTests: XCTestCase {
             clock.advance(5); session.poll()
             XCTAssertEqual(try fixture.commands(), [query], "no switch while the HID press is held")
             session.sendPointerRelease(location: point, viewSize: size, imageSize: size)
+            try fixture.probeTakes(); session.poll()
             clock.advance(0.875); session.poll()
             session.sendPointerMove(location: point, viewSize: size, imageSize: size)
             clock.advance(0.125); session.poll()
@@ -65,6 +92,7 @@ final class HvfInputRouteSwitchTests: XCTestCase {
             XCTAssertTrue(session.sendKey("tab"), "later input takes the HID route")
             XCTAssertEqual(try legacy(fixture).map { String($0.prefix(18)) },
                            ["KEY enter", "KEY text-hex:6263", "POINTER click:1638", "KEY tab"])
+            try fixture.probeTakes(); session.poll()
             clock.advance(1); session.poll()
             XCTAssertTrue(session.sendKey("esc"), "after a quiet second the next event tries the agent again")
             let retry = try XCTUnwrap(try fixture.commands().last)
@@ -73,6 +101,7 @@ final class HvfInputRouteSwitchTests: XCTestCase {
             XCTAssertEqual(try legacy(fixture).last, "KEY esc", "a retry that inserts nothing goes HID again")
             XCTAssertTrue(session.sendKey("left"))
             XCTAssertEqual(try legacy(fixture).last, "KEY left")
+            try fixture.probeTakes(); session.poll()
             clock.advance(1); session.poll()
             XCTAssertTrue(session.sendKey("right"))
             let back = try XCTUnwrap(try fixture.commands().last)

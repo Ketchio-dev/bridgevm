@@ -29,6 +29,11 @@ final class HvfSessionInputRouterTests: XCTestCase {
         XCTAssertTrue(router.allowLegacyWrite(line, binding: binding, now: now.addingTimeInterval(seconds)), line)
     }
 
+    /// The VMM's run.log lines when it took `count` KEY commands off its queue (hvf_gic_boot_probe device_apply.rs).
+    private func taken(_ count: Int) -> [String] {
+        Array(repeating: "live input accepted: command=Key(<redacted>)", count: count)
+    }
+
     /// bvagent-input.ps1's receipt when SendInput inserted `inserted` of 2 events.
     private func shortfall(_ command: String, inserted: Int = 0) -> [String] {
         let words = command.split(separator: " "), label = words.prefix(2).joined(separator: " ")
@@ -64,6 +69,7 @@ final class HvfSessionInputRouterTests: XCTestCase {
             XCTAssertEqual(router.state, .waitingForLegacy, "a target change keeps the agent's answer, no new INPUTCAPS")
             XCTAssertEqual(router.route(.pointer("click:0x0"), binding: binding, now: now), .legacy)
             wrote(&router, "POINTER click:0x0", at: 0.5)
+            _ = poll(&router, at: 0.5, lines: taken(2))
             _ = poll(&router, at: 1.25)
             XCTAssertEqual(router.state, .waitingForLegacy, "within a second of the last HID click")
             XCTAssertFalse(router.activated)
@@ -81,9 +87,11 @@ final class HvfSessionInputRouterTests: XCTestCase {
         wrote(&router, "POINTER right-press:1x2")
         negotiate(&router)
         wrote(&router, "POINTER click:1x2", at: 1)
-        _ = poll(&router, at: 60)
+        _ = poll(&router, at: 60, lines: ["live input accepted: command=Pointer(\"right-press:1x2\")",
+                                          "live input rejected: command=Pointer(\"click:1x2\") queue_error=invalid"])
         XCTAssertEqual(router.state, .waitingForLegacy, "a left click leaves the right button down")
         wrote(&router, "POINTER release:3x4", at: 60)
+        _ = poll(&router, at: 60, lines: ["live input rejected: kind=pointer parse_error=invalid"])
         wrote(&router, "POINTER move:5x6", at: 60.875)
         _ = poll(&router, at: 61)
         XCTAssertEqual(router.state, .waitingForLegacy, "a move an eighth of a second ago")
@@ -124,6 +132,7 @@ final class HvfSessionInputRouterTests: XCTestCase {
                            ("POINTER release:5x6", 0.1)] { wrote(&router, line, at: at) }
         XCTAssertEqual(router.route(.key("enter"), binding: binding, now: now), .legacy)
         wrote(&router, "KEY enter", at: 0.5)
+        _ = poll(&router, at: 0.5, lines: taken(4))
         XCTAssertEqual(router.cancelTarget(now: now), .cancelled(.targetChanged, discarded: 0))
         XCTAssertEqual(router.count, 0, "the press inserted nothing, so the agent owes no release")
         _ = poll(&router, at: 1.25)
