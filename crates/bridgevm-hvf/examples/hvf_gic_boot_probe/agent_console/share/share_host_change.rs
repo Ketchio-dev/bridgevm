@@ -53,13 +53,15 @@ impl AgentConsoleHarness {
             share.host_actions.clear();
             // An unmounted or renamed root is not the user deleting every file.
             match scan_share_host_dir(share, now) {
-                Some(real) => walked = real,
+                // The last plan from this walk was idle and stands (share_idle.rs).
+                Some(HostScan::Unchanged) => {}
+                Some(scan) => {
+                    walked = scan == HostScan::Walked;
+                    let actions = share.plan_host_scan();
+                    share.host_actions.extend(actions);
+                }
                 None => return false,
             }
-            let actions = share
-                .engine
-                .on_host_scan_normalized(share.host_scan_scratch.drain(..));
-            share.host_actions.extend(actions);
             share.host_actions_at = Some(now);
         }
         // Files found already synced are read, not sent: a bounded amount per step.

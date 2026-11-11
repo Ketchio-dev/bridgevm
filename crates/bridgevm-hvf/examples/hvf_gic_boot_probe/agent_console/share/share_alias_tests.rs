@@ -125,7 +125,7 @@ fn put_cut_short_by_an_agent_restart_never_returns_as_a_guest_edit() {
     ];
     for (label, newer, held, bytes) in cases {
         let mut rig = Rig::new(label);
-        rig.h.share.as_mut().unwrap().engine = ShareSync::new(64);
+        rig.h.share.as_mut().unwrap().engine = ShareSync::new(64).into();
         std::fs::write(rig.dir.join("foo"), b"FOO ORIGINAL").unwrap();
         rig.run(12);
         std::fs::write(rig.dir.join("foo"), &newer).unwrap();
@@ -152,7 +152,7 @@ fn put_cut_short_by_an_agent_restart_never_returns_as_a_guest_edit() {
 fn unseen_file_edited_on_the_guest_then_deleted_on_the_host_is_fetched() {
     // As for a host deletion of any guest-edited file: the edit wins.
     let mut rig = Rig::new("unseen-then-gone");
-    rig.h.share.as_mut().unwrap().engine = ShareSync::new(1);
+    rig.h.share.as_mut().unwrap().engine = ShareSync::new(1).into();
     std::fs::write(rig.dir.join("log.txt"), b"small").unwrap();
     rig.run(12);
     std::fs::write(rig.dir.join("log.txt"), [b'b'; 2048]).unwrap();

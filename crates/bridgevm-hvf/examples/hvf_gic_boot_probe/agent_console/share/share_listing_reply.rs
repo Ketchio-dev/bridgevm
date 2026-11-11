@@ -136,52 +136,58 @@ impl AgentConsoleHarness {
             return;
         }
         let gen = gen.filter(|gen| usable_gen(gen)).map(str::to_owned);
-        if self.apply_listing_bytes(&bytes) {
-            if let (Some(share), Some(gen)) = (self.share.as_mut(), gen) {
-                share.listing_same.keep(gen, bytes);
-            }
-        }
+        self.apply_listing_bytes(&bytes, gen);
     }
 
-    /// LSSAME: the agent would send the kept listing's line again; it is applied again.
+    /// LSSAME: the agent would send the kept listing's line again; it is applied again, unless
+    /// its last pass was idle and nothing touched the engine since (share_idle.rs).
     fn reapply_share_listing(&mut self, gen: &str) {
+        let puts = self.share_puts_under_way();
         let Some(share) = self.share.as_mut() else {
             return;
         };
-        let Some((gen, bytes)) = share.listing_same.take(gen) else {
+        let Some(listing) = share.listing_same.same(gen) else {
             println!("BVAGENT SHARE ls-error <listing-same-unknown>");
             return;
         };
-        if self.apply_listing_bytes(&bytes) {
-            if let Some(share) = self.share.as_mut() {
-                share.listing_same.keep(gen, bytes);
-            }
+        share.note_listing_applied();
+        if puts.is_empty() && share.guest_plan_unchanged(listing) {
+            share.check_skipped_guest_pass(share.listing_same.kept_entries());
+            share.engine.for_pass().note_unchanged_listing();
+            return;
         }
+        // Its refused names were reported, and its keys and names are kept (key_guest_listing).
+        share.engine.for_pass().set_puts_under_way(puts);
+        let entries = share.listing_same.kept_entries().iter().cloned();
+        let actions = share.engine.for_pass().on_guest_listing_normalized(entries);
+        share.note_guest_pass(Some(listing));
+        self.queue_listing_actions(actions);
     }
 
-    /// Parse and apply a decoded listing within its byte bound; whether it was applied.
-    fn apply_listing_bytes(&mut self, bytes: &[u8]) -> bool {
+    /// Parse and apply a decoded listing within its byte bound; with a gen it is kept.
+    fn apply_listing_bytes(&mut self, bytes: &[u8], gen: Option<String>) {
         let listing = match std::str::from_utf8(bytes) {
             Ok(listing) => listing,
             Err(_) => {
                 println!("BVAGENT SHARE ls-error <listing-invalid-utf8>");
-                return false;
+                return;
             }
         };
         let puts = self.share_puts_under_way();
         let Some(share) = self.share.as_mut() else {
-            return false;
+            return;
         };
         let refused = match share_sync::parse_ls_into(listing, &mut share.guest_ls_scratch) {
             Ok(refused) => refused,
             Err(error) => {
                 report_listing_limit(error);
                 share.note_listing_refused(error);
-                return false;
+                return;
             }
         };
         share.note_listing_applied();
-        for line in refused_name_lines(&mut share.engine, &refused) {
+        // The guest pass and its setup (share_idle.rs); no pass reads the refused names.
+        for line in refused_name_lines(share.engine.for_pass(), &refused) {
             println!("{line}");
         }
         // A temporary's exact name (host_destination.rs) is neither fetched nor, absent, deleted;
@@ -191,10 +197,23 @@ impl AgentConsoleHarness {
                 && (entry.is_dir || !host_destination::is_share_temporary(&entry.name))
         });
         share.key_guest_listing();
-        share.engine.set_puts_under_way(puts);
-        let actions = share
-            .engine
-            .on_guest_listing_normalized(share.guest_ls_scratch.drain(..));
+        share.engine.for_pass().set_puts_under_way(puts);
+        let engine = share.engine.for_pass();
+        let actions = match gen {
+            Some(_) => engine.on_guest_listing_normalized(share.guest_ls_scratch.iter().cloned()),
+            None => engine.on_guest_listing_normalized(share.guest_ls_scratch.drain(..)),
+        };
+        let mut kept = None;
+        if let Some(gen) = gen {
+            let serial = share.new_idle_input();
+            share.listing_same.keep(gen, std::mem::take(&mut share.guest_ls_scratch), serial);
+            kept = Some(serial);
+        }
+        share.note_guest_pass(kept);
+        self.queue_listing_actions(actions);
+    }
+
+    fn queue_listing_actions(&mut self, actions: Vec<SyncAction>) {
         for action in actions {
             match action {
                 SyncAction::Get { name } => self.queue.push_back(ServiceReq::ShareGet { name }),
@@ -209,6 +228,5 @@ impl AgentConsoleHarness {
                 SyncAction::Skip { name, reason } => print_share_skip(&name, reason),
             }
         }
-        true
     }
 }

@@ -41,6 +41,8 @@ mod listing_pause_tests;
 mod listing_scale_tests;
 #[path = "share_listing_same_tests.rs"]
 mod listing_same_tests;
+#[path = "share_idle_tests.rs"]
+mod idle_tests;
 
 const ROOT: &str = "C:\\share";
 

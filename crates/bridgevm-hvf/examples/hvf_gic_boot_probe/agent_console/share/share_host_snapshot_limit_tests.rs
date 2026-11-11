@@ -5,7 +5,7 @@ use super::*;
 #[test]
 fn share_file_read_rejects_oversized_file_before_allocation() {
     let mut rig = Rig::new("host-snapshot-sparse-cap");
-    rig.h.share.as_mut().unwrap().engine = ShareSync::new(4);
+    rig.h.share.as_mut().unwrap().engine = ShareSync::new(4).into();
     let file = std::fs::File::create(rig.dir.join("big.bin")).unwrap();
     file.set_len(512 * 1024 * 1024).unwrap();
     let share = rig.h.share.as_mut().unwrap();

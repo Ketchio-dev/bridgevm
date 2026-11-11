@@ -55,6 +55,7 @@ impl ShareSync {
             .filter(|(name, stat)| host.get(*name).is_some_and(|now| now != *stat))
             .map(|(name, _)| name.clone())
             .collect();
+        self.pass_changed |= !changed.is_empty();
         for name in changed {
             self.on_host_copy_kept(&name);
         }
@@ -81,7 +82,9 @@ impl ShareSync {
         }
         self.retain_put_rejected();
 
+        let mut flagged = false;
         for (name, record) in &self.records {
+            flagged |= record.flagged();
             if self.host_files_scratch.contains_key(name) || self.host_held(name) {
                 continue;
             }
@@ -93,6 +96,7 @@ impl ShareSync {
             }
             actions.push(SyncAction::DeleteGuest { name: name.clone() });
         }
+        self.end_pass(&actions, flagged);
 
         actions
     }

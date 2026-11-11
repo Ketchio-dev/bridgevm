@@ -1267,15 +1267,19 @@ function Start-LinkWatch {
 # <<< link watch
 
 # >>> share watch
-# The host lists the shared folder (LSR) every 2 s. Enumerating it costs the guest about
-# 35 us per file each time (8,000 files: 111 ms/s while idle), so LSR re-sends its last
-# listing while this watcher saw no change below the root. Events arrive on pool threads;
+# The host lists the shared folder (LSR) every 2 s. Enumerating it with Get-ChildItem cost the
+# guest about 35 us per file each time (8,000 files: 111 ms/s while idle), so LSR re-sends its
+# last listing while this watcher saw no change below the root. Events arrive on pool threads;
 # the counter is read before each listing, so a change made during one is listed next time.
 # A host that names that listing's gen (READY lssame) gets LSSAME instead: at 100,000 files
-# the listing is about 13 MB.
+# the listing is about 13 MB. The listing itself is made by List below, compiled, which lists
+# exactly what the Get-ChildItem walk listed (Get-ShareListing).
 $script:BvShareWatchSource = @'
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 namespace BridgeVM {
     public static class BvShareWatch {
@@ -1310,6 +1314,51 @@ namespace BridgeVM {
         static void Bump(object sender, FileSystemEventArgs e) { Interlocked.Increment(ref changes); }
 
         public static long Changes { get { return Interlocked.Read(ref changes); } }
+
+        static readonly Regex Part = new Regex("^\\.bridgevm-part-[0-9a-f]{32}$");
+
+        // The rows `relpath|size|isDir|mtimeUtc` below `listRoot` (which ends in a separator) as
+        // Get-ChildItem -Recurse -Force under Windows PowerShell 5.1 gives them: in each folder its
+        // folders, then its files, each in the order the file system gives them (NTFS: by upcased
+        // name), then each folder below in that order. A reparse point (a junction, a link) is
+        // listed but not entered. A large PUT's temporary is never listed; one no PUT holds
+        // (`held`), five minutes old, is removed. Any error (access denied, a folder gone) fails
+        // the listing, as -ErrorAction Stop did. A folder stack, not recursion, for deep trees.
+        public static string List(string listRoot, string held) {
+            StringBuilder sb = new StringBuilder();
+            Stack<DirectoryInfo> pending = new Stack<DirectoryInfo>();
+            pending.Push(new DirectoryInfo(listRoot));
+            List<FileSystemInfo> dirs = new List<FileSystemInfo>();
+            List<FileSystemInfo> files = new List<FileSystemInfo>();
+            while (pending.Count > 0) {
+                dirs.Clear();
+                files.Clear();
+                foreach (FileSystemInfo e in pending.Pop().EnumerateFileSystemInfos()) {
+                    if (e is DirectoryInfo) { dirs.Add(e); } else { files.Add(e); }
+                }
+                foreach (FileSystemInfo e in dirs) { Row(sb, listRoot, e, 0, 1); }
+                foreach (FileSystemInfo e in files) {
+                    if (Part.IsMatch(e.Name)) {
+                        bool kept = held != null && string.Equals(held, e.Name, StringComparison.OrdinalIgnoreCase);
+                        if (!kept && e.LastWriteTimeUtc < DateTime.UtcNow.AddMinutes(-5)) { try { e.Delete(); } catch { } }
+                        continue;
+                    }
+                    Row(sb, listRoot, e, ((FileInfo)e).Length, 0);
+                }
+                for (int i = dirs.Count - 1; i >= 0; i--) {
+                    if ((dirs[i].Attributes & FileAttributes.ReparsePoint) == 0) { pending.Push((DirectoryInfo)dirs[i]); }
+                }
+            }
+            return sb.ToString();
+        }
+
+        static void Row(StringBuilder sb, string listRoot, FileSystemInfo e, long size, int dir) {
+            string full = e.FullName;
+            if (!full.StartsWith(listRoot, StringComparison.OrdinalIgnoreCase)) { return; }
+            string rel = full.Substring(listRoot.Length);
+            if (rel.Length == 0) { return; }
+            sb.Append(rel).Append('|').Append(size).Append('|').Append(dir).Append('|').Append(e.LastWriteTimeUtc.ToString("o")).AppendLine();
+        }
     }
 }
 '@
@@ -1319,8 +1368,10 @@ $script:BvLsrChanges = [long]-1
 $script:BvLsrAt = [long]0
 $script:BvLsrLine = $null
 $script:BvLsrGen = $null
-# Re-sent for at most this long without a fresh enumeration, whatever the watcher says.
-$script:BvLsrMaxAgeTicks = [long](60 * [System.Diagnostics.Stopwatch]::Frequency)
+# Re-sent for at most this long without a fresh enumeration, whatever the watcher says (a lost
+# event or a dead watcher lists afresh at once): a change made through a hard link from outside
+# the folder. At 100,000 files a listing costs seconds, so not every minute.
+$script:BvLsrMaxAgeTicks = [long](600 * [System.Diagnostics.Stopwatch]::Frequency)
 
 # True while `root` is watched; the listing is then cached between changes.
 function Watch-ShareRoot([string]$root) {
@@ -1335,6 +1386,33 @@ function Watch-ShareRoot([string]$root) {
     }
     if (-not $script:BvShareWatchReady) { return $false }
     try { return [BridgeVM.BvShareWatch]::Watch($root) } catch { Log ('SHARE WATCH failed: ' + $_.Exception.Message); return $false }
+}
+
+# The LSR rows below `listRoot`: compiled (List above) once the watch helper is in, else the
+# Get-ChildItem walk it replaces, which lists the same rows.
+function Get-ShareListing([string]$listRoot) {
+    $heldName = if ($null -ne $script:BvLPut) { [System.IO.Path]::GetFileName($script:BvLPut.Temp) } else { $null }
+    if ($script:BvShareWatchReady) {
+        try { return [BridgeVM.BvShareWatch]::List($listRoot, $heldName) } catch [System.Management.Automation.MethodInvocationException] { throw $_.Exception.InnerException }
+    }
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($e in Get-ChildItem -LiteralPath $listRoot -Recurse -Force -ErrorAction Stop) {
+        # The pattern is written out here: a variable that was ever unset would make
+        # -cmatch match every name and leave every file out of the listing.
+        if (-not $e.PSIsContainer -and $e.Name -cmatch '^\.bridgevm-part-[0-9a-f]{32}$') {
+            # A large PUT's temporary (large put), never listed; an old one no PUT holds is a leftover.
+            $held = $null -ne $heldName -and [string]::Equals($heldName, $e.Name, [System.StringComparison]::OrdinalIgnoreCase)
+            if (-not $held -and $e.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddMinutes(-5)) { try { $e.Delete() } catch { } }
+            continue
+        }
+        $full = $e.FullName
+        if (-not $full.StartsWith($listRoot, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+        $rel = $full.Substring($listRoot.Length)
+        if ([string]::IsNullOrEmpty($rel)) { continue }
+        $sz = if ($e.PSIsContainer) { 0 } else { $e.Length }
+        [void]$sb.AppendLine(('{0}|{1}|{2}|{3}' -f $rel, $sz, [int]$e.PSIsContainer, $e.LastWriteTimeUtc.ToString('o')))
+    }
+    return $sb.ToString()
 }
 # <<< share watch
 
@@ -2210,27 +2288,10 @@ while ($true) {
                             $line = $script:BvLsrLine
                             $lineGen = $script:BvLsrGen
                         } else {
-                            $sb = New-Object System.Text.StringBuilder
                             # Listed below \\?\ so a path past 260 characters is listed, not an error
                             # that fails the whole listing.
                             $listRoot = Get-IoPath $rootFull $true
-                            foreach ($e in Get-ChildItem -LiteralPath $listRoot -Recurse -Force -ErrorAction Stop) {
-                                # The pattern is written out here: a variable that was ever unset would make
-                                # -cmatch match every name and leave every file out of the listing.
-                                if (-not $e.PSIsContainer -and $e.Name -cmatch '^\.bridgevm-part-[0-9a-f]{32}$') {
-                                    # A large PUT's temporary (large put), never listed; an old one no PUT holds is a leftover.
-                                    $held = $null -ne $script:BvLPut -and [string]::Equals([System.IO.Path]::GetFileName($script:BvLPut.Temp), $e.Name, [System.StringComparison]::OrdinalIgnoreCase)
-                                    if (-not $held -and $e.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddMinutes(-5)) { try { $e.Delete() } catch { } }
-                                    continue
-                                }
-                                $full = $e.FullName
-                                if (-not $full.StartsWith($listRoot, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
-                                $rel = $full.Substring($listRoot.Length)
-                                if ([string]::IsNullOrEmpty($rel)) { continue }
-                                $sz = if ($e.PSIsContainer) { 0 } else { $e.Length }
-                                [void]$sb.AppendLine(('{0}|{1}|{2}|{3}' -f $rel, $sz, [int]$e.PSIsContainer, $e.LastWriteTimeUtc.ToString('o')))
-                            }
-                            $line = 'LSOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($sb.ToString()))
+                            $line = 'LSOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Get-ShareListing $listRoot)))
                             $lineGen = [System.Guid]::NewGuid().ToString('N')
                             if ($watched) {
                                 $script:BvLsrRoot = $rootFull

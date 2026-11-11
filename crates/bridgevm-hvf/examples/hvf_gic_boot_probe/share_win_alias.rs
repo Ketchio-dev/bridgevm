@@ -47,6 +47,7 @@ impl ShareSync {
         for name in &dropped {
             self.host_files_scratch.remove(name);
         }
+        self.pass_changed |= self.host_aliased != held;
         self.host_aliased = held;
         self.adopt_host_renames();
     }
@@ -66,8 +67,9 @@ impl ShareSync {
     /// as a guest edit.
     pub(super) fn retain_put_rejected(&mut self) {
         let mut rejected = std::mem::take(&mut self.put_rejected);
-        let host = &self.host_files_scratch;
+        let (before, host) = (rejected.len(), &self.host_files_scratch);
         rejected.retain(|name, stat| host.get(name) == Some(stat) || self.host_held(name));
+        self.pass_changed |= rejected.len() != before;
         self.put_rejected = rejected;
     }
 }
