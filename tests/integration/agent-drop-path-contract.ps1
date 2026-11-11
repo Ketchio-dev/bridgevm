@@ -93,7 +93,7 @@ try {
     # A file made at the name since DROPBEG keeps it; the drop takes the next free name.
     Assert ((Send 'DROPBEG' ((B64 'race.txt') + ' 0')) -ceq ('OK DROPBEG ' + (B64 'race.txt'))) "DROPBEG race: $script:sent"
     [IO.File]::WriteAllText((Join-Path $root 'race.txt'), 'mine')
-    Assert ((Send 'DROPEND' '0') -ceq 'OK DROPEND 0') "DROPEND race: $script:sent"
+    Assert ((Send 'DROPEND' '0') -ceq ('OK DROPEND 0 ' + (B64 'race (2).txt'))) "DROPEND race: $script:sent"
     Assert ([IO.File]::ReadAllText((Join-Path $root 'race.txt')) -ceq 'mine') 'the drop replaced a file made meanwhile'
     Assert (Exists (Join-Path $root 'race (2).txt')) 'the drop did not take the next free name'
     $cases++

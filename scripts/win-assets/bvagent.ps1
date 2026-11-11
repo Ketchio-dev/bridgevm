@@ -2546,7 +2546,8 @@ while ($true) {
                     }
                 }
                 'DROPEND' {
-                    # DROPEND <chunks> -> OK DROPEND <bytes> once every byte is written.
+                    # DROPEND <chunks> -> OK DROPEND <bytes> once every byte is written, plus
+                    # <b64(final name)> when a file made at the name since DROPBEG moved it.
                     try {
                         if ($null -eq $script:BvDropStream) { throw 'no-open-drop' }
                         if ([int64]$arg -ne $script:BvDropSeq) { throw 'seq' }
@@ -2568,8 +2569,10 @@ while ($true) {
                         $readMs = 0; $decodeMs = 0
                         if ($script:BvDropReader -eq $true) { $readMs = [BridgeVM.BvDropReader]::ReadTicks / $tick; $decodeMs = [BridgeVM.BvDropReader]::DecodeTicks / $tick }
                         Log ('DROP END {0} bytes={1} chunks={2} ms={3:F0} read_ms={4:F0} decode_ms={5:F0} write_ms={6:F0}' -f $final, $written, $script:BvDropSeq, (([System.Diagnostics.Stopwatch]::GetTimestamp() - $script:BvDropStart) / $tick), $readMs, $decodeMs, ($script:BvDropWriteTicks / $tick))
+                        $reply = 'OK DROPEND ' + $written
+                        if ($final -ne $script:BvDropPath) { $reply += ' ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([System.IO.Path]::GetFileName($final))) }
                         Close-DropStream $true
-                        Write-Line $h ('OK DROPEND ' + $written) 'OK'
+                        Write-Line $h $reply 'OK'
                     } catch {
                         Close-DropStream $false
                         Write-Line $h ('ERR DROPEND ' + $_.Exception.Message) 'ERR'

@@ -29,7 +29,8 @@ pub(super) enum DropReq {
     /// `DROPCHUNK <seq> <chars>`, then the payload as its own line of `<chars>` base64
     /// characters (the guest reads it with a compiled reader) -> `OK DROPCHUNK <seq>`.
     Chunk { seq: u64, bytes: Vec<u8> },
-    /// `DROPEND <chunks>` -> `OK DROPEND <bytes>`.
+    /// `DROPEND <chunks>` -> `OK DROPEND <bytes>`, plus ` <b64(final name)>` when a file made at
+    /// the name since DROPBEG moved the copy to another one.
     End { chunks: u64 },
     /// `DROPABORT` -> `OK DROPABORT`: the guest deletes its half-written file.
     Abort,
@@ -226,7 +227,8 @@ enum DropReply {
     Caps,
     Named(String),
     Chunk(u64),
-    End(u64),
+    /// Bytes written, and the name the copy got when it is not DROPBEG's.
+    End(u64, Option<String>),
     Aborted,
     /// OPENFILE's answer; a failed open never fails the copy.
     Opened(bool),
@@ -286,9 +288,18 @@ fn classify_drop_reply(req: &DropReq, line: &str) -> DropReply {
             DropReply::Chunk(bytes.len() as u64)
         }
         DropReq::End { .. } => match line.strip_prefix("OK DROPEND ") {
-            Some(n) => n
-                .parse()
-                .map_or(DropReply::Failed("guest-error".into()), DropReply::End),
+            Some(rest) => {
+                let (n, renamed) = match rest.split_once(' ') {
+                    Some((n, b64)) => match guest_name(b64) {
+                        Some(name) => (n, Some(name)),
+                        None => return DropReply::Failed("guest-error bad-name".into()),
+                    },
+                    None => (rest, None),
+                };
+                n.parse().map_or(DropReply::Failed("guest-error".into()), |n| {
+                    DropReply::End(n, renamed)
+                })
+            }
             None => DropReply::Ignored,
         },
         DropReq::Abort if line == "OK DROPABORT" => DropReply::Aborted,
@@ -440,9 +451,17 @@ impl AgentConsoleHarness {
                 active.chunks += 1;
                 active.chunk_wire += now.saturating_duration_since(sent_at);
             }
-            DropReply::End(written) => {
+            DropReply::End(written, renamed) => {
                 if active.file.as_ref().map(|file| file.size) != Some(written) {
                     return self.fail_drop("guest-error short", now);
+                }
+                // A top-level file's name went on `top` at its DROPBEG: the copy opens by the name it has.
+                if let Some(name) = renamed {
+                    if active.open && !active.entries[active.next].host_rel.contains('/') {
+                        if let Some(last) = active.top.last_mut() {
+                            *last = name;
+                        }
+                    }
                 }
                 active.file = None;
                 active.done_files += 1;

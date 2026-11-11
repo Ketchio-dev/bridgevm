@@ -277,6 +277,33 @@ fn a_second_drop_waits_for_the_first() {
 /// by the final name the guest gave it (a folder too, never what is inside one). A failed open
 /// (the item went missing, an agent that turns out not to know OPENFILE) ends nothing but itself.
 #[test]
+fn a_file_the_guest_renames_at_dropend_opens_by_that_name() {
+    let root = staging("open-race");
+    std::fs::write(root.join("r.txt"), b"x").unwrap();
+    let mut wire = Wire::new();
+    wire.h
+        .note_agent_ready("host v3-share2 putdata bigfile lssame openfile agent=0123456789abcdef", wire.now);
+    assert_eq!(wire.submit_open("job-race", &root), ["DROPCAPS"]);
+    assert_eq!(wire.reply("BVDROP_CAPS 1"), [format!("DROPBEG {} 1", b64(b"r.txt"))]);
+    wire.reply(&format!("OK DROPBEG {}", b64(b"r.txt")));
+    wire.reply("OK DROPCHUNK 0");
+    // Another program made r.txt meanwhile: the copy is r (2).txt, and that is what opens.
+    assert_eq!(
+        wire.reply(&format!("OK DROPEND 1 {}", b64(b"r (2).txt"))),
+        [format!("OPENFILE {}", b64(b"r (2).txt"))]
+    );
+    // A name that is not one path component fails the drop instead of opening something else.
+    let other = staging("open-race-bad");
+    std::fs::write(other.join("s.txt"), b"").unwrap();
+    wire.reply("OK OPENFILE");
+    assert_eq!(wire.submit_open("job-race-2", &other), ["DROPCAPS"]);
+    wire.reply("BVDROP_CAPS 1");
+    wire.reply(&format!("OK DROPBEG {}", b64(b"s.txt")));
+    wire.reply(&format!("OK DROPEND 0 {}", b64(b"..\\x")));
+    assert!(wire.h.drops.active.is_none());
+}
+
+#[test]
 fn an_open_drop_opens_each_top_level_item_by_its_final_name_once_all_are_copied() {
     let root = staging("open");
     std::fs::create_dir(root.join("A")).unwrap();
