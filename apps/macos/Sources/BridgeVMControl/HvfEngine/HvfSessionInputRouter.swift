@@ -8,7 +8,9 @@ import Foundation
 /// input.ctl is quiet again (and Windows inserted the release an ordered press still owes) the next event tries
 /// the ordered route. Ctrl+Alt+Delete always takes the VMM keyboard, and on an active route nothing overtakes it
 /// there: input after it follows it on input.ctl (`fallback`), and behind ordered input still going in it waits,
-/// with input after it, until that input has gone in (`takeSecureAttention`).
+/// with input after it, until that input has gone in (`takeSecureAttention`). An agent restart within the boot
+/// (re-READY, a new SERVICE start) starts the owned boot over: the new agent instance negotiates again
+/// (HvfSessionInputGeneration.swift).
 struct HvfSessionInputRouter {
     private(set) var binding: [String]?
     private(set) var eligible = false
@@ -116,9 +118,8 @@ struct HvfSessionInputRouter {
                 failure = .requestFailed
             }
         }
-        if stream.state == .unavailable {
-            if activated { failure = .unavailable } else { eligible = false }
-        }
+        // A boot that never activated stays owned and legacy: the stream asks the next agent instance again.
+        if stream.state == .unavailable, activated { failure = .unavailable }
         if !held.isEmpty, stream.count == 0 { // the ordered input ahead of the chord has gone in or was handed back
             if activated, !failed, stream.state == .ready { fallback = true; legacy.restart(now: now) }
             heldOut += held
