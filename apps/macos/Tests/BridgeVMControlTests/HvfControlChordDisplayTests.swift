@@ -26,13 +26,15 @@ final class HvfControlChordDisplayTests: XCTestCase {
         for (characters, code, flags, _) in events {
             XCTAssertTrue(HvfFramebufferKeyInput.send(try event(characters, code: code, flags: flags), to: session,
                                                       refused: { XCTFail("legacy refusal") }))
+            XCTAssertTrue(HvfFramebufferKeyInput.send(try event(characters, code: code, flags: flags, type: .keyUp), to: session))
         }
         XCTAssertTrue(HvfFramebufferKeyInput.send(try event("s", code: 0x01, flags: .command), to: session))
         XCTAssertTrue(HvfFramebufferKeyInput.send(try event("\u{13}", code: 0x01, flags: [.command, .control]), to: session))
         XCTAssertFalse(HvfFramebufferKeyInput.send(try event("q", code: 0x0c, flags: .command), to: session))
         XCTAssertFalse(HvfFramebufferKeyInput.send(try event("f", code: 0x03, flags: [.command, .control]), to: session))
         XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("input.ctl")),
-                       events.map { "KEY \($0.3)\n" }.joined() + "KEY ctrl+s\nKEY ctrl+s\n")
+                       events.map { "KEY down:\($0.3)\nKEY up:\($0.3)\n" }.joined() + "KEY ctrl+s\nKEY ctrl+s\n",
+                       "each chord is held from its key-down to its key-up; a Command chord stays a tap")
         XCTAssertFalse(FileManager.default.fileExists(atPath: config.ctlFilePath))
     }
 
@@ -55,8 +57,9 @@ final class HvfControlChordDisplayTests: XCTestCase {
         }
     }
 
-    private func event(_ characters: String, code: UInt16, flags: NSEvent.ModifierFlags) throws -> NSEvent {
-        try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0,
+    private func event(_ characters: String, code: UInt16, flags: NSEvent.ModifierFlags,
+                       type: NSEvent.EventType = .keyDown) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: 0,
             windowNumber: 0, context: nil, characters: characters, charactersIgnoringModifiers: characters,
             isARepeat: false, keyCode: code))
     }

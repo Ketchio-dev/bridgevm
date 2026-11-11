@@ -18,6 +18,17 @@ enum HvfModifierChord {
     /// The Print Screen key (the Mac's F13). The VMM builds it; an agent only after its
     /// `BVINPUT_KEYS <uuid> PRINTSCREEN` marker (HvfInputCapabilityReceipt).
     static let printScreen = "printscreen"
+    /// A held key: `down:<action>` is the first half of the action's events (its keys pressed, in order) and
+    /// `up:<action>` the second (released in reverse), from the Mac's key-down to its key-up. The VMM keeps a held key
+    /// in its HID report and Windows repeats it (live_input/key_actions.rs); an agent builds the halves only after its
+    /// `BVINPUT_KEYS <uuid> HOLD` marker (bvagent-key-input.cs).
+    static let down = "down:", up = "up:"
+
+    /// The action a held key's `down:` or `up:` half names; nil for a whole tap.
+    static func heldAction(_ command: String) -> String? {
+        for half in [down, up] where command.hasPrefix(half) { return String(command.dropFirst(half.count)) }
+        return nil
+    }
 
     /// How many key events (each part pressed and released) a valid action inserts; nil if invalid.
     static func eventCount(_ action: String) -> Int? {

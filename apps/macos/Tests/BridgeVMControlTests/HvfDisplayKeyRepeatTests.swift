@@ -2,7 +2,7 @@ import AppKit
 import XCTest
 @testable import BridgeVMControl
 
-/// A held key's repeats never pile up behind a slow ordered route; first presses always queue.
+/// A tapped key's repeats never pile up behind a slow ordered route; first presses always queue.
 @MainActor
 final class HvfDisplayKeyRepeatTests: XCTestCase {
     private func backspace(repeat isRepeat: Bool) throws -> NSEvent {
@@ -32,13 +32,14 @@ final class HvfDisplayKeyRepeatTests: XCTestCase {
         }
     }
 
-    func testLegacyRouteWritesEveryRepeatAsBefore() throws {
+    /// The VMM holds the key in its HID report and Windows repeats it (HvfKeyHoldTests), so no Mac repeat is written.
+    func testLegacyRouteHoldsTheKeyAndWritesNoRepeat() throws {
         let fixture = try HvfRuntimeKeyboardDraftFixture()
         defer { fixture.remove() }
         try fixture.withSession { session in
             XCTAssertTrue(HvfFramebufferKeyInput.send(try backspace(repeat: false), to: session))
             for _ in 0..<3 { XCTAssertTrue(HvfFramebufferKeyInput.send(try backspace(repeat: true), to: session)) }
-            XCTAssertEqual(try fixture.bytes(fixture.input), Data(String(repeating: "KEY backspace\n", count: 4).utf8))
+            XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY down:backspace\n".utf8))
             XCTAssertNil(try fixture.bytes(fixture.control))
         }
     }

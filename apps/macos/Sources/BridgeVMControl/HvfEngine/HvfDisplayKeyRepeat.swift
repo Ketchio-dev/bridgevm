@@ -1,6 +1,7 @@
 /// macOS repeats a held key on its own clock, not the guest's. A repeat is admitted only when
 /// nothing waits unsent ahead of it; otherwise it is absorbed, so a slow guest route cannot
 /// replay a held Backspace or arrow after release. A key's first press is never absorbed.
+/// Taps only; a key held down on the guest repeats as HvfEngineSessionHeldKeys.swift says.
 @MainActor
 enum HvfDisplayKeyRepeat {
     static func send(_ action: String, repeat isRepeat: Bool, to session: HvfEngineSession) -> Bool {

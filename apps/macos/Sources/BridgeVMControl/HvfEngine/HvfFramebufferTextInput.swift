@@ -28,7 +28,10 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
     var guestInputIdentity: HvfTextInputTargetIdentity? { nil }
     /// Whether the guest takes generic chords now (HvfHostKeyMapping.modifierChords).
     var guestModifierChords: Bool { false }
+    /// A key-down, or the key-up of a key held down on the guest (HvfFramebufferKeyInput).
     func sendGuestKeyEvent(_ event: NSEvent) -> Bool { false }
+    /// Command came down: the Mac sends no key-up for a key released while it is down, so held keys go up now.
+    func releaseGuestHeldKeys() {}
     func sendGuestModifierTap(_ action: String) {}
     func sendGuestText(_ text: String) -> Bool { false }
     func textInputRefused() { NSSound.beep() }
@@ -50,6 +53,7 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
     }
 
     override func flagsChanged(with event: NSEvent) {
+        if guestInputAvailable, event.modifierFlags.contains(.command) { releaseGuestHeldKeys() }
         if guestInputAvailable, guestModifierChords,
            let action = modifierTap.changed(keyCode: event.keyCode, flags: event.modifierFlags) {
             _ = synchronizeTextInputTarget()
@@ -86,6 +90,11 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
         interpretationRefused = false
         defer { interpretingEvent = nil; interpretingTarget = nil; interpretationRefused = false }
         interpretKeyEvents([event])
+    }
+
+    /// Every key-up ends a key held down on the guest; the input method never sees key-ups.
+    override func keyUp(with event: NSEvent) {
+        if !guestInputAvailable || !sendGuestKeyEvent(event) { super.keyUp(with: event) }
     }
 
     override func doCommand(by selector: Selector) {

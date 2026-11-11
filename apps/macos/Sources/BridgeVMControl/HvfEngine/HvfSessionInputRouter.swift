@@ -10,7 +10,9 @@ import Foundation
 /// there: input after it follows it on input.ctl (`fallback`), and behind ordered input still going in it waits,
 /// with input after it, until that input has gone in (`takeSecureAttention`). An agent restart within the boot
 /// (re-READY, a new SERVICE start) starts the owned boot over: the new agent instance negotiates again
-/// (HvfSessionInputGeneration.swift).
+/// (HvfSessionInputGeneration.swift). A held key (`down:<key>` until `up:<key>`, HvfModifierChord.down) goes up on the
+/// route it went down (`routeKeyUp`): on input.ctl while the VMM holds it, which also keeps the switch waiting; on the
+/// ordered route, or through its cleanup (HvfPointerCleanup) like a held button.
 struct HvfSessionInputRouter {
     private(set) var binding: [String]?
     private(set) var eligible = false
@@ -40,6 +42,12 @@ struct HvfSessionInputRouter {
     /// Whether the agent answers `CARET` (the INPUTCAPS marker); the VMM's HID path cannot, and on a secure
     /// desktop (fallback) the agent sees only the user desktop's caret.
     var caret: Bool { eligible && !fallback && stream.caret }
+    /// Whether a key can be held from its press to its release now: on the legacy route the VMM shipped with this app
+    /// holds it; on the ordered route only an agent with the HOLD marker. Never behind a Ctrl+Alt+Delete: input there
+    /// reaches input.ctl later, after its release could have gone.
+    var keyHold: Bool { held.isEmpty && !failed && (!eligible || fallback || stream.keyHold) }
+    /// The keys input.ctl holds down (HvfLegacyInputActivity): their release goes there too.
+    var legacyHeldKeys: [String] { legacy.keys }
 
     mutating func beginOwnedBoot(binding: [String]) {
         self = Self()
@@ -77,11 +85,25 @@ struct HvfSessionInputRouter {
         return admission == .legacy && activated ? .refused : admission
     }
 
+    /// A held key goes up where it went down: `.legacy` while input.ctl holds it (whatever the state), `.queued` behind
+    /// its press on an ordered route taking input, and `.refused` when neither has anything to send now (a press the
+    /// ordered route still owes a release for goes up through its cleanup: leaving a fallback, a request failure or the
+    /// next target change).
+    mutating func routeKeyUp(_ action: String, binding: [String], now: Date) -> HvfNegotiatedInputStream.Admission {
+        guard matches(binding) else { return .refused }
+        if legacy.keys.contains(action) { return .legacy }
+        guard eligible, activated, !failed, !fallback, held.isEmpty, stream.state == .ready else { return .refused }
+        return stream.enqueue(.key(HvfModifierChord.up + action), now: now)
+    }
+
     /// Called with the line before every input.ctl write of guest input, clipboard-backed paste included.
     mutating func allowLegacyWrite(_ line: String, binding: [String], now: Date) -> Bool {
         guard matches(binding) else { return false }
         let secureAttention = line.hasPrefix("KEY ") && HvfGuestInputEncoding.isSecureAttention(String(line.dropFirst(4)))
-        guard secureAttention || (!failed && (!activated || fallback)) else { return false }
+        // A key the VMM holds always goes up there, even once the router failed: nothing else would release it.
+        let release = line.hasPrefix("KEY " + HvfModifierChord.up)
+            && legacy.keys.contains(HvfModifierChord.heldAction(String(line.dropFirst(4))) ?? "")
+        guard secureAttention || release || (!failed && (!activated || fallback)) else { return false }
         // Input after the chord follows it on input.ctl (Windows may switch desktops only once the VMM's keyboard
         // queue moves), until the VMM has taken it and input.ctl is quiet.
         if secureAttention, activated, !failed, stream.count == 0, stream.state == .ready { fallback = true }
@@ -96,6 +118,14 @@ struct HvfSessionInputRouter {
         guard matches(binding), eligible, !failed || (failure == .requestFailed && stream.isRecovering) else { return nil }
         let reset = lines.contains { HvfGuestResetRecord.matches($0) }
         if activated, let reason = HvfSessionInputFailure(reset: reset, serviceReady: serviceReady, lines: lines) {
+            // Windows keeps a key the old agent instance pressed down (SendInput's key state is not per process), and
+            // the new instance knows nothing of it: its release goes to the new instance now, ahead of the next
+            // INPUTCAPS. Nothing waits for its receipt (an id no later request takes); one that inserts nothing is lost.
+            if reason == .agentRestarted {
+                for key in stream.heldKeys {
+                    if let request = HvfUnicodeInputRequest(event: .key(HvfModifierChord.up + key), now: now) { _ = send(request.command) }
+                }
+            }
             return fail(reason)
         }
         let quiet = !legacyPending && legacy.quiescent(now: now)

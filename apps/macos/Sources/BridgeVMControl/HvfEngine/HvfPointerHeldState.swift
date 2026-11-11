@@ -1,10 +1,19 @@
-/// A sent press may have inserted even while its receipt is still unknown.
+/// A sent press may have inserted even while its receipt is still unknown: the buttons, and the held keys (a
+/// `down:<key>` half, HvfModifierChord.heldAction), that sent requests may have pressed and whose release Windows
+/// has not inserted.
 struct HvfPointerHeldState {
     private var buttons = 0
     private var location: String?
+    private(set) var keys: [String] = []
     var release: String? { buttons == 0 ? nil : location.map { "releaseall:" + $0 } }
+    /// What lifts all of it: each held key's `up:` half, then one `releaseall` for the buttons.
+    var releases: [HvfOrderedInputQueue.Event] {
+        keys.map { .key(HvfModifierChord.up + $0) } + (release.map { [.pointer($0)] } ?? [])
+    }
 
     mutating func sent(_ event: HvfOrderedInputQueue.Event) {
+        if case let .key(command) = event, command.hasPrefix(HvfModifierChord.down),
+           let action = HvfModifierChord.heldAction(command), !keys.contains(action) { keys.append(action) }
         guard case let .pointer(command) = event else { return }
         // `<verb>:<args>[:<held modifiers>]`; the release needs only the position.
         let fields = command.split(separator: ":")
@@ -20,6 +29,8 @@ struct HvfPointerHeldState {
     }
 
     mutating func inserted(_ event: HvfOrderedInputQueue.Event) {
+        if case let .key(command) = event, command.hasPrefix(HvfModifierChord.up),
+           let action = HvfModifierChord.heldAction(command) { keys.removeAll { $0 == action } }
         guard case let .pointer(command) = event else { return }
         switch command.split(separator: ":", maxSplits: 1).first {
         case "release", "click": buttons &= ~1

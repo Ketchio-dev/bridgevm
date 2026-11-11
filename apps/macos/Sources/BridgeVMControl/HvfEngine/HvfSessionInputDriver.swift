@@ -38,6 +38,19 @@ final class HvfSessionInputDriver {
         }
         return admission
     }
+    /// A held key's release, on the route its press took (HvfSessionInputRouter.routeKeyUp); `.refused` means nothing
+    /// to send now and is no failure.
+    func routeKeyUp(_ action: String, binding: [String]) -> HvfNegotiatedInputStream.Admission {
+        let held = router.count; defer { observeBindingDiscard(held: held) }
+        let admission = router.routeKeyUp(action, binding: binding, now: now())
+        if admission == .queued {
+            onAdmission?(admission, held, router.count)
+            startPumpIfNeeded()
+            onPoll?()
+        }
+        return admission
+    }
+
     /// `line` is the input.ctl line about to be written.
     func allowLegacyWrite(_ line: String, binding: [String]) -> Bool {
         let held = router.count; defer { observeBindingDiscard(held: held) }

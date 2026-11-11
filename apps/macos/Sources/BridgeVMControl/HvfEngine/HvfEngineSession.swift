@@ -68,6 +68,7 @@ final class HvfEngineSession: ObservableObject {
     @Published var diskGrowNotice: String? // the guest's report on extending C: after a disk grow (HvfDiskGrow)
     var diskExtendInFlight = false
     var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it
+    var heldKeys = HvfHeldKeys() // Mac keys held down on the guest (HvfEngineSessionHeldKeys.swift)
     var guestCaretQuery: HvfGuestCaretQuery? // where the guest's text caret is, asked once per composition
     let inputDriver = HvfSessionInputDriver()
     private var scrollAccumulator = HvfScrollAccumulator() // the scroll fraction not yet sent to the guest
@@ -201,6 +202,8 @@ final class HvfEngineSession: ObservableObject {
     @discardableResult func sendKey(_ action: String) -> Bool {
         guard !pause.holdsInput else { return false }
         guard legacyPaste.pending == nil else { append(.unknown("key input refused: clipboard paste pending")); return false }
+        // Held keys go up first, each on its own route, so none stays down behind Windows' secure desktop.
+        if HvfGuestInputEncoding.isSecureAttention(action) { releaseHeldKeys() }
         let admission = inputDriver.route(.key(action), binding: inputBinding)
         guard admission == .legacy else { return admission == .queued }
         return appendLiveInput("KEY \(action)")
@@ -450,6 +453,7 @@ final class HvfEngineSession: ObservableObject {
         }
         ownedProcessIdentity = nil
         legacyPaste = HvfLegacyPasteState()
+        heldKeys = HvfHeldKeys()
         inputDriver.attachUnknown(binding: inputBinding)
         timer?.invalidate()
         timer = nil
@@ -480,6 +484,7 @@ final class HvfEngineSession: ObservableObject {
         if !hasPendingGUIStart { guiStartOperation = nil }
         appPacing.begin()
         legacyPaste = HvfLegacyPasteState()
+        heldKeys = HvfHeldKeys()
         inputDriver.attachUnknown(binding: inputBinding)
         tailReader = TailOffsetReader()
         agentEvents = BvAgentEvent.Stream()
@@ -508,17 +513,20 @@ final class HvfEngineSession: ObservableObject {
             && ownedController?.waitsForGuestShutdown == true
     }
 
-    private var inputBinding: [String] {
+    var inputBinding: [String] {
         [config.targetDiskPath, config.uefiVarsPath, config.evidenceDir, config.ctlFilePath]
     }
 
     func beginOwnedInputBoot() {
         legacyPaste = HvfLegacyPasteState()
+        heldKeys = HvfHeldKeys()
         inputDriver.beginOwnedBoot(binding: inputBinding)
     }
 
+    /// Focus loss, Pause, Stop and the display's other target changes; held keys and buttons go up.
     func cancelOrderedInputTarget() {
         cancelPendingPaste("input target changed")
+        releaseHeldKeysForTargetChange()
         inputDriver.cancelTarget()
     }
 

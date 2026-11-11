@@ -6,12 +6,13 @@ import XCTest
 final class HvfKeyEventIdentityTests: XCTestCase {
     func testControlKeypadEnterNeverBecomesCopyInLegacyDisplay() throws {
         try withDisplay { view, _, fixture in
+            let enter = "KEY down:ctrl+enter\nKEY up:ctrl+enter\n"
             for (count, flags) in [(1, .control), (2, [.control, .numericPad])] as [(Int, NSEvent.ModifierFlags)] {
-                view.keyDown(with: try keypad(flags))
-                XCTAssertEqual(try fixture.bytes(fixture.input), Data(String(repeating: "KEY ctrl+enter\n", count: count).utf8), "Ctrl+keypad Enter is Ctrl+Enter, never Ctrl+C")
+                try press(view, keypad(flags))
+                XCTAssertEqual(try fixture.bytes(fixture.input), Data(String(repeating: enter, count: count).utf8), "Ctrl+keypad Enter is Ctrl+Enter, never Ctrl+C")
             }
             view.keyDown(with: try copy())
-            XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY ctrl+enter\nKEY ctrl+enter\nKEY ctrl+c\n".utf8))
+            XCTAssertEqual(try fixture.bytes(fixture.input), Data((enter + enter + "KEY down:ctrl+c\n").utf8))
             XCTAssertNil(try fixture.bytes(fixture.control))
         }
     }
@@ -40,7 +41,7 @@ final class HvfKeyEventIdentityTests: XCTestCase {
             view.keyDown(with: try keypad([.control, .numericPad]))
             XCTAssertFalse(view.hasMarkedText())
             // The preedit is committed first, but Hangul needs the guest service, which is not connected here.
-            XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY ctrl+enter\n".utf8), "never text or Ctrl+C")
+            XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY down:ctrl+enter\n".utf8), "never text or Ctrl+C")
             XCTAssertNil(try fixture.bytes(fixture.control))
         }
     }
@@ -48,9 +49,10 @@ final class HvfKeyEventIdentityTests: XCTestCase {
     func testPlainOptionAndShiftKeypadRetainTheirExistingChords() throws {
         try withDisplay { view, _, fixture in
             for flags: NSEvent.ModifierFlags in [.numericPad, [.numericPad, .option], [.numericPad, .shift]] {
-                view.keyDown(with: try keypad(flags))
+                try press(view, keypad(flags))
             }
-            XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY enter\nKEY alt+enter\nKEY shift+enter\n".utf8))
+            XCTAssertEqual(try fixture.bytes(fixture.input), Data(["enter", "alt+enter", "shift+enter"]
+                .map { "KEY down:\($0)\nKEY up:\($0)\n" }.joined().utf8))
             XCTAssertNil(try fixture.bytes(fixture.control))
         }
     }
@@ -69,10 +71,11 @@ final class HvfKeyEventIdentityTests: XCTestCase {
             for flags: NSEvent.ModifierFlags in [[.control, .shift], [.control, .option], [.control, .command]] {
                 view.setMarkedText("한", selectedRange: NSRange(location: 1, length: 0),
                     replacementRange: NSRange(location: NSNotFound, length: 0))
-                view.keyDown(with: try keypad(flags))
+                try press(view, keypad(flags))
                 XCTAssertFalse(view.hasMarkedText())
             }
-            XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY ctrl+shift+enter\nKEY ctrl+alt+enter\nKEY ctrl+enter\n".utf8))
+            XCTAssertEqual(try fixture.bytes(fixture.input), Data(("KEY down:ctrl+shift+enter\nKEY up:ctrl+shift+enter\n"
+                + "KEY down:ctrl+alt+enter\nKEY up:ctrl+alt+enter\nKEY ctrl+enter\n").utf8), "a Command chord stays a tap")
             XCTAssertNil(try fixture.bytes(fixture.control))
         }
     }
@@ -88,6 +91,14 @@ final class HvfKeyEventIdentityTests: XCTestCase {
             XCTAssertEqual(try fixture.commands(), before)
             XCTAssertNil(try fixture.bytes(fixture.input))
         }
+    }
+
+    /// Its key-down, then its key-up: a key is held between them (HvfKeyHoldTests).
+    private func press(_ view: FBLayerView, _ down: NSEvent) throws {
+        view.keyDown(with: down)
+        view.keyUp(with: try XCTUnwrap(NSEvent.keyEvent(with: .keyUp, location: .zero, modifierFlags: down.modifierFlags,
+            timestamp: 0, windowNumber: 0, context: nil, characters: down.characters ?? "",
+            charactersIgnoringModifiers: down.charactersIgnoringModifiers ?? "", isARepeat: false, keyCode: down.keyCode)))
     }
 
     private func keypad(_ flags: NSEvent.ModifierFlags) throws -> NSEvent {

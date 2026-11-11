@@ -122,7 +122,7 @@ final class HvfLegacyPasteBacklogTests: XCTestCase, HvfLegacyPasteFixture {
             XCTAssertEqual(input(root), "KEY ctrl+v\n" + String(repeating: "KEY backspace\n", count: limit - 1)
                 + "KEY text-hex:6162\n")
             try type(["\r"], into: session)
-            XCTAssertTrue(input(root).hasSuffix("KEY text-hex:6162\nKEY enter\n"), "Input flows directly again")
+            XCTAssertTrue(input(root).hasSuffix("KEY text-hex:6162\nKEY down:enter\n"), "Input flows directly again")
         }
     }
 

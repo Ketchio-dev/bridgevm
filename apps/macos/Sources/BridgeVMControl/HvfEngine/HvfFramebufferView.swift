@@ -392,6 +392,7 @@ final class FBLayerView: HvfFramebufferTextInput {
         } ?? false
     }
     override var guestModifierChords: Bool { session?.keyMapping.modifierChords ?? false }
+    override func releaseGuestHeldKeys() { session?.releaseHeldKeys() }
     override func sendGuestModifierTap(_ action: String) {
         if let session { HvfFramebufferKeyInput.sendTap(action, to: session) }
     }

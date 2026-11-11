@@ -41,7 +41,9 @@ final class HvfVirtualMachineMenuTarget: ObservableObject {
 
     deinit { if let menuBarTracking { NotificationCenter.default.removeObserver(menuBarTracking) } }
 
+    /// The menu takes the key-ups while it is open, so keys held down on the guest go up first.
     func menuBarOpened() {
+        display?.session.releaseHeldKeys()
         guard let display, display.startApps.unavailableReason == nil else { return }
         display.startApps.loadIfStale()
     }

@@ -22,6 +22,9 @@ struct HvfNegotiatedInputStream {
     var middleButton: Bool { state == .ready && capability?.middleButton == true }
     /// And only such an agent is asked where its text caret is.
     var caret: Bool { state == .ready && capability?.caret == true }
+    /// Keys held from press to release reach the guest through the VMM until this stream is ready, then only with the
+    /// agent's marker (HvfModifierChord.down).
+    var keyHold: Bool { state != .ready || capability?.keyHold == true }
 
     mutating func enqueue(_ event: HvfOrderedInputQueue.Event, now: Date) -> Admission {
         switch state {
