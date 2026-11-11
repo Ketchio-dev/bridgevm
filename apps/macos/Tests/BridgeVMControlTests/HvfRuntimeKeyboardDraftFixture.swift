@@ -77,8 +77,9 @@ final class HvfRuntimeKeyboardDraftFixture {
     }
 
     /// `modifierChords` adds the agent's MODIFIER_CHORDS marker (generic chords on the ordered route), and
-    /// `pointer` its BVINPUT_POINTER markers (SCROLL_UNITS, MODIFIERS, MIDDLE).
-    func negotiateOrderedInput(_ session: HvfEngineSession, modifierChords: Bool = false, pointer: [String] = []) throws {
+    /// `pointer` its BVINPUT_POINTER markers (SCROLL_UNITS, MODIFIERS, MIDDLE), `text` its BVINPUT_TEXT ones (CARET).
+    func negotiateOrderedInput(_ session: HvfEngineSession, modifierChords: Bool = false, pointer: [String] = [],
+                               text: [String] = []) throws {
         try connect(session)
         session.beginOwnedInputBoot()
         session.poll()
@@ -94,6 +95,7 @@ final class HvfRuntimeKeyboardDraftFixture {
             + "BVINPUT_CAPS \(words[1]) 3 TEXTINPUT KEYINPUT POINTERINPUT 65536\n"
             + (modifierChords ? "BVINPUT_CHORDS \(words[1]) MODIFIER_CHORDS\n" : "")
             + pointer.map { "BVINPUT_POINTER \(words[1]) \($0)\n" }.joined()
+            + text.map { "BVINPUT_TEXT \(words[1]) \($0)\n" }.joined()
             + "BVAGENT END \(command)\n")
         session.poll()
         session.poll()

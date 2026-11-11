@@ -7,11 +7,11 @@ struct HvfInputCapabilityReceipt {
     private let id: String
     private var accepted: [String] = [], phase = Phase.header
     /// Shift+Enter/Space, the Ctrl/Shift chord set, every generic chord, raw-unit scrolling, modifiers held
-    /// for a pointer action and the middle button, in any order after BVINPUT_CAPS.
+    /// for a pointer action, the middle button and the text caret query, in any order after BVINPUT_CAPS.
     private var markers: [String] {
         ["BVINPUT_KEYS \(id) SHIFT_ENTER_SPACE", "BVINPUT_CHORDS \(id) \(HvfControlChordKeys.token)",
          "BVINPUT_CHORDS \(id) \(HvfModifierChord.token)", "BVINPUT_POINTER \(id) SCROLL_UNITS",
-         "BVINPUT_POINTER \(id) MODIFIERS", "BVINPUT_POINTER \(id) MIDDLE"]
+         "BVINPUT_POINTER \(id) MODIFIERS", "BVINPUT_POINTER \(id) MIDDLE", "BVINPUT_TEXT \(id) CARET"]
     }
     /// Any modifiers plus a key and a bare modifier tap (HvfModifierChord); the agent builds every key then.
     var modifierChords: Bool { accepted.contains(markers[2]) }
@@ -21,6 +21,8 @@ struct HvfInputCapabilityReceipt {
     var pointerModifiers: Bool { accepted.contains(markers[4]) }
     /// `middlepress`, `middlerelease` and `middleclick`; `releaseall` then lifts the middle button too.
     var middleButton: Bool { accepted.contains(markers[5]) }
+    /// `CARET <id>` answers where the guest's text caret is (HvfGuestCaret.swift).
+    var caret: Bool { accepted.contains(markers[6]) }
 
     init(id: UUID) { self.id = id.uuidString }
 
@@ -47,7 +49,8 @@ struct HvfInputCapabilityReceipt {
                 return .failed(.invalidReceipt)
             }
             phase = .end
-        } else if line.hasPrefix("BVINPUT_KEYS ") || line.hasPrefix("BVINPUT_CHORDS ") || line.hasPrefix("BVINPUT_POINTER ") {
+        } else if line.hasPrefix("BVINPUT_KEYS ") || line.hasPrefix("BVINPUT_CHORDS ") || line.hasPrefix("BVINPUT_POINTER ")
+                    || line.hasPrefix("BVINPUT_TEXT ") {
             // A marker only ever grants its own keys: a foreign, early, repeated or misspelled one is ignored
             // instead of failing the whole handshake (which would leave the guest with no typed input at all).
             if phase == .end, markers.contains(line), !accepted.contains(line) { accepted.append(line) }

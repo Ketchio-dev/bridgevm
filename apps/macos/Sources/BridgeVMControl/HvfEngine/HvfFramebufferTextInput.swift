@@ -2,7 +2,8 @@
 import AppKit
 
 /// The local IME owns marked text; only its committed result enters the guest queue.
-/// The small preedit view also gives the candidate window a truthful host anchor.
+/// The small preedit view also gives the candidate window a truthful host anchor: at the guest's text caret
+/// when the guest says where it is (HvfGuestCaret.swift), else at the display's bottom-left.
 @MainActor
 class HvfFramebufferTextInput: NSView, NSTextInputClient {
     private var composition = HvfTextCompositionState()
@@ -11,6 +12,15 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
     private var interpretationRefused = false
     private var discardingComposition = false
     private var preeditView: HvfTextCompositionOverlay?
+    /// The overlay's constraints at the bottom-left, and at a caret (`caretLeft`, `caretTop` set per placement).
+    private var bottomLeftPlacement: [NSLayoutConstraint] = []
+    private var caretLeft: NSLayoutConstraint?
+    private var caretTop: NSLayoutConstraint?
+    /// The guest's text caret in view coordinates while text is composed; kept across a syllable committed and
+    /// the next one marked in the same key event (Korean), so the overlay does not jump back per syllable.
+    private var compositionCaret: NSRect?
+    /// Bumped whenever an answer asked for before would be stale: the composition ended, the view resized.
+    private var caretEpoch = 0
     private var compositionTarget: HvfTextInputTargetIdentity?
     private var modifierTap = HvfModifierTap()
 
@@ -22,6 +32,9 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
     func sendGuestModifierTap(_ action: String) {}
     func sendGuestText(_ text: String) -> Bool { false }
     func textInputRefused() { NSSound.beep() }
+    /// Asks the guest where its text caret is; `found` later gets it in this view's coordinates, or nil for none.
+    /// False when not asked (no agent that answers, or a question in flight).
+    func askGuestCaret(_ found: @escaping (NSRect?) -> Void) -> Bool { false }
     /// A key, click, other modifier or focus loss ends a pending bare Command or Option tap.
     func cancelModifierTap() { modifierTap.cancel() }
 
@@ -50,6 +63,8 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
 
     override func keyDown(with event: NSEvent) {
         cancelModifierTap()
+        // A key that leaves nothing composed may have moved the guest caret (a commit, an arrow key).
+        defer { if !hasMarkedText() { forgetCaret() } }
         guard guestInputAvailable else { super.keyDown(with: event); return }
         _ = synchronizeTextInputTarget()
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -89,12 +104,15 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
 
     func setMarkedText(_ value: Any, selectedRange: NSRange, replacementRange: NSRange) {
         guard guestInputAvailable, !discardingComposition, synchronizeTextInputTarget() else { return }
+        let starting = !hasMarkedText()
         guard let text = Self.string(value),
               composition.mark(text, selectedRange: selectedRange, replacementRange: replacementRange) else {
             interpretationRefused = true; textInputRefused(); return
         }
         compositionTarget = guestInputIdentity
+        if !hasMarkedText(), interpretingEvent == nil { forgetCaret() }
         refreshPreedit()
+        if starting, hasMarkedText() { askCaret() }
     }
 
     func insertText(_ value: Any, replacementRange: NSRange) {
@@ -105,6 +123,8 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
         }
         composition.clear()
         compositionTarget = nil
+        // A commit outside a key event (a candidate clicked) ends the caret's use; keyDown judges its own.
+        if interpretingEvent == nil { forgetCaret() }
         refreshPreedit()
         if !committed.isEmpty, !sendGuestText(committed) { interpretationRefused = true; textInputRefused() }
     }
@@ -120,6 +140,7 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
         discardingComposition = true
         composition.clear()
         compositionTarget = nil
+        forgetCaret()
         refreshPreedit()
         inputContext?.discardMarkedText()
         discardingComposition = false
@@ -155,6 +176,13 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
         cancelTextComposition()
     }
 
+    /// The caret was mapped for the old size (and the guest display follows the window).
+    override func setFrameSize(_ newSize: NSSize) {
+        let resized = newSize != frame.size
+        super.setFrameSize(newSize)
+        if resized { forgetCaret() }
+    }
+
     func hasMarkedText() -> Bool { !composition.text.isEmpty }
     func markedRange() -> NSRange { composition.range }
     func selectedRange() -> NSRange { composition.selection }
@@ -187,15 +215,53 @@ class HvfFramebufferTextInput: NSView, NSTextInputClient {
         if hasMarkedText(), preeditView == nil {
             let view = HvfTextCompositionOverlay.make()
             addSubview(view)
-            NSLayoutConstraint.activate([
-                view.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-                view.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12),
-                view.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -24)
-            ])
+            view.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -24).isActive = true
+            bottomLeftPlacement = [view.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+                                   view.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12)]
+            caretLeft = view.leftAnchor.constraint(equalTo: leftAnchor)
+            caretTop = view.topAnchor.constraint(equalTo: topAnchor)
             preeditView = view
         }
         preeditView?.stringValue = composition.text
         preeditView?.isHidden = !hasMarkedText()
+        placePreedit()
+        inputContext?.invalidateCharacterCoordinates()
+    }
+
+    /// Just below the guest caret, clamped inside the view (HvfGuestCaret.overlayOrigin), or the bottom-left.
+    private func placePreedit() {
+        guard let view = preeditView, let caretLeft, let caretTop else { return }
+        guard let caret = compositionCaret, hasMarkedText() else {
+            NSLayoutConstraint.deactivate([caretLeft, caretTop])
+            NSLayoutConstraint.activate(bottomLeftPlacement)
+            return
+        }
+        let top = isFlipped ? caret.minY : bounds.height - caret.maxY
+        let size = view.intrinsicContentSize
+        let origin = HvfGuestCaret.overlayOrigin(
+            caret: NSRect(x: caret.minX, y: top, width: caret.width, height: caret.height),
+            overlay: NSSize(width: max(0, min(size.width, bounds.width - 24)), height: size.height), view: bounds.size)
+        caretLeft.constant = origin.x
+        caretTop.constant = origin.y
+        NSLayoutConstraint.deactivate(bottomLeftPlacement)
+        NSLayoutConstraint.activate([caretLeft, caretTop])
+    }
+
+    /// One question per composition; an answer counts only while text is still composed and nothing made it stale.
+    private func askCaret() {
+        let epoch = caretEpoch
+        _ = askGuestCaret { [weak self] caret in
+            guard let self, self.caretEpoch == epoch, self.hasMarkedText() else { return }
+            self.compositionCaret = caret
+            self.refreshPreedit()
+        }
+    }
+
+    private func forgetCaret() {
+        caretEpoch &+= 1
+        guard compositionCaret != nil else { return }
+        compositionCaret = nil
+        placePreedit()
         inputContext?.invalidateCharacterCoordinates()
     }
 

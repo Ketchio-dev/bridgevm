@@ -17,6 +17,8 @@ struct HvfNegotiatedInputStream {
     /// Held modifiers on a pointer action and the middle button likewise reach only an agent with their markers.
     var pointerModifiers: Bool { state == .ready && capability?.pointerModifiers == true }
     var middleButton: Bool { state == .ready && capability?.middleButton == true }
+    /// And only such an agent is asked where its text caret is.
+    var caret: Bool { state == .ready && capability?.caret == true }
 
     mutating func enqueue(_ event: HvfOrderedInputQueue.Event, now: Date) -> Admission {
         switch state {

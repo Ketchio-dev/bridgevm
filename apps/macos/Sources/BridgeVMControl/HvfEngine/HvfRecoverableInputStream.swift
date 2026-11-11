@@ -13,6 +13,7 @@ struct HvfRecoverableInputStream {
     var scrollUnits: Bool { stream.scrollUnits }
     var pointerModifiers: Bool { stream.pointerModifiers }
     var middleButton: Bool { stream.middleButton }
+    var caret: Bool { stream.caret }
 
     mutating func enqueue(_ event: HvfOrderedInputQueue.Event, now: Date) -> HvfNegotiatedInputStream.Admission {
         guard !cleanup.blocked, !isRecovering else { return .refused }
