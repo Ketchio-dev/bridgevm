@@ -95,6 +95,15 @@
       "evidence": "crates/bridgevm-hvf/src/acpi_ged.rs"
     },
     {
+      "id": "acpi-battery",
+      "area": "acpi",
+      "qemu_behavior": "QEMU virt (11.0) describes no battery or AC adapter; an Arm guest sees no power source.",
+      "bridgevm_behavior": "When the Mac has an internal battery (or BRIDGEVM_HVF_FAKE_BATTERY is set for a test), the DSDT adds \\_SB.ADP0 (ACPI0003, _PSR, _PCL) and \\_SB.BAT0 (PNP0C0A, _UID 1, _STA, _BIF, _BST, _PCL). Their methods read ten 32-bit registers of a read-only page at 0x090C_0000 (OperationRegion BATR, 0x28 bytes, DWordAcc); guest writes are ignored. The GED _EVT notifies them on two BridgeVM selector bits: 0x10000 (Notify ADP0 and BAT0, 0x80) and 0x20000 (Notify BAT0, 0x81). _BIF reports mWh with a fixed 60 Wh design and full-charge capacity and 11.4 V; _BST takes the remaining capacity from the Mac's percent and the rate from macOS' time estimates (0xFFFFFFFF while macOS calculates). The probe re-reads the Mac on macOS' power-source notification and at least every 30 s. Without a Mac battery the DSDT is unchanged and the page is unmapped.",
+      "guest_visible": true,
+      "impact": "Windows on a MacBook can show the Mac's charge and whether it is plugged in, so its power plan, battery saver and apps can adapt. Capacity in Wh and the voltage are synthetic: powercfg /batteryreport shows 60 Wh, not the Mac's battery. Evidence is deterministic AML, page, platform and host-reading tests plus iasl and acpiexec checks of the DSDT; no Windows guest has run it yet.",
+      "evidence": "crates/bridgevm-hvf/src/host_power.rs"
+    },
+    {
       "id": "clipboard-images",
       "area": "guest-agent",
       "qemu_behavior": "QEMU has no Windows clipboard integration of its own; only a guest agent or remote-display protocol can share one.",
