@@ -55,8 +55,10 @@ final class HvfHardwareCursorSettingTests: XCTestCase {
         for directory in [control, cursor] {
             try FileManager.default.createDirectory(at: directory.deletingLastPathComponent(), withIntermediateDirectories: true)
         }
+        // Printing to the Mac is on by default and sends its own line at each agent start (HvfGuestPrintTests).
         func sent() -> [String] {
             ((try? String(contentsOf: control, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+                .filter { !$0.hasPrefix(HvfGuestPrint.watchCommand) }
         }
         func agentStarts() {
             session.connectionState = .connected(host: "guest")

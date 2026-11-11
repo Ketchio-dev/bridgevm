@@ -76,6 +76,7 @@ extension VMConfig {
         copy.virtioDisplayDriverInstalled = other.virtioDisplayDriverInstalled
         copy.hardwareCursor = other.hardwareCursor
         copy.openGuestLinksOnMac = other.openGuestLinksOnMac
+        copy.printToMac = other.printToMac
         copy.sharedFolderHostPath = other.sharedFolderHostPath
         copy.sharedFolderGuestPath = other.sharedFolderGuestPath
         copy.portForwards = other.portForwards
