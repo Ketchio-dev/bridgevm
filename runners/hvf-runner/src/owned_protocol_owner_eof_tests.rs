@@ -64,9 +64,21 @@ fn without_a_guest_or_a_press_owner_eof_stops_at_once() {
     );
     assert_eq!(presses.get(), 0);
     assert!(counted(&presses, false).cancel(Some("ownerEOF"), false, true, now));
-    for cause in ["stopRequested", "signal", "protocolFailed"] {
+    for cause in ["stopRequested", "signal"] {
         assert!(eof.cancel(Some(cause), false, true, now));
     }
+}
+
+#[test]
+fn an_owner_whose_output_closed_first_also_gets_the_shutdown() {
+    // A crash closes both pipes; a failed write to the owner may latch protocolFailed before its EOF.
+    let presses = Cell::new(0);
+    let eof = counted(&presses, true);
+    let start = Instant::now();
+    assert!(!eof.cancel(Some("protocolFailed"), false, true, start));
+    assert_eq!(presses.get(), 1);
+    assert!(!eof.cancel(Some("protocolFailed"), false, true, start + BUDGET / 2));
+    assert!(eof.cancel(Some("protocolFailed"), false, true, start + BUDGET));
 }
 
 #[test]
@@ -81,7 +93,8 @@ fn the_press_appends_one_line_to_the_existing_input_file_only() {
     assert!(press_power_button(&input));
     assert_eq!(
         std::fs::read_to_string(&input).unwrap(),
-        "KEY a\nPOWERBUTTON\n"
+        "KEY a\nRESUME\nPOWERBUTTON\n",
+        "a paused guest is resumed first, so its vCPUs can take the press"
     );
     let link = dir.join("link.ctl");
     std::os::unix::fs::symlink(&input, &link).unwrap();

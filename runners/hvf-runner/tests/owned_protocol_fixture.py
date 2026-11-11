@@ -12,7 +12,7 @@ from owned_protocol_fixture_support import Fixture, encode
 def await_power_button(path):
     deadline = time.monotonic() + 2
     while time.monotonic() < deadline:
-        if path.read_bytes() == b"POWERBUTTON\n":
+        if path.read_bytes() == b"RESUME\nPOWERBUTTON\n":
             return
         time.sleep(0.01)
     raise AssertionError("owner EOF did not press the guest power button: %r" % path.read_bytes())

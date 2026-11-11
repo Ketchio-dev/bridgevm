@@ -1,8 +1,9 @@
 //! Owner EOF (the app crashed or was force-quit) first lets Windows shut itself down.
 //!
 //! The app's Stop presses the guest's ACPI power button through `input.ctl` when the guest agent is
-//! not ready; Windows then closes its apps and turns off as for `shutdown.exe /s`. Without its owner
-//! the runner does the same, waits up to the app's quit deadline, and only then cancels the run
+//! not ready (after a RESUME when the guest is paused, `HvfGuestPause.resumeBeforeStop`); Windows then
+//! closes its apps and turns off as for `shutdown.exe /s`. Without its owner the runner does the same,
+//! waits up to the app's quit deadline, and only then cancels the run
 //! (helper SIGTERM: vars and disk written back, ending with F_FULLFSYNC). A guest power-off takes
 //! the helper's same terminal stop. A TERM or INT to the runner ends the wait at once.
 use std::cell::Cell;
@@ -40,7 +41,9 @@ impl<P: Fn() -> bool> OwnerEof<P> {
         helper_running: bool,
         now: Instant,
     ) -> bool {
-        if cause != Some("ownerEOF") || signalled {
+        // A dead owner closes both pipes; whichever the runner notices first latches the cause: its
+        // input's EOF (ownerEOF) or a failed write or read on the channel (protocolFailed).
+        if !matches!(cause, Some("ownerEOF" | "protocolFailed")) || signalled {
             return cause.is_some() || signalled;
         }
         match self.pressed_at.get() {
@@ -60,7 +63,8 @@ impl<P: Fn() -> bool> OwnerEof<P> {
     }
 }
 
-/// Appends the power-button line under the helper's own flock, so its compaction cannot drop it.
+/// Appends RESUME (a paused guest's vCPUs could not take the press; a no-op otherwise) and the
+/// power-button line under the helper's own flock, so its compaction cannot drop them.
 /// The app creates the file; a missing, replaced or busy file means no press.
 pub(super) fn press_power_button(path: &Path) -> bool {
     let Ok(mut file) = OpenOptions::new()
@@ -81,7 +85,7 @@ pub(super) fn press_power_button(path: &Path) -> bool {
         }
         std::thread::sleep(Duration::from_millis(5));
     }
-    file.write_all(b"POWERBUTTON\n").is_ok()
+    file.write_all(b"RESUME\nPOWERBUTTON\n").is_ok()
 }
 
 #[cfg(test)]
