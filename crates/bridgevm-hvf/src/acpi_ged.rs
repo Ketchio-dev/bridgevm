@@ -19,12 +19,13 @@ use crate::machine;
 
 /// Selector bit of the power-button event (QEMU's `ACPI_GED_PWR_DOWN_EVT`).
 pub const GED_EVENT_POWER_BUTTON: u32 = 1 << 1;
-/// The Mac's power status changed (`_PSR`/`_BST`): `Notify (ADP0, 0x80)` and
-/// `Notify (BAT0, 0x80)`. BridgeVM's own events use bits 16 and up, clear of
-/// QEMU's.
-pub const GED_EVENT_POWER_STATUS: u32 = 1 << 16;
-/// The Mac's battery information changed (`_STA`/`_BIF`): `Notify (BAT0, 0x81)`.
-pub const GED_EVENT_BATTERY_INFO: u32 = 1 << 17;
+/// The Mac was plugged in or unplugged (`_PSR`): `Notify (ADP0, 0x80)`.
+/// BridgeVM's own events use bits 16 and up, clear of QEMU's.
+pub const GED_EVENT_AC_ADAPTER: u32 = 1 << 16;
+/// The battery's status changed (`_BST`): `Notify (BAT0, 0x80)`.
+pub const GED_EVENT_BATTERY_STATUS: u32 = 1 << 17;
+/// The battery's information changed (`_STA`/`_BIF`): `Notify (BAT0, 0x81)`.
+pub const GED_EVENT_BATTERY_INFO: u32 = 1 << 18;
 
 /// Absolute GIC INTID of the GED interrupt line.
 pub const GED_INTID: u32 = machine::spi_to_intid(machine::SPI_ACPI_GED);
@@ -126,12 +127,12 @@ mod tests {
     fn events_raised_before_the_read_arrive_together() {
         let mut ged = AcpiGed::new();
         let mut levels = Vec::new();
-        ged.raise(GED_EVENT_POWER_STATUS, &mut levels);
+        ged.raise(GED_EVENT_BATTERY_STATUS, &mut levels);
         ged.press_power_button(&mut levels);
         assert_eq!(levels, [(41, true), (41, false), (41, true)]);
         assert_eq!(
             ged.mmio_read(0, 4, &mut Vec::new()),
-            u64::from(GED_EVENT_POWER_STATUS | GED_EVENT_POWER_BUTTON)
+            u64::from(GED_EVENT_BATTERY_STATUS | GED_EVENT_POWER_BUTTON)
         );
     }
 

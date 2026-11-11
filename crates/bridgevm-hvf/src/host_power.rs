@@ -15,7 +15,7 @@
 //! charge/discharge rate from macOS' time estimates, which makes Windows'
 //! time-remaining agree with the Mac's.
 
-use crate::acpi_ged::{GED_EVENT_BATTERY_INFO, GED_EVENT_POWER_STATUS};
+use crate::acpi_ged::{GED_EVENT_AC_ADAPTER, GED_EVENT_BATTERY_INFO, GED_EVENT_BATTERY_STATUS};
 
 /// One reading of the Mac's power source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,18 +133,19 @@ impl HostPowerPage {
         }
     }
 
-    /// Show `power`. Returns the GED events the change needs: power status
-    /// when `_PSR` or `_BST` changed, battery info when `_STA` or `_BIF` did,
-    /// 0 when nothing changed.
+    /// Show `power`. Returns the GED events for what changed: the adapter for
+    /// `_PSR`, battery status for `_BST`, battery information for `_STA` or
+    /// `_BIF`; 0 when nothing did.
     pub fn update(&mut self, power: HostPower) -> u32 {
         let new = encode(&power);
         let old = std::mem::replace(&mut self.regs, new);
         let flags = old[REG_FLAGS] ^ new[REG_FLAGS];
         let mut events = 0;
-        if flags & FLAG_AC_ONLINE != 0
-            || old[REG_STATE..=REG_VOLTAGE_MV] != new[REG_STATE..=REG_VOLTAGE_MV]
-        {
-            events |= GED_EVENT_POWER_STATUS;
+        if flags & FLAG_AC_ONLINE != 0 {
+            events |= GED_EVENT_AC_ADAPTER;
+        }
+        if old[REG_STATE..=REG_VOLTAGE_MV] != new[REG_STATE..=REG_VOLTAGE_MV] {
+            events |= GED_EVENT_BATTERY_STATUS;
         }
         if flags & FLAG_BATTERY_PRESENT != 0
             || old[REG_DESIGN_CAPACITY_MWH..] != new[REG_DESIGN_CAPACITY_MWH..]

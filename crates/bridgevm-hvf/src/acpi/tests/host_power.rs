@@ -26,7 +26,7 @@ fn without_a_mac_battery_the_dsdt_has_no_power_source() {
         b"BAT0".to_vec(),
         b"BATR".to_vec(),
         EISA_PNP0C0A.to_vec(),
-        aml_dword(crate::acpi_ged::GED_EVENT_POWER_STATUS),
+        aml_dword(crate::acpi_ged::GED_EVENT_AC_ADAPTER),
     ] {
         assert!(!contains_bytes(&dsdt, &absent), "unexpected {absent:02x?}");
     }
@@ -90,11 +90,12 @@ fn ged_notifies_the_adapter_and_battery_and_keeps_the_power_button() {
     for needle in [
         // If (((Local0 & 2) == 2)) { Notify (PWRB, 0x80) }
         b"\x93\x7b\x60\x0a\x02\x00\x0a\x02\x86PWRB\x0a\x80".to_vec(),
-        // If (((Local0 & 0x00010000) == 0x00010000)) { Notify (ADP0, 0x80) Notify (BAT0, 0x80) }
-        b"\x93\x7b\x60\x0c\x00\x00\x01\x00\x00\x0c\x00\x00\x01\x00\x86ADP0\x0a\x80\x86BAT0\x0a\x80"
-            .to_vec(),
-        // If (((Local0 & 0x00020000) == 0x00020000)) { Notify (BAT0, 0x81) }
-        b"\x93\x7b\x60\x0c\x00\x00\x02\x00\x00\x0c\x00\x00\x02\x00\x86BAT0\x0a\x81".to_vec(),
+        // If (((Local0 & 0x00010000) == 0x00010000)) { Notify (ADP0, 0x80) }
+        b"\x93\x7b\x60\x0c\x00\x00\x01\x00\x00\x0c\x00\x00\x01\x00\x86ADP0\x0a\x80".to_vec(),
+        // If (((Local0 & 0x00020000) == 0x00020000)) { Notify (BAT0, 0x80) }
+        b"\x93\x7b\x60\x0c\x00\x00\x02\x00\x00\x0c\x00\x00\x02\x00\x86BAT0\x0a\x80".to_vec(),
+        // If (((Local0 & 0x00040000) == 0x00040000)) { Notify (BAT0, 0x81) }
+        b"\x93\x7b\x60\x0c\x00\x00\x04\x00\x00\x0c\x00\x00\x04\x00\x86BAT0\x0a\x81".to_vec(),
     ] {
         assert!(
             contains_bytes(&dsdt, &needle),

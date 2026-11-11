@@ -6,7 +6,7 @@
 
 use super::*;
 
-use crate::acpi_ged::{GED_EVENT_BATTERY_INFO, GED_EVENT_POWER_STATUS};
+use crate::acpi_ged::{GED_EVENT_AC_ADAPTER, GED_EVENT_BATTERY_INFO, GED_EVENT_BATTERY_STATUS};
 use crate::host_power;
 use crate::machine;
 
@@ -153,13 +153,17 @@ fn ged_branch(local0: &[u8], event: u32, body: &[u8]) -> Vec<u8> {
 /// The GED `_EVT` branches for the power-source events; `local0` holds the
 /// selector `_EVT` read.
 pub(crate) fn build_host_power_ged_events(local0: &[u8]) -> Vec<u8> {
-    let mut status = aml_notify(&aml_name_ref(b"ADP0"), &aml_byte(0x80));
-    status.extend(aml_notify(&aml_name_ref(b"BAT0"), &aml_byte(0x80)));
-    let mut out = ged_branch(local0, GED_EVENT_POWER_STATUS, &status);
-    out.extend(ged_branch(
-        local0,
-        GED_EVENT_BATTERY_INFO,
-        &aml_notify(&aml_name_ref(b"BAT0"), &aml_byte(0x81)),
-    ));
+    let mut out = Vec::new();
+    for (event, device, value) in [
+        (GED_EVENT_AC_ADAPTER, b"ADP0", 0x80), // status change: _PSR
+        (GED_EVENT_BATTERY_STATUS, b"BAT0", 0x80), // status change: _BST
+        (GED_EVENT_BATTERY_INFO, b"BAT0", 0x81), // information change: _STA, _BIF
+    ] {
+        out.extend(ged_branch(
+            local0,
+            event,
+            &aml_notify(&aml_name_ref(device), &aml_byte(value)),
+        ));
+    }
     out
 }

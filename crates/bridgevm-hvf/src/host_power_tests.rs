@@ -100,31 +100,40 @@ fn reads_are_bounded_to_the_registers() {
 fn update_reports_which_acpi_objects_changed() {
     let mut page = HostPowerPage::new(on_battery(57, Some(205)));
     assert_eq!(page.update(on_battery(57, Some(205))), 0);
-    // A new percent or estimate is a _BST change.
+    // A new percent or estimate is a _BST change only.
     assert_eq!(
         page.update(on_battery(56, Some(205))),
-        GED_EVENT_POWER_STATUS
+        GED_EVENT_BATTERY_STATUS
     );
     assert_eq!(
         page.update(on_battery(56, Some(190))),
-        GED_EVENT_POWER_STATUS
+        GED_EVENT_BATTERY_STATUS
     );
-    // Plugging in is a _PSR and _BST change.
+    // Plugging in is a _PSR and a _BST change.
     let mut plugged = on_battery(56, Some(190));
     plugged.ac_online = true;
-    assert_eq!(page.update(plugged), GED_EVENT_POWER_STATUS);
-    // The battery going away is a _STA change too, and _BST reads unknown.
+    assert_eq!(
+        page.update(plugged),
+        GED_EVENT_AC_ADAPTER | GED_EVENT_BATTERY_STATUS
+    );
+    // The battery going away is a _STA change, and _BST reads unknown.
     let gone = HostPower {
         ac_online: true,
         battery: None,
     };
     assert_eq!(
         page.update(gone),
-        GED_EVENT_POWER_STATUS | GED_EVENT_BATTERY_INFO
+        GED_EVENT_BATTERY_STATUS | GED_EVENT_BATTERY_INFO
     );
+    // Unplugged without a battery: the adapter alone.
+    let unplugged = HostPower {
+        ac_online: false,
+        battery: None,
+    };
+    assert_eq!(page.update(unplugged), GED_EVENT_AC_ADAPTER);
     assert_eq!(
         page,
-        HostPowerPage::new(gone),
+        HostPowerPage::new(unplugged),
         "the page shows the latest reading"
     );
 }

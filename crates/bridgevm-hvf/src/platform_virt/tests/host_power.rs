@@ -3,7 +3,7 @@
 use super::super::*;
 use super::helpers::{platform, platform_with_devices};
 use crate::acpi::ACPI_TABLE_FILE;
-use crate::acpi_ged::GED_EVENT_POWER_STATUS;
+use crate::acpi_ged::GED_EVENT_BATTERY_STATUS;
 use crate::host_power::{HostBattery, HostPower, REG_FLAGS, REG_REMAINING_MWH};
 use crate::machine;
 
@@ -80,7 +80,7 @@ fn a_new_reading_raises_the_ged_event_and_survives_a_guest_reset() {
     assert_eq!(p.take_pending_spi_levels(), [(GED_INTID, true)]);
     assert_eq!(
         p.on_mmio(machine::ACPI_GED.base, MmioOp::Read { size: 4 }, &mut mem),
-        MmioOutcome::ReadValue(u64::from(GED_EVENT_POWER_STATUS))
+        MmioOutcome::ReadValue(u64::from(GED_EVENT_BATTERY_STATUS))
     );
     assert_eq!(p.take_pending_spi_levels(), [(GED_INTID, false)]);
     assert_eq!(
