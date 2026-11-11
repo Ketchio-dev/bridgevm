@@ -2,10 +2,11 @@ import Foundation
 
 /// What the session last wrote to input.ctl, the VMM's HID route, as far as the ordered route's switch cares.
 /// The two routes reach Windows through separate queues, so the agent route may take over only when nothing
-/// written to input.ctl can still be ahead of it: a second after the last key, text, click or scroll, a
-/// quarter second after the last absolute move (the VMM reads input.ctl every 16 ms and coalesces moves; a
-/// move only needs to land before a later ordered click or press, which carries its own position), and never
-/// while a button pressed there is still down (its release must take the same route).
+/// written to input.ctl can still be ahead of it: a second after the last key, text, click or scroll; a
+/// quarter second after the last absolute move, which only has to land before the first ordered event (that
+/// event carries its own position; a late move would drag an ordered press back), while the VMM reads
+/// input.ctl every 16 ms; and never while a button pressed there is still down (its release must take the
+/// same route: the HID mouse cannot release a SendInput press, nor SendInput an HID one).
 struct HvfLegacyInputActivity {
     static let settle: TimeInterval = 1
     static let moveSettle: TimeInterval = 0.25
