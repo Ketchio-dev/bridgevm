@@ -54,6 +54,15 @@ impl AgentConsoleHarness {
             Some((ServiceReq::AgentUpdate(step), _)) => self.agent_update_interrupted(step, now),
             _ => {}
         }
+        // A large file push between its steps starts over too; the new agent holds no
+        // temporary, so no LPUTABORT is owed.
+        self.queue.retain(|req| !matches!(req, ServiceReq::ClipFilesAbort));
+        for req in self.queue.iter_mut() {
+            if let ServiceReq::ClipFilesPush(push) = req {
+                self.last_synced.rebaseline |= push.holds_guest_file();
+                push.rewind();
+            }
+        }
         // A guest file copy starts over: the next CLIPXF announces it again.
         if self.clip_files_stage.pull.is_some() {
             self.abandon_files_pull();

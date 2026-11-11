@@ -40,7 +40,7 @@ pub use image::*;
 mod rtf;
 #[path = "host_pasteboard_files.rs"]
 mod files;
-pub use files::{composed_path, host_files, HostFileCopy, HostFiles};
+pub use files::{composed_path, host_files, open_source, HostFileCopy, HostFileSource, HostFiles};
 
 /// Test-only: the name of a private pasteboard used instead of the user's.
 pub const TEST_PASTEBOARD_ENV: &str = "BRIDGEVM_TEST_CLIP_PASTEBOARD";

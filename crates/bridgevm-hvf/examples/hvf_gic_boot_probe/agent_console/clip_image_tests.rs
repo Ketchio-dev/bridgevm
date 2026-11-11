@@ -151,6 +151,32 @@ struct Guest {
     set_files_caps: bool,
     /// Each CLIPSETFILES: the folder and its list.
     set_files: Vec<(String, String)>,
+    /// Files GETRANGE serves by their size alone, each byte `ranged_byte(offset)`: GBs need no memory.
+    big: HashMap<String, u64>,
+    /// The time GETRANGE reports for every file.
+    mtime: String,
+    /// The large PUT being written (bvagent.ps1 large put): its temporary.
+    lput: Option<LargePut>,
+    /// Files a large PUT made whole: their size and SHA-256.
+    lput_files: HashMap<String, (u64, [u8; 32])>,
+    /// Temporaries deleted unfinished: by LPUTABORT, or by a new LPUTBEG over one.
+    lput_dropped: usize,
+    /// LPUTBEG answers disk-full.
+    disk_full: bool,
+}
+
+/// A large PUT's temporary on the guest.
+struct LargePut {
+    path: String,
+    total: u64,
+    written: u64,
+    seq: u64,
+    sha: Sha256,
+}
+
+/// The byte at `offset` of a `Guest::big` file.
+fn ranged_byte(offset: u64) -> u8 {
+    (offset as u8).wrapping_mul(31) ^ (offset >> 11) as u8
 }
 
 impl Guest {
@@ -171,6 +197,12 @@ impl Guest {
             then_listing: None,
             set_files_caps: false,
             set_files: Vec::new(),
+            big: HashMap::new(),
+            mtime: "2026-11-11T00:00:00.0000000Z".to_owned(),
+            lput: None,
+            lput_files: HashMap::new(),
+            lput_dropped: 0,
+            disk_full: false,
         }
     }
     /// CLIPX's image part, as bvagent.ps1 describes the clipboard image.
@@ -262,8 +294,9 @@ impl Guest {
                 for line in list.lines() {
                     let (dir, rel) = line.split_once('|').unwrap();
                     let path = format!("{root}\\{rel}");
-                    let bytes = match self.files.get(&path) {
-                        Some(bytes) => bytes.len(),
+                    let large = self.lput_files.get(&path).map(|(bytes, _)| *bytes as usize);
+                    let bytes = match self.files.get(&path).map(Vec::len).or(large) {
+                        Some(bytes) => bytes,
                         None if dir == "1" => 0,
                         None => return vec![format!("ERR CLIPSETFILES missing {rel}")],
                     };
@@ -301,6 +334,73 @@ impl Guest {
                 let reply = format!("PUTOK {} {}", base64_encode(path.as_bytes()), bytes.len());
                 self.files.insert(path, bytes);
                 reply
+            }
+            // As bvagent.ps1's large put: a temporary of its own, whole at LPUTEND.
+            "LPUTBEG" => {
+                self.lput_dropped += usize::from(self.lput.take().is_some());
+                let mut fields = arg.split(' ');
+                let path = Self::b64_text(fields.next().unwrap());
+                let total = fields.next().unwrap().parse().unwrap();
+                if self.disk_full {
+                    return vec!["ERR LPUTBEG disk-full".to_owned()];
+                }
+                self.lput = Some(LargePut { path, total, written: 0, seq: 0, sha: Sha256::new() });
+                "OK LPUTBEG".to_owned()
+            }
+            "LPUTDATA" => {
+                let (header, payload) = arg.split_once('\n').unwrap();
+                let (seq, chars) = header.split_once(' ').unwrap();
+                assert_eq!(payload.len(), chars.parse::<usize>().unwrap(), "LPUTDATA {header}");
+                let bytes = base64_decode(payload).unwrap();
+                let Some(put) = self.lput.as_mut() else {
+                    return vec!["ERR LPUTDATA no-open-put".to_owned()];
+                };
+                assert_eq!(seq.parse::<u64>().unwrap(), put.seq);
+                put.written += bytes.len() as u64;
+                assert!(put.written <= put.total, "past the total");
+                put.sha.update(&bytes);
+                put.seq += 1;
+                format!("OK LPUTDATA {seq}")
+            }
+            "LPUTEND" => {
+                let Some(put) = self.lput.take() else {
+                    return vec!["ERR LPUTEND no-open-put".to_owned()];
+                };
+                assert_eq!((arg.parse::<u64>().unwrap(), put.written), (put.seq, put.total), "LPUTEND");
+                let reply = format!("PUTOK {} {}", base64_encode(put.path.as_bytes()), put.written);
+                self.lput_files.insert(put.path, (put.written, put.sha.finalize().into()));
+                reply
+            }
+            "LPUTABORT" => {
+                self.lput_dropped += usize::from(self.lput.take().is_some());
+                "OK LPUTABORT".to_owned()
+            }
+            "GETRANGE" => {
+                let mut fields = arg.split(' ');
+                let path_b64 = fields.next().unwrap();
+                let path = Self::b64_text(path_b64);
+                let (offset, want): (u64, u64) = (fields.next().unwrap().parse().unwrap(), fields.next().unwrap().parse().unwrap());
+                let size = match (self.files.get(&path), self.big.get(&path)) {
+                    (Some(bytes), _) => bytes.len() as u64,
+                    (None, Some(size)) => *size,
+                    (None, None) => return vec!["ERR GETRANGE Could not find file".to_owned()],
+                };
+                let len = want.min(16 << 20).min(size.saturating_sub(offset));
+                let bytes: Vec<u8> = match self.files.get(&path) {
+                    Some(bytes) => bytes[offset as usize..(offset + len) as usize].to_vec(),
+                    None => (offset..offset + len).map(ranged_byte).collect(),
+                };
+                let chunks: Vec<&[u8]> = bytes.chunks(768 * 1024).collect();
+                let mut lines = vec![format!("GETBEG {path_b64} {len} {} {offset} {size} {}", chunks.len(), self.mtime)];
+                for (seq, chunk) in chunks.iter().enumerate() {
+                    lines.push(format!("GETCHUNK {seq} {}", base64_encode(chunk)));
+                }
+                lines.push(format!("GETEND {}", chunks.len()));
+                if let Some(listing) = self.then_listing.take() {
+                    self.listing = Some(listing);
+                    lines.push("CLIPCHANGED".to_owned());
+                }
+                return lines;
             }
             "CLIPSETIMG" if self.images => {
                 let (path, text) = arg.split_once(' ').unwrap();
@@ -394,7 +494,8 @@ impl Rig {
             let mut wire: VecDeque<Vec<u8>> = sent.into();
             while let Some(bytes) = wire.pop_front() {
                 let line = String::from_utf8(bytes).unwrap();
-                self.wire.push(line.trim_end().to_owned());
+                // A payload line (PUTDATA, LPUTDATA) is not kept: only its header.
+                self.wire.push(line.split('\n').next().unwrap_or_default().trim_end().to_owned());
                 for reply in self.guest.answer(&line) {
                     let mut more = Vec::new();
                     self.h.handle_service_reply_with_sender(&reply, self.now, &mut |bytes| {
@@ -919,3 +1020,6 @@ mod files;
 
 #[path = "clip_files_push_flow_tests.rs"]
 mod files_push;
+
+#[path = "clip_files_big_tests.rs"]
+mod files_big;

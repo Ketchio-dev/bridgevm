@@ -84,7 +84,7 @@ pub(super) struct Staged {
 }
 
 /// Bytes free for an unprivileged writer on the volume holding `dir`.
-pub(super) fn free_bytes(dir: &File) -> io::Result<u64> {
+pub(in crate::agent_console) fn free_bytes(dir: &File) -> io::Result<u64> {
     // statfs, not statvfs: macOS statvfs counts blocks in 32 bits.
     let mut stat = std::mem::MaybeUninit::<libc::statfs>::uninit();
     // SAFETY: a live descriptor and writable statfs storage.

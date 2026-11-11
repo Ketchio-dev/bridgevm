@@ -309,10 +309,13 @@ pub(super) enum ServiceReq {
     /// Fetch the guest clipboard image a CLIPX reply announced.
     /// `owner`: the Mac pasteboard when the fetch was queued; any Mac copy since wins.
     ClipImagePull { digest: [u8; 32], bytes: usize, owner: Option<host_pasteboard::PasteboardOwner> },
-    /// Fetch the next file of the guest file copy under way (clip_files.rs).
-    ClipFilesPull,
-    /// Push a Mac file copy, with its names, to the guest clipboard.
+    /// Fetch the next file of the guest file copy under way (clip_files.rs), or with `ranged`
+    /// its next range.
+    ClipFilesPull { ranged: bool },
+    /// Push a Mac file copy, with its names, to the guest clipboard; a large one a step at a time.
     ClipFilesPush(ClipFilesPush),
+    /// LPUTABORT: the guest deletes the temporary of a large push's file that was ended mid-file.
+    ClipFilesAbort,
     /// A command injected via the control file (same semantics as a scripted
     /// command: raw verb sent verbatim, else RUN-wrapped).
     Ctl(String),
@@ -369,6 +372,7 @@ pub(super) enum InFlightSnapshot {
     ClipImagePull,
     ClipFilesPull,
     ClipFilesPush,
+    ClipFilesAbort,
     Ctl(String),
     Ping,
     ShareLs,
@@ -396,8 +400,9 @@ impl InFlightSnapshot {
             ServiceReq::ClipCaps => Self::ClipCaps,
             ServiceReq::ClipImagePush(_) => Self::ClipImagePush,
             ServiceReq::ClipImagePull { .. } => Self::ClipImagePull,
-            ServiceReq::ClipFilesPull => Self::ClipFilesPull,
+            ServiceReq::ClipFilesPull { .. } => Self::ClipFilesPull,
             ServiceReq::ClipFilesPush(_) => Self::ClipFilesPush,
+            ServiceReq::ClipFilesAbort => Self::ClipFilesAbort,
             ServiceReq::Ctl(command) => Self::Ctl(command.clone()),
             ServiceReq::Ping => Self::Ping,
             ServiceReq::ShareLs => Self::ShareLs,

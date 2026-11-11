@@ -86,15 +86,20 @@ impl AgentConsoleHarness {
         };
         self.last_synced.host_copy = self.last_synced.next_copy();
         // File copies arrive only while the agent advertises CLIPSETFILES. Over
-        // a limit, or with a file that cannot be read, the copy goes as a plain
-        // copy would: its names as text.
+        // this agent's limits, or with a file that cannot be read, the copy goes
+        // as a plain copy would: its names as text.
+        let limits = self.clip_files_limits();
+        let (copy, t_ms) = (self.last_synced.host_copy, self.t_ms(now));
         match clip.files.filter(|_| self.clip_files_push) {
-            Some(HostFiles::Read(files)) => return self.enqueue_host_files(clip.text, files, now),
-            Some(HostFiles::TooLarge { entries, bytes }) => clip_line(format!(
-                "BVAGENT CLIPSYNC skip host-files too-large files={entries} bytes={bytes} copy={} t={}",
-                self.last_synced.host_copy,
-                self.t_ms(now)
-            )),
+            Some(HostFiles::Read(files)) if files.entries.len() <= limits.0 && files.bytes <= limits.1 => {
+                return self.enqueue_host_files(clip.text, files, now)
+            }
+            Some(HostFiles::Read(files)) => {
+                clip_line(files_too_large_line("skip host-files", files.entries.len(), files.bytes, limits, copy, t_ms))
+            }
+            Some(HostFiles::TooLarge { entries, bytes }) => {
+                clip_line(files_too_large_line("skip host-files", entries, bytes, limits, copy, t_ms))
+            }
             Some(HostFiles::Unreadable { entries, bytes }) => clip_line(format!(
                 "BVAGENT CLIPSYNC skip host-files unreadable files={entries} bytes={bytes} copy={} t={}",
                 self.last_synced.host_copy,
@@ -185,8 +190,10 @@ impl AgentConsoleHarness {
         };
         self.complete_in_flight();
         // A reply that overtook a pending push predates it: the push
-        // overwrites the guest, so the newer Mac copy wins.
-        if self.clip_push_pending() {
+        // overwrites the guest, so the newer Mac copy wins. A large file push
+        // goes on for minutes with polls between its steps (clip_files_push.rs).
+        let large_push = self.large_files_push_since();
+        if self.clip_push_pending() && large_push.is_none() {
             return;
         }
         // The copy number, the one key of every dedup below: the clipboard's
@@ -221,6 +228,19 @@ impl AgentConsoleHarness {
             }
             guest_clip_fingerprint(text, &mut hasher)
         };
+        if let Some(since) = large_push {
+            if self.last_synced.guest_reply == Some(reply) {
+                return;
+            }
+            // A guest copy polled soon after the Mac copy may predate it: the Mac copy wins, as
+            // for any push. One polled later is newer, and ends the push.
+            let polled = self.last_clip_poll.unwrap_or(now);
+            if polled.saturating_duration_since(since) < CLIP_FILES_PUSH_GRACE {
+                self.last_synced.guest_reply = Some(reply);
+                return;
+            }
+            self.end_large_files_push(now);
+        }
         // Only a later copy, never the first poll, counts for the app's notice.
         let later = self.last_synced.guest_reply.is_some_and(|last| last != reply);
         let changed = self.last_synced.guest_reply != Some(reply);

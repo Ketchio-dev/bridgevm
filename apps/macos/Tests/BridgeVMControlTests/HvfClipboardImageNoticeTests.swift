@@ -63,6 +63,28 @@ final class HvfClipboardImageNoticeTests: XCTestCase {
         XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Mac에서 복사한 파일 중 읽을 수 없는 것이 있어 Windows에는 파일 이름만 보냈습니다.")
     }
 
+    /// The limits a too-large line names depend on the guest agent; a large copy the receiving
+    /// side has no room for gets its own notice.
+    @MainActor
+    func testFileNoticesNameTheLineLimitsAndTheMissingRoom() {
+        let session = session()
+        feed(session, ["BVAGENT CLIPSYNC refused guest-files too-large files=4097 bytes=0 limit-files=4096 limit-bytes=17179869184 copy=3 t=5"])
+        XCTAssertEqual(session.clipboardImageNotice.shown, .windowsFilesTooLarge)
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("한 번에 4096개, 모두 합쳐 16GB까지"), true)
+        feed(session, ["BVAGENT CLIPSYNC skip host-files too-large files=300 bytes=0 limit-files=256 limit-bytes=67108864 copy=4 t=6"])
+        XCTAssertEqual(session.clipboardImageNotice.shown, .macFilesTooLarge)
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("한 번에 256개, 모두 합쳐 64MB까지"), true)
+        feed(session, ["BVAGENT CLIPSYNC refused guest-files low-space files=1 bytes=9000000000 copy=5 t=7"])
+        XCTAssertEqual(session.clipboardImageNotice.shown, .windowsFilesLowSpace)
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Mac의 저장 공간이 부족해 Windows에서 복사한 파일을 가져오지 않았습니다.")
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("2GB"), true)
+        feed(session, ["BVAGENT CLIPSYNC skip host-files guest-full files=1 bytes=9000000000 copy=6 t=8"])
+        XCTAssertEqual(session.clipboardImageNotice.shown, .macFilesGuestFull)
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Windows 디스크 공간이 부족해 Mac에서 복사한 파일을 보내지 않았습니다.")
+        feed(session, ["BVAGENT CLIPSYNC guest->host files=1 bytes=5 copy=7 t=9"])
+        XCTAssertNil(session.clipboardImageNotice.shown, "a later copy clears it")
+    }
+
     /// One row per notice transition: the lines in order, then the notice left showing. The
     /// notice stays with the copy it names; only a later copy or a reset clears it.
     @MainActor

@@ -381,7 +381,7 @@ pub(super) fn is_clip_image_req(req: &ServiceReq) -> bool {
         req,
         ServiceReq::ClipImagePush(_)
             | ServiceReq::ClipImagePull { .. }
-            | ServiceReq::ClipFilesPull
+            | ServiceReq::ClipFilesPull { .. }
             | ServiceReq::ClipFilesPush(_)
     )
 }

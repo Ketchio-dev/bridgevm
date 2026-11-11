@@ -12,9 +12,14 @@ fn scratch(test: &str) -> PathBuf {
     dir
 }
 
+/// Each entry's path in the copy, and a file's bytes as its source holds them now.
 fn entries(files: Option<HostFiles>) -> Vec<(String, Option<Vec<u8>>)> {
     match files {
-        Some(HostFiles::Read(copy)) => copy.entries.into_iter().map(|entry| (entry.rel, entry.data)).collect(),
+        Some(HostFiles::Read(copy)) => copy
+            .entries
+            .into_iter()
+            .map(|entry| (entry.rel, entry.file.map(|file| std::fs::read(file.path).unwrap())))
+            .collect(),
         other => panic!("not read: {other:?}"),
     }
 }
@@ -178,20 +183,43 @@ fn a_copy_over_a_limit_is_counted_not_read() {
     let dir = scratch("limits");
     let many = dir.join("many");
     std::fs::create_dir(&many).unwrap();
-    for index in 0..CLIP_FILES_MAX_ENTRIES {
+    for index in 0..CLIP_FILES_BIG_MAX_ENTRIES {
         std::fs::write(many.join(format!("{index}.txt")), b"").unwrap();
     }
     assert_eq!(
         host_files(&[many.clone()]),
-        Some(HostFiles::TooLarge { entries: CLIP_FILES_MAX_ENTRIES + 1, bytes: 0 }),
-        "the folder and its 256 files"
+        Some(HostFiles::TooLarge { entries: CLIP_FILES_BIG_MAX_ENTRIES + 1, bytes: 0 }),
+        "the folder and its 4096 files"
     );
+    // Sparse: the walk takes its size, never its bytes.
     let big = dir.join("big.bin");
-    std::fs::File::create(&big).unwrap().set_len(CLIP_FILES_MAX_BYTES + 1).unwrap();
+    std::fs::File::create(&big).unwrap().set_len(CLIP_FILES_BIG_MAX_BYTES + 1).unwrap();
     assert_eq!(
         host_files(&[big]),
-        Some(HostFiles::TooLarge { entries: 1, bytes: CLIP_FILES_MAX_BYTES + 1 })
+        Some(HostFiles::TooLarge { entries: 1, bytes: CLIP_FILES_BIG_MAX_BYTES + 1 })
     );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_large_copy_is_listed_with_its_sizes_and_times_without_reading_a_byte() {
+    let dir = scratch("unread");
+    let big = dir.join("big.bin");
+    // 8 GiB, sparse: reading it whole would take seconds and as much memory.
+    std::fs::File::create(&big).unwrap().set_len(8 << 30).unwrap();
+    let Some(HostFiles::Read(copy)) = host_files(std::slice::from_ref(&big)) else {
+        panic!("not read");
+    };
+    assert_eq!(copy.bytes, 8 << 30);
+    let source = copy.entries[0].file.as_ref().expect("a file");
+    assert_eq!((source.path.as_path(), source.bytes()), (big.as_path(), 8 << 30));
+    // The same file is the same copy; a write makes it another one.
+    assert_eq!(host_files(std::slice::from_ref(&big)), Some(HostFiles::Read(copy.clone())));
+    std::fs::OpenOptions::new().write(true).open(&big).unwrap().set_len(1).unwrap();
+    let Some(HostFiles::Read(edited)) = host_files(std::slice::from_ref(&big)) else {
+        panic!("not read");
+    };
+    assert_ne!(edited.digest, copy.digest);
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

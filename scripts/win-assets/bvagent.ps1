@@ -1262,7 +1262,7 @@ namespace BridgeVM {
         public const int MaxBytes = 33554432;
         public const int MaxSide = 16384;
         public const int HtmlMaxBytes = 4194304;
-        public const int FilesMax = 256;
+        public const int FilesMax = 4096;
 
         [DllImport("user32.dll", SetLastError = true)] static extern bool OpenClipboard(IntPtr owner);
         [DllImport("user32.dll")] static extern bool CloseClipboard();
@@ -1529,7 +1529,7 @@ $script:BvClipFilesPart = '0 -'
 # 1), and below a copied folder every file and folder in it (top 0, after their folder). A folder has
 # 0 bytes and mtime 0; a file's mtime (LastWriteTimeUtc ticks) tells the host an edited file from
 # the copy it already has. Past FilesMax entries the listing stops and names the count only (FilesMax + 1). A failed
-# read counts as no files.
+# read counts as no files. A host whose copy is past 256 entries or 64 MiB fetches it with GETRANGE.
 function Get-ClipFilesPart {
     $seq = $K::GetClipboardSequenceNumber()
     if ($seq -eq $script:BvClipFilesSeq) { return $script:BvClipFilesPart }
@@ -1852,10 +1852,12 @@ while ($true) {
                 }
                 'CLIPSETFILES' {
                     # CLIPSETFILES <copy> <b64(list)> <b64(utf8 text)|-> -> OK CLIPSETFILES <n>: a Mac
-                    # file copy the host just PUT below <clipdir>\files\<copy> becomes an Explorer
-                    # copy. The list has one line per entry, <isDir>|<path in that folder>; a path
-                    # that would leave it is refused, listed folders are created (an empty one too)
-                    # and listed files must be there. The n top-level items go on the clipboard
+                    # file copy the host just PUT (or, past 64 MiB, large-PUT) below
+                    # <clipdir>\files\<copy> becomes an Explorer copy. The list has one line per entry,
+                    # <isDir>|<path in that folder>; a path that would leave it is refused, listed
+                    # folders are created (an empty one too) and listed files must be there. A large
+                    # PUT's temporary an agent stopped mid-file left in the copy's folders is deleted
+                    # first, so it is never pasted. The n top-level items go on the clipboard
                     # with the text in one write. Older copies' folders stay for a paste that may
                     # still read them: the 3 put on the clipboard last; older ones are deleted.
                     try {
@@ -1865,17 +1867,29 @@ while ($true) {
                         $base = $script:BvClipDir + '\files'
                         $root = $base + '\' + $parts[0]
                         $tops = New-Object System.Collections.Generic.List[string]
+                        $dirs = New-Object System.Collections.Generic.List[string]
+                        $dirs.Add($root)
+                        $listed = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
                         foreach ($line in [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[1])).Split("`n")) {
                             if ($line -eq '') { continue }
                             $rel = $line.Substring([Math]::Min(2, $line.Length))
                             if ($line.Length -lt 3 -or $line[1] -ne '|' -or -not (Test-ClipRel $rel)) { throw ('unsafe path ' + $rel) }
                             $full = $root + '\' + $rel
                             $io = Get-IoPath $full
-                            if ($line[0] -eq '1') { [void][System.IO.Directory]::CreateDirectory($io) }
+                            if ($line[0] -eq '1') { [void][System.IO.Directory]::CreateDirectory($io); $dirs.Add($full) }
                             elseif ($line[0] -ne '0' -or -not [System.IO.File]::Exists($io)) { throw ('missing ' + $rel) }
+                            else { [void]$listed.Add($full) }
                             if ($rel.IndexOf('\') -lt 0) { $tops.Add($full) }
                         }
                         if ($tops.Count -eq 0) { throw 'no files' }
+                        foreach ($dir in $dirs) {
+                            $io = Get-IoPath $dir $true
+                            if (-not [System.IO.Directory]::Exists($io)) { continue }
+                            foreach ($temp in [System.IO.Directory]::GetFiles($io, '.bridgevm-part-*')) {
+                                $leaf = [System.IO.Path]::GetFileName($temp)
+                                if ($leaf -cmatch '^\.bridgevm-part-[0-9a-f]{32}$' -and -not $listed.Contains($dir + '\' + $leaf)) { [System.IO.File]::Delete($temp) }
+                            }
+                        }
                         $txt = ''
                         if ($parts.Length -ge 3 -and $parts[2] -ne '-') { $txt = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[2])) }
                         [BridgeVM.BvClipImage]::SetFiles($tops.ToArray(), $txt)

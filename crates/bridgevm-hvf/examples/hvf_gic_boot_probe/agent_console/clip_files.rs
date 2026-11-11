@@ -9,6 +9,15 @@
 //! staging directory, and each GET must name the listed path and size. Over a
 //! limit, or with a path that could leave the staging directory, the copy
 //! stays in Windows with one line.
+//!
+//! A copy past the old limits (`CLIP_FILES_MAX_*`), from an agent whose READY
+//! carries `bigfile`, comes over with the shared folder's GETRANGE
+//! (share_big.rs) instead: each range is its own request, so clipboard polls,
+//! control and shared-folder traffic go between the ranges, and each GETCHUNK
+//! is written to its file as it comes, so memory holds one chunk. Every range
+//! must carry the listed size and the time of the file's first range: a file
+//! changed while it was copied fails the copy. The Mac needs room for the copy
+//! plus the shared folder's margin first.
 
 use super::*;
 use super::host_pasteboard::PasteboardOwner;
@@ -19,10 +28,15 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 pub(super) const CLIP_CAPS_FILES_MARKER: &str = "CF_HDROP";
 /// The agent serves CLIPSETFILES (with CF_HDROP): Mac file copies go to Windows.
 pub(super) const CLIP_CAPS_SET_FILES_MARKER: &str = "CLIPSETFILES";
-/// Most entries (files and folders) one copy brings over: the agent's FilesMax.
+/// Most entries (files and folders) one copy brings over with whole-file GETs and PUTs (an agent
+/// without `bigfile`): its FilesMax.
 pub(super) const CLIP_FILES_MAX_ENTRIES: usize = 256;
-/// Most file bytes one copy brings over.
+/// Most file bytes one copy brings over with whole-file GETs and PUTs.
 pub(super) const CLIP_FILES_MAX_BYTES: u64 = 64 << 20;
+/// Most entries one copy brings over in ranges and chunks (an agent with `bigfile`): its FilesMax.
+pub(super) const CLIP_FILES_BIG_MAX_ENTRIES: usize = 4096;
+/// Most file bytes one copy brings over in ranges and chunks: the shared folder's largest file.
+pub(super) const CLIP_FILES_BIG_MAX_BYTES: u64 = 16 << 30;
 /// Published copies kept for a paste still reading them: at most this many, each this long.
 pub(super) const CLIP_FILES_KEEP_COPIES: usize = 4;
 const CLIP_FILES_KEEP_FOR: Duration = Duration::from_secs(10 * 60);
@@ -55,7 +69,7 @@ pub(super) fn parse_files_part(rest: &str) -> Option<(GuestFiles, &str, &str)> {
     let part = &rest[..count.len() + 1 + list.len()];
     let files = match count.parse::<usize>() {
         Ok(0) => GuestFiles::None,
-        Ok(count) if list == "-" || count > CLIP_FILES_MAX_ENTRIES => GuestFiles::Unlisted(count),
+        Ok(count) if list == "-" || count > CLIP_FILES_BIG_MAX_ENTRIES => GuestFiles::Unlisted(count),
         Ok(count) => decode_file_list(list, count).map_or(GuestFiles::Malformed, GuestFiles::Listed),
         Err(_) => GuestFiles::Malformed,
     };
@@ -89,7 +103,7 @@ fn decode_file_list(b64: &str, count: usize) -> Option<Vec<GuestFile>> {
 pub(super) struct StagedFile {
     guest: String,
     rel: PathBuf,
-    bytes: usize,
+    bytes: u64,
 }
 
 /// A listed copy laid out below its staging directory.
@@ -141,8 +155,7 @@ pub(super) fn plan_guest_files(list: &[GuestFile]) -> Option<FilesPlan> {
         if entry.dir {
             plan.dirs.push(rel);
         } else {
-            let bytes = usize::try_from(entry.bytes).ok()?;
-            plan.files.push_back(StagedFile { guest: entry.path.clone(), rel, bytes });
+            plan.files.push_back(StagedFile { guest: entry.path.clone(), rel, bytes: entry.bytes });
         }
     }
     Some(plan)
@@ -156,11 +169,13 @@ pub(super) struct ClipFilesStage {
     pub(super) pull: Option<FilesPull>,
     /// The copies published, oldest first: Finder may still be pasting from an earlier one.
     pub(super) published: VecDeque<(PathBuf, Instant)>,
+    /// Room a copy fetched in ranges leaves free on the Mac volume beyond its own size.
+    pub(super) free_margin: u64,
 }
 
 impl ClipFilesStage {
     pub(super) fn new(dir: PathBuf) -> Self {
-        Self { dir, pull: None, published: VecDeque::new() }
+        Self { dir, pull: None, published: VecDeque::new(), free_margin: SHARE_FREE_MARGIN }
     }
 
     /// This process's staging directory, after deleting those of processes
@@ -195,6 +210,21 @@ pub(super) struct FilesPull {
     bytes: u64,
     /// The Mac pasteboard when the transfer began: any Mac copy since wins.
     owner: Option<PasteboardOwner>,
+    /// GETRANGE, its chunks written as they come; else one GET per file.
+    ranged: bool,
+    /// The file coming in ranges, once its first range began.
+    current: Option<FileIn>,
+}
+
+/// A file of a ranged pull, written as its ranges come.
+struct FileIn {
+    file: std::fs::File,
+    /// Bytes written: where the next range starts.
+    next: u64,
+    /// The guest file's time as its first range gave it; every later range must too.
+    mtime: Option<String>,
+    /// The range coming in: its length, the bytes and the GETCHUNKs seen.
+    range: Option<(u64, u64, u64)>,
 }
 
 /// A fresh, empty 0700 `<dir>/<copy>`, below directories that are no links.
@@ -214,19 +244,42 @@ fn create_staging(dir: &Path, copy: u64) -> std::io::Result<PathBuf> {
     Ok(staging)
 }
 
-/// A new file (never an existing one, never through a link) with `bytes`.
-fn write_new_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+/// A new file (never an existing one, never through a link).
+fn create_new_file(path: &Path) -> std::io::Result<std::fs::File> {
     std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .custom_flags(libc::O_NOFOLLOW)
-        .open(path)?
-        .write_all(bytes)
+        .open(path)
+}
+
+/// A new file (never an existing one, never through a link) with `bytes`.
+fn write_new_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    create_new_file(path)?.write_all(bytes)
 }
 
 /// The refusal record: counts and sizes only, never a name.
 pub(super) fn guest_files_refusal_line(reason: &str, entries: usize, bytes: u64, copy: u64, t_ms: u128) -> String {
     format!("BVAGENT CLIPSYNC refused guest-files {reason} files={entries} bytes={bytes} copy={copy} t={t_ms}")
+}
+
+/// A file copy over the limits either way (`refused guest-files` or `skip host-files`), with the
+/// limits the app's notice names.
+pub(super) fn files_too_large_line(what: &str, entries: usize, bytes: u64, limits: (usize, u64), copy: u64, t_ms: u128) -> String {
+    let (max_entries, max_bytes) = limits;
+    format!(
+        "BVAGENT CLIPSYNC {what} too-large files={entries} bytes={bytes} limit-files={max_entries} \
+         limit-bytes={max_bytes} copy={copy} t={t_ms}"
+    )
+}
+
+/// The write error a full Mac volume gives, as the copy's refusal says it.
+fn write_refusal(error: &std::io::Error) -> &'static str {
+    if is_out_of_space(error) {
+        "low-space"
+    } else {
+        "write-error"
+    }
 }
 
 impl AgentConsoleHarness {
@@ -267,8 +320,10 @@ impl AgentConsoleHarness {
             }
             return true;
         }
-        // A Mac file copy we pushed (clip_files_push.rs) coming back: known, never pulled.
-        if listed.as_ref().is_ok_and(|list| self.lists_own_push(list)) {
+        // A Mac file copy we pushed (clip_files_push.rs) coming back: known, never pulled. An
+        // agent that lists fewer entries than a push brought names only their count.
+        let pushed_back = echo && self.last_synced.files.is_some();
+        if listed.as_ref().map_or(pushed_back, |list| self.lists_own_push(list)) {
             self.abandon_files_pull();
             self.last_synced.files = Some(digest);
             self.last_synced.rebaseline = false;
@@ -292,16 +347,19 @@ impl AgentConsoleHarness {
             return true;
         }
         let copy = self.last_synced.guest_copy;
+        let limits = self.clip_files_limits();
         let list = match listed {
             Ok(list) => list,
             Err(count) => {
-                clip_line(guest_files_refusal_line("too-large", count, 0, copy, self.t_ms(now)));
+                // The agent lists up to its FilesMax and then names the count it stopped at.
+                let limits = (count.saturating_sub(1).clamp(1, limits.0), limits.1);
+                clip_line(files_too_large_line("refused guest-files", count, 0, limits, copy, self.t_ms(now)));
                 return true;
             }
         };
         let bytes = list.iter().filter(|file| !file.dir).fold(0u64, |sum, file| sum.saturating_add(file.bytes));
-        if list.len() > CLIP_FILES_MAX_ENTRIES || bytes > CLIP_FILES_MAX_BYTES {
-            clip_line(guest_files_refusal_line("too-large", list.len(), bytes, copy, self.t_ms(now)));
+        if list.len() > limits.0 || bytes > limits.1 {
+            clip_line(files_too_large_line("refused guest-files", list.len(), bytes, limits, copy, self.t_ms(now)));
             return true;
         }
         let Some(plan) = plan_guest_files(&list) else {
@@ -310,6 +368,15 @@ impl AgentConsoleHarness {
         };
         self.start_files_pull(plan, list.len(), bytes, digest, now);
         true
+    }
+
+    /// The most entries and bytes one copy may hold, either way, with this agent.
+    pub(super) fn clip_files_limits(&self) -> (usize, u64) {
+        if self.share_big {
+            (CLIP_FILES_BIG_MAX_ENTRIES, CLIP_FILES_BIG_MAX_BYTES)
+        } else {
+            (CLIP_FILES_MAX_ENTRIES, CLIP_FILES_MAX_BYTES)
+        }
     }
 
     /// Every copied item lies below `<clipdir>\files\`, where Mac copies go.
@@ -329,10 +396,14 @@ impl AgentConsoleHarness {
             let t_ms = self.t_ms(now);
             return clip_line(guest_files_refusal_line("staging-error", entries, bytes, copy, t_ms));
         };
+        let ranged = self.share_big && over_old_limits(entries, bytes);
         let made = plan
             .dirs
             .iter()
             .try_for_each(|dir| std::fs::DirBuilder::new().recursive(true).create(staging.join(dir)));
+        // As for a large shared-folder file: the copy and a margin must fit (share_big.rs).
+        let free = std::fs::File::open(&staging).and_then(|dir| free_bytes(&dir)).unwrap_or(u64::MAX);
+        let low_space = ranged && free < bytes.saturating_add(self.clip_files_stage.free_margin);
         self.clip_files_stage.pull = Some(FilesPull {
             digest,
             copy,
@@ -342,9 +413,14 @@ impl AgentConsoleHarness {
             entries,
             bytes,
             owner: self.pasteboard.as_ref().map(HostPasteboard::owner),
+            ranged,
+            current: None,
         });
         if made.is_err() {
             return self.fail_files_pull("staging-error", now);
+        }
+        if low_space {
+            return self.fail_files_pull("low-space", now);
         }
         self.next_files_pull(now, true);
     }
@@ -353,10 +429,11 @@ impl AgentConsoleHarness {
     fn next_files_pull(&mut self, now: Instant, first: bool) {
         let Some(pull) = self.clip_files_stage.pull.take_if(|pull| pull.pending.is_empty()) else {
             // Later fetches take turns with the polls that may bring a newer copy.
+            let ranged = self.clip_files_stage.pull.as_ref().is_some_and(|pull| pull.ranged);
             if first {
-                self.queue.push_front(ServiceReq::ClipFilesPull);
+                self.queue.push_front(ServiceReq::ClipFilesPull { ranged });
             } else {
-                self.queue.push_back(ServiceReq::ClipFilesPull);
+                self.queue.push_back(ServiceReq::ClipFilesPull { ranged });
             }
             return;
         };
@@ -398,13 +475,15 @@ impl AgentConsoleHarness {
 
     /// Drop the transfer: its queued fetches and its staging directory.
     pub(super) fn abandon_files_pull(&mut self) {
-        self.queue.retain(|req| !matches!(req, ServiceReq::ClipFilesPull));
+        self.queue.retain(|req| !matches!(req, ServiceReq::ClipFilesPull { .. }));
         if let Some(pull) = self.clip_files_stage.pull.take() {
+            // The file being written closes first; nothing of the copy stays.
+            drop(pull.current);
             let _ = std::fs::remove_dir_all(pull.staging);
         }
     }
 
-    fn fail_files_pull(&mut self, reason: &str, now: Instant) {
+    pub(super) fn fail_files_pull(&mut self, reason: &str, now: Instant) {
         let pull = self.clip_files_stage.pull.as_ref();
         let Some((copy, entries, bytes)) = pull.map(|pull| (pull.copy, pull.entries, pull.bytes)) else {
             return;
@@ -424,9 +503,18 @@ impl AgentConsoleHarness {
         };
         // A new GET cannot inherit an earlier request's fragments.
         self.get_accum = None;
-        self.service_line_scratch.push_str("GET ");
-        base64_encode_into(file.guest.as_bytes(), &mut self.service_line_scratch);
-        self.service_line_scratch.push('\n');
+        let pull = self.clip_files_stage.pull.as_ref().expect("checked");
+        let out = &mut self.service_line_scratch;
+        if pull.ranged {
+            let next = pull.current.as_ref().map_or(0, |current| current.next);
+            out.push_str("GETRANGE ");
+            base64_encode_into(file.guest.as_bytes(), out);
+            let _ = writeln!(out, " {next} {}", (file.bytes - next).min(SHARE_RANGE_BYTES));
+        } else {
+            out.push_str("GET ");
+            base64_encode_into(file.guest.as_bytes(), out);
+            out.push('\n');
+        }
         true
     }
 
@@ -437,7 +525,7 @@ impl AgentConsoleHarness {
         if !error && !line.starts_with("GETEND ") {
             return;
         }
-        let Some((ServiceReq::ClipFilesPull, _)) = self.in_flight.take() else {
+        let Some((ServiceReq::ClipFilesPull { .. }, _)) = self.in_flight.take() else {
             return;
         };
         let finished = self.take_finished_get();
@@ -452,8 +540,8 @@ impl AgentConsoleHarness {
         };
         let written = match finished {
             _ if error => Err("get-error"),
-            Some(get) if get.path == file.guest && get.total == file.bytes && get.bytes.len() == file.bytes => {
-                write_new_file(&pull.staging.join(&file.rel), &get.bytes).map_err(|_| "write-error")
+            Some(get) if get.path == file.guest && get.total as u64 == file.bytes && get.bytes.len() as u64 == file.bytes => {
+                write_new_file(&pull.staging.join(&file.rel), &get.bytes).map_err(|error| write_refusal(&error))
             }
             _ => Err("mismatch"),
         };
@@ -461,5 +549,114 @@ impl AgentConsoleHarness {
             Ok(()) => self.next_files_pull(now, false),
             Err(reason) => self.fail_files_pull(reason, now),
         }
+    }
+
+    /// A line of a GETRANGE reply to a ranged pull; false leaves it to the GET path. The reply
+    /// is read to its GETEND even when its copy was dropped meanwhile.
+    pub(super) fn handle_clip_files_range_line(&mut self, line: &str, now: Instant) -> bool {
+        if !matches!(self.in_flight, Some((ServiceReq::ClipFilesPull { ranged: true }, _))) {
+            return false;
+        }
+        let (beg, chunk) = (line.strip_prefix("GETBEG "), line.strip_prefix("GETCHUNK "));
+        let end = line.starts_with("GETEND ");
+        if beg.is_none() && chunk.is_none() && !end && !line.starts_with("ERR") {
+            return false;
+        }
+        if beg.is_none() && chunk.is_none() {
+            self.complete_in_flight();
+        }
+        // A newer guest copy, a Mac copy or an app paste came first.
+        if self.clip_files_stage.pull.is_some() && !self.files_pull_current() {
+            self.abandon_files_pull();
+            return true;
+        }
+        let failed = match (beg, chunk) {
+            (Some(rest), _) => self.clip_range_begin(rest),
+            (_, Some(rest)) => self.clip_range_chunk(rest),
+            _ if end => self.clip_range_end(now),
+            _ => Some("get-error"),
+        };
+        if let Some(reason) = failed {
+            self.fail_files_pull(reason, now);
+        }
+        true
+    }
+
+    /// GETBEG `<b64(path)> <bytes> <nchunks> <offset> <size> <mtime>`: the range asked for, of the
+    /// listed file, unchanged since its first range. The file is made at its first range.
+    fn clip_range_begin(&mut self, rest: &str) -> Option<&'static str> {
+        let pull = self.clip_files_stage.pull.as_mut()?;
+        let file = pull.pending.front()?;
+        let Some((path, len, range)) = parse_range_beg(rest) else {
+            return Some("mismatch");
+        };
+        if pull.current.is_none() {
+            match create_new_file(&pull.staging.join(&file.rel)) {
+                Ok(created) => {
+                    pull.current = Some(FileIn { file: created, next: 0, mtime: None, range: None });
+                }
+                Err(error) => return Some(write_refusal(&error)),
+            }
+        }
+        let current = pull.current.as_mut()?;
+        let expected = (file.bytes - current.next).min(SHARE_RANGE_BYTES);
+        let same = path == file.guest
+            && range.offset == current.next
+            && range.size == file.bytes
+            && current.mtime.as_ref().is_none_or(|mtime| *mtime == range.mtime)
+            && len == expected
+            && current.range.is_none();
+        if !same {
+            return Some("changed");
+        }
+        current.mtime = Some(range.mtime);
+        current.range = Some((len, 0, 0));
+        None
+    }
+
+    /// GETCHUNK `<seq> <b64>`: the range's next bytes, written to the file at once.
+    fn clip_range_chunk(&mut self, rest: &str) -> Option<&'static str> {
+        let pull = self.clip_files_stage.pull.as_mut()?;
+        let Some(FileIn { file, range: Some((len, seen, seq)), .. }) = pull.current.as_mut() else {
+            return Some("mismatch");
+        };
+        let bytes = rest
+            .split_once(' ')
+            .filter(|(number, _)| number.parse() == Ok(*seq))
+            .and_then(|(_, b64)| base64_decode(b64).ok())
+            .filter(|bytes| *seen + bytes.len() as u64 <= *len);
+        let Some(bytes) = bytes else {
+            return Some("mismatch");
+        };
+        if let Err(error) = file.write_all(&bytes) {
+            return Some(write_refusal(&error));
+        }
+        *seen += bytes.len() as u64;
+        *seq += 1;
+        None
+    }
+
+    /// GETEND: the range is whole; the file's next range, or the next file.
+    fn clip_range_end(&mut self, now: Instant) -> Option<&'static str> {
+        let pull = self.clip_files_stage.pull.as_mut()?;
+        let bytes = pull.pending.front()?.bytes;
+        let Some(current) = pull.current.as_mut() else {
+            return Some("mismatch");
+        };
+        let Some((len, seen, _)) = current.range.take() else {
+            return Some("mismatch");
+        };
+        if seen != len {
+            return Some("short");
+        }
+        current.next += len;
+        if current.next < bytes {
+            self.queue.push_back(ServiceReq::ClipFilesPull { ranged: true });
+            return None;
+        }
+        pull.current = None;
+        pull.pending.pop_front();
+        self.next_files_pull(now, false);
+        None
     }
 }

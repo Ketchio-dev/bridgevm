@@ -187,6 +187,10 @@ impl AgentConsoleHarness {
                         // A drop step creates guest files; resending could duplicate one.
                         if matches!(req, ServiceReq::ShareRange { .. } | ServiceReq::ShareBigPut(_)) {
                             println!("BVAGENT SERVICE dropped {} t={}", req_kind(&req), self.t_ms(now));
+                        } else if is_large_clip_files_req(&req) {
+                            // A large clipboard copy's step continues one already sent: the copy ends.
+                            println!("BVAGENT SERVICE dropped {} t={}", req_kind(&req), self.t_ms(now));
+                            self.stalled_large_clip_files(req, now);
                         } else if is_drop_req(&req) {
                             self.fail_drop("stalled", now);
                         } else {
@@ -212,11 +216,20 @@ impl AgentConsoleHarness {
         let hold_images = self.agent_update_holds_images();
         // During a large copy only its own steps go out of the shared-folder requests.
         let hold_share = self.big_share_active();
+        // The agent has one large PUT: a shared-folder file's and a clipboard copy's take turns.
+        let clip_large_put = self.clip_large_put_open();
+        let share_large_put = matches!(
+            self.share.as_ref().and_then(|share| share.big.as_ref()),
+            Some(BigTransfer::Put(_))
+        );
         let Some(req) = super::service_queue::pop_next_request(&mut self.queue, |req| {
             (hold_images && super::agent_update::is_clip_image_req(req))
                 || (hold_share
                     && is_share_req(req)
                     && !matches!(req, ServiceReq::ShareRange { .. } | ServiceReq::ShareBigPut(_)))
+                || (clip_large_put && matches!(req, ServiceReq::ShareBigPut(_)))
+                || (share_large_put
+                    && matches!(req, ServiceReq::ClipFilesPush(push) if push.large && push.phase == ClipImagePhase::Beg))
         }) else {
             return;
         };
@@ -277,8 +290,12 @@ impl AgentConsoleHarness {
             ServiceReq::ClipImagePush(_) | ServiceReq::ClipImagePull { .. } => {
                 self.write_clip_image_line(req)
             }
-            ServiceReq::ClipFilesPull => self.write_clip_files_line(),
-            ServiceReq::ClipFilesPush(push) => self.write_clip_files_push_line(push),
+            ServiceReq::ClipFilesPull { .. } => self.write_clip_files_line(),
+            ServiceReq::ClipFilesPush(push) => self.write_clip_files_push_line(push, now),
+            ServiceReq::ClipFilesAbort => {
+                self.service_line_scratch.push_str("LPUTABORT\n");
+                true
+            }
             ServiceReq::ClipPush(text, html) => {
                 let verb = if html.is_some() { "CLIPSETH " } else { "CLIPSET " };
                 self.service_line_scratch.push_str(verb);
@@ -520,8 +537,9 @@ impl AgentConsoleHarness {
         if self.guest_link(line) {
             return;
         }
-        // A large shared-folder copy takes its own GETBEG/GETCHUNK/GETEND (share_big.rs).
-        if self.handle_big_get_line(line, now) {
+        // A large shared-folder copy takes its own GETBEG/GETCHUNK/GETEND (share_big.rs), as
+        // does a large clipboard file copy (clip_files.rs).
+        if self.handle_big_get_line(line, now) || self.handle_clip_files_range_line(line, now) {
             return;
         }
         if matches!(
@@ -530,7 +548,7 @@ impl AgentConsoleHarness {
                 ServiceReq::Ctl(_)
                     | ServiceReq::ShareGet { .. }
                     | ServiceReq::ClipImagePull { .. }
-                    | ServiceReq::ClipFilesPull
+                    | ServiceReq::ClipFilesPull { .. }
             )
         ) && self.handle_unlabelled_get_fragment(line).is_some()
         {
@@ -553,6 +571,7 @@ impl AgentConsoleHarness {
             InFlightSnapshot::ClipImagePull => self.handle_clip_image_pull_reply(line, now),
             InFlightSnapshot::ClipFilesPull => self.handle_clip_files_pull_reply(line, now),
             InFlightSnapshot::ClipFilesPush => self.handle_clip_files_push_reply(line, now, send),
+            InFlightSnapshot::ClipFilesAbort => self.handle_clip_files_abort_reply(line),
             InFlightSnapshot::Ctl(command) if self.display_verb_refused(line, &command, now) => {}
             InFlightSnapshot::Ctl(command) => match self.handle_reply_line(line, &command) {
                 ReplyProgress::Complete => self.complete_in_flight(),

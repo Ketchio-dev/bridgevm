@@ -370,7 +370,15 @@ impl AgentConsoleHarness {
     }
 
     pub(super) fn drop_queued_host_pushes(&mut self) {
-        self.queue.retain(|req| !is_host_push(req));
+        // A large file push between its steps may have a file begun on the guest.
+        let mut abort = false;
+        self.queue.retain(|req| {
+            abort |= matches!(req, ServiceReq::ClipFilesPush(push) if push.holds_guest_file());
+            !is_host_push(req)
+        });
+        if abort {
+            self.queue.push_front(ServiceReq::ClipFilesAbort);
+        }
     }
 
     /// A CLIPX reply: the guest clipboard as one (text, image) pair, with
