@@ -17,8 +17,12 @@ struct HvfRecoverableInputStream {
     var pointerModifiers: Bool { stream.pointerModifiers }
     var middleButton: Bool { stream.middleButton }
     var caret: Bool { stream.caret }
-    /// A press Windows inserted whose release it has not: a `notInserted` release leaves it held here.
-    var owesRelease: Bool { cleanup.held.release != nil }
+    var keyHold: Bool { stream.keyHold }
+    /// A press Windows inserted whose release it has not, a held key's included: a `notInserted` release leaves it
+    /// held here.
+    var owesRelease: Bool { !cleanup.held.releases.isEmpty }
+    /// The keys sent `down:` halves may have pressed in Windows and no `up:` has released (HvfPointerHeldState).
+    var heldKeys: [String] { cleanup.held.keys }
 
     /// Sends that release (HvfPointerCleanup) ahead of anything else; the next polls report its outcome.
     mutating func releaseOwed(now: Date) { cleanup.begin(now: now) }

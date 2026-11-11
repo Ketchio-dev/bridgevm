@@ -6,13 +6,18 @@ extension HvfEngineSession {
     /// original order and before any later input, through the paths legacy input takes: text as HID keys or a
     /// clipboard paste, input that arrives behind a pending paste held for it, a press cancelling that paste. An
     /// event that cannot be re-sent ends the replay: later keys could act on text that never arrived (an Enter after
-    /// a paste too large for the clipboard command), so the rest is discarded, as replayDisplayInput does.
+    /// a paste too large for the clipboard command), so the rest is discarded, as replayDisplayInput does. A held key is
+    /// not held again here, where its press could wait behind a paste after its release went: the press goes as a tap
+    /// and the release not at all (one the agent inserted the press of goes up through the ordered route's cleanup); the
+    /// next Mac repeat of a key still held holds it on input.ctl.
     func resendOnLegacy(_ events: [HvfOrderedInputQueue.Event]) {
         var lost = 0
         for (index, event) in events.enumerated() {
             let sent: Bool
             switch event {
-            case let .key(key):
+            case let .key(command):
+                if command.hasPrefix(HvfModifierChord.up) { continue }
+                let key = HvfModifierChord.heldAction(command) ?? command
                 sent = legacyPaste.pending != nil ? legacyPaste.hold(.key(key)) : appendLiveInput("KEY " + key)
             case let .text(text):
                 sent = legacyPaste.pending != nil ? legacyPaste.hold(.text(text)) : sendLegacyText(text) != .refused

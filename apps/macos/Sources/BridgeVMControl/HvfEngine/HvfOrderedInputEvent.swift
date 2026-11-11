@@ -18,5 +18,11 @@ extension HvfOrderedInputQueue {
             guard case let .pointer(value) = self else { return false }
             return value.hasPrefix("move:")
         }
+
+        /// A held key's release (`up:<action>`, HvfModifierChord.up).
+        var isKeyRelease: Bool {
+            guard case let .key(value) = self else { return false }
+            return value.hasPrefix(HvfModifierChord.up)
+        }
     }
 }

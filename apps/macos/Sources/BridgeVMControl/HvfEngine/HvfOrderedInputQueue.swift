@@ -48,8 +48,10 @@ struct HvfOrderedInputQueue {
             byteCount = others + bytes
             return true
         }
-        guard bytes > 0, count < Self.maximumEvents,
-              bytes <= Self.maximumBytes - byteCount else { return false }
+        // A held key's release is never refused for room, or Windows would keep the key down: there is one per key
+        // held (HvfHeldKeys, at most six), so releases add only a few short events beyond the limits.
+        guard bytes > 0, event.isKeyRelease || (count < Self.maximumEvents && bytes <= Self.maximumBytes - byteCount)
+        else { return false }
         let ticket = Ticket(id: UUID(), generation: generation, event: event)
         entries.append(Entry(ticket: ticket, deadline: now.addingTimeInterval(30)))
         byteCount += bytes

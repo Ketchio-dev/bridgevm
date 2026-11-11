@@ -1,5 +1,8 @@
 use super::{trace, XhciController};
 
+#[cfg(test)]
+#[path = "setup_input_report/hold_tests.rs"]
+mod hold_tests;
 #[path = "setup_input_report/kind.rs"]
 mod kind;
 
@@ -9,6 +12,9 @@ pub(super) const HID_BOOT_KEYBOARD_REPORT_LEN: u32 = 8;
 pub(super) const HID_BOOT_KEYBOARD_NO_KEY_REPORT: [u8; 8] = [0; 8];
 const MAX_SETUP_INPUT_ACTIONS: usize = 32;
 const MAX_SETUP_INPUT_REPORTS: usize = MAX_SETUP_INPUT_ACTIONS * 2;
+/// Keys held down between a `down` and its `up` (`queue_setup_input_hold`): the six key slots of a
+/// boot-keyboard report.
+const MAX_HELD_SETUP_INPUT_KEYS: usize = 6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetupInputAction {
@@ -41,12 +47,15 @@ impl SetupInputAction {
         }
     }
 
-    const fn key_report(self) -> [u8; 8] {
-        let modifier = match self {
+    const fn modifier(self) -> u8 {
+        match self {
             Self::Key { modifier, .. } => modifier,
             Self::Tab | Self::Enter | Self::Space => 0,
-        };
-        [modifier, 0, self.usage(), 0, 0, 0, 0, 0]
+        }
+    }
+
+    const fn key_report(self) -> [u8; 8] {
+        [self.modifier(), 0, self.usage(), 0, 0, 0, 0, 0]
     }
 }
 
@@ -69,23 +78,23 @@ pub struct XhciSetupInputReportStats {
     pub busy_rejections: u64,
 }
 
+/// One queued report; its bytes are fixed when it is queued, with the keys held at that point.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct SetupInputReport {
     action: SetupInputAction,
     kind: SetupInputReportKind,
+    report: [u8; 8],
 }
 
 impl SetupInputReport {
     const EMPTY: Self = Self {
         action: SetupInputAction::Space,
         kind: SetupInputReportKind::Release,
+        report: HID_BOOT_KEYBOARD_NO_KEY_REPORT,
     };
 
     pub(super) const fn bytes(self) -> [u8; 8] {
-        match self.kind {
-            SetupInputReportKind::Key => self.action.key_report(),
-            SetupInputReportKind::Release => HID_BOOT_KEYBOARD_NO_KEY_REPORT,
-        }
+        self.report
     }
 }
 
@@ -94,6 +103,10 @@ pub(super) struct BootKeyboardReportQueue {
     reports: [SetupInputReport; MAX_SETUP_INPUT_REPORTS],
     head: usize,
     len: usize,
+    /// Held keys as (modifier, usage), in press order. Every report carries them until their `up`,
+    /// so Windows sees one continuous press and repeats it itself (kbdhid's typematic).
+    held: [(u8, u8); MAX_HELD_SETUP_INPUT_KEYS],
+    held_len: usize,
 }
 
 impl Default for BootKeyboardReportQueue {
@@ -102,6 +115,8 @@ impl Default for BootKeyboardReportQueue {
             reports: [SetupInputReport::EMPTY; MAX_SETUP_INPUT_REPORTS],
             head: 0,
             len: 0,
+            held: [(0, 0); MAX_HELD_SETUP_INPUT_KEYS],
+            held_len: 0,
         }
     }
 }
@@ -126,9 +141,27 @@ impl BootKeyboardReportQueue {
         }
     }
 
+    /// A controller reset: the guest re-enumerates the keyboard, so nothing stays held either.
     pub(super) fn clear(&mut self) {
         self.head = 0;
         self.len = 0;
+        self.held_len = 0;
+    }
+
+    /// The held keys' report, plus `extra` (a tap's modifier and usage) when given. A tap with every
+    /// slot held takes the last one for its own key report.
+    fn held_report(&self, extra: Option<(u8, u8)>) -> [u8; 8] {
+        let mut report = HID_BOOT_KEYBOARD_NO_KEY_REPORT;
+        let mut slot = 2;
+        for (modifier, usage) in self.held[..self.held_len].iter().copied().chain(extra) {
+            report[0] |= modifier;
+            if usage == 0 || report[2..slot].contains(&usage) {
+                continue;
+            }
+            report[slot.min(7)] = usage;
+            slot = (slot + 1).min(8);
+        }
+        report
     }
 
     fn queue_actions(
@@ -147,17 +180,64 @@ impl BootKeyboardReportQueue {
         if !self.is_empty() {
             return Err(XhciSetupInputQueueError::Busy);
         }
+        let release = self.held_report(None);
         for action in actions {
             self.push_back(SetupInputReport {
                 action: *action,
                 kind: SetupInputReportKind::Key,
+                report: self.held_report(Some((action.modifier(), action.usage()))),
             });
             self.push_back(SetupInputReport {
                 action: *action,
                 kind: SetupInputReportKind::Release,
+                report: release,
             });
         }
         Ok(actions.len() * 2)
+    }
+
+    /// Presses (`down`) or releases one key and queues the one report that changes. A key already
+    /// down, or released while not down, changes nothing and queues none.
+    fn queue_hold(
+        &mut self,
+        action: SetupInputAction,
+        down: bool,
+    ) -> Result<usize, XhciSetupInputQueueError> {
+        if !self.is_empty() {
+            return Err(XhciSetupInputQueueError::Busy);
+        }
+        let key = (action.modifier(), action.usage());
+        let index = self.held[..self.held_len]
+            .iter()
+            .position(|held| *held == key);
+        match (down, index) {
+            (true, Some(_)) | (false, None) => return Ok(0),
+            (true, None) => {
+                if self.held_len == MAX_HELD_SETUP_INPUT_KEYS {
+                    return Err(XhciSetupInputQueueError::TooManyActions {
+                        requested: self.held_len + 1,
+                        max: MAX_HELD_SETUP_INPUT_KEYS,
+                    });
+                }
+                self.held[self.held_len] = key;
+                self.held_len += 1;
+            }
+            (false, Some(index)) => {
+                self.held.copy_within(index + 1..self.held_len, index);
+                self.held_len -= 1;
+            }
+        }
+        let kind = if down {
+            SetupInputReportKind::Key
+        } else {
+            SetupInputReportKind::Release
+        };
+        self.push_back(SetupInputReport {
+            action,
+            kind,
+            report: self.held_report(None),
+        });
+        Ok(1)
     }
 
     fn push_back(&mut self, report: SetupInputReport) {
@@ -198,6 +278,30 @@ impl XhciController {
                         self.setup_input_report_stats.queued_reports,
                     );
                 }
+                Ok(())
+            }
+            Err(error) => {
+                self.record_setup_input_queue_rejection(error);
+                Err(error)
+            }
+        }
+    }
+
+    /// `KEY down:<key>` / `KEY up:<key>`: holds one key in every later report until its release.
+    /// Busy while earlier reports wait, like `queue_setup_input_actions`.
+    pub fn queue_setup_input_hold(
+        &mut self,
+        action: SetupInputAction,
+        down: bool,
+    ) -> Result<(), XhciSetupInputQueueError> {
+        match self.boot_keyboard_report_queue.queue_hold(action, down) {
+            Ok(queued_reports) => {
+                if queued_reports > 0 {
+                    self.arm_two_entry_dci3_queue_rearm_if_consumed();
+                }
+                let stats = &mut self.setup_input_report_stats;
+                stats.queued_actions = stats.queued_actions.saturating_add(1);
+                stats.queued_reports = stats.queued_reports.saturating_add(queued_reports as u64);
                 Ok(())
             }
             Err(error) => {

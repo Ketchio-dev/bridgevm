@@ -29,9 +29,12 @@ struct HvfGuestInputEncoding {
     }
 
     /// Any generic chord (HvfModifierChord) except Ctrl+Alt+Delete: SendInput cannot raise the secure
-    /// attention sequence, so the agent refuses its keys rather than type them into an application.
+    /// attention sequence, so the agent refuses its keys rather than type them into an application. A held key's
+    /// half (`down:`/`up:`) inserts half of its tap's events.
     private static func keyEventCount(_ command: String) -> Int? {
-        isSecureAttention(command) ? nil : HvfModifierChord.eventCount(command)
+        let action = HvfModifierChord.heldAction(command) ?? command
+        guard !isSecureAttention(action), let count = HvfModifierChord.eventCount(action) else { return nil }
+        return action == command ? count : count / 2
     }
 
     /// Ctrl+Alt+Delete with any further modifiers: only the VMM's keyboard raises it (HvfSessionInputRouter).

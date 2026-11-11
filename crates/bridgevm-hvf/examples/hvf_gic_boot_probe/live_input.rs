@@ -32,6 +32,9 @@ mod identity_tests;
 mod drain_line_tests;
 #[path = "live_input/key_actions.rs"]
 mod key_actions;
+#[cfg(test)]
+#[path = "live_input/key_hold_tests.rs"]
+mod key_hold_tests;
 #[path = "live_input/line_frames.rs"]
 mod line_frames;
 #[cfg(test)]

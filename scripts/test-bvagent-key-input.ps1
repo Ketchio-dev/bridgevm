@@ -28,6 +28,20 @@ foreach ($command in $cases.Keys) {
         }
     }
 }
+# A held key: `down:` is a tap's first half (no KEYEVENTF_KEYUP), `up:` its second (all KEYEVENTF_KEYUP); together they are the tap.
+foreach ($command in $cases.Keys) {
+    $tap = ([BridgeVM.BvUnicodeInput]::BuildKey($command) | ForEach-Object { '{0}:{1}' -f $_.Data.Keyboard.VirtualKey, $_.Data.Keyboard.Flags }) -join ','
+    $down = @([BridgeVM.BvUnicodeInput]::BuildKey('down:' + $command)); $up = @([BridgeVM.BvUnicodeInput]::BuildKey('up:' + $command))
+    $halves = (@($down) + @($up) | ForEach-Object { '{0}:{1}' -f $_.Data.Keyboard.VirtualKey, $_.Data.Keyboard.Flags }) -join ','
+    if ($halves -cne $tap -or $down.Length -ne $up.Length) { throw "held key halves differ from the tap: $command => $halves" }
+    if (@($down | Where-Object { $_.Data.Keyboard.Flags -band 2 }).Count -ne 0 -or @($up | Where-Object { -not ($_.Data.Keyboard.Flags -band 2) }).Count -ne 0) { throw "key-up flag outside up: $command" }
+}
+if ((([BridgeVM.BvUnicodeInput]::BuildKey('down:ctrl+left') + [BridgeVM.BvUnicodeInput]::BuildKey('up:ctrl+left')) | ForEach-Object { '{0}:{1}' -f $_.Data.Keyboard.VirtualKey, $_.Data.Keyboard.Flags }) -join ',' -cne '17:0,37:1,37:3,17:2') { throw 'wrong held chord order' }
+foreach ($bad in @('down:', 'up:', 'down:a', 'up:shift+s', 'down:ctrl+alt+delete', 'up:ctrl+alt+delete', 'down:up:left', 'up:down:left', 'hold:left', 'DOWN:left', 'Up:left', 'down: left', 'down:left ', ('down:ctrl+' + 'a' * 28))) {
+    $blocked = $false
+    try { [BridgeVM.BvUnicodeInput]::BuildKey($bad) | Out-Null } catch { $blocked = $true }
+    if (-not $blocked) { throw "unsupported held key accepted: $bad" }
+}
 # Text keys alone or with only Shift, unknown or non-canonical names, and the secure attention sequence stay refused.
 foreach ($bad in @('', 'a', '1', 'CTRL+V', 'Win', 'ctrl+alt+delete', 'win+ctrl+alt+shift+delete', 'shift+ctrl+left', 'ctrl+win+e', 'shift+alt+s', 'ctrl+ctrl+v', 'win+win', 'ctrl+win', 'command+c', 'cmd', "enter`n", 'shift+s', 'shift+1', 'shift+slash', 'shift+f13', 'ctrl+f13', 'ctrl+f0', 'ctrl+', '+', 'ctrl+,', 'ctrl+aa', ('ctrl+' + 'a' * 28))) {
     $blocked = $false
@@ -38,6 +52,11 @@ foreach ($letter in [char[]]'abcdefghijklmnopqrstuvwxyz') { $vk = [int][char]::T
 $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('ctrl+shift+left'))
 $result = Invoke-UnicodeInput "$id $payload" { param($key) return [uint32]([BridgeVM.BvUnicodeInput]::BuildKey($key).Length) } $true
 if ($result.Exit -ne 0 -or $result.Out -cne "BVINPUT_INSERTED $id 6") { throw 'key receipt mismatch' }
+foreach ($held in @(@('down:ctrl+shift+left', 3), @('up:ctrl+shift+left', 3), @('down:left', 1), @('up:f5', 1))) {
+    $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($held[0]))
+    $result = Invoke-UnicodeInput "$id $payload" { param($key) return [uint32]([BridgeVM.BvUnicodeInput]::BuildKey($key).Length) } $true
+    if ($result.Exit -ne 0 -or $result.Out -cne "BVINPUT_INSERTED $id $($held[1])") { throw "held key receipt mismatch: $($held[0])" }
+}
 $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('win'))
 $result = Invoke-UnicodeInput "$id $payload" { param($key) return [uint32]([BridgeVM.BvUnicodeInput]::BuildKey($key).Length) } $true
 if ($result.Exit -ne 0 -or $result.Out -cne "BVINPUT_INSERTED $id 2") { throw 'bare Windows key receipt mismatch' }
@@ -47,6 +66,62 @@ $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('ctrl+alt+de
 $script:keySenderCalled = $false
 $result = Invoke-UnicodeInput "$id $payload" { $script:keySenderCalled = $true; return [uint32]6 } $true
 if ($result.Exit -eq 0 -or $script:keySenderCalled) { throw 'unsupported key reached sender' }
+# Held keys overlap like on the VMM's HID report: an up releases only the modifiers no other held action needs (one
+# still needed is pressed again instead, so every half keeps its count); a repeat holds once; an up for an action not
+# held still releases it (a restarted agent); a down that inserted nothing holds nothing; at most six are held.
+$sent = New-Object 'System.Collections.Generic.List[string]'
+# The stand-in sender is the agent's own non-generic delegate type: Windows PowerShell 5.1 rejected a generic Func
+# literal over the nested Input[] (TypeNotFound), and nested type literals work there (test-bvagent-unicode-input.ps1).
+# Pointer events read m<MOUSEEVENTF flags>.
+$stub = [BridgeVM.BvUnicodeInput+Sender]({ param($events) $sent.Add((($events | ForEach-Object { if ($_.Type -eq 1) { '{0}:{1}' -f $_.Data.Keyboard.VirtualKey, $_.Data.Keyboard.Flags } else { 'm{0}' -f $_.Data.Mouse.Flags } }) -join ',')); return [uint32]$events.Length }.GetNewClosure())
+$none = [BridgeVM.BvUnicodeInput+Sender]{ param($events) return [uint32]0 }
+function Assert-Held([string]$command, [string]$expected, $send = $stub) {
+    $sent.Clear()
+    [void][BridgeVM.BvUnicodeInput]::InsertKey($command, $send)
+    if ($sent[0] -cne $expected) { throw "wrong held key events: $command => $($sent[0]) (expected $expected)" }
+}
+Assert-Held 'down:ctrl+left' '17:0,37:1'
+Assert-Held 'down:ctrl+right' '17:0,39:1'
+Assert-Held 'down:ctrl+right' '17:0,39:1'
+Assert-Held 'ctrl+v' '17:0,86:0,86:2,17:0'
+Assert-Held 'up:ctrl+left' '37:3,17:0'
+Assert-Held 'up:ctrl+left' '37:3,17:0'
+Assert-Held 'up:ctrl+right' '39:3,17:2'
+Assert-Held 'up:ctrl+left' '37:3,17:2'
+Assert-Held 'down:ctrl+shift+left' '17:0,16:0,37:1'
+Assert-Held 'down:shift' '16:0'
+Assert-Held 'up:shift' '16:0'
+Assert-Held 'up:ctrl+shift+left' '37:3,16:2,17:2'
+$failed = $false
+try { [void][BridgeVM.BvUnicodeInput]::InsertKey('down:ctrl+up', $none) } catch { $failed = $true }
+if (-not $failed) { throw 'a down that inserted nothing was accepted' }
+Assert-Held 'down:ctrl+down' '17:0,40:1'
+Assert-Held 'up:ctrl+down' '40:3,17:2'
+foreach ($n in 1..7) { Assert-Held "down:ctrl+f$n" "17:0,$(111 + $n):0" }
+foreach ($n in 1..5) { Assert-Held "up:ctrl+f$n" "$(111 + $n):2,17:0" }
+Assert-Held 'up:ctrl+f6' '117:2,17:2'
+Assert-Held 'up:ctrl+f7' '118:2,17:2'
+Assert-Held 'enter' '13:0,13:2'
+$payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('up:ctrl+left'))
+Assert-Held 'down:ctrl+right' '17:0,39:1'
+$sent.Clear()
+$result = Invoke-UnicodeInput "$id $payload" { param($key) return [BridgeVM.BvUnicodeInput]::InsertKey($key, $stub) } $true
+if ($result.Exit -ne 0 -or $result.Out -cne "BVINPUT_INSERTED $id 2" -or $sent.Count -ne 1 -or $sent[0] -cne '37:3,17:0') { throw 'overlapping release receipt mismatch' }
+Assert-Held 'up:ctrl+right' '39:3,17:2'
+# A modified pointer action leaves down the modifiers a held key needs (pressed again in place of the release), the
+# others go up; a plain scroll is unchanged; once the key is up the same scroll releases Ctrl.
+function Assert-Pointer([string]$command, [string]$expected) {
+    $sent.Clear()
+    [void][BridgeVM.BvUnicodeInput]::InsertPointer($command, $stub)
+    if ($sent[0] -cne $expected) { throw "wrong pointer events: $command => $($sent[0]) (expected $expected)" }
+}
+Assert-Held 'down:ctrl+left' '17:0,37:1'
+Assert-Pointer 'scroll:-1@0x0:c' '17:0,m32769,m2048,17:0'
+Assert-Pointer 'scroll:1@0x0:cs' '17:0,16:0,m32769,m2048,16:2,17:0'
+Assert-Pointer 'scroll:-1@0x0' 'm32769,m2048'
+Assert-Pointer 'click:0x0:c' '17:0,m32771,m32773,17:0'
+Assert-Held 'up:ctrl+left' '37:3,17:2'
+Assert-Pointer 'scroll:-1@0x0:c' '17:0,m32769,m2048,17:2'
 $agent = [IO.File]::ReadAllText((Join-Path $root 'bvagent.ps1'))
 if (-not $agent.Contains("{ `$_ -in @('TEXTINPUT', 'KEYINPUT', 'POINTERINPUT') } { Write-CommandResult `$h (Invoke-UnicodeInput `$arg `$null (`$tok -eq 'KEYINPUT') (`$tok -eq 'POINTERINPUT')) }")) { throw 'key dispatch missing' }
 Write-Output 'Guest key chord contracts: PASS (no native input injected)'

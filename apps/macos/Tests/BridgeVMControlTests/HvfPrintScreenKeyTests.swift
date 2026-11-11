@@ -23,7 +23,7 @@ final class HvfPrintScreenKeyTests: XCTestCase {
         XCTAssertEqual(HvfGuestInputEncoding(.key("alt+printscreen"))?.insertedEventCount, 4)
     }
 
-    /// The pressed key, through the display's key path, reaches the VMM as `KEY printscreen`.
+    /// The pressed key, through the display's key path, reaches the VMM as Print Screen, held until its key-up.
     func testF13ReachesTheLegacyRouteAsPrintScreen() throws {
         let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
             .appendingPathComponent("printscreen-" + UUID().uuidString)
@@ -34,11 +34,14 @@ final class HvfPrintScreenKeyTests: XCTestCase {
             shareHostDir: nil, shareGuestDir: nil, virtioNet: false, virtioGpu3d: false, nvmeBufferedIO: false,
             ctlFilePath: root.appendingPathComponent("agent.ctl").path)
         let session = HvfEngineSession(config: config, repoRoot: root) { _ in false }
-        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .function,
-            timestamp: 0, windowNumber: 0, context: nil, characters: "\u{f710}",
-            charactersIgnoringModifiers: "\u{f710}", isARepeat: false, keyCode: 0x69))
-        XCTAssertTrue(HvfFramebufferKeyInput.send(event, to: session))
-        XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("input.ctl"), encoding: .utf8), "KEY printscreen\n")
+        for type: NSEvent.EventType in [.keyDown, .keyUp] {
+            let event = try XCTUnwrap(NSEvent.keyEvent(with: type, location: .zero, modifierFlags: .function,
+                timestamp: 0, windowNumber: 0, context: nil, characters: "\u{f710}",
+                charactersIgnoringModifiers: "\u{f710}", isARepeat: false, keyCode: 0x69))
+            XCTAssertTrue(HvfFramebufferKeyInput.send(event, to: session))
+        }
+        XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("input.ctl"), encoding: .utf8),
+                       "KEY down:printscreen\nKEY up:printscreen\n")
     }
 
     /// An agent that cannot build Print Screen would refuse it, so it never gets it; one with the marker does.

@@ -27,13 +27,15 @@ final class HvfKeypadEnterTests: XCTestCase {
             nvmeBufferedIO: false, ctlFilePath: root.appendingPathComponent("agent.ctl").path)
         let session = HvfEngineSession(config: config, repoRoot: root) { _ in false }
         for flags: NSEvent.ModifierFlags in [.numericPad, [.numericPad, .option]] {
-            let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
-                modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil,
-                characters: "\u{3}", charactersIgnoringModifiers: "\u{3}", isARepeat: false, keyCode: 0x4c))
-            XCTAssertTrue(HvfFramebufferKeyInput.send(event, to: session))
+            for type: NSEvent.EventType in [.keyDown, .keyUp] {
+                let event = try XCTUnwrap(NSEvent.keyEvent(with: type, location: .zero,
+                    modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil,
+                    characters: "\u{3}", charactersIgnoringModifiers: "\u{3}", isARepeat: false, keyCode: 0x4c))
+                XCTAssertTrue(HvfFramebufferKeyInput.send(event, to: session))
+            }
         }
         XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("input.ctl")),
-                       "KEY enter\nKEY alt+enter\n")
+                       "KEY down:enter\nKEY up:enter\nKEY down:alt+enter\nKEY up:alt+enter\n")
         XCTAssertFalse(session.events.contains { $0.displayText.contains("clipboard paste") })
         XCTAssertFalse(FileManager.default.fileExists(atPath: config.ctlFilePath))
     }

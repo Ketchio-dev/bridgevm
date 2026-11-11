@@ -21,6 +21,7 @@ struct HvfInputCapabilitiesRequest {
     var pointerModifiers: Bool { supported && receipt.pointerModifiers }
     var middleButton: Bool { supported && receipt.middleButton }
     var caret: Bool { supported && receipt.caret }
+    var keyHold: Bool { supported && receipt.keyHold }
 
     mutating func consume(lines: [String], now: Date) -> Outcome? {
         guard !finished else { return nil }

@@ -7,13 +7,13 @@ struct HvfInputCapabilityReceipt {
     private let id: String
     private var accepted: [String] = [], phase = Phase.header
     /// Shift+Enter/Space, the Ctrl/Shift chord set, every generic chord, raw-unit scrolling, modifiers held
-    /// for a pointer action, the middle button, the text caret query and the Print Screen key, in any order
-    /// after BVINPUT_CAPS.
+    /// for a pointer action, the middle button, the text caret query, the Print Screen key and held keys, in any
+    /// order after BVINPUT_CAPS.
     private var markers: [String] {
         ["BVINPUT_KEYS \(id) SHIFT_ENTER_SPACE", "BVINPUT_CHORDS \(id) \(HvfControlChordKeys.token)",
          "BVINPUT_CHORDS \(id) \(HvfModifierChord.token)", "BVINPUT_POINTER \(id) SCROLL_UNITS",
          "BVINPUT_POINTER \(id) MODIFIERS", "BVINPUT_POINTER \(id) MIDDLE", "BVINPUT_TEXT \(id) CARET",
-         "BVINPUT_KEYS \(id) PRINTSCREEN"]
+         "BVINPUT_KEYS \(id) PRINTSCREEN", "BVINPUT_KEYS \(id) HOLD"]
     }
     /// Any modifiers plus a key and a bare modifier tap (HvfModifierChord); the agent builds every key then.
     var modifierChords: Bool { accepted.contains(markers[2]) }
@@ -25,6 +25,8 @@ struct HvfInputCapabilityReceipt {
     var middleButton: Bool { accepted.contains(markers[5]) }
     /// `CARET <id>` answers where the guest's text caret is (HvfGuestCaret.swift).
     var caret: Bool { accepted.contains(markers[6]) }
+    /// A held key's halves, `down:<key>` and `up:<key>` (HvfModifierChord.down); an older agent taps every key.
+    var keyHold: Bool { accepted.contains(markers[8]) }
 
     init(id: UUID) { self.id = id.uuidString }
 
@@ -34,7 +36,9 @@ struct HvfInputCapabilityReceipt {
             return (scrollUnits || fields[0] != "scrollunits") && (pointerModifiers || fields.count < 3)
                 && (middleButton || !fields[0].hasPrefix("middle"))
         }
-        guard case let .key(key) = event else { return true }
+        guard case let .key(command) = event else { return true }
+        let key = HvfModifierChord.heldAction(command) ?? command
+        guard keyHold || key == command else { return false }
         // An agent without the marker refuses Print Screen, so it never gets it; in a chord the generic marker too.
         if key.split(separator: "+").last.map(String.init) == HvfModifierChord.printScreen {
             return accepted.contains(markers[7]) && (modifierChords || key == HvfModifierChord.printScreen)

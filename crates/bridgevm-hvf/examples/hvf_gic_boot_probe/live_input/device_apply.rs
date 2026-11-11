@@ -1,6 +1,7 @@
 //! Apply at most one prepared input command while holding the platform.
 
-use super::{key_actions, LiveInputCommand, LiveInputController};
+use super::key_actions::{self, KeyCommand};
+use super::{LiveInputCommand, LiveInputController};
 use crate::xhci_hid_input::parse_pointer_input_actions;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::platform_virt::VirtPlatform;
@@ -36,9 +37,14 @@ impl LiveInputController {
         };
         platform.set_host_now(now);
         let result = match command {
-            LiveInputCommand::Key(value) => match key_actions::parse(value) {
-                Ok(actions) => platform
+            LiveInputCommand::Key(value) => match key_actions::parse_command(value) {
+                Ok(KeyCommand::Tap(actions)) => platform
                     .queue_xhci_setup_input_actions_with_mem(&actions, mem)
+                    .map(|()| true)
+                    .map_err(|error| matches!(error, XhciSetupInputQueueError::Busy)),
+                // A press already held, or a release of a key not held, is accepted and changes nothing.
+                Ok(KeyCommand::Hold { action, down }) => platform
+                    .queue_xhci_setup_input_hold_with_mem(action, down, mem)
                     .map(|()| true)
                     .map_err(|error| matches!(error, XhciSetupInputQueueError::Busy)),
                 Err(error) => {

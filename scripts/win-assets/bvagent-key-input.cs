@@ -24,12 +24,65 @@ namespace BridgeVM {
             { "semicolon", 0xBA }, { "quote", 0xDE }, { "grave", 0xC0 }, { "comma", 0xBC }, { "period", 0xBE }, { "slash", 0xBF }
         };
 
+        // The actions `down:` halves hold now, this agent instance's (a restarted one holds nothing), at most six
+        // like the host's. As in the VMM's HID report, a modifier stays down while a held action still needs it.
+        private static readonly List<string> HeldActions = new List<string>();
+
+        // Inserts the events and returns how many Windows took: SendInput (InsertEvents) or a contract test's stand-in.
+        public delegate uint Sender(Input[] inputs);
+
+        // `down:<key>` is the first half of a key's events (modifiers and key down) and `up:<key>` the second
+        // (key and modifiers up, in reverse): a key held from the Mac's key-down to its key-up.
         public static Input[] BuildKey(string command) {
+            return BuildKey(command, null);
+        }
+
+        // `held`: the actions held now. An `up:` presses a modifier another of them still needs again in place of its
+        // release (a repeat, as a keyboard's typematic sends): up:ctrl+left leaves Ctrl down for a held ctrl+right, and
+        // every half keeps the event count the host's receipt checks. A whole tap keeps them the same way (the host taps
+        // when it cannot hold, e.g. a seventh key): ctrl+v under a held ctrl+left leaves Ctrl down.
+        private static Input[] BuildKey(string command, List<string> held) {
+            int phase = 0;
+            if (command != null && command.StartsWith("down:", StringComparison.Ordinal)) { phase = 1; command = command.Substring(5); }
+            else if (command != null && command.StartsWith("up:", StringComparison.Ordinal)) { phase = 2; command = command.Substring(3); }
+            List<ushort> modifiers;
+            bool extended;
+            ushort code = ParseKey(command, out modifiers, out extended);
+            List<ushort> kept = phase == 2 ? HeldModifiers(held, command) : phase == 0 ? HeldModifiers(held, null) : new List<ushort>();
+            List<Input> inputs = new List<Input>();
+            if (phase != 2) {
+                foreach (ushort modifier in modifiers) { inputs.Add(KeyEvent(modifier, false, modifier == 0x5B)); }
+                inputs.Add(KeyEvent(code, false, extended));
+            }
+            if (phase != 1) {
+                inputs.Add(KeyEvent(code, !kept.Contains(code), extended));
+                for (int i = modifiers.Count - 1; i >= 0; i--) { inputs.Add(KeyEvent(modifiers[i], !kept.Contains(modifiers[i]), modifiers[i] == 0x5B)); }
+            }
+            return inputs.ToArray();
+        }
+
+        // The modifier keys the held `actions` other than `except` need down (none for null).
+        private static List<ushort> HeldModifiers(List<string> actions, string except) {
+            List<ushort> kept = new List<ushort>();
+            if (actions == null) { return kept; }
+            foreach (string other in actions) {
+                if (String.Equals(other, except, StringComparison.Ordinal)) { continue; }
+                List<ushort> its;
+                bool ignored;
+                ushort key = ParseKey(other, out its, out ignored);
+                kept.AddRange(its);
+                if (Array.IndexOf(ModifierKeys, key) >= 0) { kept.Add(key); }
+            }
+            return kept;
+        }
+
+        // One generic chord's modifiers and key; anything else throws.
+        private static ushort ParseKey(string command, out List<ushort> modifiers, out bool extended) {
             if (String.IsNullOrEmpty(command) || command.Length > 32) {
                 throw new ArgumentException("key-input-length");
             }
             string[] parts = command.Split('+');
-            List<ushort> modifiers = new List<ushort>();
+            modifiers = new List<ushort>();
             int next = 0;
             for (int i = 0; i < parts.Length - 1; i++) {
                 int index = next < ModifierNames.Length ? Array.IndexOf(ModifierNames, parts[i], next) : -1;
@@ -56,13 +109,8 @@ namespace BridgeVM {
                 throw new ArgumentException("unsupported-key-input");
             }
             // Like the physical keys: the navigation block, Print Screen (E0 37), Insert, Delete and the Windows key.
-            bool extended = (code >= 0x21 && code <= 0x28) || code == 0x2C || code == 0x2D || code == 0x2E || code == 0x5B;
-            List<Input> inputs = new List<Input>();
-            foreach (ushort modifier in modifiers) { inputs.Add(KeyEvent(modifier, false, modifier == 0x5B)); }
-            inputs.Add(KeyEvent(code, false, extended));
-            inputs.Add(KeyEvent(code, true, extended));
-            for (int i = modifiers.Count - 1; i >= 0; i--) { inputs.Add(KeyEvent(modifiers[i], true, modifiers[i] == 0x5B)); }
-            return inputs.ToArray();
+            extended = (code >= 0x21 && code <= 0x28) || code == 0x2C || code == 0x2D || code == 0x2E || code == 0x5B;
+            return code;
         }
 
         private static Input KeyEvent(ushort key, bool up, bool extended) {
@@ -74,7 +122,21 @@ namespace BridgeVM {
         }
 
         public static uint InsertKey(string command) {
-            return InsertEvents(BuildKey(command));
+            return InsertKey(command, InsertEvents);
+        }
+
+        // A `down:` holds its action once Windows
+        // took all of its events, a repeat holding it once; an `up:` forgets it whatever it inserts. An `up:` for an
+        // action not held still releases it, but for what a held action needs: a restarted agent gets the releases of
+        // the keys its predecessor pressed, which Windows still holds down.
+        public static uint InsertKey(string command, Sender send) {
+            Input[] inputs = BuildKey(command, HeldActions);
+            if (command.StartsWith("up:", StringComparison.Ordinal)) { HeldActions.Remove(command.Substring(3)); }
+            uint inserted = send(inputs);
+            RequireComplete(inserted, (uint)inputs.Length);
+            string action = command.StartsWith("down:", StringComparison.Ordinal) ? command.Substring(5) : null;
+            if (action != null && !HeldActions.Contains(action) && HeldActions.Count < 6) { HeldActions.Add(action); }
+            return inserted;
         }
 
         private static uint InsertEvents(Input[] inputs) {

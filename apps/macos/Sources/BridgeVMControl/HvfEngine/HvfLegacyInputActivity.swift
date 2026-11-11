@@ -7,22 +7,29 @@ import Foundation
 /// waits until the VMM has taken every KEY and non-move POINTER line off its queue (its run.log line for each,
 /// `observe`), and then a second after the last such line or write, for the guest to read the reports. A move
 /// prints no such line (a late one would drag an ordered press back), so one written after the last counted line
-/// needs a `barrier`; and never while a button pressed there is still down (its release must take the same
-/// route: the HID mouse cannot release a SendInput press, nor SendInput an HID one). A VMM that prints no such
-/// lines (an older one) never lets the switch happen after HID input: the HID route stays.
+/// needs a `barrier`; and never while a button pressed there, or a key held there (`KEY down:<key>`), is still down
+/// (its release must take the same route: the HID mouse and keyboard cannot release a SendInput press, nor SendInput
+/// an HID one). A VMM that prints no such lines (an older one) never lets the switch happen after HID input: the HID
+/// route stays.
 struct HvfLegacyInputActivity {
     static let settle: TimeInterval = 1
     private var last = Date.distantPast
     /// The VMM's HID button state (bridgevm-hvf xhci/pointer_input_report.rs): a press replaces it, a release
     /// or right click clears it, a left click leaves it.
     private var buttons = 0
+    /// The keys held on the VMM's keyboard (live_input/key_actions.rs): `KEY down:<key>` until its `KEY up:<key>`.
+    private(set) var keys: [String] = []
     /// KEY and non-move POINTER lines written, and how many of them the VMM has taken off its queue.
     private var written = 0, taken = 0
     /// The position of a move written after the last counted line: nothing shows yet that it left the VMM's queue.
     private var unconfirmedMove: String?
 
     mutating func wrote(_ line: String, now: Date) {
-        if line.hasPrefix("POINTER ") { // KEY lines are whole taps
+        if line.hasPrefix("KEY "), let key = HvfModifierChord.heldAction(String(line.dropFirst(4))) {
+            keys.removeAll { $0 == key }
+            if line.hasPrefix("KEY " + HvfModifierChord.down) { keys.append(key) }
+        }
+        if line.hasPrefix("POINTER ") {
             let verb = line.dropFirst(8).prefix(while: { $0 != ":" })
             switch verb {
             case "move":
@@ -58,7 +65,7 @@ struct HvfLegacyInputActivity {
     mutating func observe(_ lines: [String], now: Date) {
         for line in lines {
             if line == HvfGuestResetRecord.processRecreation || line == HvfGuestResetRecord.processRecreation + "\r" {
-                written = 0; taken = 0
+                written = 0; taken = 0; keys = [] // a new VMM holds no key
             } else if Self.takesCommand(line) {
                 taken = min(taken + 1, written) // a line never stands for one written later
                 last = now
@@ -67,7 +74,7 @@ struct HvfLegacyInputActivity {
     }
 
     func quiescent(now: Date) -> Bool {
-        taken == written && buttons == 0 && unconfirmedMove == nil && now.timeIntervalSince(last) >= Self.settle
+        taken == written && buttons == 0 && keys.isEmpty && unconfirmedMove == nil && now.timeIntervalSince(last) >= Self.settle
     }
 
     /// Nothing was written, but the next switch waits a full second from now: a fallback whose cleanup release

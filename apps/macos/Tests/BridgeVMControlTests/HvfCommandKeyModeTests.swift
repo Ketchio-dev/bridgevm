@@ -30,14 +30,15 @@ final class HvfCommandKeyModeTests: XCTestCase {
     }
 
     /// The legacy route (the VMM shipped with the app) takes a bare tap and a Command chord; the line
-    /// it gets is the Windows key or the Ctrl chord the mode names.
+    /// it gets is the Windows key or the Ctrl chord the mode names. A Command chord stays a tap; Option+S is held
+    /// from its key-down (HvfKeyHoldTests).
     func testDisplayKeysAndTapsReachTheLegacyRouteByMode() throws {
         let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
             .appendingPathComponent("command-key-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: root) }
-        for (mode, expected) in [(HvfCommandKeyMode.mac, "KEY ctrl+c\nKEY win\nKEY alt+s\n"),
-                                 (.windows, "KEY win+c\nKEY win\nKEY alt+s\n")] {
+        for (mode, expected) in [(HvfCommandKeyMode.mac, "KEY ctrl+c\nKEY win\nKEY down:alt+s\n"),
+                                 (.windows, "KEY win+c\nKEY win\nKEY down:alt+s\n")] {
             var config = HvfEngineConfig(targetDiskPath: "synthetic-disk", uefiVarsPath: "synthetic-vars",
                 evidenceDir: root.appendingPathComponent(mode.rawValue).path, watchdogMs: nil, ramMiB: 6144, smpCpus: 4,
                 clipboardSync: true, shareHostDir: nil, shareGuestDir: nil, virtioNet: false, virtioGpu3d: false,

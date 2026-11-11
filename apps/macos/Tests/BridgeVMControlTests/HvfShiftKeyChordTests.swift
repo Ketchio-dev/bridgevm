@@ -40,9 +40,13 @@ final class HvfShiftKeyChordTests: XCTestCase {
         view.frame = NSRect(x: 0, y: 0, width: 320, height: 200)
         view.refreshFrame(at: 0)
         XCTAssertTrue(view.guestInputAvailable)
-        for (character, code, _) in cases { view.keyDown(with: try event(character, code: code)) }
+        for (character, code, _) in cases {
+            view.keyDown(with: try event(character, code: code))
+            view.keyUp(with: try event(character, code: code, type: .keyUp))
+        }
         XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("input.ctl")),
-                       "KEY shift+enter\nKEY shift+enter\nKEY shift+enter\nKEY shift+space\n")
+                       String(repeating: "KEY down:shift+enter\nKEY up:shift+enter\n", count: 3)
+                        + "KEY down:shift+space\nKEY up:shift+space\n")
         XCTAssertFalse(FileManager.default.fileExists(atPath: config.ctlFilePath))
     }
 
@@ -58,8 +62,8 @@ final class HvfShiftKeyChordTests: XCTestCase {
         XCTAssertTrue(view.texts.isEmpty)
     }
 
-    private func event(_ character: String, code: UInt16) throws -> NSEvent {
-        try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .shift,
+    private func event(_ character: String, code: UInt16, type: NSEvent.EventType = .keyDown) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.keyEvent(with: type, location: .zero, modifierFlags: .shift,
             timestamp: 0, windowNumber: 0, context: nil, characters: character,
             charactersIgnoringModifiers: character, isARepeat: false, keyCode: code))
     }
