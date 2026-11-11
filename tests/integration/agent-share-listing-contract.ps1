@@ -8,6 +8,7 @@
 # PUTBEG/PUTCHUNK/PUTEND) keeps the Mac file's modification time when the host sends one. Runs
 # the agent's own verb cases and share watch block against a temporary folder. On Windows, a
 # path longer than 260 characters is written, listed and deleted, and its listing does not fail.
+# The compiled listing (BvShareWatch.List) gives exactly the rows the Get-ChildItem walk gave.
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $source = [IO.File]::ReadAllText((Join-Path $repo 'scripts/win-assets/bvagent.ps1'))
@@ -47,12 +48,15 @@ function Log([string]$m) { }
 function Write-Line($handle, [string]$line, [string]$label) { $script:sent = $line }
 $script:enumerations = 0
 $script:during = $null
-function Get-ChildItem {
+$listShare = ${function:Get-ShareListing}
+function Get-ShareListing([string]$listRoot) {
     $script:enumerations++
-    $items = @(Microsoft.PowerShell.Management\Get-ChildItem @args)
+    $rows = & $listShare $listRoot
     if ($script:during) { & $script:during; $script:during = $null }
-    $items
+    $rows
 }
+$maxAge = [long](600 * [Diagnostics.Stopwatch]::Frequency)
+if ($script:BvLsrMaxAgeTicks -ne $maxAge) { throw 'FAIL: the listing is re-sent for ten minutes at most' }
 $h = [IntPtr]::Zero
 $root = Join-Path ([IO.Path]::GetTempPath()) ('bv-lsr-' + [Guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory((Join-Path $root 'sub'))
@@ -179,7 +183,7 @@ try {
     $script:BvLsrMaxAgeTicks = [long]1
     Start-Sleep -Milliseconds 5
     $aged = List $gen
-    $script:BvLsrMaxAgeTicks = [long](60 * [Diagnostics.Stopwatch]::Frequency)
+    $script:BvLsrMaxAgeTicks = $maxAge
     Assert ($aged.Enumerated -and $aged.Gen -and $aged.Gen -cne $gen) 'past the age limit: the listing with a new gen'
     $cases++
     # A lost event (buffer overflow) or a dead watcher: its Error handler marks it broken.
@@ -284,8 +288,81 @@ try {
     $script:BvLsrMaxAgeTicks = [long]1
     Start-Sleep -Milliseconds 5
     Assert (List).Enumerated 'a listing past its age is enumerated again'
-    $script:BvLsrMaxAgeTicks = [long](60 * [Diagnostics.Stopwatch]::Frequency)
+    $script:BvLsrMaxAgeTicks = $maxAge
     $cases++
+
+    # The compiled listing gives the Get-ChildItem walk's rows, in its order: in each folder the
+    # folders, then the files, each sorted by name in the current culture ignoring case, then
+    # each folder below in the file system's order. Names that sort apart by culture and by code
+    # point, hidden and system files, an empty folder, a large PUT's temporary (never listed) and
+    # look-alikes (listed), a long path and a junction (Windows PowerShell follows it) on Windows.
+    # A folder neither can list fails both.
+    $walkRoot = Join-Path ([IO.Path]::GetTempPath()) ('bv-walk-' + [Guid]::NewGuid().ToString('N'))
+    $windows = [IO.Path]::DirectorySeparatorChar -eq '\'
+    try {
+        $names = @('b', 'A', '_u', 'a-b', 'Z', '[x]', '10', '9', ([string][char]0xD55C + [char]0xAE00), ([string][char]0xC4 + 'x'))
+        foreach ($top in @('', 'A', 'A/_u', 'Z/deep/er')) {
+            foreach ($n in $names) {
+                $dir = Join-Path (Join-Path $walkRoot $top) ($n + '.d')
+                [void][IO.Directory]::CreateDirectory($dir)
+                [IO.File]::WriteAllBytes((Join-Path (Join-Path $walkRoot $top) ($n + '.txt')), (New-Object byte[] ($n.Length)))
+            }
+        }
+        [void][IO.Directory]::CreateDirectory((Join-Path $walkRoot 'empty'))
+        [IO.File]::WriteAllBytes((Join-Path $walkRoot ('A/.bridgevm-part-' + [Guid]::NewGuid().ToString('N'))), [byte[]](1))
+        foreach ($n in @('.bridgevm-part-notes', ('.bridgevm-part-' + [Guid]::NewGuid().ToString('N').ToUpperInvariant()), '.hidden')) {
+            [IO.File]::WriteAllBytes((Join-Path $walkRoot ('A/' + $n)), [byte[]](2, 2))
+        }
+        if ($windows) {
+            # Precomposed and decomposed e-acute side by side (NTFS keeps both; one culture key).
+            [IO.File]::WriteAllBytes((Join-Path $walkRoot ([string][char]0xE9)), [byte[]](1))
+            [IO.File]::WriteAllBytes((Join-Path $walkRoot ('e' + [char]0x301)), [byte[]](1, 1))
+            $hidden = Join-Path $walkRoot 'A/hidden-system.txt'
+            [IO.File]::WriteAllBytes($hidden, [byte[]](3))
+            [IO.File]::SetAttributes($hidden, [IO.FileAttributes]'Hidden, System')
+            [IO.File]::SetAttributes((Join-Path $walkRoot 'Z'), [IO.FileAttributes]'Directory, Hidden')
+            $deepDir = Join-Path $walkRoot ((@(('w' * 60)) * 5) -join '\')
+            [void][IO.Directory]::CreateDirectory('\\?\' + $deepDir)
+            [IO.File]::WriteAllBytes('\\?\' + $deepDir + '\long.bin', [byte[]](4))
+            if ($PSVersionTable.PSEdition -eq 'Desktop') {
+                # Windows PowerShell 5.1 recurses into a junction (PowerShell 7 does not).
+                [void](New-Item -ItemType Junction -Path (Join-Path $walkRoot 'link') -Value (Join-Path $walkRoot 'A/_u'))
+            }
+        }
+        $rootFull = [IO.Path]::GetFullPath($walkRoot) + [IO.Path]::DirectorySeparatorChar
+        $listRoot = Get-IoPath $rootFull $true
+        $script:BvShareWatchReady = $true
+        $compiled = & $listShare $listRoot
+        $script:BvShareWatchReady = $false
+        $walked = & $listShare $listRoot
+        $script:BvShareWatchReady = $true
+        $a = $compiled -split "`r?`n"; $b = $walked -split "`r?`n"
+        $at = 0; while ($at -lt [Math]::Min($a.Count, $b.Count) -and $a[$at] -ceq $b[$at]) { $at++ }
+        Assert ($compiled -ceq $walked) "compiled and walked listings differ at row $at of $($a.Count)/$($b.Count): '$(if ($at -lt $a.Count) { $a[$at] })' vs '$(if ($at -lt $b.Count) { $b[$at] })'"
+        Assert ($a.Count -gt 60 -and $compiled -cmatch '\.bridgevm-part-notes\|2\|0\|' -and $compiled -cnotmatch 'bridgevm-part-[0-9a-f]{32}\|') "the compiled listing: $($a.Count) rows"
+        $cases++
+
+        $locked = Join-Path $walkRoot 'A/locked'
+        [void][IO.Directory]::CreateDirectory($locked)
+        $deny = if ($windows) { { icacls $locked /deny '*S-1-1-0:(RD)' | Out-Null } } else { { chmod 000 $locked } }
+        $allow = if ($windows) { { icacls $locked /remove:d '*S-1-1-0' | Out-Null } } else { { chmod 755 $locked } }
+        & $deny
+        try {
+            $failed = foreach ($ready in @($true, $false)) {
+                $script:BvShareWatchReady = $ready
+                try { [void](& $listShare $listRoot); 'listed' } catch { 'failed' }
+            }
+        } finally { & $allow; $script:BvShareWatchReady = $true }
+        # (root lists any folder off Windows)
+        if ($windows -or (& id -u) -ne '0') {
+            Assert (($failed -join ',') -ceq 'failed,failed') "a folder that cannot be listed fails both: $($failed -join ',')"
+        }
+        $cases++
+    } finally {
+        $script:BvShareWatchReady = $true
+        if ($windows -and (Test-Path -LiteralPath (Join-Path $walkRoot 'link'))) { [IO.Directory]::Delete((Join-Path $walkRoot 'link')) }
+        Remove-Item -LiteralPath (Get-IoPath $walkRoot $true) -Recurse -Force -ErrorAction SilentlyContinue
+    }
 
     # Without the watcher every listing enumerates, as before, and a gen never comes back as LSSAME.
     $script:BvShareWatchReady = $false

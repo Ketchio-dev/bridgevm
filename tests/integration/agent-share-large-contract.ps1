@@ -13,7 +13,15 @@ $verbs = @{}
 foreach ($verb in @('GETRANGE', 'LPUTBEG', 'LPUTDATA', 'LPUTEND', 'LPUTABORT', 'LSR')) {
     $one = [regex]::Matches($source, "(?s)\n                '$verb' \{(?<body>.*?)\r?\n                \}\r?\n")
     if ($one.Count -ne 1) { throw "expected exactly one $verb implementation" }
-    $verbs[$verb] = [scriptblock]::Create($one[0].Groups['body'].Value)
+    $body = $one[0].Groups['body'].Value
+    if ($verb -eq 'LSR' -and [IO.Path]::DirectorySeparatorChar -ne '\') {
+        # LSR roots its listing at <root>\, which only Windows paths match: elsewhere (pwsh on
+        # macOS) the test gives it the host's separator, or it lists nothing.
+        $windowsRoot = "if (-not `$rootFull.EndsWith('\')) { `$rootFull = `$rootFull + '\' }"
+        if (-not $body.Contains($windowsRoot)) { throw 'LSR root separator not found' }
+        $body = $body.Replace($windowsRoot, $windowsRoot.Replace("'\'", "'/'"))
+    }
+    $verbs[$verb] = [scriptblock]::Create($body)
 }
 foreach ($name in @('Get-IoPath', 'Set-PutTime', 'Is-BadHandle', 'Test-DropReader', 'Read-DataPayload')) {
     $function = [regex]::Match($source, "(?s)\nfunction $name\b.*?\r?\n\}\r?\n")
@@ -174,10 +182,7 @@ try {
     $listing = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($reply.Substring(5)))
     $listed = @($listing -split "`r?`n" | Where-Object { $_ } | ForEach-Object { [IO.Path]::GetFileName(($_ -split '\|')[0].Replace('\', '/')) } | Where-Object { $_.StartsWith('.bridgevm-part-', [StringComparison]::OrdinalIgnoreCase) })
     Assert ($reply -clike 'LSOK *' -and $listing -cnotmatch 'bridgevm-part-[0-9a-f]{32}\|') "listed a temporary: $listing"
-    if ([IO.Path]::DirectorySeparatorChar -eq '\') {
-        # LSR roots its listing at <root>\, which only Windows paths match (macOS pwsh lists nothing).
-        Assert ((($listed | Sort-Object) -join ',') -ceq (($users | Sort-Object) -join ',')) "listed: $($listed -join ',')"
-    }
+    Assert ((($listed | Sort-Object) -join ',') -ceq (($users | Sort-Object) -join ',')) "listed: $($listed -join ',')"
     $left = @(Parts $dir | Sort-Object)
     $want = @([IO.Path]::GetFileName($script:BvLPut.Temp), [IO.Path]::GetFileName($recent)) | Sort-Object
     Assert (($left -join ',') -ceq ($want -join ',')) "temporaries left: $($left -join ',')"
