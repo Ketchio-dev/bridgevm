@@ -39,6 +39,8 @@ mod host_watch_tests;
 mod listing_pause_tests;
 #[path = "share_listing_scale_tests.rs"]
 mod listing_scale_tests;
+#[path = "share_listing_same_tests.rs"]
+mod listing_same_tests;
 
 const ROOT: &str = "C:\\share";
 
@@ -69,6 +71,11 @@ struct NtfsGuest {
     on_get: Option<Box<dyn FnMut(&str)>>,
     /// Rows listed after the files: the other entries of a large folder, written out once.
     bulk: String,
+    /// As an agent with LSSAME (asked with a gen): its last listing and that listing's gen, the
+    /// gens made, and the LSSAME replies sent.
+    last_listing: Option<(String, String)>,
+    gens: u64,
+    same_replies: usize,
 }
 
 impl NtfsGuest {
@@ -140,7 +147,24 @@ impl NtfsGuest {
                     listing.push_str(&format!("{folder}|0|1|m0\n"));
                 }
                 listing.push_str(&self.bulk);
-                vec![format!("LSOK {}", b64(listing.as_bytes()))]
+                let Some((_, gen)) = arg.split_once(' ') else {
+                    return vec![format!("LSOK {}", b64(listing.as_bytes()))];
+                };
+                // As the agent: LSSAME while its last listing still holds, else that listing
+                // with its gen.
+                match self.last_listing.as_ref() {
+                    Some((last, last_gen)) if *last == listing && last_gen == gen => {
+                        self.same_replies += 1;
+                        return vec![format!("LSSAME {gen}")];
+                    }
+                    Some((last, _)) if *last == listing => {}
+                    _ => {
+                        self.gens += 1;
+                        self.last_listing = Some((listing, format!("{:032x}", self.gens)));
+                    }
+                }
+                let (listing, gen) = self.last_listing.as_ref().unwrap();
+                vec![format!("LSOK {} {gen}", b64(listing.as_bytes()))]
             }
             "GET" => {
                 self.gets.push(Self::rel(&text(arg)));

@@ -1,6 +1,7 @@
 //! A guest folder of 100,000 files in a code repository's tree (paths of about 60 characters):
-//! its listing is applied, not refused, and a new session adopts the copies both sides hold.
-//! The test prints how long each step took; for the release numbers:
+//! its listing is applied, not refused, a new session adopts the copies both sides hold, and
+//! LSSAME applies the kept listing again. The test prints how long each step took; for the
+//! release numbers:
 //! `cargo test --release --example hvf_gic_boot_probe 100k -- --nocapture`.
 
 use super::*;
@@ -37,7 +38,7 @@ fn a_100k_entry_listing_is_applied_and_a_new_session_adopts_its_copies() {
     let names = names();
     let listing = listing(&names);
     assert!(listing.lines().count() > FILES && listing.len() > 7_000_000, "{} bytes", listing.len());
-    let line = format!("LSOK {}", base64_encode(listing.as_bytes()));
+    let line = format!("LSOK {} g1", base64_encode(listing.as_bytes()));
 
     // A new session: the Mac holds every file and waits for the first listing.
     let mut engine = ShareSync::new(512);
@@ -48,14 +49,17 @@ fn a_100k_entry_listing_is_applied_and_a_new_session_adopts_its_copies() {
     let mut h = harness();
     h.state = AgentConsoleState::Service;
     h.share = Some(ShareState::new(engine, PathBuf::from("/unused-test-root"), ROOT.into(), Duration::from_secs(2)));
+    h.note_agent_ready("GUEST v3-share2 lssame", Instant::now());
     let _ = ShareState::take_pause_lines();
+    let reply = |h: &mut AgentConsoleHarness, line: &str| {
+        let now = Instant::now();
+        h.in_flight = Some((ServiceReq::ShareLs, now));
+        h.handle_service_reply(line, None, None, now);
+        assert!(h.in_flight.is_none());
+        now.elapsed()
+    };
 
-    let now = Instant::now();
-    h.in_flight = Some((ServiceReq::ShareLs, now));
-    let clock = Instant::now();
-    h.handle_service_reply(&line, None, None, now);
-    let applied = clock.elapsed();
-    assert!(h.in_flight.is_none());
+    let applied = reply(&mut h, &line);
     assert!(ShareState::take_pause_lines().is_empty(), "a 100k-entry listing paused the share");
     assert!(h.queue.is_empty(), "the waiting Mac files hold the listed copies: {} requests", h.queue.len());
 
@@ -63,9 +67,16 @@ fn a_100k_entry_listing_is_applied_and_a_new_session_adopts_its_copies() {
     let clock = Instant::now();
     let adopted = names.iter().filter(|name| engine.adopt_listed_version(name, 100, MS, || None)).count();
     assert_eq!(adopted, FILES);
+    let adopting = clock.elapsed();
+
+    let same = reply(&mut h, "LSSAME g1");
+    assert!(h.queue.is_empty(), "an unchanged listing planned {} requests", h.queue.len());
+    let mut line = String::new();
+    h.share.as_ref().unwrap().listing_same.write_lsr_gen(&mut line);
+    assert_eq!(line, " g1", "the listing is no longer kept");
     println!(
-        "{FILES} files ({} listing bytes): host scan {scanned:?}, listing applied {applied:?}, adopted {:?}",
-        listing.len(),
-        clock.elapsed()
+        "{FILES} files ({} listing bytes): host scan {scanned:?}, listing applied {applied:?}, \
+         adopted {adopting:?}, LSSAME applied {same:?}",
+        listing.len()
     );
 }
