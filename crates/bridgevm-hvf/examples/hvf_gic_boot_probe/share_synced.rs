@@ -125,7 +125,7 @@ impl ShareSync {
         Some(self.synced_changes.drain().collect())
     }
 
-    /// The session's first applied listing (the wait ends before it is applied): a guest edit
+    /// The session's first applied listing (it ends the wait, share_adopt.rs): a guest edit
     /// of a name whose Mac copy is the last synced version is fetched, not held for the Mac
     /// copy. A later listing without the name gives the preference up the way a refused publish
     /// does (on_host_copy_kept), so the Mac file is sent again, also when that copy's publish

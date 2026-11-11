@@ -1,4 +1,6 @@
-//! Bounded guest directory snapshots; a refused snapshot never implies deletion.
+//! Bounded guest directory snapshots; a refused snapshot never implies deletion, and only an
+//! applied one ends a new session's wait (share_adopt.rs). One refused for its size pauses the
+//! share (share_listing_pause.rs).
 
 use super::share_listing_report::refused_name_lines;
 use super::*;
@@ -8,16 +10,12 @@ use refusal::report_listing_limit;
 
 impl AgentConsoleHarness {
     pub(in crate::agent_console) fn handle_share_listing_reply(&mut self, line: &str) {
-        // Whatever the listing holds, a new session stops holding Mac files back.
-        if line.starts_with("LSOK ") || line.starts_with("ERR") {
-            if let Some(share) = self.share.as_mut() {
-                share.engine.end_first_listing_wait();
-            }
-        }
         if let Some(b64) = line.strip_prefix("LSOK ") {
             self.apply_share_listing(b64);
             self.complete_in_flight();
         } else if line.starts_with("ERR") {
+            // A folder that is there but cannot be listed may hold newer Windows copies: the
+            // waiting Mac files stay back. A missing one is created; its empty listing ends the wait.
             println!("BVAGENT SHARE ls-error {line}");
             self.complete_in_flight();
             self.create_guest_share_root_once();
@@ -80,6 +78,10 @@ impl AgentConsoleHarness {
                 "BVAGENT SHARE ls-error <listing-encoded-limit bytes={} limit={max_encoded}>",
                 b64.len()
             );
+            if let Some(share) = self.share.as_mut() {
+                let bytes = b64.len() / 4 * 3;
+                share.note_listing_refused(share_sync::ListingLimitError::TooManyBytes { bytes });
+            }
             return;
         }
         let bytes = match base64_decode(b64) {
@@ -90,9 +92,11 @@ impl AgentConsoleHarness {
             }
         };
         if bytes.len() > share_sync::MAX_LISTING_BYTES {
-            report_listing_limit(share_sync::ListingLimitError::TooManyBytes {
-                bytes: bytes.len(),
-            });
+            let error = share_sync::ListingLimitError::TooManyBytes { bytes: bytes.len() };
+            report_listing_limit(error);
+            if let Some(share) = self.share.as_mut() {
+                share.note_listing_refused(error);
+            }
             return;
         }
         let listing = match std::str::from_utf8(&bytes) {
@@ -110,9 +114,11 @@ impl AgentConsoleHarness {
             Ok(refused) => refused,
             Err(error) => {
                 report_listing_limit(error);
+                share.note_listing_refused(error);
                 return;
             }
         };
+        share.note_listing_applied();
         for line in refused_name_lines(&mut share.engine, &refused) {
             println!("{line}");
         }

@@ -9,6 +9,8 @@ mod feedback;
 mod root;
 #[path = "share_guest_listing_names.rs"]
 mod guest_listing_names;
+#[path = "share_listing_pause.rs"]
+mod listing_pause;
 #[path = "share_host_watch.rs"]
 pub(in crate::agent_console) mod host_watch;
 #[path = "share_sync_file.rs"]
@@ -29,6 +31,8 @@ pub(in crate::agent_console) struct ShareState {
     root_blocked: bool,
     /// A missing guest folder is created at most once per session.
     pub(in crate::agent_console) guest_root_create_sent: bool,
+    /// The latest guest listing was refused for its size: the share is paused (share_listing_pause.rs).
+    listing_too_large: bool,
     /// Windows key of a share key -> the name the last listing showed for it,
     /// where that is not the key's own guest form (share_guest_listing_names.rs).
     pub(in crate::agent_console) guest_names: std::collections::HashMap<String, String>,
@@ -82,6 +86,7 @@ impl ShareState {
             root,
             root_blocked: false,
             guest_root_create_sent: false,
+            listing_too_large: false,
             guest_names: std::collections::HashMap::new(),
             host_actions: VecDeque::new(),
             host_actions_at: None,

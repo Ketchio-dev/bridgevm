@@ -35,6 +35,8 @@ mod write_refusal_tests;
 mod adopt_tests;
 #[path = "share_host_watch_service_tests.rs"]
 mod host_watch_tests;
+#[path = "share_listing_pause_tests.rs"]
+mod listing_pause_tests;
 
 const ROOT: &str = "C:\\share";
 
@@ -59,6 +61,8 @@ struct NtfsGuest {
     stream_time: Option<u128>,
     /// LSR fails, as for a folder the agent cannot read.
     ls_error: bool,
+    /// The share folder is not there yet (a fresh guest): LSR fails until a RUN or PUT makes it.
+    root_missing: bool,
     /// Runs as a GET is served (its name): a Mac edit made while the guest's copy is fetched.
     on_get: Option<Box<dyn FnMut(&str)>>,
 }
@@ -110,8 +114,14 @@ impl NtfsGuest {
         match verb {
             "PING" => vec!["PONG".into()],
             "LSR" if self.ls_error => vec!["ERR LSR Access to the path is denied.".into()],
+            "LSR" if self.root_missing => {
+                vec!["ERR LSR Cannot find path 'C:\\share\\' because it does not exist.".into()]
+            }
             // The folder create after a failed first listing (share_listing_reply.rs).
-            "RUN" => vec!["OUT 0 ".into()],
+            "RUN" => {
+                self.root_missing = false;
+                vec!["OUT 0 ".into()]
+            }
             "LSR" => {
                 let mut listing: String =
                     self.files.iter().map(|(n, b, m)| format!("{n}|{}|0|{}\n", b.len(), self.listed_time(n, *m))).collect();
@@ -147,6 +157,7 @@ impl NtfsGuest {
                 let (path, data) = (parts.next().unwrap(), parts.next().unwrap_or(""));
                 let rel = Self::rel(&text(path));
                 self.puts.push(rel.clone());
+                self.root_missing = false;
                 if rel.contains(['<', '>', ':', '"', '|', '?', '*']) {
                     return vec!["ERR PUT Illegal characters in path.".into()];
                 }
@@ -167,6 +178,7 @@ impl NtfsGuest {
                 let mut parts = arg.split(' ');
                 let rel = Self::rel(&text(parts.next().unwrap()));
                 self.puts.push(rel.clone());
+                self.root_missing = false;
                 self.write(&rel, &[]);
                 self.stream = Some((rel, parts.next().unwrap().parse().unwrap(), 0));
                 self.stream_time = parts.nth(1).and_then(|t| t.parse().ok());
