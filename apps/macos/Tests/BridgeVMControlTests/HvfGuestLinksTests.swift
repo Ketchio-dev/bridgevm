@@ -103,24 +103,24 @@ final class HvfGuestLinksTests: XCTestCase {
             session.connectionState = .stopped
             XCTAssertTrue(session.applyGuestLinksToggle(enabled) == (enabled, nil))
         }
-        let (register, watch, remove) = (Links.registerCommand, Links.watchCommand, Links.removeCommand)
+        let (register, watch, remove) = (Links.registerCommands, Links.watchCommand, Links.removeCommand)
 
         agentStarts()
-        XCTAssertFalse(sent().contains { $0 == register || $0 == watch || $0 == remove }, "never set: nothing")
+        XCTAssertFalse(sent().contains { register.contains($0) || $0 == watch || $0 == remove }, "never set: nothing")
         let before = sent().count
         change(true)
         agentStarts()
         agentStarts()  // a guest restart: registered and watched again
-        XCTAssertEqual(Array(sent().dropFirst(before)), [register, watch, register, watch])
+        XCTAssertEqual(Array(sent().dropFirst(before)), register + [watch] + register + [watch])
         change(false)
         agentStarts()
         agentStarts()
-        XCTAssertEqual(Array(sent().dropFirst(before + 4)), [remove], "removed once per app session")
+        XCTAssertEqual(Array(sent().dropFirst(before + 6)), [remove], "removed once per app session")
         change(true)
         agentStarts()
         change(false)
         agentStarts()
-        XCTAssertEqual(Array(sent().dropFirst(before + 5)), [register, watch, remove])
+        XCTAssertEqual(Array(sent().dropFirst(before + 7)), register + [watch, remove])
         XCTAssertNil(library.operationError)
     }
 
@@ -133,20 +133,26 @@ final class HvfGuestLinksTests: XCTestCase {
             let units = stride(from: 0, to: bytes.count, by: 2).map { UInt16(bytes[$0]) | UInt16(bytes[$0 + 1]) << 8 }
             return try XCTUnwrap(String(utf16CodeUnits: units, count: units.count))
         }
-        for command in [Links.registerCommand, Links.removeCommand] {
-            XCTAssertTrue(command.hasPrefix("powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "))
-            XCTAssertTrue(command.utf8.count <= HvfGuestCommand.maximumBytes, "\(command.utf8.count)")
+        let handlerB64 = Data(Links.handlerScript.utf8).base64EncodedString()
+        let encoded = "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "
+        XCTAssertEqual(Links.registerCommands.count, 2)
+        XCTAssertTrue(Links.registerCommands[0].hasPrefix("set BVLINK_HANDLER=\(handlerB64)&& " + encoded))
+        for command in Links.registerCommands + [Links.removeCommand] {
+            XCTAssertTrue(command.contains(encoded))
+            // bvagent.ps1 runs a RUN line as `& cmd.exe /c $cmd`, and cmd.exe refuses a line over 8,191.
+            let cmdLine = #""C:\Windows\system32\cmd.exe" /c ""# + command + "\""
+            XCTAssertTrue(cmdLine.count <= 8_191, "\(cmdLine.count) characters")
             XCTAssertEqual(try HvfGuestCommand.normalizeShell(command).get(), command)
         }
-        let register = try script(Links.registerCommand), remove = try script(Links.removeCommand)
-        XCTAssertTrue(register.contains("[Convert]::FromBase64String('\(Data(Links.handlerScript.utf8).base64EncodedString())')"))
+        let handler = try script(Links.registerCommands[0]), register = try script(Links.registerCommands[1])
+        let remove = try script(Links.removeCommand)
+        XCTAssertTrue(handler.contains("[Convert]::FromBase64String($env:BVLINK_HANDLER)"))
+        XCTAssertTrue(handler.contains("ReparsePoint"), "an elevated write never goes through a reparse point")
         XCTAssertTrue(register.contains(#"-WindowStyle Hidden -File "' + $handler + '" "%1"'"#), "the link is the one argument after -File")
-        // The handler's base64 aside, which can spell anything.
-        for text in [register.replacingOccurrences(of: Data(Links.handlerScript.utf8).base64EncodedString(), with: ""), remove] {
-            XCTAssertTrue(text.contains("[Microsoft.Win32.Registry]::CurrentUser"))
+        XCTAssertTrue([register, remove].allSatisfy { $0.contains("[Microsoft.Win32.Registry]::CurrentUser") })
+        for text in [handler, register, remove] {
             XCTAssertFalse(text.range(of: "LocalMachine|HKLM|Remove-Item|\\.Delete\\(|Invoke-Expression|cmd", options: [.regularExpression, .caseInsensitive]) != nil, text)
         }
-        XCTAssertTrue(register.contains("ReparsePoint"), "an elevated write never goes through a reparse point")
         XCTAssertTrue(Links.handlerScript.allSatisfy(\.isASCII))
         XCTAssertNil(Links.handlerScript.range(of: "Invoke-Expression|-Command|cmd\\b|param\\(", options: [.regularExpression, .caseInsensitive]))
     }

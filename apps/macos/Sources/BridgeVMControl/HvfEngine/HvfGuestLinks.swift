@@ -47,21 +47,33 @@ for ($try = 0; $try -lt 40; $try++) {
 exit 1
 """#
 
-    /// One agent line printing `BVLINKS result=registered` or `result=failed detail=...`. It writes the handler
-    /// (only when it changed, and never through a reparse point: the agent is elevated, the folder is the
-    /// user's) and the per-user browser registration Windows' Default apps lists.
-    static let registerCommand = command(#"""
+    /// Two agent lines: bvagent.ps1 runs a RUN line as `cmd.exe /c`, which refuses over 8,191 characters
+    /// (HvfClipboardPasteCommandLimit), and the handler and the registration do not fit in one. The first writes
+    /// the handler, carried by cmd's `set` as UTF-8 base64 (no cmd.exe special characters), only when it changed
+    /// and never through a reparse point (the agent is elevated, the folder is the user's). The second writes the
+    /// per-user browser registration Windows' Default apps lists. Each prints `BVLINKS result=failed detail=...`
+    /// when it fails; the second prints `BVLINKS result=registered`.
+    static let registerCommands = [
+        "set BVLINK_HANDLER=\(Data(handlerScript.utf8).base64EncodedString())&& " + command(#"""
 $ErrorActionPreference = 'Stop'
 try {
   $dir = Join-Path $env:LOCALAPPDATA 'BridgeVM'
   $handler = Join-Path $dir 'bv-open-url.ps1'
-  $bytes = [Convert]::FromBase64String('\#(Data(handlerScript.utf8).base64EncodedString())')
+  $bytes = [Convert]::FromBase64String($env:BVLINK_HANDLER)
   [void][IO.Directory]::CreateDirectory($dir)
   foreach ($path in $dir, $handler) {
     if ((Test-Path -LiteralPath $path) -and ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "reparse point: $path" }
   }
   $same = (Test-Path -LiteralPath $handler) -and ([Convert]::ToBase64String([IO.File]::ReadAllBytes($handler)) -ceq [Convert]::ToBase64String($bytes))
   if (-not $same) { [IO.File]::WriteAllBytes($handler, $bytes) }
+  'BVLINKS handler=ready'
+} catch { 'BVLINKS result=failed detail=' + (($_.Exception.Message -replace '\s+', ' ').Trim()) }
+"""#),
+        command(#"""
+$ErrorActionPreference = 'Stop'
+try {
+  $handler = Join-Path $env:LOCALAPPDATA 'BridgeVM\bv-open-url.ps1'
+  if (-not (Test-Path -LiteralPath $handler -PathType Leaf)) { throw "no handler at $handler" }
   $command = '"' + (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') + '" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $handler + '" "%1"'
   $capabilities = 'Software\Clients\StartMenuInternet\BridgeVM\Capabilities'
   $user = [Microsoft.Win32.Registry]::CurrentUser
@@ -79,7 +91,8 @@ try {
   }
   'BVLINKS result=registered'
 } catch { 'BVLINKS result=failed detail=' + (($_.Exception.Message -replace '\s+', ' ').Trim()) }
-"""#)
+"""#),
+    ]
 
     /// One agent line printing `BVLINKS result=removed`, `result=absent` or `result=failed detail=...`. Only
     /// the registration goes: the handler and its link file stay, inert, so nothing elevated deletes in the
@@ -192,7 +205,7 @@ extension HvfEngineSession {
         switch guestLinksSetting {
         case true?:
             guestLinksOffSent = false
-            if sendCtl(HvfGuestLinks.registerCommand) { _ = sendCtl(HvfGuestLinks.watchCommand) }
+            if HvfGuestLinks.registerCommands.allSatisfy({ sendCtl($0) }) { _ = sendCtl(HvfGuestLinks.watchCommand) }
         case false?:
             if !guestLinksOffSent { guestLinksOffSent = sendCtl(HvfGuestLinks.removeCommand) }
         case nil:
