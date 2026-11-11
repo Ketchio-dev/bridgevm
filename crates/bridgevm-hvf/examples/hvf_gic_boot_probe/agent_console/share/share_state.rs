@@ -103,9 +103,12 @@ impl ShareState {
             #[cfg(test)]
             host_scans: 0,
         };
-        // A root missing at the start (an unplugged drive) is reported at once, so the first scan
-        // that finds it prints `ready`, however early it comes back.
-        share.root_matches();
+        // The runtime's first word on its root, so the app's notice from Start (a folder missing
+        // then) settles either way: `blocked` now (the first scan that finds it prints `ready`), or
+        // `ready` for a folder that came back between the app's check and this.
+        let blocked = !share.root.matches(&share.host_dir);
+        share.root_blocked = !blocked;
+        share.report_root_state(blocked);
         share
     }
 
