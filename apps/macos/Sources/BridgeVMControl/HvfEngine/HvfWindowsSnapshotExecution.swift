@@ -1,35 +1,35 @@
-import SwiftUI
+import Foundation
 
-extension HvfWindowsSnapshotCard {
-    func perform(_ operation: HvfWindowsSnapshotCommand.Operation) {
-        guard !busy, let reservation = session.reserveRuntimeMutation(kind: .snapshot, configuration: config) else { return }
-        busy = true
-        status = operation == .create ? "스냅샷 생성 중…" : "스냅샷 복원 중…"
+extension HvfEngineSession {
+    /// Creates or restores the stopped VM's powered-off snapshot under a runtime-mutation
+    /// reservation, rechecked before every file and helper effect. A failure's technical detail goes
+    /// to the event feed; the card shows HvfWindowsSnapshotModel.message for it.
+    func runSnapshot(_ operation: HvfWindowsSnapshotCommand.Operation, configuration: HvfEngineConfig) async throws {
         do {
-            guard session.validateRuntimeMutation(reservation) else {
-                throw NSError(domain: "BridgeVM.RuntimeMutation", code: 1)
-            }
-            let plan = try HvfWindowsSnapshotCommand.plan(config: reservation.configuration, repoRoot: repoRoot, operation: operation)
-            Task {
-                do {
-                    guard session.validateRuntimeMutation(reservation) else {
-                        throw NSError(domain: "BridgeVM.RuntimeMutation", code: 1)
-                    }
-                    _ = try await HvfWindowsSnapshotCommand.run(operation, plan: plan) {
-                        guard await session.validateRuntimeMutation(reservation) else {
-                            throw NSError(domain: "BridgeVM.RuntimeMutation", code: 1)
-                        }
-                        try reservation.checkEffect()
-                    }
-                    status = operation == .create ? "스냅샷 생성 완료" : "스냅샷 복원 완료"
-                } catch { status = "스냅샷 실패: \(error.localizedDescription)" }
-                session.finishRuntimeMutation(reservation)
-                busy = false
-            }
+            try await snapshotUnderReservation(operation, configuration: configuration)
         } catch {
-            status = "스냅샷 실패: \(error.localizedDescription)"
-            session.finishRuntimeMutation(reservation)
-            busy = false
+            let detail = error as NSError
+            append(.unknown("powered-off snapshot \(operation) failed (\(detail.domain) \(detail.code)): "
+                + detail.localizedDescription))
+            throw error
+        }
+    }
+
+    private func snapshotUnderReservation(_ operation: HvfWindowsSnapshotCommand.Operation,
+                                          configuration: HvfEngineConfig) async throws {
+        typealias Command = HvfWindowsSnapshotCommand
+        guard configuration == config else {
+            throw Command.failure("settings edited on this page are not saved yet", .settingsUnsaved)
+        }
+        guard let reservation = reserveRuntimeMutation(kind: .snapshot, configuration: configuration) else {
+            throw Command.notStopped()
+        }
+        defer { finishRuntimeMutation(reservation) }
+        guard validateRuntimeMutation(reservation) else { throw Command.notStopped() }
+        let plan = try Command.plan(config: reservation.configuration, repoRoot: repoRoot, operation: operation)
+        _ = try await Command.run(operation, plan: plan) {
+            guard await self.validateRuntimeMutation(reservation) else { throw Command.notStopped() }
+            try reservation.checkEffect()
         }
     }
 }

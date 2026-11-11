@@ -58,7 +58,7 @@ struct HvfEngineView: View {
                 ) { label, text, chooseDirectory in
                     pathRow(label, text: text, chooseDirectory: chooseDirectory)
                 }
-                HvfWindowsSnapshotCard(config: currentConfig(), repoRoot: session.repoRoot, session: session)
+                HvfWindowsSnapshotCard(config: currentConfig(), session: session)
                 eventFeedCard
             }
             .padding(20)

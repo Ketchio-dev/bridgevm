@@ -131,6 +131,7 @@ struct T17GuestJourney {
 
     private func restoreSnapshot() throws {
         try ui.press("bridgevm.runtime.snapshot.restore", timeout: 15)
+        try ui.press("bridgevm.runtime.snapshot.confirm", timeout: 15) // the product asks before it restores
         guard wait(timeout: 900, predicate: {
             (try? ui.text("bridgevm.runtime.snapshot.status", timeout: 1)) == "스냅샷 복원 완료"
         }) else { throw T17Blocker(code: "snapshot-unavailable", detail: "product UI did not complete snapshot restore") }

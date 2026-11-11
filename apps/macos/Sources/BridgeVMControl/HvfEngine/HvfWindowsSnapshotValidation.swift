@@ -15,8 +15,8 @@ extension HvfWindowsSnapshotCommand {
         url.standardizedFileURL.path == url.resolvingSymlinksInPath().standardizedFileURL.path
     }
 
-    static func failure(_ message: String) -> NSError {
-        NSError(domain: "BridgeVM.HvfWindowsSnapshot", code: 1,
+    static func failure(_ message: String, _ code: Failure = .helper) -> NSError {
+        NSError(domain: errorDomain, code: code.rawValue,
                 userInfo: [NSLocalizedDescriptionKey: message.isEmpty ? "snapshot operation failed" : message])
     }
 }
