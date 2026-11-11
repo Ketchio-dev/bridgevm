@@ -18,7 +18,8 @@ struct HvfPointerCleanup {
                        send: (String) -> Bool) -> HvfAcknowledgedInputStream.Update {
         let update = serviceReady ? stream.advance(lines: lines, now: now, send: send) : stream.cancel(.sessionChanged)
         if case .inserted = update { recovering = false; held = HvfPointerHeldState() }
-        // A release Windows inserted nothing of (a secure desktop) is still owed: the next target change retries it.
+        // A release Windows inserted nothing of (a secure desktop) is still owed: the router's next attempt to leave
+        // its fallback, or the next target change, retries it.
         if case let .cancelled(reason, _) = update { if reason == .notInserted { recovering = false } else { blocked = true } }
         return update
     }

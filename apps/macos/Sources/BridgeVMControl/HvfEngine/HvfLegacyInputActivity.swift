@@ -54,6 +54,10 @@ struct HvfLegacyInputActivity {
             && now.timeIntervalSince(last) >= Self.settle && now.timeIntervalSince(lastMove) >= Self.moveSettle
     }
 
+    /// Nothing was written, but the next switch waits a full second from now: a fallback whose cleanup release
+    /// inserted nothing retries it only then.
+    mutating func restart(now: Date) { last = max(last, now) }
+
     /// The one line hvf_gic_boot_probe live_input/device_apply.rs prints when it takes a KEY or POINTER command off
     /// its queue; a move prints it only when rejected (an accepted one only every 1024th, as a count), so never count.
     static func takesCommand(_ line: String) -> Bool {

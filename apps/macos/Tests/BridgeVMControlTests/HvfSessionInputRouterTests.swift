@@ -34,6 +34,19 @@ final class HvfSessionInputRouterTests: XCTestCase {
         Array(repeating: "live input accepted: command=Key(<redacted>)", count: count)
     }
 
+    private func inserted(_ command: String) -> [String] {
+        let words = command.split(separator: " "), label = words.prefix(2).joined(separator: " ")
+        guard words.count >= 2 else { XCTFail("no command sent"); return [] }
+        return ["BVAGENT CMD \(label) exit=0", "BVINPUT_INSERTED \(words[1]) 1", "BVAGENT END \(label)"]
+    }
+
+    /// `VERB payload` of an agent command, its base64 decoded.
+    private func payload(_ command: String) -> String? {
+        let words = command.split(separator: " ")
+        guard words.count == 3, let data = Data(base64Encoded: String(words[2])) else { return nil }
+        return "\(words[0]) " + String(decoding: data, as: UTF8.self)
+    }
+
     /// bvagent-input.ps1's receipt when SendInput inserted `inserted` of 2 events.
     private func shortfall(_ command: String, inserted: Int = 0) -> [String] {
         let words = command.split(separator: " "), label = words.prefix(2).joined(separator: " ")
@@ -146,6 +159,44 @@ final class HvfSessionInputRouterTests: XCTestCase {
         XCTAssertEqual(router.takeLegacyReplay(), [.key("tab")])
         XCTAssertTrue(router.fallback)
         XCTAssertEqual(router.route(.key("esc"), binding: binding, now: now), .legacy)
+    }
+
+    /// An ordered press Windows inserted still owes its release when that release inserts nothing (a secure desktop
+    /// appeared), and the HID re-send cannot release a SendInput press: leaving the fallback sends the cleanup release
+    /// first, ordered events follow only once Windows inserted it, and one that inserts nothing again keeps the HID
+    /// route until the next quiet second.
+    func testLeavingTheFallbackFirstReleasesAnOrderedPressThatIsStillHeld() {
+        var router = HvfSessionInputRouter()
+        router.beginOwnedBoot(binding: binding)
+        negotiate(&router)
+        XCTAssertEqual(router.route(.pointer("press:1x2"), binding: binding, now: now), .queued)
+        var press = ""
+        _ = poll(&router, at: 0) { press = $0 }
+        _ = poll(&router, at: 0.1, lines: inserted(press))
+        XCTAssertEqual(router.route(.pointer("releaseall:1x2"), binding: binding, now: now), .queued)
+        var release = ""
+        _ = poll(&router, at: 0.1) { release = $0 }
+        XCTAssertEqual(poll(&router, at: 0.2, lines: shortfall(release)), .cancelled(.notInserted, discarded: 0))
+        XCTAssertEqual(router.takeLegacyReplay(), [.pointer("releaseall:1x2")])
+        wrote(&router, "POINTER release:1x2", at: 0.2)
+        _ = poll(&router, at: 0.2, lines: ["live input accepted: command=Pointer(\"release:1x2\")"])
+        var cleanup = ""
+        _ = poll(&router, at: 1.2) { cleanup = $0 }
+        XCTAssertEqual(payload(cleanup), "POINTERINPUT releaseall:1x2", "the owed release goes to the agent first")
+        XCTAssertEqual(router.route(.pointer("move:3x4"), binding: binding, now: now), .legacy, "nothing ordered before it")
+        wrote(&router, "POINTER move:3x4", at: 1.2)
+        XCTAssertEqual(poll(&router, at: 1.3, lines: shortfall(cleanup)), .cancelled(.notInserted, discarded: 0))
+        XCTAssertTrue(router.fallback, "still owed, so input stays on the HID route")
+        _ = poll(&router, at: 2.2)
+        var again = ""
+        _ = poll(&router, at: 2.3) { again = $0 }
+        XCTAssertEqual(payload(again), "POINTERINPUT releaseall:1x2", "retried after the next quiet second")
+        guard case .inserted = poll(&router, at: 2.4, lines: inserted(again)) else { return XCTFail("not inserted") }
+        XCTAssertFalse(router.fallback)
+        XCTAssertEqual(router.route(.pointer("move:3x4"), binding: binding, now: now), .queued)
+        var move = ""
+        _ = poll(&router, at: 2.4) { move = $0 }
+        XCTAssertEqual(payload(move), "POINTERINPUT move:3x4")
     }
 
     func testAPartlyInsertedEventStillFailsTheRouteWithoutAReplay() {

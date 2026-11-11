@@ -17,6 +17,11 @@ struct HvfRecoverableInputStream {
     var pointerModifiers: Bool { stream.pointerModifiers }
     var middleButton: Bool { stream.middleButton }
     var caret: Bool { stream.caret }
+    /// A press Windows inserted whose release it has not: a `notInserted` release leaves it held here.
+    var owesRelease: Bool { cleanup.held.release != nil }
+
+    /// Sends that release (HvfPointerCleanup) ahead of anything else; the next polls report its outcome.
+    mutating func releaseOwed(now: Date) { cleanup.begin(now: now) }
 
     mutating func enqueue(_ event: HvfOrderedInputQueue.Event, now: Date) -> HvfNegotiatedInputStream.Admission {
         guard !cleanup.blocked, !isRecovering else { return .refused }

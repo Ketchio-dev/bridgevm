@@ -4,8 +4,9 @@ import Foundation
 /// HID route, until the agent's ordered route is ready and input.ctl is quiet (HvfLegacyInputActivity); an owned
 /// boot then activates. After activation the router uses input.ctl again only in `fallback`: when the guest
 /// inserted nothing of an event (a Windows secure desktop), that event and everything queued behind it are handed
-/// back for input.ctl in their original order (`takeLegacyReplay`), later input follows them there, and the next
-/// event once input.ctl is quiet again tries the ordered route. Ctrl+Alt+Delete always takes the VMM keyboard.
+/// back for input.ctl in their original order (`takeLegacyReplay`), later input follows them there, and once
+/// input.ctl is quiet again (and Windows inserted the release an ordered press still owes) the next event tries
+/// the ordered route. Ctrl+Alt+Delete always takes the VMM keyboard.
 struct HvfSessionInputRouter {
     private(set) var binding: [String]?
     private(set) var eligible = false
@@ -79,15 +80,20 @@ struct HvfSessionInputRouter {
             return fail(reason)
         }
         let quiet = !legacyPending && legacy.quiescent(now: now)
-        if fallback, quiet, !stream.isRecovering { fallback = false }
+        // An ordered press Windows inserted may still be held (its release inserted nothing, and the HID re-send
+        // cannot release a SendInput press): leaving the fallback sends that release first, the HID route stays
+        // until Windows inserted it, and one that inserts nothing again is retried after the next quiet second.
+        if fallback, quiet, !stream.isRecovering, stream.owesRelease { stream.releaseOwed(now: now) }
         var update = stream.poll(serviceReady: serviceReady, legacyQuiescent: quiet,
                                  lines: lines, now: now, send: send)
+        if fallback, quiet, !stream.isRecovering, !stream.owesRelease { fallback = false }
         if stream.state == .ready { activated = true }
         if case let .cancelled(reason, _) = update, activated {
             if reason == .notInserted {
                 // Not discarded: the caller writes them to input.ctl (takeLegacyReplay).
                 replay += stream.takeNotInserted()
                 fallback = true
+                legacy.restart(now: now)
                 update = .cancelled(.notInserted, discarded: 0)
             } else {
                 failure = .requestFailed
