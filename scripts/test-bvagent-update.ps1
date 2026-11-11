@@ -132,10 +132,10 @@ try {
     Assert-True (-not (Get-BvReady $readyDir '0123456789abcdef').Contains('update=pending')) 'READY says pending without pending.txt'
     [IO.File]::WriteAllText((Join-Path $readyRoot 'update/pending.txt'), "0123456789abcdef`r`n")
     $ready = Get-BvReady $readyDir '0123456789abcdef'
-    Assert-True ($ready.EndsWith(' v3-share2 putdata bigfile lssame agent=0123456789abcdef update=pending')) ('READY with its update pending: ' + $ready)
+    Assert-True ($ready.EndsWith(' v3-share2 putdata bigfile lssame startapps agent=0123456789abcdef update=pending')) ('READY with its update pending: ' + $ready)
     [IO.File]::WriteAllText((Join-Path $readyRoot 'update/pending.txt'), 'fedcba9876543210')
     Assert-True (-not (Get-BvReady $readyDir '0123456789abcdef').Contains('update=pending')) 'READY says pending for another version'
-    Assert-True ((Get-BvReady $readyDir '').EndsWith(' v3-share2 putdata bigfile lssame')) 'READY without an ID'
+    Assert-True ((Get-BvReady $readyDir '').EndsWith(' v3-share2 putdata bigfile lssame startapps')) 'READY without an ID'
 } finally { Remove-Item -LiteralPath $readyRoot -Recurse -Force }
 
 $base = Join-Path ([IO.Path]::GetTempPath()) ('bvagent-update-' + [guid]::NewGuid())

@@ -2,14 +2,21 @@
 import AppKit
 import SwiftUI
 
-/// One VM display window (HvfDisplayWindowController): its session, and its Guest windows sheet.
+/// One VM display window (HvfDisplayWindowController): its session, its Guest windows sheet, and its Windows apps
+/// (the 가상 머신 > Windows 앱 submenu and its 모든 앱… sheet).
 @MainActor
 final class HvfDisplayWindowState: ObservableObject {
     let session: HvfEngineSession
+    let startApps: HvfGuestStartAppsController
     weak var window: NSWindow?
     @Published var showsWindowInventory = false
+    @Published var showsAllApps = false
 
-    init(session: HvfEngineSession) { self.session = session }
+    init(session: HvfEngineSession) {
+        self.session = session
+        startApps = HvfGuestStartAppsController(session: session)
+        startApps.onNotice = { [weak self] in self?.tell($0) }
+    }
 }
 
 /// The VM display window that is the main window, which the menu bar's 가상 머신 menu acts on;
@@ -18,6 +25,26 @@ final class HvfDisplayWindowState: ObservableObject {
 final class HvfVirtualMachineMenuTarget: ObservableObject {
     static let shared = HvfVirtualMachineMenuTarget()
     @Published private(set) var display: HvfDisplayWindowState?
+    private var menuBarTracking: NSObjectProtocol?
+
+    /// The menu bar opening asks the guest for its apps again when the list is stale, so Windows 앱 is current
+    /// (NSMenu.didBeginTrackingNotification's object is the main menu for the menu bar).
+    init() {
+        menuBarTracking = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification,
+                                                                 object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let menu = note.object as? NSMenu, menu === NSApp?.mainMenu else { return }
+                self.menuBarOpened()
+            }
+        }
+    }
+
+    deinit { if let menuBarTracking { NotificationCenter.default.removeObserver(menuBarTracking) } }
+
+    func menuBarOpened() {
+        guard let display, display.startApps.unavailableReason == nil else { return }
+        display.startApps.loadIfStale()
+    }
 
     func became(_ display: HvfDisplayWindowState) { if self.display !== display { self.display = display } }
     func resigned(_ display: HvfDisplayWindowState) { if self.display === display { self.display = nil } }
@@ -32,6 +59,8 @@ struct HvfVirtualMachineMenuState: Equatable {
     var restarts = false
     var stops = false
     var listsWindows = false
+    /// Why Windows 앱 lists no app, in one plain sentence; nil when the guest takes STARTAPPS now.
+    var windowsAppsUnavailable: String? = HvfGuestStartApps.notRunning
 }
 
 extension HvfVirtualMachineMenuState {
@@ -46,10 +75,14 @@ extension HvfVirtualMachineMenuState {
         // The dashboard's 정지, as a quit asks it: this app's own run, with no stop under way.
         stops = session.mayHaveOwnedWork && session.terminationStopAvailable && !session.runtimeStartupWorkerPending
         if case .connected = session.connectionState { listsWindows = !session.pause.holdsInput }
+        windowsAppsUnavailable = HvfGuestStartApps.unavailableReason(session)
     }
 }
 
-enum HvfVirtualMachineMenuAction { case ctrlAltDelete, screenCapture, pause, restart, stop, windows }
+enum HvfVirtualMachineMenuAction {
+    case ctrlAltDelete, screenCapture, pause, restart, stop, windows
+    case startApp(HvfGuestStartApp), allApps, refreshApps
+}
 
 extension HvfDisplayWindowState {
     func perform(_ action: HvfVirtualMachineMenuAction) {
@@ -71,6 +104,12 @@ extension HvfDisplayWindowState {
             session.requestTerminationStop()
         case .windows:
             showsWindowInventory = true
+        case let .startApp(app):
+            if !startApps.launch(app) { tell(HvfGuestStartApps.notSent) }
+        case .allApps:
+            showsAllApps = true
+        case .refreshApps:
+            startApps.refresh()
         }
     }
 
@@ -121,7 +160,7 @@ private struct HvfVirtualMachineMenuContent: View {
         if let display = target.display {
             HvfVirtualMachineSessionMenuItems(display: display, session: display.session)
         } else {
-            HvfVirtualMachineMenuItems(state: HvfVirtualMachineMenuState(session: nil)) { _ in }
+            HvfVirtualMachineMenuItems(state: HvfVirtualMachineMenuState(session: nil), startApps: nil) { _ in }
         }
     }
 }
@@ -131,12 +170,15 @@ private struct HvfVirtualMachineSessionMenuItems: View {
     @ObservedObject var session: HvfEngineSession
 
     var body: some View {
-        HvfVirtualMachineMenuItems(state: HvfVirtualMachineMenuState(session: session)) { display.perform($0) }
+        HvfVirtualMachineMenuItems(state: HvfVirtualMachineMenuState(session: session), startApps: display.startApps) {
+            display.perform($0)
+        }
     }
 }
 
 struct HvfVirtualMachineMenuItems: View {
     let state: HvfVirtualMachineMenuState
+    let startApps: HvfGuestStartAppsController?
     let perform: @MainActor (HvfVirtualMachineMenuAction) -> Void
 
     var body: some View {
@@ -147,8 +189,31 @@ struct HvfVirtualMachineMenuItems: View {
         Button("다시 시작") { perform(.restart) }.disabled(!state.restarts)
         Button("정지") { perform(.stop) }.disabled(!state.stops)
         Divider()
+        Menu("Windows 앱") {
+            if let reason = state.windowsAppsUnavailable {
+                Button(reason) {}.disabled(true)
+            } else if let startApps {
+                HvfGuestStartAppsMenuItems(apps: startApps, perform: perform)
+            }
+        }
+        .accessibilityIdentifier("runtime.windowsApps")
         Button("Guest windows…") { perform(.windows) }.disabled(!state.listsWindows)
             .accessibilityIdentifier("runtime.windows.open")
+    }
+}
+
+/// Windows 앱's items: up to HvfGuestStartApps.menuLimit apps, alphabetically, or what the list is doing.
+struct HvfGuestStartAppsMenuItems: View {
+    @ObservedObject var apps: HvfGuestStartAppsController
+    let perform: @MainActor (HvfVirtualMachineMenuAction) -> Void
+
+    var body: some View {
+        let shown = apps.menuApps
+        if shown.isEmpty { Button(apps.statusText) {}.disabled(true) }
+        ForEach(shown) { app in Button(app.name) { perform(.startApp(app)) } }
+        Divider()
+        Button("모든 앱…") { perform(.allApps) }
+        Button("목록 새로 고침") { perform(.refreshApps) }.disabled(apps.status == .loading)
     }
 }
 #endif

@@ -54,6 +54,7 @@ final class HvfEngineSession: ObservableObject {
     var agentEvents = BvAgentEvent.Stream() // run.log's lines across polls, with tailReader
     var lastHeartbeatDate: Date?
     var serviceStarted = false
+    var guestStartApps = false // the agent's last READY carried `startapps` (HvfGuestStartApps)
     var hardwareCursorOffSent = false // HWCursor=0 went to the guest after the setting was turned off
     // Windows links (HvfGuestLinks.swift): the registration's removal went to the guest after the setting was
     // turned off, the last link opened, and what opens it.

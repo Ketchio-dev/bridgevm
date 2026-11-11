@@ -180,11 +180,11 @@ pub(super) mod tests {
         for v in [
             "CLIPGET", "CLIPSET", "LS", "LSR", "GET", "PUT", "PUTBEG", "PUTCHUNK", "PUTEND", "DEL",
             "PING", "WINLIST", "WINBOUNDS", "WINFOCUS", "WINCLOSE", "DISPLAYMODE", "DISPLAYSCALE",
-            "CARET",
+            "CARET", "STARTAPPS", "STARTAPP",
         ] {
             assert!(is_raw_verb(v), "{v} should be raw");
         }
-        for v in ["whoami", "PS", "RUN", "ipconfig", "", "caret"] {
+        for v in ["whoami", "PS", "RUN", "ipconfig", "", "caret", "startapps", "STARTAPPSX"] {
             assert!(!is_raw_verb(v), "{v} should be RUN-wrapped");
         }
     }
@@ -199,6 +199,26 @@ pub(super) mod tests {
         let mut h = harness();
         let reply = format!("OUT 0 {}", base64_encode(b"BVCARET 120 340 2 18"));
         assert!(matches!(h.handle_reply_line(&reply, command), ReplyProgress::Complete));
+    }
+
+    /// The app's Windows apps menu: the list question and a launch reach the agent as its own verbs,
+    /// never as cmd.exe lines, and the agent's OUT replies (chunked for a long list) complete them
+    /// under the command the app waits for.
+    #[test]
+    fn start_apps_verbs_go_raw_and_their_replies_complete_them() {
+        let list = "STARTAPPS 12345678-1234-1234-1234-123456789abc";
+        assert_eq!(command_wire_line(list), format!("{list}\n"));
+        let launch = format!("STARTAPP {}", base64_encode(b"Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"));
+        assert_eq!(command_wire_line(&launch), format!("{launch}\n"));
+        let mut h = harness();
+        let rows = format!("{}|{}", base64_encode(b"Calculator"), base64_encode(b"Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"));
+        let reply = format!("OUT 0 {}", base64_encode(rows.as_bytes()));
+        assert!(matches!(h.handle_reply_line(&reply, list), ReplyProgress::Complete));
+        assert!(matches!(h.handle_reply_line(&format!("OUTBEG 0 {} 1", rows.len()), list), ReplyProgress::Incomplete));
+        assert!(matches!(h.handle_reply_line(&format!("OUTCHUNK 0 {}", base64_encode(rows.as_bytes())), list), ReplyProgress::Incomplete));
+        assert!(matches!(h.handle_reply_line("OUTEND 1", list), ReplyProgress::Complete));
+        let refused = format!("OUT 1 {}", base64_encode(b"BVSTARTAPP refused"));
+        assert!(matches!(h.handle_reply_line(&refused, &launch), ReplyProgress::Complete));
     }
 
     #[test]

@@ -104,6 +104,8 @@ pub(super) fn is_raw_verb(token: &str) -> bool {
             | "DISPLAYMODE" | "DISPLAYSCALE"
             | "LINKWATCH"
             | "CARET"
+            | "STARTAPPS"
+            | "STARTAPP"
     )
 }
 
