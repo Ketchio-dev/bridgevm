@@ -222,7 +222,10 @@ extern "C" {
     fn CFBooleanGetValue(boolean: *const c_void) -> u8;
     fn CFRunLoopGetCurrent() -> *mut c_void;
     fn CFRunLoopAddSource(run_loop: *mut c_void, source: *mut c_void, mode: *const c_void);
-    fn CFRunLoopRunInMode(mode: *const c_void, seconds: f64, return_after_source_handled: u8)
-        -> i32;
+    fn CFRunLoopRunInMode(
+        mode: *const c_void,
+        seconds: f64,
+        return_after_source_handled: u8,
+    ) -> i32;
     fn CFRunLoopSourceInvalidate(source: *mut c_void);
 }

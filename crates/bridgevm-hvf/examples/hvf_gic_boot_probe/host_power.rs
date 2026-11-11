@@ -112,28 +112,40 @@ fn read_fake_file(path: &Path) -> Option<HostPower> {
 /// The reading the VM starts from when the feature is on (the Mac, or the
 /// fake, has a battery), with one line saying what Windows gets.
 pub(crate) fn initial_reading(source: &PowerSource) -> Option<HostPower> {
-    let power = source.read().filter(|power| power.battery.is_some());
-    match power {
-        Some(power) => println!(
+    let reading = source.read();
+    match reading {
+        Some(power) if power.battery.is_some() => println!(
             "host power: battery from {} ({}); Windows gets a battery (BAT0) and AC adapter (ADP0)",
             source.label(),
             describe(&power)
         ),
-        None => println!(
+        Some(_) => println!(
             "host power: no battery from {}; Windows gets no battery or AC adapter",
             source.label()
         ),
+        None => println!(
+            "host power: could not read {}; Windows gets no battery this boot",
+            source.label()
+        ),
     }
-    power
+    reading.filter(|power| power.battery.is_some())
 }
 
 pub(crate) fn describe(power: &HostPower) -> String {
-    let ac = if power.ac_online { "on AC" } else { "on battery" };
+    let ac = if power.ac_online {
+        "on AC"
+    } else {
+        "on battery"
+    };
     match power.battery {
         Some(battery) => format!(
             "{}% {} {ac} to_empty={} to_full={}",
             battery.percent,
-            if battery.charging { "charging" } else { "not charging" },
+            if battery.charging {
+                "charging"
+            } else {
+                "not charging"
+            },
             minutes(battery.minutes_to_empty),
             minutes(battery.minutes_to_full),
         ),
@@ -165,7 +177,12 @@ pub(crate) fn start_monitor(
     }
 }
 
-fn monitor(source: PowerSource, mut shown: HostPower, platform: Weak<Mutex<VirtPlatform>>, vcpu: HvVcpuT) {
+fn monitor(
+    source: PowerSource,
+    mut shown: HostPower,
+    platform: Weak<Mutex<VirtPlatform>>,
+    vcpu: HvVcpuT,
+) {
     let changes = matches!(source, PowerSource::Mac).then(mac::ChangeWait::install);
     loop {
         match &changes {

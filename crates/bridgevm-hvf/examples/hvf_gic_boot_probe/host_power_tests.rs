@@ -19,9 +19,7 @@ fn description(entries: &[(&str, Value)]) -> SourceFields {
             keys.push(mac::cf_string_from(key));
             values.push(match value {
                 Value::Text(text) => mac::cf_string_from(text),
-                Value::Number(number) => {
-                    CFNumberCreate(null(), 4, (number as *const i64).cast())
-                }
+                Value::Number(number) => CFNumberCreate(null(), 4, (number as *const i64).cast()),
                 Value::Flag(true) => CFRetain(kCFBooleanTrue),
                 Value::Flag(false) => CFRetain(kCFBooleanFalse),
             });
@@ -55,8 +53,14 @@ fn macbook(state: &'static str, charging: bool, current: i64) -> Vec<(&'static s
         ("Max Capacity", Value::Number(100)),
         ("Is Charging", Value::Flag(charging)),
         ("Is Charged", Value::Flag(false)),
-        ("Time to Empty", Value::Number(if charging { 0 } else { 205 })),
-        ("Time to Full Charge", Value::Number(if charging { 47 } else { -1 })),
+        (
+            "Time to Empty",
+            Value::Number(if charging { 0 } else { 205 }),
+        ),
+        (
+            "Time to Full Charge",
+            Value::Number(if charging { 47 } else { -1 }),
+        ),
         ("BatteryHealth", Value::Text("Good")),
     ]
 }
