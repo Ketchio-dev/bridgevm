@@ -53,6 +53,7 @@ pub(crate) fn run() -> ExitCode {
         swtpm_data_socket: _,
         swtpm_control_socket: _,
         platform_cfg,
+        power_source,
         ram_size,
         watchdog_ms,
         watchdog_enabled,
@@ -121,6 +122,11 @@ pub(crate) fn run() -> ExitCode {
         install_gpu_shm_port(&mut platform);
         configure_gpu_unlocked_copy(&mut platform);
         let platform = Arc::new(Mutex::new(platform));
+        // Probe-lifetime: follows the Mac's battery off the vCPUs and ends
+        // with the platform (host_power.rs).
+        if let Some(shown) = platform_cfg.devices.host_power {
+            crate::host_power::start_monitor(power_source, shown, Arc::downgrade(&platform), vcpu);
+        }
         // Probe-lifetime instance, deliberately OUTSIDE the reboot loop: its
         // ticker thread keeps firing across guest reboots, and the SAME fired
         // flag must be the one each boot generation's exit dispatcher consumes.

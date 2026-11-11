@@ -144,6 +144,9 @@ pub(crate) const FADT_ARM_BOOT_PSCI_USE_HVC: u16 = 1 << 1;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AcpiDeviceConfig {
     pub tpm_tis_present: bool,
+    /// The Mac's AC adapter (`ADP0`) and battery (`BAT0`), with their GED
+    /// events. Off leaves the DSDT exactly as without the feature.
+    pub host_power_present: bool,
 }
 
 /// Build the ACPI blobs for the default device set.

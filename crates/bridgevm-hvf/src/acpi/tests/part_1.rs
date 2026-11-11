@@ -293,6 +293,7 @@ fn optional_tpm_tis_has_windows_hid_and_mmio_resource() {
         2,
         AcpiDeviceConfig {
             tpm_tis_present: true,
+            ..AcpiDeviceConfig::default()
         },
     );
     let tables = split_tables(&blobs.tables);

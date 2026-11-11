@@ -4,6 +4,7 @@ mod hda_corb_interrupt;
 mod hda_diagnostic_records;
 mod hda_service_poll;
 mod helpers;
+mod host_power;
 mod net_ready;
 mod part_1;
 mod part_2;

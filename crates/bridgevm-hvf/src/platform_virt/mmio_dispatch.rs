@@ -82,6 +82,7 @@ impl VirtPlatform {
             "uart" => self.uart_access(gpa - machine::UART.base, op),
             "rtc" => self.rtc_access(gpa - machine::RTC.base, op),
             "acpi-ged" => self.acpi_ged_access(gpa - machine::ACPI_GED.base, op),
+            "host-power" => self.host_power_access(gpa - machine::HOST_POWER.base, op),
             "pcie-ecam" => self.pcie_access(gpa - machine::PCIE_ECAM.base, op),
             "pcie-mmio-32" => self.pcie_mmio_access("pcie-mmio-32", pcie_mmio_target, op, mem),
             "pcie-mmio-64" => self.pcie_mmio_access("pcie-mmio-64", pcie_mmio_target, op, mem),

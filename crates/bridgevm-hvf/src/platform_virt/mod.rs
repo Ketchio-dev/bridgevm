@@ -16,6 +16,7 @@ mod firmware_tables;
 mod gpu_device;
 mod gpu_device_setup;
 mod guest_memory;
+mod host_power_device;
 mod interrupt_routing;
 mod machine_assembly;
 pub(crate) mod mmio_dispatch;

@@ -2,12 +2,13 @@
 //!
 //! Usage:
 //!   cargo run -p bridgevm-hvf --example emit_acpi_tables -- target/bridgevm-hvf-acpi
+//!   ... -- target/bridgevm-hvf-acpi --host-power   # with the Mac's AC adapter and battery
 
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use bridgevm_hvf::acpi::build_acpi;
+use bridgevm_hvf::acpi::{build_acpi_with_devices, AcpiDeviceConfig};
 
 const ACPI_HEADER_LEN: usize = 36;
 
@@ -18,7 +19,11 @@ fn main() {
         .unwrap_or_else(|| PathBuf::from("target/bridgevm-hvf-acpi"));
     fs::create_dir_all(&out_dir).expect("create output directory");
 
-    let blobs = build_acpi(1);
+    let devices = AcpiDeviceConfig {
+        host_power_present: env::args().any(|arg| arg == "--host-power"),
+        ..AcpiDeviceConfig::default()
+    };
+    let blobs = build_acpi_with_devices(1, devices);
     write(&out_dir, "rsdp.bin", &blobs.rsdp);
     write(&out_dir, "tables.bin", &blobs.tables);
     write(&out_dir, "table-loader.bin", &blobs.loader);

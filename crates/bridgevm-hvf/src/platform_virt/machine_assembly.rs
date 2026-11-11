@@ -14,6 +14,7 @@ use crate::dtb::VirtFdtConfig;
 use crate::dtb::VirtFdtDeviceConfig;
 use crate::fwcfg::FwCfg;
 use crate::hda::HdaController;
+use crate::host_power::HostPowerPage;
 use crate::machine;
 use crate::msix::MsixMessage;
 use crate::nvme::NvmeCompletionEvent;
@@ -69,6 +70,8 @@ pub struct VirtPlatform {
     pub(crate) ramfb: Ramfb,
     pub(crate) flash_vars: P30NorFlash,
     pub(crate) acpi_ged: AcpiGed,
+    /// The Mac's power source; kept across guest resets (it is host state).
+    pub(crate) host_power: Option<HostPowerPage>,
     pub(crate) pending_msix: Vec<MsixMessage>,
     pub(crate) pending_spi_levels: Vec<(u32, bool)>,
     pub(crate) nvme_completion_scratch: Vec<NvmeCompletionEvent>,
@@ -147,6 +150,7 @@ impl VirtPlatform {
             config.fdt.cpu_count,
             AcpiDeviceConfig {
                 tpm_tis_present: config.devices.tpm_tis_present,
+                host_power_present: config.devices.host_power.is_some(),
             },
         );
         fw_cfg.add_file(ACPI_RSDP_FILE, acpi.rsdp);
@@ -222,6 +226,7 @@ impl VirtPlatform {
                 0x40000,
             ),
             acpi_ged: AcpiGed::new(),
+            host_power: config.devices.host_power.map(HostPowerPage::new),
             pending_msix: Vec::new(),
             pending_spi_levels: Vec::new(),
             nvme_completion_scratch: Vec::new(),
