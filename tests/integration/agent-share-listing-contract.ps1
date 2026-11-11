@@ -338,6 +338,14 @@ try {
         $script:BvShareWatchReady = $true
         $a = $compiled -split "`r?`n"; $b = $walked -split "`r?`n"
         $at = 0; while ($at -lt [Math]::Min($a.Count, $b.Count) -and $a[$at] -ceq $b[$at]) { $at++ }
+        if (-not ($compiled -ceq $walked)) {
+            $onlyA = @($a | Where-Object { $b -cnotcontains $_ } | Select-Object -First 25)
+            $onlyB = @($b | Where-Object { $a -cnotcontains $_ } | Select-Object -First 25)
+            Write-Host ('only compiled (' + $onlyA.Count + '): ' + ($onlyA -join ' ;; '))
+            Write-Host ('only walked (' + $onlyB.Count + '): ' + ($onlyB -join ' ;; '))
+            Write-Host ('compiled order: ' + (($a | Select-Object -First 30) -join ' ;; '))
+            Write-Host ('walked order: ' + (($b | Select-Object -First 30) -join ' ;; '))
+        }
         Assert ($compiled -ceq $walked) "compiled and walked listings differ at row $at of $($a.Count)/$($b.Count): '$(if ($at -lt $a.Count) { $a[$at] })' vs '$(if ($at -lt $b.Count) { $b[$at] })'"
         Assert ($a.Count -gt 60 -and $compiled -cmatch '\.bridgevm-part-notes\|2\|0\|' -and $compiled -cnotmatch 'bridgevm-part-[0-9a-f]{32}\|') "the compiled listing: $($a.Count) rows"
         $cases++
