@@ -83,7 +83,7 @@ impl GpuCopy {
     pub fn run(&mut self, mem: &dyn GuestMemoryMut) {
         match &mut self.work {
             CopyWork::Transfer { offset } => {
-                copy_backing_to_resource(mem, &mut self.resource, self.rect, *offset)
+                copy_backing_to_resource(mem, &mut self.resource, self.rect, *offset);
             }
             CopyWork::Flush {
                 scanout,

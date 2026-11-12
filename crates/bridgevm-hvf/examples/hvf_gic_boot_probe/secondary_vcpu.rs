@@ -74,6 +74,7 @@ pub(crate) fn secondary_vcpu_thread(
                     exit = created_exit;
                     _vcpu_guard = Some(guard);
                     control.publish_vcpu(vcpu);
+                    crate::usgic_bridge::register_secondary(Arc::clone(&control));
                     if let Some(trace) = smp_trace.as_deref() {
                         trace.secondary_vcpu_created(control.index, vcpu, exit);
                     }

@@ -41,6 +41,28 @@ impl GuestMemoryMut for TestRam {
 }
 
 #[test]
+fn bounds_regression_snapshot_rejects_huge_geometry() {
+    let config = RamfbConfig {
+        addr: 0x4008_0000,
+        fourcc: DRM_FORMAT_XRGB8888,
+        flags: 0,
+        width: 1,
+        height: u32::MAX,
+        stride: u32::MAX,
+    };
+    // Check shared sizing first so the unfixed test cannot attempt this allocation.
+    assert_eq!(
+        super::snapshot::framebuffer_len(config),
+        Err(RamfbSnapshotError::SizeOverflow)
+    );
+    let ram = TestRam::new(config.addr, Vec::new());
+    assert_eq!(
+        RamfbSnapshot::read_from(&ram, config),
+        Err(RamfbSnapshotError::SizeOverflow)
+    );
+}
+
+#[test]
 fn snapshot_summarizes_xrgb8888_framebuffer() {
     let config = RamfbConfig {
         addr: 0x4008_0000,

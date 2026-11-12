@@ -16,6 +16,7 @@ enum HvfShareStop: Equatable {
 
 extension HvfShareRootNotice {
     var displayed: (text: String, help: String)? {
+        if launchUnavailable { return (HvfEngineConfig.shareUnavailableMessage, "") }
         switch stopped {
         case .agentTooOld:
             return ("이 VM의 게스트 에이전트가 공유 폴더 동기화를 지원하지 않아 이번 실행에서는 동기화하지 않습니다.",

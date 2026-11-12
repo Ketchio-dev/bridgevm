@@ -20,13 +20,24 @@ struct LibraryDashboardDetail: View {
     @ObservedObject var model: ControlModel
     @ObservedObject var library: LibraryModel
     @State private var showingAdvanced = false
+    @State private var showingSettings = false
 
     var body: some View {
-        if showingAdvanced {
-            advancedView
-        } else {
-            dashboard
+        Group {
+            if showingAdvanced {
+                advancedView
+            } else {
+                dashboard
+            }
         }
+        .focusedSceneValue(\.hvfVMSettings, settingsSession == nil ? nil : { showingSettings = true })
+        .sheet(isPresented: $showingSettings) {
+            if let session = settingsSession { HvfVMSettingsSheet(session: session) }
+        }
+    }
+
+    private var settingsSession: HvfEngineSession? {
+        config.engineKind == .hvfEngine ? library.hvfRuntimeDetailSession(for: config) : nil
     }
 
     private var dashboard: some View {
@@ -75,7 +86,7 @@ struct LibraryDashboardDetail: View {
     }
 
     private var actionStrip: some View {
-        Group {
+        HStack {
             if config.engineKind == .hvfEngine {
                 if let session = library.hvfRuntimeDetailSession(for: config) {
                     LibraryDashboardRuntimeControls(config: config, model: model,
@@ -87,6 +98,10 @@ struct LibraryDashboardDetail: View {
                 }
             } else {
                 LibraryDashboardLegacyControls(model: model, showAdvanced: { showingAdvanced = true })
+            }
+            if settingsSession != nil {
+                DashboardActionButton(title: "설정", symbol: "gearshape") { showingSettings = true }
+                    .accessibilityIdentifier("bridgevm.runtime.settings.open")
             }
         }
     }
@@ -138,7 +153,7 @@ struct LibraryDashboardDetail: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Button { showingAdvanced = true } label: {
-                    Label("전체 설정 및 도구", systemImage: "ellipsis.circle")
+                    Label("고급 도구", systemImage: "ellipsis.circle")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
