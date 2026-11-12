@@ -1,24 +1,5 @@
 import SwiftUI
 
-struct VMRow: View {
-    let config: VMConfig
-
-    var body: some View {
-        HStack(spacing: 10) {
-            LibraryVMEmblem(engine: config.engineKind, compact: true)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(config.name).font(.body.weight(.semibold)).lineLimit(1)
-                Text(config.engineShortLabel + " · " + (config.installPending == true ? "설치 필요" : "등록됨"))
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 7)
-        .help(config.name)
-        .accessibilityElement(children: .combine)
-    }
-}
-
 struct LibraryVMCard: View {
     @ObservedObject var library: LibraryModel
     let config: VMConfig
