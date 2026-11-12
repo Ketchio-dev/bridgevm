@@ -7,8 +7,8 @@ final class HvfWindowsSnapshotCommandTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let plan = try HvfWindowsSnapshotCommand.plan(
             config: fixture.config, repoRoot: fixture.repo, operation: .create)
-        XCTAssertEqual(plan.snapshot.path,
-                       fixture.bundle.appendingPathComponent("metadata/snapshots/latest.snapshot").path)
+        XCTAssertEqual(plan.snapshot.deletingLastPathComponent(), HvfWindowsSnapshotStore.directory(bundle: fixture.bundle))
+        XCTAssertNotEqual(plan.snapshot.lastPathComponent, "latest.snapshot")
         XCTAssertEqual(plan.vmID, "test-vm")
         XCTAssertEqual(try plan.arguments(for: .create).last, "144")
         XCTAssertEqual(try plan.arguments(for: .create).first, "create")
@@ -23,7 +23,7 @@ final class HvfWindowsSnapshotCommandTests: XCTestCase {
         let snapshot = fixture.bundle.appendingPathComponent("metadata/snapshots/latest.snapshot")
         try FileManager.default.createDirectory(at: snapshot, withIntermediateDirectories: true)
         XCTAssertNoThrow(try HvfWindowsSnapshotCommand.plan(
-            config: fixture.config, repoRoot: fixture.repo, operation: .restore))
+            config: fixture.config, repoRoot: fixture.repo, operation: .restore, target: snapshot))
     }
 
     func testPlanRejectsMediaOutsideBundleAndSymlinkedHelper() throws {

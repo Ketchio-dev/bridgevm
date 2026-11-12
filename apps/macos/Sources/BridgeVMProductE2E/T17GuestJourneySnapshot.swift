@@ -3,7 +3,7 @@ import Foundation
 extension T17GuestJourney {
     /// The product's snapshot pair and manifest authenticate each other and, once restored, the selected media.
     func verifySnapshot(restored: Bool) throws {
-        let root = URL(fileURLWithPath: request.snapshotPath, isDirectory: true)
+        let root = try T17SnapshotLocation.resolve(URL(fileURLWithPath: request.snapshotPath, isDirectory: true))
         let entries = try fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
         guard Set(entries.map(\.lastPathComponent)) == ["disk.raw", "vars.fd", "manifest.json"],
               let manifest = try JSONSerialization.jsonObject(

@@ -1,11 +1,9 @@
 import Foundation
 
 enum HvfWindowsSnapshotCommand {
-    enum Operation { case create, restore }
+    enum Operation { case create, restore, delete }
 
     static let errorDomain = "BridgeVM.HvfWindowsSnapshot"
-    /// The VM bundle's one snapshot; a create replaces it.
-    static let slot = "metadata/snapshots/latest.snapshot"
 
     /// What a failure was, as its error code. The English description is for the CLI and the event
     /// feed; the card says each in Korean (HvfWindowsSnapshotModel.message).
@@ -22,8 +20,7 @@ enum HvfWindowsSnapshotCommand {
     /// When the snapshot was made: when its manifest, written last, was written; nil without one.
     static func snapshotDate(config: HvfEngineConfig) -> Date? {
         guard let bundle = HvfDiskGrow.bundle(config: config) else { return nil }
-        let manifest = bundle.appendingPathComponent(slot).appendingPathComponent("manifest.json")
-        return try? manifest.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        return HvfWindowsSnapshotStore.list(bundle: bundle).first?.date
     }
 
     struct Plan {
@@ -32,6 +29,8 @@ enum HvfWindowsSnapshotCommand {
         let vars: URL
         let snapshot: URL
         let vmID: String
+        var name: String? = nil
+        var bundle: URL { disk.deletingLastPathComponent().deletingLastPathComponent() }
 
         func arguments(for operation: Operation) throws -> [String] {
             switch operation {
@@ -39,6 +38,8 @@ enum HvfWindowsSnapshotCommand {
                 return try createArguments(destination: snapshot)
             case .restore:
                 return ["restore", snapshot.path, disk.path, vars.path]
+            case .delete:
+                return []
             }
         }
     }
@@ -47,6 +48,8 @@ enum HvfWindowsSnapshotCommand {
         config: HvfEngineConfig,
         repoRoot: URL,
         operation: Operation,
+        target: URL? = nil,
+        name: String? = nil,
         fileManager: FileManager = .default
     ) throws -> Plan {
         let disk = URL(fileURLWithPath: config.targetDiskPath).standardizedFileURL
@@ -66,7 +69,17 @@ enum HvfWindowsSnapshotCommand {
               fileManager.isExecutableFile(atPath: executable.path) else {
             throw failure("the bundled snapshot helper is missing or unsafe", .helperMissing)
         }
-        let snapshot = bundle.appendingPathComponent(slot)
+        let directory = HvfWindowsSnapshotStore.directory(bundle: bundle)
+        let snapshot: URL
+        if operation == .create {
+            let occupied = Set((try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? [])
+            snapshot = HvfWindowsSnapshotStore.nextURL(bundle: bundle, occupied: occupied)
+        } else {
+            guard let selected = target ?? HvfWindowsSnapshotStore.list(bundle: bundle).first?.url else {
+                throw failure("the verified powered-off snapshot is unavailable", .noSnapshot)
+            }
+            snapshot = try HvfWindowsSnapshotStore.validatedTarget(selected, bundle: bundle)
+        }
         let parent = snapshot.deletingLastPathComponent()
         guard canonical(bundle), canonical(snapshot.deletingLastPathComponent().deletingLastPathComponent()) else {
             throw failure("snapshot destination crosses a symbolic link", .unsafeFolder)
@@ -81,12 +94,16 @@ enum HvfWindowsSnapshotCommand {
             }
         }
         return Plan(
-            executable: executable, disk: disk, vars: vars, snapshot: snapshot, vmID: vmID)
+            executable: executable, disk: disk, vars: vars, snapshot: snapshot, vmID: vmID, name: name)
     }
 
     static func run(_ operation: Operation, plan: Plan, checkAdmission: @escaping @Sendable () async throws -> Void = {}) async throws -> String {
         try await Task.detached {
             try await checkAdmission()
+            if operation == .delete {
+                try HvfWindowsSnapshotStore.delete(plan.snapshot, bundle: plan.bundle)
+                return ""
+            }
             if operation == .create {
                 try FileManager.default.createDirectory(
                     at: plan.snapshot.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -94,10 +111,16 @@ enum HvfWindowsSnapshotCommand {
             try await checkAdmission()
             let arguments = try plan.arguments(for: operation)
             try await checkAdmission()
+            if operation == .create, FileManager.default.fileExists(atPath: plan.snapshot.path) {
+                throw failure("snapshot destination was occupied before creation", .unsafeFolder)
+            }
             let output = try invoke(plan.executable, arguments)
             if operation == .create {
                 try await checkAdmission()
                 _ = try invoke(plan.executable, ["verify", plan.snapshot.path])
+                if let name = plan.name, !name.isEmpty {
+                    try name.write(to: HvfWindowsSnapshotStore.nameFile(plan.snapshot), atomically: true, encoding: .utf8)
+                }
             }
             return output
         }.value

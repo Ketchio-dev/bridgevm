@@ -4,21 +4,37 @@ struct HvfWindowsSnapshotCard: View {
     let config: HvfEngineConfig
     @ObservedObject var session: HvfEngineSession
     @StateObject private var model = HvfWindowsSnapshotModel()
+    @State private var name = ""
 
     var body: some View {
-        let date = HvfWindowsSnapshotCommand.snapshotDate(config: config)
+        let entries = HvfDiskGrow.bundle(config: config).map { HvfWindowsSnapshotStore.list(bundle: $0) } ?? []
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
-                Text(date.map { "마지막 스냅샷: " + HvfWindowsSnapshotModel.dateText($0) } ?? "스냅샷 없음")
-                    .accessibilityIdentifier("bridgevm.runtime.snapshot.date")
+                if entries.isEmpty { Text("스냅샷 없음") }
+                ForEach(entries) { entry in
+                    HStack {
+                        Text(entry.label)
+                            .accessibilityIdentifier(identifier("date", entry, entries))
+                        Spacer()
+                        Button("복원") { request(.restore, entry) }
+                            .accessibilityIdentifier(identifier("restore", entry, entries))
+                        Button("삭제", role: .destructive) { request(.delete, entry) }
+                            .accessibilityIdentifier(identifier("delete", entry, entries))
+                    }
+                    .disabled(session.hasActiveRuntimeWork || model.busy)
+                }
                 HStack(spacing: 8) {
-                    Button("스냅샷 생성") { model.request(.create, snapshotDate: date, run: run) }
-                        .accessibilityIdentifier("bridgevm.runtime.snapshot.create")
-                    Button("스냅샷 복원") { model.request(.restore, snapshotDate: date, run: run) }
-                        .disabled(date == nil)
-                        .accessibilityIdentifier("bridgevm.runtime.snapshot.restore")
+                    TextField("이름 (선택 사항)", text: $name)
+                        .accessibilityIdentifier("bridgevm.runtime.snapshot.name")
+                    Button("새 스냅샷") {
+                        let chosenName = name
+                        model.request(.create, snapshotDate: nil) { [session, config] operation in
+                            try await session.runSnapshot(operation, configuration: config, name: chosenName)
+                            name = ""
+                        }
+                    }
+                    .accessibilityIdentifier("bridgevm.runtime.snapshot.create")
                     if model.busy { ProgressView().controlSize(.small) }
-                    Spacer()
                 }
                 .disabled(session.hasActiveRuntimeWork || model.busy)
                 Text(model.status)
@@ -41,8 +57,14 @@ struct HvfWindowsSnapshotCard: View {
         }
     }
 
-    /// The configuration the user asked about, captured when they asked.
-    private var run: HvfWindowsSnapshotModel.Run {
-        { [session, config] operation in try await session.runSnapshot(operation, configuration: config) }
+    private func identifier(_ action: String, _ entry: HvfWindowsSnapshotStore.Entry,
+                            _ entries: [HvfWindowsSnapshotStore.Entry]) -> String {
+        "bridgevm.runtime.snapshot.\(action)" + (entry.id == entries.first?.id ? "" : ".\(entry.id)")
+    }
+
+    private func request(_ operation: HvfWindowsSnapshotCommand.Operation, _ entry: HvfWindowsSnapshotStore.Entry) {
+        model.request(operation, snapshotDate: entry.date, label: entry.label) { [session, config] operation in
+            try await session.runSnapshot(operation, configuration: config, target: entry.url)
+        }
     }
 }
