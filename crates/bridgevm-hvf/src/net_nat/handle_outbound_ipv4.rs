@@ -136,6 +136,8 @@ pub(crate) struct TcpFlow {
     pub(crate) write_buf: VecDeque<u8>,
     pub(crate) pending_ack: bool,
     pub(crate) guest_fin: bool,
+    /// The guest FIN has reached the host, after every acknowledged byte.
+    pub(crate) host_write_closed: bool,
     pub(crate) last_activity: u64,
     /// The host socket may have data. A socket the wake thread watches
     /// (`watched`) is read only after its event and until a read would block;
@@ -202,6 +204,7 @@ impl TcpFlow {
             write_buf: VecDeque::new(),
             pending_ack: false,
             guest_fin: false,
+            host_write_closed: false,
             last_activity,
             readable: true,
             watched: false,
@@ -222,10 +225,14 @@ impl TcpFlow {
                 Err(_) => break,
             }
         }
+        if self.guest_fin && self.write_buf.is_empty() && !self.host_write_closed {
+            let _ = self.stream.shutdown(std::net::Shutdown::Write);
+            self.host_write_closed = true;
+        }
     }
 
     pub(crate) fn closed(&self) -> bool {
-        self.guest_fin && self.send.fin_acked
+        self.host_write_closed && self.send.fin_acked
     }
 }
 
