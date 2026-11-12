@@ -58,6 +58,7 @@ final class HvfEngineSession: ObservableObject {
     var tailReader = TailOffsetReader()
     var agentEvents = BvAgentEvent.Stream() // run.log's lines across polls, with tailReader
     var lastHeartbeatDate: Date?
+    var settingsSheetOpen = false
     var serviceStarted = false
     var guestStartApps = false // the agent's last READY carried `startapps` (HvfGuestStartApps)
     var hardwareCursorOffSent = false // HWCursor=0 went to the guest after the setting was turned off

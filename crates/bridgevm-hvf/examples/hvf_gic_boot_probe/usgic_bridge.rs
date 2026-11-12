@@ -29,13 +29,32 @@ pub(crate) fn host_time_ticks() -> u64 {
     unsafe { mach_absolute_time() }
 }
 
+fn timer_expired(cval: u64, offset: u64, counters: &impl crate::pause_gate::HostCounters) -> bool {
+    cval <= counters.mach().wrapping_sub(offset)
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::*;
+    struct AfterSleep;
+    impl crate::pause_gate::HostCounters for AfterSleep {
+        fn mach(&self) -> u64 { 100 }
+        fn raw(&self) -> u64 { 30_000_100 }
+    }
+    #[test]
+    fn synthetic_timer_waits_for_guest_count_after_host_sleep() {
+        assert!(!timer_expired(150, 10, &AfterSleep), "timer fired before guest count reached CVAL");
+        assert!(timer_expired(90, 10, &AfterSleep));
+    }
+}
+
 const MAX_VCPUS: usize = 16;
 
 pub(crate) struct UsGicBridge {
     gic: Mutex<UserspaceGic>,
     num_cpus: usize,
-    handles: [AtomicU64; MAX_VCPUS],
-    registered: [AtomicBool; MAX_VCPUS],
+    // Secondary entries share the owner's lifetime-protected publication.
+    targets: Mutex<[Option<Arc<VcpuControl>>; MAX_VCPUS]>,
     vtimer_masked: [AtomicBool; MAX_VCPUS],
     trace_budget: AtomicU64,
     /// Ring of the most recent GIC ops (BRIDGEVM_USGIC_RING=1); dumped on
@@ -85,8 +104,9 @@ pub(crate) fn usgic() -> Option<&'static UsGicBridge> {
 
 pub(crate) fn register_vcpu(cpu: usize, vcpu: HvVcpuT) {
     if let Some(bridge) = usgic() {
-        bridge.handles[cpu].store(vcpu, Ordering::SeqCst);
-        bridge.registered[cpu].store(true, Ordering::SeqCst);
+        let control = Arc::new(VcpuControl::new(cpu as u64));
+        control.publish_vcpu(vcpu);
+        bridge.publish_target(cpu, control);
         // Apple silicon has no GICv3 CPU interface, so ID_AA64PFR0_EL1.GIC
         // reads 0 without the in-kernel GIC and guests never issue ICC_*
         // accesses (EDK2/Windows check this field before selecting the
@@ -102,6 +122,26 @@ pub(crate) fn register_vcpu(cpu: usize, vcpu: HvVcpuT) {
                 println!(
                     "USGIC cpu{cpu} PFR0.GIC: before={pfr0:#x} set={status:#x} after={after:#x}"
                 );
+            }
+        }
+    }
+}
+
+pub(crate) fn register_secondary(control: Arc<VcpuControl>) {
+    if let Some(bridge) = usgic() {
+        bridge.publish_target(control.index as usize, control);
+    }
+}
+
+/// Called by the owner guard before HVF destruction, including unwinding.
+pub(crate) fn unregister_vcpu(vcpu: HvVcpuT) {
+    if let Some(bridge) = usgic() {
+        let mut targets = bridge.targets.lock().unwrap_or_else(|p| p.into_inner());
+        for target in targets.iter_mut() {
+            if target.as_ref().is_some_and(|control| {
+                control.with_published_vcpu(|handle| handle == vcpu) == Some(true)
+            }) {
+                *target = None;
             }
         }
     }
@@ -124,7 +164,7 @@ pub(crate) fn vtimer_exit_mask(cpu: usize, vcpu: HvVcpuT) {
     if let Some(bridge) = usgic() {
         bridge.vtimer_masked[cpu].store(true, Ordering::SeqCst);
         let kicks = bridge.gic.lock().unwrap().set_vtimer_ppi(cpu, true);
-        bridge.ring_push(format!("c{cpu} vtimer-fire k={kicks:#x}"));
+        bridge.ring_push_lazy(|| format!("c{cpu} vtimer-fire k={kicks:#x}"));
         bridge.kick(kicks, cpu);
     }
 }
@@ -198,7 +238,7 @@ pub(crate) fn kick_secondaries() {
 pub(crate) fn deliver_spi(intid: u32, level: bool) -> Option<HvReturn> {
     let bridge = usgic()?;
     let kicks = bridge.gic.lock().unwrap().set_spi(intid, level);
-    bridge.ring_push(format!("spi {intid} lvl={} k={kicks:#x}", u8::from(level)));
+    bridge.ring_push_lazy(|| format!("spi {intid} lvl={} k={kicks:#x}", u8::from(level)));
     bridge.kick(kicks, usize::MAX);
     Some(0)
 }
@@ -207,7 +247,7 @@ pub(crate) fn deliver_spi(intid: u32, level: bool) -> Option<HvReturn> {
 pub(crate) fn deliver_msi(address: u64, data: u32) -> Option<HvReturn> {
     let bridge = usgic()?;
     let kicks = bridge.gic.lock().unwrap().send_msi(address, data);
-    bridge.ring_push(format!("msi {address:#x} intid={data} k={kicks:#x}"));
+    bridge.ring_push_lazy(|| format!("msi {address:#x} intid={data} k={kicks:#x}"));
     bridge.kick(kicks, usize::MAX);
     Some(0)
 }
@@ -235,8 +275,7 @@ pub(crate) fn stall_report(vcpu0: HvVcpuT) {
         hv_vcpu_get_sys_reg(vcpu0, HV_SYS_REG_CNTV_CVAL_EL0, &mut cval);
         println!(
             "USGIC stall cpu0 vtimer: ctl={ctl:#x} cval={cval:#x} guest_now={:#x} host_masked={} synth={}",
-            crate::host_support::host_cntvct()
-                .wrapping_sub(bridge.last_voff[0].load(Ordering::Relaxed)),
+            host_time_ticks().wrapping_sub(bridge.last_voff[0].load(Ordering::Relaxed)),
             bridge.vtimer_masked[0].load(Ordering::SeqCst),
             bridge.synth_fires[0].load(Ordering::Relaxed)
         );
@@ -268,22 +307,76 @@ pub(crate) fn reset() -> bool {
         return false;
     };
     bridge.ring_dump("SYSTEM_RESET");
-    *bridge.gic.lock().unwrap() = UserspaceGic::new(bridge.num_cpus);
-    // The HOST vtimer mask survives guest resets: a reboot that lands while
-    // the PPI is latched (mask=true, EOI never came) would leave the next
-    // generation without a single EXIT_VTIMER -- BdsDxe then spins on a
-    // timer that never fires (p1gate-20260808 boot-1, TianoCore spinner
-    // frozen 18 min). Unmask every registered vCPU at reset.
-    for cpu in 0..bridge.num_cpus.min(MAX_VCPUS) {
-        bridge.vtimer_masked[cpu].store(false, Ordering::SeqCst);
-        if bridge.registered[cpu].load(Ordering::SeqCst) {
-            let handle = bridge.handles[cpu].load(Ordering::SeqCst);
-            unsafe {
-                hv_vcpu_set_vtimer_mask(handle, false);
-            }
-        }
-    }
+    bridge.reset_state();
     true
+}
+
+#[cfg(test)]
+mod handle_tests {
+    use super::*;
+
+    #[test]
+    fn disabled_ring_never_formats_and_enabled_ring_records() {
+        let mut bridge = UsGicBridge::new(1);
+        bridge.ring_enabled = false;
+        bridge.ring_push_lazy(|| panic!("disabled ring formatted a line"));
+        assert!(bridge.ring.lock().unwrap().is_empty());
+        bridge.ring_enabled = true;
+        let formats = std::cell::Cell::new(0);
+        bridge.ring_push_lazy(|| {
+            formats.set(formats.get() + 1);
+            format!("timer {}", 27)
+        });
+        assert_eq!(formats.get(), 1);
+        assert_eq!(bridge.ring.lock().unwrap().front().unwrap(), "timer 27");
+    }
+
+    #[test]
+    fn usgic_kick_holds_publication_until_provider_returns() {
+        let bridge = Arc::new(UsGicBridge::new(2));
+        let control = Arc::new(VcpuControl::new(1));
+        control.publish_vcpu(0x5678);
+        bridge.publish_target(1, Arc::clone(&control));
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let kicker = {
+            let bridge = Arc::clone(&bridge);
+            std::thread::spawn(move || bridge.with_kick_targets(2, 0, |handle| {
+                assert_eq!(handle, 0x5678);
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+            }))
+        };
+        entered_rx.recv().unwrap();
+        let retire = std::thread::spawn(move || {
+            control.withdraw_vcpu(0x5678);
+            done_tx.send(()).unwrap();
+        });
+        let blocked = done_rx.recv_timeout(Duration::from_millis(25)).is_err();
+        release_tx.send(()).unwrap();
+        kicker.join().unwrap();
+        retire.join().unwrap();
+        assert!(blocked, "handle retired while kick provider was using it");
+        bridge.reset_state();
+        bridge.with_kick_targets(2, 0, |_| panic!("retired handle reused"));
+    }
+
+    #[test]
+    fn usgic_kick_does_not_use_withdrawn_secondary_handle() {
+        let bridge = UsGicBridge::new(2);
+        let control = Arc::new(VcpuControl::new(1));
+        control.publish_vcpu(0x1234);
+        bridge.publish_target(1, Arc::clone(&control));
+        let mut calls = Vec::new();
+        bridge.with_kick_targets(2, 0, |handle| calls.push(handle));
+        assert_eq!(calls, vec![0x1234]);
+        control.withdraw_vcpu(0x1234);
+        calls.clear();
+        bridge.reset_state();
+        bridge.with_kick_targets(2, 0, |handle| calls.push(handle));
+        assert!(calls.is_empty(), "kick used a retired secondary handle: {calls:?}");
+    }
 }
 
 impl UsGicBridge {
@@ -291,8 +384,7 @@ impl UsGicBridge {
         Self {
             gic: Mutex::new(UserspaceGic::new(num_cpus)),
             num_cpus,
-            handles: [const { AtomicU64::new(0) }; MAX_VCPUS],
-            registered: [const { AtomicBool::new(false) }; MAX_VCPUS],
+            targets: Mutex::new(std::array::from_fn(|_| None)),
             vtimer_masked: [const { AtomicBool::new(false) }; MAX_VCPUS],
             trace_budget: AtomicU64::new(env_u64("BRIDGEVM_USGIC_TRACE", 0)),
             ring: Mutex::new(std::collections::VecDeque::with_capacity(256)),
@@ -306,10 +398,11 @@ impl UsGicBridge {
         }
     }
 
-    fn ring_push(&self, line: String) {
+    fn ring_push_lazy(&self, line: impl FnOnce() -> String) {
         if !self.ring_enabled {
             return;
         }
+        let line = line();
         let mut ring = self.ring.lock().unwrap();
         if ring.len() >= 256 {
             ring.pop_front();
@@ -341,16 +434,32 @@ impl UsGicBridge {
                 self.wfi_cv.notify_all();
             }
         }
-        for cpu in 0..self.num_cpus.min(MAX_VCPUS) {
+        self.with_kick_targets(mask, self_cpu, |handle| unsafe {
+            hv_vcpus_exit(&handle, 1);
+        });
+    }
+
+    fn reset_state(&self) {
+        *self.gic.lock().unwrap() = UserspaceGic::new(self.num_cpus);
+        // HVF timer-mask APIs are owner-thread-only. CPU0's boot reset and
+        // each secondary's CPU_ON reset unmask their own live timer.
+        for masked in &self.vtimer_masked {
+            masked.store(false, Ordering::SeqCst);
+        }
+    }
+
+    fn publish_target(&self, cpu: usize, control: Arc<VcpuControl>) {
+        self.targets.lock().unwrap()[cpu] = Some(control);
+    }
+
+    fn with_kick_targets(&self, mask: u64, self_cpu: usize, mut action: impl FnMut(HvVcpuT)) {
+        let targets = self.targets.lock().unwrap_or_else(|p| p.into_inner());
+        for (cpu, target) in targets.iter().enumerate().take(self.num_cpus) {
             if cpu == self_cpu || mask & (1u64 << cpu) == 0 {
                 continue;
             }
-            if !self.registered[cpu].load(Ordering::SeqCst) {
-                continue;
-            }
-            let handle = self.handles[cpu].load(Ordering::SeqCst);
-            unsafe {
-                hv_vcpus_exit(&handle, 1);
+            if let Some(control) = target {
+                control.with_published_vcpu(&mut action);
             }
         }
     }
@@ -386,14 +495,14 @@ impl UsGicBridge {
                     let mut voff = 0u64;
                     hv_vcpu_get_vtimer_offset(vcpu, &mut voff);
                     self.last_voff[cpu].store(voff, Ordering::Relaxed);
-                    cval <= host_cntvct().wrapping_sub(voff)
+                    timer_expired(cval, voff, &crate::pause_gate::Host)
                 };
                 if expired {
                     hv_vcpu_set_vtimer_mask(vcpu, true);
                     self.vtimer_masked[cpu].store(true, Ordering::SeqCst);
                     self.synth_fires[cpu].fetch_add(1, Ordering::Relaxed);
                     let kicks = self.gic.lock().unwrap().set_vtimer_ppi(cpu, true);
-                    self.ring_push(format!("c{cpu} vtimer-synth k={kicks:#x}"));
+                    self.ring_push_lazy(|| format!("c{cpu} vtimer-synth k={kicks:#x}"));
                     self.kick(kicks, cpu);
                 }
             }
@@ -427,15 +536,13 @@ impl UsGicBridge {
             if trap.is_read { "read " } else { "write " },
             result.is_some()
         );
-        if self.ring_enabled {
-            if let Some(r) = result {
-                self.ring_push(format!(
-                    "c{cpu} {}{encoding:#x} w={write_value:#x} -> {:#x} k={:#x} pc={pc:#x}",
-                    if trap.is_read { "r" } else { "W" },
-                    r.value,
-                    r.kick_mask
-                ));
-            }
+        if let Some(r) = result {
+            self.ring_push_lazy(|| format!(
+                "c{cpu} {}{encoding:#x} w={write_value:#x} -> {:#x} k={:#x} pc={pc:#x}",
+                if trap.is_read { "r" } else { "W" },
+                r.value,
+                r.kick_mask
+            ));
         }
         let Some(result) = result else {
             return false;
@@ -472,12 +579,10 @@ impl UsGicBridge {
             MmioOp::Write { size, value } => (size, Some(value)),
         };
         let result = self.gic.lock().unwrap().mmio(ipa, width, write);
-        if self.ring_enabled {
-            self.ring_push(format!(
-                "c{cpu} mmio {ipa:#x} w{width} wr={write:?} -> {:#x} k={:#x}",
-                result.value, result.kick_mask
-            ));
-        }
+        self.ring_push_lazy(|| format!(
+            "c{cpu} mmio {ipa:#x} w{width} wr={write:?} -> {:#x} k={:#x}",
+            result.value, result.kick_mask
+        ));
         usgic_trace!(
             self,
             "USGIC cpu{cpu} mmio ipa={ipa:#x} w={width} write={write:?} -> {:#x} pc={pc:#x}",

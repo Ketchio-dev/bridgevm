@@ -5,6 +5,51 @@
   "summary": "BridgeVM presents a QEMU virt-compatible guest contract so stock ArmVirtQemu firmware and stock Windows 11 ARM media work unmodified. It is not bit-identical. Every known deviation is listed here.",
   "deviations": [
     {
+      "id": "virtio-blk-status-zero-reset",
+      "area": "storage",
+      "qemu_behavior": "Writing device status zero resets guest-programmed device state for a new negotiation.",
+      "bridgevm_behavior": "Status-zero MMIO and legacy PCI resets clear driver features, both feature selectors, queue selector and legacy page size along with queue state. Backend configuration and request statistics are retained.",
+      "guest_visible": true,
+      "impact": "Resolved: stale guest negotiation state no longer survives a device reset. The reset path adds only scalar stores and leaves request processing unchanged.",
+      "evidence": "crates/bridgevm-hvf/src/virtio_blk/tests/mod.rs"
+    },
+    {
+      "id": "fwcfg-dma-write-capacity",
+      "area": "firmware",
+      "qemu_behavior": "Writable fw_cfg entry DMA behavior is defined by the entry callback.",
+      "bridgevm_behavior": "A DMA write exceeding the selected writable entry's remaining capacity returns DMA_CTL_ERROR before reading any payload, without changing the entry or cursor.",
+      "guest_visible": true,
+      "impact": "Oversized requests cannot cause millions of guest-memory probes. The firmware ramfb write of 28 bytes at offset zero still succeeds.",
+      "evidence": "crates/bridgevm-hvf/src/fwcfg_tests.rs"
+    },
+    {
+      "id": "ramfb-shared-snapshot-limit",
+      "area": "graphics",
+      "qemu_behavior": "ramfb geometry and host capture allocation limits depend on the display backend.",
+      "bridgevm_behavior": "Shared ramfb sizing rejects stride times height above 64 MiB with SizeOverflow before allocation, matching the interactive display export ceiling.",
+      "guest_visible": false,
+      "impact": "Snapshot and telemetry callers receive an error for oversized guest geometry rather than allocating or panicking. Supported display geometry is unchanged.",
+      "evidence": "crates/bridgevm-hvf/src/ramfb/snapshot_tests.rs"
+    },
+    {
+      "id": "virtio-gpu-2d-backing-hostmem",
+      "area": "graphics",
+      "qemu_behavior": "The 2D max_hostmem budget accounts for host pixel storage.",
+      "bridgevm_behavior": "The existing 256 MiB cumulative 2D budget also counts retained backing-entry capacity. Attachments reaching the limit return ERR_OUT_OF_MEMORY without changing the prior backing. 3D backing is unchanged.",
+      "guest_visible": true,
+      "impact": "Many small resources cannot bypass the host-memory limit with large backing lists. Normal attachments and replacement of existing backing remain supported.",
+      "evidence": "crates/bridgevm-hvf/src/virtio_gpu/tests/hostmem.rs"
+    },
+    {
+      "id": "nat-udp-reply-backpressure",
+      "area": "network",
+      "qemu_behavior": "UDP receive buffering depends on the selected network backend.",
+      "bridgevm_behavior": "NAT UDP polling stops at the existing 10000-frame reply queue limit and resumes receiving after the queue drains, retaining edge-triggered readiness.",
+      "guest_visible": true,
+      "impact": "Under sustained overload UDP datagrams may be dropped by the host socket buffer rather than consuming unbounded host memory. Ordinary datagrams are unchanged.",
+      "evidence": "crates/bridgevm-hvf/src/net_nat/tests/idle_sweep.rs"
+    },
+    {
       "id": "guest-agent-display-adapter-report",
       "area": "guest-agent",
       "qemu_behavior": "QEMU has no BridgeVM DISPLAYMODE or BVDISPLAY guest-agent protocol.",
@@ -111,6 +156,15 @@
       "guest_visible": true,
       "impact": "Windows on a MacBook can show the Mac's charge and whether it is plugged in, so its power plan, battery saver and apps can adapt. Capacity in Wh and the voltage are synthetic: powercfg /batteryreport shows 60 Wh, not the Mac's battery. Evidence is deterministic AML, page, platform and host-reading tests, iasl and acpiexec checks of the DSDT, and one operator run per arm on a Mac without a battery using the test override (2026-11-11): Windows 11 bound both devices, Win32_Battery and powercfg /batteryreport showed the battery, and an unplug reached Windows (GED events 0x30000). That run also showed the guest agent's scheduled task stopping on battery under Task Scheduler's defaults; the task now says false to both battery settings, and an agent update re-registers older tasks. A later run showed an older agent never starting when Windows booted on battery, which the AC hold until onbattery addresses.",
       "evidence": "crates/bridgevm-hvf/src/host_power.rs"
+    },
+    {
+      "id": "share-quick-access",
+      "area": "guest-agent",
+      "qemu_behavior": "QEMU has no shared-folder guest-agent Explorer integration of its own.",
+      "bridgevm_behavior": "New Windows registrations opt in to a dedicated Mac folder created at first launch; existing registrations and clones stay unchanged. When sharing requests a listing of an existing guest folder, the agent attempts Shell.Application pintohome once, recording the attempt under ProgramData/BridgeVM before invoking the verb. No READY capability is added. Failure logs one guest-agent line without failing the host request; a later manual unpin is respected.",
+      "guest_visible": true,
+      "impact": "The shared folder is offered in Explorer Quick Access without re-pinning on every boot; live verification of the elevated interactive-task Shell context is required.",
+      "evidence": "tests/integration/agent-share-quick-access-contract.ps1"
     },
     {
       "id": "share-put-mtime",
