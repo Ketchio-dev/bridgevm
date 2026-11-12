@@ -1782,6 +1782,7 @@ function Pin-ShareQuickAccess([string]$root) {
         $folder = $shell.Namespace($root)
         if ($null -eq $folder) { throw 'Shell folder unavailable' }
         $folder.Self.InvokeVerb('pintohome')
+        Log ('SHARE Quick Access pin attempted ' + $root)
     } catch { Log ('SHARE Quick Access unavailable: ' + $_.Exception.Message) }
 }
 # <<< share quick access

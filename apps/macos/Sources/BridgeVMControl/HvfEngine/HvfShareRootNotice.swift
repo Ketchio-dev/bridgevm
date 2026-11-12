@@ -53,7 +53,7 @@ final class HvfShareRootNotice: ObservableObject {
 
     /// A new run or boot generation; at Start, `missingFolder` names a shared folder missing then.
     func reset(missingFolder folder: String? = nil) {
-        launchUnavailable = false
+        if launchUnavailable { launchUnavailable = false }
         if missingFolder != folder { missingFolder = folder }
         update(false)
         if stopped != nil { stopped = nil }

@@ -42,6 +42,7 @@ try {
     [IO.File]::Delete($marker)
     $script:BvSharePinAttempted = $false
     $script:fail = $true
+    $script:logs = @()
     Pin-ShareQuickAccess $root
     Assert ($script:logs.Count -eq 1 -and [IO.File]::Exists($marker)) 'failure silent except one log line'
     $script:BvSharePinAttempted = $false
