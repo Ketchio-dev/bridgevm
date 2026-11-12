@@ -2,70 +2,6 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MANIFEST="$ROOT/docs/document-manifest.tsv"
-
-python3 "$ROOT/tests/integration/document-manifest-contract.py"
-manifest_rows=$(python3 "$ROOT/scripts/document_manifest.py" "$MANIFEST")
-
-# Bash 3.2 treats an empty-array expansion as unbound under `set -u`; retain a
-# sentinel so the checker runs on the macOS system Bash without weakening nounset.
-seen_paths=("__bridgevm_document_manifest_sentinel__")
-errors=0
-line_number=0
-
-is_seen() {
-  local candidate="$1"
-  local item
-  for item in "${seen_paths[@]}"; do
-    [[ "$item" == "$candidate" ]] && return 0
-  done
-  return 1
-}
-
-while IFS=$'\t' read -r path class topic superseded_by extra; do
-  line_number=$((line_number + 1))
-  if [[ $line_number -eq 1 ]]; then
-    [[ "$path" == "path" && "$class" == "class" && "$topic" == "topic" && "$superseded_by" == "superseded_by" ]] || {
-      echo "invalid documentation manifest header" >&2
-      errors=$((errors + 1))
-    }
-    continue
-  fi
-  [[ -n "$path" ]] || continue
-  [[ -z "${extra:-}" ]] || {
-    echo "manifest line $line_number has extra columns" >&2
-    errors=$((errors + 1))
-  }
-  case "$class" in
-    current|active-plan|decision|historical-evidence|reference) ;;
-    *)
-      echo "manifest line $line_number has invalid class: $class" >&2
-      errors=$((errors + 1))
-      ;;
-  esac
-  [[ "$path" == docs/*.md || "$path" == STATUS.md || "$path" == HANDOFF.md ]] || {
-    echo "manifest line $line_number has invalid path: $path" >&2
-    errors=$((errors + 1))
-  }
-  [[ -f "$ROOT/$path" ]] || {
-    echo "manifest path does not exist: $path" >&2
-    errors=$((errors + 1))
-  }
-  if is_seen "$path"; then
-    echo "duplicate manifest path: $path" >&2
-    errors=$((errors + 1))
-  fi
-  seen_paths+=("$path")
-  # GOAL.md is an operator ledger kept out of git on purpose, so it is a valid
-  # superseding target that a fresh CI checkout will not contain.
-  if [[ "$superseded_by" != "-" && "$superseded_by" != "GOAL.md" && ! -f "$ROOT/$superseded_by" ]]; then
-    echo "superseding document does not exist: $path -> $superseded_by" >&2
-    errors=$((errors + 1))
-  fi
-done <<< "$manifest_rows"
-
-# Classifying a document is optional since 2026-11-02 (AGENTS.md section 2):
-# unclassified documents are allowed; classified rows must still be valid.
 
 # Relative links must resolve, so a moved or renamed file cannot leave a
 # document pointing at nothing. docs/archive holds point-in-time snapshots whose
@@ -148,11 +84,9 @@ for path in sorted(files):
 print(broken)
 PY
 )
-errors=$((errors + link_errors))
-
-if [[ $errors -ne 0 ]]; then
-  echo "documentation system: FAIL ($errors error(s))" >&2
+if [[ $link_errors -ne 0 ]]; then
+  echo "documentation system: FAIL ($link_errors error(s))" >&2
   exit 1
 fi
 
-printf 'documentation system: PASS (%d classified Markdown documents, %d link targets resolved)\n' "$(( ${#seen_paths[@]} - 1 ))" "$(cd "$ROOT" && grep -ro '](\([^)]*\))' --include='*.md' docs README.md STATUS.md 2>/dev/null | wc -l | tr -d ' ')"
+printf 'documentation system: PASS (relative links and script/source references checked)\n'

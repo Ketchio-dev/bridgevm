@@ -9,6 +9,7 @@ final class HvfOwnedRuntimeSpawn: @unchecked Sendable {
     let config: HvfEngineConfig
     let digest: String
     var hello: Data
+    var shareWarning: String?
     init(process: Process, channel: HvfOwnedRuntimeChannel, guestShutdown: HvfOwnedGuestShutdown,
          token: UUID, config: HvfEngineConfig, digest: String, hello: Data) {
         self.process = process; self.channel = channel; self.guestShutdown = guestShutdown
@@ -100,26 +101,30 @@ final class HvfOwnedStartExecution {
             try input.checkClock()
             let runner = input.repoRoot.appendingPathComponent("target/release/hvf-runner")
             guard FileManager.default.isExecutableFile(atPath: runner.path) else { throw HvfOwnedStartFailure.helperUnavailable }
-            guard input.config.readiness(repoRoot: input.repoRoot).launchReady else { throw HvfOwnedStartFailure.readiness }
+            var shareWarning: String?
+            let config = input.config.preparingSharedFolder { shareWarning = $0 }
+            guard config.readiness(repoRoot: input.repoRoot).launchReady else { throw HvfOwnedStartFailure.readiness }
             if input.config.vtpmStateDir != nil {
                 guard await input.permit() else { throw HvfOwnedStartFailure.configurationChanged }
                 try input.checkClock()
                 guard let provider = input.keyProvider else { throw HvfOwnedStartFailure.keyUnavailable }
-                do { key = try VTPMExistingRuntimeKey.withExistingKey(for: input.config, provider: provider) { $0 } }
+                do { key = try VTPMExistingRuntimeKey.withExistingKey(for: config, provider: provider) { $0 } }
                 catch { throw HvfOwnedStartFailure.keyUnavailable }
             }
             guard await input.permit() else { throw HvfOwnedStartFailure.configurationChanged }
             try input.checkClock()
             let manifest: Data
-            do { manifest = try HvfRuntimePreparation.prepare(config: input.config) }
+            do { manifest = try HvfRuntimePreparation.prepare(config: config) }
             catch { throw HvfOwnedStartFailure.preparation }
             guard await input.permit() else { throw HvfOwnedStartFailure.configurationChanged }
             try input.checkClock()
             do {
-                return .success(try HvfOwnedRuntimeLaunch.spawn(config: input.config, repoRoot: input.repoRoot,
+                let spawn = try HvfOwnedRuntimeLaunch.spawn(config: config, repoRoot: input.repoRoot,
                     runner: runner, manifest: manifest, key: key, launch: { process in
                         try input.checkClock(); try input.launch(process)
-                    }))
+                    })
+                spawn.shareWarning = shareWarning
+                return .success(spawn)
             } catch let failure as HvfOwnedStartFailure { throw failure }
             catch { throw HvfOwnedStartFailure.processLaunch }
         } catch let failure as HvfOwnedStartFailure { return .failure(failure) }

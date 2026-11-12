@@ -15,6 +15,7 @@ extension VMConfig {
         cfg.installPending = false
         cfg.sharedFolderHostPath = nil
         cfg.sharedFolderGuestPath = nil
+        cfg.createSharedFolderOnStart = nil
         cfg.portForwards = nil
         return cfg
     }

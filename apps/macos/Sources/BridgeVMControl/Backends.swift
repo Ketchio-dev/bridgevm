@@ -51,7 +51,8 @@ struct VMConfig: Codable, Identifiable, Equatable, Sendable {
     var openGuestLinksOnMac: Bool? = nil  // nil == off (never set); true: Windows' http/https links open in the Mac's default browser (the app registers a per-user BridgeVM browser in Windows); false == off again, the app removes that registration (HVF only)
     var guestResolution: String? = nil  // Windows display "WxH"; nil == automatic: the VMM's 1280x800 unless the VM's firmware already has one (HVF only)
     var commandKeyMode: String? = nil  // nil == Mac-like: Command chords are Ctrl chords, a bare Command tap is the Windows key; "windows": Command is the Windows key (HVF only)
-    var sharedFolderHostPath: String? = nil, sharedFolderGuestPath: String? = nil  // user-chosen pair; nil == no sharing (HVF only)
+    var sharedFolderHostPath: String? = nil, sharedFolderGuestPath: String? = nil  // nil == no sharing (HVF only)
+    var createSharedFolderOnStart: Bool? = nil  // only new Windows VMs; never inferred for existing registrations
     var portForwards: String? = nil  // "8080:80, 3390:3389": the Mac's 127.0.0.1:8080 reaches the guest's TCP port 80; nil == none (HVF only)
     /// A config can be imported or hand-edited, so never trust its persisted ID
     /// as a filesystem component. Normalizing here keeps every caller inside the
