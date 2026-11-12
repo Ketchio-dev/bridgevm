@@ -48,6 +48,10 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
+    static func hasVisibleDisplay(for session: HvfEngineSession) -> Bool {
+        controllers[ObjectIdentifier(session)]?.window?.isVisible == true
+    }
+
     static func present(session: HvfEngineSession, title: String) {
         let identifier = ObjectIdentifier(session)
 

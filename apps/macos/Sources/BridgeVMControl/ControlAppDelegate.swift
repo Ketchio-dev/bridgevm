@@ -16,7 +16,21 @@ final class ControlAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         termination.shouldTerminate(reason: .current())
     }
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        let sessions = NativeRuntimeAppOwner.sessions
+        let plan = ControlAppReopenPlan.make(hasVisibleWindows: flag,
+            runningVMs: sessions.map { $0.hasActiveRuntimeWork },
+            visibleDisplays: sessions.map { HvfDisplayWindowController.hasVisibleDisplay(for: $0) })
+        if plan.showLibrary { ControlLibraryWindow.show() }
+        for index in plan.displayIndices {
+            let session = sessions[index]
+            HvfDisplayWindowController.present(session: session, title: HvfDisplayWindowTitle.resolve(
+                libraryName: session.config.libraryContext?.config.name, targetDiskPath: session.config.targetDiskPath))
+        }
+        return true
+    }
     /// Finder's Open With > BridgeVM and files dropped on the Dock icon (CFBundleDocumentTypes,
     /// rank Alternate): copied to the running Windows and opened there (HvfOpenFiles).
     func application(_ application: NSApplication, open urls: [URL]) {
