@@ -13,7 +13,7 @@ struct FirstRunImportFields: View {
             FirstRunImportNameField(displayName: $displayName)
             GroupBox {
                 VStack(alignment: .leading, spacing: 20) {
-                    LibraryFileField(title: "Windows 디스크", detail: "이미 설치된 Windows ARM64 디스크(RAW, UTM의 QCOW2, Hyper-V의 VHDX)를 선택하세요. QCOW2와 VHDX는 RAW로 변환해 가져옵니다.", accessibilityIdentifier: "bridgevm.first-run.disk", path: $diskPath)
+                    LibraryFileField(title: "Windows 디스크", detail: "이미 설치된 Windows ARM64 디스크(RAW, QCOW2, Hyper-V의 VHDX)를 선택하세요. QCOW2와 VHDX는 RAW로 변환해 가져옵니다.", accessibilityIdentifier: "bridgevm.first-run.disk", path: $diskPath)
                     LibraryFileField(title: "부팅 설정 파일 (UEFI vars)",
                         detail: "이 디스크를 부팅할 때 사용한 64 MiB UEFI vars 파일이 필요합니다.", accessibilityIdentifier: "bridgevm.first-run.vars", path: $varsPath)
                     FirstRunVTPMImportFields(statePath: $vtpmPath, packagePath: $vtpmPackagePath,

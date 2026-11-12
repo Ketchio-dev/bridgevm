@@ -113,7 +113,7 @@ struct CreateVMSheet: View {
                 Text("기본 Ubuntu 데스크톱을 즉시 복제합니다 (APFS 클론, 추가 용량 없음).")
                     .font(.callout).foregroundColor(.secondary)
             } else if mode == .windowsHVF {
-                Text("이미 설치되어 정상 부팅한 Windows ARM 디스크(RAW, UTM의 QCOW2, Hyper-V의 VHDX)와 그 부팅에 사용한 UEFI vars를 가져옵니다. QCOW2와 VHDX는 RAW로 변환하고, 원본은 변경하지 않고 라이브러리에 복제합니다.")
+                Text("이미 설치되어 정상 부팅한 Windows ARM 디스크(RAW, QCOW2, Hyper-V의 VHDX)와 그 부팅에 사용한 UEFI vars를 가져옵니다. QCOW2와 VHDX는 RAW로 변환하고, 원본은 변경하지 않고 라이브러리에 복제합니다.")
                     .font(.callout).foregroundColor(.secondary)
                 HStack {
                     Button("설치된 디스크 선택…") { pickHVFTarget() }

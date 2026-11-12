@@ -86,7 +86,7 @@ final class HvfWindowsImportTests: XCTestCase {
         try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
         let disk = temp.appendingPathComponent("windows.qcow2")
         let vars = temp.appendingPathComponent("efi_vars.fd")
-        XCTAssertTrue(FileManager.default.createFile(atPath: vars.path, contents: Data("utm-vars".utf8)))
+        XCTAssertTrue(FileManager.default.createFile(atPath: vars.path, contents: Data("other-vars".utf8)))
         let varsHandle = try FileHandle(forWritingTo: vars)
         try varsHandle.truncate(atOffset: VMLibrary.windowsHVFVarsBytes)
         try varsHandle.close()
@@ -95,7 +95,7 @@ final class HvfWindowsImportTests: XCTestCase {
         try image.write(to: disk)
         var percents: [Int] = []
         guard case .created(let config)? = VMLibrary.createWindowsHVF(
-            name: "UTM \(UUID().uuidString)", targetDiskPath: disk.path, varsPath: vars.path,
+            name: "Imported \(UUID().uuidString)", targetDiskPath: disk.path, varsPath: vars.path,
             storageDir: storage, persist: false, snapshotHelper: HvfMediaImportTestSupport.helper,
             converting: { format, percent in XCTAssertEqual(format, .qcow2); percents.append(percent) }
         ) else { return XCTFail("a QCOW2 disk must import") }
@@ -116,7 +116,7 @@ final class HvfWindowsImportTests: XCTestCase {
             name: "Overlay", targetDiskPath: disk.path, varsPath: vars.path,
             storageDir: storage, persist: false, snapshotHelper: HvfMediaImportTestSupport.helper
         ) else { return XCTFail("a QCOW2 with a backing file must be refused with a sentence") }
-        XCTAssertEqual(message, "이 디스크는 다른 디스크를 기반으로 하니 UTM이나 qemu-img로 하나의 디스크로 합친 뒤 다시 가져오세요.")
+        XCTAssertEqual(message, "이 디스크는 다른 디스크를 기반으로 하니 qemu-img로 하나의 디스크로 합친 뒤 다시 가져오세요.")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: storage.path), [])
     }
 

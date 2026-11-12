@@ -14,7 +14,7 @@ final class FirstRunImportDiskFormatTests: XCTestCase {
         defer { fixture.remove() }
         let (image, raw) = HvfQCOW2TestImage.make()
         try image.write(to: fixture.disk)
-        // UTM keeps efi_vars.fd beside the disk; a linked vars path must still give an independent copy.
+        // Some VM apps keep efi_vars.fd beside the disk as a link; a linked vars path must still give an independent copy.
         let linkedVars = fixture.root.appendingPathComponent("efi_vars.fd")
         try FileManager.default.createSymbolicLink(at: linkedVars, withDestinationURL: fixture.vars)
         let sourceMode = try FileManager.default.attributesOfItem(atPath: fixture.vars.path)[.posixPermissions] as? NSNumber
@@ -47,7 +47,7 @@ final class FirstRunImportDiskFormatTests: XCTestCase {
 
     func testABackingFileIsRefusedWithTheConvertersSentence() throws {
         try assertRefused(HvfQCOW2TestImage.make(backingFile: true).image,
-                          sentence: "이 디스크는 다른 디스크를 기반으로 하니 UTM이나 qemu-img로 하나의 디스크로 합친 뒤 다시 가져오세요.")
+                          sentence: "이 디스크는 다른 디스크를 기반으로 하니 qemu-img로 하나의 디스크로 합친 뒤 다시 가져오세요.")
     }
 
     func testDamagedQCOW2AndVHDXHeadersAreRefusedByTheConverter() throws {

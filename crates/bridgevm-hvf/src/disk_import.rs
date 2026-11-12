@@ -1,4 +1,4 @@
-//! Import a QCOW2 (UTM, QEMU) or VHDX (Hyper-V) disk as the sparse raw image
+//! Import a QCOW2 (QEMU) or VHDX (Hyper-V) disk as the sparse raw image
 //! the runtime boots: `snapshot_pair_cli convert-to-raw <src> <dst>`.
 //!
 //! The source file is untrusted. Its metadata is walked completely before
@@ -64,6 +64,8 @@ pub enum Refusal {
     Corrupt,
     VhdxLog,
     Differencing,
+    /// The runtime's disks have 512-byte logical sectors; a 4 KiB-sector GPT would not be found.
+    Sector4K,
     TooLarge,
     /// A version or a required feature this reader does not know.
     Unsupported(String),
@@ -80,15 +82,16 @@ impl fmt::Display for Refusal {
         const GB: u64 = 1_000_000_000;
         match self {
             Refusal::NotAnImage => write!(f, "QCOW2나 VHDX 디스크가 아니니 디스크 파일을 다시 선택하세요."),
-            Refusal::Compressed => write!(f, "이 QCOW2 디스크에는 압축된 영역이 있으니 UTM이나 qemu-img로 압축하지 않은 디스크로 변환한 뒤 다시 가져오세요."),
+            Refusal::Compressed => write!(f, "이 QCOW2 디스크에는 압축된 영역이 있으니 qemu-img로 압축하지 않은 디스크로 변환한 뒤 다시 가져오세요."),
             Refusal::Encrypted => write!(f, "암호화된 QCOW2 디스크는 가져올 수 없으니 qemu-img로 암호화를 푼 디스크로 변환한 뒤 다시 가져오세요."),
-            Refusal::BackingFile => write!(f, "이 디스크는 다른 디스크를 기반으로 하니 UTM이나 qemu-img로 하나의 디스크로 합친 뒤 다시 가져오세요."),
+            Refusal::BackingFile => write!(f, "이 디스크는 다른 디스크를 기반으로 하니 qemu-img로 하나의 디스크로 합친 뒤 다시 가져오세요."),
             Refusal::ExternalDataFile => write!(f, "이 QCOW2 디스크는 데이터를 별도 파일에 두니 qemu-img로 하나의 디스크로 변환한 뒤 다시 가져오세요."),
             Refusal::ExtendedL2 => write!(f, "이 QCOW2 디스크는 확장 L2(서브클러스터) 형식이니 qemu-img로 일반 디스크로 변환한 뒤 다시 가져오세요."),
-            Refusal::Dirty => write!(f, "이 QCOW2 디스크는 사용 중이거나 제대로 닫히지 않았으니 UTM에서 VM을 완전히 종료한 뒤 다시 가져오세요."),
+            Refusal::Dirty => write!(f, "이 QCOW2 디스크는 사용 중이거나 제대로 닫히지 않았으니 이 디스크를 쓰던 VM을 완전히 종료한 뒤 다시 가져오세요."),
             Refusal::Corrupt => write!(f, "이 QCOW2 디스크에는 손상 표시가 있으니 qemu-img check -r all로 고친 뒤 다시 가져오세요."),
             Refusal::VhdxLog => write!(f, "이 VHDX에는 반영되지 않은 변경 기록이 남아 있으니 Windows에서 이 VHDX를 한 번 연결했다가 분리한 뒤 다시 시도하세요."),
             Refusal::Differencing => write!(f, "이 디스크는 다른 디스크를 기반으로 하는 차이 디스크이니 Hyper-V에서 부모 디스크와 병합한 뒤 다시 가져오세요."),
+            Refusal::Sector4K => write!(f, "이 VHDX는 4K 논리 섹터 디스크라 BridgeVM에서 부팅할 수 없으니 512바이트 논리 섹터 디스크에 설치한 Windows를 가져오세요."),
             Refusal::TooLarge => write!(f, "가상 크기가 16 TiB를 넘는 디스크는 가져올 수 없습니다."),
             Refusal::Unsupported(what) => write!(f, "이 디스크는 지원하지 않는 형식 기능({what})을 사용하니 qemu-img convert -O raw로 먼저 변환한 뒤 다시 가져오세요."),
             Refusal::Damaged(what) => write!(f, "디스크 이미지가 손상되었거나 구조가 올바르지 않으니 원래 VM 앱에서 디스크를 점검한 뒤 다시 시도하세요({what})."),

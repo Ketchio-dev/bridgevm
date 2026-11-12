@@ -1,7 +1,7 @@
 import Foundation
 
 /// Container disks both Windows HVF import entry points convert to the bundle's sparse RAW disk
-/// with the helper's `convert-to-raw` (UTM stores QCOW2, Hyper-V VHDX). Any other file is a RAW
+/// with the helper's `convert-to-raw` (QEMU-based apps store QCOW2, Hyper-V VHDX). Any other file is a RAW
 /// disk and keeps the clone-or-copy path. The helper reads and checks the whole image itself.
 enum HvfImportedDiskFormat: String {
     case qcow2 = "QCOW2"

@@ -122,6 +122,9 @@ impl Vhdx {
         if params.has_parent {
             return Err(Refusal::Differencing.into());
         }
+        if params.logical_sector != 512 {
+            return Err(Refusal::Sector4K.into());
+        }
         let block = params.block;
         let chunk_ratio = (1u64 << 23) * params.logical_sector / block;
         let payload = params.size.div_ceil(block);

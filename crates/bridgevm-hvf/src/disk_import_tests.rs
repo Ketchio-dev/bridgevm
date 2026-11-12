@@ -252,6 +252,14 @@ fn refusals_name_what_the_user_must_do() {
     assert!(Refusal::VhdxLog
         .to_string()
         .contains("Windows에서 이 VHDX를 한 번 연결했다가 분리한 뒤 다시 시도하세요"));
+    // Our disks answer with 512-byte sectors, so Windows would look for the GPT at byte 512.
+    let mut sector_4k = VhdxSpec::new(MIB, size);
+    sector_4k.logical_sector = 4096;
+    let image = vhdx(&sector_4k, &[(0, Block::Data(pattern(MIB, 1)))]).0;
+    assert_eq!(refusal(&s, &image), Refusal::Sector4K);
+    assert!(Refusal::Sector4K
+        .to_string()
+        .contains("512바이트 논리 섹터 디스크에 설치한 Windows를 가져오세요"));
 }
 
 #[test]
