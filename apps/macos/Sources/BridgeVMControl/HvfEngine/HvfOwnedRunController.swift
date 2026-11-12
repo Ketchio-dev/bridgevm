@@ -29,6 +29,7 @@ final class HvfOwnedRunController {
     private var cancelled = false
     private var serviceReady = false
     private var guestRequestSent = false
+    private var guestBootGeneration = 0
     private var powerButtonPressed = false
     private var guestEffectsPending = 0
     private var outputEnded = false
@@ -120,7 +121,11 @@ final class HvfOwnedRunController {
 
     /// Set by this boot generation's `SERVICE start`; a guest reset record drops it, so an unsent request waits.
     func guestServiceReady() { serviceReady = true; requestGuestIfReady() }
-    func guestServiceLost() { serviceReady = false }
+    func guestServiceLost() {
+        serviceReady = false; guestRequestSent = false
+        guestBootGeneration += 1
+        guestShutdown.beginGuestBoot()
+    }
 
     func tick() {
         if runnerExit == nil, !process.isRunning {
@@ -193,11 +198,12 @@ final class HvfOwnedRunController {
 
     private func sendGuest(_ command: HvfGuestStopCommand) {
         guestEffectsPending += 1
-        let token = identity.token
+        let token = identity.token, generation = guestBootGeneration
         guestShutdown.request(command) { [weak self] delivered in
             Task { @MainActor [weak self] in
                 guard let self, self.identity.token == token else { return }
                 self.guestEffectsPending -= 1
+                guard generation == self.guestBootGeneration else { self.tick(); return }
                 let waiting = command == .shutdown ? self.graceDeadline != nil : self.forceDeadline != nil
                 guard waiting, !self.cancelled, self.runnerExit == nil, self.ledger.complete == nil else {
                     self.tick(); return
