@@ -107,7 +107,7 @@ final class HvfEngineSessionGuestResetGateTests: XCTestCase {
         XCTAssertEqual(try Self.control(f.base.root), Self.shutdown)
     }
 
-    func testResetAfterOwnedShutdownWasSentDoesNotResendIt() throws {
+    func testResetAfterOwnedShutdownResendsOnceForTheNewBoot() throws {
         let queue = DispatchQueue(label: "owned-sent-guest")
         let f = try HvfOwnedRuntimeControllerTests.Fixture(guestQueue: queue); defer { f.clean() }
         let session = try Self.ownedSession(f)
@@ -115,9 +115,10 @@ final class HvfEngineSessionGuestResetGateTests: XCTestCase {
         f.controller.receive(.message(try f.event("ready", sequence: 1)))
         _ = try Self.stop(session, f)
         queue.sync {}
-        try Self.append(Self.resets[1] + Self.boot, f.base.root); session.poll()
+        try Self.append(Self.resets[1] + Self.boot + Self.boot, f.base.root); session.poll()
         queue.sync {}
-        XCTAssertEqual(try Self.control(f.base.root), Self.shutdown)
+        XCTAssertEqual(try Self.control(f.base.root), Self.shutdown + Self.shutdown,
+                       "The next boot gets one request; duplicate SERVICE start does not resend")
     }
 
     private static func ownedSession(_ f: HvfOwnedRuntimeControllerTests.Fixture) throws -> HvfEngineSession {

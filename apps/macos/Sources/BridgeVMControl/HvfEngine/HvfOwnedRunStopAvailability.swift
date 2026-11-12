@@ -13,8 +13,8 @@ extension HvfOwnedRunController {
     }
 
     var forceStopTarget: HvfForceStopTarget? {
-        guard waitsForGuestShutdown, let operation else { return nil }
-        return HvfForceStopTarget(identity: identity, operationID: operation.operationID)
+        guard waitsForGuestShutdown || canForceAfterSupervisionLoss else { return nil }
+        return HvfForceStopTarget(identity: identity, operationID: operation?.operationID ?? supervisionForceOperationID)
     }
 
     /// What the stop controls tell the user while Windows has not turned off yet.
