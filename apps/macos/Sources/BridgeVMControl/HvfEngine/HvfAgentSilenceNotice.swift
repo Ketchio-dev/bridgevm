@@ -127,18 +127,32 @@ struct HvfAgentSilenceStrip: View {
 
     var body: some View {
         if let text = notice.text, !notice.dismissedInWindow {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
+            HvfNoticeStrip(identifier: "bridgevm.display.agent-silence", dismiss: { notice.dismissInWindow() }) {
                 Label {
                     Text(text).fixedSize(horizontal: false, vertical: true)
                 } icon: {
                     Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
                 }
-                Button { notice.dismissInWindow() } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.plain)
-                    .help("닫기")
-                    .accessibilityLabel("닫기")
-                    .accessibilityIdentifier("bridgevm.display.agent-silence.close")
             }
+        }
+    }
+}
+
+/// Shared presentation for actionable, dismissible notices over the VM display.
+struct HvfNoticeStrip<Content: View>: View {
+    let identifier: String
+    let dismiss: () -> Void
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            content()
+            Button(action: dismiss) { Image(systemName: "xmark") }
+                .buttonStyle(.plain)
+                .help("닫기")
+                .accessibilityLabel("닫기")
+                .accessibilityIdentifier(identifier + ".close")
+        }
             .font(.callout)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -146,7 +160,6 @@ struct HvfAgentSilenceStrip: View {
             .frame(maxWidth: 640)
             .padding(8)
             .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("bridgevm.display.agent-silence")
-        }
+            .accessibilityIdentifier(identifier)
     }
 }

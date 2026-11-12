@@ -337,6 +337,7 @@ enum HvfDisplayDriverFlag {
     static func record(_ session: HvfEngineSession,
                        publish: @escaping HvfEngineSession.RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> String? {
         guard let slug = session.config.libraryContext?.config.slug else { return nil }
+        session.displayDriverRestartRequired = true
         pendingVMs.insert(slug)
         return saveIfStopped(session, publish: publish)
     }
@@ -361,21 +362,23 @@ enum HvfDisplayDriverFlag {
 struct HvfDisplayDriverInstallButton: View {
     @ObservedObject var session: HvfEngineSession
     let onInstalled: @MainActor (HvfDisplayDriverInstall.Outcome) -> Void
+    var compact = false
     @State private var installing = false
     @State private var outcome: HvfDisplayDriverInstall.Outcome?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Button(action: install) {
-                Label("디스플레이 드라이버 설치 (Red Hat virtio-win, Microsoft 서명)", systemImage: "arrow.down.circle")
+                if compact { Text(installing ? "설치 중…" : "설치") }
+                else { Label("디스플레이 드라이버 설치 (Red Hat virtio-win, Microsoft 서명)", systemImage: "arrow.down.circle") }
             }
             .disabled(installing || !HvfDisplayDriverInstall.agentReady(session))
             .accessibilityIdentifier("bridgevm.runtime.display-driver.install")
             .help("게스트가 Red Hat 공식 배포처에서 virtio-win 압축 파일(약 95 MB)을 직접 내려받아 크기와 SHA-256을 확인한 뒤 viogpudo 드라이버만 설치합니다.")
-            if installing {
+            if installing && !compact {
                 Text("설치 중… 게스트가 드라이버 압축 파일(약 95 MB)을 내려받아 설치합니다. 그동안에도 VM을 계속 사용할 수 있습니다.")
                     .font(.caption).foregroundColor(.secondary)
-            } else if let outcome {
+            } else if let outcome, !compact || !outcome.leavesDriverInGuest {
                 Text(outcome.message)
                     .font(.caption).foregroundColor(outcome.leavesDriverInGuest ? .green : .orange)
                     .textSelection(.enabled)

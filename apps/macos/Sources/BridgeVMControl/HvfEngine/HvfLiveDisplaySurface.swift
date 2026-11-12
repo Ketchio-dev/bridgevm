@@ -16,7 +16,12 @@ struct HvfLiveDisplaySurface: View {
         HvfFramebufferView(session: session)
             .background(Color.black)
             .overlay { HvfPausedDisplayOverlay(session: session) }
-            .overlay(alignment: .top) { HvfAgentSilenceStrip(notice: session.agentSilenceNotice) }
+            .overlay(alignment: .top) {
+                VStack(spacing: 0) {
+                    HvfAgentSilenceStrip(notice: session.agentSilenceNotice)
+                    HvfDisplayDriverNoticeView(session: session)
+                }
+            }
             .overlay(alignment: .bottom) { HvfFileDropNoticeView(drops: session.fileDrops) }
             .sheet(isPresented: $window.showsWindowInventory) { HvfWindowInventoryPanel(session: session) }
             .sheet(isPresented: $window.showsAllApps) {
