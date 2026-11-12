@@ -13,17 +13,41 @@ pub(super) const COPY_CHUNK: usize = 4 * 1024 * 1024;
 /// Streamed rather than read wholesale: a disk image is tens of gigabytes and
 /// must not be brought into memory to be copied.
 pub(super) fn copy_and_sync(src: &Path, dst: &Path) -> io::Result<u64> {
+    copy_and_sync_using(
+        src,
+        dst,
+        free_space::clone_file,
+        free_space::available_bytes,
+    )
+}
+
+pub(super) fn copy_and_sync_using(
+    src: &Path,
+    dst: &Path,
+    clone: impl FnOnce(&Path, &Path) -> Option<()>,
+    available: impl FnOnce(&Path) -> Option<u64>,
+) -> io::Result<u64> {
     // Clone first where the filesystem allows it. On APFS this is a
     // copy-on-write reference: the 64 GiB image clones in 2ms and adds no used
     // bytes, where copying it needs minutes and room for a second full copy.
     // That difference is the whole reason a restore could not run on a volume
     // with 59 GiB free.
-    if free_space::clone_file(src, dst).is_some() {
+    if clone(src, dst).is_some() {
         let cloned = File::open(dst)?;
         // Still fsync: the clone is metadata, and the manifest is about to
         // claim these bytes are durable.
         cloned.sync_all()?;
         return Ok(cloned.metadata()?.len());
+    }
+    // Only a byte copy needs room for the source's logical size. Check before
+    // creating the destination so a failed admission leaves no partial file.
+    let needed = std::fs::metadata(src)?.len();
+    let parent = dst
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    if available(parent).is_some_and(|bytes| needed > bytes) {
+        return Err(io::Error::from_raw_os_error(libc::ENOSPC));
     }
     stream_and_sync(src, dst, |_| Ok(()))
 }

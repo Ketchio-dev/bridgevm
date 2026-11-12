@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Runs every XCTest function under the shim, per suite.
+# BV_XCTEST_BUILD_ONLY=1 compiles the same sources/flags without running tests.
 #
 # Four per-suite runners rather than one merged binary: merging app and test
 # sources into one module produced 58 redeclaration errors (fileprivate
@@ -12,7 +13,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source "$ROOT/scripts/prepare-native-test-helpers.sh"
+if [[ "${BV_XCTEST_BUILD_ONLY:-0}" != 1 ]]; then
+    source "$ROOT/scripts/prepare-native-test-helpers.sh"
+fi
 SHIM="$ROOT/apps/macos/XCTestShim"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-xctest.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
@@ -55,7 +58,18 @@ logged AppleVzRunnerCore apps/macos/Sources/AppleVzRunnerCore apps/macos/Tests/A
 logged BridgeVMProductE2E apps/macos/Sources/BridgeVMProductE2E apps/macos/Tests/BridgeVMProductE2ETests -I "$WORK" -L "$WORK" -lBridgeVMWindowProtocol -framework AppKit -framework ApplicationServices -F "$SWIFT_TESTING_FRAMEWORKS" -framework Testing -load-plugin-library "$SWIFT_TESTING_MACROS" -Xlinker -rpath -Xlinker "$SWIFT_TESTING_FRAMEWORKS" -Xlinker -rpath -Xlinker "$SWIFT_TESTING_INTEROP_LIBS" & pids+=($!)
 failed=0
 for pid in "${pids[@]}"; do wait "$pid" || failed=1; done
-for name in BridgeVMApp BridgeVMControl AppleVzRunnerCore BridgeVMProductE2E; do cat "$WORK/log-$name"; grep -Eq '^shim XCTest: [1-9][0-9]* passed, 0 failed, [0-9]+ skipped$' "$WORK/log-$name" || failed=1; done
+for name in BridgeVMApp BridgeVMControl AppleVzRunnerCore BridgeVMProductE2E; do
+    cat "$WORK/log-$name"
+    if [[ "${BV_XCTEST_BUILD_ONLY:-0}" == 1 ]]; then
+        grep -qx "COMPILED: $name (tests not run)" "$WORK/log-$name" || failed=1
+    else
+        grep -Eq '^shim XCTest: [1-9][0-9]* passed, 0 failed, [0-9]+ skipped$' "$WORK/log-$name" || failed=1
+    fi
+done
 (( failed == 0 )) || { echo "FAIL: at least one shim suite failed" >&2; exit 1; }
 
-echo "PASS: all four shim suites"
+if [[ "${BV_XCTEST_BUILD_ONLY:-0}" == 1 ]]; then
+    echo "PASS: all four shim suites compiled (tests not run)"
+else
+    echo "PASS: all four shim suites"
+fi

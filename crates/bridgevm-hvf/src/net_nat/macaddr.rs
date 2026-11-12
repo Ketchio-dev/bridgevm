@@ -5,7 +5,7 @@ use super::*;
 use std::{
     collections::{hash_map::Entry, HashMap, VecDeque},
     io,
-    net::{IpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr, Shutdown, SocketAddr, UdpSocket},
+    net::{IpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr, SocketAddr, UdpSocket},
     os::fd::AsRawFd,
     path::PathBuf,
     time::Instant,
@@ -716,11 +716,13 @@ impl HostSocketOutboundIpv4Handler {
             // 9293 3.10.7.4), so the guest resends from there at once.
             flow.pending_ack = true;
         }
-        if tcp.flags & TCP_FLAG_FIN != 0 && tcp.seq == flow.guest_next {
+        if tcp.flags & TCP_FLAG_FIN != 0
+            && tcp.seq.wrapping_add(tcp.payload.len() as u32) == flow.guest_next
+        {
             flow.guest_next = flow.guest_next.wrapping_add(1);
             flow.guest_fin = true;
             flow.pending_ack = true;
-            let _ = flow.stream.shutdown(Shutdown::Write);
+            flow.flush_host_write();
         }
         self.evict_idle_flows();
     }
@@ -737,7 +739,7 @@ impl HostSocketOutboundIpv4Handler {
         let now = self.now_ms();
         let recv_scratch = &mut self.udp_recv_scratch;
         for (key, flow) in &mut self.udp_flows {
-            while flow.readable {
+            while flow.readable && !reply_queue_full(reply_queue) {
                 match flow.socket.recv(recv_scratch) {
                     Ok(len) => {
                         flow.last_activity = now;

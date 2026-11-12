@@ -4,6 +4,7 @@ import Combine
 @MainActor
 final class HvfShareRootNotice: ObservableObject {
     @Published private(set) var isBlocked = false
+    @Published private(set) var launchUnavailable = false
     @Published private(set) var stopped: HvfShareStop?
     /// The runtime holds every change while the guest folder's listing is over its limit.
     @Published private(set) var paused: HvfSharePaused?
@@ -22,6 +23,7 @@ final class HvfShareRootNotice: ObservableObject {
         guard case let .unknown(raw) = event else { return }
         let line = raw.hasSuffix("\r") ? String(raw.dropLast()) : raw
         switch line {
+        case HvfEngineConfig.shareUnavailableMessage: launchUnavailable = true; missingFolder = nil
         case _ where HvfGuestResetRecord.matches(line): reset()
         case "BVAGENT SHARE root-state blocked": update(true)
         case "BVAGENT SHARE root-state ready":
@@ -51,6 +53,7 @@ final class HvfShareRootNotice: ObservableObject {
 
     /// A new run or boot generation; at Start, `missingFolder` names a shared folder missing then.
     func reset(missingFolder folder: String? = nil) {
+        if launchUnavailable { launchUnavailable = false }
         if missingFolder != folder { missingFolder = folder }
         update(false)
         if stopped != nil { stopped = nil }

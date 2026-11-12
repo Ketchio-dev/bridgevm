@@ -10,27 +10,17 @@ impl LockedPair {
         snapshot: &Path,
         publish: impl FnOnce(&Path, &Path) -> io::Result<()>,
     ) -> Result<SnapshotManifest, SnapshotError> {
-        self.restore_with_capacity(snapshot, super::super::free_space::available_bytes, publish)
-    }
-
-    pub(in crate::snapshot_pair) fn restore_with_capacity(
-        &mut self,
-        snapshot: &Path,
-        available_bytes: impl FnOnce(&Path) -> Option<u64>,
-        publish: impl FnOnce(&Path, &Path) -> io::Result<()>,
-    ) -> Result<SnapshotManifest, SnapshotError> {
-        self.restore_copying(snapshot, available_bytes, copy_and_sync, publish)
+        self.restore_copying(snapshot, copy_and_sync, publish)
     }
 
     /// `copy` stages one file; tests substitute a streaming copy that stops.
     pub(in crate::snapshot_pair) fn restore_copying(
         &mut self,
         snapshot: &Path,
-        available_bytes: impl FnOnce(&Path) -> Option<u64>,
         copy: impl FnMut(&Path, &Path) -> io::Result<u64>,
         publish: impl FnOnce(&Path, &Path) -> io::Result<()>,
     ) -> Result<SnapshotManifest, SnapshotError> {
-        let (snapshot, manifest) = self.admit_restore(snapshot, available_bytes)?;
+        let (snapshot, manifest) = self.admit_restore(snapshot)?;
         // Gone before the disk changes: a crash in between leaves the old disk without its state,
         // which only lets the Mac copy win.
         super::super::remove_share_state(&self.vars)?;

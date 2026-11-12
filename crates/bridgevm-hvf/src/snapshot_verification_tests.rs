@@ -70,58 +70,88 @@ fn a_full_width_format_version_cannot_wrap_to_the_supported_version() {
 }
 
 #[test]
-fn truthful_snapshot_sizes_allow_restore_at_or_above_available_capacity() {
-    for available in [Some(8), Some(9), None] {
-        let s = Scratch::new(&format!("capacity-{available:?}"));
+#[cfg(target_os = "macos")]
+fn nearly_full_volume_can_restore_by_cloning() {
+    let s = Scratch::new("clone-nospace");
+    let disk = s.write("disk", b"disk");
+    let vars = s.write("vars", b"vars");
+    let snapshot = s.path("snap");
+    create_snapshot(&disk, &vars, &snapshot, "vm", false, QUOTA).unwrap();
+    let mut pair = managed::LockedPair::open(&disk, &vars).unwrap();
+    let mut sampled = false;
+    pair.restore_copying(
+        &snapshot,
+        |src, dst| {
+            copy::copy_and_sync_using(src, dst, free_space::clone_file, |_| {
+                sampled = true;
+                Some(0)
+            })
+        },
+        snapshot_publish::publish,
+    )
+    .unwrap();
+    assert!(!sampled, "successful clone must not sample free space");
+    let (disk, vars) = pair.paths().unwrap();
+    assert_eq!(fs::read(disk).unwrap(), b"disk");
+    assert_eq!(fs::read(vars).unwrap(), b"vars");
+}
+
+#[test]
+fn failed_clone_with_short_space_refuses_before_copy_and_preserves_pair() {
+    for selected in [false, true] {
+        let s = Scratch::new(&format!("fallback-nospace-{selected}"));
         let disk = s.write("disk", b"disk");
         let vars = s.write("vars", b"vars");
-        let snapshot = s.path("snapshot");
+        let snapshot = s.path("snap");
         create_snapshot(&disk, &vars, &snapshot, "vm", false, QUOTA).unwrap();
-        fs::write(&disk, b"changed disk").unwrap();
-        fs::write(&vars, b"changed vars").unwrap();
         let mut pair = managed::LockedPair::open(&disk, &vars).unwrap();
-        pair.restore_with_capacity(
+        if selected {
+            pair.restore(&snapshot).unwrap();
+        }
+        let paths = pair.paths().unwrap();
+        fs::write(&paths.0, b"live disk").unwrap();
+        fs::write(&paths.1, b"live vars").unwrap();
+        let mut destination = None;
+        let result = pair.restore_copying(
             &snapshot,
-            |_| available,
-            crate::snapshot_pair::snapshot_publish::publish,
-        )
-        .unwrap();
-        let (selected_disk, selected_vars) = pair.paths().unwrap();
-        assert_eq!(fs::read(selected_disk).unwrap(), b"disk");
-        assert_eq!(fs::read(selected_vars).unwrap(), b"vars");
+            |src, dst| {
+                destination = Some(dst.to_path_buf());
+                let result = copy::copy_and_sync_using(
+                    src,
+                    dst,
+                    |_, _| None,
+                    |parent| {
+                        assert_eq!(parent, dst.parent().unwrap());
+                        Some(0)
+                    },
+                );
+                assert!(
+                    !dst.exists(),
+                    "byte copy must not start when space is short"
+                );
+                result
+            },
+            |_, _| panic!("short-space copy reached publication"),
+        );
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "No space left on device; free space on your Mac and try again."
+        );
+        assert!(
+            !destination.unwrap().parent().unwrap().exists(),
+            "staging not cleared"
+        );
+        assert_eq!(pair.paths().unwrap(), paths);
+        assert_eq!(fs::read(paths.0).unwrap(), b"live disk");
+        assert_eq!(fs::read(paths.1).unwrap(), b"live vars");
     }
 }
 
 #[test]
-fn a_restore_that_cannot_fit_its_staging_copy_is_refused_up_front() {
-    // Found by a live run, not by reading: restoring a 64 GiB pair needs the
-    // volume to hold the live pair, the snapshot AND a full second copy at the
-    // same time. It failed partway through with ENOSPC and left a
-    // multi-gigabyte temp file behind, which made the next attempt worse.
-    let s = Scratch::new("nospace");
-    let disk = s.write("disk", b"live disk");
-    let vars = s.write("vars", b"live vars");
-    create_snapshot(&disk, &vars, &s.path("snap"), "vm", false, QUOTA).unwrap();
-
-    // Use truthful snapshot sizes and inject the capacity of a nearly full
-    // volume, so the guard is tested independently of this machine's free space.
-    let mut pair = managed::LockedPair::open(&disk, &vars).unwrap();
-    let result = pair.restore_with_capacity(
-        &s.path("snap"),
-        |_| Some(17),
-        |_, _| panic!("insufficient capacity must refuse before publication"),
-    );
-    match result {
-        Err(SnapshotError::InsufficientSpace { needed, available }) => {
-            assert_eq!((needed, available), (18, 17));
-        }
-        other => panic!("expected InsufficientSpace, got {other:?}"),
-    }
-    // And the live pair is untouched, as with any other refusal.
+fn copy_out_of_space_has_one_plain_sentence() {
+    let error = SnapshotError::from(std::io::Error::from_raw_os_error(libc::ENOSPC));
     assert_eq!(
-        pair.paths().unwrap(),
-        (disk.canonicalize().unwrap(), vars.canonicalize().unwrap())
+        error.to_string(),
+        "No space left on device; free space on your Mac and try again."
     );
-    assert_eq!(fs::read(&disk).unwrap(), b"live disk");
-    assert_eq!(fs::read(&vars).unwrap(), b"live vars");
 }

@@ -91,7 +91,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
             (try helper("media is in use by a running VM or another snapshot operation: held by pid 42"), .create, notStopped),
             (try helper("No space left on device (os error 28)"), .create,
              "Mac 저장 공간이 부족해 스냅샷을 만들지 못했으니 공간을 확보한 뒤 다시 시도하세요."),
-            (try helper("restore needs 4096 bytes free to stage a copy, 512 available"), .restore,
+            (try helper("No space left on device; free space on your Mac and try again."), .restore,
              "Mac 저장 공간이 부족해 스냅샷으로 되돌리지 못했으니 공간을 확보한 뒤 다시 시도하세요."),
             (try helper("disk.raw does not match the hash recorded in the manifest"), .restore,
              "스냅샷이 손상되어 되돌리지 못했으니 새 스냅샷을 만드세요."),

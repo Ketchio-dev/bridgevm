@@ -13,9 +13,9 @@ pub(super) fn retry_after_explicit_staging_resolution(pair: &mut LockedPair, sna
         let before = read(&staged);
         let selected = pair.paths().unwrap();
         let refusal = pair
-            .restore_with_capacity(
+            .restore_copying(
                 snapshot,
-                |_| panic!("ambiguous staging must refuse before capacity admission"),
+                |_, _| panic!("ambiguous staging must refuse before copy"),
                 |_, _| panic!("ambiguous staging must refuse before publication"),
             )
             .unwrap_err();

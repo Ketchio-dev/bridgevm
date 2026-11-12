@@ -4,7 +4,7 @@ use crate::snapshot_pair::managed::private_directory;
 use std::io;
 use std::path::Path;
 
-/// Runs before capacity admission and each copy, and after a failed one.
+/// Runs before each restore attempt and copy, and after a failed one.
 /// A crashed copy must not consume the space needed for its own retry.
 pub(super) fn clear(staged: &Path) -> io::Result<()> {
     if private_directory(staged, false)? {

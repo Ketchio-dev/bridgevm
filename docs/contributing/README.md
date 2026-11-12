@@ -57,10 +57,10 @@ python3 scripts/check-capability-evidence.py
 
 ## Documentation changes
 
-Classify every new file under `docs/` in
-[`docs/document-manifest.tsv`](../document-manifest.tsv) as current, active
-plan, decision, historical evidence, or reference. Current documents must not
-cite a path, command flag, or repository commit that does not exist.
+Link new guides from the relevant documentation index. When useful, describe a
+document's status in the document itself; no separate catalog is required.
+Current documents must not cite a path, command flag, or repository commit that
+does not exist.
 
 Run:
 

@@ -168,6 +168,7 @@ fn framebuffer_geometry(config: RamfbConfig) -> Result<FramebufferGeometry, Ramf
     }
     let byte_len = u64::from(config.stride)
         .checked_mul(u64::from(config.height))
+        .filter(|len| *len <= 64 << 20)
         .ok_or(RamfbSnapshotError::SizeOverflow)?;
     Ok(FramebufferGeometry {
         byte_len: usize::try_from(byte_len).map_err(|_| RamfbSnapshotError::SizeOverflow)?,

@@ -49,6 +49,8 @@ function Log([string]$m) { }
 # Exercise .NET replacement here; the large contract separately compiles MoveFileEx as C# 5.
 function Test-DropReader { return $false }
 function Read-DataPayload($handle, [int]$chars) { return ,$script:testPayload }
+# Quick Access is exercised separately with a mock Shell; listing tests do not alter the host shell.
+function Pin-ShareQuickAccess([string]$root) { }
 function Write-Line($handle, [string]$line, [string]$label) { $script:sent = $line }
 $script:enumerations = 0
 $script:during = $null

@@ -43,12 +43,24 @@ def main() -> int:
         print("workflow yaml: SKIP (PyYAML not installed)")
         return 0
 
+    class UniqueKeyLoader(yaml.SafeLoader):
+        def construct_mapping(self, node, deep=False):
+            keys = set()
+            for key_node, _ in node.value:
+                key = self.construct_object(key_node, deep=deep)
+                if key in keys:
+                    raise yaml.constructor.ConstructorError(
+                        None, None, f"duplicate mapping key {key!r}", key_node.start_mark
+                    )
+                keys.add(key)
+            return super().construct_mapping(node, deep=deep)
+
     problems: list[str] = []
     checked = 0
     for path in sorted(WORKFLOWS.glob("*.yml")):
         checked += 1
         try:
-            document = yaml.safe_load(path.read_text())
+            document = yaml.load(path.read_text(), Loader=UniqueKeyLoader)
         except yaml.YAMLError as error:
             problems.append(f"{path.name}: does not parse: {str(error).splitlines()[0]}")
             continue
