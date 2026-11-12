@@ -22,19 +22,30 @@ extension LibraryModel {
     }
 
     func bindWindowsInstallSession(_ session: HvfWindowsInstallSession, slug: String) -> HvfWindowsInstallSession {
-        session.workAdmission = boundWorkAdmission(slug: slug) { [weak session] owner, current in
-            guard let session else { return false }
-            return current.engineKind == .hvfEngine && current.installPending == true
-                && owner.windowsInstallSessions.owns(session, for: current)
-        }
-        session.continuationAdmission = { [weak self, weak session] in
-            guard let self, let session else { return "VM 라이브러리를 사용할 수 없습니다." }
-            return self.libraryWorkRefusal(slug: slug, excludingWindowsInstall: session) { owner, current in
-                current.engineKind == .hvfEngine && current.installPending == true
-                    && owner.windowsInstallSessions.owns(session, for: current)
-            }
-        }
-        session.onCompleted = { [weak self] in self?.reload() }
+        bindInstallAdmissions(session, slug: slug, owns: { _, current in
+            current.engineKind == .hvfEngine && current.installPending == true
+        })
         return session
+    }
+
+    /// Both phases share ownership and CLI exclusion; only continuation excludes
+    /// the session's own active reservation, which has not started at admission.
+    func bindInstallAdmissions(_ session: HvfWindowsInstallSession, slug: String,
+        operation: NativeInstallOperation? = nil,
+        owns: @escaping @MainActor (LibraryModel, VMConfig) -> Bool
+    ) {
+        let admission: @MainActor (Bool, Bool) -> String? = { [weak self, weak session, weak operation] continuing, report in
+            guard let self, let session else {
+                return "VM 라이브러리를 사용할 수 없습니다. 라이브러리 화면에서 다시 시도하세요."
+            }
+            let refusal = self.libraryWorkRefusal(slug: slug, excludingInstall: operation,
+                excludingWindowsInstall: continuing ? session : nil,
+                owns: { owner, current in owns(owner, current) && owner.windowsInstallSessions.owns(session, for: current) })
+            if report, let refusal { self.operationError = refusal }
+            return refusal
+        }
+        session.workAdmission = { admission(false, $0) }
+        session.continuationAdmission = { admission(true, false) }
+        session.onCompleted = { [weak self] in self?.reload() }
     }
 }

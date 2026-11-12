@@ -49,15 +49,7 @@ extension LibraryModel {
 
     private func bindOwnedInstallSession(_ session: HvfWindowsInstallSession, saved: VMConfig,
                                          operation: NativeInstallOperation) {
-        session.workAdmission = { [weak self, weak session, weak operation] report in
-            guard let self, let session, let operation else {
-                return "VM 라이브러리를 사용할 수 없습니다. 라이브러리 화면에서 다시 시도하세요."
-            }
-            let refusal = self.libraryWorkRefusal(slug: saved.slug, excludingInstall: operation,
-                owns: { owner, current in current == saved && owner.windowsInstallSessions.owns(session, for: current) })
-            if report, let refusal { self.operationError = refusal }
-            return refusal
-        }
-        session.onCompleted = { [weak self] in self?.reload() }
+        bindInstallAdmissions(session, slug: saved.slug, operation: operation,
+            owns: { [weak operation] _, current in operation != nil && current == saved })
     }
 }
