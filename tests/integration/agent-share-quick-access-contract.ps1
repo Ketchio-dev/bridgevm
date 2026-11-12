@@ -20,6 +20,7 @@ function New-Object([string]$ComObject) {
     $shell = [pscustomobject]@{ Item = $item }
     $shell | Add-Member ScriptMethod Namespace { param($path)
         Assert ([IO.Directory]::Exists($path)) 'folder exists before pin'
+        $script:shellRoot = $path
         [pscustomobject]@{ Self = $this.Item }
     }
     return $shell
@@ -33,8 +34,11 @@ try {
     Pin-ShareQuickAccess $root
     Assert ($script:pins -eq 0 -and -not $script:BvSharePinAttempted) 'missing folder does nothing'
     [void][IO.Directory]::CreateDirectory($root)
-    Pin-ShareQuickAccess $root
+    # LSR appends a separator; the marker and Shell must use the same path as a bare root.
+    Pin-ShareQuickAccess ($root + [IO.Path]::DirectorySeparatorChar)
     $marker = Join-Path $temp 'BridgeVM/share-quick-access.attempted'
+    Assert ([IO.File]::ReadAllText($marker) -ceq $root) 'trailing separator normalized in marker'
+    Assert ($script:shellRoot -ceq $root) 'trailing separator normalized for Shell'
     Assert ($script:pins -eq 1 -and [IO.File]::Exists($marker)) 'pin and persistent marker'
     Assert ($script:logs.Count -eq 1 -and $script:logs[0] -eq ('SHARE Quick Access pin attempted ' + $root)) 'one attempt log line'
     $script:BvSharePinAttempted = $false # a new agent process; user has unpinned
@@ -50,7 +54,7 @@ try {
     Pin-ShareQuickAccess $root
     Assert ($script:logs.Count -eq 1) 'failed attempt also never repeated'
     Assert ($source.Contains('Pin-ShareQuickAccess $rootFull')) 'called only from sharing LSR'
-    'PASS: Quick Access contract (6 cases)'
+    'PASS: Quick Access contract (7 cases)'
 } finally {
     $env:ProgramData = $old
     Remove-Item -LiteralPath $temp -Recurse -Force

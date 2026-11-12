@@ -1771,6 +1771,12 @@ $script:BvLsrMaxAgeTicks = [long](600 * [System.Diagnostics.Stopwatch]::Frequenc
 function Pin-ShareQuickAccess([string]$root) {
     # LSR is only sent while sharing is on. Do not inspect the folder on agent startup.
     if (-not [IO.Directory]::Exists($root)) { return }
+    # LSR uses a trailing separator; pinning, logging and the marker use one canonical form.
+    $root = [IO.Path]::GetFullPath($root)
+    $volumeRoot = [IO.Path]::GetPathRoot($root)
+    while ($root.Length -gt $volumeRoot.Length -and ($root.EndsWith('\') -or $root.EndsWith('/'))) {
+        $root = $root.Substring(0, $root.Length - 1)
+    }
     $marker = Join-Path $env:ProgramData 'BridgeVM\share-quick-access.attempted'
     if ([IO.File]::Exists($marker) -or $script:BvSharePinAttempted) { return }
     $script:BvSharePinAttempted = $true
