@@ -647,8 +647,8 @@ impl HdaController {
         }
         self.note_diagnostic_poll(now, mem);
         let elapsed = match now {
-            Some(now) => match self.last_poll.replace(now) {
-                Some(last) => now.saturating_duration_since(last).min(MAX_POLL_ELAPSED),
+            Some(now) => match capture_dma::elapsed_since(&mut self.last_poll, now) {
+                Some(elapsed) => elapsed,
                 None => return,
             },
             None => TEST_POLL_QUANTUM,

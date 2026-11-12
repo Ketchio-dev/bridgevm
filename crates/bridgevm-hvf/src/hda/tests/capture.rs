@@ -145,6 +145,19 @@ fn input_streams_come_first_and_each_lpib_has_its_alias() {
 }
 
 #[test]
+fn a_capture_poll_with_an_older_time_does_not_record_that_time_twice() {
+    let mut capture = Capture::new(Some(usize::MAX));
+    capture.run();
+    let t0 = std::time::Instant::now();
+    for micros in [0, 1_000, 500, 1_500] {
+        let at = t0 + Duration::from_micros(micros);
+        capture.ctrl.poll(&mut capture.mem, Some(at));
+    }
+    // 1.5 ms of 192 bytes: 2 ms would have wrapped the 384-byte buffer to 0.
+    assert_eq!(capture.ctrl.mmio_read(REG_CAPTURE_SD_LPIB, 4), 288);
+}
+
+#[test]
 fn captured_bytes_land_in_guest_memory_before_the_position_moves() {
     let mut capture = Capture::new(Some(usize::MAX));
     capture.run();
