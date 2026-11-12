@@ -17,23 +17,23 @@ struct HvfSharedFolderSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Toggle("Shared folder", isOn: Binding(get: { enabled }, set: setEnabled))
+            Toggle("공유 폴더", isOn: Binding(get: { enabled }, set: setEnabled))
                 .accessibilityIdentifier("bridgevm.runtime.share.enabled")
                 .help(session.persistsLibraryPreferences ? "VM이 중지된 동안 선택한 폴더는 이 VM의 모든 시작에 저장됩니다." : "")
             if enabled {
                 HStack {
-                    Text("Host share").frame(width: 92, alignment: .leading)
-                    TextField("Host share", text: $hostDir)
+                    Text("Mac 폴더").frame(width: 92, alignment: .leading)
+                    TextField("Mac 폴더", text: $hostDir)
                         .textFieldStyle(.roundedBorder)
                         .font(.body.monospaced())
                         .accessibilityIdentifier("bridgevm.runtime.share.host")
                         .onSubmit(commitDraft)
                     Button(action: chooseHost) { Image(systemName: "folder") }
                         .accessibilityIdentifier("bridgevm.runtime.share.host.choose")
-                        .help("Choose Host share")
+                        .help("공유할 Mac 폴더 선택")
                 }
                 HStack {
-                    Text("Guest share").frame(width: 92, alignment: .leading)
+                    Text("Windows 폴더").frame(width: 92, alignment: .leading)
                     TextField("C:\\bridgevm-share", text: $guestDir)
                         .textFieldStyle(.roundedBorder)
                         .font(.body.monospaced()).accessibilityIdentifier("bridgevm.runtime.share.guest")

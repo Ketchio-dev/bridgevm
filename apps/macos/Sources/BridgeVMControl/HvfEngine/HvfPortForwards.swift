@@ -71,13 +71,17 @@ struct HvfPortForwardSetting: View {
     var isDisabled: Bool { session.persistsLibraryPreferences && !session.libraryPreferencesEditable }
 
     var body: some View {
-        HStack {
-            Text("Port forwards").frame(width: 92, alignment: .leading)
-            TextField("8080:80, 3390:3389", text: $text)
-                .textFieldStyle(.roundedBorder)
-                .font(.body.monospaced())
-                .accessibilityIdentifier("bridgevm.runtime.portForwards")
-                .onSubmit(apply)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("포트 전달").frame(width: 92, alignment: .leading)
+                TextField("", text: $text, prompt: Text("8080:80, 3390:3389"))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("bridgevm.runtime.portForwards")
+                    .onSubmit(apply)
+            }
+            Text("Mac 포트:Windows 포트 형식으로 쉼표로 구분해 입력합니다. 예: 8080:80")
+                .font(.caption).foregroundColor(.secondary)
         }
         .disabled(isDisabled)
         .help("Mac의 127.0.0.1:Mac포트 연결이 Windows의 TCP 포트로 전달됩니다. VM이 중지된 동안 변경하세요.")

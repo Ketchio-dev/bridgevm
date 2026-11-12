@@ -257,6 +257,11 @@ enum HvfDisplayDriverInstall {
         return true
     }
 
+    @MainActor static func unavailableReason(_ session: HvfEngineSession) -> String? {
+        guard case .connected = session.connectionState else { return "Windows를 시작하고 연결될 때까지 기다리세요." }
+        return session.serviceStarted ? nil : "Windows 도우미가 준비될 때까지 기다리세요."
+    }
+
     /// Runs one agent command, waiting at most the given time for its reply.
     typealias Runner = @MainActor (String, TimeInterval) async -> (output: String, code: Int32)
 
@@ -372,6 +377,9 @@ struct HvfDisplayDriverInstallButton: View {
             .disabled(installing || !HvfDisplayDriverInstall.agentReady(session))
             .accessibilityIdentifier("bridgevm.runtime.display-driver.install")
             .help("게스트가 Red Hat 공식 배포처에서 virtio-win 압축 파일(약 95 MB)을 직접 내려받아 크기와 SHA-256을 확인한 뒤 viogpudo 드라이버만 설치합니다.")
+            if !installing, let reason = HvfDisplayDriverInstall.unavailableReason(session) {
+                Text(reason).font(.caption).foregroundColor(.secondary)
+            }
             if installing {
                 Text("설치 중… 게스트가 드라이버 압축 파일(약 95 MB)을 내려받아 설치합니다. 그동안에도 VM을 계속 사용할 수 있습니다.")
                     .font(.caption).foregroundColor(.secondary)

@@ -8,7 +8,7 @@ struct HvfClipboardSyncToggle: View {
     var isDisabled: Bool { session.persistsLibraryPreferences && !session.libraryPreferencesEditable }
 
     var body: some View {
-        Toggle("Clipboard sync", isOn: Binding(get: { isOn }, set: update))
+        Toggle("클립보드 공유", isOn: Binding(get: { isOn }, set: update))
             .accessibilityIdentifier("bridgevm.runtime.clipboard")
             .disabled(isDisabled)
             .help(session.persistsLibraryPreferences ? "VM이 중지된 동안 변경하면 이 VM의 모든 시작에 저장됩니다." : "")

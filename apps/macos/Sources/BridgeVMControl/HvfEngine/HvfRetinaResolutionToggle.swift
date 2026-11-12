@@ -12,7 +12,7 @@ struct HvfRetinaResolutionToggle: View {
     var isDisabled: Bool { session.persistsLibraryPreferences && !session.libraryPreferencesEditable }
 
     var body: some View {
-        Toggle("Retina resolution", isOn: Binding(get: { setting == true }, set: update))
+        Toggle("Retina 해상도", isOn: Binding(get: { setting == true }, set: update))
             .accessibilityIdentifier("bridgevm.runtime.retina-resolution")
             .disabled(isDisabled)
             .help(Self.helpText(persists: session.persistsLibraryPreferences))
