@@ -82,6 +82,7 @@ extension HvfEngineSession {
                 self?.append(.unknown(message))
             }
             closeLiveInput(); resetObservedRuntimeState(clearEvents: true)
+            if let warning = spawn.shareWarning { append(.unknown(warning)) }
             connectionState = ticket.failure == nil ? .booting : .stopping
             beginOwnedInputBoot(); controller.activate(helloFrame: launched.helloFrame); startPolling()
         }

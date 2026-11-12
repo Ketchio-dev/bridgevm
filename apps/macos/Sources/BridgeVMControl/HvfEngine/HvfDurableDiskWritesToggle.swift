@@ -9,7 +9,7 @@ struct HvfDurableDiskWritesToggle: View {
     var isDisabled: Bool { session.persistsLibraryPreferences && !session.libraryPreferencesEditable }
 
     var body: some View {
-        Toggle("Durable disk writes", isOn: Binding(get: { isOn }, set: update))
+        Toggle("안전한 쓰기", isOn: Binding(get: { isOn }, set: update))
             .accessibilityIdentifier("bridgevm.runtime.durable-disk-writes")
             .disabled(isDisabled)
             .help("끄면(기본) 디스크 쓰기 순서가 보장되어 Mac이 갑자기 꺼져도 Windows 디스크는 손상되지 않고, 마지막 1초 정도의 쓰기만 사라질 수 있습니다. 켜면 Windows가 확인한 쓰기는 하나도 사라지지 않지만, 내장 SSD에서 디스크 쓰기가 크게 느려집니다."

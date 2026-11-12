@@ -79,6 +79,7 @@ extension VMConfig {
         copy.printToMac = other.printToMac
         copy.sharedFolderHostPath = other.sharedFolderHostPath
         copy.sharedFolderGuestPath = other.sharedFolderGuestPath
+        copy.createSharedFolderOnStart = other.createSharedFolderOnStart
         copy.portForwards = other.portForwards
         return copy
     }

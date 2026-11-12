@@ -27,9 +27,9 @@ struct HvfGuestResolutionPicker: View {
     /// mode from a hand-edited vm.json as its own entry. A value the VMM ignores shows Automatic.
     static func menu(for value: String?) -> (entries: [Entry], selected: String?) {
         let selected = firmwareMode(value)
-        var entries = [Entry(title: "Automatic (1280x800)", mode: nil)] + resolutions.map { Entry(title: $0, mode: $0) }
+        var entries = [Entry(title: "자동 (1280x800)", mode: nil)] + resolutions.map { Entry(title: $0, mode: $0) }
         if let selected, !resolutions.contains(selected) {
-            entries.append(Entry(title: "\(selected) (custom)", mode: selected))
+            entries.append(Entry(title: "\(selected) (사용자 지정)", mode: selected))
         }
         return (entries, selected)
     }
@@ -42,7 +42,7 @@ struct HvfGuestResolutionPicker: View {
 
     var body: some View {
         let menu = Self.menu(for: selection)
-        Picker("Display resolution", selection: Binding(get: { menu.selected }, set: update)) {
+        Picker("해상도", selection: Binding(get: { menu.selected }, set: update)) {
             ForEach(menu.entries, id: \.self) { Text($0.title).tag($0.mode) }
         }
         .fixedSize()

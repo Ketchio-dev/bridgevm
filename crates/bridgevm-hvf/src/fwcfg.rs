@@ -413,8 +413,10 @@ impl FwCfg {
             }
         } else if control & DMA_CTL_WRITE != 0 {
             // Writable entries only; bytes flow guest -> fw_cfg.
-            let writable = self.current().map(|e| e.writable).unwrap_or(false);
-            if !writable {
+            let fits = self.current().is_some_and(|entry| {
+                entry.writable && length <= entry.data.len().saturating_sub(self.offset)
+            });
+            if !fits {
                 return DMA_CTL_ERROR;
             }
             if !guest_range_readable(mem, access.address, length) {

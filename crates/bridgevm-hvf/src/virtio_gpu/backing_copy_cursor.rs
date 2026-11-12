@@ -3,6 +3,21 @@
 use super::BackingEntry;
 use crate::fwcfg::GuestMemoryMut;
 
+#[cfg(test)]
+thread_local! {
+    static ENTRY_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(super) fn count_entry_visit() {
+    ENTRY_VISITS.with(|visits| visits.set(visits.get() + 1));
+}
+
+#[cfg(test)]
+pub(super) fn take_entry_visits() -> usize {
+    ENTRY_VISITS.with(|visits| visits.replace(0))
+}
+
 #[derive(Default)]
 pub(crate) struct BackingReadCursor {
     index: usize,
@@ -31,6 +46,8 @@ pub(crate) fn read_from_backing_into_from(
     let mut start_entry = None;
     let mut covered = None;
     while let Some(entry) = backing.get(index) {
+        #[cfg(test)]
+        count_entry_visit();
         let Some(entry_end) = base.checked_add(u64::from(entry.len)) else {
             return false;
         };
@@ -60,6 +77,8 @@ pub(crate) fn read_from_backing_into_from(
 
     let mut copied = 0usize;
     for entry in &backing[start..end] {
+        #[cfg(test)]
+        count_entry_visit();
         let Some(entry_end) = base.checked_add(u64::from(entry.len)) else {
             return false;
         };
