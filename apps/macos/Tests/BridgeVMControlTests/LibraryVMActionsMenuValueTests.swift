@@ -3,10 +3,10 @@ import XCTest
 @testable import BridgeVMControl
 
 /// Through the real view values (no window): the actions menu's accessibility identifier
-/// is attached to the Menu itself, and the overview card shows that menu, not a bare one.
+/// is attached to the Menu itself, and the live workspace row shows that menu, not a bare one.
 @MainActor
 final class LibraryVMActionsMenuValueTests: XCTestCase {
-    func testTheIdentifierIsAttachedToTheMenuItselfAndTheCardShowsIt() throws {
+    func testTheIdentifierIsAttachedToTheMenuItselfAndTheWorkspaceRowShowsIt() throws {
         let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
             .appendingPathComponent("bridgevm-actions-menu-" + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -22,9 +22,10 @@ final class LibraryVMActionsMenuValueTests: XCTestCase {
         XCTAssertEqual(identified.count, 1, "one accessibility attachment carries the identifier")
         XCTAssertEqual(identified.map { menus(in: $0) }, [1], "and it wraps the Menu itself")
         XCTAssertEqual(menus(in: menu.body), 1)
-        let card = LibraryVMCard(library: library, config: config).body
-        XCTAssertEqual(values(LibraryVMActionsMenu.self, in: card).count, 1, "the card shows the shared menu")
-        XCTAssertEqual(menus(in: card), 0, "and no bare Menu")
+        let row = LibraryWorkspaceRow(library: library, config: config,
+            model: library.model(for: config), selected: false).body
+        XCTAssertEqual(values(LibraryVMActionsMenu.self, in: row).count, 1, "the live row shows the shared menu")
+        XCTAssertEqual(menus(in: row), 0, "and no bare Menu")
     }
 
     /// The content of every modifier whose dump contains `text`.

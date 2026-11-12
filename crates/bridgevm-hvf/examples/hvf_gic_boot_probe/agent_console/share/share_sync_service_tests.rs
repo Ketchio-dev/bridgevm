@@ -360,6 +360,22 @@ impl Drop for Rig {
 }
 
 #[test]
+fn same_size_guest_edit_before_first_post_put_listing_is_fetched() {
+    let mut rig = Rig::new("post-put-edit");
+    rig.h.note_agent_ready("GUEST v3-share2 putmtime", rig.now);
+    std::fs::write(rig.dir.join("a.txt"), b"host").unwrap();
+    for _ in 0..24 {
+        rig.run(1);
+        if !rig.guest.puts.is_empty() { break; }
+    }
+    assert_eq!(rig.guest.content("a.txt"), Some(&b"host"[..]));
+    rig.guest.write("a.txt", b"edit");
+    rig.run(24);
+    assert_eq!(rig.host("a.txt").as_deref(), Some(&b"edit"[..]));
+    rig.assert_settled();
+}
+
+#[test]
 fn host_case_only_rename_keeps_both_copies_and_never_rewrites_the_host() {
     let mut rig = Rig::synced("host-case", "report.txt", b"DATA");
     let gets = rig.guest.gets.len();

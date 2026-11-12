@@ -1,5 +1,4 @@
 use super::*;
-use std::panic::{catch_unwind, AssertUnwindSafe};
 #[path = "storage_persistence_raw_tests.rs"]
 mod raw;
 
@@ -31,14 +30,12 @@ fn raw_snapshot_refuses_another_runtime_owned_destination() {
     assert!(platform.nvme_disk_if_memory().is_none());
     assert_eq!(platform.nvme_disk_len(), 512);
 
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        persist_nvme_media(
+    let result = persist_nvme_media(
             &mut platform,
             media,
             NvmePersistNamespace::Primary,
             &mut owner_a,
-        )
-    }));
+        );
     let disk_unchanged = fs::read(disk_b).unwrap() == [0xb1; 512];
     let vars_unchanged = fs::read(&b.flash_vars.path).unwrap() == [0xb2; 512];
     assert!(

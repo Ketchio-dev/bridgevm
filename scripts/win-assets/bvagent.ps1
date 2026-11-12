@@ -1727,7 +1727,9 @@ namespace BridgeVM {
                 foreach (FileSystemInfo e in pending.Pop().EnumerateFileSystemInfos()) {
                     if (e is DirectoryInfo) { dirs.Add(e); } else { files.Add(e); }
                 }
-                foreach (FileSystemInfo e in dirs) { Row(sb, listRoot, e, 0, 1); }
+                // Directory size is otherwise zero; 1 means listed but not entered.
+                // Old hosts ignore directory sizes, so no capability negotiation is needed.
+                foreach (FileSystemInfo e in dirs) { Row(sb, listRoot, e, (e.Attributes & FileAttributes.ReparsePoint) != 0 ? 1 : 0, 1); }
                 foreach (FileSystemInfo e in files) {
                     if (Part.IsMatch(e.Name)) {
                         bool kept = held != null && string.Equals(held, e.Name, StringComparison.OrdinalIgnoreCase);
@@ -1800,7 +1802,7 @@ function Get-ShareListing([string]$listRoot) {
         if (-not $full.StartsWith($listRoot, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
         $rel = $full.Substring($listRoot.Length)
         if ([string]::IsNullOrEmpty($rel)) { continue }
-        $sz = if ($e.PSIsContainer) { 0 } else { $e.Length }
+        $sz = if ($e.PSIsContainer) { [int](($e.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) } else { $e.Length }
         [void]$sb.AppendLine(('{0}|{1}|{2}|{3}' -f $rel, $sz, [int]$e.PSIsContainer, $e.LastWriteTimeUtc.ToString('o')))
     }
     return $sb.ToString()
@@ -2363,7 +2365,7 @@ function Get-BvAgentId([string]$Dir) {
 # Until an agent says so, the host shows Windows the Mac on AC power, since
 # Task Scheduler would not start an older agent's task on battery.
 function Get-BvReady([string]$Dir, [string]$Id) {
-    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame startapps openfile onbattery print'
+    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame startapps openfile onbattery print putmtime'
     if (-not $Id) { return $ready }
     $ready += ' agent=' + $Id
     $root = Split-Path -Parent $Dir

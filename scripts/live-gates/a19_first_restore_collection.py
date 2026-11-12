@@ -10,6 +10,7 @@ from a19_interrupted_restore_seal import read_bounded_regular
 from native_snapshot_export_json import load_json
 from native_snapshot_restore_artifacts import digest, regular
 from native_snapshot_export_evidence import load_evidence
+from native_snapshot_result import result_path
 
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 VM_ID = "a19-native-cli-live"
@@ -59,13 +60,9 @@ def snapshot_hashes(path: Path) -> tuple[str, str]:
 
 
 def cli_result(output: Path, filename: str, command: str) -> str:
-    value, result_hash = load_json(output / filename)
-    library = output / "live/library"
-    snapshot = library / VM_ID / "bundle.vmbridge/metadata/snapshots/latest.snapshot"
-    expected = {"schema": "bridgevm.app-snapshot.v1", "command": command, "vmID": VM_ID,
-                "libraryPath": str(library), "snapshotPath": str(snapshot), "complete": True}
-    if value != expected or type(value["complete"]) is not bool:
-        raise ValueError("native CLI result does not bind the requested operation and snapshot")
+    bundle = output / "live/library" / VM_ID / "bundle.vmbridge"
+    created, _ = result_path(output / "create.json", bundle, VM_ID, "create")
+    _, result_hash = result_path(output / filename, bundle, VM_ID, command, created)
     return result_hash
 
 

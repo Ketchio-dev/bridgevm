@@ -33,6 +33,7 @@ struct T17Request: Decodable, Equatable {
     let diskPath: String
     let varsPath: String
     let vtpmStatePath: String
+    /// Fixed legacy locator; T17SnapshotLocation resolves the newest published sibling.
     let snapshotPath: String
     let secureBootReceiptPath: String
     let guestEvidencePath: String

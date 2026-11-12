@@ -104,6 +104,24 @@
       "evidence": "crates/bridgevm-hvf/src/host_power.rs"
     },
     {
+      "id": "share-put-mtime",
+      "area": "guest-agent",
+      "qemu_behavior": "QEMU has no shared-folder guest-agent push protocol of its own.",
+      "bridgevm_behavior": "READY putmtime promises that PUT, PUTEND and LPUTEND apply the optional host millisecond timestamp. The host accepts a post-push listing as its write only when size and the sent timestamp match, including the zero sub-millisecond ticks. Without the marker the old size-only adoption remains.",
+      "guest_visible": true,
+      "impact": "A same-size Windows edit before the first post-push listing is fetched instead of silently adopted as the Mac write.",
+      "evidence": "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_tests.rs"
+    },
+    {
+      "id": "share-reparse-listing",
+      "area": "guest-agent",
+      "qemu_behavior": "QEMU has no shared-folder guest-agent listing protocol of its own.",
+      "bridgevm_behavior": "Recursive shared-folder directory rows keep isDir=1 and use size=1 for a reparse point (ordinary directories remain size=0). The host holds that name and subtree unseen until a later listing reports an ordinary directory or removes it. Older hosts ignore directory sizes; older agents leave the previous behavior unchanged.",
+      "guest_visible": true,
+      "impact": "A Windows junction cannot turn an unvisited subtree into deletions on the Mac, and sync never transfers through it.",
+      "evidence": "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_tests.rs"
+    },
+    {
       "id": "clipboard-images",
       "area": "guest-agent",
       "qemu_behavior": "QEMU has no Windows clipboard integration of its own; only a guest agent or remote-display protocol can share one.",

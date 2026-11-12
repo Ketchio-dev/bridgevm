@@ -1,28 +1,25 @@
 import Foundation
 
-/// The powered-off snapshot card (HvfWindowsSnapshotCard). A VM keeps one snapshot: restoring it
-/// throws away every disk change made since, and creating one replaces it, so both ask first while
-/// a snapshot exists and run nothing until the user agrees. A failure reads as one Korean sentence;
-/// the technical detail is in the event feed (HvfEngineSession.runSnapshot).
+/// Restore and delete capture the selected snapshot in their confirmation; create never replaces one.
+/// Failures read as one Korean sentence, with technical detail in the session event feed.
 @MainActor
 final class HvfWindowsSnapshotModel: ObservableObject {
     typealias Operation = HvfWindowsSnapshotCommand.Operation
-    typealias Run = @MainActor (Operation) async throws -> Void
+    typealias Run = @MainActor (Operation) async throws -> String?
 
     /// The question before an operation that throws away the snapshot or the changes since it.
     struct Confirmation {
         let operation: Operation
-        let date: Date
+        let label: String
         let run: Run
 
         var title: String {
-            let when = HvfWindowsSnapshotModel.dateText(date)
-            return operation == .restore ? "\(when)의 스냅샷으로 되돌릴까요?" : "\(when)의 스냅샷을 새 스냅샷으로 바꿀까요?"
+            operation == .restore ? "‘\(label)’ 스냅샷으로 되돌릴까요?" : "‘\(label)’ 스냅샷을 삭제할까요?"
         }
         var message: String {
-            operation == .restore ? "그 뒤에 바뀐 디스크 내용은 모두 사라집니다." : "스냅샷은 하나만 보관되어 지금 스냅샷은 지워집니다."
+            operation == .restore ? "‘\(label)’ 스냅샷으로 복원하면 그 뒤에 바뀐 디스크 내용은 모두 사라집니다." : "‘\(label)’ 스냅샷만 영구 삭제하며 현재 VM 디스크는 바뀌지 않습니다."
         }
-        var action: String { operation == .restore ? "되돌리기" : "바꾸기" }
+        var action: String { operation == .restore ? "복원" : "삭제" }
     }
 
     nonisolated static let idleText = "VM을 종료한 뒤 디스크와 UEFI vars를 한 쌍으로 저장할 수 있습니다."
@@ -31,13 +28,12 @@ final class HvfWindowsSnapshotModel: ObservableObject {
     @Published private(set) var status = idleText
     @Published private(set) var failed = false
 
-    /// Asks first when `snapshotDate` names the snapshot this would replace or restore; creates at
-    /// once when there is none. Returns the started work, if it started.
+    /// Creates immediately; asks before restoring or deleting the selected entry.
     @discardableResult
-    func request(_ operation: Operation, snapshotDate: Date?, run: @escaping Run) -> Task<Void, Never>? {
+    func request(_ operation: Operation, snapshotDate: Date?, label: String? = nil, run: @escaping Run) -> Task<Void, Never>? {
         guard !busy else { return nil }
-        if let snapshotDate {
-            confirmation = Confirmation(operation: operation, date: snapshotDate, run: run)
+        if operation != .create, let snapshotDate {
+            confirmation = Confirmation(operation: operation, label: label ?? Self.dateText(snapshotDate), run: run)
             return nil
         }
         guard operation == .create else {
@@ -59,11 +55,11 @@ final class HvfWindowsSnapshotModel: ObservableObject {
 
     private func start(_ operation: Operation, _ run: @escaping Run) -> Task<Void, Never> {
         busy = true; failed = false
-        status = operation == .create ? "스냅샷 생성 중…" : "스냅샷 복원 중…"
+        status = operation == .create ? "스냅샷 생성 중…" : operation == .restore ? "스냅샷 복원 중…" : "스냅샷 삭제 중…"
         return Task {
             do {
-                try await run(operation)
-                status = operation == .create ? "스냅샷 생성 완료" : "스냅샷 복원 완료"
+                let notice = try await run(operation)
+                status = notice ?? (operation == .create ? "스냅샷 생성 완료" : operation == .restore ? "스냅샷 복원 완료" : "스냅샷 삭제 완료")
             } catch {
                 status = Self.message(for: error, operation: operation); failed = true
             }
@@ -87,7 +83,7 @@ final class HvfWindowsSnapshotModel: ObservableObject {
     /// anything else gets the operation's general sentence.
     nonisolated static func message(for error: Error, operation: Operation) -> String {
         let error = error as NSError
-        let failed = operation == .create ? "스냅샷을 만들지 못했으니" : "스냅샷으로 되돌리지 못했으니"
+        let failed = operation == .create ? "스냅샷을 만들지 못했으니" : operation == .restore ? "스냅샷으로 되돌리지 못했으니" : "스냅샷을 삭제하지 못했으니"
         let text = error.localizedDescription
         var failure: HvfWindowsSnapshotCommand.Failure?
         switch error.domain {
@@ -112,7 +108,7 @@ final class HvfWindowsSnapshotModel: ObservableObject {
         case .helper?, nil:
             break
         }
-        if text.contains("No space left on device") || text.contains("bytes free to stage")
+        if text.contains("No space left on device")
             || (error.domain == NSCocoaErrorDomain && error.code == NSFileWriteOutOfSpaceError) {
             return "Mac 저장 공간이 부족해 \(failed) 공간을 확보한 뒤 다시 시도하세요."
         }

@@ -86,7 +86,9 @@ final class NativeCLISnapshotTests: XCTestCase {
         let id = "개발-vm"
         let disk: URL
         let vars: URL
-        let snapshot: URL
+        var snapshot: URL {
+            HvfWindowsSnapshotStore.list(bundle: disk.deletingLastPathComponent().deletingLastPathComponent()).first!.url
+        }
         let log: URL
 
         init(backend: String = "hvf-engine", pending: Bool = false) throws {
@@ -98,7 +100,6 @@ final class NativeCLISnapshotTests: XCTestCase {
             let bundle = entry.appendingPathComponent("bundle.vmbridge", isDirectory: true)
             disk = bundle.appendingPathComponent("disks/hvf-target.raw")
             vars = bundle.appendingPathComponent("metadata/hvf-vars.fd")
-            snapshot = bundle.appendingPathComponent("metadata/snapshots/latest.snapshot")
             log = root.appendingPathComponent("helper-invocations.jsonl")
             let helper = repo.appendingPathComponent("target/release/examples/snapshot_pair_cli")
             try FileManager.default.createDirectory(
@@ -118,7 +119,7 @@ final class NativeCLISnapshotTests: XCTestCase {
             let script = """
             #!/bin/sh
             printf '%s\\n' "$@" | "\(try NativeTestPython.executable().path)" -c 'import json,sys; print(json.dumps(sys.stdin.read().splitlines()))' >> "\(log.path)"
-            if [ "$1" = size ]; then printf 'disk_bytes 64\\nvars_bytes 4\\n'; elif [ "$1" = create ]; then mkdir -p "$4"; fi
+            if [ "$1" = size ]; then printf 'disk_bytes 64\\nvars_bytes 4\\n'; elif [ "$1" = create ]; then mkdir -p "$4"; printf '{}' > "$4/manifest.json"; fi
             """
             try Data(script.utf8).write(to: helper)
             try FileManager.default.setAttributes(

@@ -81,6 +81,8 @@ pub struct ShareSync {
     max_bytes: u64,
     /// The largest file an agent without ranged transfers moves (whole in memory).
     whole_file_limit: Option<u64>,
+    /// READY putmtime: this agent applies the timestamp supplied with PUT/LPUT.
+    guest_applies_put_mtime: bool,
     guest_skip_seen: HashSet<(String, String, SkipKey)>,
     pending_guest_mtime: HashMap<String, String>,
     pending_host_changed: HashSet<String>,
@@ -89,6 +91,8 @@ pub struct ShareSync {
     host_files_scratch: HashMap<String, HostFileStat>,
     put_rejected: HashMap<String, HostFileStat>,
     host_unseen: HashSet<String>,
+    /// Directory rows with size 1: the guest listed but did not enter a reparse point.
+    guest_unseen: HashSet<String>,
     host_aliased: HashSet<String>,
     refused_names_seen: (usize, u64),
     fetched_over_cap: HashMap<String, String>,
@@ -137,6 +141,11 @@ impl ShareSync {
         self.whole_file_limit = limit;
     }
 
+    pub fn set_guest_applies_put_mtime(&mut self, applies: bool) {
+        self.pass_changed |= self.guest_applies_put_mtime != applies;
+        self.guest_applies_put_mtime = applies;
+    }
+
     /// The size and time the last guest listing gave `name`.
     pub fn listed_file(&self, name: &str) -> Option<(u64, &str)> {
         let entry = self.guest_file_entries_scratch.get(name)?;
@@ -165,6 +174,7 @@ impl ShareSync {
         let mut actions = Vec::new();
         self.present_scratch.clear();
         self.guest_file_entries_scratch.clear();
+        let mut unseen = HashSet::new();
 
         for entry in entries {
             let LsEntry {
@@ -183,11 +193,20 @@ impl ShareSync {
             }
             self.present_scratch.insert(name.clone());
             if is_dir {
+                if size == 1 {
+                    unseen.insert(share_host_unseen::unseen_key(&name));
+                }
                 continue;
             }
             self.guest_file_entries_scratch
                 .insert(name, GuestFileStat { size, mtime });
         }
+        self.pass_changed |= unseen != self.guest_unseen;
+        self.guest_unseen = unseen;
+        // A contradictory row below a reparse directory is still unseen.
+        let mut files = std::mem::take(&mut self.guest_file_entries_scratch);
+        files.retain(|name, _| !self.guest_unseen_covers(name));
+        self.guest_file_entries_scratch = files;
         self.alias_guest_renames();
         self.prefer_changed_guest_copies();
         let held = self.pull_held_keys();
@@ -213,15 +232,25 @@ impl ShareSync {
                 continue;
             }
             let changed = match self.records.get_mut(name) {
-                Some(record) if record.awaiting_guest_stamp && entry.size == record.size => {
-                    // A host PUT changes the guest mtime. The first matching LSR after
-                    // PUTOK is our write landing, not a guest edit to pull back.
+                Some(record)
+                    if record.awaiting_guest_stamp
+                        && entry.size == record.size
+                        && (!self.guest_applies_put_mtime
+                            || record.host_mtime_ms.is_none_or(|expected| {
+                                share_mtime::matches_put_mtime(&entry.mtime, expected)
+                            })) =>
+                {
+                    // Only our expected size AND time identify a timed PUT landing.
+                    // Legacy agents do not promise to apply the time.
                     record.guest_mtime = Some(entry.mtime.clone());
                     record.awaiting_guest_stamp = false;
                     self.pass_changed = true;
                     false
                 }
-                Some(record) => record.guest_mtime.as_deref() != Some(entry.mtime.as_str()),
+                Some(record) => {
+                    record.size != entry.size
+                        || record.guest_mtime.as_deref() != Some(entry.mtime.as_str())
+                }
                 None => true,
             };
             if changed {

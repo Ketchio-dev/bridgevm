@@ -62,7 +62,8 @@ impl ShareSync {
         self.hold_windows_aliases(&mut actions);
 
         for (name, file) in &self.host_files_scratch {
-            if self.records.get(name).is_some_and(|record| record.host_write_failed)
+            if self.guest_unseen_covers(name)
+                || self.records.get(name).is_some_and(|record| record.host_write_failed)
                 || self.guest_copy_preferred(name)
             {
                 continue;
@@ -108,7 +109,8 @@ impl ShareSync {
         mtime_ms: u128,
     ) -> Option<PushGuest> {
         let name = normalize_rel(&name);
-        if self.records.get(&name).is_some_and(|record| record.host_write_failed)
+        if self.guest_unseen_covers(&name)
+            || self.records.get(&name).is_some_and(|record| record.host_write_failed)
             || self.guest_copy_preferred(&name)
         {
             return None;
@@ -134,7 +136,8 @@ impl ShareSync {
     /// to compare yet: it is sent whenever the scan found it changed (on_put_ok records it).
     pub fn on_host_push_streamed(&mut self, name: &str) -> bool {
         let name = normalize_rel(name);
-        if self.records.get(&name).is_some_and(|record| record.host_write_failed)
+        if self.guest_unseen_covers(&name)
+            || self.records.get(&name).is_some_and(|record| record.host_write_failed)
             || self.guest_copy_preferred(&name)
         {
             return false;

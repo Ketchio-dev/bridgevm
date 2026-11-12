@@ -29,7 +29,6 @@ fn failed_media_ownership_transfer_removes_only_staging_and_allows_retry() {
         let mut retained_reader = None;
         let result = pair.restore_copying(
             &snapshot,
-            |_| None,
             |source, destination| {
                 let copied = copy_and_sync(source, destination)?;
                 if destination.file_name().unwrap() == "manifest.json" {
@@ -71,13 +70,8 @@ fn failed_media_ownership_transfer_removes_only_staging_and_allows_retry() {
         );
         drop(reader);
         drop(competitor);
-        pair.restore_copying(
-            &snapshot,
-            |_| None,
-            copy_and_sync,
-            snapshot_publish::publish,
-        )
-        .unwrap();
+        pair.restore_copying(&snapshot, copy_and_sync, snapshot_publish::publish)
+            .unwrap();
         let selected = pair.paths().unwrap();
         assert_eq!(fs::read(selected.0).unwrap(), b"snapshot disk");
         assert_eq!(fs::read(selected.1).unwrap(), b"snapshot vars");

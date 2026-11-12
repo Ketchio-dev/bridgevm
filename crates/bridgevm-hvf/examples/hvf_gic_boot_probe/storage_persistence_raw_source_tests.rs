@@ -20,7 +20,7 @@ fn raw_snapshot_to_self_pins_source_inode_through_later_vars_persist() {
         assert_owned(&old_source);
 
         assert_eq!(
-            persist_nvme_media(&mut platform, disk, namespace, &mut owner),
+            persist_nvme_media(&mut platform, disk, namespace, &mut owner).unwrap(),
             vec![
                 snapshot_write(disk.snapshot_path.as_ref().unwrap()),
                 MediaWrite { kind: MediaWriteKind::WriteBack, path: disk.path.clone(), bytes: 512 },

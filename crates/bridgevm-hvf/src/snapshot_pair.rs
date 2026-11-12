@@ -59,11 +59,6 @@ pub enum SnapshotError {
         bytes: u64,
         quota: u64,
     },
-    /// The volume cannot hold the copy a restore has to stage.
-    InsufficientSpace {
-        needed: u64,
-        available: u64,
-    },
     /// A file's content does not match the manifest.
     HashMismatch {
         file: String,
@@ -91,14 +86,16 @@ impl std::fmt::Display for SnapshotError {
                     "snapshot would write {bytes} bytes, over the {quota} byte quota"
                 )
             }
-            SnapshotError::InsufficientSpace { needed, available } => write!(
-                f,
-                "restore needs {needed} bytes free to stage a copy, {available} available"
-            ),
             SnapshotError::HashMismatch { file } => {
                 write!(f, "{file} does not match the hash recorded in the manifest")
             }
             SnapshotError::BadManifest(why) => write!(f, "unusable snapshot manifest: {why}"),
+            SnapshotError::Io(e) if e.raw_os_error() == Some(libc::ENOSPC) => {
+                write!(
+                    f,
+                    "No space left on device; free space on your Mac and try again."
+                )
+            }
             SnapshotError::Io(e) => write!(f, "{e}"),
         }
     }

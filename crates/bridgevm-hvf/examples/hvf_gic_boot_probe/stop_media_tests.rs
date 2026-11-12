@@ -97,6 +97,28 @@ fn a_failed_vars_write_still_writes_the_disk_back_before_it_panics() {
 }
 
 #[test]
+fn failed_first_namespace_still_flushes_healthy_second_namespace() {
+    let scratch = Scratch::new();
+    let mut media = VirtBootMediaConfig::qemu_defaults();
+    media.flash_vars = scratch.media("vars");
+    media.nvme_disk = Some(scratch.media("primary"));
+    media.nvme_target = Some(scratch.media("target"));
+    let mut owner = acquire(&mut media).unwrap();
+    let mut platform = VirtPlatform::new(VirtFdtConfig::default());
+    platform.load_nvme_disk(vec![0x31; 512]);
+    platform.attach_nvme_second_namespace(512);
+    // Replacing a directory as a disk fails, independently of permissions.
+    let primary = &media.nvme_disk.as_ref().unwrap().path;
+    fs::remove_file(primary).unwrap();
+    fs::create_dir(primary).unwrap();
+    let stop = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        persist_stop_media(&mut platform, &media, &mut owner)
+    }));
+    assert!(stop.is_err(), "stop must still report persistence failure");
+    assert_eq!(fs::read(&media.nvme_target.as_ref().unwrap().path).unwrap(), vec![0; 512]);
+}
+
+#[test]
 fn sigterm_ends_the_run_through_stop_persistence() {
     install_host_term_handler();
     // Without the handler TERM's default action ends this test process.

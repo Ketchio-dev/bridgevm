@@ -8,20 +8,16 @@ fn successful_publisher_with_old_debris_keeps_ownership_for_later_retry() {
     let old = contents(&current);
     let parked = fixture.scratch.path("legacy-current");
     let mut pair = fixture.pair();
-    let published = pair.restore_with_capacity(
-        &fixture.snapshot,
-        crate::snapshot_pair::free_space::available_bytes,
-        |stage, destination| {
-            fs::rename(destination, &parked)?;
-            fs::rename(stage, destination)?;
-            fs::rename(&parked, stage)?;
-            fs::remove_file(stage.join("disk.raw"))?;
-            fs::remove_file(stage.join("manifest.json"))?;
-            // Publication may report success after best-effort old-generation
-            // removal fails. The ownership retirement must preserve that fact.
-            Ok(())
-        },
-    );
+    let published = pair.restore_using(&fixture.snapshot, |stage, destination| {
+        fs::rename(destination, &parked)?;
+        fs::rename(stage, destination)?;
+        fs::rename(&parked, stage)?;
+        fs::remove_file(stage.join("disk.raw"))?;
+        fs::remove_file(stage.join("manifest.json"))?;
+        // Publication may report success after best-effort old-generation
+        // removal fails. The ownership retirement must preserve that fact.
+        Ok(())
+    });
     assert_eq!(contents(&current), fixture.source);
     assert_eq!(fs::read(fixture.stage.join("vars.fd")).unwrap(), old[1]);
     drop(pair);
