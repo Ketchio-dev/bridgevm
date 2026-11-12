@@ -27,13 +27,25 @@ enum HvfWindowsSnapshotStore {
             let url = directory.appendingPathComponent(child.lastPathComponent).standardizedFileURL
             guard url.pathExtension == "snapshot", (try? validatedTarget(url, bundle: bundle)) != nil,
                   HvfWindowsSnapshotCommand.regularFile(url.appendingPathComponent("manifest.json")),
-                  let date = try? url.appendingPathComponent("manifest.json")
+                  let manifestDate = try? url.appendingPathComponent("manifest.json")
                     .resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate else { return nil }
+            let date = timestamp(url.lastPathComponent) ?? manifestDate
             let sidecar = nameFile(url)
             let name = HvfWindowsSnapshotCommand.regularFile(sidecar)
                 ? try? String(contentsOf: sidecar, encoding: .utf8) : nil
             return Entry(url: url, date: date, name: name?.isEmpty == false ? name : nil)
         }.sorted { $0.date == $1.date ? $0.id > $1.id : $0.date > $1.date }
+    }
+
+    /// Timestamped snapshots keep their creation order when files are copied or touched.
+    static func timestamp(_ filename: String) -> Date? {
+        guard filename.range(of: #"^[0-9]{8}-[0-9]{6}\.snapshot$"#, options: .regularExpression) != nil else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        formatter.isLenient = false
+        return formatter.date(from: String(filename.prefix(15)))
     }
 
     /// Move forward one second on a collision, keeping the UTC filename contract even for rapid clicks.
@@ -45,7 +57,9 @@ enum HvfWindowsSnapshotStore {
         var date = now
         while true {
             let name = formatter.string(from: date) + ".snapshot"
-            if !occupied.contains(name) { return directory(bundle: bundle).appendingPathComponent(name) }
+            if !occupied.contains(name), !occupied.contains(name + ".name") {
+                return directory(bundle: bundle).appendingPathComponent(name)
+            }
             date = date.addingTimeInterval(1)
         }
     }

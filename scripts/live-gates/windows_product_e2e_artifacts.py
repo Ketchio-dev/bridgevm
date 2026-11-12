@@ -2,6 +2,7 @@
 """Host-authenticate private T17 product artifacts without publishing their paths."""
 from __future__ import annotations
 import hashlib, json, re
+from datetime import datetime, timezone
 from pathlib import Path
 import windows_product_e2e_guest_evidence as GUEST, windows_product_e2e_selected as SELECTED
 
@@ -43,7 +44,14 @@ def snapshot_files(root: Path, vm_slug: str) -> tuple[Path, Path, Path]:
                   and item.is_dir() and not item.is_symlink() and (item / "manifest.json").is_file()]
     if not candidates:
         raise ValueError("no published snapshot")
-    root = max(candidates, key=lambda item: ((item / "manifest.json").stat().st_mtime, item.name))
+    def creation_time(item: Path) -> float:
+        if item.name != "latest.snapshot":
+            try:
+                return datetime.strptime(item.stem, "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc).timestamp()
+            except ValueError:
+                pass
+        return (item / "manifest.json").stat().st_mtime
+    root = max(candidates, key=lambda item: (creation_time(item), item.name))
     if not root.is_dir() or root.is_symlink():
         raise ValueError("snapshot is not a non-symlink directory")
     entries = {item.name: item for item in root.iterdir()}

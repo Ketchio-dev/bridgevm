@@ -8,11 +8,12 @@ final class HvfWindowsSnapshotStoreTests: XCTestCase {
     func testListsNewestFirstIncludingUntouchedLegacySnapshotAndIgnoresStaging() throws {
         let bundle = temporaryBundle(); defer { try? FileManager.default.removeItem(at: bundle) }
         let legacy = try entry(bundle, "latest.snapshot", date: 100)
-        let newest = try entry(bundle, "20261112-120000.snapshot", date: 300)
-        _ = try entry(bundle, "20261112-110000.snapshot", date: 200)
+        let newest = try entry(bundle, "20261112-120000.snapshot", date: 200)
+        _ = try entry(bundle, "20261112-110000.snapshot", date: 300)
         _ = try entry(bundle, "20261112-130000.snapshot.staging", date: 400)
         let entries = Store.list(bundle: bundle)
-        XCTAssertEqual(entries.map(\.date), [300, 200, 100].map { Date(timeIntervalSince1970: $0) })
+        XCTAssertEqual(entries.map(\.date), [Store.timestamp("20261112-120000.snapshot")!,
+                                            Store.timestamp("20261112-110000.snapshot")!, Date(timeIntervalSince1970: 100)])
         XCTAssertEqual(entries.first?.url.path, newest.standardizedFileURL.path)
         XCTAssertEqual(entries.last?.url.path, legacy.standardizedFileURL.path)
         XCTAssertTrue(FileManager.default.fileExists(atPath: legacy.path))
@@ -25,6 +26,8 @@ final class HvfWindowsSnapshotStoreTests: XCTestCase {
         let second = Store.nextURL(bundle: bundle, now: now, occupied: [first.lastPathComponent])
         XCTAssertEqual(first.lastPathComponent, "19700101-000000.snapshot")
         XCTAssertEqual(second.lastPathComponent, "19700101-000001.snapshot")
+        let orphan = Store.nextURL(bundle: bundle, now: now, occupied: [first.lastPathComponent + ".name"])
+        XCTAssertEqual(orphan.lastPathComponent, "19700101-000001.snapshot", "never inherit an orphaned display name")
         let snapshot = try entry(bundle, first.lastPathComponent, date: 100)
         let name = "../../a/b..." + String(repeating: "긴 이름/", count: 10_000)
         try name.write(to: Store.nameFile(snapshot), atomically: true, encoding: .utf8)

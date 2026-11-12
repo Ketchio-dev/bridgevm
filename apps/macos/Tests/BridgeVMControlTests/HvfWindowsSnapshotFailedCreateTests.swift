@@ -14,13 +14,14 @@ final class HvfWindowsSnapshotFailedCreateTests: XCTestCase {
         try Data("{}".utf8).write(to: legacy.appendingPathComponent("manifest.json"))
         let before = HvfWindowsSnapshotStore.list(bundle: bundle)
         let plan = HvfWindowsSnapshotCommand.Plan(executable: URL(fileURLWithPath: "/usr/bin/false"),
-            disk: disk, vars: vars, snapshot: legacy.deletingLastPathComponent().appendingPathComponent("20261112-000000.snapshot"), vmID: "test")
+            disk: disk, vars: vars, snapshot: legacy.deletingLastPathComponent().appendingPathComponent("20261112-000000.snapshot"), vmID: "test", name: "not published")
         do {
             _ = try await HvfWindowsSnapshotCommand.run(.create, plan: plan)
             XCTFail("helper must fail")
         } catch {
             XCTAssertEqual(HvfWindowsSnapshotStore.list(bundle: bundle), before)
             XCTAssertFalse(FileManager.default.fileExists(atPath: plan.snapshot.path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: HvfWindowsSnapshotStore.nameFile(plan.snapshot).path))
         }
     }
 }

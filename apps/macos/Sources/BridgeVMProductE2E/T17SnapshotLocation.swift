@@ -21,6 +21,13 @@ enum T17SnapshotLocation {
     }
 
     private static func date(_ url: URL) -> Date {
-        (try? url.appendingPathComponent("manifest.json").resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        formatter.isLenient = false
+        if url.lastPathComponent != "latest.snapshot",
+           let timestamp = formatter.date(from: String(url.lastPathComponent.prefix(15))) { return timestamp }
+        return (try? url.appendingPathComponent("manifest.json").resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
     }
 }
