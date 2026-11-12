@@ -32,6 +32,7 @@ struct VMConfig: Codable, Identifiable, Equatable, Sendable {
     var guestName: String
     var displayWidth: Int
     var displayHeight: Int
+    var startWithBridgeVM: Bool? = nil
     var installPending: Bool? = nil  // true for a freshly-created ISO VM not yet installed
     // QEMU (qemu-compat) backend fields:
     var isoPath: String? = nil       // install ISO (Windows / Linux)

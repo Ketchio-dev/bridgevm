@@ -6,6 +6,10 @@ struct LibraryVMContextMenu: View {
     let config: VMConfig
 
     var body: some View {
+        Toggle("BridgeVM을 열 때 자동 시작", isOn: Binding(
+            get: { library.latestConfiguration(for: config).startWithBridgeVM == true },
+            set: { library.setStartWithBridgeVM($0, for: config) }))
+            .help("BridgeVM을 열 때 Option 키를 누르고 있으면 자동 시작을 건너뜁니다.")
         if config.engineKind == .hvfEngine, let session = library.hvfRuntimeSessions.existingRecord(slug: config.slug)?.session {
             HvfPauseMenuItem(session: session)
         }
