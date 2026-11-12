@@ -126,6 +126,7 @@ impl DiskSync {
                     crate::host_log::err(format_args!(
                         "nvme: deferred full sync failed: {error}; acknowledged writes are not durable, check the drive connection"
                     ));
+                    crate::host_log::err("BVSTORAGE durability-failed");
                     self.deferred_failed = true;
                 }
             }
@@ -202,6 +203,8 @@ fn barrier_sync(file: &File) -> io::Result<()> {
 /// `F_FULLFSYNC` on macOS (Rust's `sync_data`), `fdatasync` elsewhere: the
 /// data survives a power loss once this returns.
 fn full_sync(file: &File) -> io::Result<()> {
+    #[cfg(test)]
+    super::disk_full::faults::check(file.as_raw_fd(), super::disk_full::faults::Op::Sync)?;
     file.sync_data()?;
     #[cfg(test)]
     record(file, SyncKind::Full);
@@ -264,17 +267,44 @@ mod tests {
         const CHILD: &str = "BRIDGEVM_TEST_DEFERRED_SYNC_LOG";
         if std::env::var_os(CHILD).is_some() {
             let clock = Clock::default();
-            let mut disk = DiskSync::new(File::open("/dev/null").unwrap());
-            disk.owed = true;
-            disk.settle(&clock);
-            assert!(disk.owed());
-            disk.settle(&clock);
-            assert!(disk.owed());
             let path = std::env::temp_dir().join(format!("bridgevm-sync-{}", std::process::id()));
-            disk.file = File::create(&path).unwrap();
+            let mut disk = DiskSync::new(File::create(&path).unwrap());
+            disk.sync(&clock).unwrap();
+            disk.sync(&clock).unwrap();
+            assert!(disk.owed());
+            super::super::disk_full::faults::set(
+                &path,
+                super::super::disk_full::faults::Op::Sync,
+                Some(libc::EIO),
+            );
+            clock.advance(DURABLE_WITHIN);
+            disk.settle(&clock);
+            assert!(disk.owed());
+            clock.advance(DURABLE_WITHIN);
+            disk.settle(&clock);
+            assert!(disk.owed());
+            super::super::disk_full::faults::set(
+                &path,
+                super::super::disk_full::faults::Op::Sync,
+                None,
+            );
             disk.settle(&clock);
             assert!(!disk.owed());
             disk.settle(&clock);
+            disk.sync(&clock).unwrap();
+            super::super::disk_full::faults::set(
+                &path,
+                super::super::disk_full::faults::Op::Sync,
+                Some(libc::EIO),
+            );
+            clock.advance(DURABLE_WITHIN);
+            disk.settle(&clock);
+            disk.settle(&clock);
+            super::super::disk_full::faults::set(
+                &path,
+                super::super::disk_full::faults::Op::Sync,
+                None,
+            );
             std::fs::remove_file(path).unwrap();
             return;
         }
@@ -286,10 +316,15 @@ mod tests {
         let log = String::from_utf8(output.stderr).unwrap();
         assert_eq!(
             log.matches("nvme: deferred full sync failed:").count(),
-            1,
+            2,
             "{log}"
         );
         assert!(log.contains("os error"), "errno missing: {log}");
+        assert_eq!(
+            log.matches("BVSTORAGE durability-failed").count(),
+            2,
+            "{log}"
+        );
         assert_eq!(
             log.matches("nvme: deferred full sync recovered").count(),
             1,

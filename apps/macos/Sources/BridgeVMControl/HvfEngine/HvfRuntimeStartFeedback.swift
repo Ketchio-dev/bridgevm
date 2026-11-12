@@ -11,6 +11,9 @@ extension HvfEngineSession {
     }
 
     var runtimeSupervisionFailureText: String? {
+        if ownedController?.ledger.complete?.failureCode != nil {
+            return "Windows를 정상적으로 종료하지 못했으니 Mac의 저장 공간과 디스크 연결을 확인하세요."
+        }
         guard ownedController?.supervisionLost == true else { return nil }
         return "실행 중인 Windows와 연결이 끊겼으니 강제 중단으로 Windows를 멈추세요."
     }

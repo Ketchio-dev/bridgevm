@@ -13,6 +13,7 @@ final class HvfEngineSession: ObservableObject {
     @Published var connectionState: HvfConnectionState = .stopped
     let heartbeat = HvfRuntimeHeartbeat() // publishes the per-poll heartbeat age apart from the session
     let shareRootNotice = HvfShareRootNotice()
+    let diskSyncNotice = HvfDiskSyncNotice()
     let agentUpdateNotice = HvfAgentUpdateNotice()
     let fileDrops = HvfFileDropQueue() // Finder drops copied to the guest Desktop
     let clipboardImageNotice = HvfClipboardImageNotice()
@@ -508,6 +509,7 @@ final class HvfEngineSession: ObservableObject {
         lastHeartbeatAge = nil
         serviceStarted = false
         shareRootNotice.reset(missingFolder: config.missingShareFolder())
+        diskSyncNotice.reset()
         agentUpdateNotice.reset()
         fileDrops.reset()
         clipboardImageNotice.reset()
