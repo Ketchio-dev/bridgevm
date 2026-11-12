@@ -107,8 +107,15 @@ final class HvfCurrentGenerationImportTests: XCTestCase {
         defer { owner.abort() }
         var inputs = fixture.inputs("first")
         inputs.varsPath = ""
+        var withoutVarsMessage = ""
         XCTAssertThrowsError(try FirstRunImport.register(inputs, slug: "first",
-            libraryRoot: fixture.root.appendingPathComponent("first-library"), snapshotHelper: helper))
+            libraryRoot: fixture.root.appendingPathComponent("first-library"), snapshotHelper: helper)) {
+                withoutVarsMessage = $0.localizedDescription
+            }
+        XCTAssertThrowsError(try FirstRunImport.register(fixture.inputs("with-vars"), slug: "with-vars",
+            libraryRoot: fixture.root.appendingPathComponent("comparison-library"), snapshotHelper: helper)) {
+                XCTAssertEqual($0.localizedDescription, withoutVarsMessage)
+            }
         let library = fixture.root.appendingPathComponent("ordinary-library")
         XCTAssertNil(VMLibrary.createWindowsHVF(name: "ordinary", targetDiskPath: fixture.disk.path,
             varsPath: "", libraryRoot: library, persist: false, snapshotHelper: helper))

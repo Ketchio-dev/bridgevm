@@ -18,12 +18,17 @@ pub struct LockedPair {
 
 /// Resolve an existing pair only when a nearby vars candidate matches its exact
 /// identity. The sidecar hash is not reversible; never guess from one orphan.
- pub fn vars_for_disk(disk: &Path) -> io::Result<Option<PathBuf>> {
+pub fn vars_for_disk(disk: &Path) -> io::Result<Option<PathBuf>> {
     let disk = fs::canonicalize(disk)?;
     let parent = disk.parent().unwrap();
     let mut candidates = Vec::new();
-    for directory in [parent.to_path_buf(), parent.parent().unwrap_or(parent).join("metadata")] {
-        if !directory.is_dir() { continue; }
+    for directory in [
+        parent.to_path_buf(),
+        parent.parent().unwrap_or(parent).join("metadata"),
+    ] {
+        if !directory.is_dir() {
+            continue;
+        }
         for entry in fs::read_dir(directory)? {
             let path = entry?.path();
             if path != disk && path.is_file() {
@@ -34,7 +39,9 @@ pub struct LockedPair {
     let mut found = None;
     for vars in candidates {
         if layout::identity_matches(&disk, &vars)? {
-            if found.is_some() { return Err(io::Error::other("ambiguous managed media binding")); }
+            if found.is_some() {
+                return Err(io::Error::other("ambiguous managed media binding"));
+            }
             found = Some(vars);
         }
     }

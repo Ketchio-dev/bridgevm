@@ -24,9 +24,17 @@ fn main() -> ExitCode {
         ("convert-to-raw", 3) => return bridgevm_hvf::disk_import::command(&args[1..]),
         ("import-disk", 3) => {
             return match bridgevm_hvf::snapshot_pair::import_disk::import_disk(
-                Path::new(&args[1]), Path::new(&args[2])) {
-                Ok(paired) => { println!("paired_vars {paired}"); ExitCode::SUCCESS }
-                Err(error) => { eprintln!("{error}"); ExitCode::FAILURE }
+                Path::new(&args[1]),
+                Path::new(&args[2]),
+            ) {
+                Ok(paired) => {
+                    println!("paired_vars {paired}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::FAILURE
+                }
             };
         }
         ("create", 6) => {
