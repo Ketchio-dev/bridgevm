@@ -333,6 +333,33 @@ mod tests {
     }
 
     #[test]
+    fn failed_final_sync_emits_one_final_save_event_before_failing() {
+        const CHILD: &str = "BRIDGEVM_TEST_FINAL_SYNC_LOG";
+        if std::env::var_os(CHILD).is_some() {
+            let path = std::env::temp_dir().join(format!("bridgevm-final-sync-{}", std::process::id()));
+            let file = File::create(&path).unwrap();
+            super::super::disk_full::faults::set(
+                &path, super::super::disk_full::faults::Op::Sync, Some(libc::EIO),
+            );
+            let errors = vec![sync_inline(&file, true).unwrap_err().to_string(); 2];
+            super::super::disk_full::faults::set(
+                &path, super::super::disk_full::faults::Op::Sync, None,
+            );
+            std::fs::remove_file(path).unwrap();
+            assert!(std::panic::catch_unwind(|| crate::host_log::assert_final_save(&errors)).is_err());
+            crate::host_log::assert_final_save(&[]);
+            return;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "nvme::flush_mode::tests::failed_final_sync_emits_one_final_save_event_before_failing", "--nocapture"])
+            .env(CHILD, "1").output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let log = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(log.matches("BVSTORAGE final-save-failed").count(), 1, "{log}");
+        assert!(log.contains("os error 5"), "{log}");
+    }
+
+    #[test]
     fn ordered_is_the_default_and_only_explicit_choices_change_it() {
         assert_eq!(FlushMode::parse(None), FlushMode::Ordered);
         assert_eq!(FlushMode::parse(Some("")), FlushMode::Ordered);

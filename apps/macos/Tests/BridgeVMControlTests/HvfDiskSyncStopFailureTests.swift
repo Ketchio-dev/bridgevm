@@ -24,7 +24,49 @@ final class HvfDiskSyncStopFailureTests: XCTestCase {
         f.controller.receive(.eof)
         XCTAssertEqual(ticket.observation.failure, .cleanupFailed)
         XCTAssertFalse(ticket.observation.isComplete)
+        XCTAssertNil(session.runtimeSupervisionFailureText,
+            "helperFailed alone says nothing about storage")
+        let start = HvfGUIStartOperation(configuration: f.base.config)
+        start.finish(.failed(.processLaunch, "specific start failure"))
+        session.guiStartOperation = start
+        XCTAssertNil(session.runtimeSupervisionFailureText, "must not mask the specific start failure")
+        XCTAssertEqual(session.guiStartFailureText, "Windows를 시작하지 못했으니 아래 오류 내용을 확인하고 다시 시도하세요.\nspecific start failure")
+        session.guiStartOperation = nil
+        for event in BvAgentEvent.parse(lines: ["BVSTORAGE final-save-failed"]) { session.handle(event) }
         XCTAssertEqual(session.runtimeSupervisionFailureText,
-            "Windows를 정상적으로 종료하지 못했으니 Mac의 저장 공간과 디스크 연결을 확인하세요.")
+            "Windows를 종료하면서 디스크를 Mac에 안전하게 저장하지 못했으니 Mac의 저장 공간과 디스크 연결을 확인하세요.")
+        session.guiStartOperation = start
+        XCTAssertNil(session.runtimeSupervisionFailureText, "even a storage event cannot mask a specific startup error")
+        session.guiStartOperation = nil
+        session.resetObservedRuntimeState(clearEvents: true)
+        XCTAssertNil(session.runtimeSupervisionFailureText, "a new run clears the storage cause")
+    }
+
+    @MainActor
+    func testFailedStartReceiptKeepsSpecificStartSentence() throws {
+        let f = try HvfOwnedRuntimeControllerTests.Fixture()
+        defer { f.clean() }
+        let session = HvfEngineSession(config: f.base.config, repoRoot: f.base.root) { _ in false }
+        session.ownedController = f.controller
+        f.controller.receive(.message(try f.event("complete-not-admitted", sequence: 1)))
+        let start = HvfGUIStartOperation(configuration: f.base.config)
+        start.finish(.failed(.processLaunch, "disk in use"))
+        session.guiStartOperation = start
+        XCTAssertNotNil(f.controller.ledger.complete?.failureCode)
+        XCTAssertNil(session.runtimeSupervisionFailureText)
+        XCTAssertEqual(session.guiStartFailureText, "Windows를 시작하지 못했으니 아래 오류 내용을 확인하고 다시 시도하세요.\ndisk in use")
+    }
+
+    @MainActor
+    func testStopDrainsFinalStorageDiagnosticBeforePollingEnds() throws {
+        let f = try HvfOwnedRuntimeControllerTests.Fixture()
+        defer { f.clean() }
+        let session = HvfEngineSession(config: f.base.config, repoRoot: f.base.root) { _ in false }
+        let log = URL(fileURLWithPath: f.base.config.evidenceDir).appendingPathComponent("run.log")
+        try FileManager.default.createDirectory(at: log.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("BVSTORAGE final-save-failed\n".utf8).write(to: log)
+        session.markStopped()
+        XCTAssertTrue(session.diskSyncNotice.finalSaveFailed)
+        XCTAssertNotNil(session.runtimeSupervisionFailureText)
     }
 }

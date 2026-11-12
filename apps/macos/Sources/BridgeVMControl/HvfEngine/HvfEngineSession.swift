@@ -471,6 +471,14 @@ final class HvfEngineSession: ObservableObject {
         legacyPaste = HvfLegacyPasteState()
         heldKeys = HvfHeldKeys()
         inputDriver.attachUnknown(binding: inputBinding)
+        // The terminal receipt can arrive before the next log poll. Drain the stopped helper's
+        // final diagnostics before cancelling polling, including a final-save failure.
+        let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")
+        while true {
+            let lines = tailReader.readNewLines(from: logURL)
+            if lines.isEmpty { break }
+            for event in agentEvents.parse(lines) { diskSyncNotice.consume(event) }
+        }
         timer?.invalidate()
         timer = nil
         process = nil

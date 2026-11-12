@@ -7,15 +7,17 @@ import SwiftUI
 final class HvfDiskSyncNotice: ObservableObject {
     static let text = "Windows 디스크를 Mac에 안전하게 저장하지 못했으니 Mac의 저장 공간과 디스크 연결을 확인한 뒤 Windows를 종료했다가 다시 시작하세요."
     @Published private(set) var isVisible = false
+    @Published private(set) var finalSaveFailed = false
     private var reported = false
 
     func consume(_ event: BvAgentEvent) {
+        if case .diskFinalSaveFailed = event { finalSaveFailed = true; return }
         guard case .diskDurabilityFailed = event, !reported else { return }
         reported = true
         isVisible = true
     }
     func dismiss() { isVisible = false }
-    func reset() { reported = false; isVisible = false }
+    func reset() { reported = false; isVisible = false; finalSaveFailed = false }
 }
 
 struct HvfDiskSyncNoticeView: View {

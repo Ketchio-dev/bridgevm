@@ -11,8 +11,10 @@ extension HvfEngineSession {
     }
 
     var runtimeSupervisionFailureText: String? {
-        if ownedController?.ledger.complete?.failureCode != nil {
-            return "Windows를 정상적으로 종료하지 못했으니 Mac의 저장 공간과 디스크 연결을 확인하세요."
+        // A failed lifecycle receipt alone says nothing about storage, and must not hide
+        // the specific startup error. Only the helper's final-persistence diagnostic does.
+        if guiStartFailureText == nil, diskSyncNotice.finalSaveFailed {
+            return "Windows를 종료하면서 디스크를 Mac에 안전하게 저장하지 못했으니 Mac의 저장 공간과 디스크 연결을 확인하세요."
         }
         guard ownedController?.supervisionLost == true else { return nil }
         return "실행 중인 Windows와 연결이 끊겼으니 강제 중단으로 Windows를 멈추세요."

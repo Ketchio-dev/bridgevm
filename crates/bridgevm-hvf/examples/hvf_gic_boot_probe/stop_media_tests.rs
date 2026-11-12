@@ -119,6 +119,38 @@ fn failed_first_namespace_still_flushes_healthy_second_namespace() {
 }
 
 #[test]
+fn failed_stop_reports_final_save_once_even_when_both_disks_fail() {
+    const CHILD: &str = "BRIDGEVM_TEST_FINAL_SAVE_RECORD";
+    if std::env::var_os(CHILD).is_some() {
+        let scratch = Scratch::new();
+        let mut media = VirtBootMediaConfig::qemu_defaults();
+        media.flash_vars = scratch.media("vars");
+        media.nvme_disk = Some(scratch.media("primary"));
+        media.nvme_target = Some(scratch.media("target"));
+        let mut owner = acquire(&mut media).unwrap();
+        let mut platform = VirtPlatform::new(VirtFdtConfig::default());
+        platform.load_nvme_disk(vec![0x31; 512]);
+        platform.attach_nvme_second_namespace(512);
+        for disk in [&media.nvme_disk, &media.nvme_target] {
+            let path = &disk.as_ref().unwrap().path;
+            fs::remove_file(path).unwrap();
+            fs::create_dir(path).unwrap();
+        }
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            persist_stop_media(&mut platform, &media, &mut owner)
+        })).is_err());
+        return;
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "stop_media::tests::failed_stop_reports_final_save_once_even_when_both_disks_fail", "--nocapture"])
+        .env(CHILD, "1").output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let log = String::from_utf8(output.stderr).unwrap();
+    assert_eq!(log.matches("BVSTORAGE final-save-failed").count(), 1, "{log}");
+    assert!(log.contains("all disks were attempted"), "{log}");
+}
+
+#[test]
 fn sigterm_ends_the_run_through_stop_persistence() {
     install_host_term_handler();
     // Without the handler TERM's default action ends this test process.

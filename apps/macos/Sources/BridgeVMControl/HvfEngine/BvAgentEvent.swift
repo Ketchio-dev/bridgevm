@@ -22,6 +22,7 @@ enum BvAgentEvent: Equatable, Identifiable {
     case commandOutput(label: String, body: String)
     /// Structured host storage diagnostic, not the human-readable error log.
     case diskDurabilityFailed
+    case diskFinalSaveFailed
     case unknown(String)
 
     var id: String { "\(Date().timeIntervalSince1970)-\(displayText)" }
@@ -39,6 +40,7 @@ enum BvAgentEvent: Equatable, Identifiable {
             return "SERVICE overdue \(kind) awaiting-reply=\(awaitingReply) t=\(tMs)"
         case let .commandOutput(label, body): return "CMD \(label)\n\(body)"
         case .diskDurabilityFailed: return "BVSTORAGE durability-failed"
+        case .diskFinalSaveFailed: return "BVSTORAGE final-save-failed"
         case let .unknown(line): return line
         }
     }
@@ -85,6 +87,9 @@ enum BvAgentEvent: Equatable, Identifiable {
     private static func parseSingle(_ line: String) -> BvAgentEvent {
         if line == "BVSTORAGE durability-failed" || line == "BVSTORAGE durability-failed\r" {
             return .diskDurabilityFailed
+        }
+        if line == "BVSTORAGE final-save-failed" || line == "BVSTORAGE final-save-failed\r" {
+            return .diskFinalSaveFailed
         }
         guard line.hasPrefix("BVAGENT ") else { return .unknown(line) }
         if line.hasPrefix("BVAGENT READY host="), let tMs = tMs(in: line) {
