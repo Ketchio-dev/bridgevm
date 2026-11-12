@@ -155,6 +155,16 @@ impl Guest {
             self.copies += 1;
             copy.run(&self.mem);
             self.dev.finish_copy(copy, &mut self.mem);
+            for resource in self.dev.gpu.resources.values() {
+                assert_eq!(
+                    resource.backing_len,
+                    resource
+                        .backing
+                        .iter()
+                        .map(|entry| u64::from(entry.len))
+                        .sum::<u64>()
+                );
+            }
         }
     }
 

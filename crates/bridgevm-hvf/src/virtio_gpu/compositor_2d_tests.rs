@@ -39,6 +39,7 @@ fn resource(format: u32, width: u32, height: u32) -> GpuResource {
             .map(|index| (index.wrapping_mul(37) & 0xff) as u8)
             .collect(),
         backing: Vec::new(),
+        backing_len: 0,
     }
 }
 
@@ -75,6 +76,7 @@ fn bgr_full_frame_preserves_color_and_zeroes_the_fourth_byte() {
         height: 1,
         host_pixels: vec![1, 2, 3, 4, 5, 6, 7, 8],
         backing: Vec::new(),
+        backing_len: 0,
     };
     let mut scanout = vec![0xff; 8];
 

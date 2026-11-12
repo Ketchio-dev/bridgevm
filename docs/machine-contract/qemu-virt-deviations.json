@@ -5,6 +5,51 @@
   "summary": "BridgeVM presents a QEMU virt-compatible guest contract so stock ArmVirtQemu firmware and stock Windows 11 ARM media work unmodified. It is not bit-identical. Every known deviation is listed here.",
   "deviations": [
     {
+      "id": "virtio-blk-status-zero-reset",
+      "area": "storage",
+      "qemu_behavior": "Writing device status zero resets guest-programmed device state for a new negotiation.",
+      "bridgevm_behavior": "Status-zero MMIO and legacy PCI resets clear driver features, both feature selectors, queue selector and legacy page size along with queue state. Backend configuration and request statistics are retained.",
+      "guest_visible": true,
+      "impact": "Resolved: stale guest negotiation state no longer survives a device reset. The reset path adds only scalar stores and leaves request processing unchanged.",
+      "evidence": "crates/bridgevm-hvf/src/virtio_blk/tests/mod.rs"
+    },
+    {
+      "id": "fwcfg-dma-write-capacity",
+      "area": "firmware",
+      "qemu_behavior": "Writable fw_cfg entry DMA behavior is defined by the entry callback.",
+      "bridgevm_behavior": "A DMA write exceeding the selected writable entry's remaining capacity returns DMA_CTL_ERROR before reading any payload, without changing the entry or cursor.",
+      "guest_visible": true,
+      "impact": "Oversized requests cannot cause millions of guest-memory probes. The firmware ramfb write of 28 bytes at offset zero still succeeds.",
+      "evidence": "crates/bridgevm-hvf/src/fwcfg_tests.rs"
+    },
+    {
+      "id": "ramfb-shared-snapshot-limit",
+      "area": "graphics",
+      "qemu_behavior": "ramfb geometry and host capture allocation limits depend on the display backend.",
+      "bridgevm_behavior": "Shared ramfb sizing rejects stride times height above 64 MiB with SizeOverflow before allocation, matching the interactive display export ceiling.",
+      "guest_visible": false,
+      "impact": "Snapshot and telemetry callers receive an error for oversized guest geometry rather than allocating or panicking. Supported display geometry is unchanged.",
+      "evidence": "crates/bridgevm-hvf/src/ramfb/snapshot_tests.rs"
+    },
+    {
+      "id": "virtio-gpu-2d-backing-hostmem",
+      "area": "graphics",
+      "qemu_behavior": "The 2D max_hostmem budget accounts for host pixel storage.",
+      "bridgevm_behavior": "The existing 256 MiB cumulative 2D budget also counts retained backing-entry capacity. Attachments reaching the limit return ERR_OUT_OF_MEMORY without changing the prior backing. 3D backing is unchanged.",
+      "guest_visible": true,
+      "impact": "Many small resources cannot bypass the host-memory limit with large backing lists. Normal attachments and replacement of existing backing remain supported.",
+      "evidence": "crates/bridgevm-hvf/src/virtio_gpu/tests/hostmem.rs"
+    },
+    {
+      "id": "nat-udp-reply-backpressure",
+      "area": "network",
+      "qemu_behavior": "UDP receive buffering depends on the selected network backend.",
+      "bridgevm_behavior": "NAT UDP polling stops at the existing 10000-frame reply queue limit and resumes receiving after the queue drains, retaining edge-triggered readiness.",
+      "guest_visible": true,
+      "impact": "Under sustained overload UDP datagrams may be dropped by the host socket buffer rather than consuming unbounded host memory. Ordinary datagrams are unchanged.",
+      "evidence": "crates/bridgevm-hvf/src/net_nat/tests/idle_sweep.rs"
+    },
+    {
       "id": "gic-in-kernel",
       "area": "interrupt-controller",
       "qemu_behavior": "Userspace-modelled GICv3 with fully observable distributor, redistributor and CPU interface state, and observable timer interrupt delivery.",

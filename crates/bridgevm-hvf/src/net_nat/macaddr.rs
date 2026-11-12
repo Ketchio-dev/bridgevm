@@ -739,7 +739,7 @@ impl HostSocketOutboundIpv4Handler {
         let now = self.now_ms();
         let recv_scratch = &mut self.udp_recv_scratch;
         for (key, flow) in &mut self.udp_flows {
-            while flow.readable {
+            while flow.readable && !reply_queue_full(reply_queue) {
                 match flow.socket.recv(recv_scratch) {
                     Ok(len) => {
                         flow.last_activity = now;

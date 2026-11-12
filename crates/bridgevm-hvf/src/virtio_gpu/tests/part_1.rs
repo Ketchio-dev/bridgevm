@@ -665,6 +665,15 @@ fn attach_backing_reuses_resource_backing_and_preserves_on_malformed_request() {
             },
         ]
     );
+    assert_eq!(resource.backing_len, 12);
+    assert_eq!(
+        resource.backing_len,
+        resource
+            .backing
+            .iter()
+            .map(|entry| u64::from(entry.len))
+            .sum::<u64>()
+    );
     let backing_ptr = resource.backing.as_ptr();
     let backing_capacity = resource.backing.capacity();
 
@@ -678,6 +687,7 @@ fn attach_backing_reuses_resource_backing_and_preserves_on_malformed_request() {
     gpu.attach_backing_into(&mem, &malformed, Some(hdr), &mut response);
     assert_eq!(read_le_u32(&response, 0), Some(VIRTIO_GPU_RESP_ERR_UNSPEC));
     let resource = gpu.resources.get(&1).unwrap();
+    assert_eq!(resource.backing_len, 12);
     assert_eq!(resource.backing.as_ptr(), backing_ptr);
     assert_eq!(resource.backing.capacity(), backing_capacity);
     assert_eq!(
@@ -722,4 +732,20 @@ fn attach_backing_reuses_resource_backing_and_preserves_on_malformed_request() {
             },
         ]
     );
+    assert_eq!(resource.backing_len, 48);
+    assert_eq!(
+        resource.backing_len,
+        resource
+            .backing
+            .iter()
+            .map(|entry| u64::from(entry.len))
+            .sum::<u64>()
+    );
+
+    let mut detach = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING);
+    detach.extend_from_slice(&1u32.to_le_bytes());
+    gpu.detach_backing_into(&detach, None, &mut response);
+    let resource = &gpu.resources[&1];
+    assert!(resource.backing.is_empty());
+    assert_eq!(resource.backing_len, 0);
 }

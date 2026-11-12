@@ -4,6 +4,7 @@
 mod tests;
 
 mod async_present;
+#[cfg(test)]
 mod backing_copy;
 mod backing_copy_cursor;
 mod bytes;
