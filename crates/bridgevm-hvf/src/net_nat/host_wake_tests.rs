@@ -13,6 +13,63 @@ fn shared() -> Shared {
 }
 
 #[test]
+fn a_nearly_due_deadline_does_not_spin_while_paused() {
+    deadline_wait_is_paced(true);
+}
+
+#[test]
+fn a_past_deadline_does_not_spin_when_polls_leave_it_pending() {
+    deadline_wait_is_paced(false);
+}
+
+fn deadline_wait_is_paced(paused: bool) {
+    let shared = shared();
+    if paused {
+        crate::vm_clock::pause();
+    }
+    let now = crate::vm_clock::active_now();
+    *shared.deadline.lock().unwrap() = Some(if paused {
+        now + Duration::from_micros(100)
+    } else {
+        now - Duration::from_millis(1)
+    });
+    let started = Instant::now();
+    let end = started + REKICK * 10;
+    let (mut waits, mut kicks) = (0, 0);
+    // Run on this thread: the unit-test VM clock is thread-local. This is
+    // the production wait duration, with sleep in place of kevent and no
+    // socket events. Every kick is answered by a poll leaving the timer due.
+    run(
+        &shared,
+        || {
+            waits += 1;
+            std::thread::sleep(shared.deadline_wait().unwrap());
+            if Instant::now() >= end {
+                shared.stop.store(true, SeqCst);
+            }
+            crate::vm_clock::active_now() >= shared.deadline.lock().unwrap().unwrap()
+        },
+        || {
+            kicks += 1;
+            shared.pending.store(false, SeqCst);
+            std::thread::current().unpark();
+        },
+    );
+    let elapsed = started.elapsed();
+    if paused {
+        crate::vm_clock::resume();
+        assert_eq!(kicks, 0, "paused VM timer fired");
+    } else {
+        assert!(kicks > 0, "past timer never kicked");
+    }
+    let bound = (elapsed.as_nanos() / REKICK.as_nanos()) as usize + 3;
+    assert!(
+        waits <= bound,
+        "{waits} waits, {kicks} kicks in {elapsed:?}; bound {bound}"
+    );
+}
+
+#[test]
 fn one_socket_event_kicks_once_until_a_poll_takes_it() {
     let shared = shared();
     let (kicks, waits) = (AtomicUsize::new(0), AtomicUsize::new(0));

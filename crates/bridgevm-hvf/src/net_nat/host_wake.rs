@@ -43,6 +43,19 @@ impl Shared {
     fn ready(&self) -> MutexGuard<'_, Vec<i32>> {
         self.ready.lock().unwrap_or_else(PoisonError::into_inner)
     }
+
+    #[cfg(any(target_os = "macos", test))]
+    fn deadline_wait(&self) -> Option<Duration> {
+        let deadline = *self.deadline.lock().unwrap_or_else(PoisonError::into_inner);
+        deadline.map(|due| {
+            // Paused VM time can hold a timer just short of due indefinitely;
+            // an unanswered timer can also stay past due across polls. Pace
+            // both at the existing re-kick rate rather than spinning in kevent.
+            crate::vm_clock::host_at(due)
+                .saturating_duration_since(Instant::now())
+                .max(REKICK)
+        })
+    }
 }
 
 impl Drop for Shared {
@@ -180,14 +193,9 @@ mod imp {
             .spawn(move || {
                 let mut events = [change(0, 0, 0, 0); MAX_EVENTS];
                 let wait = || {
-                    let deadline = *ours.deadline.lock().unwrap_or_else(PoisonError::into_inner);
-                    let timeout = deadline.map(|due| {
-                        let left =
-                            crate::vm_clock::host_at(due).saturating_duration_since(Instant::now());
-                        libc::timespec {
-                            tv_sec: left.as_secs().min(i64::MAX as u64) as _,
-                            tv_nsec: left.subsec_nanos() as _,
-                        }
+                    let timeout = ours.deadline_wait().map(|left| libc::timespec {
+                        tv_sec: left.as_secs().min(i64::MAX as u64) as _,
+                        tv_nsec: left.subsec_nanos() as _,
                     });
                     // SAFETY: Category 8 - `events` has room for MAX_EVENTS;
                     // the optional timeout outlives the call.
