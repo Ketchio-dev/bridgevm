@@ -1,6 +1,7 @@
 name: Guest agent contracts
 on:
   push: {branches: [main]}
+  workflow_dispatch:
   pull_request:
     paths:
       - scripts/win-assets/bvagent.ps1
