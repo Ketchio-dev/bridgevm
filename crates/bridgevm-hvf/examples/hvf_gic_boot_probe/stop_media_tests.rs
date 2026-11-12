@@ -1,17 +1,20 @@
 use super::*;
 use bridgevm_hvf::snapshot_pair::managed::runtime::acquire;
 use std::fs;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 struct Scratch(PathBuf);
 
 impl Scratch {
     fn new() -> Self {
+        static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+        let sequence = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "bridgevm-stop-media-{}-{unique}",
+            "bridgevm-stop-media-{}-{unique}-{sequence}",
             std::process::id()
         ));
         fs::create_dir(&path).unwrap();
