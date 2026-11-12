@@ -37,6 +37,7 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
     var canCancel: Bool { isRunning && !cancelled && !commitStarted }
     var blocksAppTermination: Bool { admissionPending || isRunning }
     var isInstallation: Bool { true }
+    var requiresTerminationWait: Bool { isRunning && commitStarted }
     func requestTerminationStop() { if canCancel { cancel() } }
     func requestTerminationForceStop() { requestTerminationStop() }
     func pollTerminationWait() {}

@@ -7,6 +7,7 @@ protocol ControlAppTerminationSession: AnyObject {
     /// True until the run's teardown is confirmed, or while a start may still spawn a runner.
     var blocksAppTermination: Bool { get }
     var isInstallation: Bool { get }
+    var requiresTerminationWait: Bool { get }
     /// The user's Stop; repeating it joins the stop already admitted.
     func requestTerminationStop()
     /// Force Stop for a stop that is still waiting on Windows.
@@ -17,6 +18,7 @@ protocol ControlAppTerminationSession: AnyObject {
 
 extension ControlAppTerminationSession {
     var isInstallation: Bool { false }
+    var requiresTerminationWait: Bool { false }
 }
 
 /// Quitting (Cmd+Q, the Dock, the last window, or a Mac logout, restart or shutdown) stops each
@@ -91,8 +93,8 @@ final class ControlAppTermination {
         let running = blocking()
         guard !running.isEmpty else { finish(true); return }
         running.forEach { $0.requestTerminationStop() }
-        // Installation cleanup and publication must finish, even after Force Stop or Quit Anyway.
-        guard !running.contains(where: \.isInstallation), now() >= deadlineAt else { return }
+        // Publication cannot be interrupted; pre-commit cancellation keeps the normal quit choices.
+        guard !running.contains(where: \.requiresTerminationWait), now() >= deadlineAt else { return }
         deciding = true
         let choice = presenter.decideAtDeadline(forced) { [weak self] in
             guard let self else { return false }

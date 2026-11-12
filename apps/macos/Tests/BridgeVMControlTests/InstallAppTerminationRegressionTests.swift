@@ -11,10 +11,10 @@ final class InstallAppTerminationRegressionTests: XCTestCase {
             let library = f.library(), session = library.windowsInstallSession(for: config)
             await (try XCTUnwrap(session.start())).value
             session.commitStarted = committing
-            var questions = 0, replies: [Bool] = [], clock: TimeInterval = 100
+            var questions = 0, deadlines = 0, replies: [Bool] = [], clock: TimeInterval = 100
             let termination = ControlAppTermination(sessions: { library.appTerminationSessions() },
                 presenter: .init(confirmQuit: { _ in questions += 1; return true },
-                    decideAtDeadline: { _, _ in .quitAnyway }),
+                    decideAtDeadline: { _, _ in deadlines += 1; return .quitAnyway }),
                 reply: { replies.append($0) }, now: { clock })
             XCTAssertEqual(termination.shouldTerminate(reason: .user), .terminateLater)
             XCTAssertEqual(questions, 1)
@@ -22,7 +22,8 @@ final class InstallAppTerminationRegressionTests: XCTestCase {
             XCTAssertTrue(session.isRunning)
             clock += ControlAppTermination.deadline * 3
             termination.poll()
-            XCTAssertEqual(replies, [], "Publishing or cleanup must not be bypassed by Quit Anyway")
+            XCTAssertEqual(deadlines, committing ? 0 : 1)
+            XCTAssertEqual(replies, committing ? [] : [true], "Only publication prevents Quit Anyway")
             if committing { session.finish(.done) }
             else { await f.finishCancelled(session) }
             termination.poll()
