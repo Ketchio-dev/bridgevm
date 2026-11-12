@@ -8,7 +8,10 @@ struct HvfOwnedRuntimeIdentity: Equatable, Sendable {
     let processID: Int32
 }
 
-enum HvfRuntimeStartFailureStage: Equatable { case readiness, preparation, helper, keyAccess, processLaunch, keyDelivery }
+enum HvfRuntimeStartFailureStage: Equatable {
+    case readiness([String])
+    case preparation, helper, keyAccess, keyAccessDenied, keyStateMissing, keyStateInvalid, keyGeneration, processLaunch, keyDelivery
+}
 
 enum HvfRuntimeStartOutcome: Equatable {
     case ownedLaunchAccepted(HvfOwnedRuntimeIdentity)

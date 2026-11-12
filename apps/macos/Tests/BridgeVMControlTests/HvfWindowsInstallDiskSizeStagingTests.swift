@@ -9,7 +9,7 @@ final class HvfWindowsInstallDiskSizeStagingTests: XCTestCase {
         let original = try f.writeInstallerOutputs(log: Data("retained evidence".utf8))
         let disk = try Data(contentsOf: original.target)
         let vars = try Data(contentsOf: original.vars)
-        XCTAssertThrowsError(try HvfWindowsInstallExecution().prepareMedia(f.plan))
+        XCTAssertThrowsError(try HvfWindowsInstallStaging.prepare(f.plan))
         XCTAssertEqual(try Data(contentsOf: original.target), disk)
         XCTAssertEqual(try Data(contentsOf: original.vars), vars)
         XCTAssertEqual(try Data(contentsOf: original.evidence.appendingPathComponent("run.log")),
@@ -20,7 +20,7 @@ final class HvfWindowsInstallDiskSizeStagingTests: XCTestCase {
         for size in [Int.min, -1, 0, Int.max] {
             let f = try HvfWindowsInstallStagingFixture(diskGiB: size)
             defer { f.remove() }
-            XCTAssertThrowsError(try HvfWindowsInstallExecution().prepareMedia(f.plan))
+            XCTAssertThrowsError(try HvfWindowsInstallStaging.prepare(f.plan))
             XCTAssertFalse(FileManager.default.fileExists(atPath: f.plan.stagingDirectory))
         }
     }

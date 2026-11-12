@@ -14,16 +14,19 @@ protocol HvfWindowsInstallProcessRunning: AnyObject {
 struct HvfWindowsInstallExecution {
     let process: any HvfWindowsInstallProcessRunning
     let verifySource: (HvfWindowsInstallPlan) async -> Bool
-    let prepareMedia: (HvfWindowsInstallPlan) throws -> Void
+    let prepareMedia: (HvfWindowsInstallPlan) async throws -> Void
     let finalize: (HvfWindowsInstallPlan) async throws -> Void
 
     init(process: (any HvfWindowsInstallProcessRunning)? = nil,
         verifySource: ((HvfWindowsInstallPlan) async -> Bool)? = nil,
-        prepareMedia: ((HvfWindowsInstallPlan) throws -> Void)? = nil,
+        prepareMedia: ((HvfWindowsInstallPlan) async throws -> Void)? = nil,
+        preparationWorker: @escaping @Sendable (HvfWindowsInstallPlan) throws -> Void = { try HvfWindowsInstallStaging.prepare($0) },
         finalize: ((HvfWindowsInstallPlan) async throws -> Void)? = nil) {
         self.process = process ?? HvfWindowsInstallProcess()
         self.verifySource = verifySource ?? { await $0.sourceImageCacheIsVerified() }
-        self.prepareMedia = prepareMedia ?? { try HvfWindowsInstallStaging.prepare($0) }
+        self.prepareMedia = prepareMedia ?? { plan in
+            try await Task.detached(priority: .utility) { try preparationWorker(plan) }.value
+        }
         let worker = HvfWindowsInstallFinalizationWorker(); self.finalize = finalize ?? { try await worker.run($0) }
     }
 }

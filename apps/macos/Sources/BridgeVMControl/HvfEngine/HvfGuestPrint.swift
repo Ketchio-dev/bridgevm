@@ -198,29 +198,56 @@ extension HvfEngineSession {
 
     /// One print panel at a time; each job's file goes once its panel is over, or at once when it cannot be shown.
     func presentNextPrintJob() {
-        while printShowing == nil, !printQueue.isEmpty {
-            let job = printQueue.removeFirst()
-            guard HvfGuestPrint.verified(job) else {
-                removePrintJob(job.url)
-                printNotice.show(.notReceived)
-                continue
+        guard printShowing == nil, !printQueue.isEmpty else { return }
+        let job = printQueue.removeFirst()
+        let generation = printGeneration
+        let verify = printVerifier
+        // Reserve this exact job before yielding, including duplicate lines during verification.
+        printShowing = job.url
+        printVerificationTask = Task { [weak self] in
+            let verified = await Task.detached(priority: .utility) { verify(job) }.value
+            guard let self, self.printGeneration == generation, self.printShowing == job.url else { return }
+            self.printVerificationTask = nil
+            guard verified else {
+                self.printShowing = nil
+                self.removePrintJob(job.url)
+                self.printNotice.show(.notReceived)
+                self.presentNextPrintJob()
+                return
             }
-            printShowing = job.url
-            let shown = printPresenter.present(job.url) { [weak self] in self?.printJobFinished(job.url) }
-            if !shown, printShowing == job.url {
-                printShowing = nil
-                removePrintJob(job.url)
-                printNotice.show(.notOpened)
+            // Once presented, the panel owns its completion even across a runtime reset.
+            self.printPanelPresented = true
+            let shown = self.printPresenter.present(job.url) { [weak self] in
+                self?.printJobFinished(job.url, generation: generation)
+            }
+            if !shown, self.printShowing == job.url {
+                self.printPanelPresented = false
+                self.printShowing = nil
+                self.removePrintJob(job.url)
+                self.printNotice.show(.notOpened)
+                self.presentNextPrintJob()
             }
         }
     }
 
-    private func printJobFinished(_ url: URL) {
-        guard printShowing == url else { return }
-        printShowing = nil
+    func resetPendingPrintJobs() {
+        printGeneration = UUID()
+        printVerificationTask?.cancel()
+        printVerificationTask = nil
+        // An open panel must keep the one-panel slot until its own completion.
+        if !printPanelPresented { printShowing = nil }
+        printQueue = [] // Files stay for the next agent start, as before.
+    }
+
+    private func printJobFinished(_ url: URL, generation: UUID) {
         removePrintJob(url)
+        guard printShowing == url, printPanelPresented else { return }
+        printPanelPresented = false
+        printShowing = nil
         if printNotice.shown != .printerFailed { printNotice.show(nil) }
-        presentNextPrintJob()
+        // A stopped run has no work to present; a new agent may have queued jobs
+        // behind this old panel while it was still open.
+        if printGeneration == generation || serviceStarted { presentNextPrintJob() }
     }
 
     private func removePrintJob(_ url: URL) {

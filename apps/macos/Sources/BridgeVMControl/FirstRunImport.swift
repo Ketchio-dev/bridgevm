@@ -18,7 +18,7 @@ enum FirstRunImport {
         var cpuCount: Int
     }
 
-    enum ValidationError: Error, Equatable, CustomStringConvertible {
+    enum ValidationError: LocalizedError, Equatable, CustomStringConvertible {
         case emptyName
         case diskMissing(String)
         case diskNotAFile(String)
@@ -27,6 +27,8 @@ enum FirstRunImport {
         case varsWrongSize(path: String, bytes: UInt64)
         case vtpmNotADirectory(String); case vtpmRecoveryMissing(String); case vtpmRecoveryWithoutState
         case badResources(memMiB: Int, cpuCount: Int)
+
+        var errorDescription: String? { description }
 
         var description: String {
             switch self {

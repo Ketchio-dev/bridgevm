@@ -35,17 +35,18 @@ extension HvfWindowsInstallSession {
             schedule { await self.run() }
         } catch {
             if !acknowledgeCancellation() {
-                finish(.failed("설치 복구 상태 확인 실패: \(error.localizedDescription)"))
+                appendLog(WindowsFileFailureFeedback.diagnostic("recovery-inspection", error))
+                finish(.failed(WindowsFileFailureFeedback.recovery))
             }
         }
     }
 
     /// Recheck inside the scheduled pipeline and after awaits, before fresh effects.
-    func continueFreshInstallation() async -> Bool {
-        guard !acknowledgeCancellation() else { return false }
+    func continueFreshInstallation(cleanupOnCancellation: Bool = false) async -> Bool {
+        guard !acknowledgeCancellation(cleanup: cleanupOnCancellation) else { return false }
         do {
             let decision = try await recovery.decision(for: plan)
-            guard !acknowledgeCancellation() else { return false }
+            guard !acknowledgeCancellation(cleanup: cleanupOnCancellation) else { return false }
             switch decision {
             case .fresh: return true
             case let .pending(ticket):
@@ -53,8 +54,9 @@ extension HvfWindowsInstallSession {
                 return false
             }
         } catch {
-            if !acknowledgeCancellation() {
-                finish(.failed("설치 복구 상태 확인 실패: \(error.localizedDescription)"))
+            if !acknowledgeCancellation(cleanup: cleanupOnCancellation) {
+                appendLog(WindowsFileFailureFeedback.diagnostic("recovery-inspection", error))
+                finish(.failed(WindowsFileFailureFeedback.recovery))
             }
             return false
         }
@@ -69,7 +71,8 @@ extension HvfWindowsInstallSession {
             _ = try await recovery.resume(plan: plan, ticket: ticket)
             completeInstallation()
         } catch {
-            finish(.failed("설치 결과 복구 실패: \(error.localizedDescription)"))
+            appendLog(WindowsFileFailureFeedback.diagnostic("recovery", error))
+            finish(.failed(WindowsFileFailureFeedback.recovery))
         }
     }
 }
