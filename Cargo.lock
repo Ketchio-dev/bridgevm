@@ -186,13 +186,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bridgevm-fullvm"
-version = "0.1.0"
-dependencies = [
- "bridgevm-core",
-]
-
-[[package]]
 name = "bridgevm-hvf"
 version = "0.1.0"
 dependencies = [
@@ -210,13 +203,6 @@ version = "0.1.0"
 dependencies = [
  "bridgevm-hvf",
  "libc",
-]
-
-[[package]]
-name = "bridgevm-lightvm"
-version = "0.1.0"
-dependencies = [
- "bridgevm-core",
 ]
 
 [[package]]
@@ -423,8 +409,6 @@ name = "fullvm-runner"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bridgevm-core",
- "bridgevm-fullvm",
  "bridgevm-qemu",
  "bridgevm-storage",
  "clap",
@@ -527,8 +511,6 @@ dependencies = [
  "anyhow",
  "bridgevm-apple-vz",
  "bridgevm-config",
- "bridgevm-core",
- "bridgevm-lightvm",
  "bridgevm-storage",
  "clap",
  "serde_json",

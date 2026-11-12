@@ -1,6 +1,4 @@
 use anyhow::{bail, Context, Result};
-use bridgevm_core::VmEngine;
-use bridgevm_fullvm::FullVmEngine;
 use bridgevm_qemu::{
     build_compatibility_command, is_qmp_status_unavailable, qmp_socket_path, query_status,
 };
@@ -15,6 +13,8 @@ use std::{
     process::{Command, Stdio},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+const ENGINE_NAME: &str = "fullvm";
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -36,7 +36,6 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let engine = FullVmEngine;
     if let Some(vm) = args.vm {
         let store = args
             .store
@@ -128,7 +127,7 @@ fn main() -> Result<()> {
                 .spawn()
                 .with_context(|| format!("failed to spawn {}", command.program))?;
             let metadata = runner_metadata(RunnerMetadataInput {
-                engine_name: engine.name(),
+                engine_name: ENGINE_NAME,
                 pid: Some(child.id()),
                 command: command.render_shell_words(),
                 log_path,
@@ -148,7 +147,7 @@ fn main() -> Result<()> {
                 .context("failed to prepare guest tools runner metadata")?;
             let command_words = command.render_shell_words();
             let metadata = runner_metadata(RunnerMetadataInput {
-                engine_name: engine.name(),
+                engine_name: ENGINE_NAME,
                 pid: None,
                 command: command_words,
                 log_path: bundle.join("logs").join("qemu.log"),
@@ -159,11 +158,11 @@ fn main() -> Result<()> {
                 active_disk: Some(active_disk),
             });
             store.write_runner_metadata(&vm, &metadata)?;
-            println!("{} dry-run for {}", engine.name(), vm);
+            println!("{} dry-run for {}", ENGINE_NAME, vm);
             println!("{}", command_line(&metadata.command));
         }
     } else {
-        println!("{}", runner_ready_line(engine.name()));
+        println!("{}", runner_ready_line(ENGINE_NAME));
     }
     Ok(())
 }
