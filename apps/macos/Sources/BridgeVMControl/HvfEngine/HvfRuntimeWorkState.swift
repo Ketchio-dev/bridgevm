@@ -10,6 +10,10 @@ extension HvfEngineSession {
     }
     var mayHaveOwnedWork: Bool { ownedController?.mayHaveOwnedWork == true }
     var hasRetainedAttachment: Bool { attachedToExistingProcess }
+    var runnerDiedWithoutCleanup: Bool {
+        guard let controller = ownedController else { return false }
+        return controller.runnerExit != nil && !controller.process.isRunning && !controller.teardownConfirmed
+    }
     var hasActiveRuntimeWork: Bool {
         runtimeTransitionInProgress || hasPendingRuntimeStart || hasPendingRuntimeMutation
             || mayHaveOwnedWork || process?.isRunning == true || connectionState != .stopped

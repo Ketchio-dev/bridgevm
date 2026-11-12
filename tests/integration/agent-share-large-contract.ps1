@@ -45,6 +45,8 @@ $script:BvLines = New-Object 'System.Collections.Generic.Queue[string]'
 $script:BvPending = New-Object System.Text.StringBuilder
 function Assert($condition, [string]$what) { if (-not $condition) { throw "FAIL: $what" } }
 function Log([string]$m) { }
+# Quick Access has its own Shell-mocked contract; LSR extraction needs its entry point too.
+function Pin-ShareQuickAccess([string]$root) { }
 function Write-Line($handle, [string]$line, [string]$label) { [void]$script:sent.Add($line) }
 function B64([string]$text) { [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)) }
 $h = [IntPtr]::Zero

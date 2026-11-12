@@ -216,7 +216,18 @@ impl AgentConsoleHarness {
     fn queue_listing_actions(&mut self, actions: Vec<SyncAction>) {
         for action in actions {
             match action {
-                SyncAction::Get { name } => self.queue.push_back(ServiceReq::ShareGet { name }),
+                SyncAction::Get { name } => {
+                    if let Some(share) = self.share.as_mut() {
+                        if !share.fetch_mac.contains_key(&name) {
+                            let mac = share.engine.preferred_mac_stat(&name).or_else(|| {
+                                let meta = std::fs::symlink_metadata(share.host_dir.join(&name)).ok()?;
+                                Some((meta.len(), file_mtime_ms_from_meta(&meta)?))
+                            });
+                            share.fetch_mac.insert(name.clone(), mac);
+                        }
+                    }
+                    self.queue.push_back(ServiceReq::ShareGet { name });
+                }
                 SyncAction::DeleteHost { name } => self.queue.push_back(ServiceReq::ShareDel {
                     name,
                     direction: ShareDelDirection::GuestToHost,

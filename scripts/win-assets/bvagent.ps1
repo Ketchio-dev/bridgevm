@@ -657,6 +657,8 @@ function Close-PutStream {
         try { $script:BvPutStream.Close() } catch { }
         $script:BvPutStream = $null
     }
+    if ($script:BvPutTemp) { try { [System.IO.File]::Delete($script:BvPutTemp) } catch { } }
+    $script:BvPutTemp = ''
     $script:BvPutPath = ''
     $script:BvPutTotal = [int64]0
     $script:BvPutWritten = [int64]0
@@ -665,6 +667,7 @@ function Close-PutStream {
 }
 
 # >>> large put
+# All PUT paths use New-PutStage and Move-Replace; ordinary and large streams stay independent.
 # A large shared-folder file from the Mac (LPUTBEG, LPUTDATA, LPUTEND, LPUTABORT) is written into a
 # temporary of its own beside the target, apart from PUTBEG's stream, so clipboard images and tools
 # updates can go between its chunks. At the end it is flushed to disk and renamed over the target in
@@ -673,6 +676,16 @@ function Close-PutStream {
 # such a file and deletes one no PUT holds once it is a few minutes old (an earlier agent's). Any
 # other name, a user's .bridgevm-part-notes too, is a file like any other.
 $script:BvLPut = $null
+
+function New-PutStage([string]$path, [bool]$writeThrough = $false) {
+    $io = Get-IoPath $path
+    $dir = [System.IO.Path]::GetDirectoryName($io)
+    if ($dir) { [void][System.IO.Directory]::CreateDirectory($dir) }
+    $temp = Get-IoPath ([System.IO.Path]::Combine($dir, '.bridgevm-part-' + [Guid]::NewGuid().ToString('N')))
+    $options = if ($writeThrough) { [System.IO.FileOptions]::WriteThrough } else { [System.IO.FileOptions]::None }
+    $stream = New-Object System.IO.FileStream($temp, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None, 4096, $options)
+    return @{ Stream = $stream; Temp = $temp; Io = $io }
+}
 
 function Close-LargePut {
     $put = $script:BvLPut
@@ -1732,7 +1745,7 @@ namespace BridgeVM {
                 foreach (FileSystemInfo e in dirs) { Row(sb, listRoot, e, (e.Attributes & FileAttributes.ReparsePoint) != 0 ? 1 : 0, 1); }
                 foreach (FileSystemInfo e in files) {
                     if (Part.IsMatch(e.Name)) {
-                        bool kept = held != null && string.Equals(held, e.Name, StringComparison.OrdinalIgnoreCase);
+                        bool kept = held != null && Array.Exists(held.Split('|'), delegate(string name) { return string.Equals(name, e.Name, StringComparison.OrdinalIgnoreCase); });
                         if (!kept && e.LastWriteTimeUtc < DateTime.UtcNow.AddMinutes(-5)) { try { e.Delete(); } catch { } }
                         continue;
                     }
@@ -1810,7 +1823,10 @@ function Watch-ShareRoot([string]$root) {
 # The LSR rows below `listRoot`: compiled (List above) once the watch helper is in, else the
 # Get-ChildItem walk it replaces, which lists the same rows.
 function Get-ShareListing([string]$listRoot) {
-    $heldName = if ($null -ne $script:BvLPut) { [System.IO.Path]::GetFileName($script:BvLPut.Temp) } else { $null }
+    $heldNames = @()
+    if ($null -ne $script:BvLPut) { $heldNames += [System.IO.Path]::GetFileName($script:BvLPut.Temp) }
+    if ($script:BvPutTemp) { $heldNames += [System.IO.Path]::GetFileName($script:BvPutTemp) }
+    $heldName = $heldNames -join '|'
     if ($script:BvShareWatchReady) {
         try { return [BridgeVM.BvShareWatch]::List($listRoot, $heldName) } catch [System.Management.Automation.MethodInvocationException] { throw $_.Exception.InnerException }
     }
@@ -1820,7 +1836,7 @@ function Get-ShareListing([string]$listRoot) {
         # -cmatch match every name and leave every file out of the listing.
         if (-not $e.PSIsContainer -and $e.Name -cmatch '^\.bridgevm-part-[0-9a-f]{32}$') {
             # A large PUT's temporary (large put), never listed; an old one no PUT holds is a leftover.
-            $held = $null -ne $heldName -and [string]::Equals($heldName, $e.Name, [System.StringComparison]::OrdinalIgnoreCase)
+            $held = $heldNames -contains $e.Name
             if (-not $held -and $e.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddMinutes(-5)) { try { $e.Delete() } catch { } }
             continue
         }
@@ -2448,7 +2464,7 @@ function Get-BvAgentId([string]$Dir) {
 # Until an agent says so, the host shows Windows the Mac on AC power, since
 # Task Scheduler would not start an older agent's task on battery.
 function Get-BvReady([string]$Dir, [string]$Id) {
-    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame startapps openfile onbattery print putmtime'
+    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame startapps openfile onbattery print putmtime delcheck'
     if (-not $Id) { return $ready }
     $ready += ' agent=' + $Id
     $root = Split-Path -Parent $Dir
@@ -2864,27 +2880,32 @@ while ($true) {
                         $parts = $arg.Split(' ')
                         $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0]))
                         $data = if ($parts.Length -ge 2 -and $parts[1]) { [System.Convert]::FromBase64String($parts[1]) } else { New-Object byte[] 0 }
-                        $io = Get-IoPath $path
-                        $dir = [System.IO.Path]::GetDirectoryName($io)
-                        if ($dir) { [void][System.IO.Directory]::CreateDirectory($dir) }
-                        [System.IO.File]::WriteAllBytes($io, $data)
-                        if ($parts.Length -ge 3) { Set-PutTime $path $parts[2] }
+                        $stage = New-PutStage $path $true
+                        $io = $stage.Io
+                        try {
+                            $stage.Stream.Write($data, 0, $data.Length)
+                            $stage.Stream.Close()
+                            if ($parts.Length -ge 3) { Set-PutTime $stage.Temp $parts[2] }
+                            Move-Replace $stage.Temp $io
+                        } finally {
+                            $stage.Stream.Close()
+                            try { [System.IO.File]::Delete($stage.Temp) } catch { }
+                        }
                         Write-Line $h ('PUTOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($path)) + ' ' + $data.Length) 'PUTOK'
                     } catch { Write-Line $h ('ERR PUT ' + $_.Exception.Message) 'ERR' }
                 }
                 'PUTBEG' {
                     # PUTBEG <b64(path)> <total> <nchunks> [<mtime ms>] -> OK PUTBEG.
-                    # Opens/truncates a stream; PUTCHUNK/PUTEND complete it.
+                    # Opens a staged sibling; PUTCHUNK/PUTEND publish it only when complete.
                     $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
                         Close-PutStream
                         $parts = $arg.Split(' ')
                         $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0]))
                         $total = [int64]$parts[1]
-                        $io = Get-IoPath $path
-                        $dir = [System.IO.Path]::GetDirectoryName($io)
-                        if ($dir) { [void][System.IO.Directory]::CreateDirectory($dir) }
-                        $script:BvPutStream = [System.IO.File]::Open($io, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+                        $stage = New-PutStage $path $true
+                        $script:BvPutStream = $stage.Stream
+                        $script:BvPutTemp = $stage.Temp
                         $script:BvPutPath = $path
                         $script:BvPutTotal = $total
                         $script:BvPutWritten = [int64]0
@@ -2909,7 +2930,7 @@ while ($true) {
                             Write-Line $h 'ERR PUTCHUNK seq' 'ERR'
                         } else {
                             $data = if (-not [string]::IsNullOrEmpty($payload)) { [System.Convert]::FromBase64String($payload) } else { New-Object byte[] 0 }
-                            $script:BvPutStream.Write($data, 0, $data.Length)
+                            try { $script:BvPutStream.Write($data, 0, $data.Length) } catch { Close-PutStream; throw }
                             $script:BvPutWritten += [int64]$data.Length
                             $script:BvPutSeq++
                             Write-Line $h ('OK PUTCHUNK ' + $seq) 'OK'
@@ -2931,7 +2952,7 @@ while ($true) {
                         if ($seq -ne $script:BvPutSeq) {
                             Write-Line $h 'ERR PUTCHUNK seq' 'ERR'
                         } else {
-                            $script:BvPutStream.Write($data, 0, $data.Length)
+                            try { $script:BvPutStream.Write($data, 0, $data.Length) } catch { Close-PutStream; throw }
                             $script:BvPutWritten += [int64]$data.Length
                             $script:BvPutSeq++
                             Write-Line $h ('OK PUTCHUNK ' + $seq) 'OK'
@@ -2950,19 +2971,19 @@ while ($true) {
                         $total = $script:BvPutTotal
                         $expectedSeq = $script:BvPutSeq
                         $time = $script:BvPutTime
-                        Close-PutStream
+                        $script:BvPutStream.Close()
                         if ($seq -ne $expectedSeq) {
                             Write-Line $h 'ERR PUTEND seq' 'ERR'
                         } elseif ($written -ne $total) {
                             Write-Line $h 'ERR PUTEND short' 'ERR'
                         } else {
-                            Set-PutTime $path $time
+                            Set-PutTime $script:BvPutTemp $time
+                            Move-Replace $script:BvPutTemp (Get-IoPath $path)
                             Write-Line $h ('PUTOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($path)) + ' ' + $written) 'PUTOK'
                         }
                     } catch {
-                        Close-PutStream
                         Write-Line $h ('ERR PUTEND ' + $_.Exception.Message) 'ERR'
-                    }
+                    } finally { Close-PutStream }
                 }
                 'LPUTBEG' {
                     # LPUTBEG <b64(path)> <total> [<mtime ms>] -> OK LPUTBEG: a large file's own stream into a
@@ -2980,8 +3001,9 @@ while ($true) {
                         $free = [int64]::MaxValue
                         try { $free = (New-Object System.IO.DriveInfo ([System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($path)))).AvailableFreeSpace } catch { }
                         if ($free -lt $total) { throw 'disk-full' }
-                        $temp = Get-IoPath ([System.IO.Path]::Combine($dir, '.bridgevm-part-' + [Guid]::NewGuid().ToString('N')))
-                        $stream = [System.IO.File]::Open($temp, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+                        $stage = New-PutStage $path
+                        $temp = $stage.Temp
+                        $stream = $stage.Stream
                         $time = ''
                         if ($parts.Length -ge 3) { $time = $parts[2] }
                         $script:BvLPut = @{ Stream = $stream; Path = $path; Io = $io; Temp = $temp; Total = $total; Written = [int64]0; Seq = 0; Time = $time }
@@ -3133,14 +3155,21 @@ while ($true) {
                     # removed recursively by the shared-folder protocol.
                     $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
-                        $path = Get-IoPath ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg)))
+                        $parts = $arg.Split(' ')
+                        $path = Get-IoPath ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0])))
                         if (Test-Path -LiteralPath $path -PathType Container) {
                             Write-Line $h 'ERR DEL is-dir' 'ERR'
                         } elseif (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
                             Write-Line $h 'OK DEL absent' 'OK'
                         } else {
-                            Remove-Item -LiteralPath $path -Force -ErrorAction Stop
-                            Write-Line $h 'OK DEL' 'OK'
+                            # Compare the exact listing stamp and size, not a rounded date.
+                            $file = New-Object System.IO.FileInfo($path)
+                            if ($parts.Length -ge 3 -and ($file.Length -ne [int64]$parts[1] -or $file.LastWriteTimeUtc.ToString('o') -cne $parts[2])) {
+                                Write-Line $h 'OK DEL changed' 'OK'
+                            } else {
+                                Remove-Item -LiteralPath $path -Force -ErrorAction Stop
+                                Write-Line $h 'OK DEL' 'OK'
+                            }
                         }
                     } catch { Write-Line $h ('ERR DEL ' + $_.Exception.Message) 'ERR' }
                 }

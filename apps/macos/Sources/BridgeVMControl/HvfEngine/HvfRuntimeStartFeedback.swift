@@ -11,16 +11,18 @@ extension HvfEngineSession {
     }
 
     var runtimeSupervisionFailureText: String? {
-        guard ownedController?.supervisionLost == true else { return nil }
+        guard !runnerDiedWithoutCleanup, ownedController?.supervisionLost == true else { return nil }
         return "실행 중인 Windows와 연결이 끊겼으니 강제 중단으로 Windows를 멈추세요."
     }
 
     var guiStartFailureText: String? {
-        guard !hasPendingOwnedStart, let outcome = guiStartOperation?.outcome else { return nil }
-        switch outcome {
-        case let .refused(reason): return reason
-        case let .failed(_, detail): return "VM을 시작하지 못했습니다: \(detail)"
-        case .ownedLaunchAccepted, .observedAttachment: return nil
+        if !hasPendingOwnedStart, let outcome = guiStartOperation?.outcome {
+            switch outcome {
+            case let .refused(reason): return reason
+            case let .failed(_, detail): return "VM을 시작하지 못했습니다: \(detail)"
+            case .ownedLaunchAccepted, .observedAttachment: break
+            }
         }
+        return runnerDiedWithoutCleanup ? "Windows가 예기치 않게 종료되었으니 잠시 후 다시 시작하세요." : nil
     }
 }

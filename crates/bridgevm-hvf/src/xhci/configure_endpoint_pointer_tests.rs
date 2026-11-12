@@ -25,15 +25,22 @@ fn configure_endpoint_copies_pointer_dci5_context() {
     // When: the command doorbell runs Configure Endpoint.
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
 
-    // Then: DCI5 is published to the slot output context.
+    // Then: controller-owned EP State is Running; remaining fields are copied.
+    assert_eq!(
+        mem.read_u32(OUTPUT_CONTEXT + DCI5_OUTPUT_CONTEXT_OFFSET) & 7,
+        1
+    );
     assert_eq!(
         mem.read_bytes(
-            OUTPUT_CONTEXT + DCI5_OUTPUT_CONTEXT_OFFSET,
-            EP_CONTEXT_BYTES
+            OUTPUT_CONTEXT + DCI5_OUTPUT_CONTEXT_OFFSET + 4,
+            EP_CONTEXT_BYTES - 4
         )
         .unwrap(),
-        mem.read_bytes(INPUT_CONTEXT + DCI5_INPUT_CONTEXT_OFFSET, EP_CONTEXT_BYTES)
-            .unwrap()
+        mem.read_bytes(
+            INPUT_CONTEXT + DCI5_INPUT_CONTEXT_OFFSET + 4,
+            EP_CONTEXT_BYTES - 4
+        )
+        .unwrap()
     );
     assert_eq!(xhci.slot1_dci5_dequeue, DCI5_RING);
 }

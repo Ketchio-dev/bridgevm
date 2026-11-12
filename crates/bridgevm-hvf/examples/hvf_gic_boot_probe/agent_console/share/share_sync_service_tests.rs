@@ -376,6 +376,112 @@ fn same_size_guest_edit_before_first_post_put_listing_is_fetched() {
 }
 
 #[test]
+fn dropped_fetch_guards_are_pruned_after_error_skip_and_restart() {
+    let mut rig = Rig::new("fetch-guard-lifetime");
+    let name = "doc.txt".to_string();
+    rig.h.share.as_mut().unwrap().fetch_mac.insert(name.clone(), None);
+    rig.h.queue.push_back(ServiceReq::ShareGet { name: name.clone() });
+    rig.h.prune_fetch_guards();
+    assert_eq!(rig.h.share.as_ref().unwrap().fetch_mac.len(), 1);
+    rig.h.queue.clear(); // a skipped/dropped queued request
+    rig.h.prune_fetch_guards();
+    assert!(rig.h.share.as_ref().unwrap().fetch_mac.is_empty());
+    rig.h.share.as_mut().unwrap().fetch_mac.insert(name.clone(), None);
+    rig.h.in_flight = Some((ServiceReq::ShareGet { name: name.clone() }, rig.now));
+    rig.h.handle_service_reply("ERR GET missing", None, None, rig.now);
+    assert!(rig.h.share.as_ref().unwrap().fetch_mac.is_empty());
+    rig.h.share.as_mut().unwrap().fetch_mac.insert(name.clone(), None);
+    rig.h.in_flight = Some((ServiceReq::ShareGet { name }, rig.now));
+    rig.h.resync_after_agent_restart("GUEST v3-share2", rig.now);
+    assert!(rig.h.share.as_ref().unwrap().fetch_mac.is_empty());
+    rig.h.share = None; // session end owns and drops the entire map
+}
+
+#[test]
+fn refused_stale_guest_delete_fetches_the_edit_instead_of_retrying_delete() {
+    let mut rig = Rig::synced("delete-guest-save", "doc.txt", b"original");
+    rig.h.note_agent_ready("GUEST v3-share2 delcheck", rig.now);
+    std::fs::remove_file(rig.dir.join("doc.txt")).unwrap();
+    rig.guest.write("doc.txt", b"new guest save");
+    let req = ServiceReq::ShareDel { name: "doc.txt".into(), direction: ShareDelDirection::HostToGuest };
+    let wire = rig.h.service_req_line(&req, rig.now).unwrap().to_string();
+    assert!(wire.contains(" 8 "), "expected size/time were not carried: {wire}");
+    rig.h.in_flight = Some((req, rig.now));
+    rig.h.handle_service_reply("OK DEL changed", None, None, rig.now);
+    rig.run(16);
+    assert_eq!(rig.host("doc.txt").as_deref(), Some(&b"new guest save"[..]));
+    assert_eq!(rig.guest.content("doc.txt"), Some(&b"new guest save"[..]));
+}
+
+#[test]
+fn unstamped_host_record_keeps_legacy_delete_behavior() {
+    let mut rig = Rig::new("delete-unstamped-host");
+    std::fs::write(rig.dir.join("doc.txt"), b"original").unwrap();
+    let engine = &mut rig.h.share.as_mut().unwrap().engine;
+    engine.on_guest_file("doc.txt".into(), b"original".to_vec(), None);
+    // Successful publication without a readable destination mtime is valid.
+    engine.on_host_write_succeeded("doc.txt", None);
+    assert!(engine.delete_host_stat("doc.txt").is_none());
+    assert!(engine.on_guest_listing_normalized(Vec::new()).iter().any(|a| matches!(a, SyncAction::DeleteHost { .. })));
+    rig.h.handle_share_delete("doc.txt", ShareDelDirection::GuestToHost, rig.now);
+    assert!(rig.host("doc.txt").is_none(), "unknown stamp must not silently suppress a planned delete");
+}
+
+#[test]
+fn unstamped_guest_record_sends_legacy_delete_even_with_delcheck() {
+    let mut rig = Rig::new("delete-unstamped-guest");
+    rig.h.note_agent_ready("GUEST v3-share2 delcheck", rig.now);
+    let engine = &mut rig.h.share.as_mut().unwrap().engine;
+    // An acknowledged push has no guest stamp until its first matching listing.
+    engine.on_put_ok("doc.txt".into(), 8, share_sync::fnv1a64(b"original"));
+    assert!(engine.delete_guest_stat("doc.txt").is_none());
+    assert!(engine.on_host_scan_normalized(Vec::new()).iter().any(|a| matches!(a, SyncAction::DeleteGuest { .. })));
+    let req = ServiceReq::ShareDel { name: "doc.txt".into(), direction: ShareDelDirection::HostToGuest };
+    let wire = rig.h.service_req_line(&req, rig.now).expect("unknown stamp must still send a delete").to_owned();
+    assert_eq!(wire.split_whitespace().count(), 2, "fallback must be the legacy DEL path");
+    rig.guest.write("doc.txt", b"original");
+    assert_eq!(rig.guest.reply(&wire), ["OK DEL"]);
+    rig.h.in_flight = Some((req, rig.now));
+    rig.h.handle_service_reply("OK DEL", None, None, rig.now);
+    assert!(rig.guest.content("doc.txt").is_none());
+    assert!(!rig.h.share.as_ref().unwrap().engine.has_synced());
+}
+
+#[test]
+fn queued_guest_delete_preserves_a_newer_mac_save() {
+    let mut rig = Rig::synced("delete-mac-save", "doc.txt", b"original");
+    // Guest disappearance was planned while the Mac still held the synced version.
+    rig.guest.files.clear();
+    let share = rig.h.share.as_mut().unwrap();
+    assert!(share.engine.delete_host_stat("doc.txt").is_some());
+    assert!(share.engine.on_guest_listing_normalized(Vec::new()).iter().any(|a| matches!(a, SyncAction::DeleteHost { .. })));
+    std::fs::write(rig.dir.join("doc.txt"), b"newer Mac save").unwrap();
+    rig.h.handle_share_delete("doc.txt", ShareDelDirection::GuestToHost, rig.now);
+    assert_eq!(rig.host("doc.txt").as_deref(), Some(&b"newer Mac save"[..]));
+    rig.run(16);
+    assert_eq!(rig.guest.content("doc.txt"), Some(&b"newer Mac save"[..]));
+}
+
+#[test]
+fn ordinary_fetch_preserves_mac_save_and_guest_conflict() {
+    let mut rig = Rig::synced("fetch-mac-save", "doc.txt", b"original");
+    std::fs::write(rig.dir.join("doc (Windows copy).txt"), b"existing copy").unwrap();
+    rig.guest.write("doc.txt", b"guest edit");
+    let path = rig.dir.join("doc.txt");
+    rig.guest.on_get = Some(Box::new(move |_| { std::fs::write(&path, b"newer Mac save").unwrap(); }));
+    rig.run(12);
+    assert_eq!(rig.host("doc.txt").as_deref(), Some(&b"newer Mac save"[..]));
+    assert_eq!(rig.host("doc (Windows copy).txt").as_deref(), Some(&b"existing copy"[..]));
+    assert_eq!(rig.host("doc (Windows copy 2).txt").as_deref(), Some(&b"guest edit"[..]));
+    rig.guest.on_get = None;
+    rig.run(16);
+    assert_eq!(rig.guest.content("doc (Windows copy 2).txt"), Some(&b"guest edit"[..]));
+    assert!(!rig.guest.gets.iter().any(|n| n.contains("Windows copy")), "our pushed conflict must not be fetched back");
+    rig.assert_settled();
+    assert!(rig.h.share.as_ref().unwrap().fetch_mac.is_empty());
+}
+
+#[test]
 fn host_case_only_rename_keeps_both_copies_and_never_rewrites_the_host() {
     let mut rig = Rig::synced("host-case", "report.txt", b"DATA");
     let gets = rig.guest.gets.len();

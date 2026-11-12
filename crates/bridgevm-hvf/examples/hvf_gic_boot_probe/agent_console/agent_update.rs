@@ -420,6 +420,7 @@ impl AgentConsoleHarness {
         self.ready_survives_battery = rest.split(' ').any(|token| token == SURVIVES_BATTERY_MARKER);
         self.put_data = ready_has_put_data(rest);
         self.share_big = ready_has_big_files(rest);
+        self.delete_if_unchanged = rest.split(' ').any(|token| token == "delcheck");
         self.drops.agent_opens = rest.split(' ').any(|token| token == "openfile");
         self.print.agent = ready_has_print(rest);
         // A new agent process may have the display verbs (an update brings them).
