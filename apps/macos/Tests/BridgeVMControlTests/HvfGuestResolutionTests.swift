@@ -43,9 +43,9 @@ final class HvfGuestResolutionTests: XCTestCase {
     /// vm.json may hold any of the VMM's 15 modes (hand-edited): the picker shows such a mode as its own
     /// selected entry instead of nothing, and a value the VMM ignores as Automatic.
     func testPickerShowsTheSavedModeTheVMMApplies() {
-        let automatic = "Automatic (1280x800)"
+        let automatic = "자동 (1280x800)"
         let cases: [(saved: String?, shown: String, entries: Int)] = [
-            ("1600x900", "1600x900 (custom)", 10), (" 1280x720\n", "1280x720 (custom)", 10),
+            ("1600x900", "1600x900 (사용자 지정)", 10), (" 1280x720\n", "1280x720 (사용자 지정)", 10),
             ("1920x1080", "1920x1080", 9), ("3840x2160", automatic, 9), (nil, automatic, 9)]
         for (saved, shown, entries) in cases {
             let menu = HvfGuestResolutionPicker.menu(for: saved)
