@@ -21,6 +21,8 @@ final class HvfEngineSession: ObservableObject {
     @Published var displayDriverFlagMessage: String? // why HvfDisplayDriverFlag could not save yet
     @Published var displayDriverNoticeDismissed = false // per VM, only for this app session
     @Published var displayDriverRestartRequired = false
+    @Published var displayDriverUnbound = false
+    @Published var displayDriverUnboundDismissed = false
     @Published var displayDriverRestarting = false
     var repoRoot: URL
     var workAdmission: LibraryWorkAdmission?
@@ -504,6 +506,8 @@ final class HvfEngineSession: ObservableObject {
         inputDriver.attachUnknown(binding: inputBinding)
         tailReader = TailOffsetReader()
         agentEvents = BvAgentEvent.Stream()
+        displayDriverUnboundDismissed = false
+        displayDriverUnbound = false
         lastHeartbeatDate = nil
         lastHeartbeatAge = nil
         serviceStarted = false

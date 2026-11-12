@@ -230,7 +230,7 @@ else while(true){byte[] f=null;for(int n=0;f==null;n++){var m=M(t,n);if(m==null)
 res=f==null?"not_listed":""+C(t,f,1);if(res=="0"&&S(t)==want||DateTime.Now>end)break;
 force=Force(w,h);Thread.Sleep(400);}
 Scan();
-return "BVDISPLAY target="+want+" before="+before+" after="+S(t)+" primary="+Pr+" layout="+lay+" detached="+(det.Count==0?"none":string.Join(",",det))+" force="+force+" result="+res;}}
+return "BVDISPLAY target="+want+" virtio="+(t==null?"none":"found")+" before="+before+" after="+S(t)+" primary="+Pr+" layout="+lay+" detached="+(det.Count==0?"none":string.Join(",",det))+" force="+force+" result="+res;}}
 '@
     'DISPLAYSCALE' = @'
 using System;using System.Runtime.InteropServices;
@@ -1904,15 +1904,72 @@ function Read-Line($handle) {
         }
     }
 }
+# A pipe waits for EOF from every inheriting child, even after cmd exits. Use one
+# shared output file instead, wait on only the command process, and read a snapshot.
+function Initialize-BvCommand {
+    if ('BvCommand' -as [type]) { return }
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class BvCommand {
+    [StructLayout(LayoutKind.Sequential)] struct SA { public int size; public IntPtr descriptor; public int inherit; }
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct SI {
+        public int size; public string reserved, desktop, title;
+        public int x,y,width,height,xchars,ychars,fill,flags;
+        public short show,reservedSize; public IntPtr reservedPtr,input,output,error;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct PI { public IntPtr process,thread; public int pid,tid; }
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]
+    static extern IntPtr CreateFile(string name,uint access,uint share,ref SA sa,uint create,uint flags,IntPtr template);
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]
+    static extern bool CreateProcess(string app,StringBuilder line,IntPtr pa,IntPtr ta,bool inherit,uint flags,IntPtr env,string dir,ref SI si,out PI pi);
+    [DllImport("kernel32.dll")] static extern uint WaitForSingleObject(IntPtr h,uint ms);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetExitCodeProcess(IntPtr h,out int code);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
+    public static string Run(string app,string arguments,out int code) {
+        string path=Path.GetTempFileName(); IntPtr file=new IntPtr(-1); PI pi=new PI(); code=-1;
+        try {
+            var sa=new SA { size=Marshal.SizeOf(typeof(SA)),inherit=1 };
+            file=CreateFile(path,0x40000000,7,ref sa,2,0x100,IntPtr.Zero);
+            if(file==new IntPtr(-1))throw new Win32Exception();
+            var si=new SI { size=Marshal.SizeOf(typeof(SI)),flags=0x100,input=GetStdHandle(-10),output=file,error=file };
+            if(!CreateProcess(app,new StringBuilder("\""+app+"\" "+arguments),IntPtr.Zero,IntPtr.Zero,true,0,IntPtr.Zero,null,ref si,out pi))throw new Win32Exception();
+            if(WaitForSingleObject(pi.process,0xffffffff)!=0)throw new Win32Exception();
+            if(!GetExitCodeProcess(pi.process,out code))throw new Win32Exception();
+            using(var reader=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete)) {
+                long length=reader.Length;
+                if(length>16*1024*1024){code=-1;return "command output exceeded 16777216-byte protocol limit";}
+                var bytes=new byte[(int)length]; int offset=0;
+                while(offset<bytes.Length){int n=reader.Read(bytes,offset,bytes.Length-offset);if(n==0)break;offset+=n;}
+                return Console.OutputEncoding.GetString(bytes,0,offset);
+            }
+        } finally {
+            if(pi.thread!=IntPtr.Zero)CloseHandle(pi.thread);
+            if(pi.process!=IntPtr.Zero)CloseHandle(pi.process);
+            if(file!=new IntPtr(-1))CloseHandle(file);
+            File.Delete(path);
+        }
+    }
+}
+'@
+}
 function Invoke-B64([string]$b64, [bool]$usePwsh) {
     $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64))
+    Initialize-BvCommand
+    $code = 0
     if ($usePwsh) {
-        $out = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $cmd 2>&1 | Out-String)
+        $app = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        $arguments = '-NoProfile -ExecutionPolicy Bypass -EncodedCommand ' + [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
     } else {
-        $out = (& cmd.exe /c $cmd 2>&1 | Out-String)
+        $app = Join-Path $env:SystemRoot 'System32\cmd.exe'
+        $arguments = '/c "' + $cmd + '"'
     }
-    if ($null -eq $out) { $out = '' }
-    return @{ Exit = $LASTEXITCODE; Out = $out }
+    $out = [BvCommand]::Run($app, $arguments, [ref]$code)
+    return @{ Exit = $code; Out = $out }
 }
 
 function Write-CommandResult($handle, $result) {

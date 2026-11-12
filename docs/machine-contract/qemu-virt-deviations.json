@@ -50,6 +50,15 @@
       "evidence": "crates/bridgevm-hvf/src/net_nat/tests/idle_sweep.rs"
     },
     {
+      "id": "guest-agent-display-adapter-report",
+      "area": "guest-agent",
+      "qemu_behavior": "QEMU has no BridgeVM DISPLAYMODE or BVDISPLAY guest-agent protocol.",
+      "bridgevm_behavior": "BVDISPLAY adds virtio=found|none for whether Windows EnumDisplayDevices exposes a 1AF4:1050 display adapter. The host treats an absent or unknown field as unknown. With the saved display-driver-installed flag and virtio=none, the VM window offers one dismissible diagnostic per run without clearing the flag, retrying or blocking commands.",
+      "guest_visible": true,
+      "impact": "A staged driver that did not bind no longer silently hides the display notice; Windows Device Manager is the suggested next action. This reports the display adapter, not driver-store installation status.",
+      "evidence": "apps/macos/Tests/BridgeVMControlTests/HvfDisplayDriverNoticeTests.swift"
+    },
+    {
       "id": "gic-in-kernel",
       "area": "interrupt-controller",
       "qemu_behavior": "Userspace-modelled GICv3 with fully observable distributor, redistributor and CPU interface state, and observable timer interrupt delivery.",

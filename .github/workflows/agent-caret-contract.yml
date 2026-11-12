@@ -25,6 +25,7 @@ on:
       - tests/integration/agent-start-apps-contract.ps1
       - .github/workflows/agent-start-apps-contract.yml
       - scripts/test-bvagent-update.ps1
+      - tests/integration/agent-run-contract.ps1
       - scripts/win-assets/bvagent-update.ps1
       - scripts/win-assets/bvagent-task.ps1
       - .github/workflows/agent-update-contract.yml
@@ -155,6 +156,19 @@ jobs:
         if: ${{ !cancelled() }}
         shell: pwsh
         run: scripts/test-bvagent-update.ps1
+  run-command:
+    name: A command that leaves a program running still returns
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: RUN and PS return when the command exits (Windows PowerShell 5.1)
+        shell: powershell
+        run: tests/integration/agent-run-contract.ps1
+      - name: The same under PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: tests/integration/agent-run-contract.ps1
   firstboot-provisioner:
     name: Committed first-logon provisioner against a staged receipt
     runs-on: windows-2025

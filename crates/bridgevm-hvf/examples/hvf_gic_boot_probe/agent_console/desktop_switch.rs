@@ -16,7 +16,8 @@
 //! the current one was the previous custom size. If Windows refuses it, the
 //! unchanged configuration is applied. Without a virtio display the primary
 //! display is switched directly, as before. The script prints one
-//! `BVDISPLAY` line.
+//! `BVDISPLAY` line. `virtio=found|none` reports whether EnumDisplayDevices
+//! exposed a 1AF4:1050 display adapter, not whether its driver was merely staged.
 //!
 //! The request goes to the agent as `DISPLAYMODE W H`, which runs this C#
 //! compiled once in the agent process, and as this RUN powershell line to an
@@ -86,7 +87,7 @@ pub(super) const SCRIPT_BODY: &str = concat!(
     r#"res=f==null?"not_listed":""+C(t,f,1);if(res=="0"&&S(t)==want||DateTime.Now>end)break;"#,
     r#"force=Force(w,h);Thread.Sleep(400);}"#,
     r#"Scan();"#,
-    r#"return "BVDISPLAY target="+want+" before="+before+" after="+S(t)+" primary="+Pr+" layout="+lay+" detached="+(det.Count==0?"none":string.Join(",",det))+" force="+force+" result="+res;}}';"#,
+    r#"return "BVDISPLAY target="+want+" virtio="+(t==null?"none":"found")+" before="+before+" after="+S(t)+" primary="+Pr+" layout="+lay+" detached="+(det.Count==0?"none":string.Join(",",det))+" force="+force+" result="+res;}}';"#,
 );
 
 fn requested() -> &'static AtomicU64 {
