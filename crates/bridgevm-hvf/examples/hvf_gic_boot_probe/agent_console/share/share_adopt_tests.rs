@@ -3,6 +3,8 @@
 //! was off.
 
 use super::*;
+#[path = "share_unclean_tests.rs"]
+mod unclean;
 
 #[test]
 fn a_new_session_sends_only_what_changed_while_the_vm_was_off() {
