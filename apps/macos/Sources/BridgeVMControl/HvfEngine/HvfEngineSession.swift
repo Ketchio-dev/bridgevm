@@ -27,17 +27,23 @@ final class HvfEngineSession: ObservableObject {
     var reservedWorkAdmission: (@MainActor (UUID, Bool) -> String?)?
     var onConfigurationPersisted: (@MainActor (_ previous: VMConfig, _ saved: VMConfig) -> Void)? // library rebind + reload
     var ownedStartOperation: HvfOwnedStartOperation?
-    var ownedStartExecution: HvfOwnedStartExecution?
+    var ownedStartExecution: HvfOwnedStartExecution? { didSet { updateSleepPrevention() } }
     var guiStartOperation: HvfGUIStartOperation?
-    var guiStartExecution: HvfGUIStartExecution?
+    var guiStartExecution: HvfGUIStartExecution? { didSet { updateSleepPrevention() } }
     var guiStartCleanupOnly = false
     var guiStartWorker: HvfGUIStartExecution.Worker = HvfGUIStartWorker.run
     var mutationReservation: HvfRuntimeMutationReservation?
     var ownedStartNow: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     var ownedStartWorker: HvfOwnedStartExecution.Worker = HvfOwnedStartExecution.run
     let workAdmissionGate = HvfRuntimeWorkAdmissionGate()
-    var process: Process?
-    var ownedController: HvfOwnedRunController?
+    let sleepPreventionID = UUID()
+    var sleepPrevention = ControlAppPower.shared
+    func updateSleepPrevention() {
+        sleepPrevention.update(sleepPreventionID, active: ownedStartExecution != nil || guiStartExecution != nil
+            || process?.isRunning == true || ownedController?.mayHaveOwnedWork == true || attachedToExistingProcess)
+    }
+    var process: Process? { didSet { updateSleepPrevention() } }
+    var ownedController: HvfOwnedRunController? { didSet { updateSleepPrevention() } }
     @Published var forceStopTarget: HvfForceStopTarget?
     @Published var stopWait: HvfGuestStopWait? // what Windows is doing while a Stop waits for it
     @Published var restartRequest: HvfPendingRestart? // a Restart or Reset sent this boot (HvfGuestRestart)
@@ -89,7 +95,7 @@ final class HvfEngineSession: ObservableObject {
     var textInputTarget: HvfTextInputTargetIdentity { .init(owner: ObjectIdentifier(self), generation: inputDriver.textInputGeneration, binding: inputBinding) }
     var stopCommandSent = false
     var stopDeadline: Date?
-    var attachedToExistingProcess = false
+    var attachedToExistingProcess = false { didSet { updateSleepPrevention() } }
     var nextAttachedLivenessCheck = Date.distantPast
     private let liveInputFile = HvfLiveInputFile()
     var liveInputWriteFailureReported = false
@@ -123,6 +129,8 @@ final class HvfEngineSession: ObservableObject {
         timer?.invalidate()
         if ownedController == nil { process?.terminate() }
         liveInputFile.close()
+        let id = sleepPreventionID, power = sleepPrevention
+        Task { @MainActor in power.update(id, active: false) }
     }
 
     func ownedRuntimeChanged(token: UUID) { // runs on every controller tick: assign only a changed state
@@ -135,6 +143,7 @@ final class HvfEngineSession: ObservableObject {
         }
         else if controller.operation != nil { if connectionState != .stopping { connectionState = .stopping } }
         refreshForceStopTarget()
+        updateSleepPrevention()
     }
 
     @discardableResult

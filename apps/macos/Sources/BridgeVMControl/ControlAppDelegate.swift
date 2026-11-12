@@ -8,6 +8,11 @@ final class ControlAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ControlAppActivation.activate()
+        ControlAppPower.shared.failure = {
+            let alert = NSAlert()
+            alert.messageText = "Mac 잠자기를 막지 못했으니 긴 작업 중에는 Mac의 잠자기 설정을 확인하세요."
+            alert.runModal()
+        }
         #if DEBUG && BRIDGEVM_APP_UI_HOST
         AppUIHost.prepared?.applicationDidFinishLaunching(notification)
         #endif
@@ -50,6 +55,9 @@ final class ControlAppDelegate: NSObject, NSApplicationDelegate {
             })
     }
     /// Runs only after every stop above has completed: releases the library owner lock.
-    func applicationWillTerminate(_ notification: Notification) { NativeRuntimeAppOwner.shutdown() }
+    func applicationWillTerminate(_ notification: Notification) {
+        ControlAppPower.shared.shutdown()
+        NativeRuntimeAppOwner.shutdown()
+    }
 }
 #endif
