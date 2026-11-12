@@ -28,7 +28,7 @@ extension VMConfig {
 }
 
 extension HvfEngineConfig {
-    static let shareUnavailableMessage = "공유 폴더를 사용할 수 없어 이번 시작에는 공유를 껐습니다. 설정에서 공유 폴더를 다시 선택하세요."
+    static let shareUnavailableMessage = "공유 폴더를 사용할 수 없어 이번 시작에는 공유를 껐으니 설정에서 공유 폴더를 다시 선택하세요."
 
     /// A launch-only copy: never clears or rewrites the saved preference.
     func preparingSharedFolder(diagnostic: (String) -> Void) -> HvfEngineConfig {
