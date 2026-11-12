@@ -5,6 +5,15 @@
   "summary": "BridgeVM presents a QEMU virt-compatible guest contract so stock ArmVirtQemu firmware and stock Windows 11 ARM media work unmodified. It is not bit-identical. Every known deviation is listed here.",
   "deviations": [
     {
+      "id": "fwcfg-dma-write-capacity",
+      "area": "firmware",
+      "qemu_behavior": "Writable fw_cfg entry DMA behavior is defined by the entry callback.",
+      "bridgevm_behavior": "A DMA write exceeding the selected writable entry's remaining capacity returns DMA_CTL_ERROR before reading any payload, without changing the entry or cursor.",
+      "guest_visible": true,
+      "impact": "Oversized requests cannot cause millions of guest-memory probes. The firmware ramfb write of 28 bytes at offset zero still succeeds.",
+      "evidence": "crates/bridgevm-hvf/src/fwcfg_tests.rs"
+    },
+    {
       "id": "ramfb-shared-snapshot-limit",
       "area": "graphics",
       "qemu_behavior": "ramfb geometry and host capture allocation limits depend on the display backend.",
