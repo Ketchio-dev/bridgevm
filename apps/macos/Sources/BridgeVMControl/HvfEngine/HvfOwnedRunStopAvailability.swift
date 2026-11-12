@@ -13,7 +13,7 @@ extension HvfOwnedRunController {
     }
 
     var forceStopTarget: HvfForceStopTarget? {
-        guard waitsForGuestShutdown, let operation else { return nil }
+        guard waitsForGuestShutdown || canForceAfterSupervisionLoss, let operation else { return nil }
         return HvfForceStopTarget(identity: identity, operationID: operation.operationID)
     }
 

@@ -72,7 +72,7 @@ final class HvfOwnedRunController {
             graceDeadline = time + Self.guestGrace
             requestGuestIfReady()
             if !serviceReady, let pressPowerButton { pressGuestPowerButton(pressPowerButton) }
-        } else { cancelRunner() }
+        } else if !supervisionLost { cancelRunner() }
         tick()
         return .accepted(ticket)
     }
@@ -83,7 +83,15 @@ final class HvfOwnedRunController {
     func requestForceStop(_ target: HvfForceStopTarget) -> HvfForceStopResult {
         guard target.identity == identity else { return .refused(.targetChanged) }
         guard let operation, operation.operationID == target.operationID else { return .refused(.operationChanged) }
-        guard waitsForGuestShutdown else { return .refused(.notWaiting) }
+        guard waitsForGuestShutdown || canForceAfterSupervisionLoss else { return .refused(.notWaiting) }
+        if canForceAfterSupervisionLoss {
+            forceRequested = true
+            graceDeadline = nil; forceDeadline = nil; guestShutdown.close(); channel.close()
+            // Only this retained Process, never a PID lookup or an attached VM.
+            if process.isRunning, process.processIdentifier == identity.processID { process.terminate() }
+            tick()
+            return .requested
+        }
         graceDeadline = nil; forceRequested = true
         if serviceReady {
             let time = now(), limit = time + Self.forcedGuestWindow
@@ -151,7 +159,17 @@ final class HvfOwnedRunController {
             outputEnded = true; protocolValid = false; recordFailure(.channelFailed)
             onDiagnostic?("Owned runtime channel failed; cleanup remains unconfirmed")
         }
+        if supervisionLost, operation == nil {
+            // Admit one durable escalation target without cancelling until the user confirms.
+            _ = requestStop(target: identity, operationID: UUID())
+        }
         tick()
+    }
+
+    var supervisionLost: Bool { failure == .channelFailed || failure == .protocolInvalid }
+    var canForceAfterSupervisionLoss: Bool {
+        supervisionLost && !forceRequested && runnerExit == nil && process.isRunning
+            && process.processIdentifier == identity.processID
     }
 
     /// A held Stop has no deadline until the user escalates; Windows may be waiting on an app.
