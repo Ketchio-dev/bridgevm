@@ -94,6 +94,10 @@ final class HvfEngineSession: ObservableObject {
     var printSetupFailureShown = false
     var printQueue: [HvfGuestPrint.Job] = []
     var printShowing: URL?
+    var printPanelPresented = false
+    var printGeneration = UUID()
+    var printVerificationTask: Task<Void, Never>?
+    var printVerifier: @Sendable (HvfGuestPrint.Job) -> Bool = HvfGuestPrint.verified
     var printPresenter: any HvfPrintPresenter = HvfPDFPrintPresenter()
     let printNotice = HvfGuestPrintNotice()
     @Published var diskGrowNotice: String? // the guest's report on extending C: after a disk grow (HvfDiskGrow)
@@ -484,6 +488,7 @@ final class HvfEngineSession: ObservableObject {
     func markStopped() {
         guard !runtimeTransitionInProgress, !mayHaveOwnedWork else { return }
         runtimeTransitionInProgress = true
+        resetPendingPrintJobs()
         appPacing.end(evidenceDir: config.evidenceDir)
         if let process, let identity = ownedProcessIdentity, !process.isRunning {
             lastOwnedExit = HvfOwnedRuntimeExit(identity: identity, process: process)
@@ -527,6 +532,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     func resetObservedRuntimeState(clearEvents: Bool) {
+        resetPendingPrintJobs()
         if !hasPendingGUIStart { guiStartOperation = nil }
         appPacing.begin()
         legacyPaste = HvfLegacyPasteState()

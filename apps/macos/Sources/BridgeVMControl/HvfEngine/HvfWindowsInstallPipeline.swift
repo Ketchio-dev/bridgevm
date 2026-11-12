@@ -7,7 +7,8 @@ extension HvfWindowsInstallSession {
         do {
             sourceLock = try HvfWindowsInstallSourceLock(sourceImagePath: plan.sourceImagePath)
         } catch {
-            finish(.failed(error.localizedDescription))
+            appendLog(WindowsFileFailureFeedback.diagnostic("source-lock", error))
+            finish(.failed(WindowsFileFailureFeedback.source))
             return
         }
         defer { withExtendedLifetime(sourceLock) {} }
@@ -33,9 +34,17 @@ extension HvfWindowsInstallSession {
         guard !acknowledgeCancellation(cleanup: true) else { return }
         guard await continueFreshInstallation() else { return }
         do {
-            try execution.prepareMedia(plan)
+            try await execution.prepareMedia(plan)
         } catch {
-            failUnlessCancelled("설치 작업 파일을 준비하지 못했습니다: \(error.localizedDescription)")
+            appendLog(WindowsFileFailureFeedback.diagnostic("preparation", error))
+            failUnlessCancelled(WindowsFileFailureFeedback.preparation)
+            return
+        }
+        guard !acknowledgeCancellation(cleanup: true) else { return }
+        guard await continueFreshInstallation(cleanupOnCancellation: true) else { return }
+        guard !acknowledgeCancellation(cleanup: true) else { return }
+        if let refusal = continuationAdmission?() {
+            failUnlessCancelled(refusal)
             return
         }
         let installLog = URL(fileURLWithPath: plan.stagingEvidenceDir).appendingPathComponent("run.log")
@@ -54,7 +63,8 @@ extension HvfWindowsInstallSession {
             try await execution.finalize(plan)
             appendLog("UEFI 부팅 항목과 Microsoft-only Secure Boot 키를 검증·시드했습니다.")
         } catch {
-            finish(.failed("설치 결과 반영 실패: \(error.localizedDescription)"))
+            appendLog(WindowsFileFailureFeedback.diagnostic("finalization", error))
+            finish(.failed(WindowsFileFailureFeedback.finalization))
             return
         }
         completeInstallation()
