@@ -33,6 +33,18 @@ final class HvfVMSettingsDraftTests: XCTestCase {
         XCTAssertEqual(file.portForwards, "8080:80")
     }
 
+    func testStartIsRefusedWhileSettingsSheetIsOpen() throws {
+        let f = try HvfRuntimeSessionStoreFixture()
+        defer { f.clean() }
+        let library = f.library()
+        let session = library.experimentalHvfRuntimeSession()
+        session.settingsSheetOpen = true
+        guard case let .refused(message) = session.requestGUIStart(configuration: session.config) else {
+            return XCTFail("Start must not admit a visible settings draft")
+        }
+        XCTAssertEqual(message, "설정을 완료한 뒤 Windows를 시작하세요.")
+    }
+
     func testExperimentalTextCommitsReachLaunchConfiguration() throws {
         let f = try HvfRuntimeSessionStoreFixture()
         defer { f.clean() }

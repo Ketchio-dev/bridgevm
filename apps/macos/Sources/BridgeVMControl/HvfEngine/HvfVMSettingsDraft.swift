@@ -19,7 +19,7 @@ final class HvfVMSettingsDraft: ObservableObject {
         host = session.config.shareHostDir ?? ""
         guest = session.config.shareGuestDir ?? "C:\\bridgevm-share"
         forwards = HvfPortForwards.text(session.config.portForwards)
-        savedForwards = forwards
+        savedForwards = HvfPortForwards.text(session.config.portForwards)
         savedShare = session.config.shareHostDir.map {
             HvfSharedFolderSelection(hostPath: $0, guestPath: session.config.shareGuestDir ?? "")
         }

@@ -162,8 +162,8 @@ private struct HvfVirtualMachineMenuContent: View {
 
     var body: some View {
         Button("설정…") {
-            if let display = target.display { display.showsSettings = true }
-            else { showSettings?() }
+            if let showSettings { showSettings() }
+            else if let display = target.display { display.showsSettings = true }
         }
         .keyboardShortcut(",", modifiers: .command)
         .disabled(target.display == nil && showSettings == nil)
