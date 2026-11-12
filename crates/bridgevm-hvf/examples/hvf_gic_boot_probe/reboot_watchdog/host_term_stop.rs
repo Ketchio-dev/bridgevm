@@ -48,6 +48,14 @@ pub(crate) fn install_host_term_handler() {
         libc::sigemptyset(&mut action.sa_mask);
         libc::sigaction(libc::SIGTERM, &action, std::ptr::null_mut())
     };
+    if std::env::var_os("BRIDGEVM_RESET_GENERATION").is_some() {
+        std::thread::Builder::new().name("runner-exit-stop".into()).spawn(|| {
+            if crate::parent_watch::wait_for_runner_exit() {
+                // SAFETY: signal only this process; the installed handler routes it through persistence.
+                unsafe { libc::kill(libc::getpid(), libc::SIGTERM) };
+            }
+        }).expect("runner lifetime watcher");
+    }
     if status != 0 {
         println!(
             "HOST-TERM: handler unavailable ({}); TERM ends the run without persistence",

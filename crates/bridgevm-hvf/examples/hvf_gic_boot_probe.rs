@@ -122,6 +122,7 @@ probe_modules!(
     "hvf_gic_boot_probe/hvf_abi.rs" => hvf_abi,
     "hvf_gic_boot_probe/interrupt_delivery.rs" => interrupt_delivery,
     "hvf_gic_boot_probe/stop_media.rs" => stop_media,
+    "hvf_gic_boot_probe/parent_watch.rs" => parent_watch,
     "hvf_gic_boot_probe/probe_env.rs" => probe_env,
     "hvf_gic_boot_probe/psci_adapter.rs" => psci_adapter,
     "hvf_gic_boot_probe/reboot_watchdog.rs" => reboot_watchdog,

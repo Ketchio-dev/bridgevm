@@ -10,6 +10,28 @@ final class HvfGUIStartLibraryTests: XCTestCase {
             runnerPath: "", launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "", leasesPath: "",
             guestName: "fixture", displayWidth: 1280, displayHeight: 720, installPending: false)
     }
+    func testContextMenuAutoStartTogglePreservesPendingStartReservation() async throws {
+        let gate = HvfGUIStartGate()
+        let f = try HvfGUIStartFixture(rejectLaunch: true, probeGate: gate)
+        do {
+            let root = f.root.appendingPathComponent("library"), saved = config(f.root.appendingPathComponent("library"))
+            XCTAssertTrue(VMLibrary.save(saved, rootURL: root))
+            let library = LibraryModel(rootURL: root, migrateLegacy: false,
+                runtimeSessionFactory: { _ in f.session }, startsModelsAutomatically: false)
+            XCTAssertTrue(library.hvfRuntimeSession(for: saved) === f.session)
+            let ticket = try f.start()
+            try await f.wait { gate.state.entered }
+            XCTAssertTrue(f.session.checkReservedWork(ticket.id))
+            library.setStartWithBridgeVM(true, for: saved)
+            XCTAssertTrue(f.session.checkReservedWork(ticket.id),
+                "Changing next-launch preference must not orphan the pending start reservation")
+            XCTAssertNil(ticket.invalidationReason, "Context-menu preference must not invalidate an in-flight start")
+            XCTAssertEqual(library.latestConfiguration(for: saved).startWithBridgeVM, saved.startWithBridgeVM)
+            gate.release(); try await f.wait { !ticket.workerPending }
+        } catch { gate.release(); await f.clean(); throw error }
+        await f.clean()
+    }
+
     func testRemovedRegistrationKeepsPendingSessionAndRefusesNewEffectsAfterWorkerReturns() async throws {
         let gate = HvfGUIStartGate()
         let f = try HvfGUIStartFixture(encrypted: true, probeGate: gate)

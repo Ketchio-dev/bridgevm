@@ -11,6 +11,8 @@ mod write_policy;
 mod root_fd;
 #[path = "host_destination_snapshot_tests.rs"]
 mod snapshot;
+#[path = "host_conflict_tests.rs"]
+mod conflict;
 
 static FIXTURE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 struct Fixture { path: std::path::PathBuf, _lock: std::sync::MutexGuard<'static, ()> }

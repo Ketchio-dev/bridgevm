@@ -9,6 +9,7 @@ mod dci5_endpoint_state;
 mod device_context;
 mod device_context_mem;
 mod event;
+mod hid_endpoint;
 mod hid_semantics;
 mod interrupt_in;
 mod interrupt_pointer;
@@ -88,6 +89,7 @@ pub struct XhciController {
     pending_interrupter_bits: u32,
     pending_enabled_interrupter_bits: u32,
     port_status_change_pending: bool,
+    hid_endpoints: [hid_endpoint::HidEndpoint; 2],
     slot1_ep0_dequeue: u64,
     slot1_ep0_dcs: bool,
     slot1_dci3_dequeue: u64,
@@ -254,6 +256,8 @@ mod hid_report_descriptor_tests;
 mod hid_semantic_stats_test_support;
 #[cfg(test)]
 mod hid_semantic_stats_tests;
+#[cfg(test)]
+mod hid_stop_tests;
 #[cfg(test)]
 mod hid_unsupported_semantic_stats_tests;
 #[cfg(test)]

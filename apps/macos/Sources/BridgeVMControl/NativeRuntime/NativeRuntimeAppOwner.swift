@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import AppKit
 
 /// Ordinary app admission precedes App.main and all library model effects.
 @MainActor
@@ -25,6 +26,7 @@ final class NativeRuntimeAppOwner {
     }
 
     static func prepareOrExit(arguments: [String]) {
+        ControlAutoStart.skipAtLaunch = NSEvent.modifierFlags.contains(.option)
         ControlCommandDispatch.validateOrExit(arguments: arguments)
         do {
             let instance = try NativeRuntimeAppOwner(options: BridgeVMControlLaunchOptions.parse(arguments: arguments))

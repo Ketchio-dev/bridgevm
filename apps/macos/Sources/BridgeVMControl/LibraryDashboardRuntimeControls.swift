@@ -54,7 +54,7 @@ struct LibraryDashboardRuntimeControls: View {
         }
     }
 
-    private var runtimeActive: Bool { model.running || session.hasActiveRuntimeWork }
+    private var runtimeActive: Bool { !session.runnerDiedWithoutCleanup && (model.running || session.hasActiveRuntimeWork) }
     private var lifecycleBusy: Bool {
         model.lifecycleBusy || session.runtimeStartupWorkerPending || session.connectionState == .stopping
     }

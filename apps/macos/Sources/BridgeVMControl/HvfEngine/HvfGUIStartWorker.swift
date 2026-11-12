@@ -10,7 +10,18 @@ enum HvfGUIStartWorker {
         defer { let count = key?.count ?? 0; key?.resetBytes(in: 0..<count) }
         do {
             try await checkAdmission(input)
-            let existing = input.processIsRunning(input.config.targetDiskPath)
+            if input.retryAfterRunnerDeath {
+                do {
+                    let lease = try HvfMediaLeaseSession(
+                        executable: input.repoRoot.appendingPathComponent("target/release/examples/snapshot_pair_cli"),
+                        disk: input.config.targetDiskPath, vars: input.config.uefiVarsPath)
+                    try lease.finish()
+                } catch {
+                    diagnostics.append("Runner-death retry media lease: \(error.localizedDescription)")
+                    return .init(result: .refused("이전 Windows가 파일을 정리하고 있으니 잠시 후 다시 시작하세요."), diagnostics: diagnostics)
+                }
+            }
+            let existing = input.retryAfterRunnerDeath ? false : input.processIsRunning(input.config.targetDiskPath)
             try await checkAdmission(input)
             if existing {
                 return .init(result: input.policy == .attachOrStart ? .observedAttachment

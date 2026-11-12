@@ -41,8 +41,14 @@ impl XhciController {
         }
         match target {
             ENDPOINT_ID_EP0 => self.process_ep0_doorbell(mem),
-            ENDPOINT_ID_DCI3 => self.process_dci3_interrupt_in_transfer_after_doorbell(mem),
-            ENDPOINT_ID_DCI5 => self.process_dci5_interrupt_in_transfer_after_doorbell(mem),
+            ENDPOINT_ID_DCI3 => {
+                self.restart_hid(mem, ENDPOINT_ID_DCI3);
+                self.process_dci3_interrupt_in_transfer_after_doorbell(mem)
+            }
+            ENDPOINT_ID_DCI5 => {
+                self.restart_hid(mem, ENDPOINT_ID_DCI5);
+                self.process_dci5_interrupt_in_transfer_after_doorbell(mem)
+            }
             _ => false,
         }
     }

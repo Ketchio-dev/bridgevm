@@ -43,6 +43,9 @@ impl XhciController {
         mem: &mut dyn GuestMemoryMut,
         rearm_policy: Dci3RearmPolicy,
     ) -> bool {
+        if matches!(self.hid_endpoints[0].state, 2..=4) {
+            return false;
+        }
         for _ in 0..MAX_LINK_TRBS_PER_DOORBELL {
             let transfer_ring = self.slot1_dci3_dequeue;
             if transfer_ring == 0 {
@@ -89,6 +92,8 @@ impl XhciController {
                     self.write_slot1_dci3_output_dequeue(mem);
                 }
                 TRB_TYPE_NORMAL => {
+                    self.hid_endpoints[0].pending =
+                        Some((interrupt_transfer.gpa, interrupt_transfer.status));
                     // Windows chains the interrupt-IN Normal TRB to an Event
                     // Data TRB carrying the URB cookie; the TD completes with
                     // one Event Data completion instead of a per-TRB event.
@@ -166,6 +171,7 @@ impl XhciController {
                         }
                     };
                     if posted {
+                        self.hid_endpoints[0].pending = None;
                         if can_emit_queued_report {
                             self.record_setup_input_report_emitted(
                                 queued_report,
