@@ -1,5 +1,8 @@
 ﻿# Install only the agent; imported Windows must already have the serial driver.
 $ErrorActionPreference = 'Stop'
+function Test-GuestToolsSerialDevice([scriptblock]$Query = { Get-PnpDevice -PresentOnly }) {
+    return @(& $Query | Where-Object { $_.InstanceId -match '^PCI\\VEN_1AF4&DEV_(1043|1003)(&|\\)' -and $_.Status -eq 'OK' }).Count -gt 0
+}
 function Assert-ToolsFolder([string]$Path) {
     if ((Get-Item -LiteralPath $Path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Unsafe installation folder' }
     $acl = Get-Acl -LiteralPath $Path
@@ -27,8 +30,7 @@ try {
         $child = Start-Process powershell.exe -ArgumentList $args -Verb RunAs -Wait -PassThru
         exit $child.ExitCode
     }
-    $serial = @(Get-CimInstance Win32_SystemDriver -Filter "Name='vioser'" | Where-Object { $_.State -eq 'Running' })
-    if ($serial.Count -eq 0) {
+    if (-not (Test-GuestToolsSerialDevice)) {
         Write-Host '이 Windows에는 연결 드라이버가 없어 게스트 도구를 설치할 수 없습니다.'
         Write-Host 'Guest tools cannot be installed because this Windows does not have the connection driver.'
         Read-Host 'Enter'
