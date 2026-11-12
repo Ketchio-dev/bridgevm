@@ -10,6 +10,11 @@ final class ControlAppPowerTests: XCTestCase {
         func acquire() -> Bool { acquired += 1; return succeeds }
         func release() { released += 1 }
     }
+    func testDiagnosticAssertionNameIsNonemptyASCII() {
+        let name = ControlSystemPowerAssertion.diagnosticName
+        XCTAssertFalse(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        XCTAssertTrue(name.utf8.allSatisfy { $0 < 128 }, "pmset must print the diagnostic name: \(String(reflecting: name))")
+    }
     func testOptionalPowerFailureNeverPresentsModalAlert() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Sources/BridgeVMControl/ControlAppDelegate.swift")

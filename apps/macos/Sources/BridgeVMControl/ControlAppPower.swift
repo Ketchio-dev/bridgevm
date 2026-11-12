@@ -11,11 +11,13 @@ protocol ControlPowerAsserting {
 
 @MainActor
 final class ControlSystemPowerAssertion: ControlPowerAsserting {
+    // pmset renders a non-ASCII assertion name as empty; this is a diagnostic, not UI text.
+    static let diagnosticName = "BridgeVM: Windows is running"
     private var assertion: IOPMAssertionID?
     func acquire() -> Bool {
         var id: IOPMAssertionID = 0
         let result = IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
-            IOPMAssertionLevel(kIOPMAssertionLevelOn), "Windows 실행 중 Mac 잠자기 방지" as CFString, &id)
+            IOPMAssertionLevel(kIOPMAssertionLevelOn), Self.diagnosticName as CFString, &id)
         if result == kIOReturnSuccess { assertion = id; return true }
         return false
     }
