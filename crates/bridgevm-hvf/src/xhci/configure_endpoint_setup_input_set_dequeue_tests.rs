@@ -21,6 +21,14 @@ fn slot1_dci3_set_tr_dequeue_pointer_moves_interrupt_ring() {
     let mut mem = TestRam::new(0x9000);
     setup_configure_endpoint_command(&mut xhci, &mut mem);
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
+    // Set TR Dequeue Pointer is legal only after Stop Endpoint.
+    setup_command_rings_with_parameter(
+        &mut xhci,
+        &mut mem,
+        0,
+        command_control(15, ENABLE_SLOT_ID) | (DCI3 << COMMAND_ENDPOINT_ID_SHIFT),
+    );
+    assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
     write_dci3_normal_trb(&mut mem, NEW_DCI3_RING, NEW_DCI3_BUFFER, true);
     assert!(mem.write_bytes(NEW_DCI3_BUFFER, &[0xcc; 8]));
     setup_set_dci3_dequeue_pointer_command(&mut xhci, &mut mem, NEW_DCI3_RING | TRB_CYCLE);

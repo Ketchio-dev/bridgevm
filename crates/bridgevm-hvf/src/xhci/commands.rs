@@ -17,6 +17,7 @@ const TRB_TYPE_DISABLE_SLOT: u32 = 10;
 const TRB_TYPE_ADDRESS_DEVICE: u32 = 11;
 const TRB_TYPE_CONFIGURE_ENDPOINT: u32 = 12;
 const TRB_TYPE_EVALUATE_CONTEXT: u32 = 13;
+const TRB_TYPE_RESET_ENDPOINT: u32 = 14;
 const TRB_TYPE_STOP_ENDPOINT: u32 = 15;
 const TRB_TYPE_SET_TR_DEQUEUE_POINTER: u32 = 16;
 const TRB_TYPE_RESET_DEVICE: u32 = 17;
@@ -96,9 +97,53 @@ impl XhciController {
                     }
                     return posted;
                 }
+                TRB_TYPE_RESET_ENDPOINT => {
+                    let slot_id = command_slot_id(command_control);
+                    let endpoint_id = command_endpoint_id(command_control);
+                    let code = if slot_id != SLOT_ID {
+                        11
+                    } else if let Some(i) = Self::hid_index(endpoint_id) {
+                        match self.hid_endpoints[i].state {
+                            0 => 12,
+                            2 => {
+                                self.hid_endpoints[i].pending = None;
+                                self.hid_endpoints[i].state = 3;
+                                self.publish_hid_state(mem, endpoint_id);
+                                1
+                            }
+                            _ => 19,
+                        }
+                    } else {
+                        12
+                    };
+                    let posted = self.post_command_completion_code(mem, command_trb, slot_id, code);
+                    if posted {
+                        self.advance_command_dequeue(command_trb);
+                    }
+                    return posted;
+                }
                 TRB_TYPE_STOP_ENDPOINT => {
                     let slot_id = command_slot_id(command_control);
                     let endpoint_id = command_endpoint_id(command_control);
+                    if slot_id == SLOT_ID {
+                        if let Some(i) = Self::hid_index(endpoint_id) {
+                            if self.hid_endpoints[i].state == 0 {
+                                let posted = self.post_command_completion_code(
+                                    mem,
+                                    command_trb,
+                                    slot_id,
+                                    12,
+                                );
+                                if posted {
+                                    self.advance_command_dequeue(command_trb);
+                                }
+                                return posted;
+                            }
+                            if !self.stop_hid(mem, endpoint_id) {
+                                return false;
+                            }
+                        }
+                    }
                     let posted = self.post_command_completion(mem, command_trb, slot_id);
                     if posted {
                         if slot_id == SLOT_ID && endpoint_id == ENDPOINT_ID_EP0 {
@@ -114,6 +159,23 @@ impl XhciController {
                     };
                     let slot_id = command_slot_id(command_control);
                     if slot_id == SLOT_ID {
+                        if let Some(i) = Self::hid_index(command_endpoint_id(command_control)) {
+                            let state = self.hid_endpoints[i].state;
+                            if state != 3 {
+                                let code = if state == 0 { 12 } else { 19 };
+                                let posted = self.post_command_completion_code(
+                                    mem,
+                                    command_trb,
+                                    slot_id,
+                                    code,
+                                );
+                                if posted {
+                                    self.advance_command_dequeue(command_trb);
+                                }
+                                return posted;
+                            }
+                            self.hid_endpoints[i].pending = None;
+                        }
                         match command_endpoint_id(command_control) {
                             ENDPOINT_ID_EP0 => {
                                 self.slot1_ep0_dequeue = raw_dequeue & TR_DEQUEUE_POINTER_MASK;
@@ -217,12 +279,17 @@ impl XhciController {
         command_trb: u64,
         slot_id: u32,
     ) -> bool {
-        self.post_event(
-            mem,
-            command_trb,
-            COMPLETION_CODE_SUCCESS << 24,
-            event_control(slot_id),
-        )
+        self.post_command_completion_code(mem, command_trb, slot_id, COMPLETION_CODE_SUCCESS)
+    }
+
+    fn post_command_completion_code(
+        &mut self,
+        mem: &mut dyn GuestMemoryMut,
+        command_trb: u64,
+        slot_id: u32,
+        code: u32,
+    ) -> bool {
+        self.post_event(mem, command_trb, code << 24, event_control(slot_id))
     }
 
     fn advance_command_dequeue(&mut self, command_trb: u64) {

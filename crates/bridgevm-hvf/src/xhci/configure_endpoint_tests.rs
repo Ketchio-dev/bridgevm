@@ -42,15 +42,22 @@ fn configure_endpoint_command_copies_dci3_context_and_posts_completion() {
     // When: the guest rings host-controller doorbell 0 for Configure Endpoint type 12.
     assert!(xhci.mmio_write_with_mem(DOORBELL_BASE, 4, 0, &mut mem));
 
-    // Then: DCI3 is copied into the output context and command completion advances CRCR.
+    // Then: controller-owned EP State is Running; the remaining context is copied.
+    assert_eq!(
+        mem.read_u32(OUTPUT_CONTEXT + DCI3_OUTPUT_CONTEXT_OFFSET) & 7,
+        1
+    );
     assert_eq!(
         mem.read_bytes(
-            OUTPUT_CONTEXT + DCI3_OUTPUT_CONTEXT_OFFSET,
-            EP_CONTEXT_BYTES
+            OUTPUT_CONTEXT + DCI3_OUTPUT_CONTEXT_OFFSET + 4,
+            EP_CONTEXT_BYTES - 4
         )
         .unwrap(),
-        mem.read_bytes(INPUT_CONTEXT + DCI3_INPUT_CONTEXT_OFFSET, EP_CONTEXT_BYTES)
-            .unwrap()
+        mem.read_bytes(
+            INPUT_CONTEXT + DCI3_INPUT_CONTEXT_OFFSET + 4,
+            EP_CONTEXT_BYTES - 4
+        )
+        .unwrap()
     );
     assert_eq!(xhci.slot1_dci3_dequeue, DCI3_RING);
     assert_success_completion(&mem, EVENT_RING, CMD_RING, ENABLE_SLOT_ID);
