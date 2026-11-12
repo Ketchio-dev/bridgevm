@@ -150,6 +150,11 @@ impl ServiceThread {
     /// Called only at the observed PSCI SYSTEM_OFF boundary, never reset or host teardown.
     pub fn guest_powered_off(&mut self) {
         self.shared.guest_powered_off.store(true, Ordering::Release);
+        self.shared.stop.store(true, Ordering::Release);
+        if let Some(thread) = self.thread.take() {
+            thread.thread().unpark();
+            let _ = thread.join();
+        }
     }
 
     /// Windows' clock is behind by `paused` (time_resync.rs).
@@ -194,7 +199,10 @@ fn serve(
         if shared.stop.load(Ordering::Acquire) {
             if shared.guest_powered_off.load(Ordering::Acquire) {
                 if let Some(share) = harness.share.as_mut() {
-                    if let Some(file) = share.sync_file.as_mut() { file.finish_clean(&mut share.engine); }
+                    // A still-running piecewise publisher has not finished the share state.
+                    if share.big.is_none() {
+                        if let Some(file) = share.sync_file.as_mut() { file.finish_clean(&mut share.engine); }
+                    }
                 }
             }
             return;

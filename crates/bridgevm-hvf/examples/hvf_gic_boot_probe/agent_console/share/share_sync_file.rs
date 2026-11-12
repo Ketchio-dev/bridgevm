@@ -233,7 +233,10 @@ impl SyncStateFile {
         file.previous_unclean = std::fs::read_to_string(&file.versions).ok()
             .is_none_or(|text| !text.lines().any(|line| line == "session clean"));
         // Persist uncertainty before any share mutation, including when old state was loaded.
-        if let Err(error) = file.write_session(false, &files) { unremoved = Some(error); }
+        if let Err(error) = file.write_session(false, &files) {
+            file.previous_unclean = true;
+            unremoved = Some(error);
+        }
         (file, files, marks, unremoved)
     }
 
@@ -485,6 +488,7 @@ fn run(versions: &Path, marks: &MarksFile, root: &str, mut files: HashMap<String
             continue;
         }
         if let Err(error) = write_replace(versions, text.as_bytes()) {
+            marks.failed.store(true, Ordering::Release);
             if !warned {
                 println!("BVAGENT SHARE sync-state unwritable {error}");
                 warned = true;
