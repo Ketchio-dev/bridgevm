@@ -11,6 +11,7 @@ final class HvfDisplayWindowState: ObservableObject {
     weak var window: NSWindow?
     @Published var showsWindowInventory = false
     @Published var showsAllApps = false
+    @Published var showsSettings = false
 
     init(session: HvfEngineSession) {
         self.session = session
@@ -146,7 +147,7 @@ extension HvfDisplayWindowState {
     }
 }
 
-/// The menu bar's 가상 머신 menu. No key equivalents: every key in the VM window goes to Windows.
+/// The menu bar's 가상 머신 menu. Cmd+, opens this VM's settings.
 struct HvfVirtualMachineCommands: Commands {
     var body: some Commands {
         CommandMenu("가상 머신") { HvfVirtualMachineMenuContent() }
@@ -157,8 +158,16 @@ struct HvfVirtualMachineCommands: Commands {
 /// window in front and its session's state at that moment.
 private struct HvfVirtualMachineMenuContent: View {
     @ObservedObject var target = HvfVirtualMachineMenuTarget.shared
+    @FocusedValue(\.hvfVMSettings) private var showSettings
 
     var body: some View {
+        Button("설정…") {
+            if let display = target.display { display.showsSettings = true }
+            else { showSettings?() }
+        }
+        .keyboardShortcut(",", modifiers: .command)
+        .disabled(target.display == nil && showSettings == nil)
+        Divider()
         if let display = target.display {
             HvfVirtualMachineSessionMenuItems(display: display, session: display.session)
         } else {
