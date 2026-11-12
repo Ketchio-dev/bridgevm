@@ -58,7 +58,11 @@ fn managed_pair_kept_in_a_directory_named_metadata_is_one_binding() {
     restore_snapshot(&snapshot, &disk, &vars, false).unwrap();
     let dest = root.join("import");
     let imported = import_disk(&disk, &dest).map_err(|e| e.to_string());
-    assert_eq!(imported, Ok(true), "one managed pair must import with its vars");
+    assert_eq!(
+        imported,
+        Ok(true),
+        "one managed pair must import with its vars"
+    );
     assert_eq!(fs::read(dest.join("disk.raw")).unwrap(), b"old");
     assert_eq!(fs::read(dest.join("vars.fd")).unwrap(), b"vars-old");
     fs::remove_dir_all(root).unwrap();
