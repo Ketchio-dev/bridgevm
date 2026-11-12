@@ -23,7 +23,7 @@ struct SettingsView: View {
 
                 Label(settings.daemonModeSummary, systemImage: settings.useMockInventory ? "shippingbox" : "server.rack")
                     .font(.callout)
-                    .foregroundStyle(settings.hasValidDaemonSettings ? Color.secondary : Color.red)
+                    .foregroundStyle(Color.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let bundledDaemonLaunchReport {
@@ -74,7 +74,7 @@ struct SettingsView: View {
                         onApply()
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!settings.hasPendingChanges || !settings.hasValidDaemonSettings)
+                    .disabled(!settings.hasPendingChanges)
                     .help(settingsApplyHelp)
                 }
             }
@@ -102,7 +102,7 @@ struct SettingsView: View {
                         Text("Run Health Check")
                     }
                 }
-                .disabled(storeDoctorState == .checking || !settings.hasValidDaemonSettings)
+                .disabled(storeDoctorState == .checking)
                 .help("Ask the daemon for store metadata without launching a VM")
             }
 
@@ -141,9 +141,6 @@ struct SettingsView: View {
     }
 
     private var settingsApplyHelp: String {
-        if !settings.hasValidDaemonSettings {
-            return "Use a daemon socket path or mock inventory"
-        }
         return settings.hasPendingChanges ? "Apply settings to the dashboard" : "Settings already applied"
     }
 
