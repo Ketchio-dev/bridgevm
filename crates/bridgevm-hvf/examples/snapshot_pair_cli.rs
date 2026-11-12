@@ -22,6 +22,13 @@ fn main() -> ExitCode {
         ("size", 3) => return bridgevm_hvf::snapshot_pair::size::command(&args[1..]),
         ("grow", 4) => return bridgevm_hvf::snapshot_pair::grow::command(&args[1..]),
         ("convert-to-raw", 3) => return bridgevm_hvf::disk_import::command(&args[1..]),
+        ("import-disk", 3) => {
+            return match bridgevm_hvf::snapshot_pair::import_disk::import_disk(
+                Path::new(&args[1]), Path::new(&args[2])) {
+                Ok(paired) => { println!("paired_vars {paired}"); ExitCode::SUCCESS }
+                Err(error) => { eprintln!("{error}"); ExitCode::FAILURE }
+            };
+        }
         ("create", 6) => {
             let Ok(quota) = args[5].parse::<u64>() else {
                 eprintln!("quota must be a number of bytes");

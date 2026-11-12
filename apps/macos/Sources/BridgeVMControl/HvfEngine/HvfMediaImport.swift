@@ -24,18 +24,24 @@ enum HvfMediaImport {
                     converting(format, $0)
                 }
             } else {
-                guard VMLibrary.cloneOrCopyFile(from: disk, to: copiedDisk.path) else {
-                    throw CocoaError(.fileWriteUnknown)
+                let selected = workspace.appendingPathComponent("selected.snapshot", isDirectory: true)
+                try HvfMediaImportHelper.invoke(helper, arguments: ["import-disk", disk, selected.path])
+                try fileManager.moveItem(at: selected.appendingPathComponent("disk.raw"), to: copiedDisk)
+                let pairedVars = selected.appendingPathComponent("vars.fd")
+                if fileManager.fileExists(atPath: pairedVars.path) {
+                    try fileManager.moveItem(at: pairedVars, to: seededVars)
                 }
             }
-            // Only the private copy is inspected; neither GPT reads nor seeding touch the source.
-            try HvfWindowsBootSeed.writeBundledSeed(to: seededVars.path)
-            do {
-                try HvfWindowsBootSeed.seedFile(varsPath: seededVars.path, diskPath: copiedDisk.path)
-            } catch HvfWindowsBootSeed.SeedError.gptUnreadable {
-                try HvfWindowsImportNotice.write(nextTo: toVars)
-            } catch HvfWindowsBootSeed.SeedError.espNotFound {
-                try HvfWindowsImportNotice.write(nextTo: toVars)
+            // Managed disks bring their selected vars. Seed only an unmanaged private copy.
+            if !fileManager.fileExists(atPath: seededVars.path) {
+                try HvfWindowsBootSeed.writeBundledSeed(to: seededVars.path)
+                do {
+                    try HvfWindowsBootSeed.seedFile(varsPath: seededVars.path, diskPath: copiedDisk.path)
+                } catch HvfWindowsBootSeed.SeedError.gptUnreadable {
+                    try HvfWindowsImportNotice.write(nextTo: toVars)
+                } catch HvfWindowsBootSeed.SeedError.espNotFound {
+                    try HvfWindowsImportNotice.write(nextTo: toVars)
+                }
             }
             members = [(copiedDisk, toDisk), (seededVars, toVars)]
         } else if let format = HvfImportedDiskFormat.detect(path: disk) {

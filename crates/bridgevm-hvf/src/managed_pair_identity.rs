@@ -38,6 +38,11 @@ fn legacy_root(disk: &Path, vars: &Path) -> PathBuf {
         .join(format!(".bridgevm-pair-{}", digest([disk, vars])))
 }
 
+pub(super) fn matches(disk: &Path, vars: &Path) -> io::Result<bool> {
+    Ok(super::private_directory(&stable_root(disk, vars), false)?
+        || super::private_directory(&legacy_root(disk, vars), false)?)
+}
+
 /// Caller owns logical disk/vars leases. Do not infer a binding from one orphan:
 /// it could belong to another VM, and guessing would boot the wrong guest state.
 pub(super) fn resolve(disk: &Path, vars: &Path) -> io::Result<PathBuf> {

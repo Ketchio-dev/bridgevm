@@ -78,6 +78,46 @@ final class HvfCurrentGenerationImportTests: XCTestCase {
         XCTAssertEqual(try prefix(fixture.vars), "vars-new")
     }
 
+    func testNoVarsBothEntryPointsCopySelectedGeneration() throws {
+        let fixture = try restoredFixture()
+        defer { fixture.remove() }
+        var inputs = fixture.inputs("first")
+        inputs.varsPath = ""
+        let beforeDisk = try FileManager.default.attributesOfItem(atPath: fixture.disk.path)[.modificationDate] as? Date
+        let beforeVars = try FileManager.default.attributesOfItem(atPath: fixture.vars.path)[.modificationDate] as? Date
+        let first = try FirstRunImport.register(inputs, slug: "first",
+            libraryRoot: fixture.root.appendingPathComponent("first-library"), snapshotHelper: helper)
+        guard case .created(let ordinary)? = VMLibrary.createWindowsHVF(name: "ordinary", targetDiskPath: fixture.disk.path,
+            varsPath: "", libraryRoot: fixture.root.appendingPathComponent("ordinary-library"),
+            persist: false, snapshotHelper: helper) else { return XCTFail("expected created") }
+        for config in [first, ordinary] {
+            let layout = FirstRunImport.BundleLayout(bundleURL: URL(fileURLWithPath: config.bundlePath))
+            XCTAssertEqual(try prefix(layout.diskURL), "disk-old")
+            XCTAssertEqual(try prefix(layout.varsURL), "vars-old")
+        }
+        try assertOriginals(fixture)
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: fixture.disk.path)[.modificationDate] as? Date, beforeDisk)
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: fixture.vars.path)[.modificationDate] as? Date, beforeVars)
+    }
+
+    func testNoVarsBothEntryPointsRefuseHeldNativeOwnership() throws {
+        let fixture = try restoredFixture()
+        defer { fixture.remove() }
+        let owner = try HvfMediaLeaseSession(executable: helper, disk: fixture.disk.path, vars: fixture.vars.path)
+        defer { owner.abort() }
+        var inputs = fixture.inputs("first")
+        inputs.varsPath = ""
+        XCTAssertThrowsError(try FirstRunImport.register(inputs, slug: "first",
+            libraryRoot: fixture.root.appendingPathComponent("first-library"), snapshotHelper: helper))
+        let library = fixture.root.appendingPathComponent("ordinary-library")
+        XCTAssertNil(VMLibrary.createWindowsHVF(name: "ordinary", targetDiskPath: fixture.disk.path,
+            varsPath: "", libraryRoot: library, persist: false, snapshotHelper: helper))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("first-library/first").path))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: library.path), [])
+        try assertOriginals(fixture)
+        try owner.finish()
+    }
+
     func testBothImportEntryPointsCopySelectedGeneration() throws {
         let fixture = try restoredFixture()
         defer { fixture.remove() }

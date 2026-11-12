@@ -8,6 +8,10 @@ pub(super) fn store_root(disk: &Path, vars: &Path) -> PathBuf {
     identity::stable_root(disk, vars)
 }
 
+pub(super) fn identity_matches(disk: &Path, vars: &Path) -> io::Result<bool> {
+    identity::matches(disk, vars)
+}
+
 pub(super) fn resolve_root(disk: &Path, vars: &Path) -> io::Result<PathBuf> {
     identity::resolve(disk, vars)
 }
