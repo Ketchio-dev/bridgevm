@@ -6,12 +6,17 @@ import AppKit
 protocol ControlAppTerminationSession: AnyObject {
     /// True until the run's teardown is confirmed, or while a start may still spawn a runner.
     var blocksAppTermination: Bool { get }
+    var isInstallation: Bool { get }
     /// The user's Stop; repeating it joins the stop already admitted.
     func requestTerminationStop()
     /// Force Stop for a stop that is still waiting on Windows.
     func requestTerminationForceStop()
     /// Reads the run's progress where its own default-mode timer cannot fire.
     func pollTerminationWait()
+}
+
+extension ControlAppTerminationSession {
+    var isInstallation: Bool { false }
 }
 
 /// Quitting (Cmd+Q, the Dock, the last window, or a Mac logout, restart or shutdown) stops each
@@ -34,6 +39,7 @@ final class ControlAppTermination {
         var confirmQuit: @MainActor (_ runningCount: Int) -> Bool
         /// Asked each time Windows has not turned off by the deadline. `afterForce` offers quitting anyway.
         var decideAtDeadline: @MainActor (_ afterForce: Bool, _ stillRunning: @escaping @MainActor () -> Bool) -> DeadlineChoice
+        var confirmWithInstallations: (@MainActor (_ runningCount: Int, _ installCount: Int) -> Bool)? = nil
     }
 
     static let deadline: TimeInterval = 60
@@ -64,7 +70,11 @@ final class ControlAppTermination {
         let running = blocking()
         switch Self.plan(blockingSessions: running.count, reason: reason) {
         case .terminateNow: return .terminateNow
-        case .confirmThenStop: guard presenter.confirmQuit(running.count) else { return .terminateCancel }
+        case .confirmThenStop:
+            let installs = running.filter(\.isInstallation).count
+            let confirmed = installs > 0 ? (presenter.confirmWithInstallations?(running.count - installs, installs)
+                ?? presenter.confirmQuit(running.count)) : presenter.confirmQuit(running.count)
+            guard confirmed else { return .terminateCancel }
         case .stopWithoutConfirmation: break
         }
         pending = true; forced = false
@@ -81,7 +91,8 @@ final class ControlAppTermination {
         let running = blocking()
         guard !running.isEmpty else { finish(true); return }
         running.forEach { $0.requestTerminationStop() }
-        guard now() >= deadlineAt else { return }
+        // Installation cleanup and publication must finish, even after Force Stop or Quit Anyway.
+        guard !running.contains(where: \.isInstallation), now() >= deadlineAt else { return }
         deciding = true
         let choice = presenter.decideAtDeadline(forced) { [weak self] in
             guard let self else { return false }
@@ -175,6 +186,15 @@ extension ControlAppTermination.Presenter {
             case .alertThirdButtonReturn: return .cancelQuit
             default: return .keepWaiting
             }
+        },
+        confirmWithInstallations: { running, installs in
+            let alert = NSAlert()
+            alert.messageText = "Windows 설치를 취소하고 BridgeVM을 끝낼까요?"
+            alert.informativeText = "설치 \(installs)개를 취소하고 정리가 끝날 때까지 기다리며, 이미 저장 중인 설치 결과는 완료될 때까지 기다립니다."
+                + (running > 0 ? " 실행 중인 VM \(running)개의 Windows도 안전하게 종료합니다." : "")
+            alert.addButton(withTitle: "설치 취소 후 끝내기")
+            alert.addButton(withTitle: "취소")
+            return alert.runModal() == .alertFirstButtonReturn
         })
 }
 #endif

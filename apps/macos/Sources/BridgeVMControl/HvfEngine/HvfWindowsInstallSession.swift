@@ -2,7 +2,7 @@ import Foundation
 import Combine
 
 @MainActor
-final class HvfWindowsInstallSession: ObservableObject {
+final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSession {
     @Published private(set) var stage: HvfWindowsInstallStage = .idle
     @Published private(set) var logLines: [String] = []
     @Published private(set) var startedAt: Date?
@@ -35,6 +35,11 @@ final class HvfWindowsInstallSession: ObservableObject {
     // The reservation is committed before Published callbacks and survives every await.
     var isRunning: Bool { attemptActive }
     var canCancel: Bool { isRunning && !cancelled && !commitStarted }
+    var blocksAppTermination: Bool { admissionPending || isRunning }
+    var isInstallation: Bool { true }
+    func requestTerminationStop() { if canCancel { cancel() } }
+    func requestTerminationForceStop() { requestTerminationStop() }
+    func pollTerminationWait() {}
 
     func cancel() {
         guard isRunning, !cancelled else { return }
