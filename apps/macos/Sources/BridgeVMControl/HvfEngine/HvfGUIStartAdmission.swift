@@ -27,6 +27,7 @@ extension HvfEngineSession {
         let execution = HvfGUIStartExecution(session: self, ticket: ticket, policy: policy)
         guiStartExecution = execution
         objectWillChange.send()
+        updateSleepPrevention()
         execution.begin()
         return .accepted(ticket)
     }

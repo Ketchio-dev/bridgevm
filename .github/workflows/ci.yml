@@ -315,6 +315,25 @@ jobs:
       - run: bash tests/integration/windows-product-e2e-contract-smoke.sh
       - run: bash scripts/verify-app-hvf-entitlements.sh --self-test
 
+  swift-compile-macos-26:
+    # PR signal, not a required check. Keep main's full suites unchanged.
+    name: macOS app compile (macos-26)
+    needs: changes
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && (needs.changes.result != 'success' || needs.changes.outputs.swift == 'true') }}
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: swift --version
+      - name: Compile app
+        run: swift build --jobs 2 --package-path apps/macos
+      - name: Compile shim suites (no tests run)
+        env:
+          BV_XCTEST_BUILD_ONLY: "1"
+          BV_XCTEST_SANITIZER: thread
+          SWIFTC_JOBS: "2"
+        run: bash scripts/run-xctest-shim-suites.sh
+
   macos-contracts:
     # The macOS halves of four contract suites. Each needs macOS (Swift and
     # xcrun, hdiutil and plutil, the Darwin rename path, Homebrew's QEMU) but

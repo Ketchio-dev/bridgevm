@@ -10,7 +10,7 @@ import AppKit
 @MainActor
 final class HvfEngineSession: ObservableObject {
     @Published var config: HvfEngineConfig { didSet { runtimeConfigurationChanged() } }
-    @Published var connectionState: HvfConnectionState = .stopped
+    @Published var connectionState: HvfConnectionState = .stopped { didSet { updateSleepPrevention() } }
     let heartbeat = HvfRuntimeHeartbeat() // publishes the per-poll heartbeat age apart from the session
     let shareRootNotice = HvfShareRootNotice()
     let agentUpdateNotice = HvfAgentUpdateNotice()
@@ -21,6 +21,8 @@ final class HvfEngineSession: ObservableObject {
     @Published var displayDriverFlagMessage: String? // why HvfDisplayDriverFlag could not save yet
     @Published var displayDriverNoticeDismissed = false // per VM, only for this app session
     @Published var displayDriverRestartRequired = false
+    @Published var displayDriverUnbound = false
+    @Published var displayDriverUnboundDismissed = false
     @Published var displayDriverRestarting = false
     var repoRoot: URL
     var workAdmission: LibraryWorkAdmission?
@@ -36,6 +38,18 @@ final class HvfEngineSession: ObservableObject {
     var ownedStartNow: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     var ownedStartWorker: HvfOwnedStartExecution.Worker = HvfOwnedStartExecution.run
     let workAdmissionGate = HvfRuntimeWorkAdmissionGate()
+    let sleepPreventionID = UUID()
+    var sleepPrevention = ControlAppPower.shared
+    func updateSleepPrevention() {
+        sleepPrevention.update(sleepPreventionID, active: needsMacAwake)
+    }
+    /// Cleanup can remain unconfirmed after a dead runner, but no Windows task is using the Mac.
+    var needsMacAwake: Bool {
+        guard pause != .paused else { return false }
+        if runtimeStartupWorkerPending { return true }
+        if let process { return process.isRunning }
+        return hasRetainedAttachment && connectionState != .stopped
+    }
     var process: Process?
     var ownedController: HvfOwnedRunController?
     @Published var forceStopTarget: HvfForceStopTarget?
@@ -45,7 +59,10 @@ final class HvfEngineSession: ObservableObject {
     @Published var restartNotice: String? // a Reset that no helper took
     @Published var guestBoot = 0 // bumps at every guest reset record and at every run start or end
     @Published var pause = HvfPauseState.running { // what the probe last said about Pause (HvfGuestPause)
-        didSet { guestRunClock.hold(pause.holdsInput, host: hostNow()) }
+        didSet {
+            guestRunClock.hold(pause.holdsInput, host: hostNow())
+            updateSleepPrevention()
+        }
     }
     var hostNow: () -> Date = Date.init // the host clock behind guestNow()
     var guestRunClock = HvfGuestRunClock()
@@ -123,9 +140,12 @@ final class HvfEngineSession: ObservableObject {
         timer?.invalidate()
         if ownedController == nil { process?.terminate() }
         liveInputFile.close()
+        let id = sleepPreventionID, power = sleepPrevention
+        Task { @MainActor in power.update(id, active: false) }
     }
 
     func ownedRuntimeChanged(token: UUID) { // runs on every controller tick: assign only a changed state
+        defer { updateSleepPrevention() }
         guard let controller = ownedController, controller.identity.token == token else { return }
         refreshOwnedStart()
         lastOwnedExit = controller.runnerExit
@@ -409,6 +429,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     func poll() {
+        defer { updateSleepPrevention() }
         if guiStartCleanupOnly { pollGUIStartCleanup(); return }
         let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")
         let lines = tailReader.readNewLines(from: logURL)
@@ -504,6 +525,8 @@ final class HvfEngineSession: ObservableObject {
         inputDriver.attachUnknown(binding: inputBinding)
         tailReader = TailOffsetReader()
         agentEvents = BvAgentEvent.Stream()
+        displayDriverUnboundDismissed = false
+        displayDriverUnbound = false
         lastHeartbeatDate = nil
         lastHeartbeatAge = nil
         serviceStarted = false

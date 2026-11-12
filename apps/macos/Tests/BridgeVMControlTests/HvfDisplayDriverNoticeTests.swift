@@ -4,6 +4,69 @@ import XCTest
 
 @MainActor
 final class HvfDisplayDriverNoticeTests: XCTestCase {
+    func testInstalledButUnboundDisplayShowsOneNoticePerRun() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
+        defer { fixture.clean() }
+        var saved = fixture.config("notice-unbound")
+        saved.virtioDisplayDriverInstalled = true
+        fixture.save(saved)
+        let session = try XCTUnwrap(fixture.library(probe: probe).hvfRuntimeDetailSession(for: saved))
+        session.connectionState = .connected(host: "guest")
+        session.serviceStarted = true
+        func report(_ field: String) {
+            for event in BvAgentEvent.parse(lines: ["BVAGENT CMD DISPLAYMODE 1600 900 exit=0",
+                "BVDISPLAY target=1600x900 before=1280x800 after=1280x800 \(field) result=-2",
+                "BVAGENT END DISPLAYMODE 1600 900"]) { session.handle(event) }
+        }
+        report("")
+        XCTAssertNil(session.displayDriverNotice, "Old agents leave the notice unchanged")
+        report("virtio=found")
+        XCTAssertNil(session.displayDriverNotice)
+        report("virtio=none")
+        XCTAssertEqual(session.displayDriverNotice, .unbound, "Installed flag plus virtio=none must explain the unbound driver")
+        report("")
+        report("virtio=future")
+        XCTAssertEqual(session.displayDriverNotice, .unbound, "Absent or unknown fields must not clear the notice")
+        report("virtio=found")
+        XCTAssertNil(session.displayDriverNotice, "A bound adapter must clear the earlier unbound notice")
+        report("")
+        report("virtio=future")
+        XCTAssertNil(session.displayDriverNotice, "Absent or unknown fields must not recreate the notice")
+        report("virtio=none")
+        XCTAssertEqual(session.displayDriverNotice, .unbound)
+        session.displayDriverUnboundDismissed = true
+        report("virtio=found")
+        report("virtio=none")
+        XCTAssertNil(session.displayDriverNotice, "Recovery must not undo this run's dismissal")
+        XCTAssertEqual(session.config.libraryContext?.config.virtioDisplayDriverInstalled, true)
+        session.resetObservedRuntimeState(clearEvents: true)
+        session.connectionState = .connected(host: "guest")
+        session.serviceStarted = true
+        XCTAssertNil(session.displayDriverNotice)
+        report("virtio=none")
+        XCTAssertEqual(session.displayDriverNotice, .unbound, "A new run may report its own failure")
+    }
+
+    func testDisplayAdapterFieldParser() {
+        XCTAssertEqual(HvfDisplayDriverNotice.virtio(in: "BVDISPLAY target=1600x900 virtio=none result=-2"), .some(.none))
+        XCTAssertEqual(HvfDisplayDriverNotice.virtio(in: "BVDISPLAY target=1600x900 virtio=found result=0"), .found)
+        XCTAssertNil(HvfDisplayDriverNotice.virtio(in: "BVDISPLAY target=1600x900 result=0"))
+        XCTAssertNil(HvfDisplayDriverNotice.virtio(in: "BVDISPLAY virtio=future"))
+        XCTAssertNil(HvfDisplayDriverNotice.virtio(in: "unrelated virtio=none"))
+    }
+
+    func testUnboundReplyWithoutInstalledFlagChangesNothing() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
+        defer { fixture.clean() }
+        let saved = fixture.config("notice-no-flag"); fixture.save(saved)
+        let session = try XCTUnwrap(fixture.library(probe: probe).hvfRuntimeDetailSession(for: saved))
+        session.connectionState = .connected(host: "guest")
+        session.serviceStarted = true
+        session.handle(.commandOutput(label: "DISPLAYMODE 1600 900", body: "BVDISPLAY virtio=none result=-2"))
+        XCTAssertEqual(session.displayDriverNotice, .install)
+        XCTAssertFalse(session.displayDriverUnbound)
+    }
+
     func testReadyGuestWithoutDriverShowsInstall() {
         XCTAssertEqual(shown(), .install)
         XCTAssertEqual(shown(installed: nil), .install)
