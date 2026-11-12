@@ -80,7 +80,7 @@ final class HvfWindowsImportNoVarsTests: XCTestCase {
         let before = try fm.attributesOfItem(atPath: source.path)[.modificationDate] as? Date
         guard case .created(let config)? = VMLibrary.createWindowsHVF(name: "Data",
             targetDiskPath: source.path, varsPath: "", libraryRoot: root.appendingPathComponent("library"),
-            persist: false) else { return XCTFail("data disk must import") }
+            persist: false, snapshotHelper: HvfMediaImportTestSupport.helper) else { return XCTFail("data disk must import") }
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: config.bundlePath + "/metadata/hvf-vars.fd")),
             try HvfWindowsBootSeed.bundledSeed())
         XCTAssertEqual(notice(bundlePath: config.bundlePath), noESP)
