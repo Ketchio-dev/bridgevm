@@ -230,7 +230,7 @@ else while(true){byte[] f=null;for(int n=0;f==null;n++){var m=M(t,n);if(m==null)
 res=f==null?"not_listed":""+C(t,f,1);if(res=="0"&&S(t)==want||DateTime.Now>end)break;
 force=Force(w,h);Thread.Sleep(400);}
 Scan();
-return "BVDISPLAY target="+want+" before="+before+" after="+S(t)+" primary="+Pr+" layout="+lay+" detached="+(det.Count==0?"none":string.Join(",",det))+" force="+force+" result="+res;}}
+return "BVDISPLAY target="+want+" virtio="+(t==null?"none":"found")+" before="+before+" after="+S(t)+" primary="+Pr+" layout="+lay+" detached="+(det.Count==0?"none":string.Join(",",det))+" force="+force+" result="+res;}}
 '@
     'DISPLAYSCALE' = @'
 using System;using System.Runtime.InteropServices;
