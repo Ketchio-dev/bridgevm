@@ -97,12 +97,13 @@ enum HvfWindowsSnapshotCommand {
             executable: executable, disk: disk, vars: vars, snapshot: snapshot, vmID: vmID, name: name)
     }
 
-    static func run(_ operation: Operation, plan: Plan, checkAdmission: @escaping @Sendable () async throws -> Void = {}) async throws -> String {
+    /// A successful operation may carry a non-fatal display-name notice.
+    static func run(_ operation: Operation, plan: Plan, checkAdmission: @escaping @Sendable () async throws -> Void = {}) async throws -> String? {
         try await Task.detached {
             try await checkAdmission()
             if operation == .delete {
                 try HvfWindowsSnapshotStore.delete(plan.snapshot, bundle: plan.bundle)
-                return ""
+                return nil
             }
             if operation == .create {
                 try FileManager.default.createDirectory(
@@ -114,15 +115,19 @@ enum HvfWindowsSnapshotCommand {
             if operation == .create, FileManager.default.fileExists(atPath: plan.snapshot.path) {
                 throw failure("snapshot destination was occupied before creation", .unsafeFolder)
             }
-            let output = try invoke(plan.executable, arguments)
+            _ = try invoke(plan.executable, arguments)
             if operation == .create {
                 try await checkAdmission()
                 _ = try invoke(plan.executable, ["verify", plan.snapshot.path])
                 if let name = plan.name, !name.isEmpty {
-                    try name.write(to: HvfWindowsSnapshotStore.nameFile(plan.snapshot), atomically: true, encoding: .utf8)
+                    do {
+                        try name.write(to: HvfWindowsSnapshotStore.nameFile(plan.snapshot), atomically: true, encoding: .utf8)
+                    } catch {
+                        return "스냅샷은 생성했지만 이름을 저장하지 못해 날짜만 표시합니다."
+                    }
                 }
             }
-            return output
+            return nil
         }.value
     }
 

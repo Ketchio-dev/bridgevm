@@ -11,7 +11,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
     func testRestoreRunsOnlyOnceConfirmedAndCancelRunsNothing() async throws {
         let model = HvfWindowsSnapshotModel()
         var ran: [Operation] = []
-        let run: HvfWindowsSnapshotModel.Run = { ran.append($0) }
+        let run: HvfWindowsSnapshotModel.Run = { ran.append($0); return nil }
 
         XCTAssertNil(model.request(.restore, snapshotDate: made, run: run))
         let asked = try XCTUnwrap(model.confirmation)
@@ -37,7 +37,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
     func testCreateNeverReplacesAndDeleteNamesItsConfirmedSnapshot() async throws {
         let model = HvfWindowsSnapshotModel()
         var ran: [Operation] = []
-        let run: HvfWindowsSnapshotModel.Run = { ran.append($0) }
+        let run: HvfWindowsSnapshotModel.Run = { ran.append($0); return nil }
         await model.request(.create, snapshotDate: made, run: run)?.value
         XCTAssertEqual(ran, [.create])
         XCTAssertNil(model.confirmation)
@@ -56,7 +56,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
     func testRestoreWithoutASnapshotRunsNothing() async {
         let model = HvfWindowsSnapshotModel()
         var ran: [Operation] = []
-        XCTAssertNil(model.request(.restore, snapshotDate: nil) { ran.append($0) })
+        XCTAssertNil(model.request(.restore, snapshotDate: nil) { ran.append($0); return nil })
         await Task.yield()
         XCTAssertEqual(ran, [])
         XCTAssertNil(model.confirmation)
@@ -156,7 +156,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         var ran: [Operation] = []
         let run: HvfWindowsSnapshotModel.Run = {
             ran.append($0)
-            try await session.runSnapshot($0, configuration: config)
+            return try await session.runSnapshot($0, configuration: config)
         }
 
         XCTAssertNil(HvfWindowsSnapshotCommand.snapshotDate(config: config))
@@ -172,7 +172,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         XCTAssertEqual(entries.first?.name, "두 번째/../이름")
         let restoreFirst: HvfWindowsSnapshotModel.Run = {
             ran.append($0)
-            try await session.runSnapshot($0, configuration: config, target: first.url)
+            return try await session.runSnapshot($0, configuration: config, target: first.url)
         }
         model.request(.restore, snapshotDate: date, label: first.label, run: restoreFirst)
         XCTAssertEqual(ran, [.create], "the restore waits for its answer")

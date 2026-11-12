@@ -29,8 +29,9 @@ struct HvfWindowsSnapshotCard: View {
                     Button("새 스냅샷") {
                         let chosenName = name
                         model.request(.create, snapshotDate: nil) { [session, config] operation in
-                            try await session.runSnapshot(operation, configuration: config, name: chosenName)
+                            let notice = try await session.runSnapshot(operation, configuration: config, name: chosenName)
                             name = ""
+                            return notice
                         }
                     }
                     .accessibilityIdentifier("bridgevm.runtime.snapshot.create")

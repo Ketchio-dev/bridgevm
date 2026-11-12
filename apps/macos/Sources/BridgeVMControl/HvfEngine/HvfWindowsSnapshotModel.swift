@@ -5,7 +5,7 @@ import Foundation
 @MainActor
 final class HvfWindowsSnapshotModel: ObservableObject {
     typealias Operation = HvfWindowsSnapshotCommand.Operation
-    typealias Run = @MainActor (Operation) async throws -> Void
+    typealias Run = @MainActor (Operation) async throws -> String?
 
     /// The question before an operation that throws away the snapshot or the changes since it.
     struct Confirmation {
@@ -58,8 +58,8 @@ final class HvfWindowsSnapshotModel: ObservableObject {
         status = operation == .create ? "스냅샷 생성 중…" : operation == .restore ? "스냅샷 복원 중…" : "스냅샷 삭제 중…"
         return Task {
             do {
-                try await run(operation)
-                status = operation == .create ? "스냅샷 생성 완료" : operation == .restore ? "스냅샷 복원 완료" : "스냅샷 삭제 완료"
+                let notice = try await run(operation)
+                status = notice ?? (operation == .create ? "스냅샷 생성 완료" : operation == .restore ? "스냅샷 복원 완료" : "스냅샷 삭제 완료")
             } catch {
                 status = Self.message(for: error, operation: operation); failed = true
             }
