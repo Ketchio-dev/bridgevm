@@ -29,7 +29,7 @@ final class HvfWindowsImportNoVarsTests: XCTestCase {
         XCTAssertEqual(data.count, 64 * 1024 * 1024)
         XCTAssertNotNil(data.range(of: esp.partitionGUID))
         XCTAssertNil(data.range(of: HvfWindowsBootSeed.sentinelGUID))
-        XCTAssertTrue(HvfWindowsBootSeed.varstoreContainsLiveVariable(data, name: "Boot0000"))
+        XCTAssertTrue(HvfWindowsBootSeed.varstoreContainsLiveVariable(data, name: "Boot0003"))
         try JSONSerialization.data(withJSONObject: ["disk": disk, "vars": vars, "boot_entry": true])
             .write(to: URL(fileURLWithPath: output))
     }
@@ -66,14 +66,39 @@ final class HvfWindowsImportNoVarsTests: XCTestCase {
         } else if hasGPT {
             XCTAssertNotNil(result.range(of: guid))
             XCTAssertNil(result.range(of: HvfWindowsBootSeed.sentinelGUID))
-            XCTAssertTrue(HvfWindowsBootSeed.varstoreContainsLiveVariable(result, name: "Boot0000"))
+            XCTAssertTrue(HvfWindowsBootSeed.varstoreContainsLiveVariable(result, name: "Boot0003"))
         } else {
             XCTAssertEqual(result, seed)
         }
         XCTAssertEqual(HvfWindowsImportNotice.read(bundlePath: config.bundlePath),
             !suppliedVars && !hasGPT ? HvfWindowsImportNotice.noESP : nil)
+        var state = CreateVMCreationState()
+        let presentation = state.complete(.created(config), adopt: { _ in true })
+        XCTAssertEqual(presentation.dismiss, suppliedVars || hasGPT)
+        XCTAssertEqual(presentation.message, !suppliedVars && !hasGPT ? HvfWindowsImportNotice.noESP : "")
         XCTAssertEqual(try Data(contentsOf: source), bytes)
         XCTAssertEqual(try fm.attributesOfItem(atPath: source.path)[.modificationDate] as? Date, date)
+    }
+
+    func testGPTWithoutESPImportsWithPlainSeed() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+        let source = root.appendingPathComponent("data.raw")
+        var bytes = HvfWindowsBootSeedTests.makeSyntheticGptDisk(
+            espGUID: Data(repeating: 1, count: 16), firstLBA: 34, lastLBA: 40)
+        bytes.replaceSubrange(1024..<1040, with: Data(count: 16))
+        try bytes.write(to: source)
+        let before = try fm.attributesOfItem(atPath: source.path)[.modificationDate] as? Date
+        guard case .created(let config)? = VMLibrary.createWindowsHVF(name: "Data",
+            targetDiskPath: source.path, libraryRoot: root.appendingPathComponent("library"),
+            persist: false) else { return XCTFail("data disk must import") }
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: config.bundlePath + "/metadata/hvf-vars.fd")),
+            try HvfWindowsBootSeed.bundledSeed())
+        XCTAssertEqual(HvfWindowsImportNotice.read(bundlePath: config.bundlePath), HvfWindowsImportNotice.noESP)
+        XCTAssertEqual(try Data(contentsOf: source), bytes)
+        XCTAssertEqual(try fm.attributesOfItem(atPath: source.path)[.modificationDate] as? Date, before)
     }
 
     func testFirstRunImportAlsoAcceptsOmittedVars() throws {
