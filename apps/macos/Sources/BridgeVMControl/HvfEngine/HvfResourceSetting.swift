@@ -19,15 +19,17 @@ struct HvfResourceSetting: View {
             ? VMResourceLimits.minimumCPU...VMResourceLimits.maximumCPU : HvfEngineConfig.supportedCPURange
     }
 
+    static func memoryText(_ mib: Int) -> String {
+        mib % 1024 == 0 ? "\(mib / 1024)GB" : String(format: "%.2fGB", Double(mib) / 1024)
+    }
+
     var body: some View {
         HStack(spacing: 24) {
-            Stepper("RAM \(ramMiB) MiB", value: Binding(get: { ramMiB }, set: { update(memMiB: $0, cpus: cpus) }),
+            Stepper("메모리 \(Self.memoryText(ramMiB))", value: Binding(get: { ramMiB }, set: { update(memMiB: $0, cpus: cpus) }),
                     in: ramRange, step: 1024)
-                .font(.body.monospaced())
                 .accessibilityIdentifier("bridgevm.runtime.ram")
             Stepper("CPU \(cpus)", value: Binding(get: { cpus }, set: { update(memMiB: ramMiB, cpus: $0) }),
                     in: cpuRange)
-                .font(.body.monospaced())
                 .accessibilityIdentifier("bridgevm.runtime.cpu")
         }
         .disabled(isDisabled)

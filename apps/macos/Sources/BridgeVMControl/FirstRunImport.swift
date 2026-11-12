@@ -106,6 +106,8 @@ enum FirstRunImport {
         libraryRoot: URL,
         fileManager: FileManager = .default, snapshotHelper: URL = HvfMediaImportHelper.bundled
     ) throws -> VMConfig {
+        VMLibrary.windowsShareRegistrationLock.lock()
+        defer { VMLibrary.windowsShareRegistrationLock.unlock() }
         let prepared = try prepare(inputs, slug: slug, libraryRoot: libraryRoot,
             fileManager: fileManager, snapshotHelper: snapshotHelper)
         prepared.preserve()

@@ -8,6 +8,9 @@ struct HvfSharedFolderSettings: View {
     @Binding var hostDir: String
     @Binding var guestDir: String
     @State private var message: String?
+    var commit: (() -> Void)? = nil
+    @FocusState private var focusedField: Field?
+    private enum Field { case host, guest }
 
     var isDisabled: Bool { session.persistsLibraryPreferences && !session.libraryPreferencesEditable }
     /// The visible pair, or nil while either half is still empty.
@@ -17,31 +20,34 @@ struct HvfSharedFolderSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Toggle("Shared folder", isOn: Binding(get: { enabled }, set: setEnabled))
+            Toggle("공유 폴더", isOn: Binding(get: { enabled }, set: setEnabled))
                 .accessibilityIdentifier("bridgevm.runtime.share.enabled")
                 .help(session.persistsLibraryPreferences ? "VM이 중지된 동안 선택한 폴더는 이 VM의 모든 시작에 저장됩니다." : "")
             if enabled {
                 HStack {
-                    Text("Host share").frame(width: 92, alignment: .leading)
-                    TextField("Host share", text: $hostDir)
+                    Text("Mac 폴더").frame(width: 92, alignment: .leading)
+                    TextField("Mac 폴더", text: $hostDir)
                         .textFieldStyle(.roundedBorder)
                         .font(.body.monospaced())
                         .accessibilityIdentifier("bridgevm.runtime.share.host")
+                        .focused($focusedField, equals: .host)
                         .onSubmit(commitDraft)
                     Button(action: chooseHost) { Image(systemName: "folder") }
                         .accessibilityIdentifier("bridgevm.runtime.share.host.choose")
-                        .help("Choose Host share")
+                        .help("공유할 Mac 폴더 선택")
                 }
                 HStack {
-                    Text("Guest share").frame(width: 92, alignment: .leading)
+                    Text("Windows 폴더").frame(width: 92, alignment: .leading)
                     TextField("C:\\bridgevm-share", text: $guestDir)
                         .textFieldStyle(.roundedBorder)
                         .font(.body.monospaced()).accessibilityIdentifier("bridgevm.runtime.share.guest")
+                        .focused($focusedField, equals: .guest)
                         .onSubmit(commitDraft)
                 }
             }
         }
         .disabled(isDisabled)
+        .onChange(of: focusedField) { old, _ in if old != nil { commitDraft() } }
         .alert("공유 폴더 설정", isPresented: Binding(
             get: { message != nil }, set: { if !$0 { message = nil } }
         )) {
@@ -54,10 +60,12 @@ struct HvfSharedFolderSettings: View {
     /// Turning sharing on only reveals the fields; nothing is shared until a folder is chosen.
     func setEnabled(_ on: Bool) {
         enabled = on
-        if !on { apply(nil) } else if let draft { apply(draft) }
+        if let commit { commit() }
+        else if !on { apply(nil) } else if let draft { apply(draft) }
     }
 
     func commitDraft() {
+        if let commit { commit(); return }
         if enabled, let draft { apply(draft) }
     }
 

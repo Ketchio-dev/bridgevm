@@ -183,6 +183,11 @@ impl VirtioMmioBlock {
     }
 
     pub(crate) fn reset_queue(&mut self) {
+        self.device_features_sel = 0;
+        self.driver_features_sel = 0;
+        self.driver_features = [0; 2];
+        self.guest_page_size = 4096;
+        self.queue_sel = 0;
         self.queue_num = 0;
         self.queue_ready = false;
         self.queue_desc = 0;

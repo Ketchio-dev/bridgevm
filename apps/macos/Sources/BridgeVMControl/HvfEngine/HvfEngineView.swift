@@ -7,25 +7,12 @@ struct HvfEngineView: View {
     @ObservedObject private(set) var session: HvfEngineSession
     @StateObject private var readiness = HvfRuntimeReadinessModel()
     @State private var startRefusal: String?
+    @State private var showingSettings = false
     @State private var targetDiskPath = ""
     @State private var uefiVarsPath = ""
     @State private var evidenceDir = ""
     @State private var watchdogEnabled = false
     @State private var watchdogMs = 900_000
-    @State private var ramMiB = 6144
-    @State private var smpCpus = 4
-    @State private var clipboardSync = true
-    @State private var shareEnabled = false
-    @State private var shareHostDir = ""
-    @State private var shareGuestDir = "C:\\bridgevm-share"
-    @State private var virtioNet = false
-    @State private var durableDiskWrites = false
-    @State private var microphoneEnabled = false
-    @State private var portForwards = ""
-    @State private var portForwardNotice: String?
-    @State private var guestResolution: String?
-    @State private var retinaResolution: Bool?
-    @State private var commandKeyMode = HvfCommandKeyMode.mac
     @State private var virtioGpu3d = false
     @State private var nvmeBufferedIO = false
     @State private var ctlFilePath = ""
@@ -42,7 +29,7 @@ struct HvfEngineView: View {
     init(session: HvfEngineSession) {
         _session = ObservedObject(wrappedValue: session)
     }
-    var body: some View {
+    var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
@@ -58,23 +45,21 @@ struct HvfEngineView: View {
                 ) { label, text, chooseDirectory in
                     pathRow(label, text: text, chooseDirectory: chooseDirectory)
                 }
-                HvfWindowsSnapshotCard(config: currentConfig(), session: session)
                 eventFeedCard
             }
             .padding(20)
         }
+    }
+
+    var body: some View {
+        content
         .navigationTitle("HVF Engine")
+        .focusedSceneValue(\.hvfVMSettings, { showingSettings = true })
+        .sheet(isPresented: $showingSettings) { HvfVMSettingsSheet(session: session) }
         .accessibilityIdentifier("bridgevm.windows.runtime.view")
         .onChange(of: confirmVTPMRestore) { _, shown in if !shown { releaseVTPMReservation() } }
         .onChange(of: confirmVTPMReset) { _, shown in if !shown { releaseVTPMReservation() } }
         .onDisappear { releaseVTPMReservation() }
-        .alert("포트 포워딩 설정", isPresented: Binding(
-            get: { portForwardNotice != nil }, set: { if !$0 { portForwardNotice = nil } }
-        )) {
-            Button("확인") { portForwardNotice = nil }
-        } message: {
-            Text(portForwardNotice ?? "")
-        }
         .onAppear {
             loadStateFromSession()
             readiness.request(configuration: currentConfig(), repoRoot: session.repoRoot)
@@ -131,30 +116,9 @@ struct HvfEngineView: View {
             VStack(alignment: .leading, spacing: 12) {
                 pathRow("Target disk", text: $targetDiskPath, chooseDirectory: false)
                 pathRow("UEFI vars", text: $uefiVarsPath, chooseDirectory: false)
-                HvfDiskSizeSetting(session: session, config: session.config)
-                HStack(spacing: 24) {
-                    HvfResourceSetting(session: session, ramMiB: $ramMiB, cpus: $smpCpus)
-                    Spacer()
+                if session.config.allowsExperimental3D {
+                    Toggle("Graphics Lab 3D", isOn: $virtioGpu3d)
                 }
-                HStack(spacing: 18) {
-                    HvfClipboardSyncToggle(session: session, isOn: $clipboardSync)
-                    HvfNetworkToggle(session: session, isOn: $virtioNet)
-                    HvfDurableDiskWritesToggle(session: session, isOn: $durableDiskWrites)
-                    HvfMicrophoneToggle(session: session, isOn: $microphoneEnabled)
-                    HvfGuestLinksToggle(session: session)
-                    HvfGuestPrintToggle(session: session)
-                    HvfGuestResolutionPicker(session: session, selection: $guestResolution)
-                    if session.config.offersRetinaResolution && !virtioGpu3d {
-                        HvfRetinaResolutionToggle(session: session, setting: $retinaResolution)
-                    }
-                    HvfCommandKeyPicker(session: session, selection: $commandKeyMode)
-                    if session.config.allowsExperimental3D {
-                        Toggle("Graphics Lab 3D", isOn: $virtioGpu3d)
-                    }
-                    Spacer()
-                }
-                HvfSharedFolderSettings(session: session, enabled: $shareEnabled, hostDir: $shareHostDir, guestDir: $shareGuestDir)
-                if virtioNet { HvfPortForwardSetting(session: session, text: $portForwards) }
                 HvfRuntimeKeyboardInput(session: session, draft: $keyboardInput)
                 HvfRuntimeSpecialKeys(session: session)
             }
@@ -242,9 +206,6 @@ struct HvfEngineView: View {
                         Label("화면 창 열기", systemImage: "macwindow")
                     }.accessibilityIdentifier("bridgevm.runtime.display.open")
                 }
-                // Installed or staged: this VM's virtioDisplayDriverInstalled is saved once it has stopped.
-                HvfDisplayDriverInstallButton(session: session) { _ in HvfDisplayDriverFlag.record(session) }
-                HvfHardwareCursorToggle(session: session)
             }
             .padding(6)
             #else
@@ -324,7 +285,8 @@ struct HvfEngineView: View {
     private func pathRow(_ label: String, text: Binding<String>, chooseDirectory: Bool, identifier: String = "", chooseIdentifier: String = "") -> some View {
         HStack {
             Text(label).frame(width: 92, alignment: .leading)
-            TextField(label, text: text)
+            TextField("", text: text, prompt: Text(label == "Target disk" ? "대상 디스크 경로" : label == "UEFI vars" ? "UEFI vars 경로" : label))
+                .labelsHidden()
                 .textFieldStyle(.roundedBorder)
                 .font(.body.monospaced())
                 .accessibilityIdentifier(identifier)
@@ -336,13 +298,6 @@ struct HvfEngineView: View {
 
     private func start() {
         startRefusal = nil
-        let share = shareEnabled ? HvfSharedFolderSelection(hostPath: shareHostDir, guestPath: shareGuestDir) : nil
-        if let refusal = session.saveSharedFolderBeforeStart(share) { startRefusal = refusal; return }
-        if virtioNet {
-            let forwards = session.savePortForwardsBeforeStart(portForwards)
-            portForwards = forwards.text
-            portForwardNotice = forwards.notice
-        }
         if case let .refused(reason) = session.requestGUIStart(configuration: currentConfig()) {
             startRefusal = reason; return
         }
@@ -363,18 +318,6 @@ struct HvfEngineView: View {
         config.uefiVarsPath = uefiVarsPath
         config.evidenceDir = evidenceDir
         config.watchdogMs = watchdogEnabled ? watchdogMs : nil
-        config.ramMiB = ramMiB
-        config.smpCpus = smpCpus
-        config.clipboardSync = clipboardSync
-        config.shareHostDir = shareEnabled ? shareHostDir : nil
-        config.shareGuestDir = shareEnabled ? shareGuestDir : nil
-        config.virtioNet = virtioNet
-        config.durableDiskWrites = durableDiskWrites
-        config.microphoneEnabled = microphoneEnabled
-        config.portForwards = HvfPortForwards.parse(portForwards) ?? config.portForwards
-        config.guestResolution = guestResolution
-        config.retinaResolution = retinaResolution
-        config.commandKeyMode = commandKeyMode
         config.virtioGpu3d = virtioGpu3d
         config.nvmeBufferedIO = nvmeBufferedIO
         config.ctlFilePath = ctlFilePath
@@ -388,19 +331,6 @@ struct HvfEngineView: View {
         evidenceDir = cfg.evidenceDir
         watchdogEnabled = cfg.watchdogMs != nil
         watchdogMs = cfg.watchdogMs ?? 900_000
-        ramMiB = cfg.ramMiB
-        smpCpus = cfg.smpCpus
-        clipboardSync = cfg.clipboardSync
-        shareEnabled = cfg.shareHostDir != nil && cfg.shareGuestDir != nil
-        shareHostDir = cfg.shareHostDir ?? ""
-        shareGuestDir = cfg.shareGuestDir ?? "C:\\bridgevm-share"
-        virtioNet = cfg.virtioNet
-        durableDiskWrites = cfg.durableDiskWrites
-        microphoneEnabled = cfg.microphoneEnabled
-        portForwards = HvfPortForwards.text(cfg.portForwards)
-        guestResolution = cfg.guestResolution
-        retinaResolution = cfg.retinaResolution
-        commandKeyMode = cfg.commandKeyMode
         virtioGpu3d = cfg.virtioGpu3d
         nvmeBufferedIO = cfg.nvmeBufferedIO
         ctlFilePath = cfg.ctlFilePath

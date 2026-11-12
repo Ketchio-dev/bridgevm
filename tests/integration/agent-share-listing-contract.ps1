@@ -45,6 +45,8 @@ if ($PSVersionTable.PSEdition -eq 'Core') {
 
 function Assert($condition, [string]$what) { if (-not $condition) { throw "FAIL: $what" } }
 function Log([string]$m) { }
+# Quick Access is exercised separately with a mock Shell; listing tests do not alter the host shell.
+function Pin-ShareQuickAccess([string]$root) { }
 function Write-Line($handle, [string]$line, [string]$label) { $script:sent = $line }
 $script:enumerations = 0
 $script:during = $null

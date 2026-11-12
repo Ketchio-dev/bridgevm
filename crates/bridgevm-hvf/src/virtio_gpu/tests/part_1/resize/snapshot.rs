@@ -9,6 +9,18 @@ fn snapshot_v2_round_trips_active_and_pending_geometry() {
     install_2d_resource(&mut source, 1, 4, 3);
     source.gpu.scanout_resource = Some(1);
     source.gpu.scanout.fill(0x3c);
+    let resource = source.gpu.resources.get_mut(&1).unwrap();
+    resource.backing = vec![
+        BackingEntry {
+            addr: 0x4000_8000,
+            len: 12,
+        },
+        BackingEntry {
+            addr: 0x4000_9000,
+            len: 36,
+        },
+    ];
+    resource.backing_len = 48;
     assert!(source.request_display_resolution(6, 5));
     let state = source.snapshot_state();
 
@@ -20,6 +32,11 @@ fn snapshot_v2_round_trips_active_and_pending_geometry() {
     let active = restored.scanout().unwrap();
     assert_eq!((active.width, active.height, active.stride), (4, 3, 16));
     assert!(active.bytes.iter().all(|byte| *byte == 0x3c));
+    assert_eq!(restored.gpu.resources[&1].backing_len, 48);
+    assert_eq!(
+        restored.gpu.resources[&1].backing,
+        source.gpu.resources[&1].backing
+    );
 }
 
 #[test]

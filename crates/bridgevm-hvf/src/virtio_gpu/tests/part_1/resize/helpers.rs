@@ -16,6 +16,7 @@ pub(super) fn install_2d_resource(
             height,
             host_pixels: vec![0; scanout_len(width, height)],
             backing: Vec::new(),
+            backing_len: 0,
         },
     );
 }

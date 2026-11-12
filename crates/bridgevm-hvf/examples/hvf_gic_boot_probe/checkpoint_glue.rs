@@ -18,6 +18,16 @@ pub struct CheckpointEnv {
 }
 
 impl CheckpointEnv {
+    pub(crate) fn validate_cpu_count(&self, cpus: u64) -> io::Result<()> {
+        if cpus > 1 && (self.checkpoint.is_some() || self.restore.is_some()) {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "checkpoints need a single-CPU run (BRIDGEVM_SMP_CPUS=1)",
+            ));
+        }
+        Ok(())
+    }
+
     pub fn from_env() -> Self {
         Self {
             checkpoint: nonempty_path(CHECKPOINT_ENV),
@@ -122,6 +132,24 @@ fn require_probe_owned_vcpus(vcpus: &[HvVcpu]) -> io::Result<()> {
             "checkpoint/restore currently requires BRIDGEVM_SMP_CPUS=1"
         ),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checkpoint_and_restore_refuse_smp_before_vm_creation() {
+        for request in [
+            CheckpointEnv { checkpoint: Some("capture".into()), restore: None },
+            CheckpointEnv { checkpoint: None, restore: Some("restore".into()) },
+        ] {
+            let error = request.validate_cpu_count(4).expect_err("SMP checkpoints must be refused");
+            assert_eq!(error.to_string(), "checkpoints need a single-CPU run (BRIDGEVM_SMP_CPUS=1)");
+            assert!(request.validate_cpu_count(1).is_ok());
+        }
+        assert!(CheckpointEnv::default().validate_cpu_count(4).is_ok());
+    }
 }
 
 fn nonempty_path(name: &str) -> Option<PathBuf> {

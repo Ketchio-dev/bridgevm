@@ -242,6 +242,53 @@ fn dma_write_into_readonly_entry_is_rejected() {
 }
 
 #[test]
+fn bounds_regression_dma_write_rejects_excess_before_reading() {
+    struct NoRead;
+    impl GuestMemoryMut for NoRead {
+        fn read_bytes(&self, _: u64, _: usize) -> Option<Vec<u8>> {
+            panic!("oversized write must not probe guest memory")
+        }
+        fn write_bytes(&mut self, _: u64, _: &[u8]) -> bool {
+            false
+        }
+    }
+    let mut fw = FwCfg::new();
+    let sel = fw.add_writable_file("etc/ramfb", vec![0; 28]);
+    fw.select(sel);
+    for offset in [0, 28] {
+        fw.offset = offset;
+        assert_eq!(
+            fw.dma_execute(
+                FwCfgDmaAccess {
+                    control: DMA_CTL_WRITE,
+                    length: u32::MAX,
+                    address: 0,
+                },
+                &mut NoRead
+            ),
+            DMA_CTL_ERROR
+        );
+        assert_eq!(fw.offset, offset);
+        assert_eq!(fw.file_bytes("etc/ramfb"), Some(&[0; 28][..]));
+    }
+    fw.select(sel);
+    let mut mem = FakeMem::new(0x4000_0000, 28);
+    mem.bytes.fill(0x5a);
+    assert_eq!(
+        fw.dma_execute(
+            FwCfgDmaAccess {
+                control: DMA_CTL_WRITE,
+                length: 28,
+                address: mem.base,
+            },
+            &mut mem
+        ),
+        0
+    );
+    assert_eq!(fw.file_bytes("etc/ramfb"), Some(&[0x5a; 28][..]));
+}
+
+#[test]
 fn dma_write_updates_writable_entry() {
     let mut fw = FwCfg::new();
     let sel = fw.add_writable_file("etc/system-states", vec![0, 0, 0, 0]);

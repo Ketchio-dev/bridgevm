@@ -158,6 +158,11 @@ final class HvfWindowsInstallTests: XCTestCase {
 
         XCTAssertEqual(config.backendKind, "hvf-engine")
         XCTAssertEqual(config.installPending, true)
+        let decoded = try JSONDecoder().decode(VMConfig.self, from: JSONEncoder().encode(config))
+        XCTAssertEqual(decoded.sharedFolderHostPath, FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("BridgeVM 공유/\(config.name)").path)
+        XCTAssertEqual(decoded.sharedFolderGuestPath, "C:\\bridgevm-share")
+        XCTAssertEqual(decoded.createSharedFolderOnStart, true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: try XCTUnwrap(decoded.sharedFolderHostPath)))
         let request = try XCTUnwrap(HvfWindowsInstallRequest.load(bundlePath: config.bundlePath))
         XCTAssertEqual(request.diskGiB, 64)
         XCTAssertFalse(request.injectViogpu3d)

@@ -6,6 +6,10 @@ type Prepared = (ProbeConfig, RuntimeLease, Option<Box<dyn Tpm2Backend>>);
 /// The run's media and this generation's TPM, both owned before the VM exists.
 pub(super) fn prepare() -> Option<Prepared> {
     let mut config = ProbeConfig::from_env();
+    if let Err(error) = checkpoint_glue::CheckpointEnv::from_env().validate_cpu_count(config.smp_cpus) {
+        eprintln!("{error}");
+        return None;
+    }
     let lease = match acquire(&mut config.media) {
         Ok(lease) => lease,
         Err(error) => {
