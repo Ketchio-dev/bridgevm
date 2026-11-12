@@ -90,7 +90,8 @@ final class HvfOwnedRunController {
         if canForceAfterSupervisionLoss {
             if operation == nil {
                 _ = requestStop(target: identity, operationID: target.operationID)
-            } else { cancelRunnerAfterSupervisionLoss() }
+            }
+            cancelRunnerAfterSupervisionLoss()
             tick()
             return .requested
         }
@@ -222,7 +223,12 @@ final class HvfOwnedRunController {
         // A held Stop has had no deadline, so its cancellation gets one; a Force Stop already set its own.
         let deadline = holdsAfterGrace && forceDeadline == nil ? limit
             : min(operation.observation.deadlineUptime, limit)
-        if supervisionLost { cancelRunnerAfterSupervisionLoss(); return }
+        if supervisionLost {
+            // EOF (or the runner's failed event write) presses the guest power button and waits
+            // up to 60 s. Only an explicit Force Stop may interrupt that grace with SIGTERM.
+            graceDeadline = nil; forceDeadline = nil; guestShutdown.close(); channel.close()
+            return
+        }
         cancelled = true; graceDeadline = nil; forceDeadline = nil; guestShutdown.close()
         operation.update(phase: .cancelling, deadline: deadline, complete: ledger.complete,
                          exit: runnerExit, failure: failure)
