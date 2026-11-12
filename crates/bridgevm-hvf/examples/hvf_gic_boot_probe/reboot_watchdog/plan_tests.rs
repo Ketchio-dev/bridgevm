@@ -11,7 +11,7 @@ fn a_run_has_no_exit_cap_unless_one_is_requested() {
 }
 
 #[test]
-fn reboot_plan_resets_gic_guest_ram_platform_and_vcpu() {
+fn reboot_plan_advances_the_count_for_system_reset() {
     assert_eq!(
         psci_terminal_action(PSCI_SYSTEM_OFF),
         Some(PsciTerminalAction::SystemOff)
@@ -24,15 +24,27 @@ fn reboot_plan_resets_gic_guest_ram_platform_and_vcpu() {
         decide_system_reset(0, RebootPlan { max_reboots: 2, exit_on_reset: false }),
         SystemResetDecision::Reboot {
             next_reboot_count: 1,
-            actions: RebootActions {
-                reset_gic: true,
-                reset_guest_ram: true,
-                reset_platform: true,
-                reset_vcpu: true,
-                continue_run_loop: true,
-            },
         }
     );
+}
+
+#[test]
+fn in_process_reboot_preserves_the_fixed_reset_order() {
+    let run = include_str!("../probe_runtime.rs");
+    let reboot = &run[run.find("SystemResetDecision::Reboot {").unwrap()..];
+    let mut remaining = reboot;
+    for step in [
+        "crate::usgic_bridge::reset()",
+        "hv_gic_reset()",
+        "system_reset_failure(gic_reset_status, &platform)",
+        "reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb)",
+        "reset_vcpu_for_boot(vcpu)",
+        "arm_watchpoint_for_boot(vcpu, watch_addr)",
+        "continue 'reboot;",
+    ] {
+        let position = remaining.find(step).unwrap_or_else(|| panic!("missing or reordered {step}"));
+        remaining = &remaining[position + step.len()..];
+    }
 }
 
 #[test]

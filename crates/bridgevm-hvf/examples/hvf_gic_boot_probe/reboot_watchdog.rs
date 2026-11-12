@@ -33,30 +33,10 @@ impl RebootPlan {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct RebootActions {
-    pub(crate) reset_gic: bool,
-    pub(crate) reset_guest_ram: bool,
-    pub(crate) reset_platform: bool,
-    pub(crate) reset_vcpu: bool,
-    pub(crate) continue_run_loop: bool,
-}
-
-impl RebootActions {
-    const SYSTEM_RESET: Self = Self {
-        reset_gic: true,
-        reset_guest_ram: true,
-        reset_platform: true,
-        reset_vcpu: true,
-        continue_run_loop: true,
-    };
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SystemResetDecision {
     Reboot {
         next_reboot_count: u64,
-        actions: RebootActions,
     },
     Stop {
         reason: String,
@@ -77,7 +57,6 @@ pub(crate) fn decide_system_reset(reboot_count: u64, plan: RebootPlan) -> System
     if reboot_count < plan.max_reboots {
         return SystemResetDecision::Reboot {
             next_reboot_count: reboot_count + 1,
-            actions: RebootActions::SYSTEM_RESET,
         };
     }
     SystemResetDecision::Stop {

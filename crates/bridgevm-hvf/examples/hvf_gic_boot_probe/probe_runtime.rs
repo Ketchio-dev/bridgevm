@@ -1027,10 +1027,7 @@ pub(crate) fn run() -> ExitCode {
                     }
                 }
                 match decide_system_reset(reboot_count, reboot_plan) {
-                    SystemResetDecision::Reboot {
-                        next_reboot_count,
-                        actions,
-                    } => {
+                    SystemResetDecision::Reboot { next_reboot_count } => {
                         // No HDA tick polls or sends an MSI across these resets.
                         let _hda_quiesced = hda_service_tick.quiesce();
                         reboot_count = next_reboot_count;
@@ -1039,11 +1036,10 @@ pub(crate) fn run() -> ExitCode {
                             "PSCI SYSTEM_RESET: reboot {reboot_count}/{}",
                             reboot_plan.max_reboots
                         );
-                        let gic_reset_status = if actions.reset_gic && crate::usgic_bridge::reset()
-                        {
+                        let gic_reset_status = if crate::usgic_bridge::reset() {
                             println!("userspace GIC reset");
                             0
-                        } else if actions.reset_gic {
+                        } else {
                             // All secondary vCPUs have stopped and joined above, and CPU0
                             // is outside hv_vcpu_run. Apple documents hv_gic_reset as the
                             // VM-reset operation for the distributor, redistributors, and
@@ -1051,27 +1047,15 @@ pub(crate) fn run() -> ExitCode {
                             let status = hv_gic_reset();
                             println!("hv_gic_reset = {status:#x}");
                             status
-                        } else {
-                            0
                         };
-                        if let Some(reason) = system_reset_failure(
-                            gic_reset_status,
-                            actions.reset_platform,
-                            &platform,
-                        ) {
+                        if let Some(reason) = system_reset_failure(gic_reset_status, &platform) {
                             fatal_reset_error = true;
                             stop_reason = reason;
                         } else {
-                            if actions.reset_guest_ram {
-                                reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb);
-                            }
-                            if actions.reset_vcpu {
-                                reset_vcpu_for_boot(vcpu);
-                                arm_watchpoint_for_boot(vcpu, watch_addr);
-                            }
-                            if actions.continue_run_loop {
-                                continue 'reboot;
-                            }
+                            reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb);
+                            reset_vcpu_for_boot(vcpu);
+                            arm_watchpoint_for_boot(vcpu, watch_addr);
+                            continue 'reboot;
                         }
                     }
                     SystemResetDecision::Stop { reason } => {
