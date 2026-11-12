@@ -19,7 +19,7 @@ ASSETS = ROOT / "scripts/win-assets"
 WORKLOAD, LAUNCHER = ASSETS / "bv-product-e2e-bitlocker.ps1", ASSETS / "bv-product-e2e-bitlocker-launch.ps1"
 CONTRACT = ROOT / "tests/integration/t19-bitlocker-guest-contract.ps1"
 RUNNER = ROOT / "tests/integration/windows-guest-pwsh-contracts.ps1"
-WORKFLOW = ROOT / ".github/workflows/t17-tpm-pcr-contract.yml"
+WORKFLOW = ROOT / ".github/workflows/agent-caret-contract.yml"
 ALLOWED = {"GetConversionStatus", "GetProtectionStatus", "GetLockStatus", "GetKeyProtectors", "GetKeyProtectorType",
            "GetKeyProtectorPlatformValidationProfile", "ProtectKeyWithTPM", "Encrypt"}
 DENIED = (r"NumericalPassword", r"KeyPackage", r"RecoveryPassword", r"RecoveryInformation", r"ExternalKey",
