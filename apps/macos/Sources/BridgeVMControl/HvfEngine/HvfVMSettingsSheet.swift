@@ -28,6 +28,7 @@ struct HvfVMSettingsSheet: View {
                 if let notice = runningNoticeText {
                     Text(notice).foregroundStyle(.secondary)
                 }
+                HvfStartCloseSettings(session: session)
                 Section("하드웨어") {
                     HvfResourceSetting(session: session, ramMiB: binding(\.ramMiB), cpus: binding(\.smpCpus))
                     HvfDiskSizeSetting(session: session, config: session.config)

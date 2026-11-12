@@ -110,6 +110,22 @@ fn is_range(line: &Option<String>) -> bool {
 }
 
 #[test]
+fn ranged_fetch_preserves_mac_save_and_guest_conflict() {
+    let mut rig = rig("mac-save", 1024);
+    std::fs::write(rig.dir.join("doc.bin"), b"original").unwrap();
+    rig.list("doc.bin", 10, TIME);
+    // Change after scheduling, before the first range even starts.
+    std::fs::write(rig.dir.join("doc.bin"), b"newer Mac save").unwrap();
+    let line = rig.step().unwrap();
+    for reply in range_reply(&line, b"guest edit", 10, TIME) { rig.reply(&reply); }
+    rig.wait(|r| !r.h.big_share_active());
+    assert_eq!(std::fs::read(rig.dir.join("doc.bin")).unwrap(), b"newer Mac save");
+    assert!(std::fs::read_dir(&rig.dir).unwrap().filter_map(Result::ok).any(|e| {
+        e.file_name().to_string_lossy().contains("Windows copy") && std::fs::read(e.path()).ok().as_deref() == Some(&b"guest edit"[..])
+    }));
+}
+
+#[test]
 fn a_large_guest_file_is_reassembled_range_by_range_and_appears_only_complete() {
     let mut rig = rig("whole", 1 << 30);
     let bytes = data(2 * SHARE_RANGE_BYTES as usize + 12_345);

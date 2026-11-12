@@ -16,7 +16,7 @@ struct HvfRuntimeStatusCard: View {
                         Label(session.runtimeStartupWorkerPending ? "준비 중…" : "시작", systemImage: "play.fill")
                     }
                     .buttonStyle(.borderedProminent).controlSize(.large)
-                    .disabled(session.hasActiveRuntimeWork || !ready)
+                    .disabled((session.hasActiveRuntimeWork && !session.runnerDiedWithoutCleanup) || session.runtimeStartupWorkerPending || !ready)
                     .accessibilityIdentifier("bridgevm.windows.runtime.start")
                     HvfRuntimeStatusStopControl(session: session)
                     HvfRestartControl(session: session, identifier: "bridgevm.windows.runtime") { enabled, press in

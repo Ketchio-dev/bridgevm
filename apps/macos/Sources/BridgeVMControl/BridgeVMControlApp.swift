@@ -15,6 +15,7 @@ struct BridgeVMControlApp: App {
         return WindowGroup("BridgeVM Control") {
             BridgeVMControlAppContent(library: library)
                 .frame(minWidth: 1100)
+                .background(ControlLibraryWindow())
                 .appUIHostSceneObservation()
         }
         .controlWindowPresentation()

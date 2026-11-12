@@ -13,8 +13,8 @@ extension HvfEngineSession {
         }
         guard !runtimeTransitionInProgress, !workAdmissionGate.isChecking else { return .refused(.busy) }
         guard mutationReservation == nil else { return .refused(.mutationActive) }
-        guard !hasPendingRuntimeStart, !mayHaveOwnedWork, process?.isRunning != true,
-              !hasRetainedAttachment, connectionState == .stopped else { return .refused(.runtimeActive) }
+        guard !hasPendingRuntimeStart, process?.isRunning != true, !hasRetainedAttachment,
+              runnerDiedWithoutCleanup || (!mayHaveOwnedWork && connectionState == .stopped) else { return .refused(.runtimeActive) }
         guard config == configuration, expectedSavedConfigurationDigest.utf8.count == 64,
               expectedSavedConfigurationDigest.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else {
             return .refused(.configurationMismatch)
@@ -30,6 +30,7 @@ extension HvfEngineSession {
         let execution = HvfOwnedStartExecution(session: self, ticket: ticket, revalidate: revalidate)
         ownedStartExecution = execution
         objectWillChange.send()
+        updateSleepPrevention()
         execution.begin()
         return .accepted(ticket)
     }
@@ -47,7 +48,7 @@ extension HvfEngineSession {
         ticket.checkDeadline(now: ownedStartNow())
         if let controller = ownedController, ticket.target == controller.identity {
             ticket.observe(controller, now: ownedStartNow())
-            if ticket.failure != nil, controller.mayHaveOwnedWork, controller.operation == nil {
+            if ticket.failure != nil, controller.runnerExit == nil, controller.mayHaveOwnedWork, controller.operation == nil {
                 _ = controller.requestStop(target: controller.identity, operationID: UUID(), allowGuestGrace: false)
             }
         }
@@ -64,6 +65,7 @@ extension HvfEngineSession {
     }
     func finishOwnedStartWorker(_ ticket: HvfOwnedStartOperation, result: Result<HvfOwnedRuntimeSpawn, HvfOwnedStartFailure>,
                                 revalidate: @MainActor () -> Bool) {
+        defer { updateSleepPrevention() }
         guard ownedStartOperation === ticket else { return }
         ticket.checkDeadline(now: ownedStartNow())
         switch result {

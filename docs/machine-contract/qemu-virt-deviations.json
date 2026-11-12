@@ -14,6 +14,15 @@
       "evidence": "apps/macos/Tests/BridgeVMControlTests/HvfAgentSilenceNoticeTests.swift; crates/bridgevm-hvf/examples/hvf_gic_boot_probe/boot_media_setup_tests.rs"
     },
     {
+      "id": "runner-death-helper-stop",
+      "area": "lifecycle",
+      "qemu_behavior": "A separately launched VM process can outlive its launcher.",
+      "bridgevm_behavior": "A runner-started helper watches its original parent and requests its normal SIGTERM final-persistence stop when that runner exits; directly launched helpers do not watch their shell parent.",
+      "guest_visible": true,
+      "impact": "Runner death ends Windows promptly rather than leaving an invisible orphan holding writable media; Windows observes an unexpected power-off, while ordered guest flushes and final host persistence retain their existing guarantees.",
+      "evidence": "crates/bridgevm-hvf/tests/parent_watch.rs"
+    },
+    {
       "id": "virtio-blk-status-zero-reset",
       "area": "storage",
       "qemu_behavior": "Writing device status zero resets guest-programmed device state for a new negotiation.",
@@ -165,6 +174,24 @@
       "guest_visible": true,
       "impact": "Windows on a MacBook can show the Mac's charge and whether it is plugged in, so its power plan, battery saver and apps can adapt. Capacity in Wh and the voltage are synthetic: powercfg /batteryreport shows 60 Wh, not the Mac's battery. Evidence is deterministic AML, page, platform and host-reading tests, iasl and acpiexec checks of the DSDT, and one operator run per arm on a Mac without a battery using the test override (2026-11-11): Windows 11 bound both devices, Win32_Battery and powercfg /batteryreport showed the battery, and an unplug reached Windows (GED events 0x30000). That run also showed the guest agent's scheduled task stopping on battery under Task Scheduler's defaults; the task now says false to both battery settings, and an agent update re-registers older tasks. A later run showed an older agent never starting when Windows booted on battery, which the AC hold until onbattery addresses.",
       "evidence": "crates/bridgevm-hvf/src/host_power.rs"
+    },
+    {
+      "id": "share-checked-delete",
+      "area": "guest-agent",
+      "qemu_behavior": "QEMU has no shared-folder guest-agent deletion protocol of its own.",
+      "bridgevm_behavior": "READY delcheck enables DEL path size timestamp: a file is deleted only when its size and exact listed UTC timestamp still match the synchronized version. OK DEL changed preserves a guest edit and makes the host fetch it on the next listing. Without delcheck the host keeps legacy DEL. New agents still accept legacy one-argument DEL from older hosts. Host deletions also compare synchronized size and millisecond timestamp before unlink. When the synchronized stamp is unknown, the host logs del-unchecked and uses legacy deletion rather than silently suppressing it. Both executors continue to refuse directory deletion.",
+      "guest_visible": true,
+      "impact": "A save made after deletion planning wins over the propagated file deletion.",
+      "evidence": "tests/integration/agent-share-listing-contract.ps1"
+    },
+    {
+      "id": "share-staged-put",
+      "area": "guest-agent",
+      "qemu_behavior": "QEMU has no shared-folder guest-agent push protocol of its own.",
+      "bridgevm_behavior": "PUT and PUTBEG/PUTCHUNK/PUTDATA/PUTEND write an unlisted .bridgevm-part sibling and rename only the complete file over the destination, using the same staging and replacement helpers as LPUT. An interrupted transfer leaves the previous file intact; abandoned temporaries use the existing listing cleanup. The wire is unchanged.",
+      "guest_visible": true,
+      "impact": "Readers see the old file until the new version is complete, not a truncated or partially transferred version.",
+      "evidence": "tests/integration/agent-share-listing-contract.ps1"
     },
     {
       "id": "share-quick-access",

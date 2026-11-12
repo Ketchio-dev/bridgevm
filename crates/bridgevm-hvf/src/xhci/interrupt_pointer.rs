@@ -39,6 +39,9 @@ impl XhciController {
         mem: &mut dyn GuestMemoryMut,
         policy: &'static str,
     ) -> bool {
+        if matches!(self.hid_endpoints[1].state, 2..=4) {
+            return false;
+        }
         for _ in 0..MAX_LINK_TRBS_PER_DOORBELL {
             let transfer_ring = self.slot1_dci5_dequeue;
             if transfer_ring == 0 {
@@ -77,6 +80,8 @@ impl XhciController {
                     self.write_slot1_dci5_output_dequeue(mem);
                 }
                 TRB_TYPE_NORMAL => {
+                    self.hid_endpoints[1].pending =
+                        Some((interrupt_transfer.gpa, interrupt_transfer.status));
                     let event_data =
                         read_chained_event_data(mem, &interrupt_transfer, self.slot1_dci5_dcs);
                     let last_td_trb_gpa = event_data
@@ -161,6 +166,7 @@ impl XhciController {
                         ),
                     };
                     if posted {
+                        self.hid_endpoints[1].pending = None;
                         self.slot1_dci5_last_drain_blocked = None;
                         if can_emit_queued_report {
                             #[rustfmt::skip]
