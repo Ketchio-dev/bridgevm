@@ -8,6 +8,9 @@ struct HvfSharedFolderSettings: View {
     @Binding var hostDir: String
     @Binding var guestDir: String
     @State private var message: String?
+    var commit: (() -> Void)? = nil
+    @FocusState private var focusedField: Field?
+    private enum Field { case host, guest }
 
     var isDisabled: Bool { session.persistsLibraryPreferences && !session.libraryPreferencesEditable }
     /// The visible pair, or nil while either half is still empty.
@@ -27,6 +30,7 @@ struct HvfSharedFolderSettings: View {
                         .textFieldStyle(.roundedBorder)
                         .font(.body.monospaced())
                         .accessibilityIdentifier("bridgevm.runtime.share.host")
+                        .focused($focusedField, equals: .host)
                         .onSubmit(commitDraft)
                     Button(action: chooseHost) { Image(systemName: "folder") }
                         .accessibilityIdentifier("bridgevm.runtime.share.host.choose")
@@ -37,11 +41,13 @@ struct HvfSharedFolderSettings: View {
                     TextField("C:\\bridgevm-share", text: $guestDir)
                         .textFieldStyle(.roundedBorder)
                         .font(.body.monospaced()).accessibilityIdentifier("bridgevm.runtime.share.guest")
+                        .focused($focusedField, equals: .guest)
                         .onSubmit(commitDraft)
                 }
             }
         }
         .disabled(isDisabled)
+        .onChange(of: focusedField) { old, _ in if old != nil { commitDraft() } }
         .alert("공유 폴더 설정", isPresented: Binding(
             get: { message != nil }, set: { if !$0 { message = nil } }
         )) {
@@ -54,10 +60,12 @@ struct HvfSharedFolderSettings: View {
     /// Turning sharing on only reveals the fields; nothing is shared until a folder is chosen.
     func setEnabled(_ on: Bool) {
         enabled = on
-        if !on { apply(nil) } else if let draft { apply(draft) }
+        if let commit { commit() }
+        else if !on { apply(nil) } else if let draft { apply(draft) }
     }
 
     func commitDraft() {
+        if let commit { commit(); return }
         if enabled, let draft { apply(draft) }
     }
 

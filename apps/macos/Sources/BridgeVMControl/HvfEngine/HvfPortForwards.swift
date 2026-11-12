@@ -37,9 +37,12 @@ extension HvfEngineSession {
     /// vm.json's forwards for a library VM after the attempt (the visible text otherwise), plus any message.
     func applyPortForwards(_ text: String,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (text: String, message: String?) {
-        guard persistsLibraryPreferences else { return (text, nil) }
         guard let forwards = HvfPortForwards.parse(text) else {
             return (text, "포트 포워딩은 Mac포트:Windows포트 형식으로 쉼표로 구분해 입력하세요. 예: 8080:80, 3390:3389")
+        }
+        guard persistsLibraryPreferences else {
+            config.portForwards = forwards
+            return (HvfPortForwards.text(forwards), nil)
         }
         let message = saveLibraryPreference("포트 포워딩 설정", publish: publish) {
             $0.portForwards = forwards.isEmpty ? nil : HvfPortForwards.text(forwards)
@@ -67,6 +70,8 @@ struct HvfPortForwardSetting: View {
     @ObservedObject var session: HvfEngineSession
     @Binding var text: String
     @State private var message: String?
+    var commit: (() -> Void)? = nil
+    @FocusState private var focused: Bool
 
     var isDisabled: Bool { session.persistsLibraryPreferences && !session.libraryPreferencesEditable }
 
@@ -78,12 +83,14 @@ struct HvfPortForwardSetting: View {
                     .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("bridgevm.runtime.portForwards")
-                    .onSubmit(apply)
+                    .focused($focused)
+                    .onSubmit(commitDraft)
             }
             Text("Mac 포트:Windows 포트 형식으로 쉼표로 구분해 입력합니다. 예: 8080:80")
                 .font(.caption).foregroundColor(.secondary)
         }
         .disabled(isDisabled)
+        .onChange(of: focused) { _, active in if !active { commitDraft() } }
         .help("Mac의 127.0.0.1:Mac포트 연결이 Windows의 TCP 포트로 전달됩니다. VM이 중지된 동안 변경하세요.")
         .alert("포트 포워딩 설정", isPresented: Binding(
             get: { message != nil }, set: { if !$0 { message = nil } }
@@ -94,7 +101,8 @@ struct HvfPortForwardSetting: View {
         }
     }
 
-    private func apply() {
+    private func commitDraft() {
+        if let commit { commit(); return }
         let result = session.applyPortForwards(text)
         text = result.text
         message = result.message

@@ -33,7 +33,11 @@ extension HvfEngineSession {
     func applySharedFolderSelection(_ selection: HvfSharedFolderSelection?,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) })
         -> (selection: HvfSharedFolderSelection?, message: String?) {
-        guard persistsLibraryPreferences else { return (selection, nil) }
+        guard persistsLibraryPreferences else {
+            config.shareHostDir = selection?.hostPath
+            config.shareGuestDir = selection?.guestPath
+            return (selection, nil)
+        }
         let message = saveSharedFolderPreference(selection, publish: publish)
         return (config.libraryContext?.config.sharedFolder, message)
     }

@@ -5,18 +5,11 @@ struct HvfVMSettingsSheet: View {
     @ObservedObject var session: HvfEngineSession
     @Environment(\.dismiss) private var dismiss
     var captureHeight: CGFloat = 720
-    @State private var shareEnabled: Bool
-    @State private var shareHostDir: String
-    @State private var shareGuestDir: String
-    @State private var portForwards: String
+    @StateObject private var draft: HvfVMSettingsDraft
 
     init(session: HvfEngineSession) {
         self.session = session
-        let config = session.config
-        _shareEnabled = State(initialValue: config.shareHostDir != nil && config.shareGuestDir != nil)
-        _shareHostDir = State(initialValue: config.shareHostDir ?? "")
-        _shareGuestDir = State(initialValue: config.shareGuestDir ?? "C:\\bridgevm-share")
-        _portForwards = State(initialValue: HvfPortForwards.text(config.portForwards))
+        _draft = StateObject(wrappedValue: HvfVMSettingsDraft(session: session))
     }
 
     private func binding<Value>(_ keyPath: WritableKeyPath<HvfEngineConfig, Value>) -> Binding<Value> {
@@ -28,7 +21,7 @@ struct HvfVMSettingsSheet: View {
             HStack {
                 Text("설정").font(.title2.bold())
                 Spacer()
-                Button("완료") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("완료", action: finish).keyboardShortcut(.cancelAction)
             }
             .padding(20)
             Form {
@@ -50,8 +43,9 @@ struct HvfVMSettingsSheet: View {
                     HvfHardwareCursorToggle(session: session)
                 }
                 Section("공유") {
-                    HvfSharedFolderSettings(session: session, enabled: $shareEnabled,
-                        hostDir: $shareHostDir, guestDir: $shareGuestDir)
+                    HvfSharedFolderSettings(session: session, enabled: $draft.shareEnabled,
+                        hostDir: $draft.host, guestDir: $draft.guest, commit: { draft.commitShare() })
+                    if let message = draft.shareMessage { help(message) }
                     HvfClipboardSyncToggle(session: session, isOn: binding(\.clipboardSync))
                     HvfGuestPrintToggle(session: session)
                     HvfGuestLinksToggle(session: session)
@@ -59,9 +53,11 @@ struct HvfVMSettingsSheet: View {
                 Section("네트워크") {
                     HvfNetworkToggle(session: session, isOn: binding(\.virtioNet))
                     if session.config.virtioNet {
-                        HvfPortForwardSetting(session: session, text: $portForwards)
+                        HvfPortForwardSetting(session: session, text: $draft.forwards,
+                            commit: { draft.commitForwards() })
                     }
                 }
+                if let message = draft.forwardsMessage { help(message) }
                 Section("입력") {
                     HvfCommandKeyPicker(session: session, selection: binding(\.commandKeyMode))
                 }
@@ -80,6 +76,15 @@ struct HvfVMSettingsSheet: View {
         }
         .frame(width: 680, height: captureHeight)
         .accessibilityIdentifier("bridgevm.runtime.settings")
+        .onAppear { session.settingsSheetOpen = true }
+        .onDisappear { _ = draft.finish(); session.settingsSheetOpen = false }
+        .interactiveDismissDisabled()
+        .background(HvfSettingsDismissGuard(shouldDismiss: { draft.finish() }))
+        .focusedSceneValue(\.hvfVMSettings, finish)
+    }
+
+    private func finish() {
+        if draft.finish() { dismiss() }
     }
 
     static let runningNotice = "일부 설정은 Windows를 종료한 뒤 바꿀 수 있습니다."
