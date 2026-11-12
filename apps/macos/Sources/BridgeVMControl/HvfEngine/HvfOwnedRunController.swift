@@ -26,6 +26,7 @@ final class HvfOwnedRunController {
     private(set) var graceExpired = false
     private var forceDeadline: TimeInterval?
     private var forceRequested = false
+    let supervisionForceOperationID = UUID()
     private var cancelled = false
     private var serviceReady = false
     private var guestRequestSent = false
@@ -73,7 +74,7 @@ final class HvfOwnedRunController {
             graceDeadline = time + Self.guestGrace
             requestGuestIfReady()
             if !serviceReady, let pressPowerButton { pressGuestPowerButton(pressPowerButton) }
-        } else if !supervisionLost { cancelRunner() }
+        } else { cancelRunner() }
         tick()
         return .accepted(ticket)
     }
@@ -83,16 +84,17 @@ final class HvfOwnedRunController {
     /// runner is cancelled at once (the helper still persists vars and disk on TERM).
     func requestForceStop(_ target: HvfForceStopTarget) -> HvfForceStopResult {
         guard target.identity == identity else { return .refused(.targetChanged) }
-        guard let operation, operation.operationID == target.operationID else { return .refused(.operationChanged) }
-        guard waitsForGuestShutdown || canForceAfterSupervisionLoss else { return .refused(.notWaiting) }
+        guard target.operationID == (operation?.operationID ?? supervisionForceOperationID) else {
+            return .refused(.operationChanged)
+        }
         if canForceAfterSupervisionLoss {
-            forceRequested = true
-            graceDeadline = nil; forceDeadline = nil; guestShutdown.close(); channel.close()
-            // Only this retained Process, never a PID lookup or an attached VM.
-            if process.isRunning, process.processIdentifier == identity.processID { process.terminate() }
+            if operation == nil {
+                _ = requestStop(target: identity, operationID: target.operationID)
+            } else { cancelRunnerAfterSupervisionLoss() }
             tick()
             return .requested
         }
+        guard let operation, waitsForGuestShutdown else { return .refused(.notWaiting) }
         graceDeadline = nil; forceRequested = true
         if serviceReady {
             let time = now(), limit = time + Self.forcedGuestWindow
@@ -164,10 +166,6 @@ final class HvfOwnedRunController {
             outputEnded = true; protocolValid = false; recordFailure(.channelFailed)
             onDiagnostic?("Owned runtime channel failed; cleanup remains unconfirmed")
         }
-        if supervisionLost, operation == nil {
-            // Admit one durable escalation target without cancelling until the user confirms.
-            _ = requestStop(target: identity, operationID: UUID())
-        }
         tick()
     }
 
@@ -224,6 +222,7 @@ final class HvfOwnedRunController {
         // A held Stop has had no deadline, so its cancellation gets one; a Force Stop already set its own.
         let deadline = holdsAfterGrace && forceDeadline == nil ? limit
             : min(operation.observation.deadlineUptime, limit)
+        if supervisionLost { cancelRunnerAfterSupervisionLoss(); return }
         cancelled = true; graceDeadline = nil; forceDeadline = nil; guestShutdown.close()
         operation.update(phase: .cancelling, deadline: deadline, complete: ledger.complete,
                          exit: runnerExit, failure: failure)
@@ -234,6 +233,13 @@ final class HvfOwnedRunController {
         } catch HvfOwnedRuntimeProtocolError.channelClosed {
             // The worker may already have queued a valid COMPLETE and EOF. Drain before deciding.
         } catch { recordFailure(.channelFailed); channel.close() }
+    }
+
+    private func cancelRunnerAfterSupervisionLoss() {
+        forceRequested = true; cancelled = true
+        graceDeadline = nil; forceDeadline = nil; guestShutdown.close(); channel.close()
+        // Only this retained Process, never a PID lookup or an attached VM.
+        if process.isRunning, process.processIdentifier == identity.processID { process.terminate() }
     }
 
     private func recordFailure(_ value: HvfOwnedStopFailure) {

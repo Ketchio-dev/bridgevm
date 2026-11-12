@@ -22,8 +22,7 @@ extension HvfEngineSession {
         defer { refreshForceStopTarget() }
         guard ownedProcessIdentity == target.identity, let controller = ownedController,
               controller.identity == target.identity else { return .refused(.targetChanged) }
-        guard connectionState == .stopping || connectionState == .timedOut,
-              !runtimeStartupWorkerPending else { return .refused(.notWaiting) }
+        guard !runtimeStartupWorkerPending else { return .refused(.notWaiting) }
         resumeBeforeStop() // the helper then saves the disk and UEFI variables as it stops
         let result = controller.requestForceStop(target)
         ownedRuntimeChanged(token: target.identity.token)
@@ -32,7 +31,7 @@ extension HvfEngineSession {
 
     func refreshForceStopTarget() {
         let target: HvfForceStopTarget?
-        if (connectionState == .stopping || connectionState == .timedOut), !runtimeStartupWorkerPending,
+        if !runtimeStartupWorkerPending,
            let controller = ownedController, ownedProcessIdentity == controller.identity {
             target = controller.forceStopTarget
         } else { target = nil }
