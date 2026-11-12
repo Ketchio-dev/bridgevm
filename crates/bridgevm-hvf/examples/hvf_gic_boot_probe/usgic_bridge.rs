@@ -29,6 +29,25 @@ pub(crate) fn host_time_ticks() -> u64 {
     unsafe { mach_absolute_time() }
 }
 
+fn timer_expired(cval: u64, offset: u64, counters: &impl crate::pause_gate::HostCounters) -> bool {
+    cval <= counters.mach().wrapping_sub(offset)
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::*;
+    struct AfterSleep;
+    impl crate::pause_gate::HostCounters for AfterSleep {
+        fn mach(&self) -> u64 { 100 }
+        fn raw(&self) -> u64 { 30_000_100 }
+    }
+    #[test]
+    fn synthetic_timer_waits_for_guest_count_after_host_sleep() {
+        assert!(!timer_expired(150, 10, &AfterSleep), "timer fired before guest count reached CVAL");
+        assert!(timer_expired(90, 10, &AfterSleep));
+    }
+}
+
 const MAX_VCPUS: usize = 16;
 
 pub(crate) struct UsGicBridge {
@@ -235,8 +254,7 @@ pub(crate) fn stall_report(vcpu0: HvVcpuT) {
         hv_vcpu_get_sys_reg(vcpu0, HV_SYS_REG_CNTV_CVAL_EL0, &mut cval);
         println!(
             "USGIC stall cpu0 vtimer: ctl={ctl:#x} cval={cval:#x} guest_now={:#x} host_masked={} synth={}",
-            crate::host_support::host_cntvct()
-                .wrapping_sub(bridge.last_voff[0].load(Ordering::Relaxed)),
+            host_time_ticks().wrapping_sub(bridge.last_voff[0].load(Ordering::Relaxed)),
             bridge.vtimer_masked[0].load(Ordering::SeqCst),
             bridge.synth_fires[0].load(Ordering::Relaxed)
         );
@@ -386,7 +404,7 @@ impl UsGicBridge {
                     let mut voff = 0u64;
                     hv_vcpu_get_vtimer_offset(vcpu, &mut voff);
                     self.last_voff[cpu].store(voff, Ordering::Relaxed);
-                    cval <= host_cntvct().wrapping_sub(voff)
+                    timer_expired(cval, voff, &crate::pause_gate::Host)
                 };
                 if expired {
                     hv_vcpu_set_vtimer_mask(vcpu, true);
