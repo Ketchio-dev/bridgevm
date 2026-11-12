@@ -51,6 +51,54 @@ impl KdSerialPump {
     }
 }
 
+// 1 MiB leaves ample room for a burst of KD packets, without letting an
+// attached debugger that stops reading retain unlimited untrusted guest TX.
+const MAX_PENDING_TX: usize = 1024 * 1024;
+
+fn pump_tx(
+    pending: &mut Vec<u8>,
+    guest_tx: &[u8],
+    peer: Option<&mut impl Write>,
+    report: impl FnOnce(&str),
+) -> bool {
+    let Some(peer) = peer else {
+        pending.clear();
+        return false;
+    };
+    if guest_tx.len() >= MAX_PENDING_TX.saturating_sub(pending.len()) {
+        pending.clear();
+        report("kd-serial: debugger disconnected: 1 MiB transmit backlog limit reached");
+        return false;
+    }
+    // Avoid Vec's geometric growth reserving more than the fixed ceiling.
+    pending.reserve_exact(guest_tx.len());
+    pending.extend_from_slice(guest_tx);
+    if flush_pending(pending, peer).is_err() {
+        pending.clear();
+        report("kd-serial: debugger disconnected");
+        return false;
+    }
+    true
+}
+
+fn flush_pending(pending: &mut Vec<u8>, writer: &mut impl Write) -> std::io::Result<()> {
+    let mut sent = 0;
+    let result = loop {
+        if sent == pending.len() {
+            break Ok(());
+        }
+        match writer.write(&pending[sent..]) {
+            Ok(0) => break Err(ErrorKind::WriteZero.into()),
+            Ok(n) => sent += n,
+            Err(error) if error.kind() == ErrorKind::WouldBlock => break Ok(()),
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(error) => break Err(error),
+        }
+    };
+    pending.drain(..sent);
+    result
+}
+
 /// Live bridge over a Unix-domain socket. `None` (bridge disabled) unless
 /// `BRIDGEVM_KD_SERIAL_SOCKET` is set.
 pub struct KdSerialBridge {
@@ -58,6 +106,7 @@ pub struct KdSerialBridge {
     path: PathBuf,
     peer: Option<UnixStream>,
     recv_scratch: [u8; 4096],
+    pending_tx: Vec<u8>,
 }
 
 impl KdSerialBridge {
@@ -90,6 +139,7 @@ impl KdSerialBridge {
             path: path.to_path_buf(),
             peer: None,
             recv_scratch: [0u8; 4096],
+            pending_tx: Vec::new(),
         })
     }
 
@@ -101,6 +151,7 @@ impl KdSerialBridge {
             // No debugger yet: still drain guest TX so the UART buffer cannot
             // grow without bound while waiting for an attach.
             let _ = platform.take_uart_output();
+            self.pending_tx.clear();
             return;
         };
 
@@ -133,18 +184,13 @@ impl KdSerialBridge {
         if !transfer.to_guest.is_empty() {
             platform.push_uart_input(&transfer.to_guest);
         }
-        if peer_alive && !transfer.to_debugger.is_empty() {
-            match peer.write_all(&transfer.to_debugger) {
-                Ok(()) => {}
-                Err(ref e) if e.kind() == ErrorKind::WouldBlock => {}
-                Err(_) => peer_alive = false,
-            }
-        }
-
-        if peer_alive {
-            self.peer = Some(peer);
-        } else {
+        if !peer_alive {
+            self.pending_tx.clear();
             eprintln!("kd-serial: debugger disconnected");
+            return;
+        }
+        if pump_tx(&mut self.pending_tx, &transfer.to_debugger, Some(&mut peer), |line| eprintln!("{line}")) {
+            self.peer = Some(peer);
         }
     }
 
@@ -174,6 +220,59 @@ impl Drop for KdSerialBridge {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blocked_debugger_is_disconnected_once_at_tx_ceiling() {
+        struct Blocked;
+        impl Write for Blocked {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                Err(ErrorKind::WouldBlock.into())
+            }
+            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        }
+        let mut peer = Some(Blocked);
+        let mut pending = Vec::new();
+        let burst = vec![0; MAX_PENDING_TX / 4];
+        let mut reports = Vec::new();
+        for _ in 0..8 {
+            if !pump_tx(&mut pending, &burst, peer.as_mut(), |line| reports.push(line.to_owned())) {
+                peer = None;
+            }
+            assert!(pending.len() <= MAX_PENDING_TX, "KD TX exceeded fixed ceiling: {}", pending.len());
+            assert!(pending.capacity() <= MAX_PENDING_TX);
+        }
+        assert!(peer.is_none(), "blocked debugger was not disconnected at TX ceiling");
+        assert!(pending.is_empty());
+        assert_eq!(reports, vec!["kd-serial: debugger disconnected: 1 MiB transmit backlog limit reached"]);
+        assert!(!pump_tx(&mut pending, &burst, None::<&mut Blocked>, |_| panic!("no-peer disconnect reported")));
+        assert!(pending.is_empty(), "no-peer TX was retained");
+    }
+
+    #[test]
+    fn partial_write_and_backpressure_preserve_kd_bytes_once_in_order() {
+        struct Backpressure { bytes: Vec<u8>, step: usize }
+        impl Write for Backpressure {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.step += 1;
+                match self.step {
+                    1 => { self.bytes.extend_from_slice(&bytes[..2]); Ok(2) }
+                    2 => Err(ErrorKind::WouldBlock.into()),
+                    3 => Err(ErrorKind::Interrupted.into()),
+                    _ => { self.bytes.extend_from_slice(bytes); Ok(bytes.len()) }
+                }
+            }
+            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        }
+        let mut writer = Backpressure { bytes: Vec::new(), step: 0 };
+        let mut pending = b"abcdef".to_vec();
+        flush_pending(&mut pending, &mut writer).unwrap();
+        assert_eq!(pending, b"cdef", "unaccepted KD suffix was lost");
+        pending.extend_from_slice(b"gh");
+        flush_pending(&mut pending, &mut writer).unwrap();
+        flush_pending(&mut pending, &mut writer).unwrap();
+        assert!(pending.is_empty());
+        assert_eq!(writer.bytes, b"abcdefgh");
+    }
 
     #[test]
     fn pump_forwards_guest_tx_to_debugger_and_debugger_rx_to_guest() {
