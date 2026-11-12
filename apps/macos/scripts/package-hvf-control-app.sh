@@ -106,6 +106,7 @@ install_installed_boot_modules "$stage_app/Contents/Resources"
 for script in \
   build-hvf-windows-scripted-source.sh \
   stage-hvf-windows-guest-payload.sh \
+  build-guest-tools-volume.sh \
   hvf-disk-image-utils.sh \
   build-hvf-windows-viogpu3d-injector.sh \
   build-hvf-windows-driver-injector.sh \
@@ -135,7 +136,7 @@ for asset in \
   bvagent.ps1 bvagent-firstboot.ps1 bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-pointer-input.cs bvagent-window-inventory.ps1 bv-window-inventory.cs bvagent-task.ps1 bvagent-update.ps1 bv-product-e2e-launch.ps1 bv-product-e2e-bitlocker-launch.ps1 bv-product-e2e-bitlocker.ps1 \
   bv-product-e2e.ps1 bv-product-e2e-tpm.ps1 bv-product-e2e-tpm.cs \
   windows-guest-payload-v1.example.tsv \
-  bvagent-install-service.c
+  bvagent-install-service.c bvagent-install.ps1 install.cmd
 do
   install -m 644 "$ROOT/scripts/win-assets/$asset" \
     "$stage_app/Contents/Resources/scripts/win-assets/$asset"

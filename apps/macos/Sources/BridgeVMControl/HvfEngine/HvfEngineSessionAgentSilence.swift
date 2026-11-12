@@ -1,18 +1,19 @@
 import Foundation
 
 extension HvfEngineSession {
-    /// Written at the agent's first `SERVICE start` in this VM. A VM without it (Windows setup's first
-    /// logon still to come, or a disk imported without the agent) never shows the not-connected notice.
+    /// Written at the agent's first SERVICE start; distinguishes missing tools from a broken agent.
     var agentSeenMarker: URL { URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("guest-agent-seen") }
 
     /// From poll(): the agent notice for this moment (HvfAgentSilenceNotice).
     func refreshAgentSilence() {
-        agentSilenceNotice.refresh(now: ownedStartNow(), running: agentSilenceWatched, serviceStarted: serviceStarted) {
+        agentSilenceNotice.refresh(now: ownedStartNow(), running: agentSilenceWatched, serviceStarted: serviceStarted,
+            offersTools: HvfGuestTools.eligible(config)) {
             FileManager.default.fileExists(atPath: agentSeenMarker.path)
         }
     }
 
     func noteAgentServiceStarted() {
+        guestToolsMessage = nil
         let path = agentSeenMarker.path
         if !FileManager.default.fileExists(atPath: path) { _ = FileManager.default.createFile(atPath: path, contents: nil) }
     }

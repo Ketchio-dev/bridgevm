@@ -40,6 +40,17 @@ fn a_chosen_mode_is_switched_to_even_when_the_vars_already_ask_for_it() {
 }
 
 #[test]
+fn a_missing_tools_image_does_not_prevent_the_ordinary_boot() {
+    let mut platform = VirtPlatform::new(Default::default());
+    // Optional tools media must be nonfatal; the boot disk and vars stay ordinary.
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        attach_guest_tools(&mut platform, std::path::Path::new("/absent-bridgevm-tools.raw"))
+    }));
+    assert!(matches!(outcome, Ok(false)), "tools failure must not unwind the boot");
+    assert!(platform.nvme_second_namespace_disk_len().is_none());
+}
+
+#[test]
 fn nvme_reads_and_writes_run_without_the_platform_lock_unless_opted_out() {
     assert!(nvme_unlocked_io(None, false), "on by default");
     assert!(nvme_unlocked_io(Some("1"), false));

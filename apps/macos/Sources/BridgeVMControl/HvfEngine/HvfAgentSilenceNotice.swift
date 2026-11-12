@@ -8,7 +8,7 @@ import SwiftUI
 /// and it is off while the VM is paused, stopping or restarting (HvfEngineSessionAgentSilence).
 @MainActor
 final class HvfAgentSilenceNotice: ObservableObject {
-    enum Kind: Equatable { case notConnected, notResponding }
+    enum Kind: Equatable { case notConnected, notResponding, missingTools }
 
     /// The scoreboards measured READY 7-26 s after launch (vm_bench medians, T16-T42) on images that
     /// log on by themselves. A product VM starts its agent at the user's logon, and the agent's task
@@ -39,6 +39,7 @@ final class HvfAgentSilenceNotice: ObservableObject {
 
     var text: String? {
         switch shown {
+        case .missingTools: return HvfGuestTools.missing
         case .notConnected: return Self.notConnectedText
         case .notResponding: return Self.notRespondingText
         case nil: return nil
@@ -66,7 +67,7 @@ final class HvfAgentSilenceNotice: ObservableObject {
 
     /// From every runtime poll. `running`: the VM runs, not paused, stopping or restarting.
     /// `agentInstalled` is asked once per boot, when the wait is over.
-    func refresh(now: TimeInterval, running: Bool, serviceStarted: Bool, agentInstalled: () -> Bool) {
+    func refresh(now: TimeInterval, running: Bool, serviceStarted: Bool, offersTools: Bool = false, agentInstalled: () -> Bool) {
         var kind: Kind?
         if !running {
             waitingSince = nil
@@ -79,6 +80,7 @@ final class HvfAgentSilenceNotice: ObservableObject {
             if now - since >= Self.readyTimeout {
                 if agentSeen == nil { agentSeen = agentInstalled() }
                 if agentSeen == true { kind = .notConnected }
+                else if offersTools { kind = .missingTools }
             }
         }
         show(kind)

@@ -46,6 +46,9 @@ pub(super) fn env(surfaces: &DeviceSurfaces) -> Vec<(&'static str, String)> {
             share.max_kb.to_string(),
         ));
     }
+    if let Some(tools) = &surfaces.guest_tools {
+        env.push(("BRIDGEVM_GUEST_TOOLS", tools.display().to_string()));
+    }
     if let Some(update) = &surfaces.agent_update {
         let marker = update.marker.display().to_string();
         env.push((

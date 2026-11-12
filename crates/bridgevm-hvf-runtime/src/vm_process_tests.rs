@@ -167,6 +167,7 @@ fn the_app_surfaces_reproduce_the_wrapper_device_shape() {
             hda_audio: true,
             hda_microphone: false,
             agent_update: None,
+            guest_tools: None,
             host_diagnostic_stop: false,
         }),
         swtpm_sockets: None,
@@ -254,6 +255,7 @@ fn surfaced_spawns_append_to_the_run_log_across_generations() {
             hda_microphone: false,
             agent_update: None,
             host_diagnostic_stop: false,
+            guest_tools: None,
         }),
         swtpm_sockets: None,
     };
@@ -331,6 +333,7 @@ fn the_app_ships_virgl_1050_and_the_env_says_so() {
             hda_microphone: false,
             agent_update: None,
             host_diagnostic_stop: false,
+            guest_tools: None,
         }),
         swtpm_sockets: None,
     };

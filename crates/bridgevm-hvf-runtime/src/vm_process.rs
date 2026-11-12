@@ -83,6 +83,8 @@ pub struct DeviceSurfaces {
     pub hda_microphone: bool,
     /// Installs the app's copy of the guest agent over an older one.
     pub agent_update: Option<AgentUpdateSurface>,
+    /// App-owned tools image, never opened writable by the helper.
+    pub guest_tools: Option<PathBuf>,
     /// Only a validated typed E2E launch may enable a fixed host stop request.
     pub host_diagnostic_stop: bool,
 }
