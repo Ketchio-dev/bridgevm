@@ -138,6 +138,25 @@ fn host_guest_round_trip_does_not_ping_pong() {
 }
 
 #[test]
+fn guest_size_change_with_restored_time_is_fetched_once() {
+    let mut sync = ShareSync::new(1);
+    sync.on_guest_file("a.txt".into(), b"old".to_vec(), Some("g1"));
+    sync.note_host_stat("a.txt", 10);
+    assert_eq!(sync.on_guest_listing(vec![ls_file("a.txt", 4, "g1")]), vec![SyncAction::Get { name: "a.txt".into() }]);
+    assert_eq!(sync.on_guest_file("a.txt".into(), b"new!".to_vec(), None), GuestFileOutcome::WriteHost(b"new!".to_vec()));
+    sync.note_host_stat("a.txt", 10);
+    assert!(sync.on_guest_listing(vec![ls_file("a.txt", 4, "g1")]).is_empty());
+    assert!(sync.on_host_scan(vec![host_file("a.txt", 4, 10)]).is_empty());
+    // An over-limit replacement is skipped, not fetched, without corrupting the record.
+    assert_eq!(sync.on_guest_listing(vec![ls_file("a.txt", 2048, "g1")]), vec![SyncAction::Skip { name: "a.txt".into(), reason: SkipReason::TooLarge { size: 2048 } }]);
+    assert!(sync.on_guest_listing(vec![ls_file("a.txt", 2048, "g1")]).is_empty());
+    assert!(sync.on_guest_listing(vec![ls_file("a.txt", 4, "g1")]).is_empty());
+    // The listing may show a half-written PUT: existing in-flight protection wins.
+    sync.set_puts_under_way(["a.txt".into()]);
+    assert!(sync.on_guest_listing(vec![ls_file("a.txt", 2, "g1")]).is_empty());
+}
+
+#[test]
 fn guest_oversize_skips_are_deduped_by_name_mtime_kind_and_dirs_are_ignored() {
     let mut sync = ShareSync::new(1);
     let entries = vec![

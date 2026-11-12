@@ -233,7 +233,10 @@ impl ShareSync {
                     self.pass_changed = true;
                     false
                 }
-                Some(record) => record.guest_mtime.as_deref() != Some(entry.mtime.as_str()),
+                Some(record) => {
+                    record.size != entry.size
+                        || record.guest_mtime.as_deref() != Some(entry.mtime.as_str())
+                }
                 None => true,
             };
             if changed {
