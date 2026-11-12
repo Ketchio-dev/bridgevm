@@ -89,7 +89,7 @@ struct LibraryWorkspaceList: View {
     }
 }
 
-private struct LibraryWorkspaceRow: View {
+struct LibraryWorkspaceRow: View {
     @ObservedObject var library: LibraryModel
     let config: VMConfig
     @ObservedObject var model: ControlModel

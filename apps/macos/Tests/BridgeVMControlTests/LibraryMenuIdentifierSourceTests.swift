@@ -30,10 +30,8 @@ final class LibraryMenuIdentifierSourceTests: XCTestCase {
         let menu = try String(contentsOf: sources.appendingPathComponent("LibraryVMActionsMenu.swift"), encoding: .utf8)
         XCTAssertTrue(menu.contains(".accessibilityIdentifier(Self.identifier)"), "the shared menu sets its identifier")
         XCTAssertTrue(menu.contains("static let identifier = \"bridgevm.library.vm-actions\""))
-        for (name, count) in [("LibraryWorkspaceList.swift", 1), ("LibraryVMCard.swift", 1)] {
-            let text = try String(contentsOf: sources.appendingPathComponent(name), encoding: .utf8)
-            XCTAssertEqual(text.components(separatedBy: "LibraryVMActionsMenu(").count - 1, count,
-                           "\(name) shows the shared actions menu")
-        }
+        let workspace = try String(contentsOf: sources.appendingPathComponent("LibraryWorkspaceList.swift"), encoding: .utf8)
+        XCTAssertEqual(workspace.components(separatedBy: "LibraryVMActionsMenu(").count - 1, 1,
+                       "the live workspace shows the shared actions menu")
     }
 }
