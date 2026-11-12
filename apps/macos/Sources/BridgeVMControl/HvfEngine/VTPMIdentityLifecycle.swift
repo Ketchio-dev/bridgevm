@@ -243,7 +243,8 @@ struct VTPMIdentityLifecycle {
         } catch {
             do {
                 try? fileManager.removeItem(at: receiptURL)
-                if fileManager.fileExists(atPath: stateDirectory.path) {
+                // Until the old state has moved to the archive, the directory here is still the original.
+                if movedState || !hasState, fileManager.fileExists(atPath: stateDirectory.path) {
                     try fileManager.removeItem(at: stateDirectory)
                 }
                 if movedState { try fileManager.moveItem(at: archive, to: stateDirectory) }
