@@ -96,8 +96,9 @@ final class HvfWindowsImportNoVarsTests: XCTestCase {
         try Data(repeating: 0, count: 4096).write(to: disk)
         let inputs = FirstRunImport.Inputs(displayName: "Imported", diskPath: disk.path, varsPath: "",
             vtpmStateDir: nil, memMiB: 4096, cpuCount: 4)
-        XCTAssertNil(FirstRunImport.validate(inputs))
-        let config = try FirstRunImport.register(inputs, slug: "imported", libraryRoot: root.appendingPathComponent("library"))
+        if let error = FirstRunImport.validate(inputs) { return XCTFail(error.description) }
+        let config = try FirstRunImport.register(inputs, slug: "imported", libraryRoot: root.appendingPathComponent("library"),
+            snapshotHelper: HvfMediaImportTestSupport.helper)
         XCTAssertEqual(notice(bundlePath: config.bundlePath), noESP)
     }
 }
