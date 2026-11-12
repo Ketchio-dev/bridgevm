@@ -80,12 +80,25 @@ mod tests {
     #[test]
     fn the_owned_launch_accepts_a_disposable_tools_volume() {
         let args = crate::Args::try_parse_from([
-            "hvf-runner", "--launch-spec", "m.json", "--helper", "p",
-            "--helper-evidence-dir", "/ev", "--helper-guest-tools", "/tools.raw",
+            "hvf-runner",
+            "--launch-spec",
+            "m.json",
+            "--helper",
+            "p",
+            "--helper-evidence-dir",
+            "/ev",
+            "--helper-guest-tools",
+            "/tools.raw",
         ]);
-        assert!(args.is_ok(), "the typed product path must accept the tools image");
+        assert!(
+            args.is_ok(),
+            "the typed product path must accept the tools image"
+        );
         let launch = super::build(&args.unwrap(), Path::new("p"));
-        assert_eq!(launch.surfaces.unwrap().guest_tools.unwrap(), Path::new("/tools.raw"));
+        assert_eq!(
+            launch.surfaces.unwrap().guest_tools.unwrap(),
+            Path::new("/tools.raw")
+        );
     }
 
     #[test]
