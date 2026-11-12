@@ -379,7 +379,33 @@ try {
         Assert (& $Done) $What
     }
     function Get-Renamed { @([IO.Directory]::GetFiles($dir, '*.pdf') | Where-Object { [IO.Path]::GetFileName($_) -match '\A\d{19}\.pdf\z' } | Sort-Object) }
-    function Get-Texts { (@(Get-Renamed | ForEach-Object { ([Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($_)) -split "`0")[0] }) -join '|') }
+    function Get-Texts {
+        (@(Get-Renamed | ForEach-Object {
+            # The rename is visible before File.Move has released its Windows delete handle.
+            # Read like GETRANGE, the real consumer, allowing that handle to finish closing.
+            # The model closed its writer before the rename, so these bytes are complete.
+            $file = [IO.File]::Open($_, [IO.FileMode]::Open, [IO.FileAccess]::Read,
+                ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+            try {
+                $bytes = New-Object byte[] $file.Length
+                $offset = 0
+                while ($offset -lt $bytes.Length) {
+                    $read = $file.Read($bytes, $offset, $bytes.Length - $offset)
+                    Assert ($read -gt 0) 'a renamed document is complete'
+                    $offset += $read
+                }
+                ([Text.Encoding]::ASCII.GetString($bytes) -split "`0")[0]
+            } finally { $file.Dispose() }
+        }) -join '|')
+    }
+    # Model the delete-capable handle held while a Windows rename finishes. ReadAllBytes
+    # denies delete sharing and fails here even though the writer has already closed.
+    $renamed = Join-Path $dir '0000000000000000001.pdf'
+    Write-Job $renamed (Get-Pdf 64 'rename-handle')
+    $renameHandle = [IO.File]::Open($renamed, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite,
+        ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+    try { Assert ((Get-Texts) -ceq '%PDF-1.7 rename-handle') 'read a complete renamed document with a shared handle still open' }
+    finally { $renameHandle.Dispose(); [IO.File]::Delete($renamed) }
     # The renamed jobs are these documents, in this order, within 30 s; and none was lost.
     function Wait-Texts([string[]]$Names, [string]$What) {
         $want = @($Names | ForEach-Object { "%PDF-1.7 $_" }) -join '|'
