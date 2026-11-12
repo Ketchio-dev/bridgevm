@@ -3,6 +3,51 @@ import XCTest
 
 @MainActor
 final class HvfSharedFolderPreferenceTests: XCTestCase {
+    func testDefaultFolderIsLazyAndPerVM() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        var first = fixture.config()
+        first.enableNewWindowsShare(otherRegistrations: [], home: fixture.root)
+        var second = first; second.id = first.slug + "-2"
+        second.enableNewWindowsShare(otherRegistrations: [first], home: fixture.root)
+        XCTAssertNotEqual(first.sharedFolderHostPath, second.sharedFolderHostPath)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: try XCTUnwrap(first.sharedFolderHostPath)))
+        let config = try XCTUnwrap(HvfEngineConfig.libraryVM(first, rootURL: fixture.root))
+        var warnings: [String] = []
+        let launch = config.preparingSharedFolder { warnings.append($0) }
+        XCTAssertEqual(launch.shareHostDir, first.sharedFolderHostPath)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(first.sharedFolderHostPath)))
+        XCTAssertTrue(warnings.isEmpty)
+    }
+
+    func testUnavailableShareDisablesOnlyLaunchAndShowsOneSentence() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        let obstruction = fixture.root.appendingPathComponent("not-a-directory")
+        try Data("file".utf8).write(to: obstruction)
+        for path in [obstruction.path, obstruction.appendingPathComponent("share").path] {
+            var saved = fixture.config()
+            saved.sharedFolderHostPath = path; saved.sharedFolderGuestPath = "C:\\bridgevm-share"
+            saved.createSharedFolderOnStart = path != obstruction.path
+            fixture.save(saved)
+            let before = try Data(contentsOf: fixture.registration(saved))
+            let config = try XCTUnwrap(HvfEngineConfig.libraryVM(saved, rootURL: fixture.root))
+            var warnings: [String] = []
+            let launch = config.preparingSharedFolder { warnings.append($0) }
+            XCTAssertNil(launch.shareHostDir); XCTAssertNil(launch.shareGuestDir)
+            XCTAssertFalse(launch.wrapperArguments().contains("--agent-share-host"))
+            XCTAssertFalse(launch.readiness(repoRoot: fixture.root).launchBlockers.contains { $0.code.hasPrefix("share-") })
+            XCTAssertEqual(warnings, [HvfEngineConfig.shareUnavailableMessage])
+            XCTAssertEqual(config.libraryContext?.config.sharedFolderHostPath, path)
+            XCTAssertEqual(try Data(contentsOf: fixture.registration(saved)), before)
+            let notice = HvfShareRootNotice()
+            if let warning = warnings.first {
+                notice.consume(.unknown(warning))
+                XCTAssertEqual(notice.displayed?.text, warning)
+            }
+        }
+    }
+
     private func drain(_ pending: @MainActor () -> Bool) async throws {
         let deadline = ProcessInfo.processInfo.systemUptime + 2
         while pending(), ProcessInfo.processInfo.systemUptime < deadline {
@@ -81,7 +126,7 @@ final class HvfSharedFolderPreferenceTests: XCTestCase {
         try await drain { ticket.workerPending }
     }
 
-    /// Sharing is never enabled by default: no key is written and no launch path shares.
+    /// Existing registrations without a selection are never migrated.
     func testRegistrationWithoutSelectionNeverShares() throws {
         let fixture = try HvfRuntimeSessionStoreFixture()
         defer { fixture.clean() }

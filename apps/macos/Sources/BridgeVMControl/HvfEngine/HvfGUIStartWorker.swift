@@ -16,14 +16,15 @@ enum HvfGUIStartWorker {
                 return .init(result: input.policy == .attachOrStart ? .observedAttachment
                     : .refused("An existing runtime cannot be adopted by a require-new launch"))
             }
-            if let failure = HvfRuntimeLaunchReadiness.failure(config: input.config,
+            let config = input.config.preparingSharedFolder { diagnostics.append($0) }
+            if let failure = HvfRuntimeLaunchReadiness.failure(config: config,
                 repoRoot: input.repoRoot, diagnostic: { diagnostics.append($0) }),
                case let .failed(stage, detail) = failure {
                 return .init(result: .failed(stage, detail), diagnostics: diagnostics)
             }
             try await checkAdmission(input)
             let manifest: Data
-            do { manifest = try HvfRuntimePreparation.prepare(config: input.config) }
+            do { manifest = try HvfRuntimePreparation.prepare(config: config) }
             catch { return .init(result: .failed(.preparation, error.localizedDescription)) }
             let runner = input.repoRoot.appendingPathComponent("target/release/hvf-runner")
             let typed = FileManager.default.isExecutableFile(atPath: runner.path)
@@ -31,7 +32,7 @@ enum HvfGUIStartWorker {
                 return .init(result: .failed(.helper, "The installed-boot wrapper is unavailable"))
             }
             try await checkAdmission(input)
-            do { key = try VTPMRuntimeKey.withKey(for: input.config, provider: input.keyProvider) { $0 } }
+            do { key = try VTPMRuntimeKey.withKey(for: config, provider: input.keyProvider) { $0 } }
             catch { return .init(result: .failed(.keyAccess, error.localizedDescription)) }
             try await checkAdmission(input)
             let launch: (Process) throws -> Void = { process in
@@ -39,13 +40,13 @@ enum HvfGUIStartWorker {
                 try input.launch(process)
             }
             if typed {
-                let spawn = try HvfOwnedRuntimeLaunch.spawn(config: input.config, repoRoot: input.repoRoot,
+                let spawn = try HvfOwnedRuntimeLaunch.spawn(config: config, repoRoot: input.repoRoot,
                     runner: runner, manifest: manifest, key: key, launch: launch)
-                return .init(result: .owned(spawn))
+                return .init(result: .owned(spawn), diagnostics: diagnostics)
             }
-            let spawn = try HvfRuntimeLegacyFallback.spawn(config: input.config, repoRoot: input.repoRoot,
+            let spawn = try HvfRuntimeLegacyFallback.spawn(config: config, repoRoot: input.repoRoot,
                 key: key, launch: launch)
-            return .init(result: .legacy(spawn))
+            return .init(result: .legacy(spawn), diagnostics: diagnostics)
         } catch is AdmissionChanged {
             return .init(result: .refused(changed))
         } catch let failure as HvfRuntimeLaunchFailure {

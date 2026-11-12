@@ -109,11 +109,12 @@ impl VirtioPciGpu {
 
             let backing_count = input.read_u32() as usize;
             let mut backing = Vec::with_capacity(backing_count);
+            let mut backing_len = 0u64;
             for _ in 0..backing_count {
-                backing.push(BackingEntry {
-                    addr: input.read_u64(),
-                    len: input.read_u32(),
-                });
+                let addr = input.read_u64();
+                let len = input.read_u32();
+                backing.push(BackingEntry { addr, len });
+                backing_len += u64::from(len);
                 assert_eq!(input.read_u32(), 0, "invalid GPU backing snapshot");
             }
 
@@ -125,6 +126,7 @@ impl VirtioPciGpu {
                     height,
                     host_pixels,
                     backing,
+                    backing_len,
                 },
             );
         }
