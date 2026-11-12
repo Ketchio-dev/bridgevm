@@ -31,12 +31,12 @@ extension HvfEngineSession {
             restartRequired: displayDriverRestartRequired)
     }
 
-    /// Latch once per run: later resize replies neither reopen a dismissal nor clear the evidence.
+    /// The latest known adapter status wins; recovery never resets this run's dismissal.
     func displayDriverReported(_ output: String) {
         guard config.libraryContext?.config.virtioDisplayDriverInstalled == true else { return }
-        if output.split(whereSeparator: \.isNewline).contains(where: {
-            HvfDisplayDriverNotice.virtio(in: String($0)) == .some(.none)
-        }) { displayDriverUnbound = true }
+        if let virtio = output.split(whereSeparator: \.isNewline).compactMap({
+            HvfDisplayDriverNotice.virtio(in: String($0))
+        }).last { displayDriverUnbound = virtio == .none }
     }
 
     /// A Windows restart cannot attach a device. Join the normal graceful Stop, wait for full
@@ -71,7 +71,7 @@ struct HvfDisplayDriverNoticeView: View {
                 else { session.displayDriverNoticeDismissed = true }
             }) {
                 Text(notice == .unbound
-                     ? "디스플레이 드라이버가 Windows에 연결되지 않아 화면을 창 크기에 맞출 수 없으니 Windows 장치 관리자에서 디스플레이 어댑터의 드라이버와 오류 상태를 확인하세요."
+                     ? "디스플레이 드라이버가 연결되지 않아 화면을 창 크기에 맞출 수 없으니 Windows 장치 관리자에서 디스플레이 어댑터를 확인하세요."
                      : notice == .install ? "창 크기에 맞춰 Windows 화면을 바꾸려면 디스플레이 드라이버가 필요합니다"
                      : "다시 시작하면 적용됩니다")
                 if notice == .install {
