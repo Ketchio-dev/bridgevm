@@ -4,16 +4,17 @@ import SwiftUI
 enum HvfDisplayDriverNotice: Equatable {
     case install, restart
 
-    static func shown(agentReady: Bool, installed: Bool?, experimental3D: Bool,
+    static func shown(libraryBacked: Bool, agentReady: Bool, installed: Bool?, experimental3D: Bool,
                       dismissed: Bool, restartRequired: Bool) -> Self? {
-        guard agentReady, installed != true, !experimental3D, !dismissed else { return nil }
+        guard libraryBacked, agentReady, installed != true, !experimental3D, !dismissed else { return nil }
         return restartRequired ? .restart : .install
     }
 }
 
 extension HvfEngineSession {
     var displayDriverNotice: HvfDisplayDriverNotice? {
-        HvfDisplayDriverNotice.shown(agentReady: HvfDisplayDriverInstall.agentReady(self),
+        HvfDisplayDriverNotice.shown(libraryBacked: config.libraryContext != nil,
+            agentReady: HvfDisplayDriverInstall.agentReady(self),
             installed: config.libraryContext?.config.virtioDisplayDriverInstalled,
             experimental3D: config.virtioGpu3d, dismissed: displayDriverNoticeDismissed,
             restartRequired: displayDriverRestartRequired)

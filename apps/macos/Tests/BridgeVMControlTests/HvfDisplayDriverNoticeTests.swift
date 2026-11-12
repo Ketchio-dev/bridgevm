@@ -9,6 +9,19 @@ final class HvfDisplayDriverNoticeTests: XCTestCase {
         XCTAssertEqual(shown(installed: nil), .install)
     }
 
+    func testNonLibrarySessionNeverShowsNotice() {
+        XCTAssertNil(shown(libraryBacked: false))
+        XCTAssertNil(shown(libraryBacked: false, restartRequired: true))
+        let session = HvfEngineSession(config: HvfEngineView.defaultConfig(), processIsRunning: { _ in false })
+        session.connectionState = .connected(host: "guest")
+        session.serviceStarted = true
+        XCTAssertNil(session.config.libraryContext)
+        XCTAssertTrue(HvfDisplayDriverInstall.agentReady(session))
+        XCTAssertNil(session.displayDriverNotice)
+        session.displayDriverRestartRequired = true
+        XCTAssertNil(session.displayDriverNotice)
+    }
+
     func testInstalledDriverHidesNotice() {
         XCTAssertNil(shown(installed: true))
         XCTAssertNil(shown(installed: true, restartRequired: true))
@@ -98,9 +111,9 @@ final class HvfDisplayDriverNoticeTests: XCTestCase {
         while session.hasPendingGUIStart { try await Task.sleep(nanoseconds: 5_000_000) }
     }
 
-    private func shown(agentReady: Bool = true, installed: Bool? = false, experimental3D: Bool = false,
-                       dismissed: Bool = false, restartRequired: Bool = false) -> HvfDisplayDriverNotice? {
-        HvfDisplayDriverNotice.shown(agentReady: agentReady, installed: installed,
+    private func shown(libraryBacked: Bool = true, agentReady: Bool = true, installed: Bool? = false,
+                       experimental3D: Bool = false, dismissed: Bool = false, restartRequired: Bool = false) -> HvfDisplayDriverNotice? {
+        HvfDisplayDriverNotice.shown(libraryBacked: libraryBacked, agentReady: agentReady, installed: installed,
             experimental3D: experimental3D, dismissed: dismissed, restartRequired: restartRequired)
     }
 }
