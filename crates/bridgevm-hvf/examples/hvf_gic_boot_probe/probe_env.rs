@@ -18,6 +18,13 @@ pub(crate) fn env_u64(name: &str, default: u64) -> u64 {
         .unwrap_or(default)
 }
 
+/// The per-vCPU exit count at which the run stops. A diagnostic run asks for
+/// one; without the request there is none, because a VM in daily use makes
+/// 500-3500 exits a second on a vCPU and any fixed count ends it within hours.
+pub(crate) fn exit_cap(requested: Option<u64>) -> u64 {
+    requested.map_or(u64::MAX, |cap| cap.max(1))
+}
+
 pub(crate) fn env_optional_u64(name: &str) -> Option<u64> {
     std::env::var(name).ok().and_then(|s| parse_u64(&s))
 }

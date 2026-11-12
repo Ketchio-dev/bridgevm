@@ -67,7 +67,7 @@ print_installed_boot_policy() {
     "DAILY_PRESET=$DAILY" \
     "BRIDGEVM_RAM_MIB=$RAM_MIB" \
     "BRIDGEVM_BOOT_PROBE_WATCHDOG_MS=$WATCHDOG_MS" \
-    "BRIDGEVM_BOOT_PROBE_MAX_EXITS=$MAX_EXITS" \
+    "BRIDGEVM_BOOT_PROBE_MAX_EXITS=${MAX_EXITS:-<unset> (no cap)}" \
     "BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED=${WATCHDOG_DISABLED/0/<unset>}" \
     "BRIDGEVM_SMP_CPUS=${SMP_CPUS:-<unset> (probe default 1)}" \
     "BRIDGEVM_XHCI_REPORT_INTERVAL_MS=$([[ "$DAILY" == "1" ]] && printf '30' || printf '<probe-default 30>')" \
