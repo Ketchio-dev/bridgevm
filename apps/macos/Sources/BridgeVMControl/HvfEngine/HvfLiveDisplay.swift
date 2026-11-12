@@ -8,6 +8,7 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
 
     private let sessionIdentifier: ObjectIdentifier
     private let state: HvfDisplayWindowState
+    private var closeQuestionOpen = false
     let placement: HvfDisplayWindowPlacement
 
     /// A new display window for the session, not shown yet: where this VM's window was last
@@ -46,6 +47,10 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    static func hasVisibleDisplay(for session: HvfEngineSession) -> Bool {
+        controllers[ObjectIdentifier(session)]?.window?.isVisible == true
     }
 
     static func present(session: HvfEngineSession, title: String) {
@@ -97,6 +102,43 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
     func windowDidExitFullScreen(_ notification: Notification) { if let window { placement.didExitFullScreen(window) } }
 
     func windowDidFailToEnterFullScreen(_ window: NSWindow) { placement.didExitFullScreen(window) }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        let session = state.session
+        guard !closeQuestionOpen else { return false }
+        let plan = ControlDisplayClosePlan.make(running: session.hasActiveRuntimeWork,
+            quitting: ControlDisplayClose.quitting,
+            canPause: session.pauseAvailable && session.pause == .running,
+            remembered: ControlDisplayClose.remembered())
+        switch plan {
+        case .close: return true
+        case let .apply(choice): return applyClose(choice)
+        case let .ask(choices):
+            closeQuestionOpen = true
+            let alert = ControlDisplayClose.alert(choices: choices)
+            alert.beginSheetModal(for: sender) { [weak self] response in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.closeQuestionOpen = false
+                    let index = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+                    guard choices.indices.contains(index) else { return }
+                    let choice = choices[index]
+                    guard self.applyClose(choice) else { return }
+                    if alert.suppressionButton?.state == .on { ControlDisplayClose.remember(choice) }
+                    sender.close()
+                }
+            }
+            return false
+        }
+    }
+
+    private func applyClose(_ choice: ControlDisplayCloseChoice) -> Bool {
+        ControlDisplayClose.apply(choice, session: state.session) { [weak self] message in
+            guard let window = self?.window else { return }
+            let alert = NSAlert(); alert.messageText = message
+            alert.beginSheetModal(for: window)
+        }
+    }
 
     func windowWillClose(_ notification: Notification) {
         if let window { placement.willClose(window) }
