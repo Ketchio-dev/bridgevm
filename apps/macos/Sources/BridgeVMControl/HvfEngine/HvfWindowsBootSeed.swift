@@ -20,7 +20,7 @@ enum HvfWindowsBootSeed {
         var partitionNumber: UInt32
     }
 
-    enum SeedError: Error, CustomStringConvertible {
+    enum SeedError: LocalizedError, CustomStringConvertible {
         case gptUnreadable
         case espNotFound
         case varstoreUnreadable
@@ -28,6 +28,8 @@ enum HvfWindowsBootSeed {
         case secureBootManifestMissing
         case secureBootManifestInvalid(String)
         case secureBootConflict(String)
+
+        var errorDescription: String? { description }
 
         var description: String {
             switch self {

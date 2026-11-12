@@ -116,7 +116,7 @@ final class HvfWindowsImportTests: XCTestCase {
             name: "Overlay", targetDiskPath: disk.path, varsPath: vars.path,
             storageDir: storage, persist: false, snapshotHelper: HvfMediaImportTestSupport.helper
         ) else { return XCTFail("a QCOW2 with a backing file must be refused with a sentence") }
-        XCTAssertEqual(message, "이 디스크는 다른 디스크를 기반으로 하니 qemu-img로 하나의 디스크로 합친 뒤 다시 가져오세요.")
+        XCTAssertEqual(message, "이 디스크는 다른 디스크를 기반으로 하니 원래 VM 앱에서 하나의 디스크로 합친 뒤 다시 가져오세요.")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: storage.path), [])
     }
 

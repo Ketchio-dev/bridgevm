@@ -35,7 +35,8 @@ extension HvfWindowsInstallSession {
             schedule { await self.run() }
         } catch {
             if !acknowledgeCancellation() {
-                finish(.failed("설치 복구 상태 확인 실패: \(error.localizedDescription)"))
+                appendLog(WindowsFileFailureFeedback.diagnostic("recovery-inspection", error))
+                finish(.failed(WindowsFileFailureFeedback.recovery))
             }
         }
     }
@@ -54,7 +55,8 @@ extension HvfWindowsInstallSession {
             }
         } catch {
             if !acknowledgeCancellation(cleanup: cleanupOnCancellation) {
-                finish(.failed("설치 복구 상태 확인 실패: \(error.localizedDescription)"))
+                appendLog(WindowsFileFailureFeedback.diagnostic("recovery-inspection", error))
+                finish(.failed(WindowsFileFailureFeedback.recovery))
             }
             return false
         }
@@ -69,7 +71,8 @@ extension HvfWindowsInstallSession {
             _ = try await recovery.resume(plan: plan, ticket: ticket)
             completeInstallation()
         } catch {
-            finish(.failed("설치 결과 복구 실패: \(error.localizedDescription)"))
+            appendLog(WindowsFileFailureFeedback.diagnostic("recovery", error))
+            finish(.failed(WindowsFileFailureFeedback.recovery))
         }
     }
 }
