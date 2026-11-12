@@ -22,10 +22,14 @@ pub fn vars_for_disk(disk: &Path) -> io::Result<Option<PathBuf>> {
     let disk = fs::canonicalize(disk)?;
     let parent = disk.parent().unwrap();
     let mut candidates = Vec::new();
-    for directory in [
-        parent.to_path_buf(),
-        parent.parent().unwrap_or(parent).join("metadata"),
-    ] {
+    let metadata = parent.parent().unwrap_or(parent).join("metadata");
+    // A pair kept in a directory named "metadata" makes both places the same one.
+    let directories = if metadata == parent {
+        vec![parent.to_path_buf()]
+    } else {
+        vec![parent.to_path_buf(), metadata]
+    };
+    for directory in directories {
         if !directory.is_dir() {
             continue;
         }
