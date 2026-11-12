@@ -158,6 +158,24 @@
       "evidence": "crates/bridgevm-hvf/src/host_power.rs"
     },
     {
+      "id": "share-checked-delete",
+      "area": "guest-agent",
+      "qemu_behavior": "QEMU has no shared-folder guest-agent deletion protocol of its own.",
+      "bridgevm_behavior": "READY delcheck enables DEL path size timestamp: a file is deleted only when its size and exact listed UTC timestamp still match the synchronized version. OK DEL changed preserves a guest edit and makes the host fetch it on the next listing. Without delcheck the host keeps legacy DEL. New agents still accept legacy one-argument DEL from older hosts. Host deletions also compare synchronized size and millisecond timestamp before unlink. When the synchronized stamp is unknown, the host logs del-unchecked and uses legacy deletion rather than silently suppressing it. Both executors continue to refuse directory deletion.",
+      "guest_visible": true,
+      "impact": "A save made after deletion planning wins over the propagated file deletion.",
+      "evidence": "tests/integration/agent-share-listing-contract.ps1"
+    },
+    {
+      "id": "share-staged-put",
+      "area": "guest-agent",
+      "qemu_behavior": "QEMU has no shared-folder guest-agent push protocol of its own.",
+      "bridgevm_behavior": "PUT and PUTBEG/PUTCHUNK/PUTDATA/PUTEND write an unlisted .bridgevm-part sibling and rename only the complete file over the destination, using the same staging and replacement helpers as LPUT. An interrupted transfer leaves the previous file intact; abandoned temporaries use the existing listing cleanup. The wire is unchanged.",
+      "guest_visible": true,
+      "impact": "Readers see the old file until the new version is complete, not a truncated or partially transferred version.",
+      "evidence": "tests/integration/agent-share-listing-contract.ps1"
+    },
+    {
       "id": "share-quick-access",
       "area": "guest-agent",
       "qemu_behavior": "QEMU has no shared-folder guest-agent Explorer integration of its own.",

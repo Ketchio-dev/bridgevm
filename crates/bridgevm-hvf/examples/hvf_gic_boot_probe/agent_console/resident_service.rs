@@ -32,6 +32,7 @@ impl AgentConsoleHarness {
         // 0. A requested desktop mode switch, then the display scale, a clock
         //    resync after the host slept, and a DNS cache flush after the
         //    Mac's resolver changed.
+        self.prune_fetch_guards();
         self.enqueue_desktop_switch();
         self.enqueue_desktop_scale();
         self.enqueue_time_resync();
@@ -438,6 +439,21 @@ impl AgentConsoleHarness {
             ServiceReq::PrintDel { path } => self.write_print_del_line(path),
         }
     }
+    /// Guards exist only while a queued/in-flight GET or ranged writer owns the fetch.
+    /// Covers errors, skips, dropped queue entries and completed requests on the next step.
+    pub(super) fn prune_fetch_guards(&mut self) {
+        let mut live = HashSet::new();
+        for req in self.queue.iter().chain(self.in_flight.iter().map(|(req, _)| req)) {
+            if let ServiceReq::ShareGet { name } | ServiceReq::ShareRange { name, .. } = req {
+                live.insert(name.clone());
+            }
+        }
+        if let Some(share) = self.share.as_mut() {
+            if let Some(BigTransfer::Get(get)) = share.big.as_ref() { live.insert(get.name.clone()); }
+            share.fetch_mac.retain(|name, _| live.contains(name));
+        }
+    }
+
     /// Whether any queued OR in-flight request satisfies `pred`.
     pub(super) fn any_pending(&self, pred: impl Fn(&ServiceReq) -> bool) -> bool {
         if let Some((req, _)) = self.in_flight.as_ref() {
@@ -452,6 +468,7 @@ impl AgentConsoleHarness {
     }
     pub(super) fn complete_in_flight(&mut self) {
         self.in_flight = None;
+        self.prune_fetch_guards();
     }
     /// Poll the control file (throttled) and turn appended lines into Ctl
     /// requests. A missing file means no commands yet (silent retry).
@@ -609,7 +626,15 @@ impl AgentConsoleHarness {
             InFlightSnapshot::PrintRange => {}
             InFlightSnapshot::PrintDel => self.handle_print_del_reply(line),
             InFlightSnapshot::ShareDel { name, direction } => {
-                if line.starts_with("OK DEL") {
+                if line == "OK DEL changed" {
+                    if let Some(share) = self.share.as_mut() {
+                        share.engine.on_guest_delete_changed(&name);
+                        share.listing_same.forget();
+                        share.forget_host_walk();
+                    }
+                    println!("BVAGENT SHARE del-skipped {name} guest-changed");
+                    self.complete_in_flight();
+                } else if line.starts_with("OK DEL") {
                     if direction == ShareDelDirection::HostToGuest {
                         if let Some(share) = self.share.as_mut() {
                             share.engine.on_guest_deleted(&name);

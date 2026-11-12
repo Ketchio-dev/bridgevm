@@ -29,7 +29,7 @@ pub(in crate::agent_console) enum BigTransfer {
 }
 
 pub(in crate::agent_console) struct BigGet {
-    name: String,
+    pub(in crate::agent_console) name: String,
     size: u64,
     mtime: String,
     /// The offset the next range starts at.
@@ -323,9 +323,12 @@ impl AgentConsoleHarness {
         };
         let name = get.name.clone();
         // A preferred guest edit goes only over the Mac file it was preferred to (share_synced.rs).
-        let mac = share.engine.preferred_mac_stat(&name);
+        let mac = share.fetch_mac.get(&name).copied().or_else(|| share.engine.preferred_mac_stat(&name).map(Some));
         match share.engine.on_guest_version(name.clone(), get.size, hash, None) {
-            GuestVersion::AlreadySynced => share.big = None,
+            GuestVersion::AlreadySynced => {
+                share.fetch_mac.remove(&name);
+                share.big = None;
+            }
             GuestVersion::Skip(reason) => {
                 share.big = None;
                 print_share_skip(&name, reason);
@@ -353,6 +356,7 @@ impl AgentConsoleHarness {
         share.engine.mark_settling(&get.name, now);
         match result {
             Ok(mtime) => {
+                share.fetch_mac.remove(&get.name);
                 share.engine.on_host_write_succeeded(&get.name, mtime);
                 let ms = now.duration_since(get.started).as_millis().max(1);
                 println!("BVAGENT SHARE guest->host {} bytes={} t={t}", get.name, get.size);
@@ -364,6 +368,7 @@ impl AgentConsoleHarness {
                 );
             }
             Err(error) if super::host_destination::is_mac_changed(&error) => {
+                share.fetch_mac.remove(&get.name);
                 share.engine.on_host_copy_kept(&get.name);
                 println!("BVAGENT SHARE skip {} mac-changed", get.name);
             }

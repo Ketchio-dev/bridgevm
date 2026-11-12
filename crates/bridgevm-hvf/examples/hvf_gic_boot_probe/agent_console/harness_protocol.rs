@@ -112,6 +112,7 @@ impl AgentConsoleHarness {
             clip_push: false,
             put_data: false,
             share_big: false,
+            delete_if_unchanged: false,
             display_verbs_refused: false,
             link_watch: false,
             clip_html: false,

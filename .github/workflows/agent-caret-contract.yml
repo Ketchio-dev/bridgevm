@@ -6,6 +6,7 @@ on:
       - scripts/win-assets/bvagent.ps1
       - scripts/win-assets/bvagent-input.ps1
       - tests/integration/agent-caret-contract.ps1
+      - tests/integration/agent-put-durability-contract.ps1
       - .github/workflows/agent-caret-contract.yml
       - scripts/test-bvagent-display-verbs.ps1
       - .github/workflows/agent-display-verbs-contract.yml
@@ -42,6 +43,18 @@ on:
 permissions:
   contents: read
 jobs:
+  put-durability:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: PUT durability source contract (Windows PowerShell 5.1)
+        shell: powershell
+        run: tests/integration/agent-put-durability-contract.ps1
+      - name: PUT durability source contract (PowerShell 7)
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: tests/integration/agent-put-durability-contract.ps1
   caret:
     runs-on: windows-latest
     timeout-minutes: 5
