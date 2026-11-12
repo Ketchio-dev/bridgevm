@@ -50,8 +50,26 @@ enum ControlAutoStart {
 }
 
 extension LibraryModel {
+    func canSetStartWithBridgeVM(for config: VMConfig) -> Bool {
+        let saved = latestConfiguration(for: config)
+        if saved.engineKind == .hvfEngine {
+            return hvfRuntimeDetailSession(for: saved)?.libraryPreferencesEditable == true
+        }
+        return !model(for: saved).hasActiveRuntimeWork
+    }
+
     func setStartWithBridgeVM(_ enabled: Bool, for config: VMConfig) {
         var saved = latestConfiguration(for: config)
+        guard canSetStartWithBridgeVM(for: saved) else { return }
+        if saved.engineKind == .hvfEngine {
+            guard let session = hvfRuntimeDetailSession(for: saved) else { return }
+            if let message = session.saveLibraryPreference("자동 시작 설정",
+                publish: { VMRegistrationWriter.commit($0, to: $1) },
+                change: { $0.startWithBridgeVM = enabled }) {
+                operationError = message
+            }
+            return
+        }
         saved.startWithBridgeVM = enabled
         guard VMLibrary.save(saved, rootURL: rootURL) else {
             operationError = "자동 시작 설정을 저장하지 못했으니 다시 시도하세요."
