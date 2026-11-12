@@ -49,11 +49,6 @@ final class BridgeVMAppModel: ObservableObject {
     }
 
     func checkStoreDoctor() {
-        guard settings.hasValidDaemonSettings else {
-            storeDoctorState = .failed("Enter a daemon Unix socket path or enable mock inventory.")
-            return
-        }
-
         storeDoctorState = .checking
         storeDoctorGeneration += 1
         let generation = storeDoctorGeneration
@@ -149,10 +144,6 @@ final class AppSettings: ObservableObject {
     var effectiveDaemonSocketPath: String {
         let trimmed = daemonSocketPath.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? DaemonEndpoint.local.socketPath : trimmed
-    }
-
-    var hasValidDaemonSettings: Bool {
-        useMockInventory || !effectiveDaemonSocketPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var daemonModeSummary: String {

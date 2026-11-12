@@ -123,7 +123,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertTrue(settings.hasPendingChanges)
     }
 
-    func testSettingsValidateDaemonSocketPathUnlessMockInventoryIsEnabled() {
+    func testSettingsResolveDefaultAndTrimmedSocketPathsAndDescribeInventoryMode() {
         let suiteName = Self.suite(#function)
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { Self.discard(defaults, suiteName) }
@@ -131,18 +131,16 @@ final class AppSettingsTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
         settings.daemonSocketPath = "   "
 
-        XCTAssertTrue(settings.hasValidDaemonSettings)
         XCTAssertEqual(settings.effectiveDaemonSocketPath, DaemonEndpoint.local.socketPath)
         XCTAssertTrue(settings.daemonModeSummary.contains("Using default bridgevmd socket"))
 
         settings.daemonSocketPath = "  /tmp/bridgevmd.sock  "
-        XCTAssertTrue(settings.hasValidDaemonSettings)
         XCTAssertEqual(settings.effectiveDaemonSocketPath, "/tmp/bridgevmd.sock")
         XCTAssertTrue(settings.daemonModeSummary.contains("Connection errors are shown"))
 
         settings.daemonSocketPath = ""
         settings.useMockInventory = true
-        XCTAssertTrue(settings.hasValidDaemonSettings)
+        XCTAssertEqual(settings.effectiveDaemonSocketPath, DaemonEndpoint.local.socketPath)
         XCTAssertTrue(settings.daemonModeSummary.contains("Using mock inventory"))
 
         settings.useMockInventory = false
