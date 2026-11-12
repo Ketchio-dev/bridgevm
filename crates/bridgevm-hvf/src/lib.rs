@@ -67,8 +67,7 @@ pub mod vm_clock;
 mod windows_arm_xhci_hid_boot_key_probe;
 pub mod xhci;
 
-// Extracted from the legacy probe monolith below (see
-// docs/plans/hvf-lib-refactor-extraction-plan.md). Private, re-exported explicitly.
+// Extracted from the legacy probe monolith. Private, re-exported explicitly.
 mod machine_plan;
 mod no_qemu_plan;
 mod probe_mmio;

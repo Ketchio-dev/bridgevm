@@ -82,8 +82,6 @@ for [current priorities](../STATUS.md#current-development-focus):
 
 - [Windows completion plan](plans/hvf-windows-install-completion-plan.md)
 - [Performance optimization plan](plans/hvf-perf-optimization-plan.md)
-- [HVF refactor extraction plan](plans/hvf-lib-refactor-extraction-plan.md)
-- [Structural refactor handoff](plans/refactor-handoff.md)
 
 Graphics Lab future research (excluded from General Preview and v1):
 
