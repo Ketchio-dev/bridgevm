@@ -54,13 +54,14 @@ extension VMLibrary {
             unattendedIdentity: inputs.unattended?.sha256
         )
         guard request.save(bundlePath: b) else { return nil }
-        let cfg = VMConfig(id: slug, name: name, displayName: name, backendKind: "hvf-engine",
+        var cfg = VMConfig(id: slug, name: name, displayName: name, backendKind: "hvf-engine",
                            bootMode: "windows-hvf", bundlePath: b, runnerPath: "",
                            launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
                            leasesPath: "", guestName: slug,
                            displayWidth: width, displayHeight: height, installPending: true,
                            isoPath: nil, diskPath: "\(b)/disks/hvf-target.raw",
                            memMiB: memMiB, cpuCount: cpuCount, networkEnabled: networkEnabled, experimental3DAllowed: false)
+        cfg.enableNewWindowsShare()
         guard let outcome = HVFCreationOutcome.publish(cfg, libraryRoot: libraryRoot,
             persist: persist, preserving: { preserveDestination = true }, using: publish) else { return nil }
         preserveDestination = true

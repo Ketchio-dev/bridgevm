@@ -1767,6 +1767,25 @@ $script:BvLsrGen = $null
 $script:BvLsrMaxAgeTicks = [long](600 * [System.Diagnostics.Stopwatch]::Frequency)
 
 # True while `root` is watched; the listing is then cached between changes.
+# >>> share quick access
+function Pin-ShareQuickAccess([string]$root) {
+    # LSR is only sent while sharing is on. Do not inspect the folder on agent startup.
+    if (-not [IO.Directory]::Exists($root)) { return }
+    $marker = Join-Path $env:ProgramData 'BridgeVM\share-quick-access.attempted'
+    if ([IO.File]::Exists($marker) -or $script:BvSharePinAttempted) { return }
+    $script:BvSharePinAttempted = $true
+    try {
+        [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($marker))
+        # Record the attempt first: never override a later manual unpin, even after a failure.
+        [IO.File]::WriteAllText($marker, $root)
+        $shell = New-Object -ComObject Shell.Application
+        $folder = $shell.Namespace($root)
+        if ($null -eq $folder) { throw 'Shell folder unavailable' }
+        $folder.Self.InvokeVerb('pintohome')
+    } catch { Log ('SHARE Quick Access unavailable: ' + $_.Exception.Message) }
+}
+# <<< share quick access
+
 function Watch-ShareRoot([string]$root) {
     if ($null -eq $script:BvShareWatchReady) {
         try {
@@ -2680,6 +2699,7 @@ while ($true) {
                         $root = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($lsrArgs[0]))
                         $rootFull = [System.IO.Path]::GetFullPath($root)
                         if (-not $rootFull.EndsWith('\')) { $rootFull = $rootFull + '\' }
+                        Pin-ShareQuickAccess $rootFull
                         # Unchanged since the last listing (share watch): the same reply again.
                         $watched = Watch-ShareRoot $rootFull
                         $changes = if ($watched) { [BridgeVM.BvShareWatch]::Changes } else { [long]-1 }
