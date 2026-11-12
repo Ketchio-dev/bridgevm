@@ -163,6 +163,7 @@ impl ShareSync {
             }
             self.pending_host_changed.remove(name);
             self.guest_changed.insert(name.clone(), *host);
+            if self.previous_unclean { self.recovery_copies.insert(name.clone()); }
         }
     }
 
@@ -190,6 +191,7 @@ impl ShareSync {
     pub fn on_host_copy_kept(&mut self, name: &str) {
         let name = normalize_rel(name);
         self.guest_changed.remove(&name);
+        self.recovery_copies.remove(&name);
         if let Some(record) = self.records.get_mut(&name) {
             record.host_write_failed = false;
             record.host_mtime_ms = None;

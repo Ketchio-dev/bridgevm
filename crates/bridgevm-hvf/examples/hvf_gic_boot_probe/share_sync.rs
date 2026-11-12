@@ -109,6 +109,9 @@ pub struct ShareSync {
     synced_dirty: bool,
     /// Guest edits preferred at the first listing, with the Mac file's stat then.
     guest_changed: HashMap<String, HostFileStat>,
+    /// A prior share run lacked observed guest power-off. Sharing-off crashes remain unknown.
+    previous_unclean: bool,
+    recovery_copies: HashSet<String>,
     /// Names with a PUT held, queued or in flight, as the service holds them at each listing.
     puts_under_way: HashSet<String>,
     /// A pass, or the setup before it, changed what a later pass reads (share_sync_idle.rs).
@@ -145,6 +148,9 @@ impl ShareSync {
         self.pass_changed |= self.guest_applies_put_mtime != applies;
         self.guest_applies_put_mtime = applies;
     }
+
+    pub fn set_previous_unclean(&mut self, unclean: bool) { self.previous_unclean = unclean; }
+    pub fn recovery_copy(&self, name: &str) -> bool { self.recovery_copies.contains(name) }
 
     /// The size and time the last guest listing gave `name`.
     pub fn listed_file(&self, name: &str) -> Option<(u64, &str)> {

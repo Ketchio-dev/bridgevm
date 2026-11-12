@@ -151,6 +151,10 @@ pub(super) fn vars(rig: &Rig) -> PathBuf {
 
 /// A new session (a VM start or guest restart), with the state at `vars` when given.
 pub(super) fn new_session(rig: &mut Rig, vars: Option<&Path>) {
+    // Existing adoption tests model a normal shutdown unless they explicitly drop the share.
+    if let Some(share) = rig.h.share.as_mut() {
+        if let Some(file) = share.sync_file.as_mut() { file.finish_clean(&mut share.engine); }
+    }
     rig.h.share = None; // the old session ends first and leaves its state on disk
     let mut share = ShareState::new(ShareSync::new(512), rig.dir.clone(), ROOT.into(), Duration::from_millis(500));
     if let Some(vars) = vars {

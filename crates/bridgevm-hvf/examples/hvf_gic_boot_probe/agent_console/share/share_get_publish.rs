@@ -32,7 +32,9 @@ impl AgentConsoleHarness {
             }
         };
         // A preferred guest edit goes only over the Mac file it was preferred to (share_synced.rs).
-        let mac = share.fetch_mac.get(name).copied().or_else(|| share.engine.preferred_mac_stat(name).map(Some));
+        let recovery = share.engine.recovery_copy(name);
+        let empty_recovery = recovery && finished.bytes.is_empty();
+        let mac = if recovery { Some(None) } else { share.fetch_mac.get(name).copied().or_else(|| share.engine.preferred_mac_stat(name).map(Some)) };
         let bytes = match share
             .engine
             .on_guest_file(name.to_string(), finished.bytes, None)
@@ -44,6 +46,11 @@ impl AgentConsoleHarness {
             GuestFileOutcome::Skip(reason) => return print_share_skip(name, reason),
             GuestFileOutcome::WriteHost(bytes) => bytes,
         };
+        if empty_recovery {
+            share.fetch_mac.remove(name);
+            share.engine.on_host_copy_kept(name);
+            return;
+        }
         let mtime = (share.engine.guest_mtime(name))
             .and_then(share_sync::share_mtime::guest_mtime_ms)
             .and_then(share_sync::share_mtime::system_time);
