@@ -60,7 +60,6 @@ fn unsafe_disk_and_vars_members_refuse_without_blocking_or_changing_live_media()
                 let mut pair = LockedPair::open(&worker_disk, &worker_vars).unwrap();
                 let restored = pair.restore_copying(
                     &worker_snapshot,
-                    |_| None,
                     |_, _| panic!("unsafe source reached restore copy"),
                     |_, _| panic!("unsafe source reached publication"),
                 );
@@ -122,7 +121,6 @@ fn mismatched_sparse_member_size_is_refused_before_hashing_or_staging() {
         let worker = std::thread::spawn(move || {
             let result = pair.restore_copying(
                 &snapshot,
-                |_| None,
                 |_, _| panic!("wrong-size source reached copy"),
                 |_, _| panic!("wrong-size source reached publication"),
             );

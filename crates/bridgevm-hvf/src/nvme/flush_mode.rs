@@ -84,6 +84,8 @@ pub(crate) struct DiskSync {
     last_full: Option<Instant>,
     /// An ordered flush of this disk was acknowledged after its last full sync.
     owed: bool,
+    /// Only the first deferred failure and its recovery are logged.
+    deferred_failed: bool,
 }
 
 impl DiskSync {
@@ -92,6 +94,7 @@ impl DiskSync {
             file,
             last_full: None,
             owed: false,
+            deferred_failed: false,
         }
     }
 
@@ -118,7 +121,14 @@ impl DiskSync {
     /// Run the full sync this disk owes, if any; a failure leaves it owed.
     pub(crate) fn settle(&mut self, clock: &Clock) {
         if self.owed {
-            let _ = self.full_sync(clock);
+            if let Err(error) = self.full_sync(clock) {
+                if !self.deferred_failed {
+                    crate::host_log::err(format_args!(
+                        "nvme: deferred full sync failed: {error}; acknowledged writes are not durable, check the drive connection"
+                    ));
+                    self.deferred_failed = true;
+                }
+            }
         }
     }
 
@@ -126,6 +136,12 @@ impl DiskSync {
         full_sync(&self.file)?;
         self.last_full = Some(clock.now());
         self.owed = false;
+        if self.deferred_failed {
+            crate::host_log::err(
+                "nvme: deferred full sync recovered; acknowledged writes are durable",
+            );
+            self.deferred_failed = false;
+        }
         Ok(())
     }
 }
@@ -242,6 +258,44 @@ pub(crate) fn recorded_syncs(path: &std::path::Path) -> Vec<SyncKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deferred_sync_failure_is_logged_once_and_recovery_is_logged() {
+        const CHILD: &str = "BRIDGEVM_TEST_DEFERRED_SYNC_LOG";
+        if std::env::var_os(CHILD).is_some() {
+            let clock = Clock::default();
+            let mut disk = DiskSync::new(File::open("/dev/null").unwrap());
+            disk.owed = true;
+            disk.settle(&clock);
+            assert!(disk.owed());
+            disk.settle(&clock);
+            assert!(disk.owed());
+            let path = std::env::temp_dir().join(format!("bridgevm-sync-{}", std::process::id()));
+            disk.file = File::create(&path).unwrap();
+            disk.settle(&clock);
+            assert!(!disk.owed());
+            disk.settle(&clock);
+            std::fs::remove_file(path).unwrap();
+            return;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "nvme::flush_mode::tests::deferred_sync_failure_is_logged_once_and_recovery_is_logged", "--nocapture"])
+            .env(CHILD, "1")
+            .output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let log = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(
+            log.matches("nvme: deferred full sync failed:").count(),
+            1,
+            "{log}"
+        );
+        assert!(log.contains("os error"), "errno missing: {log}");
+        assert_eq!(
+            log.matches("nvme: deferred full sync recovered").count(),
+            1,
+            "{log}"
+        );
+    }
 
     #[test]
     fn ordered_is_the_default_and_only_explicit_choices_change_it() {

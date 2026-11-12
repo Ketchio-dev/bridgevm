@@ -108,7 +108,7 @@ final class HvfWindowsSnapshotModel: ObservableObject {
         case .helper?, nil:
             break
         }
-        if text.contains("No space left on device") || text.contains("bytes free to stage")
+        if text.contains("No space left on device")
             || (error.domain == NSCocoaErrorDomain && error.code == NSFileWriteOutOfSpaceError) {
             return "Mac 저장 공간이 부족해 \(failed) 공간을 확보한 뒤 다시 시도하세요."
         }

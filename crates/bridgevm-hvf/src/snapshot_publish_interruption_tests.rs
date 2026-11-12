@@ -1,6 +1,6 @@
 use super::*;
 use crate::snapshot_pair::managed::LockedPair;
-use crate::snapshot_pair::{create_snapshot, free_space, sync_dir};
+use crate::snapshot_pair::{create_snapshot, sync_dir};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -59,7 +59,7 @@ fn swap_crash_child() {
         })
     };
     let mut pair = LockedPair::open(&disk, &vars).expect("child owns pair");
-    pair.restore_with_capacity(&snapshot, free_space::available_bytes, interrupted)
+    pair.restore_copying(&snapshot, crate::snapshot_pair::copy_and_sync, interrupted)
         .expect("the crash boundary must exit before restore returns");
 }
 
