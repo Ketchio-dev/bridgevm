@@ -45,7 +45,7 @@ struct HvfWindowsSnapshotCard: View {
             }
             .padding(6)
         } label: {
-            Label("Powered-off Snapshot", systemImage: "clock.arrow.circlepath")
+            Label("종료 상태 스냅샷", systemImage: "clock.arrow.circlepath")
         }
         .confirmationDialog(model.confirmation?.title ?? "", isPresented: Binding(
             get: { model.confirmation != nil }, set: { if !$0 { model.cancel() } }

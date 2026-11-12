@@ -23,6 +23,7 @@ struct HvfLiveDisplaySurface: View {
                 }
             }
             .overlay(alignment: .bottom) { HvfFileDropNoticeView(drops: session.fileDrops) }
+            .sheet(isPresented: $window.showsSettings) { HvfVMSettingsSheet(session: session) }
             .sheet(isPresented: $window.showsWindowInventory) { HvfWindowInventoryPanel(session: session) }
             .sheet(isPresented: $window.showsAllApps) {
                 HvfGuestStartAppsPanel(apps: window.startApps) { [window] in window.perform(.startApp($0)) }

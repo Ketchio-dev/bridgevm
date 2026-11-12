@@ -4,6 +4,9 @@ extension HvfEngineSession {
     @discardableResult
     func requestGUIStart(configuration: HvfEngineConfig,
                          policy: HvfRuntimeStartPolicy = .attachOrStart) -> HvfGUIStartAdmission {
+        guard !settingsSheetOpen else {
+            return .refused("설정을 완료한 뒤 Windows를 시작하세요.")
+        }
         guard !hasActiveRuntimeWork, !hasRetainedAttachment, !workAdmissionGate.isChecking else {
             return .refused("VM 작업이 진행 중입니다. 완료 후 다시 시도하세요.")
         }
