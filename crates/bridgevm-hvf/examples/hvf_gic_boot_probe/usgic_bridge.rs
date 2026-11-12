@@ -164,7 +164,7 @@ pub(crate) fn vtimer_exit_mask(cpu: usize, vcpu: HvVcpuT) {
     if let Some(bridge) = usgic() {
         bridge.vtimer_masked[cpu].store(true, Ordering::SeqCst);
         let kicks = bridge.gic.lock().unwrap().set_vtimer_ppi(cpu, true);
-        bridge.ring_push(format!("c{cpu} vtimer-fire k={kicks:#x}"));
+        bridge.ring_push_lazy(|| format!("c{cpu} vtimer-fire k={kicks:#x}"));
         bridge.kick(kicks, cpu);
     }
 }
@@ -238,7 +238,7 @@ pub(crate) fn kick_secondaries() {
 pub(crate) fn deliver_spi(intid: u32, level: bool) -> Option<HvReturn> {
     let bridge = usgic()?;
     let kicks = bridge.gic.lock().unwrap().set_spi(intid, level);
-    bridge.ring_push(format!("spi {intid} lvl={} k={kicks:#x}", u8::from(level)));
+    bridge.ring_push_lazy(|| format!("spi {intid} lvl={} k={kicks:#x}", u8::from(level)));
     bridge.kick(kicks, usize::MAX);
     Some(0)
 }
@@ -247,7 +247,7 @@ pub(crate) fn deliver_spi(intid: u32, level: bool) -> Option<HvReturn> {
 pub(crate) fn deliver_msi(address: u64, data: u32) -> Option<HvReturn> {
     let bridge = usgic()?;
     let kicks = bridge.gic.lock().unwrap().send_msi(address, data);
-    bridge.ring_push(format!("msi {address:#x} intid={data} k={kicks:#x}"));
+    bridge.ring_push_lazy(|| format!("msi {address:#x} intid={data} k={kicks:#x}"));
     bridge.kick(kicks, usize::MAX);
     Some(0)
 }
@@ -316,6 +316,22 @@ mod handle_tests {
     use super::*;
 
     #[test]
+    fn disabled_ring_never_formats_and_enabled_ring_records() {
+        let mut bridge = UsGicBridge::new(1);
+        bridge.ring_enabled = false;
+        bridge.ring_push_lazy(|| panic!("disabled ring formatted a line"));
+        assert!(bridge.ring.lock().unwrap().is_empty());
+        bridge.ring_enabled = true;
+        let formats = std::cell::Cell::new(0);
+        bridge.ring_push_lazy(|| {
+            formats.set(formats.get() + 1);
+            format!("timer {}", 27)
+        });
+        assert_eq!(formats.get(), 1);
+        assert_eq!(bridge.ring.lock().unwrap().front().unwrap(), "timer 27");
+    }
+
+    #[test]
     fn usgic_kick_holds_publication_until_provider_returns() {
         let bridge = Arc::new(UsGicBridge::new(2));
         let control = Arc::new(VcpuControl::new(1));
@@ -382,10 +398,11 @@ impl UsGicBridge {
         }
     }
 
-    fn ring_push(&self, line: String) {
+    fn ring_push_lazy(&self, line: impl FnOnce() -> String) {
         if !self.ring_enabled {
             return;
         }
+        let line = line();
         let mut ring = self.ring.lock().unwrap();
         if ring.len() >= 256 {
             ring.pop_front();
@@ -485,7 +502,7 @@ impl UsGicBridge {
                     self.vtimer_masked[cpu].store(true, Ordering::SeqCst);
                     self.synth_fires[cpu].fetch_add(1, Ordering::Relaxed);
                     let kicks = self.gic.lock().unwrap().set_vtimer_ppi(cpu, true);
-                    self.ring_push(format!("c{cpu} vtimer-synth k={kicks:#x}"));
+                    self.ring_push_lazy(|| format!("c{cpu} vtimer-synth k={kicks:#x}"));
                     self.kick(kicks, cpu);
                 }
             }
@@ -519,15 +536,13 @@ impl UsGicBridge {
             if trap.is_read { "read " } else { "write " },
             result.is_some()
         );
-        if self.ring_enabled {
-            if let Some(r) = result {
-                self.ring_push(format!(
-                    "c{cpu} {}{encoding:#x} w={write_value:#x} -> {:#x} k={:#x} pc={pc:#x}",
-                    if trap.is_read { "r" } else { "W" },
-                    r.value,
-                    r.kick_mask
-                ));
-            }
+        if let Some(r) = result {
+            self.ring_push_lazy(|| format!(
+                "c{cpu} {}{encoding:#x} w={write_value:#x} -> {:#x} k={:#x} pc={pc:#x}",
+                if trap.is_read { "r" } else { "W" },
+                r.value,
+                r.kick_mask
+            ));
         }
         let Some(result) = result else {
             return false;
@@ -564,12 +579,10 @@ impl UsGicBridge {
             MmioOp::Write { size, value } => (size, Some(value)),
         };
         let result = self.gic.lock().unwrap().mmio(ipa, width, write);
-        if self.ring_enabled {
-            self.ring_push(format!(
-                "c{cpu} mmio {ipa:#x} w{width} wr={write:?} -> {:#x} k={:#x}",
-                result.value, result.kick_mask
-            ));
-        }
+        self.ring_push_lazy(|| format!(
+            "c{cpu} mmio {ipa:#x} w{width} wr={write:?} -> {:#x} k={:#x}",
+            result.value, result.kick_mask
+        ));
         usgic_trace!(
             self,
             "USGIC cpu{cpu} mmio ipa={ipa:#x} w={width} write={write:?} -> {:#x} pc={pc:#x}",
