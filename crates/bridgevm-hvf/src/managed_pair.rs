@@ -16,6 +16,46 @@ pub struct LockedPair {
     _lease: MediaLease,
 }
 
+/// Resolve an existing pair only when a nearby vars candidate matches its exact
+/// identity. The sidecar hash is not reversible; never guess from one orphan.
+pub fn vars_for_disk(disk: &Path) -> io::Result<Option<PathBuf>> {
+    let disk = fs::canonicalize(disk)?;
+    let parent = disk.parent().unwrap();
+    let mut candidates = Vec::new();
+    let metadata = parent.parent().unwrap_or(parent).join("metadata");
+    // A pair kept in a directory named "metadata" makes both places the same one.
+    let directories = if metadata == parent {
+        vec![parent.to_path_buf()]
+    } else {
+        vec![parent.to_path_buf(), metadata]
+    };
+    for directory in directories {
+        if !directory.is_dir() {
+            continue;
+        }
+        for entry in fs::read_dir(directory)? {
+            let path = entry?.path();
+            if path != disk && path.is_file() {
+                candidates.push(path);
+            }
+        }
+    }
+    let mut found = None;
+    for vars in candidates {
+        if layout::identity_matches(&disk, &vars)? {
+            if found.is_some() {
+                return Err(io::Error::other("ambiguous managed media binding"));
+            }
+            found = Some(vars);
+        }
+    }
+    if found.is_none() {
+        // Reuse the existing fail-closed orphan check, without creating a pair.
+        layout::resolve_root(&disk, &parent.join(".bridgevm-import-no-vars"))?;
+    }
+    Ok(found)
+}
+
 impl LockedPair {
     pub fn open(disk: &Path, vars: &Path) -> io::Result<Self> {
         let disk = fs::canonicalize(disk)?;

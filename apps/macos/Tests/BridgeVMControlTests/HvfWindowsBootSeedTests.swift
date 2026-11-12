@@ -216,7 +216,7 @@ final class HvfWindowsBootSeedTests: XCTestCase {
         return store
     }
 
-    private static func makeSyntheticGptDisk(espGUID: Data, firstLBA: UInt64, lastLBA: UInt64) -> Data {
+    static func makeSyntheticGptDisk(espGUID: Data, firstLBA: UInt64, lastLBA: UInt64) -> Data {
         var disk = Data(count: 512 * (34 + 8))  // protective MBR + GPT header + entries + slack
         // GPT header at LBA1
         var header = Data("EFI PART".utf8)

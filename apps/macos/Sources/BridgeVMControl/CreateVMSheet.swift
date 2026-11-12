@@ -113,7 +113,7 @@ struct CreateVMSheet: View {
                 Text("기본 Ubuntu 데스크톱을 즉시 복제합니다 (APFS 클론, 추가 용량 없음).")
                     .font(.callout).foregroundColor(.secondary)
             } else if mode == .windowsHVF {
-                Text("이미 설치되어 정상 부팅한 Windows ARM 디스크(RAW, QCOW2, Hyper-V의 VHDX)와 그 부팅에 사용한 UEFI vars를 가져옵니다. QCOW2와 VHDX는 RAW로 변환하고, 원본은 변경하지 않고 라이브러리에 복제합니다.")
+                Text("이미 설치되어 정상 부팅한 Windows ARM 디스크(RAW, QCOW2, Hyper-V의 VHDX)를 가져옵니다. UEFI vars가 없으면 기본 부팅 설정을 만듭니다. QCOW2와 VHDX는 RAW로 변환하고, 원본은 변경하지 않고 라이브러리에 복제합니다.")
                     .font(.callout).foregroundColor(.secondary)
                 HStack {
                     Button("설치된 디스크 선택…") { pickHVFTarget() }
@@ -121,10 +121,14 @@ struct CreateVMSheet: View {
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
                 }
                 HStack {
-                    Button("UEFI vars 선택…") { pickHVFVars() }
+                    Button("UEFI vars 선택… (선택 사항)") { pickHVFVars() }
                     Text(hvfVarsPath.isEmpty ? "선택된 vars 없음" : (hvfVarsPath as NSString).lastPathComponent)
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
                 }
+                Text(HvfWindowsImportNotice.varsHelp)
+                    .font(.caption).foregroundColor(.secondary)
+                Text(HvfWindowsImportNotice.bitLockerHelp)
+                    .font(.caption).foregroundColor(.secondary)
                 Text("3D 가속은 Future Path이며 이번 출시 범위에 포함되지 않습니다. 기본 디스플레이 구성으로 가져옵니다.")
                     .font(.caption).foregroundColor(.secondary)
             } else if mode == .windowsHVFInstall {
@@ -266,7 +270,7 @@ struct CreateVMSheet: View {
         guard !working, creationState.permitsCreation, VMLibrary.normalizedVMName(name) != nil else { return false }
         switch mode {
         case .windowsHVF:
-            return !hvfTargetPath.isEmpty && !hvfVarsPath.isEmpty
+            return !hvfTargetPath.isEmpty
         case .windowsHVFInstall:
             return !isoPath.isEmpty && !guestPayloadPath.isEmpty && !guestPayloadManifestPath.isEmpty
         case .iso, .windows:

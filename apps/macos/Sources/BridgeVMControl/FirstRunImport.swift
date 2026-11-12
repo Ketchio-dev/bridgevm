@@ -1,17 +1,17 @@
 import Foundation
 
 /// D2 first-run import: register an existing HVF Windows VM bundle (an installed
-/// disk + 64 MiB UEFI vars + optional vTPM state dir) into the library so a
+/// disk + optional 64 MiB UEFI vars + optional vTPM state dir) into the library so a
 /// cold GUI start can boot it. Import-only: no ISO install, no from-scratch VM
 /// creation — those stay separate flows. Validation is fail-closed at the
 /// system boundary (user-picked paths), mirroring VTPMStateSecurity's stance.
 enum FirstRunImport {
-    /// The three inputs a user selects. Only the disk and vars are required; a
+    /// The three inputs a user selects. Only the disk is required; a
     /// vTPM state dir is optional (a fresh TPM is initialized when absent).
     struct Inputs: Equatable, Sendable {
         var displayName: String
         var diskPath: String
-        var varsPath: String
+        var varsPath: String = ""
         var vtpmStateDir: String?; var vtpmRecoveryPackagePath: String? = nil
         var vtpmRecoveryCodePath: String? = nil
         var memMiB: Int
@@ -70,18 +70,19 @@ enum FirstRunImport {
             URL(fileURLWithPath: inputs.diskPath).resolvingSymlinksInPath().path)[.size] as? NSNumber)?.uint64Value ?? 0
         if diskBytes == 0 { return .diskEmpty(inputs.diskPath) }
 
-        var varsIsDir: ObjCBool = false
-        guard fileManager.fileExists(atPath: inputs.varsPath, isDirectory: &varsIsDir),
-            !varsIsDir.boolValue
-        else {
-            return .varsMissing(inputs.varsPath)
+        if !inputs.varsPath.isEmpty {
+            var varsIsDir: ObjCBool = false
+            guard fileManager.fileExists(atPath: inputs.varsPath, isDirectory: &varsIsDir),
+                !varsIsDir.boolValue
+            else {
+                return .varsMissing(inputs.varsPath)
+            }
+            let varsBytes = (try? fileManager.attributesOfItem(atPath:
+                URL(fileURLWithPath: inputs.varsPath).resolvingSymlinksInPath().path)[.size] as? NSNumber)?.uint64Value ?? 0
+            if varsBytes != requiredVarsBytes {
+                return .varsWrongSize(path: inputs.varsPath, bytes: varsBytes)
+            }
         }
-        let varsBytes = (try? fileManager.attributesOfItem(atPath:
-            URL(fileURLWithPath: inputs.varsPath).resolvingSymlinksInPath().path)[.size] as? NSNumber)?.uint64Value ?? 0
-        if varsBytes != requiredVarsBytes {
-            return .varsWrongSize(path: inputs.varsPath, bytes: varsBytes)
-        }
-
         if let error = FirstRunImportVTPMValidation.validate(inputs, fileManager: fileManager) { return error }
         return nil
     }
