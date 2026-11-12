@@ -40,16 +40,11 @@ extension LibraryModel {
         case let .failed(message): operation.fail(message)
         case .preparing: operation.fail(HvfWindowsInstallPreparation.staleMessage)
         case let .ready(session):
-            bindOwnedInstallSession(session, saved: saved, operation: operation)
+            _ = bindWindowsInstallSession(session, slug: saved.slug)
             guard operation.start(session) else {
                 operation.fail("Windows 설치를 시작할 수 없습니다. VM 상태를 확인한 뒤 다시 시도하세요."); return
             }
         }
     }
 
-    private func bindOwnedInstallSession(_ session: HvfWindowsInstallSession, saved: VMConfig,
-                                         operation: NativeInstallOperation) {
-        bindInstallAdmissions(session, slug: saved.slug, operation: operation,
-            owns: { [weak operation] _, current in operation != nil && current == saved })
-    }
 }

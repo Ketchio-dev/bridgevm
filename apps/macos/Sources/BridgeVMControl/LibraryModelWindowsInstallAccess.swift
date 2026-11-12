@@ -22,25 +22,25 @@ extension LibraryModel {
     }
 
     func bindWindowsInstallSession(_ session: HvfWindowsInstallSession, slug: String) -> HvfWindowsInstallSession {
-        bindInstallAdmissions(session, slug: slug, owns: { _, current in
-            current.engineKind == .hvfEngine && current.installPending == true
-        })
+        bindInstallAdmissions(session, slug: slug)
         return session
     }
 
-    /// Both phases share ownership and CLI exclusion; only continuation excludes
-    /// the session's own active reservation, which has not started at admission.
-    func bindInstallAdmissions(_ session: HvfWindowsInstallSession, slug: String,
-        operation: NativeInstallOperation? = nil,
-        owns: @escaping @MainActor (LibraryModel, VMConfig) -> Bool
-    ) {
-        let admission: @MainActor (Bool, Bool) -> String? = { [weak self, weak session, weak operation] continuing, report in
+    /// Resolve CLI ownership at check time: detail-view adoption may rebind this
+    /// session, and operation.start installs its session before checking admission.
+    func bindInstallAdmissions(_ session: HvfWindowsInstallSession, slug: String) {
+        let admission: @MainActor (Bool, Bool) -> String? = { [weak self, weak session] continuing, report in
             guard let self, let session else {
                 return "VM 라이브러리를 사용할 수 없습니다. 라이브러리 화면에서 다시 시도하세요."
             }
+            let candidate = self.windowsInstallSessions.cliOperations.records[slug]?.operation
+            let operation = candidate?.session === session ? candidate : nil
             let refusal = self.libraryWorkRefusal(slug: slug, excludingInstall: operation,
                 excludingWindowsInstall: continuing ? session : nil,
-                owns: { owner, current in owns(owner, current) && owner.windowsInstallSessions.owns(session, for: current) })
+                owns: { owner, current in
+                    current.engineKind == .hvfEngine && current.installPending == true
+                        && owner.windowsInstallSessions.owns(session, for: current)
+                })
             if report, let refusal { self.operationError = refusal }
             return refusal
         }

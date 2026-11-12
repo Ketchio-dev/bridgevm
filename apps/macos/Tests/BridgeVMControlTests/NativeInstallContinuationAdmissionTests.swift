@@ -24,6 +24,8 @@ final class NativeInstallContinuationAdmissionTests: XCTestCase {
         let queue = HvfWindowsInstallPipelineQueue()
         defer { queue.discard() }
         let process = ProcessRecorder()
+        let gate = HvfWindowsInstallCancellationGate()
+        defer { gate.release() }
         var prepared = 0
         var session: HvfWindowsInstallSession?
         var library: LibraryModel!
@@ -33,6 +35,7 @@ final class NativeInstallContinuationAdmissionTests: XCTestCase {
                     prepared += 1
                     XCTAssertEqual(library.vms.first { $0.slug == saved.slug }, saved,
                                    "media preparation must not mutate the admitted registration")
+                    if conflict == "view" || conflict == "view-config" { await gate.hold() }
                     if conflict == "cli" {
                         let other = NativeInstallOperation(operationID: UUID(), expectedSavedConfigurationDigest: "other")
                         library.windowsInstallSessions.cliOperations.records[saved.slug] = .init(digest: "other", operation: other)
@@ -55,12 +58,31 @@ final class NativeInstallContinuationAdmissionTests: XCTestCase {
         XCTAssertTrue(accepted.operation.reservesWork)
         XCTAssertEqual(queue.jobs.count, 1)
         if conflict == "gui" {
-            // A GUI-bound session has no authority to exclude the active CLI owner.
+            // A view may exclude only the operation that actually owns its session.
+            let other = NativeInstallOperation(operationID: UUID(), expectedSavedConfigurationDigest: digest)
+            library.windowsInstallSessions.cliOperations.records[saved.slug] = .init(digest: digest, operation: other)
             _ = library.bindWindowsInstallSession(active, slug: saved.slug)
         }
-        await queue.runNext()
+        let pipeline = Task { await queue.runNext() }
+        if conflict == "view" || conflict == "view-config" {
+            let entered = await gate.waitForEntry()
+            XCTAssertTrue(entered)
+            // This is the lookup invoked by HvfWindowsInstallPreparationView.init.
+            let detail = library.windowsInstallPreparation(for: saved)
+            guard case let .ready(observed) = detail.state else {
+                gate.release(); await pipeline.value
+                return XCTFail("detail view must adopt the running session")
+            }
+            XCTAssertTrue(observed === active)
+            if conflict == "view-config" {
+                var changed = saved; changed.memMiB = 8192
+                try f.save(changed); library.reload()
+            }
+            gate.release()
+        }
+        await pipeline.value
         XCTAssertEqual(prepared, 1)
-        if conflict.isEmpty {
+        if conflict.isEmpty || conflict == "view" {
             XCTAssertEqual(process.launches, 1, "owning CLI operation must reach installer launch after preparation; stage=\(active.stage)")
         } else {
             XCTAssertEqual(process.launches, 0, "foreign work or changed registration must stay refused")
@@ -70,6 +92,8 @@ final class NativeInstallContinuationAdmissionTests: XCTestCase {
 
     func testOwnedInstallContinuationExcludesItsOwnSessionAndOperation() async throws { try await run("") }
     func testOwnedInstallContinuationRejectsDifferentCLIOperation() async throws { try await run("cli") }
-    func testGUIContinuationDoesNotExcludeCLIWork() async throws { try await run("gui") }
+    func testGUIContinuationRejectsUnrelatedCLIOperationWithoutSession() async throws { try await run("gui") }
+    func testDetailViewAdoptionDuringOwnedPreparationPreservesInstallerLaunch() async throws { try await run("view") }
+    func testDetailViewAdoptionStillRejectsChangedRegistration() async throws { try await run("view-config") }
     func testOwnedInstallContinuationRejectsChangedRegistration() async throws { try await run("config") }
 }
