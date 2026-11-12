@@ -114,14 +114,22 @@ enum HvfWindowsSnapshotCommand {
             if operation == .create, FileManager.default.fileExists(atPath: plan.snapshot.path) {
                 throw failure("snapshot destination was occupied before creation", .unsafeFolder)
             }
+            let sidecar = HvfWindowsSnapshotStore.nameFile(plan.snapshot)
+            var named = false
+            var completed = false
+            defer {
+                if named && !completed { try? FileManager.default.removeItem(at: sidecar) }
+            }
+            if operation == .create, let name = plan.name, !name.isEmpty {
+                try name.write(to: sidecar, atomically: true, encoding: .utf8)
+                named = true
+            }
             let output = try invoke(plan.executable, arguments)
             if operation == .create {
                 try await checkAdmission()
                 _ = try invoke(plan.executable, ["verify", plan.snapshot.path])
-                if let name = plan.name, !name.isEmpty {
-                    try name.write(to: HvfWindowsSnapshotStore.nameFile(plan.snapshot), atomically: true, encoding: .utf8)
-                }
             }
+            completed = true
             return output
         }.value
     }
