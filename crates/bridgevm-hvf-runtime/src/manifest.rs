@@ -103,15 +103,42 @@ fn field_str(text: &str, key: &str) -> Result<String, RuntimeError> {
             problem: "must not be empty",
         });
     }
-    if value.contains('\\') {
-        // The four fields are paths and numbers; no legal value needs an
-        // escape, and refusing them keeps this parser honest about its size.
-        return Err(RuntimeError::ManifestField {
-            field: leak(key),
-            problem: "escape sequences are not accepted",
+    // A path may hold a quote, a backslash or a control character; the app
+    // writes those as JSON escapes.
+    unescape(value).ok_or(RuntimeError::ManifestField {
+        field: leak(key),
+        problem: "has an escape sequence that is not valid JSON",
+    })
+}
+
+/// The string a JSON string body stands for. Surrogate escapes are not
+/// accepted: the app writes everything outside the control range as UTF-8.
+fn unescape(body: &str) -> Option<String> {
+    let mut out = String::with_capacity(body.len());
+    let mut chars = body.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        out.push(match chars.next()? {
+            '"' => '"',
+            '\\' => '\\',
+            '/' => '/',
+            'b' => '\u{8}',
+            'f' => '\u{c}',
+            'n' => '\n',
+            'r' => '\r',
+            't' => '\t',
+            'u' => {
+                let hex = chars.as_str().get(..4)?;
+                chars = chars.as_str()[4..].chars();
+                char::from_u32(u32::from_str_radix(hex, 16).ok()?)?
+            }
+            _ => return None,
         });
     }
-    Ok(value.to_string())
+    Some(out)
 }
 
 fn field_u64(text: &str, key: &str) -> Result<u64, RuntimeError> {
@@ -141,8 +168,10 @@ fn raw_field<'a>(text: &'a str, key: &str) -> Result<&'a str, RuntimeError> {
         .trim_start();
     let end = after
         .char_indices()
-        .scan(false, |in_string, (i, c)| {
+        .scan((false, false), |(in_string, escaped), (i, c)| {
             match c {
+                _ if *escaped => *escaped = false,
+                '\\' if *in_string => *escaped = true,
                 '"' => *in_string = !*in_string,
                 ',' | '}' if !*in_string => return Some(Some(i)),
                 _ => {}

@@ -121,6 +121,18 @@ final class HvfEngineConfigTests: XCTestCase {
         XCTAssertTrue(json.contains("\"vcpus\": 6"), json)
     }
 
+    func testAManifestPathWithAQuoteOrBackslashIsEscapedNotFatal() throws {
+        var cfg = HvfEngineConfig(targetDiskPath: "/vm/win.raw", uefiVarsPath: "/vm/vars.fd", evidenceDir: "/tmp/evidence",
+                                  ramMiB: 8192, smpCpus: 6, clipboardSync: false, shareHostDir: nil, shareGuestDir: nil,
+                                  virtioNet: false, virtioGpu3d: false, nvmeBufferedIO: false, ctlFilePath: "/tmp/evidence/ctl")
+        cfg.targetDiskPath = "/vm/My \"VM\"\\ x\ny/win.raw"
+        let json = cfg.launchManifestJSON()
+        // bridgevm-hvf-runtime's manifest_tests read exactly this spelling back.
+        XCTAssertTrue(json.contains(#""disk": "/vm/My \"VM\"\\ x\u000ay/win.raw""#), json)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        XCTAssertEqual(object["disk"] as? String, cfg.targetDiskPath)
+    }
+
     func testBaseArgumentsUseExplicitServiceCLI() {
         let cfg = HvfEngineConfig(targetDiskPath: "/vm/win.raw",
                                   uefiVarsPath: "/vm/vars.fd",

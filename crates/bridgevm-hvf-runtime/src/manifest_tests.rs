@@ -84,12 +84,27 @@ fn a_product_launch_refuses_a_repository_path() {
 }
 
 #[test]
-fn escapes_and_non_string_paths_are_refused() {
-    let escaped = valid().replace("/tmp/win.raw", "C:\\\\win.raw");
-    assert!(matches!(
-        LaunchManifest::parse(&escaped, false),
-        Err(RuntimeError::ManifestField { field: "disk", .. })
-    ));
+fn a_path_with_a_quote_a_backslash_or_a_control_character_is_read_back() {
+    // What the app writes for the folder `/tmp/My "VM"\, } x<newline>y`.
+    let text = valid().replace("/tmp/win.raw", r#"/tmp/My \"VM\"\\, } x\u000ay/win.raw"#);
+    let m = LaunchManifest::parse(&text, false).expect("escaped path");
+    assert_eq!(m.disk(), "/tmp/My \"VM\"\\, } x\ny/win.raw");
+    assert_eq!(m.uefi_vars(), "/tmp/vars.fd");
+    assert_eq!(m.vcpus(), 4);
+}
+
+#[test]
+fn bad_escapes_and_non_string_paths_are_refused() {
+    for bad in [r"/tmp/\q", r"/tmp/\u12", r"/tmp/\ud800", "/tmp/x\\"] {
+        let escaped = valid().replace("/tmp/win.raw", bad);
+        assert!(
+            matches!(
+                LaunchManifest::parse(&escaped, false),
+                Err(RuntimeError::ManifestField { field: "disk", .. })
+            ),
+            "{bad}"
+        );
+    }
     let numeric = valid().replace("\"/tmp/win.raw\"", "7");
     assert!(matches!(
         LaunchManifest::parse(&numeric, false),
