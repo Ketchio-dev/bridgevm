@@ -2365,7 +2365,7 @@ function Get-BvAgentId([string]$Dir) {
 # Until an agent says so, the host shows Windows the Mac on AC power, since
 # Task Scheduler would not start an older agent's task on battery.
 function Get-BvReady([string]$Dir, [string]$Id) {
-    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame startapps openfile onbattery print'
+    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame startapps openfile onbattery print putmtime'
     if (-not $Id) { return $ready }
     $ready += ' agent=' + $Id
     $root = Split-Path -Parent $Dir

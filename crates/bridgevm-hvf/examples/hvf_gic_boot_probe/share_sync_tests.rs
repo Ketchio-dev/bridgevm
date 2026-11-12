@@ -138,6 +138,23 @@ fn host_guest_round_trip_does_not_ping_pong() {
 }
 
 #[test]
+fn timed_put_stamp_requires_exact_guest_ticks_but_legacy_still_adopts() {
+    for (capable, stamp, fetch) in [
+        (true, "2026-11-08T00:05:12.1230000Z", false),
+        (true, "2026-11-08T00:05:12.1230001Z", true),
+        (true, "2026-11-08T00:05:13.1230000Z", true),
+        (false, "2026-11-08T00:05:13.1230000Z", false),
+    ] {
+        let mut sync = ShareSync::new(1);
+        sync.set_guest_applies_put_mtime(capable);
+        sync.on_put_ok_with_mtime("a.txt".into(), 3, fnv1a64(b"old"), Some(1_794_096_312_123));
+        let actions = sync.on_guest_listing(vec![ls_file("a.txt", 3, stamp)]);
+        assert_eq!(actions, if fetch { vec![SyncAction::Get { name: "a.txt".into() }] } else { vec![] }, "{capable} {stamp}");
+        if !fetch { assert!(sync.on_guest_listing(vec![ls_file("a.txt", 3, stamp)]).is_empty()); }
+    }
+}
+
+#[test]
 fn guest_size_change_with_restored_time_is_fetched_once() {
     let mut sync = ShareSync::new(1);
     sync.on_guest_file("a.txt".into(), b"old".to_vec(), Some("g1"));

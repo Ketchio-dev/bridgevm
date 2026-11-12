@@ -104,6 +104,15 @@
       "evidence": "crates/bridgevm-hvf/src/host_power.rs"
     },
     {
+      "id": "share-put-mtime",
+      "area": "guest-agent",
+      "qemu_behavior": "QEMU has no shared-folder guest-agent push protocol of its own.",
+      "bridgevm_behavior": "READY putmtime promises that PUT, PUTEND and LPUTEND apply the optional host millisecond timestamp. The host accepts a post-push listing as its write only when size and the sent timestamp match, including the zero sub-millisecond ticks. Without the marker the old size-only adoption remains.",
+      "guest_visible": true,
+      "impact": "A same-size Windows edit before the first post-push listing is fetched instead of silently adopted as the Mac write.",
+      "evidence": "crates/bridgevm-hvf/examples/hvf_gic_boot_probe/share_sync_tests.rs"
+    },
+    {
       "id": "share-reparse-listing",
       "area": "guest-agent",
       "qemu_behavior": "QEMU has no shared-folder guest-agent listing protocol of its own.",

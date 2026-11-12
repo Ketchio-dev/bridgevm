@@ -81,6 +81,8 @@ pub struct ShareSync {
     max_bytes: u64,
     /// The largest file an agent without ranged transfers moves (whole in memory).
     whole_file_limit: Option<u64>,
+    /// READY putmtime: this agent applies the timestamp supplied with PUT/LPUT.
+    guest_applies_put_mtime: bool,
     guest_skip_seen: HashSet<(String, String, SkipKey)>,
     pending_guest_mtime: HashMap<String, String>,
     pending_host_changed: HashSet<String>,
@@ -137,6 +139,11 @@ impl ShareSync {
     /// An agent without ranged transfers (READY without `bigfile`) gets files of at most `limit`.
     pub fn set_whole_file_limit(&mut self, limit: Option<u64>) {
         self.whole_file_limit = limit;
+    }
+
+    pub fn set_guest_applies_put_mtime(&mut self, applies: bool) {
+        self.pass_changed |= self.guest_applies_put_mtime != applies;
+        self.guest_applies_put_mtime = applies;
     }
 
     /// The size and time the last guest listing gave `name`.
@@ -225,9 +232,16 @@ impl ShareSync {
                 continue;
             }
             let changed = match self.records.get_mut(name) {
-                Some(record) if record.awaiting_guest_stamp && entry.size == record.size => {
-                    // A host PUT changes the guest mtime. The first matching LSR after
-                    // PUTOK is our write landing, not a guest edit to pull back.
+                Some(record)
+                    if record.awaiting_guest_stamp
+                        && entry.size == record.size
+                        && (!self.guest_applies_put_mtime
+                            || record.host_mtime_ms.is_none_or(|expected| {
+                                share_mtime::matches_put_mtime(&entry.mtime, expected)
+                            })) =>
+                {
+                    // Only our expected size AND time identify a timed PUT landing.
+                    // Legacy agents do not promise to apply the time.
                     record.guest_mtime = Some(entry.mtime.clone());
                     record.awaiting_guest_stamp = false;
                     self.pass_changed = true;

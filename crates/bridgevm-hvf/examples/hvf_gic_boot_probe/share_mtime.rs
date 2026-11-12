@@ -29,6 +29,14 @@ pub fn guest_mtime_ms(listed: &str) -> Option<u128> {
     u128::try_from(seconds * 1_000 + millis).ok()
 }
 
+/// A sent millisecond time has no sub-millisecond ticks in .NET's seven-digit listing.
+/// Do not truncate a later guest edit within that same millisecond into a match.
+pub fn matches_put_mtime(listed: &str, expected_ms: u128) -> bool {
+    guest_mtime_ms(listed) == Some(expected_ms)
+        && listed.strip_suffix('Z').and_then(|s| s.split_once('.'))
+            .is_none_or(|(_, fraction)| fraction.bytes().skip(3).all(|b| b == b'0'))
+}
+
 pub fn system_time(mtime_ms: u128) -> Option<SystemTime> {
     UNIX_EPOCH.checked_add(Duration::from_millis(u64::try_from(mtime_ms).ok()?))
 }
