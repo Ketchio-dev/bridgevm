@@ -6,9 +6,14 @@ enum HvfRuntimeLaunchReadiness {
                         diagnostic: (String) -> Void) -> HvfRuntimeStartOutcome? {
         let readiness = config.readiness(repoRoot: repoRoot)
         guard !readiness.launchReady else { return nil }
-        for blocker in readiness.launchBlockers {
+        return failure(blockers: readiness.launchBlockers, diagnostic: diagnostic)
+    }
+
+    static func failure(blockers: [HvfWindowsReadinessIssue],
+                        diagnostic: (String) -> Void) -> HvfRuntimeStartOutcome {
+        for blocker in blockers {
             diagnostic("launch readiness blocked [\(blocker.code)]: \(blocker.summary)")
         }
-        return .failed(.readiness, readiness.launchBlockers.map(\.summary).joined(separator: " "))
+        return .failed(.readiness(blockers.map(\.code)), blockers.map(\.summary).joined(separator: " "))
     }
 }

@@ -59,6 +59,12 @@ extension HvfEngineSession {
         ticket.finish(outcome)
         guiStartExecution = nil
         for diagnostic in result.diagnostics { append(.unknown(diagnostic)) }
+        if case let .failed(stage, detail) = result.result {
+            append(.unknown("VM start failed [\(stage)]: \(detail)"))
+        }
+        if case let .failed(stage, detail) = outcome, case .legacy = result.result {
+            append(.unknown("VM start failed [\(stage)]: \(detail)"))
+        }
         if let failure = guiStartFailureText { append(.unknown(failure)) }
         objectWillChange.send()
     }
