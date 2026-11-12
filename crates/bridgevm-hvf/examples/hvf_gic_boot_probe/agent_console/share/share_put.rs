@@ -131,7 +131,7 @@ impl AgentConsoleHarness {
             );
             if let Some(share) = self.share.as_mut() {
                 share.engine.put_confirmed(&name, len as u64, mtime_ms, now);
-                share.engine.on_put_ok(name, len as u64, hash);
+                share.engine.on_put_ok_with_mtime(name, len as u64, hash, mtime_ms);
             }
             return;
         }

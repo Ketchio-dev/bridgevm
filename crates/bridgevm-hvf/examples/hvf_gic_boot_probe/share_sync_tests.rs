@@ -43,6 +43,23 @@ fn parse_ls_handles_lines_empty_pipe_names_and_normalizes_guest_rels() {
 }
 
 #[test]
+fn guest_reparse_subtree_is_unseen_until_an_ordinary_directory_returns() {
+    let mut sync = ShareSync::new(512);
+    sync.on_guest_file("folder/a.txt".into(), b"old".to_vec(), Some("g1"));
+    sync.note_host_stat("folder/a.txt", 10);
+    let junction = "FOLDER|1|1|2026-01-01T00:00:00.0000000Z\n";
+    assert_eq!(sync.on_guest_listing(parse_ls(junction)), vec![]);
+    assert_eq!(sync.on_host_scan(vec![host_file("folder/a.txt", 4, 20), host_file("folder/new.txt", 1, 20)]), vec![]);
+    assert!(sync.on_host_file("folder/new.txt".into(), b"x".to_vec(), 20).is_none());
+    assert!(!sync.on_host_push_streamed("folder/new.txt"));
+    assert_eq!(sync.on_host_scan(Vec::new()), vec![]);
+    // Even contradictory rows below an unseen directory must not be fetched.
+    assert_eq!(sync.on_guest_listing(parse_ls(&format!("{junction}folder\\a.txt|4|0|g2\n"))), vec![]);
+    assert_eq!(sync.on_guest_listing(parse_ls("folder|0|1|d1\nfolder\\a.txt|4|0|g2\n")), vec![SyncAction::Get { name: "folder/a.txt".into() }]);
+    assert_eq!(sync.on_host_scan(vec![host_file("folder/new.txt", 1, 20)]), vec![SyncAction::Get { name: "folder/new.txt".into() }]);
+}
+
+#[test]
 fn rel_path_helpers_round_trip_guest_and_host_forms() {
     assert_eq!(
         from_guest_rel("sub\\dir\\file.txt").as_deref(),
@@ -118,6 +135,42 @@ fn host_guest_round_trip_does_not_ping_pong() {
     assert!(sync
         .on_host_file("sub/x.txt".into(), b"world!".to_vec(), 20)
         .is_none());
+}
+
+#[test]
+fn timed_put_stamp_requires_exact_guest_ticks_but_legacy_still_adopts() {
+    for (capable, stamp, fetch) in [
+        (true, "2026-11-08T00:05:12.1230000Z", false),
+        (true, "2026-11-08T00:05:12.1230001Z", true),
+        (true, "2026-11-08T00:05:13.1230000Z", true),
+        (false, "2026-11-08T00:05:13.1230000Z", false),
+    ] {
+        let mut sync = ShareSync::new(1);
+        sync.set_guest_applies_put_mtime(capable);
+        sync.on_put_ok_with_mtime("a.txt".into(), 3, fnv1a64(b"old"), Some(1_794_096_312_123));
+        let actions = sync.on_guest_listing(vec![ls_file("a.txt", 3, stamp)]);
+        assert_eq!(actions, if fetch { vec![SyncAction::Get { name: "a.txt".into() }] } else { vec![] }, "{capable} {stamp}");
+        if !fetch { assert!(sync.on_guest_listing(vec![ls_file("a.txt", 3, stamp)]).is_empty()); }
+    }
+}
+
+#[test]
+fn guest_size_change_with_restored_time_is_fetched_once() {
+    let mut sync = ShareSync::new(1);
+    sync.on_guest_file("a.txt".into(), b"old".to_vec(), Some("g1"));
+    sync.note_host_stat("a.txt", 10);
+    assert_eq!(sync.on_guest_listing(vec![ls_file("a.txt", 4, "g1")]), vec![SyncAction::Get { name: "a.txt".into() }]);
+    assert_eq!(sync.on_guest_file("a.txt".into(), b"new!".to_vec(), None), GuestFileOutcome::WriteHost(b"new!".to_vec()));
+    sync.note_host_stat("a.txt", 10);
+    assert!(sync.on_guest_listing(vec![ls_file("a.txt", 4, "g1")]).is_empty());
+    assert!(sync.on_host_scan(vec![host_file("a.txt", 4, 10)]).is_empty());
+    // An over-limit replacement is skipped, not fetched, without corrupting the record.
+    assert_eq!(sync.on_guest_listing(vec![ls_file("a.txt", 2048, "g1")]), vec![SyncAction::Skip { name: "a.txt".into(), reason: SkipReason::TooLarge { size: 2048 } }]);
+    assert!(sync.on_guest_listing(vec![ls_file("a.txt", 2048, "g1")]).is_empty());
+    assert!(sync.on_guest_listing(vec![ls_file("a.txt", 4, "g1")]).is_empty());
+    // The listing may show a half-written PUT: existing in-flight protection wins.
+    sync.set_puts_under_way(["a.txt".into()]);
+    assert!(sync.on_guest_listing(vec![ls_file("a.txt", 2, "g1")]).is_empty());
 }
 
 #[test]

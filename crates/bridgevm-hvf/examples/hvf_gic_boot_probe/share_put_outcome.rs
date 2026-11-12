@@ -9,6 +9,12 @@
 use super::*;
 
 impl ShareSync {
+    pub fn on_put_ok_with_mtime(&mut self, name: String, size: u64, hash: u64, mtime_ms: Option<u128>) {
+        let key = normalize_rel(&name);
+        self.on_put_ok(name, size, hash);
+        self.records.get_mut(&key).unwrap().host_mtime_ms = mtime_ms;
+    }
+
     pub fn on_put_ok(&mut self, name: String, size: u64, hash: u64) {
         let name = normalize_rel(&name);
         self.pending_host_changed.remove(&name);

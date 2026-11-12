@@ -26,15 +26,23 @@ impl ShareSync {
         self.host_unseen = unseen;
     }
 
+    pub(super) fn guest_unseen_covers(&self, name: &str) -> bool {
+        covers(&self.guest_unseen, name)
+    }
+
     /// The name is unseen itself or lies below an unseen directory.
     pub(super) fn host_unseen_covers(&self, name: &str) -> bool {
-        if self.host_unseen.is_empty() {
+        covers(&self.host_unseen, name)
+    }
+}
+
+fn covers(unseen: &HashSet<String>, name: &str) -> bool {
+        if unseen.is_empty() {
             return false;
         }
         let key = unseen_key(name);
         let mut parents = key.match_indices('/').map(|(end, _)| &key[..end]);
-        self.host_unseen.contains(&key) || parents.any(|dir| self.host_unseen.contains(dir))
-    }
+        unseen.contains(&key) || parents.any(|dir| unseen.contains(dir))
 }
 
 #[cfg(test)]

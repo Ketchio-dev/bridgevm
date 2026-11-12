@@ -427,6 +427,7 @@ impl AgentConsoleHarness {
         if let Some(share) = self.share.as_mut() {
             let limit = (!self.share_big).then_some(harness_protocol::MAX_AGENT_GET_BYTES as u64);
             share.engine.set_whole_file_limit(limit);
+            share.engine.set_guest_applies_put_mtime(rest.split(' ').any(|token| token == "putmtime"));
             share.listing_same.ready(ready_has_listing_same(rest));
         }
         let t = self.t_ms(now);
