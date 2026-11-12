@@ -68,6 +68,15 @@
       "evidence": "crates/bridgevm-hvf/src/net_nat/tests/idle_sweep.rs"
     },
     {
+      "id": "import-default-uefi-vars",
+      "area": "firmware",
+      "qemu_behavior": "The caller supplies a writable firmware variable store and boot options.",
+      "bridgevm_behavior": "Disk import without vars captures a recognized managed pair's current disk and vars under native ownership; unmanaged disks use the bundled Windows seed and install-time GPT ESP boot-entry seeding on the imported RAW copy. Supplied vars remain byte-identical. Missing GPT or ESP retains the plain seed with a nonblocking Korean notice.",
+      "guest_visible": true,
+      "impact": "A new variable store does not preserve custom boot options or another machine's TPM identity. MBR/BIOS disks cannot gain UEFI boot support from seeding and may reach the firmware shell instead of Windows.",
+      "evidence": "apps/macos/Tests/BridgeVMControlTests/HvfWindowsImportNoVarsTests.swift"
+    },
+    {
       "id": "guest-agent-display-adapter-report",
       "area": "guest-agent",
       "qemu_behavior": "QEMU has no BridgeVM DISPLAYMODE or BVDISPLAY guest-agent protocol.",

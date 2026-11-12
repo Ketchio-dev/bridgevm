@@ -2,6 +2,7 @@ use std::process::ExitCode;
 pub(super) fn usage() -> ExitCode {
     eprintln!(
         "usage:\n  \
+         snapshot_pair_cli import-disk <disk> <dest>\n  \
          snapshot_pair_cli create <disk> <vars> <dest> <vm-id> <quota-bytes>\n  \
          snapshot_pair_cli verify <snapshot-dir>\n  \
          snapshot_pair_cli restore <snapshot-dir> <disk> <vars>\n  \

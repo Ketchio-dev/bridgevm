@@ -27,14 +27,15 @@ extension VMLibrary {
         guard isReadableRegularFile(targetURL.path) else {
             return "설치된 Windows RAW 디스크 파일을 찾을 수 없습니다."
         }
+        let targetBytes = ((try? fm.attributesOfItem(atPath: targetURL.path)[.size] as? NSNumber)?.uint64Value) ?? 0
+        guard targetBytes > 0 else { return "Windows RAW 디스크가 비어 있습니다." }
+        if varsPath.isEmpty { return nil }
         guard isReadableRegularFile(varsURL.path) else {
             return "이 VM과 함께 사용한 UEFI vars 파일을 찾을 수 없습니다."
         }
         guard targetURL != varsURL else {
             return "Windows RAW 디스크와 UEFI vars는 서로 다른 파일이어야 합니다."
         }
-        let targetBytes = ((try? fm.attributesOfItem(atPath: targetURL.path)[.size] as? NSNumber)?.uint64Value) ?? 0
-        guard targetBytes > 0 else { return "Windows RAW 디스크가 비어 있습니다." }
         let varsBytes = ((try? fm.attributesOfItem(atPath: varsURL.path)[.size] as? NSNumber)?.uint64Value) ?? 0
         guard varsBytes == windowsHVFVarsBytes else {
             return "UEFI vars는 정확히 64 MiB여야 합니다 (현재 \(varsBytes)바이트)."

@@ -50,7 +50,7 @@ pub(super) fn restore(
     open(disk, vars, "restore")?.pair.restore(dir)
 }
 
-fn writer(image: &Path, holder: &str) -> io::Result<Option<MediaLease>> {
+pub(super) fn writer(image: &Path, holder: &str) -> io::Result<Option<MediaLease>> {
     match fs::symlink_metadata(lock_path_for(image)) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error),
