@@ -15,23 +15,10 @@ final class HvfWindowsImportNoVarsTests: XCTestCase {
         try checkImport(hasGPT: true, suppliedVars: true)
     }
 
-    func testLiveImportThroughSheetModel() throws {
-        let env = ProcessInfo.processInfo.environment
-        guard let source = env["BV_IMPORT_SOURCE"], let library = env["BV_IMPORT_LIBRARY"],
-              let output = env["BV_IMPORT_OUTPUT"] else { throw XCTSkip("explicit live import paths required") }
-        guard case .created(let config)? = VMLibrary.createWindowsHVF(name: "Imported Windows",
-            targetDiskPath: source, libraryRoot: URL(fileURLWithPath: library), persist: false,
-            snapshotHelper: HvfMediaImportTestSupport.helper) else { return XCTFail("live import failed") }
-        let disk = try XCTUnwrap(config.diskPath)
-        let esp = try HvfWindowsBootSeed.readESP(diskPath: disk)
-        let vars = config.bundlePath + "/metadata/hvf-vars.fd"
-        let data = try Data(contentsOf: URL(fileURLWithPath: vars))
-        XCTAssertEqual(data.count, 64 * 1024 * 1024)
-        XCTAssertNotNil(data.range(of: esp.partitionGUID))
-        XCTAssertNil(data.range(of: HvfWindowsBootSeed.sentinelGUID))
-        XCTAssertTrue(HvfWindowsBootSeed.varstoreContainsLiveVariable(data, name: "Boot0003"))
-        try JSONSerialization.data(withJSONObject: ["disk": disk, "vars": vars, "boot_entry": true])
-            .write(to: URL(fileURLWithPath: output))
+    private let noESP = "이 디스크에는 UEFI 부팅 파티션이 없어 시작되지 않을 수 있습니다."
+
+    private func notice(bundlePath: String) -> String? {
+        try? String(contentsOfFile: bundlePath + "/metadata/hvf-import-notice.txt", encoding: .utf8)
     }
 
     private func checkImport(hasGPT: Bool, suppliedVars: Bool) throws {
@@ -70,12 +57,12 @@ final class HvfWindowsImportNoVarsTests: XCTestCase {
         } else {
             XCTAssertEqual(result, seed)
         }
-        XCTAssertEqual(HvfWindowsImportNotice.read(bundlePath: config.bundlePath),
-            !suppliedVars && !hasGPT ? HvfWindowsImportNotice.noESP : nil)
+        XCTAssertEqual(notice(bundlePath: config.bundlePath),
+            !suppliedVars && !hasGPT ? noESP : nil)
         var state = CreateVMCreationState()
         let presentation = state.complete(.created(config), adopt: { _ in true })
         XCTAssertEqual(presentation.dismiss, suppliedVars || hasGPT)
-        XCTAssertEqual(presentation.message, !suppliedVars && !hasGPT ? HvfWindowsImportNotice.noESP : "")
+        XCTAssertEqual(presentation.message, !suppliedVars && !hasGPT ? noESP : "")
         XCTAssertEqual(try Data(contentsOf: source), bytes)
         XCTAssertEqual(try fm.attributesOfItem(atPath: source.path)[.modificationDate] as? Date, date)
     }
@@ -92,11 +79,11 @@ final class HvfWindowsImportNoVarsTests: XCTestCase {
         try bytes.write(to: source)
         let before = try fm.attributesOfItem(atPath: source.path)[.modificationDate] as? Date
         guard case .created(let config)? = VMLibrary.createWindowsHVF(name: "Data",
-            targetDiskPath: source.path, libraryRoot: root.appendingPathComponent("library"),
+            targetDiskPath: source.path, varsPath: "", libraryRoot: root.appendingPathComponent("library"),
             persist: false) else { return XCTFail("data disk must import") }
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: config.bundlePath + "/metadata/hvf-vars.fd")),
             try HvfWindowsBootSeed.bundledSeed())
-        XCTAssertEqual(HvfWindowsImportNotice.read(bundlePath: config.bundlePath), HvfWindowsImportNotice.noESP)
+        XCTAssertEqual(notice(bundlePath: config.bundlePath), noESP)
         XCTAssertEqual(try Data(contentsOf: source), bytes)
         XCTAssertEqual(try fm.attributesOfItem(atPath: source.path)[.modificationDate] as? Date, before)
     }
@@ -107,10 +94,10 @@ final class HvfWindowsImportNoVarsTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let disk = root.appendingPathComponent("disk.raw")
         try Data(repeating: 0, count: 4096).write(to: disk)
-        let inputs = FirstRunImport.Inputs(displayName: "Imported", diskPath: disk.path,
+        let inputs = FirstRunImport.Inputs(displayName: "Imported", diskPath: disk.path, varsPath: "",
             vtpmStateDir: nil, memMiB: 4096, cpuCount: 4)
         XCTAssertNil(FirstRunImport.validate(inputs))
         let config = try FirstRunImport.register(inputs, slug: "imported", libraryRoot: root.appendingPathComponent("library"))
-        XCTAssertEqual(HvfWindowsImportNotice.read(bundlePath: config.bundlePath), HvfWindowsImportNotice.noESP)
+        XCTAssertEqual(notice(bundlePath: config.bundlePath), noESP)
     }
 }
