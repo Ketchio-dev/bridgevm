@@ -376,6 +376,47 @@ fn same_size_guest_edit_before_first_post_put_listing_is_fetched() {
 }
 
 #[test]
+fn dropped_fetch_guards_are_pruned_after_error_skip_and_restart() {
+    let mut rig = Rig::new("fetch-guard-lifetime");
+    let name = "doc.txt".to_string();
+    rig.h.share.as_mut().unwrap().fetch_mac.insert(name.clone(), None);
+    rig.h.queue.push_back(ServiceReq::ShareGet { name: name.clone() });
+    rig.h.prune_fetch_guards();
+    assert_eq!(rig.h.share.as_ref().unwrap().fetch_mac.len(), 1);
+    rig.h.queue.clear(); // a skipped/dropped queued request
+    rig.h.prune_fetch_guards();
+    assert!(rig.h.share.as_ref().unwrap().fetch_mac.is_empty());
+    rig.h.share.as_mut().unwrap().fetch_mac.insert(name.clone(), None);
+    rig.h.in_flight = Some((ServiceReq::ShareGet { name: name.clone() }, rig.now));
+    rig.h.handle_service_reply("ERR GET missing", None, None, rig.now);
+    assert!(rig.h.share.as_ref().unwrap().fetch_mac.is_empty());
+    rig.h.share.as_mut().unwrap().fetch_mac.insert(name.clone(), None);
+    rig.h.in_flight = Some((ServiceReq::ShareGet { name }, rig.now));
+    rig.h.resync_after_agent_restart("GUEST v3-share2", rig.now);
+    assert!(rig.h.share.as_ref().unwrap().fetch_mac.is_empty());
+    rig.h.share = None; // session end owns and drops the entire map
+}
+
+#[test]
+fn ordinary_fetch_preserves_mac_save_and_guest_conflict() {
+    let mut rig = Rig::synced("fetch-mac-save", "doc.txt", b"original");
+    std::fs::write(rig.dir.join("doc (Windows copy).txt"), b"existing copy").unwrap();
+    rig.guest.write("doc.txt", b"guest edit");
+    let path = rig.dir.join("doc.txt");
+    rig.guest.on_get = Some(Box::new(move |_| { std::fs::write(&path, b"newer Mac save").unwrap(); }));
+    rig.run(12);
+    assert_eq!(rig.host("doc.txt").as_deref(), Some(&b"newer Mac save"[..]));
+    assert_eq!(rig.host("doc (Windows copy).txt").as_deref(), Some(&b"existing copy"[..]));
+    assert_eq!(rig.host("doc (Windows copy 2).txt").as_deref(), Some(&b"guest edit"[..]));
+    rig.guest.on_get = None;
+    rig.run(16);
+    assert_eq!(rig.guest.content("doc (Windows copy 2).txt"), Some(&b"guest edit"[..]));
+    assert!(!rig.guest.gets.iter().any(|n| n.contains("Windows copy")), "our pushed conflict must not be fetched back");
+    rig.assert_settled();
+    assert!(rig.h.share.as_ref().unwrap().fetch_mac.is_empty());
+}
+
+#[test]
 fn host_case_only_rename_keeps_both_copies_and_never_rewrites_the_host() {
     let mut rig = Rig::synced("host-case", "report.txt", b"DATA");
     let gets = rig.guest.gets.len();

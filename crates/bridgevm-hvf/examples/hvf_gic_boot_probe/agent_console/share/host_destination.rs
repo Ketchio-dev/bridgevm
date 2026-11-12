@@ -33,7 +33,7 @@ thread_local! {
 
 /// The Mac file a preferred guest copy is to replace, as the session's first scan saw it: size
 /// and modification time (ms), as the scan reads them (share_synced.rs).
-pub(super) type MacStat = (u64, u128);
+pub(super) type MacStat = Option<(u64, u128)>;
 
 /// A preferred guest copy was not published: the Mac file changed since the first scan (or is
 /// no longer a plain file).
@@ -179,8 +179,26 @@ impl Destination {
         // Last, right before the rename: a Mac edit since the first scan wins over a preferred
         // copy. A Mac file deleted since does not: the guest's edit wins over the deletion.
         if let Some(mac) = mac {
-            if self.mac_stat().is_some_and(|now| now != Some(mac)) {
-                return Err(io::Error::other(MacChanged));
+            if self.mac_stat().is_some_and(|now| now != mac) {
+                // Preserve the fully fetched guest bytes beside the newer Mac copy. Reserve
+                // the name exclusively: a conflict never replaces a user's existing file.
+                let original = self.leaf.to_string_lossy();
+                let path = Path::new(original.as_ref());
+                let stem = path.file_stem().unwrap_or(path.as_os_str()).to_string_lossy();
+                let extension = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+                for number in 1u64.. {
+                    let label = if number == 1 { "Windows copy".to_string() } else { format!("Windows copy {number}") };
+                    let conflict = CString::new(format!("{stem} ({label}){extension}")).unwrap();
+                    // SAFETY: pinned parent and two live, single-component names. linkat
+                    // publishes without replacing any existing conflict (even a racing one).
+                    if unsafe { libc::linkat(self.parent.as_raw_fd(), temporary.as_ptr(), self.parent.as_raw_fd(), conflict.as_ptr(), 0) } == 0 {
+                        unsafe { libc::unlinkat(self.parent.as_raw_fd(), temporary.as_ptr(), 0) };
+                        println!("BVAGENT SHARE conflict kept-mac={} windows-copy={}", original, conflict.to_string_lossy());
+                        return Err(io::Error::other(MacChanged));
+                    }
+                    let error = io::Error::last_os_error();
+                    if error.kind() != io::ErrorKind::AlreadyExists { return Err(error); }
+                }
             }
         }
         // SAFETY: both names and the owning directory remain live. renameat
@@ -204,7 +222,7 @@ impl Destination {
 
     /// The destination's size and modification time (ms) now: None when it is missing,
     /// Some(None) when it is not a plain file (or cannot be read).
-    fn mac_stat(&self) -> Option<Option<MacStat>> {
+    fn mac_stat(&self) -> Option<MacStat> {
         let file = match self.existing(libc::O_RDONLY) {
             Ok(Some(file)) => file,
             Ok(None) => return None,

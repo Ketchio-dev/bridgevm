@@ -29,6 +29,8 @@ pub(in crate::agent_console) struct ShareState {
     pub(in crate::agent_console) last_poll: Option<Instant>,
     pub(in crate::agent_console) host_skip_seen: HashSet<(String, u128, HostSkipKind)>,
     pub(in crate::agent_console) guest_ls_scratch: Vec<LsEntry>,
+    /// Destination version when a GET was queued, retained through publish retries.
+    pub(in crate::agent_console) fetch_mac: std::collections::HashMap<String, Option<(u64, u128)>>,
     pub(in crate::agent_console) host_scan_scratch: Vec<HostFile>,
     pub(in crate::agent_console) host_scan_work: Vec<HostFile>,
     root: root::ShareRoot,
@@ -93,6 +95,7 @@ impl ShareState {
             last_poll: None,
             host_skip_seen: HashSet::new(),
             guest_ls_scratch: Vec::new(),
+            fetch_mac: std::collections::HashMap::new(),
             host_scan_scratch: Vec::new(),
             host_scan_work: Vec::new(),
             root,

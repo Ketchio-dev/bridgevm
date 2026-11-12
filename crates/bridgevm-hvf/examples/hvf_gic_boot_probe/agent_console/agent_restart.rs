@@ -75,6 +75,7 @@ impl AgentConsoleHarness {
         self.abort_big_share("agent-restarted", now);
         self.print_agent_restarted();
         self.get_accum = None;
+        self.prune_fetch_guards();
         self.out_accum = None;
         self.note_agent_ready(hostname, now);
         // The new agent answers CLIPCAPS before any other request, and sends no
