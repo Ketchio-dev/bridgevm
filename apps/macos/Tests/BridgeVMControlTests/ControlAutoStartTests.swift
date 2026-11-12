@@ -4,6 +4,34 @@ import XCTest
 
 @MainActor
 final class ControlAutoStartTests: XCTestCase {
+    func testOnlyStoppedStartableVMIsEligible() throws {
+        let f = try HvfOwnedRuntimeFixture(); defer { f.clean() }
+        let root = f.root.appendingPathComponent("library")
+        var saved = VMConfig(id: "windows", name: "Windows", displayName: "Windows", backendKind: "hvf-engine",
+            bootMode: "windows-hvf", bundlePath: f.root.appendingPathComponent("bundle").path,
+            runnerPath: "", launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
+            leasesPath: "", guestName: "windows", displayWidth: 1280, displayHeight: 800)
+        saved.startWithBridgeVM = true
+        let session = f.session()
+        let library = LibraryModel(rootURL: root, migrateLegacy: false, runtimeSessionFactory: { _ in session }, startsModelsAutomatically: false)
+        library.vms = [saved]
+        XCTAssertTrue(ControlAutoStart.isStartable(saved, library: library), "Stopped and ready VM starts")
+        var pending = saved; pending.installPending = true
+        XCTAssertFalse(ControlAutoStart.isStartable(pending, library: library), "Install pending is skipped")
+        let transaction = HvfWindowsInstallFinalization.paths(slug: saved.slug, libraryRoot: root, bundlePath: saved.bundlePath).transaction
+        try FileManager.default.createDirectory(at: transaction, withIntermediateDirectories: true)
+        XCTAssertFalse(ControlAutoStart.isStartable(saved, library: library), "Interrupted installation is skipped")
+        try FileManager.default.removeItem(at: transaction)
+        try FileManager.default.removeItem(atPath: session.config.targetDiskPath)
+        XCTAssertFalse(ControlAutoStart.isStartable(saved, library: library), "Missing disk is skipped")
+        try Data([0]).write(to: URL(fileURLWithPath: session.config.targetDiskPath))
+        f.existingRuntime = true
+        XCTAssertFalse(ControlAutoStart.isStartable(saved, library: library), "Surviving runner is skipped")
+        f.existingRuntime = false
+        session.connectionState = .booting
+        XCTAssertFalse(ControlAutoStart.isStartable(saved, library: library), "Active session is skipped")
+        session.connectionState = .stopped
+    }
     func testSelectionAndOptionKeySkip() throws {
         let f = try LibraryDashboardNavigationFixture(); defer { f.clean() }
         var on = try XCTUnwrap(f.library.vms.first), off = on, installing = on

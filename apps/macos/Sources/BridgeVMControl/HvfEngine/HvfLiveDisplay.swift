@@ -8,6 +8,7 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
 
     private let sessionIdentifier: ObjectIdentifier
     private let state: HvfDisplayWindowState
+    private var closeQuestionOpen = false
     let placement: HvfDisplayWindowPlacement
 
     /// A new display window for the session, not shown yet: where this VM's window was last
@@ -104,18 +105,39 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         let session = state.session
-        switch ControlDisplayClose.decide(running: session.hasActiveRuntimeWork,
-            canPause: session.pauseAvailable && session.pause == .running) {
-        case .pause:
-            if let message = session.requestPause().message {
-                let alert = NSAlert(); alert.messageText = message; alert.runModal()
-                return false
+        guard !closeQuestionOpen else { return false }
+        let plan = ControlDisplayClosePlan.make(running: session.hasActiveRuntimeWork,
+            quitting: ControlDisplayClose.quitting,
+            canPause: session.pauseAvailable && session.pause == .running,
+            remembered: ControlDisplayClose.remembered())
+        switch plan {
+        case .close: return true
+        case let .apply(choice): return applyClose(choice)
+        case let .ask(choices):
+            closeQuestionOpen = true
+            let alert = ControlDisplayClose.alert(choices: choices)
+            alert.beginSheetModal(for: sender) { [weak self] response in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.closeQuestionOpen = false
+                    let index = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+                    guard choices.indices.contains(index) else { return }
+                    let choice = choices[index]
+                    guard self.applyClose(choice) else { return }
+                    if alert.suppressionButton?.state == .on { ControlDisplayClose.remember(choice) }
+                    sender.close()
+                }
             }
-        case .shutdown:
-            if let identity = session.ownedProcessIdentity { _ = session.stopOwned(expectedToken: identity.token) }
-        case .background, nil: break
+            return false
         }
-        return true
+    }
+
+    private func applyClose(_ choice: ControlDisplayCloseChoice) -> Bool {
+        ControlDisplayClose.apply(choice, session: state.session) { [weak self] message in
+            guard let window = self?.window else { return }
+            let alert = NSAlert(); alert.messageText = message
+            alert.beginSheetModal(for: window)
+        }
     }
 
     func windowWillClose(_ notification: Notification) {

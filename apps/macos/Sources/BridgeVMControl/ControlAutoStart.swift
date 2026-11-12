@@ -2,7 +2,7 @@ import AppKit
 
 @MainActor
 enum ControlAutoStart {
-    static let skipAtLaunch = NSEvent.modifierFlags.contains(.option)
+    static var skipAtLaunch = false
     static func selection(_ configs: [VMConfig], optionHeld: Bool) -> [VMConfig] {
         optionHeld ? [] : configs.filter { $0.startWithBridgeVM == true && $0.installPending != true }
     }
@@ -12,13 +12,31 @@ enum ControlAutoStart {
             do { try await start(config) } catch { failed(config, error) }
         }
     }
+    static func isStartable(_ config: VMConfig, library: LibraryModel) -> Bool {
+        guard config.installPending != true, !library.shouldShowWindowsInstall(for: config),
+              !HvfWindowsInstallTransactionResidue.isPresent(config, rootURL: library.rootURL) else { return false }
+        guard config.engineKind == .hvfEngine else {
+            let model = library.model(for: config)
+            return !model.hasActiveRuntimeWork && !model.backend.isRunning()
+        }
+        guard let session = library.hvfRuntimeDetailSession(for: config),
+              !session.hasActiveRuntimeWork, !session.hasRetainedAttachment,
+              !session.processIsRunning(session.config.targetDiskPath),
+              session.config.readiness(repoRoot: session.repoRoot).launchReady else { return false }
+        return true
+    }
     static func launch(_ library: LibraryModel, optionHeld: Bool) async {
         await run(library.vms, optionHeld: optionHeld, start: { config in
-            guard !ControlDisplayClose.quitting else { return }
+            guard !ControlDisplayClose.quitting, isStartable(config, library: library) else { return }
             let model = library.model(for: config)
             if config.engineKind == .hvfEngine {
-                LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library)
                 if let session = library.hvfRuntimeDetailSession(for: config) {
+                    // Like the ordinary Start click, but never attach to a surviving runtime.
+                    switch session.requestGUIStart(configuration: session.config, policy: .requireNew) {
+                    case .accepted:
+                        HvfDisplayWindowController.present(session: session, title: config.name)
+                    case let .refused(message): model.statusNote = message
+                    }
                     while session.hasPendingRuntimeStart {
                         try await Task.sleep(nanoseconds: 50_000_000)
                     }

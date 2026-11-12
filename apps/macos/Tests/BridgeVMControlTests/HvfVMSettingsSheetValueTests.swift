@@ -46,6 +46,7 @@ final class HvfVMSettingsSheetValueTests: XCTestCase {
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
         let sheet = HvfVMSettingsSheet(session: session).body
         let advanced = HvfEngineView(session: session).body
+        assertMoved(HvfStartCloseSettings.self, sheet: sheet, advanced: advanced)
         assertMoved(HvfResourceSetting.self, sheet: sheet, advanced: advanced)
         assertMoved(HvfDiskSizeSetting.self, sheet: sheet, advanced: advanced)
         assertMoved(HvfRetinaResolutionToggle.self, sheet: sheet, advanced: advanced)
@@ -64,6 +65,21 @@ final class HvfVMSettingsSheetValueTests: XCTestCase {
         assertMoved(HvfWindowsSnapshotCard.self, sheet: sheet, advanced: advanced)
     }
 
+    func testAutoStartUsesExistingRegistrationSavePath() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        let saved = fixture.config(); fixture.save(saved)
+        let library = fixture.library()
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+        XCTAssertNil(session.saveLibraryPreference("자동 시작 설정", publish: { VMRegistrationWriter.commit($0, to: $1) }) {
+            $0.startWithBridgeVM = true
+        })
+        let file = try JSONDecoder().decode(VMConfig.self, from: Data(contentsOf: fixture.registration(saved)))
+        XCTAssertEqual(file.startWithBridgeVM, true)
+        XCTAssertEqual(session.config.libraryContext?.config.startWithBridgeVM, true)
+        XCTAssertEqual(fixture.processLookups, 1, "Saving uses the existing disk-in-use safety check")
+        fixture.processLookups = 0
+    }
     func testNetworkToggleInSheetUsesExistingSavePath() throws {
         let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
         defer { fixture.clean() }

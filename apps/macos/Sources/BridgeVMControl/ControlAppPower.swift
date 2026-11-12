@@ -1,5 +1,6 @@
 #if canImport(IOKit)
 import Foundation
+import Combine
 import IOKit.pwr_mgt
 
 @MainActor
@@ -24,9 +25,9 @@ final class ControlSystemPowerAssertion: ControlPowerAsserting {
     }
 }
 
-/// One assertion for all runtimes, including a paused runtime and a failed start still cleaning up.
+/// One assertion for all running Windows tasks, never for a paused or exited runtime.
 @MainActor
-final class ControlAppPower {
+final class ControlAppPower: ObservableObject {
     static let preferenceKey = "preventIdleSleepWhileWindowsRuns"
     static let shared: ControlAppPower = {
         UserDefaults.standard.register(defaults: [preferenceKey: true])
@@ -36,7 +37,7 @@ final class ControlAppPower {
     private let api: any ControlPowerAsserting
     private var runtimes = Set<UUID>()
     private(set) var held = false
-    var enabled: Bool
+    @Published var enabled: Bool { didSet { reconcile() } }
     var failure: (() -> Void)?
     private var failureReported = false
 
@@ -45,6 +46,13 @@ final class ControlAppPower {
     }
     func update(_ runtime: UUID, active: Bool) {
         if active { runtimes.insert(runtime) } else { runtimes.remove(runtime) }
+        reconcile()
+    }
+    func setEnabled(_ value: Bool, defaults: UserDefaults = .standard) {
+        defaults.set(value, forKey: Self.preferenceKey)
+        enabled = value
+    }
+    private func reconcile() {
         let needed = enabled && !runtimes.isEmpty
         if needed && !held {
             held = api.acquire()

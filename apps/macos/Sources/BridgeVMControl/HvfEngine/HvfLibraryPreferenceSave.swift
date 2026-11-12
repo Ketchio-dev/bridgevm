@@ -64,6 +64,7 @@ extension VMConfig {
     /// exactly when only those keys differ.
     func keepingRuntimePreferences(of other: VMConfig) -> VMConfig {
         var copy = self
+        copy.startWithBridgeVM = other.startWithBridgeVM
         copy.memMiB = other.memMiB
         copy.cpuCount = other.cpuCount
         copy.clipboardSyncEnabled = other.clipboardSyncEnabled

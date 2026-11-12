@@ -30,6 +30,7 @@ extension HvfEngineSession {
         let execution = HvfOwnedStartExecution(session: self, ticket: ticket, revalidate: revalidate)
         ownedStartExecution = execution
         objectWillChange.send()
+        updateSleepPrevention()
         execution.begin()
         return .accepted(ticket)
     }
@@ -64,6 +65,7 @@ extension HvfEngineSession {
     }
     func finishOwnedStartWorker(_ ticket: HvfOwnedStartOperation, result: Result<HvfOwnedRuntimeSpawn, HvfOwnedStartFailure>,
                                 revalidate: @MainActor () -> Bool) {
+        defer { updateSleepPrevention() }
         guard ownedStartOperation === ticket else { return }
         ticket.checkDeadline(now: ownedStartNow())
         switch result {

@@ -10,7 +10,7 @@ import AppKit
 @MainActor
 final class HvfEngineSession: ObservableObject {
     @Published var config: HvfEngineConfig { didSet { runtimeConfigurationChanged() } }
-    @Published var connectionState: HvfConnectionState = .stopped
+    @Published var connectionState: HvfConnectionState = .stopped { didSet { updateSleepPrevention() } }
     let heartbeat = HvfRuntimeHeartbeat() // publishes the per-poll heartbeat age apart from the session
     let shareRootNotice = HvfShareRootNotice()
     let agentUpdateNotice = HvfAgentUpdateNotice()
@@ -27,9 +27,9 @@ final class HvfEngineSession: ObservableObject {
     var reservedWorkAdmission: (@MainActor (UUID, Bool) -> String?)?
     var onConfigurationPersisted: (@MainActor (_ previous: VMConfig, _ saved: VMConfig) -> Void)? // library rebind + reload
     var ownedStartOperation: HvfOwnedStartOperation?
-    var ownedStartExecution: HvfOwnedStartExecution? { didSet { updateSleepPrevention() } }
+    var ownedStartExecution: HvfOwnedStartExecution?
     var guiStartOperation: HvfGUIStartOperation?
-    var guiStartExecution: HvfGUIStartExecution? { didSet { updateSleepPrevention() } }
+    var guiStartExecution: HvfGUIStartExecution?
     var guiStartCleanupOnly = false
     var guiStartWorker: HvfGUIStartExecution.Worker = HvfGUIStartWorker.run
     var mutationReservation: HvfRuntimeMutationReservation?
@@ -39,11 +39,17 @@ final class HvfEngineSession: ObservableObject {
     let sleepPreventionID = UUID()
     var sleepPrevention = ControlAppPower.shared
     func updateSleepPrevention() {
-        sleepPrevention.update(sleepPreventionID, active: ownedStartExecution != nil || guiStartExecution != nil
-            || process?.isRunning == true || ownedController?.mayHaveOwnedWork == true || attachedToExistingProcess)
+        sleepPrevention.update(sleepPreventionID, active: needsMacAwake)
     }
-    var process: Process? { didSet { updateSleepPrevention() } }
-    var ownedController: HvfOwnedRunController? { didSet { updateSleepPrevention() } }
+    /// Cleanup can remain unconfirmed after a dead runner, but no Windows task is using the Mac.
+    var needsMacAwake: Bool {
+        guard pause != .paused else { return false }
+        if runtimeStartupWorkerPending { return true }
+        if let process { return process.isRunning }
+        return hasRetainedAttachment && connectionState != .stopped
+    }
+    var process: Process?
+    var ownedController: HvfOwnedRunController?
     @Published var forceStopTarget: HvfForceStopTarget?
     @Published var stopWait: HvfGuestStopWait? // what Windows is doing while a Stop waits for it
     @Published var restartRequest: HvfPendingRestart? // a Restart or Reset sent this boot (HvfGuestRestart)
@@ -51,7 +57,10 @@ final class HvfEngineSession: ObservableObject {
     @Published var restartNotice: String? // a Reset that no helper took
     @Published var guestBoot = 0 // bumps at every guest reset record and at every run start or end
     @Published var pause = HvfPauseState.running { // what the probe last said about Pause (HvfGuestPause)
-        didSet { guestRunClock.hold(pause.holdsInput, host: hostNow()) }
+        didSet {
+            guestRunClock.hold(pause.holdsInput, host: hostNow())
+            updateSleepPrevention()
+        }
     }
     var hostNow: () -> Date = Date.init // the host clock behind guestNow()
     var guestRunClock = HvfGuestRunClock()
@@ -95,7 +104,7 @@ final class HvfEngineSession: ObservableObject {
     var textInputTarget: HvfTextInputTargetIdentity { .init(owner: ObjectIdentifier(self), generation: inputDriver.textInputGeneration, binding: inputBinding) }
     var stopCommandSent = false
     var stopDeadline: Date?
-    var attachedToExistingProcess = false { didSet { updateSleepPrevention() } }
+    var attachedToExistingProcess = false
     var nextAttachedLivenessCheck = Date.distantPast
     private let liveInputFile = HvfLiveInputFile()
     var liveInputWriteFailureReported = false
@@ -134,6 +143,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     func ownedRuntimeChanged(token: UUID) { // runs on every controller tick: assign only a changed state
+        defer { updateSleepPrevention() }
         guard let controller = ownedController, controller.identity.token == token else { return }
         refreshOwnedStart()
         lastOwnedExit = controller.runnerExit
@@ -143,7 +153,6 @@ final class HvfEngineSession: ObservableObject {
         }
         else if controller.operation != nil { if connectionState != .stopping { connectionState = .stopping } }
         refreshForceStopTarget()
-        updateSleepPrevention()
     }
 
     @discardableResult
@@ -418,6 +427,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     func poll() {
+        defer { updateSleepPrevention() }
         if guiStartCleanupOnly { pollGUIStartCleanup(); return }
         let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")
         let lines = tailReader.readNewLines(from: logURL)
