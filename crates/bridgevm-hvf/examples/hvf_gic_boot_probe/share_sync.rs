@@ -89,6 +89,8 @@ pub struct ShareSync {
     host_files_scratch: HashMap<String, HostFileStat>,
     put_rejected: HashMap<String, HostFileStat>,
     host_unseen: HashSet<String>,
+    /// Directory rows with size 1: the guest listed but did not enter a reparse point.
+    guest_unseen: HashSet<String>,
     host_aliased: HashSet<String>,
     refused_names_seen: (usize, u64),
     fetched_over_cap: HashMap<String, String>,
@@ -165,6 +167,7 @@ impl ShareSync {
         let mut actions = Vec::new();
         self.present_scratch.clear();
         self.guest_file_entries_scratch.clear();
+        let mut unseen = HashSet::new();
 
         for entry in entries {
             let LsEntry {
@@ -183,11 +186,20 @@ impl ShareSync {
             }
             self.present_scratch.insert(name.clone());
             if is_dir {
+                if size == 1 {
+                    unseen.insert(share_host_unseen::unseen_key(&name));
+                }
                 continue;
             }
             self.guest_file_entries_scratch
                 .insert(name, GuestFileStat { size, mtime });
         }
+        self.pass_changed |= unseen != self.guest_unseen;
+        self.guest_unseen = unseen;
+        // A contradictory row below a reparse directory is still unseen.
+        let mut files = std::mem::take(&mut self.guest_file_entries_scratch);
+        files.retain(|name, _| !self.guest_unseen_covers(name));
+        self.guest_file_entries_scratch = files;
         self.alias_guest_renames();
         self.prefer_changed_guest_copies();
         let held = self.pull_held_keys();

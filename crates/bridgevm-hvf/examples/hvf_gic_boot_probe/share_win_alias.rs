@@ -59,6 +59,7 @@ impl ShareSync {
         let aliased = &self.host_aliased;
         is_share_excluded(name)
             || self.host_unseen_covers(name)
+            || self.guest_unseen_covers(name)
             || (!aliased.is_empty() && aliased.contains(&share_host_unseen::unseen_key(name)))
     }
 

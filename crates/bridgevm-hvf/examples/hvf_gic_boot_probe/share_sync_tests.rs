@@ -43,6 +43,23 @@ fn parse_ls_handles_lines_empty_pipe_names_and_normalizes_guest_rels() {
 }
 
 #[test]
+fn guest_reparse_subtree_is_unseen_until_an_ordinary_directory_returns() {
+    let mut sync = ShareSync::new(512);
+    sync.on_guest_file("folder/a.txt".into(), b"old".to_vec(), Some("g1"));
+    sync.note_host_stat("folder/a.txt", 10);
+    let junction = "FOLDER|1|1|2026-01-01T00:00:00.0000000Z\n";
+    assert_eq!(sync.on_guest_listing(parse_ls(junction)), vec![]);
+    assert_eq!(sync.on_host_scan(vec![host_file("folder/a.txt", 4, 20), host_file("folder/new.txt", 1, 20)]), vec![]);
+    assert!(sync.on_host_file("folder/new.txt".into(), b"x".to_vec(), 20).is_none());
+    assert!(!sync.on_host_push_streamed("folder/new.txt"));
+    assert_eq!(sync.on_host_scan(Vec::new()), vec![]);
+    // Even contradictory rows below an unseen directory must not be fetched.
+    assert_eq!(sync.on_guest_listing(parse_ls(&format!("{junction}folder\\a.txt|4|0|g2\n"))), vec![]);
+    assert_eq!(sync.on_guest_listing(parse_ls("folder|0|1|d1\nfolder\\a.txt|4|0|g2\n")), vec![SyncAction::Get { name: "folder/a.txt".into() }]);
+    assert_eq!(sync.on_host_scan(vec![host_file("folder/new.txt", 1, 20)]), vec![SyncAction::Get { name: "folder/new.txt".into() }]);
+}
+
+#[test]
 fn rel_path_helpers_round_trip_guest_and_host_forms() {
     assert_eq!(
         from_guest_rel("sub\\dir\\file.txt").as_deref(),

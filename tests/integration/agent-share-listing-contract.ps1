@@ -367,7 +367,7 @@ try {
         }
         Assert ($compiled -ceq $walked) "compiled and walked listings differ at row $at of $($a.Count)/$($b.Count): '$(if ($at -lt $a.Count) { $a[$at] })' vs '$(if ($at -lt $b.Count) { $b[$at] })'"
         Assert ($a.Count -gt 60 -and $compiled -cmatch '\.bridgevm-part-notes\|2\|0\|' -and $compiled -cnotmatch 'bridgevm-part-[0-9a-f]{32}\|') "the compiled listing: $($a.Count) rows"
-        Assert ($compiled -cmatch '(?m)^link\|0\|1\|' -and $compiled -cnotmatch '(?m)^link[\\/]') 'the link is listed, not entered'
+        Assert ($compiled -cmatch '(?m)^link\|1\|1\|' -and $compiled -cnotmatch '(?m)^link[\\/]') 'the link is listed, not entered'
         $cases++
 
         $locked = Join-Path $walkRoot 'A/locked'
