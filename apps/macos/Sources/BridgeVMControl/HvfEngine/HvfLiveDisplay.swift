@@ -102,6 +102,22 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidFailToEnterFullScreen(_ window: NSWindow) { placement.didExitFullScreen(window) }
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        let session = state.session
+        switch ControlDisplayClose.decide(running: session.hasActiveRuntimeWork,
+            canPause: session.pauseAvailable && session.pause == .running) {
+        case .pause:
+            if let message = session.requestPause().message {
+                let alert = NSAlert(); alert.messageText = message; alert.runModal()
+                return false
+            }
+        case .shutdown:
+            if let identity = session.ownedProcessIdentity { _ = session.stopOwned(expectedToken: identity.token) }
+        case .background, nil: break
+        }
+        return true
+    }
+
     func windowWillClose(_ notification: Notification) {
         if let window { placement.willClose(window) }
         HvfVirtualMachineMenuTarget.shared.resigned(state)

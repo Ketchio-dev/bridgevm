@@ -4,7 +4,10 @@ import AppKit
 final class ControlAppDelegate: NSObject, NSApplicationDelegate {
     private lazy var termination = ControlAppTermination(
         sessions: { NativeRuntimeAppOwner.terminationSessions }, presenter: .alerts,
-        reply: { NSApp.reply(toApplicationShouldTerminate: $0) })
+        reply: {
+            ControlDisplayClose.quitting = $0
+            NSApp.reply(toApplicationShouldTerminate: $0)
+        })
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ControlAppActivation.activate()
@@ -19,7 +22,10 @@ final class ControlAppDelegate: NSObject, NSApplicationDelegate {
     }
     /// Cmd+Q, the Dock, a Mac logout/restart/shutdown and the last window all ask here first.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        termination.shouldTerminate(reason: .current())
+        ControlDisplayClose.quitting = true
+        let result = termination.shouldTerminate(reason: .current())
+        if result == .terminateCancel { ControlDisplayClose.quitting = false }
+        return result
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
