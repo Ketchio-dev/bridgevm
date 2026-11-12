@@ -6,6 +6,8 @@ extension NativeCLICreateWindows {
         case .created(let config): return config
         case .publishedButUnsynced(let config, _):
             throw NativeCLIError.unavailable("VM files and registration were preserved, but durable saving was not confirmed. Do not recreate; inspect the library entry: \(config.slug)")
+        case .refused(let message):
+            throw NativeCLIError.unavailable(message)
         case nil:
             throw NativeCLIError.unavailable("VM creation did not publish a confirmed registration.")
         }

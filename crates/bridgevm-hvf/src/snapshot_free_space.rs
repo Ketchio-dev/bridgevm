@@ -8,7 +8,7 @@ use std::path::Path;
 ///
 /// None means "do not block the restore": a missing statfs is not evidence
 /// that space is short, and the copy will fail loudly if it is.
-pub(super) fn available_bytes(path: &Path) -> Option<u64> {
+pub(crate) fn available_bytes(path: &Path) -> Option<u64> {
     use std::os::unix::ffi::OsStrExt;
     let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
     // SAFETY: c_path is a valid NUL-terminated string, and statfs only writes

@@ -23,7 +23,8 @@ final class FirstRunImportPreparation {
 extension FirstRunImport {
     static func prepare(
         _ inputs: Inputs, slug: String, libraryRoot: URL,
-        fileManager: FileManager = .default, snapshotHelper: URL = HvfMediaImportHelper.bundled
+        fileManager: FileManager = .default, snapshotHelper: URL = HvfMediaImportHelper.bundled,
+        converting: @escaping (HvfImportedDiskFormat, Int) -> Void = { _, _ in }
     ) throws -> FirstRunImportPreparation {
         let destination = try FirstRunImportDestination(
             slug: slug, libraryRoot: libraryRoot, fileManager: fileManager)
@@ -38,7 +39,8 @@ extension FirstRunImport {
         try fileManager.createDirectory(at: layout.vtpmURL, withIntermediateDirectories: true)
 
         try HvfMediaImport.copy(disk: inputs.diskPath, vars: inputs.varsPath,
-            toDisk: layout.diskURL, toVars: layout.varsURL, helper: snapshotHelper, fileManager: fileManager)
+            toDisk: layout.diskURL, toVars: layout.varsURL, helper: snapshotHelper, fileManager: fileManager,
+            converting: converting)
         let keyCustody = try FirstRunImportVTPMRecovery.materialize(inputs, destinationStableVMID: slug,
             destination: layout.vtpmURL, fileManager: fileManager)
 

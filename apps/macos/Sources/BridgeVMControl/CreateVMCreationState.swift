@@ -21,6 +21,8 @@ struct CreateVMCreationState {
             published = config
             publicationWarning = message
             return (false, "vm-publication-unconfirmed", message)
+        case .refused(let message):
+            return (false, "hvf-import-invalid", message)
         case nil:
             return (false, "vm-materialization-failed", "생성 또는 VM 라이브러리 저장 실패")
         }

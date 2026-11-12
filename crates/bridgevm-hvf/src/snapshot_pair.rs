@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 #[path = "snapshot_copy.rs"]
 mod copy;
 #[path = "snapshot_free_space.rs"]
-mod free_space;
+pub(crate) mod free_space;
 #[path = "snapshot_manifest_json.rs"]
 mod manifest_json;
 #[path = "snapshot_manifest_read.rs"]

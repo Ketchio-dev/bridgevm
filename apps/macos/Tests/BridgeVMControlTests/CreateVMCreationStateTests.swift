@@ -38,6 +38,17 @@ final class CreateVMCreationStateTests: XCTestCase {
         XCTAssertEqual(state.published, config)
     }
 
+    func testARefusedImportShowsItsSentenceAndAllowsRetry() {
+        var state = CreateVMCreationState()
+        let result = state.complete(.refused("이 디스크는 다른 디스크를 기반으로 하니 합친 뒤 다시 가져오세요.")) { _ in
+            XCTFail("nothing was published"); return true
+        }
+        XCTAssertEqual(result.code, "hvf-import-invalid")
+        XCTAssertEqual(result.message, "이 디스크는 다른 디스크를 기반으로 하니 합친 뒤 다시 가져오세요.")
+        XCTAssertFalse(result.dismiss)
+        XCTAssertTrue(state.permitsCreation)
+    }
+
     func testUnpublishedFailureAllowsRetryAndSuccessfulAdoptionDismisses() {
         var state = CreateVMCreationState()
         XCTAssertEqual(state.complete(nil) { _ in XCTFail(); return true }.code, "vm-materialization-failed")

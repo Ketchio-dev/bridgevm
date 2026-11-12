@@ -39,7 +39,7 @@ extension VMLibrary {
         guard varsBytes == windowsHVFVarsBytes else {
             return "UEFI vars는 정확히 64 MiB여야 합니다 (현재 \(varsBytes)바이트)."
         }
-        return HvfImportedDiskFormat.detect(path: targetURL.path)?.importError
+        return nil
     }
 
     static func reserveDestination(

@@ -21,6 +21,7 @@ pub mod acpi_ged;
 pub mod bridgevm_pc_boot_info;
 pub mod bridgevm_pc_gic;
 pub mod checkpoint;
+pub mod disk_import;
 pub mod display_fb;
 pub mod dtb;
 pub mod fwcfg;
