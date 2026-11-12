@@ -215,11 +215,13 @@ extension HvfEngineSession {
                 self.presentNextPrintJob()
                 return
             }
+            // Once presented, the panel owns its completion even across a runtime reset.
+            self.printPanelPresented = true
             let shown = self.printPresenter.present(job.url) { [weak self] in
-                guard self?.printGeneration == generation else { return }
-                self?.printJobFinished(job.url)
+                self?.printJobFinished(job.url, generation: generation)
             }
             if !shown, self.printShowing == job.url {
+                self.printPanelPresented = false
                 self.printShowing = nil
                 self.removePrintJob(job.url)
                 self.printNotice.show(.notOpened)
@@ -232,16 +234,20 @@ extension HvfEngineSession {
         printGeneration = UUID()
         printVerificationTask?.cancel()
         printVerificationTask = nil
-        printShowing = nil
+        // An open panel must keep the one-panel slot until its own completion.
+        if !printPanelPresented { printShowing = nil }
         printQueue = [] // Files stay for the next agent start, as before.
     }
 
-    private func printJobFinished(_ url: URL) {
-        guard printShowing == url else { return }
-        printShowing = nil
+    private func printJobFinished(_ url: URL, generation: UUID) {
         removePrintJob(url)
+        guard printShowing == url, printPanelPresented else { return }
+        printPanelPresented = false
+        printShowing = nil
         if printNotice.shown != .printerFailed { printNotice.show(nil) }
-        presentNextPrintJob()
+        // A stopped run has no work to present; a new agent may have queued jobs
+        // behind this old panel while it was still open.
+        if printGeneration == generation || serviceStarted { presentNextPrintJob() }
     }
 
     private func removePrintJob(_ url: URL) {

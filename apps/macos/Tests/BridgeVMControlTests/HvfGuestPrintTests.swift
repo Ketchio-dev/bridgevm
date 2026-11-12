@@ -111,6 +111,51 @@ final class HvfGuestPrintTests: XCTestCase {
         XCTAssertTrue(session.printQueue.isEmpty)
     }
 
+    func testPresentedJobFinishesAfterStopOrResetAndIsNotOfferedAgain() async throws {
+        for stop in [true, false] {
+            let fixture = try HvfRuntimeSessionStoreFixture()
+            defer { fixture.clean() }
+            let (session, presenter, _, _) = try session(fixture)
+            let (url, line) = try job(session, 1, pdf("open panel"))
+            session.handle(.unknown(line))
+            await finishVerification(session)
+            XCTAssertEqual(presenter.shown, [url])
+            if stop { session.markStopped() } else { session.resetObservedRuntimeState(clearEvents: true) }
+            presenter.finish()
+            XCTAssertFalse(exists(url), "an already-presented job must be deleted when its panel finishes after stop/reset")
+            session.connectionState = .connected(host: "guest")
+            session.handle(.serviceStart(tMs: 1))
+            await finishVerification(session)
+            XCTAssertEqual(presenter.shown, [url], "completed job must not be offered by leftovers again")
+            XCTAssertTrue(session.printQueue.isEmpty)
+        }
+    }
+
+    func testOldPanelRemainsExclusiveAcrossStopAndNewRun() async throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        let (session, presenter, _, _) = try session(fixture)
+        let (old, line) = try job(session, 1, pdf("old panel"))
+        session.handle(.unknown(line))
+        await finishVerification(session)
+        session.markStopped()
+        session.resetObservedRuntimeState(clearEvents: true)
+        let (next, nextLine) = try job(session, 2, pdf("new run"))
+        session.connectionState = .connected(host: "guest")
+        session.handle(.serviceStart(tMs: 1))
+        session.handle(.unknown(nextLine))
+        await finishVerification(session)
+        XCTAssertEqual(presenter.shown, [old], "old panel must retain the single presentation slot across runs")
+        XCTAssertEqual(session.printShowing, old)
+        presenter.finish()
+        await finishVerification(session)
+        XCTAssertFalse(exists(old))
+        XCTAssertEqual(presenter.shown, [old, next], "new job must be presented once, only after old panel ends")
+        presenter.finish()
+        XCTAssertFalse(exists(next))
+        XCTAssertTrue(session.printQueue.isEmpty)
+    }
+
     func testPrintWatchGoesRawNeverAsAShellCommand() {
         XCTAssertTrue(HvfGuestCommand.relayProtocolVerbs.contains(HvfGuestPrint.watchCommand))
         XCTAssertEqual(try HvfGuestCommand.normalize(HvfGuestPrint.offCommand).get(), "PRINTWATCH off")

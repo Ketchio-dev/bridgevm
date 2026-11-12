@@ -76,6 +76,7 @@ final class HvfEngineSession: ObservableObject {
     var printSetupFailureShown = false
     var printQueue: [HvfGuestPrint.Job] = []
     var printShowing: URL?
+    var printPanelPresented = false
     var printGeneration = UUID()
     var printVerificationTask: Task<Void, Never>?
     var printVerifier: @Sendable (HvfGuestPrint.Job) -> Bool = HvfGuestPrint.verified
