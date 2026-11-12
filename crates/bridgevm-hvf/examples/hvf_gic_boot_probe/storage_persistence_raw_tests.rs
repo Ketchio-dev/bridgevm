@@ -67,7 +67,7 @@ fn raw_snapshot_success_retains_primary_and_nsid2_inputs_and_outputs() {
         (NvmePersistNamespace::Target, target, &target_out, 0xb1),
     ] {
         assert_eq!(
-            persist_nvme_media(&mut platform, disk, namespace, &mut owner),
+            persist_nvme_media(&mut platform, disk, namespace, &mut owner).unwrap(),
             vec![snapshot_write(output)]
         );
         assert_eq!(fs::read(output).unwrap(), [byte; 512]);
@@ -99,9 +99,7 @@ fn raw_primary_and_nsid2_contention_refuses_then_retries_after_owner_drop() {
         let disk = disk_mut(&mut media, namespace);
         let mut platform = attach_raw(disk, namespace);
         assert_owned(disk_b);
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            persist_nvme_media(&mut platform, disk, namespace, &mut owner_a)
-        }));
+        let result = persist_nvme_media(&mut platform, disk, namespace, &mut owner_a);
         let disk_unchanged = fs::read(disk_b).unwrap() == [0xb1; 512];
         let vars_unchanged = fs::read(&b.flash_vars.path).unwrap() == [0xb2; 512];
         assert!(
@@ -114,7 +112,7 @@ fn raw_primary_and_nsid2_contention_refuses_then_retries_after_owner_drop() {
         assert_owned(&disk.path);
         drop(owner_b);
         assert_eq!(
-            persist_nvme_media(&mut platform, disk, namespace, &mut owner_a),
+            persist_nvme_media(&mut platform, disk, namespace, &mut owner_a).unwrap(),
             vec![snapshot_write(disk_b)]
         );
         assert_eq!(fs::read(disk_b).unwrap(), [0xa1; 512]);

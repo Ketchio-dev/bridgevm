@@ -17,7 +17,7 @@ fn raw_snapshot_uses_captured_some_after_retarget_or_removal() {
             disk.snapshot_path = retarget.then(|| other.clone());
 
             assert_eq!(
-                persist_nvme_media(&mut platform, disk, namespace, &mut owner),
+                persist_nvme_media(&mut platform, disk, namespace, &mut owner).unwrap(),
                 vec![snapshot_write(&captured)]
             );
             assert_eq!(fs::read(&captured).unwrap(), [0xa1; 512]);
@@ -47,7 +47,7 @@ fn raw_snapshot_captured_none_ignores_newly_configured_destination() {
         let mut platform = attach_raw(disk, namespace);
         disk.snapshot_path = Some(output.clone());
 
-        assert!(persist_nvme_media(&mut platform, disk, namespace, &mut owner).is_empty());
+        assert!(persist_nvme_media(&mut platform, disk, namespace, &mut owner).unwrap().is_empty());
         assert_eq!(fs::read(&output).unwrap(), [0xd1; 512]);
         assert_eq!(fs::read(&disk.path).unwrap(), [0xa1; 512]);
         assert_owned(&disk.path);
