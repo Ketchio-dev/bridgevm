@@ -677,12 +677,13 @@ function Close-PutStream {
 # other name, a user's .bridgevm-part-notes too, is a file like any other.
 $script:BvLPut = $null
 
-function New-PutStage([string]$path) {
+function New-PutStage([string]$path, [bool]$writeThrough = $false) {
     $io = Get-IoPath $path
     $dir = [System.IO.Path]::GetDirectoryName($io)
     if ($dir) { [void][System.IO.Directory]::CreateDirectory($dir) }
     $temp = Get-IoPath ([System.IO.Path]::Combine($dir, '.bridgevm-part-' + [Guid]::NewGuid().ToString('N')))
-    $stream = [System.IO.File]::Open($temp, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+    $options = if ($writeThrough) { [System.IO.FileOptions]::WriteThrough } else { [System.IO.FileOptions]::None }
+    $stream = New-Object System.IO.FileStream($temp, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None, 4096, $options)
     return @{ Stream = $stream; Temp = $temp; Io = $io }
 }
 
@@ -2795,7 +2796,7 @@ while ($true) {
                         $parts = $arg.Split(' ')
                         $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0]))
                         $data = if ($parts.Length -ge 2 -and $parts[1]) { [System.Convert]::FromBase64String($parts[1]) } else { New-Object byte[] 0 }
-                        $stage = New-PutStage $path
+                        $stage = New-PutStage $path $true
                         $io = $stage.Io
                         try {
                             $stage.Stream.Write($data, 0, $data.Length)
@@ -2818,7 +2819,7 @@ while ($true) {
                         $parts = $arg.Split(' ')
                         $path = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0]))
                         $total = [int64]$parts[1]
-                        $stage = New-PutStage $path
+                        $stage = New-PutStage $path $true
                         $script:BvPutStream = $stage.Stream
                         $script:BvPutTemp = $stage.Temp
                         $script:BvPutPath = $path
