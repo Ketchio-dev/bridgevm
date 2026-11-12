@@ -5,6 +5,15 @@
   "summary": "BridgeVM presents a QEMU virt-compatible guest contract so stock ArmVirtQemu firmware and stock Windows 11 ARM media work unmodified. It is not bit-identical. Every known deviation is listed here.",
   "deviations": [
     {
+      "id": "ramfb-shared-snapshot-limit",
+      "area": "graphics",
+      "qemu_behavior": "ramfb geometry and host capture allocation limits depend on the display backend.",
+      "bridgevm_behavior": "Shared ramfb sizing rejects stride times height above 64 MiB with SizeOverflow before allocation, matching the interactive display export ceiling.",
+      "guest_visible": false,
+      "impact": "Snapshot and telemetry callers receive an error for oversized guest geometry rather than allocating or panicking. Supported display geometry is unchanged.",
+      "evidence": "crates/bridgevm-hvf/src/ramfb/snapshot_tests.rs"
+    },
+    {
       "id": "virtio-gpu-2d-backing-hostmem",
       "area": "graphics",
       "qemu_behavior": "The 2D max_hostmem budget accounts for host pixel storage.",
