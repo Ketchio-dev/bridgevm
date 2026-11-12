@@ -39,6 +39,7 @@ final class HvfOwnedStartOperation {
     private(set) var target: HvfOwnedRuntimeIdentity?
     private(set) var workerPending = true
     private(set) var mayHaveOwnedWork = false
+    private var runnerExitObserved = false
     let effectAdmission = HvfRuntimeEffectAdmission()
     private let clock: () -> TimeInterval
     private var deadlineTask: Task<Void, Never>?
@@ -52,7 +53,7 @@ final class HvfOwnedStartOperation {
             phase: phase, acceptedUptime: acceptedUptime, deadlineUptime: deadlineUptime,
             target: target, proof: proof, failure: failure, workerPending: workerPending, mayHaveOwnedWork: mayHaveOwnedWork)
     }
-    var reservesSession: Bool { workerPending || mayHaveOwnedWork || observation.phase == .awaitingStartup }
+    var reservesSession: Bool { workerPending || (mayHaveOwnedWork && !runnerExitObserved) || observation.phase == .awaitingStartup }
 
     init(operationID: UUID, configuration: HvfEngineConfig, expectedSavedConfigurationDigest: String,
          now: TimeInterval, clock: (() -> TimeInterval)? = nil) {
@@ -79,13 +80,9 @@ final class HvfOwnedStartOperation {
     deinit { deadlineTask?.cancel() }
     func observe(_ controller: HvfOwnedRunController, now: TimeInterval) {
         guard target == controller.identity else { return }
-        if controller.runnerExit != nil, controller.ledger.complete == nil, !workerPending {
-            // The session still owns uncertain runtime cleanup, but this start worker is over.
-            // Retain ID/target for CLI polling without reserving a future replacement run.
-            mayHaveOwnedWork = false; proof = nil; failure = .runnerExited
-            effectAdmission.invalidate(); deadlineTask?.cancel()
-            return
-        }
+        // Runtime cleanup remains uncertain; only this ticket's session reservation ends.
+        // Historical startup proof and the observation's ownership facts are unchanged.
+        if controller.runnerExit != nil { runnerExitObserved = true }
         mayHaveOwnedWork = controller.mayHaveOwnedWork
         guard proof == nil else { return }
         checkDeadline(now: now)

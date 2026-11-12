@@ -27,10 +27,13 @@ final class RunnerDeathStartReservationTests: XCTestCase {
         try await HvfOwnedStartTestSupport.wait { !ticket.workerPending }
         let dead = try XCTUnwrap(session.ownedController)
         dead.receive(.message(try old.event("ready", sequence: 1)))
-        // First helper was proven before death: retain that evidence, but do not report started forever.
+        // A successful start remains historical proof even after its VM later dies.
         dead.receive(.message(try old.event("helper-started", sequence: 2)))
         XCTAssertEqual(ticket.observation.phase, .started)
+        let proof = ticket.observation.proof
         try await old.exit(); dead.tick(); dead.receive(.eof)
+        XCTAssertFalse(ticket.reservesSession, "Runner death ends the reservation, not historical proof")
+        XCTAssertTrue(session.mayHaveOwnedWork, "The controller still owns unconfirmed cleanup")
         let nextSpawn = try spawn(replacement)
         session.guiStartWorker = { _ in .init(result: .owned(nextSpawn)) }
         guard case let .accepted(gui) = session.requestGUIStart(configuration: session.config) else {
@@ -45,16 +48,34 @@ final class RunnerDeathStartReservationTests: XCTestCase {
         XCTAssertFalse(session.hasPendingRuntimeStart, "Dead CLI ticket must not reserve the replacement session")
         XCTAssertFalse(session.hasActiveRuntimeWork)
         let observation = try XCTUnwrap(session.ownedStartObservation(operationID: ticket.operationID))
-        XCTAssertEqual(observation.phase, .failed, "CLI polling must end in terminal failure")
-        XCTAssertEqual(observation.failure, .runnerExited)
+        XCTAssertFalse(ticket.reservesSession)
+        XCTAssertEqual(observation.phase, .started, "CLI polling retains historical startup success")
+        XCTAssertNil(observation.failure)
         XCTAssertEqual(observation.target, dead.identity)
-        XCTAssertNil(observation.proof, "A failed CLI response must not carry a contradictory started proof")
+        XCTAssertEqual(observation.proof, proof)
         _ = try NativeRuntimeStartObservation(observation) // Validate the actual polling wire contract.
         session.guiStartWorker = { _ in .init(result: .refused("synthetic subsequent start")) }
         guard case let .accepted(last) = session.requestGUIStart(configuration: session.config) else {
             return XCTFail("Start after replacement cleanup must be accepted")
         }
         try await HvfOwnedStartTestSupport.wait { !last.workerPending }
+    }
+
+    func testUnprovenExitReleasesReservationWithoutRewritingUnconfirmedObservation() async throws {
+        let f = try HvfOwnedRuntimeControllerTests.Fixture(); defer { f.clean() }
+        let ticket = HvfOwnedStartOperation(operationID: UUID(), configuration: f.base.config,
+            expectedSavedConfigurationDigest: HvfOwnedStartTestSupport.digest, now: 100)
+        ticket.finishWorker(target: f.controller.identity)
+        ticket.observe(f.controller, now: 101)
+        XCTAssertEqual(ticket.observation.phase, .awaitingStartup)
+        XCTAssertTrue(ticket.reservesSession)
+        try await f.exit()
+        ticket.observe(f.controller, now: 102)
+        XCTAssertFalse(ticket.reservesSession)
+        XCTAssertEqual(ticket.observation.phase, .unconfirmed)
+        XCTAssertEqual(ticket.observation.failure, .runnerExited)
+        XCTAssertTrue(ticket.observation.mayHaveOwnedWork)
+        _ = try NativeRuntimeStartObservation(ticket.observation)
     }
 
     func testGUIRunnerDeathAllowsOwnedStartRetryToReachLeaseCheck() async throws {
