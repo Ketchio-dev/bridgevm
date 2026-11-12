@@ -157,8 +157,12 @@ final class HvfFramebufferDamageTests: XCTestCase {
     /// The shown frame's pixels without their fourth byte.
     private static func shown(_ view: FBLayerView) throws -> [UInt32] {
         let bytes = [UInt8](try Fixture.pixels(view))
-        return stride(from: 0, to: bytes.count, by: 4).map {
-            UInt32(bytes[$0]) | UInt32(bytes[$0 + 1]) << 8 | UInt32(bytes[$0 + 2]) << 16
+        // Typed step by step: as one expression this timed out the macos-26 runner's type checker.
+        return stride(from: 0, to: bytes.count, by: 4).map { (offset: Int) -> UInt32 in
+            let blue = UInt32(bytes[offset])
+            let green = UInt32(bytes[offset + 1]) << 8
+            let red = UInt32(bytes[offset + 2]) << 16
+            return blue | green | red
         }
     }
 

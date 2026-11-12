@@ -681,12 +681,14 @@ fn host_socket_udp_flows_evict_after_idle_timeout() {
     };
     let port = echo.local_addr().unwrap().port();
     let handler = HostSocketOutboundIpv4Handler::with_dns_resolver(StdIpv4Addr::LOCALHOST)
-        .with_idle_timeout_ms(2);
+        .with_idle_timeout_ms(200);
     let mut backend = NatBackend::with_outbound_handler(handler);
 
+    // The timeout must exceed the time transmit itself takes: it stamps the flow, opens the socket
+    // and then sweeps, so with 2 ms a slow runner evicted the flow before this first assertion.
     backend.transmit(&udp_guest_frame([127, 0, 0, 1], port, 49152, b"hello"));
     assert_eq!(backend.outbound_ipv4_handler().udp_flow_count(), 1);
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    std::thread::sleep(std::time::Duration::from_millis(400));
     backend.poll_host_sockets();
     assert_eq!(backend.outbound_ipv4_handler().udp_flow_count(), 0);
 }
