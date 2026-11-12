@@ -275,6 +275,13 @@ impl Destination {
         matches!(destination.existing(libc::O_RDONLY), Ok(None))
     }
 
+    pub(super) fn delete_unless_changed(&self, expected: (u64, u128)) -> io::Result<()> {
+        if self.mac_stat() != Some(Some(expected)) {
+            return Err(io::Error::other(MacChanged));
+        }
+        self.delete()
+    }
+
     pub(super) fn delete(&self) -> io::Result<()> {
         let mut meta = std::mem::MaybeUninit::<libc::stat>::uninit();
         // SAFETY: writable stat storage, live parent and NUL-terminated name.

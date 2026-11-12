@@ -2380,7 +2380,7 @@ function Get-BvAgentId([string]$Dir) {
 # Until an agent says so, the host shows Windows the Mac on AC power, since
 # Task Scheduler would not start an older agent's task on battery.
 function Get-BvReady([string]$Dir, [string]$Id) {
-    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame startapps openfile onbattery print putmtime'
+    $ready = 'READY ' + $env:COMPUTERNAME + ' v3-share2 putdata bigfile lssame startapps openfile onbattery print putmtime delcheck'
     if (-not $Id) { return $ready }
     $ready += ' agent=' + $Id
     $root = Split-Path -Parent $Dir
@@ -3070,14 +3070,21 @@ while ($true) {
                     # removed recursively by the shared-folder protocol.
                     $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
-                        $path = Get-IoPath ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($arg)))
+                        $parts = $arg.Split(' ')
+                        $path = Get-IoPath ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0])))
                         if (Test-Path -LiteralPath $path -PathType Container) {
                             Write-Line $h 'ERR DEL is-dir' 'ERR'
                         } elseif (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
                             Write-Line $h 'OK DEL absent' 'OK'
                         } else {
-                            Remove-Item -LiteralPath $path -Force -ErrorAction Stop
-                            Write-Line $h 'OK DEL' 'OK'
+                            # Compare the exact listing stamp and size, not a rounded date.
+                            $file = New-Object System.IO.FileInfo($path)
+                            if ($parts.Length -ge 3 -and ($file.Length -ne [int64]$parts[1] -or $file.LastWriteTimeUtc.ToString('o') -cne $parts[2])) {
+                                Write-Line $h 'OK DEL changed' 'OK'
+                            } else {
+                                Remove-Item -LiteralPath $path -Force -ErrorAction Stop
+                                Write-Line $h 'OK DEL' 'OK'
+                            }
                         }
                     } catch { Write-Line $h ('ERR DEL ' + $_.Exception.Message) 'ERR' }
                 }

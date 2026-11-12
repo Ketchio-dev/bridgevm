@@ -626,7 +626,15 @@ impl AgentConsoleHarness {
             InFlightSnapshot::PrintRange => {}
             InFlightSnapshot::PrintDel => self.handle_print_del_reply(line),
             InFlightSnapshot::ShareDel { name, direction } => {
-                if line.starts_with("OK DEL") {
+                if line == "OK DEL changed" {
+                    if let Some(share) = self.share.as_mut() {
+                        share.engine.on_guest_delete_changed(&name);
+                        share.listing_same.forget();
+                        share.forget_host_walk();
+                    }
+                    println!("BVAGENT SHARE del-skipped {name} guest-changed");
+                    self.complete_in_flight();
+                } else if line.starts_with("OK DEL") {
                     if direction == ShareDelDirection::HostToGuest {
                         if let Some(share) = self.share.as_mut() {
                             share.engine.on_guest_deleted(&name);

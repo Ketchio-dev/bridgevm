@@ -29,7 +29,12 @@ fn owned_share(label: &str) -> (AgentConsoleHarness, HostDirectory) {
     let directory = HostDirectory::new(label);
     let mut h = synced_share();
     h.share.as_mut().unwrap().host_dir = directory.0.clone();
-    std::fs::write(directory.0.join("keep.txt"), [7]).unwrap();
+    let path = directory.0.join("keep.txt");
+    std::fs::write(&path, [7]).unwrap();
+    // This fixture represents a synced copy, so record its real stat, not synced_share's
+    // synthetic 1 ms. Deletion now verifies that the destination is still that version.
+    let stamp = file_mtime_ms_from_meta(&std::fs::metadata(path).unwrap()).unwrap();
+    h.share.as_mut().unwrap().engine.on_host_write_succeeded("keep.txt", Some(stamp));
     (h, directory)
 }
 

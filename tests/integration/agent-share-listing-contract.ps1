@@ -225,6 +225,20 @@ try {
     Assert ($listing.Enumerated -and -not $listing.Entries.ContainsKey('put.bin')) 'the LSR right after a DEL no longer lists the file'
     $cases++
 
+    # DEL carries the last synced version. A guest edit after planning must survive.
+    $guarded = Join-Path $root 'guarded-delete.txt'
+    [IO.File]::WriteAllText($guarded, 'original')
+    $oldTime = [IO.File]::GetLastWriteTimeUtc($guarded).ToString('o')
+    [IO.File]::WriteAllText($guarded, 'edited after the scan')
+    $arg = (& $b64 $guarded) + ' 8 ' + $oldTime
+    & $verbs['DEL']
+    Assert ($script:sent -ceq 'OK DEL changed') "a stale delete must report changed: $script:sent"
+    Assert ([IO.File]::ReadAllText($guarded) -ceq 'edited after the scan') 'a stale delete removed the guest edit'
+    $arg = (& $b64 $guarded) + ' 21 ' + [IO.File]::GetLastWriteTimeUtc($guarded).ToString('o')
+    & $verbs['DEL']
+    Assert ($script:sent -ceq 'OK DEL' -and -not [IO.File]::Exists($guarded)) 'unchanged version must delete'
+    $cases++
+
     # An interrupted ordinary transfer must leave the old published bytes intact.
     $atomic = Join-Path $root 'atomic.bin'
     [IO.File]::WriteAllBytes($atomic, [byte[]](1, 2, 3))
