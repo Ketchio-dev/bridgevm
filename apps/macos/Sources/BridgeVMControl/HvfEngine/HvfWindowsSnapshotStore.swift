@@ -23,7 +23,8 @@ enum HvfWindowsSnapshotStore {
         let directory = directory(bundle: bundle)
         guard HvfWindowsSnapshotCommand.canonical(directory),
               let children = try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return [] }
-        return children.compactMap { url -> Entry? in
+        return children.compactMap { child -> Entry? in
+            let url = directory.appendingPathComponent(child.lastPathComponent).standardizedFileURL
             guard url.pathExtension == "snapshot", (try? validatedTarget(url, bundle: bundle)) != nil,
                   HvfWindowsSnapshotCommand.regularFile(url.appendingPathComponent("manifest.json")),
                   let date = try? url.appendingPathComponent("manifest.json")

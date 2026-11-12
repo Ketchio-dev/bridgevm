@@ -178,7 +178,10 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         XCTAssertEqual(ran, [.create], "the restore waits for its answer")
         await model.confirm(try XCTUnwrap(model.confirmation))?.value
         XCTAssertEqual(model.status, "스냅샷 복원 완료", session.events.last?.displayText ?? "")
-        XCTAssertEqual(try Data(contentsOf: disk), Data(repeating: 7, count: 128))
+        let selectedDigest = try HvfWindowsSnapshotCommand.invoke(helper, ["digest", disk.path, vars.path])
+        let firstDigest = try HvfWindowsSnapshotCommand.invoke(helper, ["digest", first.url.appendingPathComponent("disk.raw").path,
+                                                                        first.url.appendingPathComponent("vars.fd").path])
+        XCTAssertEqual(selectedDigest, firstDigest, "restore selects the first pair without overwriting logical originals")
         XCTAssertEqual(HvfWindowsSnapshotStore.list(bundle: bundle).count, 2, "a restore keeps both snapshots")
 
         let snapshot = first.url
@@ -196,7 +199,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         XCTAssertEqual(model.status, "스냅샷 삭제 완료")
         XCTAssertEqual(HvfWindowsSnapshotStore.list(bundle: bundle).count, 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: first.url.path))
-        XCTAssertEqual(try Data(contentsOf: disk), Data(repeating: 7, count: 128))
+        XCTAssertEqual(try HvfWindowsSnapshotCommand.invoke(helper, ["digest", disk.path, vars.path]), selectedDigest)
 
         // The helper owns staging; a failed invocation must not publish an entry.
         let before = HvfWindowsSnapshotStore.list(bundle: bundle)

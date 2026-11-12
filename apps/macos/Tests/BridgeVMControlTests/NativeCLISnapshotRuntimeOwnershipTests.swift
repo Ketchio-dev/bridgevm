@@ -61,7 +61,9 @@ final class NativeCLISnapshotRuntimeOwnershipTests: XCTestCase {
         let repo: URL
         let disk: URL
         let vars: URL
-        let snapshot: URL
+        var snapshot: URL {
+            HvfWindowsSnapshotStore.list(bundle: disk.deletingLastPathComponent().deletingLastPathComponent()).first!.url
+        }
         let id = "runtime-owned-vm"
 
         init() throws {
@@ -73,7 +75,6 @@ final class NativeCLISnapshotRuntimeOwnershipTests: XCTestCase {
             let bundle = entry.appendingPathComponent("bundle.vmbridge", isDirectory: true)
             disk = bundle.appendingPathComponent("disks/hvf-target.raw")
             vars = bundle.appendingPathComponent("metadata/hvf-vars.fd")
-            snapshot = bundle.appendingPathComponent("metadata/snapshots/latest.snapshot")
             let helper = repo.appendingPathComponent("target/release/examples/snapshot_pair_cli")
             for directory in [disk.deletingLastPathComponent(), vars.deletingLastPathComponent(), helper.deletingLastPathComponent()] {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

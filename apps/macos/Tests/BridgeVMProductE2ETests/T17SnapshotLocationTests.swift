@@ -16,6 +16,6 @@ final class T17SnapshotLocationTests: XCTestCase {
         }
         XCTAssertEqual(try T17SnapshotLocation.resolve(legacy).lastPathComponent, "20261112-120000.snapshot")
         try FileManager.default.removeItem(at: root.appendingPathComponent("20261112-120000.snapshot"))
-        XCTAssertEqual(try T17SnapshotLocation.resolve(legacy), legacy)
+        XCTAssertEqual(try T17SnapshotLocation.resolve(legacy).path, legacy.standardizedFileURL.path)
     }
 }

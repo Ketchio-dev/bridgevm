@@ -17,7 +17,7 @@ enum T17SnapshotLocation {
         guard let newest = snapshots.max(by: { date($0) == date($1) ? $0.lastPathComponent < $1.lastPathComponent : date($0) < date($1) }) else {
             throw T17Blocker(code: "snapshot-unavailable", detail: "no published snapshot")
         }
-        return newest
+        return parent.appendingPathComponent(newest.lastPathComponent).standardizedFileURL
     }
 
     private static func date(_ url: URL) -> Date {

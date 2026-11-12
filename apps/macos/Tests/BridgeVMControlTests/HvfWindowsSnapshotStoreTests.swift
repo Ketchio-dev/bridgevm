@@ -13,8 +13,8 @@ final class HvfWindowsSnapshotStoreTests: XCTestCase {
         _ = try entry(bundle, "20261112-130000.snapshot.staging", date: 400)
         let entries = Store.list(bundle: bundle)
         XCTAssertEqual(entries.map(\.date), [300, 200, 100].map { Date(timeIntervalSince1970: $0) })
-        XCTAssertEqual(entries.first?.url, newest)
-        XCTAssertEqual(entries.last?.url, legacy)
+        XCTAssertEqual(entries.first?.url.path, newest.standardizedFileURL.path)
+        XCTAssertEqual(entries.last?.url.path, legacy.standardizedFileURL.path)
         XCTAssertTrue(FileManager.default.fileExists(atPath: legacy.path))
     }
 
@@ -29,7 +29,7 @@ final class HvfWindowsSnapshotStoreTests: XCTestCase {
         let name = "../../a/b..." + String(repeating: "긴 이름/", count: 10_000)
         try name.write(to: Store.nameFile(snapshot), atomically: true, encoding: .utf8)
         XCTAssertEqual(Store.list(bundle: bundle).first?.name, name)
-        XCTAssertEqual(Store.list(bundle: bundle).first?.url, first)
+        XCTAssertEqual(Store.list(bundle: bundle).first?.url.path, first.standardizedFileURL.path)
     }
 
     func testDeleteRefusesSymlinkOutsideEntryAndSymlinkedParentWithoutTouchingData() throws {
