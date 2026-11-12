@@ -29,6 +29,8 @@ static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 thread_local! {
     /// The errno a new temporary fails with on this thread, as on a full Mac disk (tests).
     pub(super) static TEMPORARY_FAULT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+    pub(super) static LINK_FAULT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+    pub(super) static CONFLICT_COPY_FAULT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
 }
 
 /// The Mac file a preferred guest copy is to replace, as the session's first scan saw it: size
@@ -103,6 +105,18 @@ pub(super) struct Destination {
 fn name(value: &std::ffi::OsStr) -> io::Result<CString> {
     use std::os::unix::ffi::OsStrExt;
     CString::new(value.as_bytes()).map_err(|_| io::ErrorKind::InvalidInput.into())
+}
+
+fn link_at(parent: &File, from: &CStr, to: &CStr) -> io::Result<()> {
+    #[cfg(test)]
+    if let Some(errno) = LINK_FAULT.with(std::cell::Cell::get) {
+        return Err(io::Error::from_raw_os_error(errno));
+    }
+    // SAFETY: pinned parent and live single-component names; never replaces an existing name.
+    if unsafe { libc::linkat(parent.as_raw_fd(), from.as_ptr(), parent.as_raw_fd(), to.as_ptr(), 0) } < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 fn open_at(parent: &File, leaf: &CStr, flags: i32, mode: libc::mode_t) -> io::Result<File> {
@@ -191,13 +205,32 @@ impl Destination {
                     let conflict = CString::new(format!("{stem} ({label}){extension}")).unwrap();
                     // SAFETY: pinned parent and two live, single-component names. linkat
                     // publishes without replacing any existing conflict (even a racing one).
-                    if unsafe { libc::linkat(self.parent.as_raw_fd(), temporary.as_ptr(), self.parent.as_raw_fd(), conflict.as_ptr(), 0) } == 0 {
+                    let linked = link_at(&self.parent, temporary, &conflict);
+                    if linked.is_ok() {
                         unsafe { libc::unlinkat(self.parent.as_raw_fd(), temporary.as_ptr(), 0) };
                         println!("BVAGENT SHARE conflict kept-mac={} windows-copy={}", original, conflict.to_string_lossy());
                         return Err(io::Error::other(MacChanged));
                     }
-                    let error = io::Error::last_os_error();
-                    if error.kind() != io::ErrorKind::AlreadyExists { return Err(error); }
+                    let error = linked.unwrap_err();
+                    if error.kind() == io::ErrorKind::AlreadyExists { continue; }
+                    let preserved = if matches!(error.raw_os_error(), Some(libc::ENOTSUP) | Some(libc::EPERM) | Some(libc::EXDEV)) {
+                        match self.copy_conflict(temporary, &conflict, file) {
+                            Ok(()) => true,
+                            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                            Err(e) => {
+                                println!("BVAGENT SHARE conflict windows-copy-not-kept={} {e}", original);
+                                false
+                            }
+                        }
+                    } else {
+                        println!("BVAGENT SHARE conflict windows-copy-not-kept={} {error}", original);
+                        false
+                    };
+                    if preserved {
+                        println!("BVAGENT SHARE conflict kept-mac={} windows-copy={}", original, conflict.to_string_lossy());
+                    }
+                    // Conflict preservation is best effort: never retry over a newer Mac save.
+                    return Err(io::Error::other(MacChanged));
                 }
             }
         }
@@ -209,6 +242,29 @@ impl Destination {
             return Err(io::Error::last_os_error());
         }
         Ok(mtime)
+    }
+
+    fn copy_conflict(&self, temporary: &CStr, conflict: &CStr, staged: &File) -> io::Result<()> {
+        let mut output = open_at(&self.parent, conflict,
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW, policy::NEW_FILE_MODE)?;
+        let result = (|| {
+            let mut input = open_at(&self.parent, temporary, libc::O_RDONLY | libc::O_NOFOLLOW, 0)?;
+            #[cfg(test)]
+            if let Some(errno) = CONFLICT_COPY_FAULT.with(std::cell::Cell::get) {
+                output.write_all(b"partial")?;
+                return Err(io::Error::from_raw_os_error(errno));
+            }
+            io::copy(&mut input, &mut output)?;
+            policy::seal(Some(staged), &output, &self.parent)?;
+            if let Ok(mtime) = staged.metadata()?.modified() { let _ = output.set_modified(mtime); }
+            output.sync_all()?;
+            Ok(())
+        })();
+        if result.is_err() {
+            // SAFETY: this exclusive name belongs to this failed copy; no partial final copy.
+            unsafe { libc::unlinkat(self.parent.as_raw_fd(), conflict.as_ptr(), 0) };
+        }
+        result
     }
 
     /// An unpublished temporary beside the destination for a file written in parts (a large
