@@ -38,7 +38,7 @@ final class HvfDefaultShareCollisionTests: XCTestCase {
     func testUnicodeEquivalentNamesNeverSelectTheSameFolder() throws {
         let root = try root(); defer { try? FileManager.default.removeItem(at: root) }
         let first = try make("Café", root: root)
-        var second = first; second.name = "Cafe\u0301"; second.id = VMConfig.slugify(second.name)
+        var second = first; second.name = "Cafe\u{0301}"; second.id = VMConfig.slugify(second.name)
         second.enableNewWindowsShare(otherRegistrations: [first])
         XCTAssertNotEqual(key(first.sharedFolderHostPath), key(second.sharedFolderHostPath))
     }
