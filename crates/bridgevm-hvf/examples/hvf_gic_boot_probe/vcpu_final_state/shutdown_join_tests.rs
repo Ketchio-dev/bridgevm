@@ -118,6 +118,90 @@ fn assert_all_owners_joined_before_outcome(leading_panics: &[bool]) {
     );
 }
 
+// Records the lifetime boundary without allocating or touching actual guest RAM.
+struct FakeRamBacking(Arc<Mutex<Vec<&'static str>>>);
+impl Drop for FakeRamBacking {
+    fn drop(&mut self) {
+        self.0.lock().unwrap().push("RAM dropped");
+    }
+}
+
+fn assert_drop_before_ram(panic_exit: bool, partial_spawn: bool) {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let controls: Vec<_> = (1..=3).map(|i| Arc::new(VcpuControl::new(i))).collect();
+    let (finished_tx, finished_rx) = mpsc::channel();
+    let owner_count = if partial_spawn { 2 } else { controls.len() };
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // Same declaration order as run(): RAM outlives the per-boot owners.
+        let _ram = FakeRamBacking(Arc::clone(&events));
+        let mut set = SecondaryVcpuSet {
+            shutdown: Arc::clone(&shutdown),
+            terminal: Arc::new(SecondaryTerminalSignal::new()),
+            controls: controls.clone(),
+            handles: Vec::new(),
+        };
+        for control in controls.iter().take(owner_count) {
+            let control = Arc::clone(control);
+            let shutdown = Arc::clone(&shutdown);
+            let events = Arc::clone(&events);
+            let finished = finished_tx.clone();
+            set.handles.push(thread::spawn(move || {
+                let state = control.state.lock().unwrap();
+                let (state, _) = control
+                    .condvar
+                    .wait_timeout_while(state, WAIT, |_| !shutdown.load(Ordering::SeqCst))
+                    .unwrap();
+                drop(state);
+                events.lock().unwrap().push("owner exited");
+                let _ = finished.send(());
+            }));
+        }
+        if panic_exit {
+            if partial_spawn {
+                // Builder::spawn returns Err; production's expect panics here.
+                let failure: std::io::Result<()> =
+                    Err(std::io::Error::other("synthetic spawn failure"));
+                failure.expect("spawn secondary vCPU thread");
+            }
+            panic!("synthetic CPU0 checkpoint failure");
+        }
+        // Returning normally also exercises dropping an unreported set.
+    }));
+    let before_cleanup = events.lock().unwrap().clone();
+    // Also clean up the detached owners on the unfixed implementation, before
+    // asserting, so the fail-first test never leaks threads into other tests.
+    shutdown.store(true, Ordering::SeqCst);
+    for control in &controls {
+        control.notify_shutdown();
+    }
+    for _ in 0..owner_count {
+        finished_rx.recv_timeout(WAIT * 2).unwrap();
+    }
+    assert_eq!(outcome.is_err(), panic_exit);
+    let mut expected = vec!["owner exited"; owner_count];
+    expected.push("RAM dropped");
+    assert_eq!(
+        before_cleanup, expected,
+        "RAM dropped before all secondary owners exited"
+    );
+}
+
+#[test]
+fn drop_joins_owners_before_ram_on_cpu0_unwind() {
+    assert_drop_before_ram(true, false);
+}
+
+#[test]
+fn drop_joins_owners_before_ram_on_early_return() {
+    assert_drop_before_ram(false, false);
+}
+
+#[test]
+fn drop_joins_owners_before_ram_on_partial_spawn_failure() {
+    assert_drop_before_ram(true, true);
+}
+
 #[test]
 fn first_panicked_owner_does_not_detach_later_owner() {
     assert_all_owners_joined_before_outcome(&[true]);

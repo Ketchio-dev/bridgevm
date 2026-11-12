@@ -1,9 +1,12 @@
-//! Stop every secondary owner before propagating an owner panic.
+//! Stop every secondary owner before reporting or tearing down guest RAM.
 
 use crate::*;
 
 impl SecondaryVcpuSet {
-    pub(crate) fn shutdown_and_join(self) -> SecondaryVcpuStopResult {
+    fn join_owners(&mut self) -> thread::Result<()> {
+        if self.handles.is_empty() {
+            return Ok(());
+        }
         self.shutdown.store(true, Ordering::SeqCst);
         for control in &self.controls {
             control.notify_shutdown();
@@ -13,10 +16,18 @@ impl SecondaryVcpuSet {
         }
         // Interpret failures only after every owner is joined. An early panic
         // must not detach later owners while the caller tears down guest RAM.
-        let joined: Vec<_> = self.handles.into_iter().map(JoinHandle::join).collect();
-        for result in joined {
-            result.expect("join secondary vCPU thread");
+        let mut outcome = Ok(());
+        for handle in std::mem::take(&mut self.handles) {
+            let result = handle.join();
+            if outcome.is_ok() {
+                outcome = result;
+            }
         }
+        outcome
+    }
+
+    pub(crate) fn shutdown_and_join(mut self) -> SecondaryVcpuStopResult {
+        self.join_owners().expect("join secondary vCPU thread");
         let run_error = self
             .controls
             .iter()
@@ -41,6 +52,14 @@ impl SecondaryVcpuSet {
             final_states,
             missing_final_states,
         }
+    }
+}
+
+impl Drop for SecondaryVcpuSet {
+    fn drop(&mut self) {
+        // A primary panic may already be unwinding. Join every owner, but leave
+        // panic reporting to the explicit stop path rather than double-panicking.
+        let _ = self.join_owners();
     }
 }
 

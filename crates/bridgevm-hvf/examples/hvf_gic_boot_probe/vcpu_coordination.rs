@@ -71,7 +71,11 @@ impl VcpuControl {
         *published = None;
     }
     pub(crate) fn with_published_vcpu<R>(&self, action: impl FnOnce(HvVcpuT) -> R) -> Option<R> {
-        let published = self.vcpu.lock().expect("secondary vCPU handle mutex");
+        // Cleanup must still join other owners if an owner poisoned this lock.
+        let published = self
+            .vcpu
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let vcpu = (*published)?;
         Some(action(vcpu))
     }
@@ -225,62 +229,50 @@ impl SecondaryVcpuSet {
             max_exits,
             generation,
         } = config;
-        if cpu_count <= 1 {
-            return Self {
-                shutdown: Arc::new(AtomicBool::new(false)),
-                terminal: Arc::new(SecondaryTerminalSignal::new()),
-                controls: Vec::new(),
-                handles: Vec::new(),
-            };
+        // Own each handle as soon as it is spawned: a later spawn failure
+        // unwinds through this set and joins the already-started owners.
+        let mut set = Self {
+            shutdown: Arc::new(AtomicBool::new(false)),
+            terminal: Arc::new(SecondaryTerminalSignal::new()),
+            controls: (1..cpu_count)
+                .map(|index| Arc::new(VcpuControl::new(index)))
+                .collect(),
+            handles: Vec::new(),
+        };
+        for control in &set.controls {
+            let control = Arc::clone(control);
+            let controls_for_thread = set.controls.clone();
+            let shutdown = Arc::clone(&set.shutdown);
+            let terminal = Arc::clone(&set.terminal);
+            let platform = Arc::clone(&platform);
+            let pre_run_drain_gate = Arc::clone(&pre_run_drain_gate);
+            let smp_trace = smp_trace.clone();
+            let handle = thread::Builder::new()
+                .name(format!("bridgevm-hvf-vcpu{}", control.index))
+                .spawn(move || {
+                    raise_vcpu_qos();
+                    secondary_vcpu_thread(
+                        control,
+                        SecondaryVcpuThreadContext {
+                            shutdown,
+                            terminal,
+                            primary_vcpu,
+                            ram_base,
+                            ram_size,
+                            platform,
+                            drain_trace,
+                            pre_run_drain_gate,
+                            controls: controls_for_thread,
+                            smp_trace,
+                            max_exits,
+                            generation,
+                        },
+                    )
+                })
+                .expect("spawn secondary vCPU thread");
+            set.handles.push(handle);
         }
-
-        let shutdown = Arc::new(AtomicBool::new(false));
-        let terminal = Arc::new(SecondaryTerminalSignal::new());
-        let controls: Vec<_> = (1..cpu_count)
-            .map(|index| Arc::new(VcpuControl::new(index)))
-            .collect();
-        let handles = controls
-            .iter()
-            .map(|control| {
-                let control = Arc::clone(control);
-                let controls_for_thread = controls.clone();
-                let shutdown = Arc::clone(&shutdown);
-                let terminal = Arc::clone(&terminal);
-                let platform = Arc::clone(&platform);
-                let pre_run_drain_gate = Arc::clone(&pre_run_drain_gate);
-                let smp_trace = smp_trace.clone();
-                thread::Builder::new()
-                    .name(format!("bridgevm-hvf-vcpu{}", control.index))
-                    .spawn(move || {
-                        raise_vcpu_qos();
-                        secondary_vcpu_thread(
-                            control,
-                            SecondaryVcpuThreadContext {
-                                shutdown,
-                                terminal,
-                                primary_vcpu,
-                                ram_base,
-                                ram_size,
-                                platform,
-                                drain_trace,
-                                pre_run_drain_gate,
-                                controls: controls_for_thread,
-                                smp_trace,
-                                max_exits,
-                                generation,
-                            },
-                        )
-                    })
-                    .expect("spawn secondary vCPU thread")
-            })
-            .collect();
-
-        Self {
-            shutdown,
-            terminal,
-            controls,
-            handles,
-        }
+        set
     }
     pub(crate) fn terminal_action(&self) -> Option<PsciTerminalAction> {
         self.terminal.action()
