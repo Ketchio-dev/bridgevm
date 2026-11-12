@@ -5,6 +5,15 @@
   "summary": "BridgeVM presents a QEMU virt-compatible guest contract so stock ArmVirtQemu firmware and stock Windows 11 ARM media work unmodified. It is not bit-identical. Every known deviation is listed here.",
   "deviations": [
     {
+      "id": "virtio-blk-status-zero-reset",
+      "area": "storage",
+      "qemu_behavior": "Writing device status zero resets guest-programmed device state for a new negotiation.",
+      "bridgevm_behavior": "Status-zero MMIO and legacy PCI resets clear driver features, both feature selectors, queue selector and legacy page size along with queue state. Backend configuration and request statistics are retained.",
+      "guest_visible": true,
+      "impact": "Resolved: stale guest negotiation state no longer survives a device reset. The reset path adds only scalar stores and leaves request processing unchanged.",
+      "evidence": "crates/bridgevm-hvf/src/virtio_blk/tests/mod.rs"
+    },
+    {
       "id": "fwcfg-dma-write-capacity",
       "area": "firmware",
       "qemu_behavior": "Writable fw_cfg entry DMA behavior is defined by the entry callback.",

@@ -5,6 +5,39 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
+#[test]
+fn bounds_regression_status_zero_clears_negotiation() {
+    let path = temp_path("reset-negotiation");
+    fs::write(&path, vec![0; 4096]).unwrap();
+    let mut dev = VirtioMmioBlock::open_read_only(&path).unwrap();
+    let mut mem = TestMem::new(0x4000_0000, 4096);
+    for legacy_pci in [false, true] {
+        dev.device_features_sel = 1;
+        dev.driver_features_sel = 1;
+        dev.driver_features = [u32::MAX; 2];
+        dev.queue_sel = 7;
+        dev.guest_page_size = 8192;
+        dev.queue_num = 32;
+        dev.queue_ready = true;
+        dev.stats.notify_count = 42;
+        if legacy_pci {
+            dev.legacy_pci_io_write(0x12, 1, 0, &mut mem);
+        } else {
+            dev.write(REG_STATUS, 4, 0, &mut mem);
+        }
+        assert_eq!(dev.driver_features, [0; 2]);
+        assert_eq!(dev.device_features_sel, 0);
+        assert_eq!(dev.driver_features_sel, 0);
+        assert_eq!(dev.queue_sel, 0);
+        assert_eq!(dev.guest_page_size, 4096);
+        assert_eq!(dev.queue_num, 0);
+        assert!(!dev.queue_ready);
+        assert_eq!(dev.stats.notify_count, 42);
+        assert_eq!(dev.backend.capacity_sectors(), 8);
+    }
+    fs::remove_file(path).unwrap();
+}
+
 mod driver_ready_model;
 mod modern_requests;
 mod part_2;
