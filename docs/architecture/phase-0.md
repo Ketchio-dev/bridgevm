@@ -35,7 +35,6 @@ The important Phase 0 boundary is intentional: Fast Mode and Compatibility Mode 
 - `bridgevm-api` and `bridgevm-cli`: metadata-safe readiness evidence ingestion for preserved Apple VZ live evidence bundles through `readiness_report` and `bridgevm readiness --live-evidence`, without launching Apple VZ or invoking the Swift helper.
 - `bridgevmd` supervisor: daemon-owned backend child registry for `run --spawn`, periodic exit reconciliation, QMP/guest-tools reconciliation for Compatibility Mode, and stop/shutdown cleanup.
 - `bridgevm-api`: service contracts for daemon/socket callers.
-- `bridgevm-lightvm` and `bridgevm-fullvm`: separate engine adapters.
 - `bridgevm-agent-protocol`: first typed guest-tools messages.
 - `bridgevm-agentd`: host-side guest-tools session policy and authenticated
   `GuestHello` validation.

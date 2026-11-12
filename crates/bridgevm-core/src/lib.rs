@@ -402,21 +402,6 @@ pub fn boot_template_by_id(id: &str) -> Option<BootTemplate> {
         .find(|template| template.id == id)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VmState {
-    Running,
-    Suspended,
-    Stopped,
-}
-
-pub trait VmEngine {
-    fn name(&self) -> &'static str;
-    fn start(&self, vm_name: &str) -> Result<VmState, String>;
-    fn stop(&self, vm_name: &str) -> Result<VmState, String>;
-    fn suspend(&self, vm_name: &str) -> Result<VmState, String>;
-    fn resume(&self, vm_name: &str) -> Result<VmState, String>;
-}
-
 #[cfg(test)]
 #[path = "lib_tests.rs"]
 mod tests;

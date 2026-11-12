@@ -72,7 +72,7 @@ jobs:
           # The app job also builds and runs Rust: the test helpers (hvf-runner,
           # the bridgevm CLI, snapshot_pair_cli) and the probe's input-receipt
           # transcript. Only crates none of them depend on can skip it.
-          app_rust=$(printf '%s\n' "$files" | grep -E '^(crates/|runners/hvf-runner/|Cargo\.(toml|lock)$)' | grep -vE '^crates/bridgevm-(daemon|fullvm|lightvm)/' || true)
+          app_rust=$(printf '%s\n' "$files" | grep -E '^(crates/|runners/hvf-runner/|Cargo\.(toml|lock)$)' | grep -vE '^crates/bridgevm-daemon/' || true)
           [ -n "$app_rust" ] && swift=true
           venus=false
           printf '%s\n' "$files" | grep -qE '^(crates/bridgevm-hvf/(src/|build\.rs$|Cargo\.toml$)|tools/venus-host-probe/|Cargo\.(toml|lock)$|scripts/.*(venus|virgl)|scripts/patches/|\.github/workflows/ci\.yml$)' && venus=true

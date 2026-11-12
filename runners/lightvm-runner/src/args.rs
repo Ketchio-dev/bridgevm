@@ -14,8 +14,6 @@ use bridgevm_apple_vz::AppleVzLaunchSpec;
 use bridgevm_apple_vz::AppleVzReadinessSpec;
 use bridgevm_apple_vz::UnsupportedAppleVzLauncher;
 use bridgevm_config::VmMode;
-use bridgevm_core::VmEngine;
-use bridgevm_lightvm::LightVmEngine;
 use bridgevm_storage::LaunchReadinessBlockerMetadata;
 use bridgevm_storage::LaunchReadinessMetadata;
 use bridgevm_storage::RunnerMetadata;
@@ -23,6 +21,8 @@ use bridgevm_storage::RuntimeControlMetadata;
 use bridgevm_storage::VmRuntimeState;
 use bridgevm_storage::VmStore;
 use clap::Parser;
+
+const ENGINE_NAME: &str = "lightvm";
 
 #[derive(Debug, Parser)]
 #[command(name = "lightvm-runner", about = "BridgeVM Fast Mode runner scaffold")]
@@ -106,7 +106,6 @@ impl<'a> From<&'a Args> for AppleVzLaunchOptions<'a> {
 
 pub(crate) fn run() -> Result<()> {
     let args = Args::parse();
-    let engine = LightVmEngine;
     if let Some(path) = args.launch_spec.as_ref() {
         let spec =
             read_launch_spec_artifact(path).context("failed to read Fast Mode launch spec")?;
@@ -122,7 +121,7 @@ pub(crate) fn run() -> Result<()> {
     }
 
     let Some(vm) = args.vm.as_deref() else {
-        println!("{}", runner_ready_line(engine.name()));
+        println!("{}", runner_ready_line(ENGINE_NAME));
         return Ok(());
     };
 
@@ -159,7 +158,7 @@ pub(crate) fn run() -> Result<()> {
             .prepare_active_disk(vm)
             .context("failed to prepare active disk")?;
         let metadata = RunnerMetadata {
-            engine: engine.name().to_string(),
+            engine: ENGINE_NAME.to_string(),
             pid: None,
             command: plan.render_runner_words_for_launch_spec(
                 launch_spec_path
@@ -190,7 +189,7 @@ pub(crate) fn run() -> Result<()> {
         record_live_launch_metadata(
             &store,
             vm,
-            engine.name(),
+            ENGINE_NAME,
             &plan,
             launch_spec_path.clone(),
             args.apple_vz_runtime_control_socket.clone(),

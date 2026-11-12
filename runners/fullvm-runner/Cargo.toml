@@ -7,8 +7,6 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-bridgevm-core = { path = "../../crates/bridgevm-core" }
-bridgevm-fullvm = { path = "../../crates/bridgevm-fullvm" }
 bridgevm-qemu = { path = "../../crates/bridgevm-qemu" }
 bridgevm-storage = { path = "../../crates/bridgevm-storage" }
 clap.workspace = true
