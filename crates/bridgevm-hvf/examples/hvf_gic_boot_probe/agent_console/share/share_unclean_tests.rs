@@ -43,6 +43,23 @@ fn clean_first_listing_still_accepts_windows_edit() {
 }
 
 #[test]
+fn recovery_does_not_divert_a_later_normal_edit_or_loop_on_restart() {
+    let (mut rig, vars) = synced_from_guest("recovery-later-edit", now_ms()-2*HOUR_MS, true);
+    settle(&mut rig);
+    rig.guest.write("doc.bin", b"crash recovery bytes");
+    rig.guest.stamps.insert("DOC.BIN".into(), now_ms());
+    rig.h.share=None;
+    new_session(&mut rig,Some(&vars));rig.run(24);settle(&mut rig);
+    rig.guest.write("doc.bin",b"later legitimate edit");
+    rig.guest.stamps.insert("DOC.BIN".into(),now_ms()+HOUR_MS);
+    rig.run(24);
+    assert_eq!(rig.host("doc.bin").as_deref(),Some(&b"later legitimate edit"[..]));
+    assert!(rig.host("doc (Windows copy 2).bin").is_none());
+    settle(&mut rig);rig.h.share=None;new_session(&mut rig,Some(&vars));rig.run(24);
+    assert!(rig.host("doc (Windows copy) (Windows copy).bin").is_none());
+}
+
+#[test]
 fn unclean_first_listing_keeps_mac_and_windows_versions() {
     for empty in [false, true] {
         let (mut rig, vars) = synced_from_guest(if empty { "unclean-empty" } else { "unclean-edit" }, now_ms()-2*HOUR_MS, true);

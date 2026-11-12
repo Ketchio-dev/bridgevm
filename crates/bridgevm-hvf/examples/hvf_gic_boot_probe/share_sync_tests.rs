@@ -26,6 +26,31 @@ fn host_file(name: &str, size: u64, mtime_ms: u128) -> HostFile {
 }
 
 #[test]
+fn recovery_guard_ends_when_fetched_bytes_are_already_synced() {
+    let mut sync = ShareSync::new(512);
+    sync.on_guest_file("doc".into(), b"same".to_vec(), Some("old"));
+    sync.note_host_stat("doc", 1);
+    sync.guest_changed.insert("doc".into(), HostFileStat { size: 4, mtime_ms: 1 });
+    sync.recovery_copies.insert("doc".into());
+    assert!(matches!(sync.on_guest_file("doc".into(), b"same".to_vec(), Some("new")), GuestFileOutcome::AlreadySynced));
+    assert!(!sync.recovery_copy("doc"), "AlreadySynced left recovery guard behind");
+}
+
+#[test]
+fn recovery_guard_applies_only_to_the_first_listed_version() {
+    let mut sync = ShareSync::new(512);
+    sync.set_previous_unclean(true);
+    sync.load_synced(HashMap::from([("doc".into(), share_synced::SyncedFile { last: share_synced::SyncedVersion { size: 4, mtime_ms: 1 }, prev: None })]), HashSet::new());
+    sync.on_host_scan(vec![host_file("doc", 4, 1)]);
+    sync.on_guest_listing(vec![ls_file("doc", 7, "2026-01-01T00:00:01Z")]);
+    assert!(sync.recovery_copy("doc"));
+    sync.on_guest_file("doc".into(), b"damaged".to_vec(), None);
+    sync.on_host_write_error("doc", true); // terminal refusal for that version
+    sync.on_guest_listing(vec![ls_file("doc", 9, "2026-01-01T00:00:02Z")]);
+    assert!(!sync.recovery_copy("doc"), "later guest version inherited recovery guard");
+}
+
+#[test]
 fn parse_ls_handles_lines_empty_pipe_names_and_normalizes_guest_rels() {
     assert!(parse_ls("").is_empty());
     let entries = parse_ls(
