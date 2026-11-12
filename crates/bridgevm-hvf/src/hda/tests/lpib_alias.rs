@@ -22,3 +22,13 @@ fn lpib_alias_reads_the_stream_position() {
         assert_eq!(ctrl.mmio_read(REG_SD_LPIB_ALIAS, 4), lpib, "at {ms} ms");
     }
 }
+
+/// The audio tick takes its time, waits for the platform, and can poll after
+/// a vCPU that took a later time. Its older time must not become the base.
+#[test]
+fn a_poll_with_an_older_time_does_not_play_that_time_twice() {
+    let (mut ctrl, mut mem) = running_stream(&TWO_PERIODS, false);
+    poll_at(&mut ctrl, &mut mem, Instant::now(), &[0, 10, 5, 15]);
+    // 15 ms of 192 bytes: 20 ms would have wrapped the 3,840-byte buffer to 0.
+    assert_eq!(ctrl.mmio_read(REG_SD_LPIB, 4), 2_880);
+}
