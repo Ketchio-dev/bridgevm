@@ -507,6 +507,33 @@ final class VTPMIdentityLifecycleTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: result.receiptPath))
         XCTAssertTrue(store.keys.contains { $0.key.hasPrefix("win11.archive.") && $0.value == oldKey })
     }
+
+    func testAResetThatCannotArchiveTheStateLeavesTheStateAndItsKeyInPlace() throws {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let state = temp.appendingPathComponent("vtpm", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        let stateFile = state.appendingPathComponent("tpm2-00.permall")
+        try Data("old-state".utf8).write(to: stateFile)
+        // The archive name is already taken, so the state is never moved.
+        try FileManager.default.createDirectory(
+            at: temp.appendingPathComponent("vtpm-archive-1700000000-11111111", isDirectory: true),
+            withIntermediateDirectories: true)
+        let oldKey = Data(repeating: 9, count: 32)
+        let store = InMemoryVTPMKeyStore()
+        store.keys["win11"] = oldKey
+
+        XCTAssertThrowsError(try VTPMIdentityLifecycle(keyStore: store).resetIdentity(
+            stableVMID: "win11",
+            stateDirectory: state,
+            now: Date(timeIntervalSince1970: 1_700_000_000),
+            nonce: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+        ))
+
+        XCTAssertEqual(try Data(contentsOf: stateFile), Data("old-state".utf8))
+        XCTAssertEqual(store.keys, ["win11": oldKey])
+    }
 }
 
 final class HvfHostKeyCommandTests: XCTestCase {
