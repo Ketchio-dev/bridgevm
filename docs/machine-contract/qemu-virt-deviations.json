@@ -104,6 +104,15 @@
       "evidence": "crates/bridgevm-hvf/src/host_power.rs"
     },
     {
+      "id": "share-staged-put",
+      "area": "guest-agent",
+      "qemu_behavior": "QEMU has no shared-folder guest-agent push protocol of its own.",
+      "bridgevm_behavior": "PUT and PUTBEG/PUTCHUNK/PUTDATA/PUTEND write an unlisted .bridgevm-part sibling and rename only the complete file over the destination, using the same staging and replacement helpers as LPUT. An interrupted transfer leaves the previous file intact; abandoned temporaries use the existing listing cleanup. The wire is unchanged.",
+      "guest_visible": true,
+      "impact": "Readers see the old file until the new version is complete, not a truncated or partially transferred version.",
+      "evidence": "tests/integration/agent-share-listing-contract.ps1"
+    },
+    {
       "id": "share-put-mtime",
       "area": "guest-agent",
       "qemu_behavior": "QEMU has no shared-folder guest-agent push protocol of its own.",

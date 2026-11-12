@@ -4,11 +4,13 @@
 # so the next request still parses. Without the compiled reader the same bytes land. Runs the
 # agent's own verb cases on an anonymous pipe.
 $ErrorActionPreference = 'Stop'
+if ([IO.Path]::DirectorySeparatorChar -ne '\') { Write-Output 'SKIP: PUTDATA pipe contract requires Windows kernel32 ReadFile'; exit 0 }
 $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $source = [IO.File]::ReadAllText((Join-Path $repo 'scripts/win-assets/bvagent.ps1'))
 $reader = [regex]::Match($source, "(?s)\`$script:BvDropReaderSource = @'\r?\n(?<cs>.*?)\r?\n'@")
 if (-not $reader.Success) { throw 'BvDropReaderSource not found' }
 $script:BvDropReaderSource = $reader.Groups['cs'].Value
+. ([scriptblock]::Create([regex]::Match($source, '(?s)# >>> large put.*?# <<< large put').Value))
 foreach ($name in @('Is-BadHandle', 'Test-DropReader', 'Read-DataPayload', 'Read-Line', 'Get-IoPath', 'Set-PutTime', 'Close-PutStream')) {
     $function = [regex]::Match($source, "(?s)\nfunction $name\b.*?\r?\n\}\r?\n")
     if (-not $function.Success) { throw "$name not found" }
