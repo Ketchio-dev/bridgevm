@@ -16,7 +16,7 @@
 use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread::{self, Thread};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Called by the wake thread; the live VMM kicks vCPU0 so its drain polls the
 /// NAT.
@@ -35,6 +35,8 @@ struct Shared {
     stop: AtomicBool,
     /// Sockets seen readable (or connected) since the last poll took them.
     ready: Mutex<Vec<i32>>,
+    /// VM-clock deadline, published once per NAT poll, never per segment.
+    deadline: Mutex<Option<Instant>>,
 }
 
 impl Shared {
@@ -76,6 +78,22 @@ impl HostWake {
     /// False when the kqueue refused it: the socket is then read on every poll.
     pub(crate) fn watch(&self, fd: i32, writable: bool) -> bool {
         imp::watch(self.shared.queue, fd, writable)
+    }
+
+    /// Publish the earliest TCP timer. Only an earlier deadline must interrupt
+    /// kevent: for a later/cancelled one its old timeout simply rechecks it.
+    pub(crate) fn set_deadline(&self, deadline: Option<Instant>) {
+        let mut current = self
+            .shared
+            .deadline
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let earlier = deadline.is_some_and(|due| current.is_none_or(|old| due < old));
+        *current = deadline;
+        drop(current);
+        if earlier {
+            imp::interrupt(self.shared.queue);
+        }
     }
 
     /// A poll of the host sockets is starting: the kick it answers is done.
@@ -149,6 +167,7 @@ mod imp {
             pending: AtomicBool::new(false),
             stop: AtomicBool::new(false),
             ready: Mutex::new(Vec::new()),
+            deadline: Mutex::new(None),
         });
         let user = change(0, libc::EVFILT_USER, libc::EV_ADD | libc::EV_CLEAR, 0);
         // SAFETY: Category 8 - `user` outlives the call.
@@ -161,7 +180,17 @@ mod imp {
             .spawn(move || {
                 let mut events = [change(0, 0, 0, 0); MAX_EVENTS];
                 let wait = || {
-                    // SAFETY: Category 8 - `events` has room for MAX_EVENTS.
+                    let deadline = *ours.deadline.lock().unwrap_or_else(PoisonError::into_inner);
+                    let timeout = deadline.map(|due| {
+                        let left =
+                            crate::vm_clock::host_at(due).saturating_duration_since(Instant::now());
+                        libc::timespec {
+                            tv_sec: left.as_secs().min(i64::MAX as u64) as _,
+                            tv_nsec: left.subsec_nanos() as _,
+                        }
+                    });
+                    // SAFETY: Category 8 - `events` has room for MAX_EVENTS;
+                    // the optional timeout outlives the call.
                     let got = unsafe {
                         libc::kevent(
                             queue,
@@ -169,7 +198,7 @@ mod imp {
                             0,
                             events.as_mut_ptr(),
                             MAX_EVENTS as i32,
-                            null(),
+                            timeout.as_ref().map_or(null(), |timeout| timeout),
                         )
                     };
                     let mut ready = ours.ready();
@@ -178,7 +207,8 @@ mod imp {
                             ready.push(event.ident as i32);
                         }
                     }
-                    !ready.is_empty()
+                    let due = *ours.deadline.lock().unwrap_or_else(PoisonError::into_inner);
+                    !ready.is_empty() || due.is_some_and(|due| crate::vm_clock::active_now() >= due)
                 };
                 run(&ours, wait, kick_vcpu);
             });

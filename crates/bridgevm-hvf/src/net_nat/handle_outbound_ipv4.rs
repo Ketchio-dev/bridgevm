@@ -56,6 +56,14 @@ impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
         self.poll_tcp(guest_mac, reply_queue, stats);
         self.poll_icmp(guest_mac, reply_queue, stats);
         self.evict_idle_flows();
+        if let Some(Some(wake)) = self.wake.get() {
+            let deadline = self
+                .tcp_flows
+                .values()
+                .filter_map(|flow| flow.send.deadline_ms())
+                .min();
+            wake.set_deadline(deadline.map(|ms| self.epoch + std::time::Duration::from_millis(ms)));
+        }
     }
 
     fn active_flow_counts(&self) -> (usize, usize) {

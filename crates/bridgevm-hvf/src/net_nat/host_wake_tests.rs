@@ -8,6 +8,7 @@ fn shared() -> Shared {
         pending: AtomicBool::new(false),
         stop: AtomicBool::new(false),
         ready: Mutex::new(Vec::new()),
+        deadline: Mutex::new(None),
     }
 }
 
@@ -85,6 +86,98 @@ fn a_kick_no_poll_answers_is_sent_again() {
     // Paced by REKICK, not a spin.
     let periods = (elapsed.as_millis() / REKICK.as_millis()) as usize;
     assert!(kicks <= periods + 3, "{kicks} kicks in {elapsed:?}");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn nat_timer_wakes_for_an_unanswered_forwarded_syn() {
+    idle_tcp_timer_wakes(0);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn nat_timer_wakes_for_unacknowledged_data() {
+    idle_tcp_timer_wakes(1);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn nat_timer_wakes_for_a_zero_window_probe() {
+    idle_tcp_timer_wakes(2);
+}
+
+#[cfg(target_os = "macos")]
+fn idle_tcp_timer_wakes(kind: u8) {
+    use crate::net_nat::*;
+    use std::collections::VecDeque;
+    use std::io::Write;
+    use std::net::{Ipv4Addr, TcpListener, TcpStream};
+
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (mut peer, _) = listener.accept().unwrap();
+    stream.set_nonblocking(true).unwrap();
+    let mut handler = HostSocketOutboundIpv4Handler::with_dns_resolver(Ipv4Addr::LOCALHOST);
+    handler
+        .wake
+        .set(Some(HostWake::start_unhooked().unwrap()))
+        .unwrap();
+    let key = TcpFlowKey {
+        guest_ip: [10, 0, 2, 15],
+        guest_port: 49163,
+        dst_ip: [127, 0, 0, 1],
+        dst_port: listener.local_addr().unwrap().port(),
+    };
+    let mut flow = TcpFlow::new(stream, 100, 200, if kind == 2 { 0 } else { 65535 }, None, 0);
+    flow.state = if kind == 0 {
+        TcpProxyState::Opening
+    } else {
+        TcpProxyState::Established
+    };
+    // No socket is registered: only a TCP deadline can wake this thread.
+    flow.watched = true;
+    if kind == 0 {
+        flow.syn_sent(handler.now_ms());
+    } else if kind == 1 {
+        peer.write_all(b"unacknowledged").unwrap();
+    }
+    handler.tcp_flows.insert(key, flow);
+    let mut replies = VecDeque::new();
+    let mut stats = NatStats::default();
+    let mac = Some([2, 0, 0, 0, 0, 1]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        // With no registered socket, explicitly poll until the initial bytes
+        // arrive. After that only the TCP deadline can request another drain.
+        handler.tcp_flows.get_mut(&key).unwrap().readable = true;
+        handler.poll_host_sockets(mac, &mut replies, &mut stats);
+        if kind != 1 || !replies.is_empty() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "host data never arrived");
+        std::thread::yield_now();
+    }
+    replies.clear();
+    let wake = handler.wake.get().unwrap().as_ref().unwrap();
+    while !wake.shared.pending.load(SeqCst) && Instant::now() < deadline {
+        std::thread::yield_now();
+    }
+    assert!(
+        wake.shared.pending.load(SeqCst),
+        "TCP timer did not wake an idle NAT (kind={kind})"
+    );
+    handler.poll_host_sockets(mac, &mut replies, &mut stats);
+    assert_eq!(
+        replies.len(),
+        1,
+        "deadline kick did not deliver the TCP timer"
+    );
+    if kind == 1 {
+        assert_eq!(stats.tcp_timeout_retransmits, 1);
+    }
+    if kind == 2 {
+        assert_eq!(stats.tcp_zero_window_probes, 1);
+    }
 }
 
 #[cfg(target_os = "macos")]
