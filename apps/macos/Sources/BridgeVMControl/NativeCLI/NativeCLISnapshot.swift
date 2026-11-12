@@ -32,6 +32,7 @@ enum NativeCLISnapshot {
         switch operation {
         case .create: command = "create"
         case .restore: command = "restore"
+        case .delete: command = "delete"
         }
         do {
             let config = try NativeLibraryReader.readConfig(rootURL: rootURL, id: id)
@@ -53,10 +54,14 @@ enum NativeCLISnapshot {
                     withIntermediateDirectories: true
                 )
             }
-            _ = try HvfWindowsSnapshotCommand.invoke(
-                plan.executable,
-                plan.arguments(for: operation)
-            )
+            if operation == .delete {
+                try HvfWindowsSnapshotStore.delete(plan.snapshot, bundle: plan.bundle)
+            } else {
+                _ = try HvfWindowsSnapshotCommand.invoke(
+                    plan.executable,
+                    plan.arguments(for: operation)
+                )
+            }
             if case .create = operation {
                 _ = try HvfWindowsSnapshotCommand.invoke(
                     plan.executable,
