@@ -1,5 +1,5 @@
 name: Sealed production input driver profile contracts
-on: {push: {branches: [main]}, pull_request: {paths: ['scripts/live-gates/guest_input_*', 'tests/integration/guest-input-controller-test.py', 'tests/integration/guest-input-driver-variant-test.py', 'tests/integration/guest-input-queue-test.py', '.github/workflows/guest-input-driver-variant.yml']}}
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/live-gates/guest_input_*', 'tests/integration/guest-input-controller-test.py', 'tests/integration/guest-input-driver-variant-test.py', 'tests/integration/guest-input-queue-test.py', '.github/workflows/guest-input-queue.yml', '.github/workflows/guest-input-driver-variant.yml']}}
 permissions:
   contents: read
 jobs:
@@ -8,5 +8,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: {python-version: '3.12'}
       - run: python3 tests/integration/guest-input-driver-variant-test.py
-      - run: python3 tests/integration/guest-input-queue-test.py && python3 tests/integration/guest-input-controller-test.py
+      - run: python tests/integration/guest-input-queue-test.py
+      - run: python3 tests/integration/guest-input-controller-test.py

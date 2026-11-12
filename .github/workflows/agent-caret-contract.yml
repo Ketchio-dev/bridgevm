@@ -1,5 +1,44 @@
-name: Guest agent caret contract
-on: {push: {branches: [main]}, pull_request: {paths: ['scripts/win-assets/bvagent.ps1', 'scripts/win-assets/bvagent-input.ps1', 'tests/integration/agent-caret-contract.ps1', '.github/workflows/agent-caret-contract.yml']}}
+name: Guest agent contracts
+on:
+  push: {branches: [main]}
+  pull_request:
+    paths:
+      - scripts/win-assets/bvagent.ps1
+      - scripts/win-assets/bvagent-input.ps1
+      - tests/integration/agent-caret-contract.ps1
+      - .github/workflows/agent-caret-contract.yml
+      - scripts/test-bvagent-display-verbs.ps1
+      - .github/workflows/agent-display-verbs-contract.yml
+      - tests/integration/agent-drop-decode-contract.ps1
+      - tests/integration/agent-drop-path-contract.ps1
+      - tests/integration/agent-open-file-contract.ps1
+      - .github/workflows/agent-drop-decode-contract.yml
+      - scripts/win-assets/bvagent-firstboot.ps1
+      - scripts/test-bvagent-firstboot-acl.ps1
+      - tests/integration/agent-folder-acl-contract.ps1
+      - .github/workflows/agent-folder-acl-contract.yml
+      - scripts/test-bvagent-guest-links.ps1
+      - apps/macos/Sources/BridgeVMControl/HvfEngine/HvfGuestLinks.swift
+      - .github/workflows/agent-guest-links-contract.yml
+      - tests/integration/agent-print-contract.ps1
+      - .github/workflows/agent-print-contract.yml
+      - tests/integration/agent-start-apps-contract.ps1
+      - .github/workflows/agent-start-apps-contract.yml
+      - scripts/test-bvagent-update.ps1
+      - tests/integration/agent-run-contract.ps1
+      - scripts/win-assets/bvagent-update.ps1
+      - scripts/win-assets/bvagent-task.ps1
+      - .github/workflows/agent-update-contract.yml
+      - scripts/test-bvagent-firstboot-receipt.ps1
+      - scripts/win-assets/bvagent-install-service.c
+      - tests/integration/agent-task-contract.ps1
+      - .github/workflows/firstboot-provisioner-contract.yml
+      - scripts/win-assets/bv-product-e2e*
+      - tests/integration/t17-tpm-pcr-contract.ps1
+      - tests/integration/t19-bitlocker-guest-contract.ps1
+      - tests/integration/windows-guest-pwsh-contracts.ps1
+      - .github/workflows/t17-tpm-pcr-contract.yml
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -15,3 +54,139 @@ jobs:
         if: ${{ !cancelled() }}
         shell: pwsh
         run: tests/integration/agent-caret-contract.ps1
+  display-verbs:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check DISPLAYMODE/DISPLAYSCALE with Windows PowerShell 5.1
+        shell: powershell
+        run: scripts/test-bvagent-display-verbs.ps1
+      - name: Check DISPLAYMODE/DISPLAYSCALE with PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: scripts/test-bvagent-display-verbs.ps1
+  drop-decode:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Decoder against Convert.FromBase64String (Windows PowerShell 5.1)
+        shell: powershell
+        run: tests/integration/agent-drop-decode-contract.ps1
+      - name: The same as C# 5 (PowerShell 7)
+        shell: pwsh
+        run: tests/integration/agent-drop-decode-contract.ps1
+      - name: Drop verbs on paths past 260 characters (Windows PowerShell 5.1)
+        shell: powershell
+        run: tests/integration/agent-drop-path-contract.ps1
+      - name: OPENFILE opens only a dropped Desktop item, one explorer argument (Windows PowerShell 5.1)
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: tests/integration/agent-open-file-contract.ps1
+      - name: The same with PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: tests/integration/agent-open-file-contract.ps1
+  windows-acl:
+    name: Lock a folder with the provisioner's code and read the permissions back
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Windows PowerShell 5.1
+        shell: powershell
+        run: tests/integration/agent-folder-acl-contract.ps1
+      - name: PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: tests/integration/agent-folder-acl-contract.ps1
+  stand-ins:
+    name: Provisioner locks before hashing and blocks when the lock fails
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - shell: pwsh
+        run: scripts/test-bvagent-firstboot-acl.ps1
+  guest-links:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the link handler and the agent's link watch with Windows PowerShell 5.1
+        shell: powershell
+        run: scripts/test-bvagent-guest-links.ps1
+      - name: Check the link handler and the agent's link watch with PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: scripts/test-bvagent-guest-links.ps1
+  print:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: PRINTWATCH setup, job detection and PRINTJOB dispatch (Windows PowerShell 5.1)
+        shell: powershell
+        run: tests/integration/agent-print-contract.ps1
+      - name: The same, C# 5 checked (PowerShell 7)
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: tests/integration/agent-print-contract.ps1
+  start-apps:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check STARTAPPS and STARTAPP with Windows PowerShell 5.1
+        shell: powershell
+        run: tests/integration/agent-start-apps-contract.ps1
+      - name: Check STARTAPPS and STARTAPP with PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: tests/integration/agent-start-apps-contract.ps1
+  agent-update:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Arm, guard, Confirm and rollback, with real ACLs, under Windows PowerShell 5.1
+        shell: powershell
+        run: scripts/test-bvagent-update.ps1
+      - name: The same under PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: scripts/test-bvagent-update.ps1
+  run-command:
+    name: A command that leaves a program running still returns
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: RUN and PS return when the command exits (Windows PowerShell 5.1)
+        shell: powershell
+        run: tests/integration/agent-run-contract.ps1
+      - name: The same under PowerShell 7
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: tests/integration/agent-run-contract.ps1
+  firstboot-provisioner:
+    name: Committed first-logon provisioner against a staged receipt
+    runs-on: windows-2025
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run the provisioner under Windows PowerShell 5.1 and PowerShell 7
+        shell: powershell
+        run: scripts/test-bvagent-firstboot-receipt.ps1
+      - name: Register the agent task twice and compare it with the bvinject installer's
+        shell: powershell
+        run: tests/integration/agent-task-contract.ps1
+  tpm-pcr:
+    name: T17 TPM workload parses and its TBS helper compiles and binds under Windows PowerShell
+    runs-on: windows-2025
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build TPM2_PCR_Read, bind tbs.dll, and run the BitLocker workload on scripted CIM answers
+        shell: powershell
+        run: tests/integration/windows-guest-pwsh-contracts.ps1

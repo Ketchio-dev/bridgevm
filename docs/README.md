@@ -166,9 +166,8 @@ own license and attribution requirements.
 
 ## Document status convention
 
-New or substantially revised Markdown documents should be classified in
-[`document-manifest.tsv`](document-manifest.tsv), or its explicitly included
-[history shard](document-manifests/history.tsv), as one of:
+When useful, label a new or substantially revised Markdown document in the
+document itself as one of the following; no separate catalog is required:
 
 - **Current** — presently supported or proven product boundary;
 - **Active plan** — accepted work not yet fully implemented/evidenced;
