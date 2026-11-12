@@ -44,18 +44,19 @@ final class HvfOwnedStartProofTests: XCTestCase {
             ticket.observe(f.controller, now: 101)
             XCTAssertNil(ticket.proof)
             XCTAssertTrue(ticket.failure == .protocolInvalid || ticket.failure == .runnerExited)
-            XCTAssertEqual(ticket.observation.phase, .unconfirmed)
+            XCTAssertEqual(ticket.observation.phase, invalidProtocol ? .unconfirmed : .failed)
         }
     }
-    func testStartedIsHistoricalProofAndIsNotRewrittenByLaterExit() async throws {
+    func testProvenStartRetiresAfterRunnerExitWithoutComplete() async throws {
         let f = try HvfOwnedRuntimeControllerTests.Fixture(); defer { f.clean() }
         let ticket = ticket(f)
         f.controller.receive(.message(try f.event("ready", sequence: 1)))
         f.controller.receive(.message(try f.event("helper-started", sequence: 2)))
         ticket.observe(f.controller, now: 101)
-        let proof = ticket.proof
         try await f.exit(); ticket.observe(f.controller, now: 200)
-        XCTAssertEqual(ticket.observation.phase, .started); XCTAssertEqual(ticket.proof, proof)
-        XCTAssertNil(ticket.failure)
+        XCTAssertEqual(ticket.observation.phase, .failed); XCTAssertNil(ticket.proof)
+        XCTAssertEqual(ticket.failure, .runnerExited)
+        XCTAssertFalse(ticket.reservesSession)
+        XCTAssertTrue(f.controller.mayHaveOwnedWork, "Start retirement does not assert runtime cleanup")
     }
 }

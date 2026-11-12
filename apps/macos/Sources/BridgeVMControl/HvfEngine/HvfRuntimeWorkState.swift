@@ -2,7 +2,7 @@ import Foundation
 
 extension HvfEngineSession {
     var hasPendingRuntimeMutation: Bool { mutationReservation != nil }
-    var hasPendingOwnedStart: Bool { ownedStartOperation?.reservesSession == true && !runnerDiedWithoutCleanup }
+    var hasPendingOwnedStart: Bool { ownedStartOperation?.reservesSession == true }
     var hasPendingGUIStart: Bool { guiStartOperation?.workerPending == true }
     var hasPendingRuntimeStart: Bool { hasPendingOwnedStart || hasPendingGUIStart }
     var runtimeStartupWorkerPending: Bool {

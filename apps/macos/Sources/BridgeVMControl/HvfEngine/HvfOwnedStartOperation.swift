@@ -79,6 +79,13 @@ final class HvfOwnedStartOperation {
     deinit { deadlineTask?.cancel() }
     func observe(_ controller: HvfOwnedRunController, now: TimeInterval) {
         guard target == controller.identity else { return }
+        if controller.runnerExit != nil, controller.ledger.complete == nil, !workerPending {
+            // The session still owns uncertain runtime cleanup, but this start worker is over.
+            // Retain ID/target for CLI polling without reserving a future replacement run.
+            mayHaveOwnedWork = false; proof = nil; failure = .runnerExited
+            effectAdmission.invalidate(); deadlineTask?.cancel()
+            return
+        }
         mayHaveOwnedWork = controller.mayHaveOwnedWork
         guard proof == nil else { return }
         checkDeadline(now: now)
