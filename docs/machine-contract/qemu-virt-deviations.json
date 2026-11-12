@@ -5,6 +5,15 @@
   "summary": "BridgeVM presents a QEMU virt-compatible guest contract so stock ArmVirtQemu firmware and stock Windows 11 ARM media work unmodified. It is not bit-identical. Every known deviation is listed here.",
   "deviations": [
     {
+      "id": "runner-death-helper-stop",
+      "area": "lifecycle",
+      "qemu_behavior": "A separately launched VM process can outlive its launcher.",
+      "bridgevm_behavior": "A runner-started helper watches its original parent and requests its normal SIGTERM final-persistence stop when that runner exits; directly launched helpers do not watch their shell parent.",
+      "guest_visible": true,
+      "impact": "Runner death ends Windows promptly rather than leaving an invisible orphan holding writable media; Windows observes an unexpected power-off, while ordered guest flushes and final host persistence retain their existing guarantees.",
+      "evidence": "crates/bridgevm-hvf/tests/parent_watch.rs"
+    },
+    {
       "id": "virtio-blk-status-zero-reset",
       "area": "storage",
       "qemu_behavior": "Writing device status zero resets guest-programmed device state for a new negotiation.",
