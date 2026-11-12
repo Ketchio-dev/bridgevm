@@ -61,6 +61,7 @@ final class HvfOwnedStartExecution {
         let repoRoot: URL
         let keyProvider: VTPMExistingStateKeyReading?
         let launch: (Process) throws -> Void
+        var retryAfterRunnerDeath: Bool = false
         let deadline: TimeInterval
         let now: () -> TimeInterval
         let effectAdmission: HvfRuntimeEffectAdmission
@@ -85,6 +86,7 @@ final class HvfOwnedStartExecution {
         }
         let input = Input(config: ticket.configuration, repoRoot: session.repoRoot,
             keyProvider: session.vtpmKeyProvider as? VTPMExistingStateKeyReading, launch: session.processLaunch,
+            retryAfterRunnerDeath: session.runnerDiedWithoutCleanup,
             deadline: ticket.deadlineUptime, now: session.ownedStartNow, effectAdmission: ticket.effectAdmission,
             permit: { session.admitOwnedStartEffect(ticket, revalidate: revalidate) })
         let worker = session.ownedStartWorker
@@ -99,6 +101,15 @@ final class HvfOwnedStartExecution {
         do {
             guard await input.permit() else { throw HvfOwnedStartFailure.configurationChanged }
             try input.checkClock()
+            if input.retryAfterRunnerDeath {
+                do {
+                    let lease = try HvfMediaLeaseSession(
+                        executable: input.repoRoot.appendingPathComponent("target/release/examples/snapshot_pair_cli"),
+                        disk: input.config.targetDiskPath, vars: input.config.uefiVarsPath)
+                    try lease.finish()
+                } catch { throw HvfOwnedStartFailure.preparation }
+                try input.checkClock()
+            }
             let runner = input.repoRoot.appendingPathComponent("target/release/hvf-runner")
             guard FileManager.default.isExecutableFile(atPath: runner.path) else { throw HvfOwnedStartFailure.helperUnavailable }
             var shareWarning: String?

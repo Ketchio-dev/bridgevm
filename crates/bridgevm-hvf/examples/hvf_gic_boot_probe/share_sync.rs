@@ -369,6 +369,22 @@ impl ShareSync {
         !self.records.is_empty()
     }
 
+    /// Last synchronized versions, used at deletion execution rather than a later listing.
+    pub fn delete_host_stat(&self, name: &str) -> Option<(u64, u128)> {
+        let record = self.records.get(&normalize_rel(name))?;
+        Some((record.size, record.host_mtime_ms?))
+    }
+
+    pub fn delete_guest_stat(&self, name: &str) -> Option<(u64, &str)> {
+        let record = self.records.get(&normalize_rel(name))?;
+        Some((record.size, record.guest_mtime.as_deref()?))
+    }
+
+    /// Forget a stale deletion baseline so the changed copy is fetched as a new file.
+    pub fn on_guest_delete_changed(&mut self, name: &str) {
+        self.on_guest_deleted(name);
+    }
+
     /// The listed guest time of a file this engine knows.
     pub fn guest_mtime(&self, name: &str) -> Option<&str> {
         self.records.get(&normalize_rel(name))?.guest_mtime.as_deref()

@@ -18,6 +18,7 @@ const EP_TR_DEQUEUE_MASK: u64 = !0xf;
 
 impl XhciController {
     pub(super) fn invalidate_slot1_dci5_endpoint_state(&mut self) {
+        self.hid_endpoints[1] = Default::default();
         self.slot1_dci5_dequeue = 0;
         self.slot1_dci5_ring_base = 0;
         self.slot1_dci5_dcs = false;
@@ -74,7 +75,7 @@ impl XhciController {
             }
         };
         capture_trace.dci5_context = Dci5InputContextField::Value(dci5_input_gpa);
-        let Some(dci5_input_context) = read_mem_array::<EP_CONTEXT_BYTES>(mem, dci5_input_gpa)
+        let Some(mut dci5_input_context) = read_mem_array::<EP_CONTEXT_BYTES>(mem, dci5_input_gpa)
         else {
             capture_trace.dci5_context = Dci5InputContextField::Unreadable;
             capture_trace.reason = "dci5_context_unreadable";
@@ -88,6 +89,11 @@ impl XhciController {
         };
         capture_trace.raw_dequeue = Some(raw_dequeue);
         let dci5_dequeue = raw_dequeue & EP_TR_DEQUEUE_MASK;
+        self.hid_endpoints[1] = super::hid_endpoint::HidEndpoint {
+            state: 1,
+            pending: None,
+        };
+        dci5_input_context[0] = (dci5_input_context[0] & !7) | 1;
         self.slot1_dci5_dequeue = dci5_dequeue;
         self.slot1_dci5_ring_base = dci5_dequeue;
         self.slot1_dci5_dcs = raw_dequeue & 1 != 0;

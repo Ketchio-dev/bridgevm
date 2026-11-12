@@ -64,17 +64,19 @@ fn a_preferred_copy_is_not_published_over_a_mac_file_changed_since_the_first_sca
     writer.chunk(base64_encode(b"guest"), 5);
     assert!(matches!(answer(&mut writer), FromWriter::Hashed(_)));
     std::fs::write(&mac, b"edited on the Mac").unwrap();
-    writer.publish(None, Some(seen));
+    writer.publish(None, Some(Some(seen)));
     assert!(matches!(answer(&mut writer), FromWriter::Published(Err(e)) if super::super::host_destination::is_mac_changed(&e)));
     assert_eq!(std::fs::read(&mac).unwrap(), b"edited on the Mac");
-    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "a temporary is left");
+    let conflicts: Vec<_> = std::fs::read_dir(&dir).unwrap().filter_map(Result::ok).filter(|e| e.file_name().to_string_lossy().contains("Windows copy")).collect();
+    assert_eq!(conflicts.len(), 1);
+    assert_eq!(std::fs::read(conflicts[0].path()).unwrap(), b"guest");
     // Unchanged, the same copy goes.
     let meta = std::fs::metadata(&mac).unwrap();
     let seen = (meta.len(), super::super::file_mtime_ms_from_meta(&meta).unwrap());
     let mut writer = StageWriter::start(Destination::open(&dir, "doc.bin", true).unwrap(), 5, None).unwrap();
     writer.chunk(base64_encode(b"guest"), 5);
     assert!(matches!(answer(&mut writer), FromWriter::Hashed(_)));
-    writer.publish(None, Some(seen));
+    writer.publish(None, Some(Some(seen)));
     assert!(matches!(answer(&mut writer), FromWriter::Published(Ok(_))));
     assert_eq!(std::fs::read(&mac).unwrap(), b"guest");
     let _ = std::fs::remove_dir_all(&dir);

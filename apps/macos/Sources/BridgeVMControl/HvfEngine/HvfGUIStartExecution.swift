@@ -27,6 +27,7 @@ final class HvfGUIStartExecution {
         let keyProvider: VTPMStateKeyProviding
         let processIsRunning: (String) -> Bool
         let launch: (Process) throws -> Void
+        var retryAfterRunnerDeath: Bool = false
         let effectAdmission: HvfRuntimeEffectAdmission
         let permit: @MainActor () -> Bool
     }
@@ -44,7 +45,8 @@ final class HvfGUIStartExecution {
         let session = session, ticket = ticket
         let input = Input(config: ticket.configuration, repoRoot: session.repoRoot, policy: policy,
             keyProvider: session.vtpmKeyProvider, processIsRunning: session.processIsRunning,
-            launch: session.processLaunch, effectAdmission: ticket.effectAdmission,
+            launch: session.processLaunch, retryAfterRunnerDeath: session.runnerDiedWithoutCleanup,
+            effectAdmission: ticket.effectAdmission,
             permit: { session.admitGUIStartEffect(ticket) })
         let worker = session.guiStartWorker
         task = Task {

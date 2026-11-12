@@ -128,6 +128,7 @@ pub struct AgentConsoleHarness {
     pub(super) put_data: bool,
     /// The agent's READY carried `bigfile`: large shared-folder files move in ranges (share_big.rs).
     pub(super) share_big: bool,
+    pub(super) delete_if_unchanged: bool,
     /// The agent refused DISPLAYMODE or DISPLAYSCALE since its READY: display requests go as
     /// RUN powershell lines (display_verbs.rs).
     pub(super) display_verbs_refused: bool,

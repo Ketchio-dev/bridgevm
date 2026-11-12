@@ -39,8 +39,11 @@ extension HvfEngineSession {
             guestLinkReported(line)
         case let .unknown(line) where line.hasPrefix("BVPRINT "):
             printLineReported(line)
-        case let .commandOutput(label, body) where label == HvfGuestPrint.watchCommand:
-            printWatchReported(body)
+        case let .commandOutput(label, body):
+            displayDriverReported(body)
+            if label == HvfGuestPrint.watchCommand { printWatchReported(body) }
+        case let .unknown(line) where line.hasPrefix("BVDISPLAY "):
+            displayDriverReported(line)
         case let .unknown(line) where line.hasPrefix("BVAGENT re-READY "):
             // The agent restarted (a guest tools update): the new one says what it takes.
             guestStartApps = HvfGuestStartApps.advertised(line)

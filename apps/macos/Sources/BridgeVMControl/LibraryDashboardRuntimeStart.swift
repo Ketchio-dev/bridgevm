@@ -7,7 +7,7 @@ extension LibraryDashboardPrimaryAction {
                         present: (HvfEngineSession) -> Void,
                         report: (String) -> Void) {
         guard let session else { report("VM 런타임 세션을 준비하지 못했습니다."); return }
-        if session.hasActiveRuntimeWork { present(session); return }
+        if session.hasActiveRuntimeWork && !session.runnerDiedWithoutCleanup { present(session); return }
         if !observedRunning {
             switch requestStart(session) {
             case .accepted: report("VM 시작 중…"); present(session)

@@ -30,7 +30,7 @@ final class HvfDiskSyncStopFailureTests: XCTestCase {
         start.finish(.failed(.processLaunch, "specific start failure"))
         session.guiStartOperation = start
         XCTAssertNil(session.runtimeSupervisionFailureText, "must not mask the specific start failure")
-        XCTAssertEqual(session.guiStartFailureText, "Windows를 시작하지 못했으니 아래 오류 내용을 확인하고 다시 시도하세요.\nspecific start failure")
+        XCTAssertEqual(session.guiStartFailureText, "VM을 시작하지 못했습니다: specific start failure")
         session.guiStartOperation = nil
         for event in BvAgentEvent.parse(lines: ["BVSTORAGE final-save-failed"]) { session.handle(event) }
         XCTAssertEqual(session.runtimeSupervisionFailureText,
@@ -54,7 +54,20 @@ final class HvfDiskSyncStopFailureTests: XCTestCase {
         session.guiStartOperation = start
         XCTAssertNotNil(f.controller.ledger.complete?.failureCode)
         XCTAssertNil(session.runtimeSupervisionFailureText)
-        XCTAssertEqual(session.guiStartFailureText, "Windows를 시작하지 못했으니 아래 오류 내용을 확인하고 다시 시도하세요.\ndisk in use")
+        XCTAssertEqual(session.guiStartFailureText, "VM을 시작하지 못했습니다: disk in use")
+    }
+
+    @MainActor
+    func testFinalSaveDiagnosticDoesNotMaskRunnerDeath() async throws {
+        let f = try HvfOwnedRuntimeControllerTests.Fixture()
+        defer { f.clean() }
+        let session = HvfEngineSession(config: f.base.config, repoRoot: f.base.root) { _ in false }
+        session.ownedController = f.controller
+        session.handle(.diskFinalSaveFailed)
+        try await f.exit()
+        XCTAssertTrue(session.runnerDiedWithoutCleanup)
+        XCTAssertNil(session.runtimeSupervisionFailureText)
+        XCTAssertEqual(session.guiStartFailureText, "Windows가 예기치 않게 종료되었으니 잠시 후 다시 시작하세요.")
     }
 
     @MainActor

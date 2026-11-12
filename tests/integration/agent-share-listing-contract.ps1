@@ -26,12 +26,13 @@ if ([IO.Path]::DirectorySeparatorChar -ne '\') {
 }
 $lsr = [scriptblock]::Create($body)
 $verbs = @{}
-foreach ($verb in @('PUT', 'DEL', 'PUTBEG', 'PUTCHUNK', 'PUTEND')) {
+foreach ($verb in @('PUT', 'DEL', 'PUTBEG', 'PUTCHUNK', 'PUTDATA', 'PUTEND')) {
     $one = [regex]::Matches($source, "(?s)\n                '$verb' \{(?<body>.*?)\r?\n                \}\r?\n")
     if ($one.Count -ne 1) { throw "expected exactly one $verb implementation" }
     $verbs[$verb] = [scriptblock]::Create($one[0].Groups['body'].Value)
 }
 . ([scriptblock]::Create($block.Value))
+. ([scriptblock]::Create([regex]::Match($source, '(?s)# >>> large put.*?# <<< large put').Value))
 foreach ($name in @('Get-IoPath', 'Set-PutTime', 'Close-PutStream')) {
     $function = [regex]::Match($source, "(?s)\nfunction $name\b.*?\r?\n\}\r?\n")
     if (-not $function.Success) { throw "$name not found" }
@@ -45,6 +46,9 @@ if ($PSVersionTable.PSEdition -eq 'Core') {
 
 function Assert($condition, [string]$what) { if (-not $condition) { throw "FAIL: $what" } }
 function Log([string]$m) { }
+# Exercise .NET replacement here; the large contract separately compiles MoveFileEx as C# 5.
+function Test-DropReader { return $false }
+function Read-DataPayload($handle, [int]$chars) { return ,$script:testPayload }
 # Quick Access is exercised separately with a mock Shell; listing tests do not alter the host shell.
 function Pin-ShareQuickAccess([string]$root) { }
 function Write-Line($handle, [string]$line, [string]$label) { $script:sent = $line }
@@ -221,6 +225,55 @@ try {
     Assert ($script:sent -ceq 'OK DEL') "DEL reply: $script:sent"
     $listing = List
     Assert ($listing.Enumerated -and -not $listing.Entries.ContainsKey('put.bin')) 'the LSR right after a DEL no longer lists the file'
+    $cases++
+
+    # DEL carries the last synced version. A guest edit after planning must survive.
+    $guarded = Join-Path $root 'guarded-delete.txt'
+    [IO.File]::WriteAllText($guarded, 'original')
+    $oldTime = [IO.File]::GetLastWriteTimeUtc($guarded).ToString('o')
+    [IO.File]::WriteAllText($guarded, 'edited after the scan')
+    $arg = (& $b64 $guarded) + ' 8 ' + $oldTime
+    & $verbs['DEL']
+    Assert ($script:sent -ceq 'OK DEL changed') "a stale delete must report changed: $script:sent"
+    Assert ([IO.File]::ReadAllText($guarded) -ceq 'edited after the scan') 'a stale delete removed the guest edit'
+    $arg = (& $b64 $guarded) + ' 21 ' + [IO.File]::GetLastWriteTimeUtc($guarded).ToString('o')
+    & $verbs['DEL']
+    Assert ($script:sent -ceq 'OK DEL' -and -not [IO.File]::Exists($guarded)) 'unchanged version must delete'
+    $cases++
+
+    # An interrupted ordinary transfer must leave the old published bytes intact.
+    $atomic = Join-Path $root 'atomic.bin'
+    [IO.File]::WriteAllBytes($atomic, [byte[]](1, 2, 3))
+    $arg = (& $b64 $atomic) + ' 6 2'
+    & $verbs['PUTBEG']
+    Assert ($script:sent -ceq 'OK PUTBEG') "staged begin: $script:sent"
+    $arg = '0 ' + [Convert]::ToBase64String([byte[]](4, 5, 6))
+    & $verbs['PUTCHUNK']
+    Assert (([IO.File]::ReadAllBytes($atomic) -join ',') -eq '1,2,3') 'ordinary PUT exposed partial bytes at its real name'
+    $temporary = $script:BvPutTemp
+    [void](List)
+    Assert ($script:sent -cnotmatch '\.bridgevm-part-') 'a PUT temporary leaked into the listing'
+    Close-PutStream
+    Assert (-not [IO.File]::Exists($temporary)) 'aborted PUT left its temporary'
+    Assert (([IO.File]::ReadAllBytes($atomic) -join ',') -eq '1,2,3') 'interrupted PUT destroyed the old bytes'
+    $arg = (& $b64 $atomic) + ' 6 2'
+    & $verbs['PUTBEG']
+    $arg = '0 ' + [Convert]::ToBase64String([byte[]](4, 5, 6))
+    & $verbs['PUTCHUNK']
+    $arg = '1'
+    & $verbs['PUTEND']
+    Assert ($script:sent -ceq 'ERR PUTEND short') 'short PUTEND must fail'
+    Assert (([IO.File]::ReadAllBytes($atomic) -join ',') -eq '1,2,3') 'short PUTEND destroyed the old bytes'
+    $arg = (& $b64 $atomic) + ' 3 1'
+    & $verbs['PUTBEG']
+    $script:testPayload = [byte[]](7, 8, 9)
+    $arg = '0 4'
+    & $verbs['PUTDATA']
+    Assert ($script:sent -ceq 'OK PUTCHUNK 0') 'staged PUTDATA chunk'
+    Assert (([IO.File]::ReadAllBytes($atomic) -join ',') -eq '1,2,3') 'PUTDATA exposed partial bytes'
+    $arg = '1'
+    & $verbs['PUTEND']
+    Assert ($script:sent -clike 'PUTOK *' -and ([IO.File]::ReadAllBytes($atomic) -join ',') -eq '7,8,9') 'PUTDATA complete file did not publish'
     $cases++
 
     # A written file keeps the Mac file's time: 2026-11-08T00:05:12.123Z, as the host sends it.
