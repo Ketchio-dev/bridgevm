@@ -297,12 +297,14 @@ build_installed_boot_env_args() {
     "BRIDGEVM_BOOT_PROBE_MAX_REBOOTS=$MAX_REBOOTS"
     "BRIDGEVM_EXIT_ON_RESET=$EXIT_ON_RESET"
     "BRIDGEVM_ENABLE_EL2=$ENABLE_EL2"
-    "BRIDGEVM_BOOT_PROBE_MAX_EXITS=$MAX_EXITS"
     'BRIDGEVM_RECENT_NVME_COMMANDS=4096' 'BRIDGEVM_RECENT_PCIE_MMIO=2048'
     'BRIDGEVM_RECENT_PCIE_PIO=1024'
   )
   if [[ "${WATCHDOG_DISABLED:-0}" == "1" ]]; then
     COMMON_ENV+=('BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED=1')
+  fi
+  if [[ -n "$MAX_EXITS" ]]; then
+    COMMON_ENV+=("BRIDGEVM_BOOT_PROBE_MAX_EXITS=$MAX_EXITS")
   fi
   # Per-interrupt MSIX/SPI tracing is opt-in: always-on it emitted 50k+ lines
   # per run and drowned the BVAGENT evidence (service-mode logs must stay

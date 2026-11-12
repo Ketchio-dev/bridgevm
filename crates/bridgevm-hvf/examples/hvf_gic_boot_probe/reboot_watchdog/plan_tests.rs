@@ -3,6 +3,14 @@
 use crate::*;
 
 #[test]
+fn a_run_has_no_exit_cap_unless_one_is_requested() {
+    // 50,000,000 was the default: about 4 h at 3,450 exits/s, a day at 560.
+    assert_eq!(exit_cap(None), u64::MAX);
+    assert_eq!(exit_cap(Some(150_000_000)), 150_000_000);
+    assert_eq!(exit_cap(Some(0)), 1);
+}
+
+#[test]
 fn reboot_plan_resets_gic_guest_ram_platform_and_vcpu() {
     assert_eq!(
         psci_terminal_action(PSCI_SYSTEM_OFF),
