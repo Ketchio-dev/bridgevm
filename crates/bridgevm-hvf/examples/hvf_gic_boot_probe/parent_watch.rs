@@ -55,7 +55,7 @@ pub(crate) fn wait_for_runner_exit() -> bool {
     // ESRCH during registration, or a resource failure: parent identity still decides.
     // getppid cannot confuse a reused PID with this process's original parent.
     while unsafe { libc::getppid() } == parent {
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::thread::sleep(std::time::Duration::from_secs(1));
     }
     true
 }
