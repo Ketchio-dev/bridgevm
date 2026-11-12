@@ -6,17 +6,36 @@ struct HvfSharedFolderSelection: Equatable {
     var guestPath: String
 }
 
+extension VMLibrary {
+    /// Destination reservation protects IDs, not folder names. Hold from the share scan through
+    /// publication so concurrent creation workers in this app cannot choose the same folder.
+    static let windowsShareRegistrationLock = NSRecursiveLock()
+}
+
 extension VMConfig {
     /// New registrations only: allocating a name does not touch the user's home directory.
-    mutating func enableNewWindowsShare(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+    mutating func enableNewWindowsShare(otherRegistrations: [VMConfig],
+        home: URL = FileManager.default.homeDirectoryForCurrentUser) {
         let cleaned = name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
         let safeName = cleaned == "." || cleaned == ".." ? slug : cleaned
-        let component = safeName == name && slug == VMConfig.slugify(name)
-            ? name : "\(safeName) (\(slug))"
-        sharedFolderHostPath = home.appendingPathComponent("BridgeVM 공유", isDirectory: true)
-            .appendingPathComponent(component, isDirectory: true).path
+        let parent = home.appendingPathComponent("BridgeVM 공유", isDirectory: true)
+        let occupied = Set(otherRegistrations.compactMap(\.sharedFolderHostPath).map(Self.sharePathKey))
+        var component = safeName
+        var suffix = 2
+        while occupied.contains(Self.sharePathKey(parent.appendingPathComponent(component, isDirectory: true).path)) {
+            component = "\(safeName) \(suffix)"
+            suffix += 1
+        }
+        // Registrations, not disk contents, own names: deleting a VM frees its folder for reuse.
+        sharedFolderHostPath = parent.appendingPathComponent(component, isDirectory: true).path
         sharedFolderGuestPath = "C:\\bridgevm-share"
         createSharedFolderOnStart = true
+    }
+
+    private static func sharePathKey(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.path
+            .precomposedStringWithCanonicalMapping
+            .folding(options: [.caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
     }
 
     /// nil unless vm.json holds both halves. An incomplete hand-edited pair still reaches the

@@ -60,7 +60,7 @@ extension FirstRunImport {
             displayWidth: 1280,
             displayHeight: 720
         )
-        config.enableNewWindowsShare()
+        config.enableNewWindowsShare(otherRegistrations: VMLibrary.scan(rootURL: libraryRoot).configs)
         config.diskPath = layout.diskURL.path
         config.memMiB = inputs.memMiB
         config.cpuCount = inputs.cpuCount

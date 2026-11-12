@@ -61,7 +61,9 @@ extension VMLibrary {
                            displayWidth: width, displayHeight: height, installPending: true,
                            isoPath: nil, diskPath: "\(b)/disks/hvf-target.raw",
                            memMiB: memMiB, cpuCount: cpuCount, networkEnabled: networkEnabled, experimental3DAllowed: false)
-        cfg.enableNewWindowsShare()
+        VMLibrary.windowsShareRegistrationLock.lock()
+        defer { VMLibrary.windowsShareRegistrationLock.unlock() }
+        cfg.enableNewWindowsShare(otherRegistrations: VMLibrary.scan(rootURL: libraryRoot).configs)
         guard let outcome = HVFCreationOutcome.publish(cfg, libraryRoot: libraryRoot,
             persist: persist, preserving: { preserveDestination = true }, using: publish) else { return nil }
         preserveDestination = true

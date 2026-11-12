@@ -7,9 +7,9 @@ final class HvfSharedFolderPreferenceTests: XCTestCase {
         let fixture = try HvfRuntimeSessionStoreFixture()
         defer { fixture.clean() }
         var first = fixture.config()
-        first.enableNewWindowsShare(home: fixture.root)
+        first.enableNewWindowsShare(otherRegistrations: [], home: fixture.root)
         var second = first; second.id = first.slug + "-2"
-        second.enableNewWindowsShare(home: fixture.root)
+        second.enableNewWindowsShare(otherRegistrations: [first], home: fixture.root)
         XCTAssertNotEqual(first.sharedFolderHostPath, second.sharedFolderHostPath)
         XCTAssertFalse(FileManager.default.fileExists(atPath: try XCTUnwrap(first.sharedFolderHostPath)))
         let config = try XCTUnwrap(HvfEngineConfig.libraryVM(first, rootURL: fixture.root))
