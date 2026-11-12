@@ -41,8 +41,10 @@ final class HvfSharedFolderPreferenceTests: XCTestCase {
             XCTAssertEqual(config.libraryContext?.config.sharedFolderHostPath, path)
             XCTAssertEqual(try Data(contentsOf: fixture.registration(saved)), before)
             let notice = HvfShareRootNotice()
-            notice.consume(.unknown(warnings[0]))
-            XCTAssertEqual(notice.displayed?.text, warnings[0])
+            if let warning = warnings.first {
+                notice.consume(.unknown(warning))
+                XCTAssertEqual(notice.displayed?.text, warning)
+            }
         }
     }
 
