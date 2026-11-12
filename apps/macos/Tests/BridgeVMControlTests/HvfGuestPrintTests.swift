@@ -49,6 +49,68 @@ final class HvfGuestPrintTests: XCTestCase {
 
     private func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.path) }
 
+    private func finishVerification(_ session: HvfEngineSession) async {
+        while let pending = session.printVerificationTask { await pending.value }
+    }
+
+    private final class VerificationGate: @unchecked Sendable {
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let completed = DispatchSemaphore(value: 0)
+        func verify(_ job: HvfGuestPrint.Job) -> Bool {
+            entered.signal()
+            let responsive = release.wait(timeout: .now() + 2) == .success
+            completed.signal()
+            return responsive
+        }
+    }
+
+    func testVerificationYieldsMainActorAndStopDiscardsPendingJob() async throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        let (session, presenter, _, _) = try session(fixture)
+        let gate = VerificationGate()
+        session.printVerifier = gate.verify
+        let (_, line) = try job(session, 1, pdf("pending"))
+        session.handle(.unknown(line))
+        // This operation must run while the verifier is still pending.
+        let entered = await Task.detached { gate.entered.wait(timeout: .now() + 3) == .success }.value
+        XCTAssertTrue(entered)
+        XCTAssertEqual(gate.completed.wait(timeout: .now()), .timedOut, "verification must not block the main actor")
+        let pending = session.printVerificationTask
+        session.markStopped()
+        gate.release.signal()
+        _ = await Task.detached { gate.completed.wait(timeout: .now() + 3) }.value
+        await pending?.value
+        XCTAssertTrue(presenter.shown.isEmpty, "a stopped session must not present its pending job")
+    }
+
+    func testPendingVerificationKeepsIdentityAndDoesNotPresentDuplicate() async throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        let (session, presenter, _, _) = try session(fixture)
+        let gate = VerificationGate()
+        session.printVerifier = gate.verify
+        let (first, line) = try job(session, 1, pdf("first"))
+        let (second, nextLine) = try job(session, 2, pdf("second"))
+        session.handle(.unknown(line))
+        let entered = await Task.detached { gate.entered.wait(timeout: .now() + 3) == .success }.value
+        XCTAssertTrue(entered)
+        session.handle(.unknown(line))
+        session.handle(.unknown(nextLine))
+        session.handle(.unknown(nextLine))
+        XCTAssertEqual(session.printQueue.map(\.url), [second])
+        gate.release.signal()
+        await finishVerification(session)
+        XCTAssertEqual(presenter.shown, [first])
+        session.printVerifier = HvfGuestPrint.verified
+        presenter.finish()
+        await finishVerification(session)
+        XCTAssertEqual(presenter.shown, [first, second])
+        presenter.finish()
+        XCTAssertTrue(session.printQueue.isEmpty)
+    }
+
     func testPrintWatchGoesRawNeverAsAShellCommand() {
         XCTAssertTrue(HvfGuestCommand.relayProtocolVerbs.contains(HvfGuestPrint.watchCommand))
         XCTAssertEqual(try HvfGuestCommand.normalize(HvfGuestPrint.offCommand).get(), "PRINTWATCH off")
@@ -90,7 +152,7 @@ final class HvfGuestPrintTests: XCTestCase {
 
     /// Jobs an earlier probe published that never reached a print panel (the app quit or the VM stopped first;
     /// a restarted probe keeps them) open at the next agent start, oldest first, each once.
-    func testJobsLeftByAnEarlierProbeOpenAtTheAgentStart() throws {
+    func testJobsLeftByAnEarlierProbeOpenAtTheAgentStart() async throws {
         let fixture = try HvfRuntimeSessionStoreFixture()
         defer { fixture.clean() }
         let (session, presenter, _, _) = try session(fixture)
@@ -103,11 +165,14 @@ final class HvfGuestPrintTests: XCTestCase {
         for url in others { try pdf("other").write(to: url) }
         func agentStarts() { session.connectionState = .connected(host: "guest"); session.handle(.serviceStart(tMs: 1)) }
         agentStarts()
+        await finishVerification(session)
         XCTAssertEqual(presenter.shown, [second], "one panel at a time, oldest first")
         session.handle(.unknown(tenthLine))  // its line read again: still one panel for it
         agentStarts()                        // the next boot: the same jobs, not again
         presenter.finish()
+        await finishVerification(session)
         presenter.finish()
+        await finishVerification(session)
         presenter.finish()
         XCTAssertEqual(presenter.shown, [second, tenth, later])
         XCTAssertTrue(presenter.pending.isEmpty)
@@ -117,7 +182,7 @@ final class HvfGuestPrintTests: XCTestCase {
     }
 
     /// Each job opens one print panel, the next only after it, and its file goes once its panel is over.
-    func testEachJobOpensOnePrintPanelInTurnAndItsFileGoesAfter() throws {
+    func testEachJobOpensOnePrintPanelInTurnAndItsFileGoesAfter() async throws {
         let fixture = try HvfRuntimeSessionStoreFixture()
         defer { fixture.clean() }
         let (session, presenter, _, _) = try session(fixture)
@@ -127,10 +192,12 @@ final class HvfGuestPrintTests: XCTestCase {
         session.handle(.unknown(firstLine))
         session.handle(.unknown(secondLine))
         session.handle(.unknown(secondLine))  // the same line again: still one panel for it
+        await finishVerification(session)
         XCTAssertEqual(presenter.shown, [first], "one panel at a time")
         XCTAssertTrue(exists(first) && exists(second))
         presenter.finish()
         XCTAssertFalse(exists(first), "deleted after its panel")
+        await finishVerification(session)
         XCTAssertEqual(presenter.shown, [first, second])
         presenter.finish()
         XCTAssertFalse(exists(second))
@@ -142,7 +209,7 @@ final class HvfGuestPrintTests: XCTestCase {
     }
 
     /// A file that is not the line's job (another size or digest, a link, not a PDF) never reaches the panel.
-    func testAFileThatIsNotTheLinesJobIsNeverShown() throws {
+    func testAFileThatIsNotTheLinesJobIsNeverShown() async throws {
         let fixture = try HvfRuntimeSessionStoreFixture()
         defer { fixture.clean() }
         let (session, presenter, _, _) = try session(fixture)
@@ -158,6 +225,7 @@ final class HvfGuestPrintTests: XCTestCase {
         for line in [changedLine, sizeLine.replacingOccurrences(of: "bytes=\(pdf("two").count)", with: "bytes=3"), linkLine, zipLine] {
             session.handle(.unknown(line))
         }
+        await finishVerification(session)
         XCTAssertTrue(presenter.shown.isEmpty)
         XCTAssertEqual(session.printNotice.shown, .notReceived)
         XCTAssertTrue(exists(secret), "a link's target is never deleted")
@@ -167,7 +235,7 @@ final class HvfGuestPrintTests: XCTestCase {
 
     /// A printer Windows could not make, a job the probe refused, a job the panel cannot open: one Korean notice
     /// each, and the VM goes on.
-    func testFailuresAreOneKoreanNoticeEach() throws {
+    func testFailuresAreOneKoreanNoticeEach() async throws {
         let fixture = try HvfRuntimeSessionStoreFixture()
         defer { fixture.clean() }
         let (session, presenter, _, _) = try session(fixture)
@@ -190,11 +258,13 @@ final class HvfGuestPrintTests: XCTestCase {
         presenter.succeeds = false
         let (url, line) = try job(session, 1, pdf("one"))
         session.handle(.unknown(line))
+        await finishVerification(session)
         XCTAssertEqual(session.printNotice.shown, .notOpened)
         XCTAssertFalse(exists(url), "a job that cannot be shown is not kept")
         presenter.succeeds = true
         let (next, nextLine) = try job(session, 2, pdf("two"))
         session.handle(.unknown(nextLine))
+        await finishVerification(session)
         XCTAssertEqual(presenter.shown.last, next, "the next job still opens")
         presenter.finish()
         XCTAssertNil(session.printNotice.shown, "a printed job clears the notice")
