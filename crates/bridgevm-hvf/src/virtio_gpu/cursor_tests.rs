@@ -11,6 +11,7 @@ fn resource(width: u32, height: u32, format: u32, fill: u8) -> GpuResource {
         height,
         host_pixels: vec![fill; (width * height * 4) as usize],
         backing: Vec::new(),
+        backing_len: 0,
     }
 }
 

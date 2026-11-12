@@ -8,7 +8,7 @@ struct HvfRuntimeKeyboardInput: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                TextField("Type text into Windows", text: $draft, onCommit: submit)
+                TextField("Windows에 입력할 텍스트", text: $draft, onCommit: submit)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("bridgevm.runtime.keyboard.input")
                 Button("Type", action: submit)

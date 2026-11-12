@@ -19,6 +19,9 @@ final class HvfEngineSession: ObservableObject {
     let agentSilenceNotice = HvfAgentSilenceNotice() // the guest agent is not there (HvfEngineSessionAgentSilence)
     @Published var events: [BvAgentEvent] = []
     @Published var displayDriverFlagMessage: String? // why HvfDisplayDriverFlag could not save yet
+    @Published var displayDriverNoticeDismissed = false // per VM, only for this app session
+    @Published var displayDriverRestartRequired = false
+    @Published var displayDriverRestarting = false
     var repoRoot: URL
     var workAdmission: LibraryWorkAdmission?
     var reservedWorkAdmission: (@MainActor (UUID, Bool) -> String?)?
@@ -53,6 +56,7 @@ final class HvfEngineSession: ObservableObject {
     var tailReader = TailOffsetReader()
     var agentEvents = BvAgentEvent.Stream() // run.log's lines across polls, with tailReader
     var lastHeartbeatDate: Date?
+    var settingsSheetOpen = false
     var serviceStarted = false
     var guestStartApps = false // the agent's last READY carried `startapps` (HvfGuestStartApps)
     var hardwareCursorOffSent = false // HWCursor=0 went to the guest after the setting was turned off
@@ -493,6 +497,7 @@ final class HvfEngineSession: ObservableObject {
         // vm.json may change again: a display driver installed during this run is saved now,
         // whether or not the VM's view is open (a guest shutdown, another VM selected).
         HvfDisplayDriverFlag.saveIfStopped(self)
+        displayDriverRestartRequired = false
     }
 
     func resetObservedRuntimeState(clearEvents: Bool) {

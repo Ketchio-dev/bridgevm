@@ -8,7 +8,7 @@ struct HvfNetworkToggle: View {
     var isDisabled: Bool { session.persistsLibraryPreferences && !session.libraryPreferencesEditable }
 
     var body: some View {
-        Toggle("Virtio net", isOn: Binding(get: { isOn }, set: update))
+        Toggle("네트워크 사용", isOn: Binding(get: { isOn }, set: update))
             .accessibilityIdentifier("bridgevm.runtime.network")
             .disabled(isDisabled)
             .help(session.persistsLibraryPreferences ? "VM이 중지된 동안 변경하면 이 VM의 모든 시작에 저장됩니다." : "")
@@ -21,7 +21,8 @@ struct HvfNetworkToggle: View {
             }
     }
 
-    private func update(_ enabled: Bool) {
+    /// The toggle's action, also exercised by value tests without SwiftUI's private storage.
+    func update(_ enabled: Bool) {
         let result = session.applyNetworkToggle(enabled)
         isOn = result.isOn
         message = result.message

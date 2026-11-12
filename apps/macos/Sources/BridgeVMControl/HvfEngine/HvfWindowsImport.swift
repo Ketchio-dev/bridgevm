@@ -52,13 +52,16 @@ extension VMLibrary {
         guard fm.createFile(atPath: bundle.appendingPathComponent("metadata/hvf.ctl").path, contents: nil) else { return nil }
 
         let b = bundle.path
-        let cfg = VMConfig(id: slug, name: name, displayName: name, backendKind: "hvf-engine",
+        var cfg = VMConfig(id: slug, name: name, displayName: name, backendKind: "hvf-engine",
                            bootMode: "windows-hvf", bundlePath: b, runnerPath: "",
                            launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
                            leasesPath: "", guestName: slug,
                            displayWidth: width, displayHeight: height, installPending: false,
                            isoPath: nil, diskPath: disk, memMiB: memMiB, cpuCount: cpuCount,
                            networkEnabled: networkEnabled, experimental3DAllowed: false)
+        VMLibrary.windowsShareRegistrationLock.lock()
+        defer { VMLibrary.windowsShareRegistrationLock.unlock() }
+        cfg.enableNewWindowsShare(otherRegistrations: VMLibrary.scan(rootURL: libraryRoot).configs)
         guard let outcome = HVFCreationOutcome.publish(cfg, libraryRoot: libraryRoot,
             persist: persist, preserving: { preserveDestination = true }, using: publish) else { return nil }
         preserveDestination = true

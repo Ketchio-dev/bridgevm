@@ -235,6 +235,7 @@ pub(crate) struct HvVcpuGuard {
 
 impl Drop for HvVcpuGuard {
     fn drop(&mut self) {
+        crate::usgic_bridge::unregister_vcpu(self.vcpu);
         unsafe {
             hv_vcpu_destroy(self.vcpu);
         }
