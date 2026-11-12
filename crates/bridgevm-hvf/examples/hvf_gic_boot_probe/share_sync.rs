@@ -111,7 +111,8 @@ pub struct ShareSync {
     guest_changed: HashMap<String, HostFileStat>,
     /// A prior share run lacked observed guest power-off. Sharing-off crashes remain unknown.
     previous_unclean: bool,
-    recovery_copies: HashSet<String>,
+    // Only the version from the first listing, retained through retries of that version.
+    recovery_copies: HashMap<String, GuestFileStat>,
     /// Names with a PUT held, queued or in flight, as the service holds them at each listing.
     puts_under_way: HashSet<String>,
     /// A pass, or the setup before it, changed what a later pass reads (share_sync_idle.rs).
@@ -150,7 +151,7 @@ impl ShareSync {
     }
 
     pub fn set_previous_unclean(&mut self, unclean: bool) { self.previous_unclean = unclean; }
-    pub fn recovery_copy(&self, name: &str) -> bool { self.recovery_copies.contains(name) }
+    pub fn recovery_copy(&self, name: &str) -> bool { self.recovery_copies.contains_key(name) }
 
     /// The size and time the last guest listing gave `name`.
     pub fn listed_file(&self, name: &str) -> Option<(u64, &str)> {
@@ -331,6 +332,7 @@ impl ShareSync {
                 record.guest_mtime = guest_mtime;
                 record.awaiting_guest_stamp = false;
                 self.guest_changed.remove(&name);
+                self.recovery_copies.remove(&name);
                 return GuestVersion::AlreadySynced;
             }
         }
@@ -363,6 +365,7 @@ impl ShareSync {
         record.host_mtime_ms = mtime_ms;
         // Published: a preferred copy needs its guard no more.
         self.guest_changed.remove(&name);
+        self.recovery_copies.remove(&name);
         // Both sides now hold this version (the Mac copy keeps the guest's time).
         let size = record.size;
         if let Some(mtime_ms) = mtime_ms {

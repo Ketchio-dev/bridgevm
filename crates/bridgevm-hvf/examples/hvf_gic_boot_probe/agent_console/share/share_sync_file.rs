@@ -1,6 +1,10 @@
 //! The share's synced state on disk (share_synced.rs), beside the VM's own UEFI vars:
 //! `<vars>.share-sync` holds each name's last and previous synced version and the marks as of a
 //! sequence number; `<vars>.share-sync-puts` holds the marks as of every later number.
+//! Versions header 2 adds `session unclean` (durably set before share mutations) or `session clean`
+//! (only observed guest SYSTEM_OFF after the share state finishes). Header 1 still loads, but
+//! missing/old/unreadable state is unclean. Every running-session rewrite keeps `unclean`.
+//! This share-only fact cannot detect a Windows crash in a run with sharing switched off.
 //!
 //! A mark reaches the disk before what it guards: before a PUT goes out and before a fetched copy
 //! is published: the names, renamed into place and ordered with F_BARRIERFSYNC before any later

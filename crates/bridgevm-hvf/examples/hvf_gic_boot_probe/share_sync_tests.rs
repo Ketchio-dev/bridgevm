@@ -31,9 +31,19 @@ fn recovery_guard_ends_when_fetched_bytes_are_already_synced() {
     sync.on_guest_file("doc".into(), b"same".to_vec(), Some("old"));
     sync.note_host_stat("doc", 1);
     sync.guest_changed.insert("doc".into(), HostFileStat { size: 4, mtime_ms: 1 });
-    sync.recovery_copies.insert("doc".into());
+    sync.recovery_copies.insert("doc".into(), GuestFileStat { size: 4, mtime: "new".into() });
     assert!(matches!(sync.on_guest_file("doc".into(), b"same".to_vec(), Some("new")), GuestFileOutcome::AlreadySynced));
     assert!(!sync.recovery_copy("doc"), "AlreadySynced left recovery guard behind");
+}
+
+#[test]
+fn recovery_guard_leaves_when_guest_name_disappears() {
+    let mut sync = ShareSync::new(512);
+    sync.guest_changed.insert("doc".into(), HostFileStat { size: 4, mtime_ms: 1 });
+    sync.recovery_copies.insert("doc".into(), GuestFileStat { size: 7, mtime: "first".into() });
+    sync.on_guest_listing(Vec::new());
+    assert!(!sync.recovery_copy("doc"));
+    assert!(!sync.guest_copy_preferred("doc"));
 }
 
 #[test]
@@ -46,6 +56,8 @@ fn recovery_guard_applies_only_to_the_first_listed_version() {
     assert!(sync.recovery_copy("doc"));
     sync.on_guest_file("doc".into(), b"damaged".to_vec(), None);
     sync.on_host_write_error("doc", true); // terminal refusal for that version
+    sync.on_guest_listing(vec![ls_file("doc", 7, "2026-01-01T00:00:01Z")]);
+    assert!(sync.recovery_copy("doc"), "same refused version must never overwrite Mac");
     sync.on_guest_listing(vec![ls_file("doc", 9, "2026-01-01T00:00:02Z")]);
     assert!(!sync.recovery_copy("doc"), "later guest version inherited recovery guard");
 }

@@ -132,6 +132,7 @@ impl ShareSync {
     /// had failed and waited for a retry.
     pub(super) fn prefer_changed_guest_copies(&mut self) {
         let listed = &self.guest_file_entries_scratch;
+        self.recovery_copies.retain(|name, first| listed.get(name) == Some(first));
         let gone: Vec<String> = (self.guest_changed.keys())
             .filter(|name| !listed.contains_key(*name))
             .cloned()
@@ -163,7 +164,7 @@ impl ShareSync {
             }
             self.pending_host_changed.remove(name);
             self.guest_changed.insert(name.clone(), *host);
-            if self.previous_unclean { self.recovery_copies.insert(name.clone()); }
+            if self.previous_unclean { self.recovery_copies.insert(name.clone(), entry.clone()); }
         }
     }
 

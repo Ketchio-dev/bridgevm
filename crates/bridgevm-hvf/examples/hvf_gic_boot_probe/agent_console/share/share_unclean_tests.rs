@@ -1,45 +1,87 @@
 use super::*;
 
+fn state_path(vars: &Path) -> PathBuf { PathBuf::from(format!("{}.share-sync", vars.display())) }
+
 #[test]
-fn state_lifecycle_old_missing_kill_restart_and_clean_end() {
-    let mut rig = Rig::new("unclean-state");
-    let vars = vars(&rig);
-    let state = PathBuf::from(format!("{}.share-sync", vars.display()));
-    let (file, _, _, error) = sync_file::SyncStateFile::open(&vars, &rig.dir);
-    assert!(error.is_none());
-    assert!(file.previous_unclean, "missing state must be unclean");
-    assert!(std::fs::read_to_string(&state).unwrap().contains("session unclean"), "set before any mutation");
-    drop(file); // simulated kill: no finish
-    let (file, _, _, _) = sync_file::SyncStateFile::open(&vars, &rig.dir);
-    assert!(file.previous_unclean);
-    drop(file);
-    let mut text = std::fs::read_to_string(&state).unwrap().replace("bridgevm-share-sync 2", "bridgevm-share-sync 1");
-    text = text.lines().filter(|l| !l.starts_with("session ")).collect::<Vec<_>>().join("\n")+"\n";
-    std::fs::write(&state, text).unwrap();
-    let (mut file, _, _, error) = sync_file::SyncStateFile::open(&vars, &rig.dir);
-    assert!(error.is_none()); assert!(file.previous_unclean, "old format is unclean");
+fn missing_state_is_unclean_before_any_mutation() {
+    let rig=Rig::new("missing-state");let vars=vars(&rig);
+    let (file,_,_,error)=sync_file::SyncStateFile::open(&vars,&rig.dir);
+    assert!(error.is_none());assert!(file.previous_unclean);
+    assert!(std::fs::read_to_string(state_path(&vars)).unwrap().contains("session unclean"));
+}
+
+#[test]
+fn kill_without_finish_keeps_unclean() {
+    let rig=Rig::new("kill-no-finish");let vars=vars(&rig);
+    let (file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir);drop(file);
+    let (file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir);assert!(file.previous_unclean);
+}
+
+#[test]
+fn old_format_loads_versions_but_is_unclean() {
+    let (mut rig,vars)=synced_from_guest("old-state",now_ms()-2*HOUR_MS,true);settle(&mut rig);rig.h.share=None;
+    let text=std::fs::read_to_string(state_path(&vars)).unwrap().replace("bridgevm-share-sync 2","bridgevm-share-sync 1");
+    let text=text.lines().filter(|l|!l.starts_with("session ")).collect::<Vec<_>>().join("\n")+"\n";
+    std::fs::write(state_path(&vars),text).unwrap();
+    let (file,files,_,error)=sync_file::SyncStateFile::open(&vars,&rig.dir);
+    assert!(error.is_none());assert!(file.previous_unclean);assert!(files.contains_key("doc.bin"));
+}
+
+#[test]
+fn clean_end_reopens_unclean_before_a_new_boot_can_mutate() {
+    let rig=Rig::new("clean-reboot");let vars=vars(&rig);
+    let (mut file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir);
     file.finish_clean(&mut ShareSync::new(512));
-    let (file, _, _, _) = sync_file::SyncStateFile::open(&vars, &rig.dir);
-    assert!(!file.previous_unclean, "explicit clean end is recognized");
-    drop(file);
-    let mut share = ShareState::new(ShareSync::new(512),rig.dir.clone(),ROOT.into(),Duration::from_secs(1));
-    share.attach_sync_state(&vars); rig.h.share=Some(share);
+    assert!(std::fs::read_to_string(state_path(&vars)).unwrap().contains("session clean"));
+    let (file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir);
+    assert!(!file.previous_unclean);
+    assert!(std::fs::read_to_string(state_path(&vars)).unwrap().contains("session unclean"));
+}
+
+#[test]
+fn agent_restart_does_not_clear_unclean() {
+    let mut rig=Rig::new("restart-state");let vars=vars(&rig);new_session(&mut rig,Some(&vars));
     rig.h.resync_after_agent_restart("GUEST v3-share2",rig.now);
-    assert!(std::fs::read_to_string(&state).unwrap().contains("session unclean"));
-    rig.h.share=None; // same Drop path used for guest reset; never clears
-    assert!(std::fs::read_to_string(&state).unwrap().contains("session unclean"));
+    assert!(std::fs::read_to_string(state_path(&vars)).unwrap().contains("session unclean"));
+}
+
+#[test]
+fn share_drop_does_not_clear_unclean() {
+    let mut rig=Rig::new("drop-state");let vars=vars(&rig);new_session(&mut rig,Some(&vars));rig.h.share=None;
+    assert!(std::fs::read_to_string(state_path(&vars)).unwrap().contains("session unclean"));
+}
+
+#[test]
+fn clean_finish_joins_latest_versions_and_keeps_other_thread_marks() {
+    let rig=Rig::new("finish-marks");let vars=vars(&rig);
+    let (mut file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir);
+    let mut engine=ShareSync::new(512);
+    engine.on_guest_file("latest".into(),b"latest bytes".to_vec(),Some("g"));
+    engine.on_host_write_succeeded("latest",Some(123));
+    let marks=file.marks();
+    std::thread::spawn(move || sync_file::mark(&marks,["live-put"]).unwrap()).join().unwrap();
+    file.finish_clean(&mut engine);
+    file.finish(&mut engine); // ShareState's eventual Drop must not undo the joined write.
+    let (file,files,marks,_)=sync_file::SyncStateFile::open(&vars,&rig.dir);
+    assert!(!file.previous_unclean);assert_eq!(files["latest"].last.size,12);assert!(marks.contains("live-put"));
 }
 
 #[test]
 fn clean_first_listing_still_accepts_windows_edit() {
-    let (mut rig, vars) = synced_from_guest("clean-edit",now_ms()-2*HOUR_MS,true);
-    settle(&mut rig);
-    rig.guest.write("doc.bin",b"legitimate Windows edit");
-    rig.guest.stamps.insert("DOC.BIN".into(),now_ms());
-    new_session(&mut rig,Some(&vars));
-    rig.run(24);
-    assert_eq!(rig.host("doc.bin").as_deref(),Some(&b"legitimate Windows edit"[..]));
-    assert!(rig.host("doc (Windows copy).bin").is_none());
+    for in_flight in [false,true] {
+        let (mut rig, vars) = synced_from_guest(if in_flight { "clean-inflight" } else { "clean-queued" },now_ms()-2*HOUR_MS,true);
+        settle(&mut rig);
+        rig.guest.write("doc.bin",b"legitimate Windows edit");
+        rig.guest.stamps.insert("DOC.BIN".into(),now_ms());
+        let req=ServiceReq::ShareGet { name:"doc.bin".into() };
+        if in_flight { rig.h.in_flight=Some((req,rig.now)); } else { rig.h.queue.push_back(req); }
+        assert_eq!(rig.host("doc.bin").as_deref(),Some(&b"old version"[..]),"not fetched before clean stop");
+        new_session(&mut rig,Some(&vars));
+        rig.h.in_flight=None;rig.h.queue.clear(); // old wire requests do not survive a boot
+        rig.run(24);
+        assert_eq!(rig.host("doc.bin").as_deref(),Some(&b"legitimate Windows edit"[..]));
+        assert!(rig.host("doc (Windows copy).bin").is_none());
+    }
 }
 
 #[test]
