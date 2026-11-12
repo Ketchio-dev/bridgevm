@@ -1,5 +1,5 @@
 name: Guest tools update contract
-on: {push: {branches: [main]}, pull_request: {paths: ['scripts/test-bvagent-update.ps1', 'scripts/win-assets/bvagent-update.ps1', 'scripts/win-assets/bvagent.ps1', 'scripts/win-assets/bvagent-task.ps1', '.github/workflows/agent-update-contract.yml']}}
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/test-bvagent-update.ps1', 'tests/integration/agent-run-contract.ps1', 'scripts/win-assets/bvagent-update.ps1', 'scripts/win-assets/bvagent.ps1', 'scripts/win-assets/bvagent-task.ps1', '.github/workflows/agent-update-contract.yml']}}
 permissions:
   contents: read
 jobs:
@@ -10,8 +10,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Arm, guard, Confirm and rollback, with real ACLs, under Windows PowerShell 5.1
         shell: powershell
-        run: scripts/test-bvagent-update.ps1
+        run: |
+          scripts/test-bvagent-update.ps1
+          tests/integration/agent-run-contract.ps1
       - name: The same under PowerShell 7
         if: ${{ !cancelled() }}
         shell: pwsh
-        run: scripts/test-bvagent-update.ps1
+        run: |
+          scripts/test-bvagent-update.ps1
+          tests/integration/agent-run-contract.ps1
+  agent-run-portable:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - shell: pwsh
+        run: tests/integration/agent-run-contract.ps1
