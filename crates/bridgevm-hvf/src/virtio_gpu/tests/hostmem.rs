@@ -20,6 +20,48 @@ fn unref(dev: &mut VirtioPciGpu, mem: &mut TestMem, id: u32) -> u32 {
 }
 
 #[test]
+fn bounds_regression_backing_counts_toward_hostmem() {
+    let mut dev = VirtioPciGpu::new(1, 1);
+    let mem = TestMem::new(0x4000_0000, 0x10000);
+    let mut response = Vec::new();
+    // Leave room for one backing entry, but not two. The large allocation is
+    // pixels, not guest memory, and remains strictly below the existing cap.
+    dev.gpu.resources.insert(
+        1,
+        GpuResource {
+            format: FORMAT_B8G8R8A8_UNORM,
+            width: 1,
+            height: 1,
+            host_pixels: vec![0; resource::MAX_2D_HOSTMEM - 32],
+            backing: vec![BackingEntry { addr: 0, len: 4 }],
+        },
+    );
+    let previous = dev.gpu.resources[&1].backing.clone();
+    let mut attach = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING);
+    attach.extend_from_slice(&1u32.to_le_bytes());
+    attach.extend_from_slice(&2u32.to_le_bytes());
+    attach.resize(64, 0);
+    dev.gpu
+        .attach_backing_into(&mem, &attach, None, &mut response);
+    assert_eq!(
+        read_le_u32(&response, 0),
+        Some(VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY)
+    );
+    assert_eq!(dev.gpu.resources[&1].backing, previous);
+    // Creation must count retained metadata on other resources as well.
+    let mut create = ctrl_req(VIRTIO_GPU_CMD_RESOURCE_CREATE_2D);
+    for value in [2, FORMAT_B8G8R8A8_UNORM, 2, 2] {
+        create.extend_from_slice(&value.to_le_bytes());
+    }
+    dev.gpu
+        .resource_create_2d_into(&create, None, &mut response);
+    assert_eq!(
+        read_le_u32(&response, 0),
+        Some(VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY)
+    );
+}
+
+#[test]
 fn oversized_create_is_refused_without_allocating() {
     let mut dev = VirtioPciGpu::new(64, 64);
     let mut mem = TestMem::new(0x4000_0000, 0x10000);

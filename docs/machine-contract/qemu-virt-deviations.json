@@ -5,6 +5,15 @@
   "summary": "BridgeVM presents a QEMU virt-compatible guest contract so stock ArmVirtQemu firmware and stock Windows 11 ARM media work unmodified. It is not bit-identical. Every known deviation is listed here.",
   "deviations": [
     {
+      "id": "virtio-gpu-2d-backing-hostmem",
+      "area": "graphics",
+      "qemu_behavior": "The 2D max_hostmem budget accounts for host pixel storage.",
+      "bridgevm_behavior": "The existing 256 MiB cumulative 2D budget also counts retained backing-entry capacity. Attachments reaching the limit return ERR_OUT_OF_MEMORY without changing the prior backing. 3D backing is unchanged.",
+      "guest_visible": true,
+      "impact": "Many small resources cannot bypass the host-memory limit with large backing lists. Normal attachments and replacement of existing backing remain supported.",
+      "evidence": "crates/bridgevm-hvf/src/virtio_gpu/tests/hostmem.rs"
+    },
+    {
       "id": "nat-udp-reply-backpressure",
       "area": "network",
       "qemu_behavior": "UDP receive buffering depends on the selected network backend.",

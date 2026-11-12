@@ -7,8 +7,8 @@ use crate::fwcfg::GuestMemoryMut;
 use crate::virtio_gpu_3d::BlobMemEntry;
 use crate::virtio_gpu_3d::VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY;
 
-/// QEMU's default `max_hostmem`: 2D resource pixels must stay below it, and a
-/// create that would reach it fails with ERR_OUT_OF_MEMORY.
+/// The cumulative 2D pixel and retained backing-storage limit. Requests that
+/// would reach it fail with ERR_OUT_OF_MEMORY.
 pub(crate) const MAX_2D_HOSTMEM: usize = 256 << 20;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,7 +120,10 @@ impl VirtioGpu {
             .resources
             .iter()
             .filter(|(id, _)| **id != resource_id)
-            .map(|(_, resource)| resource.host_pixels.len())
+            .map(|(_, resource)| {
+                resource.host_pixels.len()
+                    + resource.backing.capacity() * std::mem::size_of::<BackingEntry>()
+            })
             .sum::<usize>();
         in_use.saturating_add(len)
     }
@@ -169,6 +172,17 @@ impl VirtioGpu {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, hdr);
             return;
         }
+        if let Some(resource) = self.resources.get(&resource_id) {
+            let retained = resource.backing.capacity().max(nr_entries as usize)
+                * std::mem::size_of::<BackingEntry>();
+            let total = self
+                .hostmem_after_create(resource_id, resource.host_pixels.len())
+                .saturating_add(retained);
+            if total >= MAX_2D_HOSTMEM {
+                response_hdr_into(out, VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY, hdr);
+                return;
+            }
+        }
         let mut backing = Vec::with_capacity(nr_entries as usize);
         let mut offset = 32usize;
         for _ in 0..nr_entries {
@@ -179,6 +193,8 @@ impl VirtioGpu {
         }
         if let Some(resource) = self.resources.get_mut(&resource_id) {
             resource.backing.clear();
+            // Reserve exactly when growing: spare capacity is retained host memory.
+            resource.backing.reserve_exact(nr_entries as usize);
             resource
                 .backing
                 .extend(backing.iter().map(|entry| BackingEntry {
