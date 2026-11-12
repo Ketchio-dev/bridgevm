@@ -117,6 +117,10 @@ impl TcpSendState {
         }
     }
 
+    pub(crate) fn deadline_ms(&self) -> Option<u64> {
+        self.deadline_ms
+    }
+
     fn in_flight(&self) -> u32 {
         self.next.wrapping_sub(self.una)
     }

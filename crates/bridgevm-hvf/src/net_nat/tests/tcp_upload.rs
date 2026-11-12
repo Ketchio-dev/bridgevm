@@ -88,6 +88,80 @@ fn a_segment_the_nat_cannot_take_is_answered_with_an_ack() {
     server.join().unwrap();
 }
 
+#[test]
+fn guest_fin_drains_the_acknowledged_upload_tail_before_host_eof() {
+    upload_fin_with_backlog(false);
+}
+
+#[test]
+fn guest_payload_and_fin_are_accepted_together() {
+    upload_fin_with_backlog(true);
+}
+
+fn upload_fin_with_backlog(with_payload: bool) {
+    use super::super::*;
+    use super::helpers::*;
+    use std::net::{TcpListener, TcpStream};
+
+    let listener = TcpListener::bind((StdIpv4Addr::LOCALHOST, 0)).unwrap();
+    let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (mut peer, _) = listener.accept().unwrap();
+    stream.set_nonblocking(true).unwrap();
+    peer.set_nonblocking(true).unwrap();
+    let key = TcpFlowKey {
+        guest_ip: GUEST_IP,
+        guest_port: 49162,
+        dst_ip: [127, 0, 0, 1],
+        dst_port: listener.local_addr().unwrap().port(),
+    };
+    let mut nat = NatBackend::<HostSocketOutboundIpv4Handler>::new_host_socket();
+    nat.guest_mac = Some(GUEST_MAC);
+    let seq = 0x6000_0000;
+    let mut flow = TcpFlow::new(stream, seq, 100, 65535, None, 0);
+    flow.state = TcpProxyState::Established;
+    // Deterministically model bytes already ACKed while the host was blocked.
+    // Keep them queued until the FIN arrives, rather than depending on kernel
+    // buffer sizes or scheduling to hit WouldBlock at just the right moment.
+    let data = payload(64 * 1024);
+    let tail = if with_payload {
+        &b"last segment"[..]
+    } else {
+        &[]
+    };
+    flow.write_buf.extend(&data);
+    nat.outbound_ipv4.tcp_flows.insert(key, flow);
+    nat.transmit(&tcp_guest_frame(
+        key.dst_ip,
+        key.dst_port,
+        key.guest_port,
+        seq,
+        101,
+        TCP_FLAG_ACK | TCP_FLAG_FIN,
+        tail,
+    ));
+    let flow = &nat.outbound_ipv4.tcp_flows[&key];
+    assert!(flow.guest_fin, "payload plus FIN was not accepted");
+    assert_eq!(flow.guest_next, seq + tail.len() as u32 + 1);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut received = Vec::new();
+    let mut scratch = [0; 8192];
+    loop {
+        nat.poll_host_sockets();
+        match peer.read(&mut scratch) {
+            Ok(0) => break,
+            Ok(n) => received.extend_from_slice(&scratch[..n]),
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::yield_now();
+            }
+            Err(e) => panic!("host read: {e}"),
+        }
+        assert!(Instant::now() < deadline, "host never saw EOF");
+    }
+    assert_eq!(received.len(), data.len() + tail.len(), "upload tail lost");
+    assert_eq!(&received[..data.len()], data);
+    assert_eq!(&received[data.len()..], tail);
+}
+
 fn upload_through_a_backlog_that_fills_and_drains(shift: Option<u8>) {
     let data = payload(24 << 20);
     let (go, wait) = mpsc::channel::<()>();
