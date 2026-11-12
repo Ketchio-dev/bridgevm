@@ -94,8 +94,11 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging, VTPMExistingStateKe
         attributes[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         let status = access.api.add(attributes as CFDictionary)
         let backend: VTPMKeychainBackend
-        if status == errSecSuccess || status == errSecDuplicateItem {
+        if status == errSecSuccess {
             _ = access.api.delete(VTPMExistingKeyLookup.query(account: account, backend: .dataProtection) as CFDictionary)
+            backend = .dataProtection
+        } else if status == errSecDuplicateItem {
+            // The item is not this probe's: a VM may be named like the probe account, and that is its key.
             backend = .dataProtection
         } else { backend = .legacySearchList }
         resolvedBackend = backend

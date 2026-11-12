@@ -21,6 +21,7 @@ pub mod acpi_ged;
 pub mod bridgevm_pc_boot_info;
 pub mod bridgevm_pc_gic;
 pub mod checkpoint;
+pub mod disk_import;
 pub mod display_fb;
 pub mod dtb;
 pub mod fwcfg;
@@ -66,8 +67,7 @@ pub mod vm_clock;
 mod windows_arm_xhci_hid_boot_key_probe;
 pub mod xhci;
 
-// Extracted from the legacy probe monolith below (see
-// docs/plans/hvf-lib-refactor-extraction-plan.md). Private, re-exported explicitly.
+// Extracted from the legacy probe monolith. Private, re-exported explicitly.
 mod machine_plan;
 mod no_qemu_plan;
 mod probe_mmio;

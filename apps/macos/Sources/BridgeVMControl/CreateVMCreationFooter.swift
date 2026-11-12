@@ -9,6 +9,8 @@ struct CreateVMCreationFooter: View {
     let create: () -> Void
     let recoveryAvailable: Bool
     let recover: () -> Void
+    /// What the wait is for, such as a QCOW2 conversion and its percent.
+    var workingLabel = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -21,7 +23,7 @@ struct CreateVMCreationFooter: View {
             HStack(spacing: 10) {
                 if working {
                     ProgressView().controlSize(.small)
-                    Text("VM 파일 준비 중…").font(.caption).foregroundStyle(.secondary)
+                    Text(workingLabel.isEmpty ? "VM 파일 준비 중…" : workingLabel).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("취소") { if !working { cancel() } }

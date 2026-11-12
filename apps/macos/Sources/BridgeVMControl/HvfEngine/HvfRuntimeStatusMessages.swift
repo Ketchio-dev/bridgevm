@@ -4,12 +4,14 @@ struct HvfRuntimeStatusMessages: View {
     @ObservedObject var session: HvfEngineSession
     let refusal: String?
 
+    private var failureText: String? { refusal ?? session.runtimeSupervisionFailureText ?? session.guiStartFailureText }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(refusal ?? session.guiStartFailureText ?? "시작 오류 없음")
-                .font(.callout).foregroundColor((refusal ?? session.guiStartFailureText) == nil ? Color.secondary : Color.red).textSelection(.enabled)
+            Text(failureText ?? "시작 오류 없음")
+                .font(.callout).foregroundColor(failureText == nil ? Color.secondary : Color.red).textSelection(.enabled)
                 .accessibilityIdentifier("bridgevm.windows.runtime.start.failure")
-                .accessibilityValue(refusal ?? session.guiStartFailureText ?? "none")
+                .accessibilityValue(failureText ?? "none")
             HvfAgentSilenceNoticeView(notice: session.agentSilenceNotice)
             HvfShareRootNoticeView(notice: session.shareRootNotice)
             HvfMicrophoneNoticeView(session: session)

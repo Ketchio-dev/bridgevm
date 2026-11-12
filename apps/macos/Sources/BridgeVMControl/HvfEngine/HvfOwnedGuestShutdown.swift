@@ -7,7 +7,7 @@ final class HvfOwnedGuestShutdown: @unchecked Sendable {
     private let expected: stat?
     private let queue: DispatchQueue
     private var descriptor: Int32 = -1
-    private var attempted: [HvfGuestStopCommand] = [] // each command at most once: Stop, then Force Stop
+    private var attempted: [HvfGuestStopCommand] = [] // each command at most once per guest boot
     private let closeLock = NSLock()
     private var closing = false
 
@@ -25,6 +25,11 @@ final class HvfOwnedGuestShutdown: @unchecked Sendable {
             }
             descriptor = fd
         }
+    }
+
+    /// Only a guest reset record changes this generation; in-boot agent restarts do not.
+    func beginGuestBoot() {
+        queue.async { [self] in attempted.removeAll() }
     }
 
     func request(_ command: HvfGuestStopCommand, _ completion: @escaping @Sendable (Bool) -> Void) {

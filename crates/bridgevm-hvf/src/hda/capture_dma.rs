@@ -10,6 +10,16 @@
 
 use super::*;
 
+/// The time to play or record for a poll at `now`, moving the stream's time
+/// base to `now`; `None` for the poll that sets the base. Two threads poll
+/// (a vCPU drain and the audio tick), each with a time it took before it got
+/// the platform, so `now` can be older than the base. The base never moves
+/// back: it would make the next poll count the same interval again.
+pub(super) fn elapsed_since(last_poll: &mut Option<Instant>, now: Instant) -> Option<Duration> {
+    let last = last_poll.replace(last_poll.map_or(now, |last| last.max(now)))?;
+    Some(now.saturating_duration_since(last).min(MAX_POLL_ELAPSED))
+}
+
 impl HdaController {
     pub(crate) fn poll_capture(&mut self, mem: &mut dyn GuestMemoryMut, now: Option<Instant>) {
         if self.capture.ctl & SDCTL_RUN == 0 || self.gctl & GCTL_CRST == 0 {
@@ -17,8 +27,8 @@ impl HdaController {
             return;
         }
         let elapsed = match now {
-            Some(now) => match self.capture_last_poll.replace(now) {
-                Some(last) => now.saturating_duration_since(last).min(MAX_POLL_ELAPSED),
+            Some(now) => match elapsed_since(&mut self.capture_last_poll, now) {
+                Some(elapsed) => elapsed,
                 None => return,
             },
             None => TEST_POLL_QUANTUM,

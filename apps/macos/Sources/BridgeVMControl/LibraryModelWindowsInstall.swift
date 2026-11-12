@@ -13,6 +13,8 @@ final class HvfWindowsInstallSessionStore {
         self.makeSession = makeSession; self.preparation = HvfWindowsInstallPreparationStore(options: preparation)
     }
 
+    var sessions: [HvfWindowsInstallSession] { entries.values.map(\.session) }
+
     func record(for slug: String) -> HvfWindowsInstallSessionRecord? { entries[slug] }
 
     func session(for config: VMConfig, request: HvfWindowsInstallRequest, makePlan: () -> HvfWindowsInstallPlan) -> HvfWindowsInstallSession {

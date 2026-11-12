@@ -129,7 +129,9 @@ final class HvfEngineSession: ObservableObject {
         refreshOwnedStart()
         lastOwnedExit = controller.runnerExit
         if controller.teardownConfirmed { markStopped() }
-        else if controller.failure != nil { if connectionState != .timedOut { connectionState = .timedOut } }
+        else if controller.failure != nil, !(controller.supervisionLost && controller.operation == nil && controller.process.isRunning) {
+            if connectionState != .timedOut { connectionState = .timedOut }
+        }
         else if controller.operation != nil { if connectionState != .stopping { connectionState = .stopping } }
         refreshForceStopTarget()
     }

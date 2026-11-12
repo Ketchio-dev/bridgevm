@@ -26,9 +26,11 @@ final class HvfOwnedRunController {
     private(set) var graceExpired = false
     private var forceDeadline: TimeInterval?
     private var forceRequested = false
+    let supervisionForceOperationID = UUID()
     private var cancelled = false
     private var serviceReady = false
     private var guestRequestSent = false
+    private var guestBootGeneration = 0
     private var powerButtonPressed = false
     private var guestEffectsPending = 0
     private var outputEnded = false
@@ -82,8 +84,18 @@ final class HvfOwnedRunController {
     /// runner is cancelled at once (the helper still persists vars and disk on TERM).
     func requestForceStop(_ target: HvfForceStopTarget) -> HvfForceStopResult {
         guard target.identity == identity else { return .refused(.targetChanged) }
-        guard let operation, operation.operationID == target.operationID else { return .refused(.operationChanged) }
-        guard waitsForGuestShutdown else { return .refused(.notWaiting) }
+        guard target.operationID == (operation?.operationID ?? supervisionForceOperationID) else {
+            return .refused(.operationChanged)
+        }
+        if canForceAfterSupervisionLoss {
+            if operation == nil {
+                _ = requestStop(target: identity, operationID: target.operationID)
+            }
+            cancelRunnerAfterSupervisionLoss()
+            tick()
+            return .requested
+        }
+        guard let operation, waitsForGuestShutdown else { return .refused(.notWaiting) }
         graceDeadline = nil; forceRequested = true
         if serviceReady {
             let time = now(), limit = time + Self.forcedGuestWindow
@@ -112,7 +124,11 @@ final class HvfOwnedRunController {
 
     /// Set by this boot generation's `SERVICE start`; a guest reset record drops it, so an unsent request waits.
     func guestServiceReady() { serviceReady = true; requestGuestIfReady() }
-    func guestServiceLost() { serviceReady = false }
+    func guestServiceLost() {
+        serviceReady = false; guestRequestSent = false
+        guestBootGeneration += 1
+        guestShutdown.beginGuestBoot()
+    }
 
     func tick() {
         if runnerExit == nil, !process.isRunning {
@@ -154,6 +170,12 @@ final class HvfOwnedRunController {
         tick()
     }
 
+    var supervisionLost: Bool { failure == .channelFailed || failure == .protocolInvalid }
+    var canForceAfterSupervisionLoss: Bool {
+        supervisionLost && !forceRequested && runnerExit == nil && process.isRunning
+            && process.processIdentifier == identity.processID
+    }
+
     /// A held Stop has no deadline until the user escalates; Windows may be waiting on an app.
     private var awaitsUserDecision: Bool { holdsAfterGrace && !forceRequested && !cancelled }
 
@@ -175,11 +197,12 @@ final class HvfOwnedRunController {
 
     private func sendGuest(_ command: HvfGuestStopCommand) {
         guestEffectsPending += 1
-        let token = identity.token
+        let token = identity.token, generation = guestBootGeneration
         guestShutdown.request(command) { [weak self] delivered in
             Task { @MainActor [weak self] in
                 guard let self, self.identity.token == token else { return }
                 self.guestEffectsPending -= 1
+                guard generation == self.guestBootGeneration else { self.tick(); return }
                 let waiting = command == .shutdown ? self.graceDeadline != nil : self.forceDeadline != nil
                 guard waiting, !self.cancelled, self.runnerExit == nil, self.ledger.complete == nil else {
                     self.tick(); return
@@ -200,6 +223,12 @@ final class HvfOwnedRunController {
         // A held Stop has had no deadline, so its cancellation gets one; a Force Stop already set its own.
         let deadline = holdsAfterGrace && forceDeadline == nil ? limit
             : min(operation.observation.deadlineUptime, limit)
+        if supervisionLost {
+            // EOF (or the runner's failed event write) presses the guest power button and waits
+            // up to 60 s. Only an explicit Force Stop may interrupt that grace with SIGTERM.
+            graceDeadline = nil; forceDeadline = nil; guestShutdown.close(); channel.close()
+            return
+        }
         cancelled = true; graceDeadline = nil; forceDeadline = nil; guestShutdown.close()
         operation.update(phase: .cancelling, deadline: deadline, complete: ledger.complete,
                          exit: runnerExit, failure: failure)
@@ -210,6 +239,13 @@ final class HvfOwnedRunController {
         } catch HvfOwnedRuntimeProtocolError.channelClosed {
             // The worker may already have queued a valid COMPLETE and EOF. Drain before deciding.
         } catch { recordFailure(.channelFailed); channel.close() }
+    }
+
+    private func cancelRunnerAfterSupervisionLoss() {
+        forceRequested = true; cancelled = true
+        graceDeadline = nil; forceDeadline = nil; guestShutdown.close(); channel.close()
+        // Only this retained Process, never a PID lookup or an attached VM.
+        if process.isRunning, process.processIdentifier == identity.processID { process.terminate() }
     }
 
     private func recordFailure(_ value: HvfOwnedStopFailure) {

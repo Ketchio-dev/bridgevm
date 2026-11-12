@@ -4,6 +4,14 @@ import XCTest
 @testable import BridgeVMControl
 
 final class VTPMKeychainAccessTests: XCTestCase {
+    func testTheBackendProbeNeverDeletesAnItemItDidNotAdd() throws {
+        // A VM may be named like the probe account; a duplicate there is that VM's key.
+        let fixture = VTPMKeychainFixture(); fixture.addStatuses = [errSecDuplicateItem]
+        XCTAssertEqual(try fixture.store.stateKey(for: "bridgevm-entitlement-probe", allowCreation: false),
+                       Data(repeating: 0x5a, count: 32))
+        XCTAssertEqual(fixture.calls, ["add", "copy"])
+    }
+
     func testLegacyRestoresBothInitialPolicyStatesOnReadFailure() {
         for allowed in [false, true] {
             let fixture = VTPMKeychainFixture(); fixture.allowed = allowed; fixture.read = (nil, errSecAuthFailed)

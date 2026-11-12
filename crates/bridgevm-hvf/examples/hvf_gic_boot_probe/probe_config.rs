@@ -53,7 +53,7 @@ impl ProbeConfig {
         println!("SMP CPUs advertised: {smp_cpus}");
         let watchdog_ms = env_u64("BRIDGEVM_BOOT_PROBE_WATCHDOG_MS", WATCHDOG_MS);
         let watchdog_enabled = !env_flag("BRIDGEVM_BOOT_PROBE_WATCHDOG_DISABLED");
-        let max_exits = env_u64("BRIDGEVM_BOOT_PROBE_MAX_EXITS", DEFAULT_MAX_EXITS).max(1);
+        let max_exits = exit_cap(env_optional_u64("BRIDGEVM_BOOT_PROBE_MAX_EXITS"));
         if watchdog_enabled {
             println!("Boot watchdog: {watchdog_ms} ms per boot generation");
         } else {

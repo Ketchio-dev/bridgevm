@@ -77,11 +77,17 @@ struct HvfEngineConfig: Equatable {
     /// evidence-harness path (PLAN.md R1).
     func launchManifestJSON() -> String {
         func quoted(_ value: String) -> String {
-            // The runtime parser refuses escapes by design; refuse here too
-            // rather than emit a manifest it will reject.
-            precondition(!value.contains("\\") && !value.contains("\""),
-                         "manifest paths may not contain quotes or backslashes")
-            return "\"\(value)\""
+            // A folder name may hold a quote, a backslash or a control character.
+            var out = "\""
+            for scalar in value.unicodeScalars {
+                switch scalar {
+                case "\"": out += "\\\""
+                case "\\": out += "\\\\"
+                case _ where scalar.value < 0x20: out += String(format: "\\u%04x", scalar.value)
+                default: out.unicodeScalars.append(scalar)
+                }
+            }
+            return out + "\""
         }
         return """
         {"version": 1, "disk": \(quoted(targetDiskPath)), \

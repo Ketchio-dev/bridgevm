@@ -10,8 +10,6 @@ rust-version.workspace = true
 anyhow.workspace = true
 bridgevm-apple-vz = { path = "../../crates/bridgevm-apple-vz" }
 bridgevm-config = { path = "../../crates/bridgevm-config" }
-bridgevm-lightvm = { path = "../../crates/bridgevm-lightvm" }
-bridgevm-core = { path = "../../crates/bridgevm-core" }
 bridgevm-storage = { path = "../../crates/bridgevm-storage" }
 clap.workspace = true
 serde_json.workspace = true

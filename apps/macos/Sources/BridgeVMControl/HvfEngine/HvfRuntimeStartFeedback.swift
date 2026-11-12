@@ -10,6 +10,11 @@ extension HvfEngineSession {
         return nil
     }
 
+    var runtimeSupervisionFailureText: String? {
+        guard ownedController?.supervisionLost == true else { return nil }
+        return "실행 중인 Windows와 연결이 끊겼으니 강제 중단으로 Windows를 멈추세요."
+    }
+
     var guiStartFailureText: String? {
         guard !hasPendingOwnedStart, let outcome = guiStartOperation?.outcome else { return nil }
         switch outcome {

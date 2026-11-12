@@ -7,7 +7,8 @@ enum HvfMediaImportHelper {
             .appendingPathComponent("target/release/examples/snapshot_pair_cli")
     }
 
-    static func invoke(_ executable: URL, arguments: [String]) throws {
+    /// `progress` sees the helper's `progress <percent>` lines, which then stay out of its diagnostic.
+    static func invoke(_ executable: URL, arguments: [String], progress: ((Int) -> Void)? = nil) throws {
         let canonical = executable.resolvingSymlinksInPath().standardizedFileURL
         let values = try executable.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
         guard executable.standardizedFileURL == canonical,
@@ -17,7 +18,7 @@ enum HvfMediaImportHelper {
         }
         // The helper prints a six-line manifest; output past the shared limit
         // is not retained and fails the import instead of passing unread.
-        let completion = try HvfHelperProcess.run(executable, arguments)
+        let completion = try HvfHelperProcess.run(executable, arguments, progress: progress)
         guard completion.succeeded else {
             let message = completion.diagnostic
             throw failure(message.isEmpty ? "디스크와 부팅 설정을 가져오지 못했습니다." : message)

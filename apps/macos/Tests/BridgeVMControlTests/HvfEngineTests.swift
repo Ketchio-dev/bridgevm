@@ -121,6 +121,18 @@ final class HvfEngineConfigTests: XCTestCase {
         XCTAssertTrue(json.contains("\"vcpus\": 6"), json)
     }
 
+    func testAManifestPathWithAQuoteOrBackslashIsEscapedNotFatal() throws {
+        var cfg = HvfEngineConfig(targetDiskPath: "/vm/win.raw", uefiVarsPath: "/vm/vars.fd", evidenceDir: "/tmp/evidence",
+                                  ramMiB: 8192, smpCpus: 6, clipboardSync: false, shareHostDir: nil, shareGuestDir: nil,
+                                  virtioNet: false, virtioGpu3d: false, nvmeBufferedIO: false, ctlFilePath: "/tmp/evidence/ctl")
+        cfg.targetDiskPath = "/vm/My \"VM\"\\ x\ny/win.raw"
+        let json = cfg.launchManifestJSON()
+        // bridgevm-hvf-runtime's manifest_tests read exactly this spelling back.
+        XCTAssertTrue(json.contains(#""disk": "/vm/My \"VM\"\\ x\u000ay/win.raw""#), json)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        XCTAssertEqual(object["disk"] as? String, cfg.targetDiskPath)
+    }
+
     func testBaseArgumentsUseExplicitServiceCLI() {
         let cfg = HvfEngineConfig(targetDiskPath: "/vm/win.raw",
                                   uefiVarsPath: "/vm/vars.fd",
@@ -506,6 +518,33 @@ final class VTPMIdentityLifecycleTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: archive + "/tpm2-00.permall"))
         XCTAssertTrue(FileManager.default.fileExists(atPath: result.receiptPath))
         XCTAssertTrue(store.keys.contains { $0.key.hasPrefix("win11.archive.") && $0.value == oldKey })
+    }
+
+    func testAResetThatCannotArchiveTheStateLeavesTheStateAndItsKeyInPlace() throws {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let state = temp.appendingPathComponent("vtpm", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        let stateFile = state.appendingPathComponent("tpm2-00.permall")
+        try Data("old-state".utf8).write(to: stateFile)
+        // The archive name is already taken, so the state is never moved.
+        try FileManager.default.createDirectory(
+            at: temp.appendingPathComponent("vtpm-archive-1700000000-11111111", isDirectory: true),
+            withIntermediateDirectories: true)
+        let oldKey = Data(repeating: 9, count: 32)
+        let store = InMemoryVTPMKeyStore()
+        store.keys["win11"] = oldKey
+
+        XCTAssertThrowsError(try VTPMIdentityLifecycle(keyStore: store).resetIdentity(
+            stableVMID: "win11",
+            stateDirectory: state,
+            now: Date(timeIntervalSince1970: 1_700_000_000),
+            nonce: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+        ))
+
+        XCTAssertEqual(try Data(contentsOf: stateFile), Data("old-state".utf8))
+        XCTAssertEqual(store.keys, ["win11": oldKey])
     }
 }
 

@@ -190,8 +190,7 @@ enum VTPMLifecycleCommand {
         }
         let ram = try positiveInt(options.values["--ram-mib"] ?? "6144", name: "--ram-mib")
         let cpus = try positiveInt(options.values["--smp-cpus"] ?? "4", name: "--smp-cpus")
-        let maxExits = try positiveInt(
-            options.values["--max-exits"] ?? "50000000", name: "--max-exits")
+        let maxExits = try options.values["--max-exits"].map { try positiveInt($0, name: "--max-exits") }
         let ctl = evidence.appendingPathComponent("agent-control.txt")
         let input = evidence.appendingPathComponent("input.ctl")
         FileManager.default.createFile(atPath: ctl.path, contents: Data())
@@ -235,7 +234,6 @@ enum VTPMLifecycleCommand {
             "--evidence-dir", evidence.path,
             "--ram-mib", String(ram),
             "--smp-cpus", String(cpus),
-            "--max-exits", String(maxExits),
             "--release", "--skip-build", "--no-watchdog",
             "--agent-service-control", ctl.path,
             "--agent-service-command", "whoami",
@@ -248,6 +246,7 @@ enum VTPMLifecycleCommand {
             "--swtpm-bin", swtpm.path,
             "--swtpm-key-stdin",
         ]
+        if let maxExits { args.append(contentsOf: ["--max-exits", String(maxExits)]) }
         if !options.flags.contains("--no-network") { args.append("--virtio-net") }
         if options.flags.contains("--require-real-title-gate"),
            !options.flags.contains("--virtio-gpu-3d") {
