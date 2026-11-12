@@ -363,9 +363,7 @@ extension HvfEngineConfig {
             // the share: the runtime shares the folder once it appears, and the app says so
             // (missingShareFolder). Not a relative one: the runtime resolves it from another directory
             // than this check does, so the folder it would wait for is not this one.
-            isDirectory = false
-            let exists = fileManager.fileExists(atPath: host, isDirectory: &isDirectory)
-            if guest.isEmpty || (exists ? !isDirectory.boolValue : !host.hasPrefix("/")) {
+            if guest.isEmpty || !host.hasPrefix("/") {
                 launch("share-invalid", "공유 폴더 경로가 올바르지 않습니다. 설정에서 공유 폴더를 다시 선택하세요.")
             }
         default:

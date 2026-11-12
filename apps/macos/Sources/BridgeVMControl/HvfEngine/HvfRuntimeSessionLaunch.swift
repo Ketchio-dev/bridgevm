@@ -15,7 +15,8 @@ extension HvfEngineSession {
         if policy == .attachOrStart, attachToRunningVM(reportDuplicateLaunch: true) { return .observedAttachment }
         runtimeTransitionInProgress = true
         defer { runtimeTransitionInProgress = false }
-        let frozen = config
+        var shareWarning: String?
+        let frozen = config.preparingSharedFolder { shareWarning = $0 }
         if let failure = HvfRuntimeLaunchReadiness.failure(config: frozen, repoRoot: repoRoot,
             diagnostic: { append(.unknown($0)) }) {
             connectionState = .stopped
@@ -36,6 +37,7 @@ extension HvfEngineSession {
             return .failed(.helper, "The installed-boot wrapper is unavailable")
         }
         resetObservedRuntimeState(clearEvents: true)
+        if let shareWarning { append(.unknown(shareWarning)) }
         do {
             var deliveryFailure: String?
             if typed {

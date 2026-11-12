@@ -104,6 +104,15 @@
       "evidence": "crates/bridgevm-hvf/src/host_power.rs"
     },
     {
+      "id": "share-quick-access",
+      "area": "guest-agent",
+      "qemu_behavior": "QEMU has no shared-folder guest-agent Explorer integration of its own.",
+      "bridgevm_behavior": "New Windows registrations opt in to a dedicated Mac folder created at first launch; existing registrations and clones stay unchanged. When sharing requests a listing of an existing guest folder, the agent attempts Shell.Application pintohome once, recording the attempt under ProgramData/BridgeVM before invoking the verb. No READY capability is added. Failure logs one guest-agent line without failing the host request; a later manual unpin is respected.",
+      "guest_visible": true,
+      "impact": "The shared folder is offered in Explorer Quick Access without re-pinning on every boot; live verification of the elevated interactive-task Shell context is required.",
+      "evidence": "tests/integration/agent-share-quick-access-contract.ps1"
+    },
+    {
       "id": "share-put-mtime",
       "area": "guest-agent",
       "qemu_behavior": "QEMU has no shared-folder guest-agent push protocol of its own.",
