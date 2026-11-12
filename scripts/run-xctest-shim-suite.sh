@@ -24,6 +24,10 @@ suite() {
         "$ROOT/$tests" "$WORK/$name/main.swift"
     bash "$ROOT/scripts/xctest-swiftc.sh" -j "$SWIFTC_JOBS" -D DEBUG -target "$TARGET" -I "$WORK" -L "$WORK" -lXCTest "-l$name" \
         -o "$WORK/run-$name" "$ROOT/$tests"/*.swift "$WORK/$name/main.swift" "$@"
+    if [[ "${BV_XCTEST_BUILD_ONLY:-0}" == 1 ]]; then
+        echo "COMPILED: $name (tests not run)"
+        return
+    fi
     BV_SHIM_RESOURCES="$ROOT/apps/macos/Sources/BridgeVMControl/Resources" \
         "$WORK/run-$name"
 }
