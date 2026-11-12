@@ -130,14 +130,9 @@ echo "=== phase 2: snapshot the powered-off pair ==="
 "$NATIVE_SNAPSHOT_CLI" app snapshot-create "$NATIVE_SNAPSHOT_VM_ID" \
   --library "$LIBRARY" --json > "$OUT/create.json" 2> "$OUT/create.stderr" \
   || fail "native snapshot create failed; see $OUT/create.stderr"
-SNAP=$BUNDLE/metadata/snapshots/latest.snapshot
-python3 - "$OUT/create.json" "$SNAP" "$NATIVE_SNAPSHOT_VM_ID" <<'PY'
-import json, pathlib, sys
-value=json.load(open(sys.argv[1], encoding="utf-8"))
-assert value == {"schema":"bridgevm.app-snapshot.v1","command":"create","vmID":sys.argv[3],
-                 "libraryPath":str(pathlib.Path(sys.argv[2]).parents[4]),
-                 "snapshotPath":sys.argv[2],"complete":True}
-PY
+SNAP=$(python3 "$REPO/scripts/live-gates/native_snapshot_result.py" \
+  "$OUT/create.json" "$BUNDLE" "$NATIVE_SNAPSHOT_VM_ID" create) \
+  || fail "native snapshot create returned an unsafe path"
 
 echo "=== phase 3: overwrite it, so a no-op restore cannot pass ==="
 CLOBBER="BV-CLOBBERED-$(date +%s)"
@@ -151,13 +146,9 @@ echo "=== phase 4: restore ==="
 "$NATIVE_SNAPSHOT_CLI" app snapshot-restore "$NATIVE_SNAPSHOT_VM_ID" \
   --library "$LIBRARY" --json > "$OUT/restore.json" 2> "$OUT/restore.stderr" \
   || fail "native snapshot restore failed; see $OUT/restore.stderr"
-python3 - "$OUT/restore.json" "$SNAP" "$NATIVE_SNAPSHOT_VM_ID" <<'PY'
-import json, pathlib, sys
-value=json.load(open(sys.argv[1], encoding="utf-8"))
-assert value == {"schema":"bridgevm.app-snapshot.v1","command":"restore","vmID":sys.argv[3],
-                 "libraryPath":str(pathlib.Path(sys.argv[2]).parents[4]),
-                 "snapshotPath":sys.argv[2],"complete":True}
-PY
+python3 "$REPO/scripts/live-gates/native_snapshot_result.py" \
+  "$OUT/restore.json" "$BUNDLE" "$NATIVE_SNAPSHOT_VM_ID" restore "$SNAP" \
+  || fail "native snapshot restore did not select the created snapshot"
 
 echo "=== phase 4b: export the selected restored pair ==="
 native_snapshot_export_and_select "$NATIVE_SNAPSHOT_CLI" "$NATIVE_SNAPSHOT_VM_ID" \

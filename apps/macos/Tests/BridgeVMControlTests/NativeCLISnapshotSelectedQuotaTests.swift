@@ -115,7 +115,9 @@ final class NativeCLISnapshotSelectedQuotaTests: XCTestCase {
         let repo: URL
         let disk: URL
         let vars: URL
-        let snapshot: URL
+        var snapshot: URL {
+            HvfWindowsSnapshotStore.list(bundle: disk.deletingLastPathComponent().deletingLastPathComponent()).first!.url
+        }
         let output: URL
         let config: VMConfig
         let id = "selected-quota-vm"
@@ -129,7 +131,6 @@ final class NativeCLISnapshotSelectedQuotaTests: XCTestCase {
             let bundle = entry.appendingPathComponent("bundle.vmbridge", isDirectory: true)
             disk = bundle.appendingPathComponent("disks/hvf-target.raw")
             vars = bundle.appendingPathComponent("metadata/hvf-vars.fd")
-            snapshot = bundle.appendingPathComponent("metadata/snapshots/latest.snapshot", isDirectory: true)
             output = root.appendingPathComponent("exports/current.snapshot", isDirectory: true)
             let helper = repo.appendingPathComponent("target/release/examples/snapshot_pair_cli")
             config = VMConfig(

@@ -32,6 +32,7 @@ enum NativeCLISnapshot {
         switch operation {
         case .create: command = "create"
         case .restore: command = "restore"
+        case .delete: command = "delete"
         }
         do {
             let config = try NativeLibraryReader.readConfig(rootURL: rootURL, id: id)
@@ -42,25 +43,20 @@ enum NativeCLISnapshot {
                 throw NativeCLIError.unavailable("Windows installation must finish before snapshot operations.")
             }
             let engine = try NativeCLISnapshotAdmission.engine(config, rootURL: rootURL)
-            let plan = try HvfWindowsSnapshotCommand.plan(
+            var plan = try HvfWindowsSnapshotCommand.plan(
                 config: engine,
                 repoRoot: repoRoot,
                 operation: operation
             )
-            if case .create = operation {
-                try FileManager.default.createDirectory(
-                    at: plan.snapshot.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
-                )
-            }
-            _ = try HvfWindowsSnapshotCommand.invoke(
-                plan.executable,
-                plan.arguments(for: operation)
-            )
-            if case .create = operation {
+            if operation == .create {
+                plan = try HvfWindowsSnapshotCommand.create(plan: plan, arguments: plan.arguments(for: .create))
+                _ = try HvfWindowsSnapshotCommand.verifyCreated(plan)
+            } else if operation == .delete {
+                try HvfWindowsSnapshotStore.delete(plan.snapshot, bundle: plan.bundle)
+            } else {
                 _ = try HvfWindowsSnapshotCommand.invoke(
                     plan.executable,
-                    ["verify", plan.snapshot.path]
+                    plan.arguments(for: operation)
                 )
             }
             return NativeCLISnapshotResult(

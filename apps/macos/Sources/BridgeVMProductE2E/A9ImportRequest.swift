@@ -23,6 +23,7 @@ struct A9ImportRequest: Decodable, Equatable, T17JourneyRequest {
     let diskPath: String
     let varsPath: String
     let vtpmStatePath: String
+    /// Fixed legacy locator; the shared journey resolves the newest published sibling.
     let snapshotPath: String
     let guestEvidencePath: String
 

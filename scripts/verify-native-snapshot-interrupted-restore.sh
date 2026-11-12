@@ -68,14 +68,9 @@ echo "=== phase 2: snapshot the powered-off pair ==="
 "$NATIVE_SNAPSHOT_CLI" app snapshot-create "$NATIVE_SNAPSHOT_VM_ID" \
   --library "$LIBRARY" --json > "$OUT/create.json" 2> "$OUT/create.stderr" \
   || fail "native snapshot create failed; see $OUT/create.stderr"
-SNAP=$BUNDLE/metadata/snapshots/latest.snapshot
-python3 - "$OUT/create.json" "$SNAP" "$NATIVE_SNAPSHOT_VM_ID" <<'PY'
-import json, pathlib, sys
-value=json.load(open(sys.argv[1], encoding="utf-8"))
-assert value == {"schema":"bridgevm.app-snapshot.v1","command":"create","vmID":sys.argv[3],
-                 "libraryPath":str(pathlib.Path(sys.argv[2]).parents[4]),
-                 "snapshotPath":sys.argv[2],"complete":True}
-PY
+SNAP=$(python3 "$REPO/scripts/live-gates/native_snapshot_result.py" \
+  "$OUT/create.json" "$BUNDLE" "$NATIVE_SNAPSHOT_VM_ID" create) \
+  || fail "native snapshot create returned an unsafe path"
 cp "$SNAP/manifest.json" "$OUT/snapshot-created-manifest.json" \
   || fail "retain authenticated snapshot manifest"
 
@@ -121,13 +116,9 @@ echo "=== phase 6: normal product CLI restore retry ==="
 "$NATIVE_SNAPSHOT_CLI" app snapshot-restore "$NATIVE_SNAPSHOT_VM_ID" \
   --library "$LIBRARY" --json > "$OUT/restore-retry.json" 2> "$OUT/restore-retry.stderr" \
   || fail "native snapshot restore retry failed"
-python3 - "$OUT/restore-retry.json" "$SNAP" "$NATIVE_SNAPSHOT_VM_ID" <<'PY'
-import json, pathlib, sys
-value=json.load(open(sys.argv[1], encoding="utf-8"))
-assert value == {"schema":"bridgevm.app-snapshot.v1","command":"restore","vmID":sys.argv[3],
-                 "libraryPath":str(pathlib.Path(sys.argv[2]).parents[4]),
-                 "snapshotPath":sys.argv[2],"complete":True}
-PY
+python3 "$REPO/scripts/live-gates/native_snapshot_result.py" \
+  "$OUT/restore-retry.json" "$BUNDLE" "$NATIVE_SNAPSHOT_VM_ID" restore "$SNAP" \
+  || fail "native snapshot restore did not select the created snapshot"
 
 echo "=== phase 6b: export the selected restored pair ==="
 mkdir "$WORK/postretry-export" "$OUT/postretry-export" || fail "postretry export directories"
