@@ -5,6 +5,15 @@
   "summary": "BridgeVM presents a QEMU virt-compatible guest contract so stock ArmVirtQemu firmware and stock Windows 11 ARM media work unmodified. It is not bit-identical. Every known deviation is listed here.",
   "deviations": [
     {
+      "id": "nat-udp-reply-backpressure",
+      "area": "network",
+      "qemu_behavior": "UDP receive buffering depends on the selected network backend.",
+      "bridgevm_behavior": "NAT UDP polling stops at the existing 10000-frame reply queue limit and resumes receiving after the queue drains, retaining edge-triggered readiness.",
+      "guest_visible": true,
+      "impact": "Under sustained overload UDP datagrams may be dropped by the host socket buffer rather than consuming unbounded host memory. Ordinary datagrams are unchanged.",
+      "evidence": "crates/bridgevm-hvf/src/net_nat/tests/idle_sweep.rs"
+    },
+    {
       "id": "gic-in-kernel",
       "area": "interrupt-controller",
       "qemu_behavior": "Userspace-modelled GICv3 with fully observable distributor, redistributor and CPU interface state, and observable timer interrupt delivery.",
