@@ -1,6 +1,6 @@
 use super::*;
 use crate::snapshot_pair::copy::{stream_and_sync, COPY_CHUNK};
-use crate::snapshot_pair::{create_snapshot, free_space, snapshot_pair_tests::Scratch};
+use crate::snapshot_pair::{create_snapshot, snapshot_pair_tests::Scratch};
 use std::process::Command;
 
 const SCENARIO_ENV: &str = "BRIDGEVM_TEST_MANAGED_PAIR_STREAM_CRASH";
@@ -36,14 +36,8 @@ fn restore_streaming_crash_child() {
     let exit_after_first_chunk = |src: &Path, dst: &Path| {
         stream_and_sync(src, dst, |_| std::process::exit(FIRST_CHUNK_EXIT))
     };
-    let available = free_space::available_bytes;
-    pair.restore_copying(
-        &snapshot,
-        available,
-        exit_after_first_chunk,
-        refuse_publication,
-    )
-    .expect("the crash boundary must exit before restore returns");
+    pair.restore_copying(&snapshot, exit_after_first_chunk, refuse_publication)
+        .expect("the crash boundary must exit before restore returns");
 }
 
 fn crash_restore(disk: &Path, vars: &Path, snapshot: &Path) {

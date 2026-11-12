@@ -27,12 +27,7 @@ fn invalid_or_inside_managed_source_preserves_crash_debris() {
             snapshot
         };
         assert!(pair
-            .restore_copying(
-                &source,
-                |_| panic!("invalid source sampled space"),
-                refuse_copy,
-                refuse_publish
-            )
+            .restore_copying(&source, refuse_copy, refuse_publish)
             .is_err());
         assert_eq!(fs::metadata(&staged).unwrap().ino(), identity);
         assert_eq!(fs::read(staged.join("disk.raw")).unwrap(), b"new-disk");
@@ -44,7 +39,7 @@ fn invalid_or_inside_managed_source_preserves_crash_debris() {
 }
 
 #[test]
-fn replaced_root_symlink_refuses_before_cleanup_or_capacity() {
+fn replaced_root_symlink_refuses_before_cleanup_or_copy() {
     let (scratch, disk, vars, snapshot) = fixture("managed-retry-root-link");
     let mut pair = LockedPair::open(&disk, &vars).unwrap();
     init::initialize(&pair.root, |_| {}).unwrap();
@@ -58,12 +53,7 @@ fn replaced_root_symlink_refuses_before_cleanup_or_capacity() {
     let inode = fs::metadata(staged.join("keep")).unwrap().ino();
     symlink(&unrelated, &pair.root).unwrap();
     assert!(pair
-        .restore_copying(
-            &snapshot,
-            |_| panic!("replaced root sampled space"),
-            refuse_copy,
-            refuse_publish
-        )
+        .restore_copying(&snapshot, refuse_copy, refuse_publish)
         .is_err());
     assert!(fs::symlink_metadata(&pair.root)
         .unwrap()
@@ -77,7 +67,7 @@ fn replaced_root_symlink_refuses_before_cleanup_or_capacity() {
 }
 
 #[test]
-fn unowned_staging_refuses_before_capacity_and_preserves_selection() {
+fn unowned_staging_refuses_before_copy_and_preserves_selection() {
     for selected in [false, true] {
         for kind in ["symlink", "file", "permissive"] {
             let tag = format!("managed-retry-stage-{selected}-{kind}");
@@ -105,12 +95,7 @@ fn unowned_staging_refuses_before_capacity_and_preserves_selection() {
             }
             let metadata = fs::symlink_metadata(&staged).unwrap();
             assert!(pair
-                .restore_copying(
-                    &snapshot,
-                    |_| panic!("unowned stage sampled space"),
-                    refuse_copy,
-                    refuse_publish
-                )
+                .restore_copying(&snapshot, refuse_copy, refuse_publish)
                 .is_err());
             let after = fs::symlink_metadata(&staged).unwrap();
             assert_eq!(
@@ -135,7 +120,7 @@ fn unowned_staging_refuses_before_capacity_and_preserves_selection() {
 }
 
 #[test]
-fn insufficient_post_reclaim_capacity_preserves_original_or_current_pair() {
+fn copy_enospc_after_reclaim_preserves_original_or_current_pair() {
     for selected in [false, true] {
         let tag = format!("managed-retry-still-full-{selected}");
         let (_scratch, disk, vars, snapshot) = fixture(&tag);
@@ -152,20 +137,18 @@ fn insufficient_post_reclaim_capacity_preserves_original_or_current_pair() {
         let staged = pair.root.join("staging");
         let result = pair.restore_copying(
             &snapshot,
-            |_| {
-                assert!(!staged.exists(), "stale copy still consumes capacity");
-                Some(15)
+            |_, _| {
+                assert!(
+                    !staged.join("disk.raw").exists(),
+                    "stale disk not reclaimed before copy"
+                );
+                Err(io::Error::from_raw_os_error(libc::ENOSPC))
             },
-            refuse_copy,
             refuse_publish,
         );
-        assert!(matches!(
-            result,
-            Err(SnapshotError::InsufficientSpace {
-                needed: 16,
-                available: 15
-            })
-        ));
+        assert!(
+            matches!(result, Err(SnapshotError::Io(e)) if e.raw_os_error() == Some(libc::ENOSPC))
+        );
         assert_eq!(pair.paths().unwrap(), paths);
         assert_eq!(contents(&pair), old);
         assert_eq!(fs::read(&disk).unwrap(), b"old-disk");
@@ -175,20 +158,18 @@ fn insufficient_post_reclaim_capacity_preserves_original_or_current_pair() {
 }
 
 #[test]
-fn initial_capacity_refusal_does_not_create_managed_storage() {
+fn initial_copy_enospc_preserves_original_and_clears_staging() {
     let (_scratch, disk, vars, snapshot) = fixture("managed-retry-new-full");
     let mut pair = LockedPair::open(&disk, &vars).unwrap();
     let root = pair.root.clone();
     assert!(!root.exists());
-    let result = pair.restore_copying(&snapshot, |_| Some(0), refuse_copy, refuse_publish);
-    assert!(matches!(
-        result,
-        Err(SnapshotError::InsufficientSpace {
-            needed: 16,
-            available: 0
-        })
-    ));
-    assert!(!root.exists());
+    let result = pair.restore_copying(
+        &snapshot,
+        |_, _| Err(io::Error::from_raw_os_error(libc::ENOSPC)),
+        refuse_publish,
+    );
+    assert!(matches!(result, Err(SnapshotError::Io(e)) if e.raw_os_error() == Some(libc::ENOSPC)));
+    assert!(!root.join("staging").exists());
     assert_eq!(
         contents(&pair),
         (b"old-disk".to_vec(), b"old-vars".to_vec())
@@ -196,16 +177,18 @@ fn initial_capacity_refusal_does_not_create_managed_storage() {
 }
 
 #[test]
-fn unknown_capacity_still_allows_retry_after_reclaim() {
+fn retry_copies_after_reclaim() {
     let (_scratch, disk, vars, snapshot) = fixture("managed-retry-unknown-space");
     crash_incomplete_restore(&disk, &vars, &snapshot);
     let mut pair = LockedPair::open(&disk, &vars).unwrap();
     let staged = pair.root.join("staging");
-    pair.restore_with_capacity(
+    pair.restore_copying(
         &snapshot,
-        |_| {
-            assert!(!staged.exists());
-            None
+        |src, dst| {
+            if dst.file_name().unwrap() == "disk.raw" {
+                assert!(!staged.join("disk.raw").exists());
+            }
+            crate::snapshot_pair::copy_and_sync(src, dst)
         },
         snapshot_publish::publish,
     )

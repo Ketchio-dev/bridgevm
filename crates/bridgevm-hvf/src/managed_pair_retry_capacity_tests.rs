@@ -1,8 +1,8 @@
-//! Incomplete crash copies must be reclaimed before measuring retry space.
+//! Incomplete crash copies must be reclaimed before copying on retry.
 
 use super::super::staging_recovery_test_support::crash_incomplete_restore;
 use super::*;
-use crate::snapshot_pair::{snapshot_publish, verify_snapshot};
+use crate::snapshot_pair::{copy_and_sync, snapshot_publish, verify_snapshot};
 
 fn constrained_crash_retry(selected: bool) {
     let tag = format!("managed-capacity-crash-{selected}");
@@ -31,14 +31,14 @@ fn constrained_crash_retry(selected: bool) {
     assert_eq!(stale_bytes(), needed, "child must leave the complete pair");
     assert_eq!(fs::read(&disk).unwrap(), b"old-disk");
     assert_eq!(fs::read(&vars).unwrap(), b"old-vars");
-    let result = pair.restore_with_capacity(
+    let result = pair.restore_copying(
         &snapshot,
-        |_| {
-            let stale = stale_bytes();
-            let available = needed - stale;
-            eprintln!("selected={selected} needed={needed} stale={stale} available={available}");
-            assert_eq!(pair_paths(&old_paths), old, "admission changed selection");
-            Some(available)
+        |src, dst| {
+            if dst.file_name().unwrap() == "disk.raw" {
+                assert_eq!(stale_bytes(), 0, "stale copy not reclaimed before copy");
+                assert_eq!(pair_paths(&old_paths), old, "reclaim changed selection");
+            }
+            copy_and_sync(src, dst)
         },
         snapshot_publish::publish,
     );
@@ -58,12 +58,12 @@ fn pair_paths(paths: &(PathBuf, PathBuf)) -> (Vec<u8>, Vec<u8>) {
 }
 
 #[test]
-fn initial_selection_retry_reclaims_crashed_staging_before_capacity_admission() {
+fn initial_selection_retry_reclaims_crashed_staging_before_copy() {
     constrained_crash_retry(false);
 }
 
 #[test]
-fn current_selection_retry_reclaims_crashed_staging_before_capacity_admission() {
+fn current_selection_retry_reclaims_crashed_staging_before_copy() {
     constrained_crash_retry(true);
 }
 
