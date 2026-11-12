@@ -36,9 +36,10 @@ try {
     Pin-ShareQuickAccess $root
     $marker = Join-Path $temp 'BridgeVM/share-quick-access.attempted'
     Assert ($script:pins -eq 1 -and [IO.File]::Exists($marker)) 'pin and persistent marker'
+    Assert ($script:logs.Count -eq 1 -and $script:logs[0] -eq ('SHARE Quick Access pin attempted ' + $root)) 'one attempt log line'
     $script:BvSharePinAttempted = $false # a new agent process; user has unpinned
     Pin-ShareQuickAccess $root
-    Assert ($script:pins -eq 1) 'restart respects manual unpin'
+    Assert ($script:pins -eq 1 -and $script:logs.Count -eq 1) 'restart respects manual unpin without another attempt log'
     [IO.File]::Delete($marker)
     $script:BvSharePinAttempted = $false
     $script:fail = $true
