@@ -27,8 +27,8 @@ reappears in the code or docs it watches. Change the registry, then regenerate;
 never hand-edit a generated block.
 
 History is preserved. Superseding a document means adding a pointer to the new
-source of truth or reclassifying it in `docs/document-manifest.tsv`; it does not
-mean deleting useful observations.
+source of truth in the document itself; it does not mean deleting useful
+observations.
 
 ## 1a. Working rules and the deterministic check
 
@@ -127,8 +127,8 @@ current state; active plans own detailed task sequencing.
 5. For live gates, run only from the signed/package path and archive the exact
    configuration, hashes, logs, and guest receipt.
 6. Update `STATUS.md` only after the evidence exists.
-7. Add new documents to `docs/document-manifest.tsv` and run the documentation
-   check.
+7. Link new guides from the relevant documentation index and run the
+   documentation check.
 
 Do not mix two stateful migrations into one live experiment. For example, a new
 TPM state format and a new Secure Boot variable store should each have an
@@ -264,11 +264,11 @@ look identical from a single failed run.
 
 ## 10. Documentation maintenance
 
-`docs/document-manifest.tsv` and its explicit `@include` shards classify every
-Markdown document. Historical records live in `docs/document-manifests/history.tsv`.
-Every shard uses the same four-column header. The checker rejects missing or
-malformed shards, nested includes, duplicate document paths, unclassified
-documents, missing paths and missing superseding documents.
+Use the documentation index and in-document status notes to distinguish current
+guides from plans, references and dated evidence; no separate catalog is required.
+Run `bash scripts/check-documentation-system.sh` to check relative links and
+script/source references. The checker skips relative links in inline code and
+point-in-time snapshots under `docs/archive/`.
 
 Long logs belong in a dated evidence document. Root README and STATUS stay
 short. When their detail is still useful, archive the exact old version before
