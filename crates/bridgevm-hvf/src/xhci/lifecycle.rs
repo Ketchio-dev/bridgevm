@@ -29,6 +29,7 @@ impl XhciController {
             pending_interrupter_bits: 0,
             pending_enabled_interrupter_bits: 0,
             port_status_change_pending: false,
+            hid_endpoints: Default::default(),
             slot1_ep0_dequeue: 0,
             slot1_ep0_dcs: false,
             slot1_dci3_dequeue: 0,
