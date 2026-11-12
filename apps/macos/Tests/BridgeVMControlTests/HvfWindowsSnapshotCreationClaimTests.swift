@@ -41,5 +41,15 @@ final class HvfWindowsSnapshotCreationClaimTests: XCTestCase {
         let next = HvfWindowsSnapshotStore.nextURL(bundle: bundle,
             now: HvfWindowsSnapshotStore.timestamp(destination.lastPathComponent)!, occupied: [destination.lastPathComponent])
         XCTAssertEqual(next.lastPathComponent, "20261112-120001.snapshot")
+        let disk = bundle.appendingPathComponent("disks/hvf-target.raw")
+        let vars = bundle.appendingPathComponent("metadata/hvf-vars.fd")
+        try FileManager.default.createDirectory(at: disk.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 128).write(to: disk)
+        try Data(repeating: 2, count: 16).write(to: vars)
+        let plan = HvfWindowsSnapshotCommand.Plan(executable: HvfMediaImportTestSupport.helper,
+            disk: disk, vars: vars, snapshot: destination, vmID: "test")
+        _ = try await HvfWindowsSnapshotCommand.run(.create, plan: plan)
+        XCTAssertEqual(HvfWindowsSnapshotStore.list(bundle: bundle).map(\.url.path), [next.path])
+        XCTAssertEqual(try Data(contentsOf: destination.appendingPathComponent("disk.raw")), Data("partial".utf8))
     }
 }

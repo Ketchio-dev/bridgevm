@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 enum HvfWindowsSnapshotCommand {
     enum Operation { case create, restore, delete }
@@ -27,7 +28,7 @@ enum HvfWindowsSnapshotCommand {
         let executable: URL
         let disk: URL
         let vars: URL
-        let snapshot: URL
+        var snapshot: URL
         let vmID: String
         var name: String? = nil
         var bundle: URL { disk.deletingLastPathComponent().deletingLastPathComponent() }
@@ -105,30 +106,52 @@ enum HvfWindowsSnapshotCommand {
                 try HvfWindowsSnapshotStore.delete(plan.snapshot, bundle: plan.bundle)
                 return nil
             }
-            if operation == .create {
-                try FileManager.default.createDirectory(
-                    at: plan.snapshot.deletingLastPathComponent(), withIntermediateDirectories: true)
-            }
-            try await checkAdmission()
             let arguments = try plan.arguments(for: operation)
             try await checkAdmission()
-            if operation == .create, FileManager.default.fileExists(atPath: plan.snapshot.path) {
-                throw failure("snapshot destination was occupied before creation", .unsafeFolder)
+            if operation == .create {
+                let created = try create(plan: plan, arguments: arguments)
+                try await checkAdmission()
+                return try verifyCreated(created)
             }
             _ = try invoke(plan.executable, arguments)
-            if operation == .create {
-                try await checkAdmission()
-                _ = try invoke(plan.executable, ["verify", plan.snapshot.path])
-                if let name = plan.name, !name.isEmpty {
-                    do {
-                        try name.write(to: HvfWindowsSnapshotStore.nameFile(plan.snapshot), atomically: true, encoding: .utf8)
-                    } catch {
-                        return "스냅샷은 생성했지만 이름을 저장하지 못해 날짜만 표시합니다."
-                    }
-                }
-            }
             return nil
         }.value
+    }
+
+    /// Shared by the session and native CLI: mkdir claims an empty destination exclusively.
+    /// The helper accepts it and publishes with rename; a competing creator must choose a sibling.
+    static func create(plan: Plan, arguments: [String]) throws -> Plan {
+        let parent = plan.snapshot.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        guard canonical(parent), regularDirectory(parent) else {
+            throw failure("snapshot directory is unsafe", .unsafeFolder)
+        }
+        var claimed = plan
+        while mkdir(claimed.snapshot.path, 0o700) != 0 {
+            guard errno == EEXIST else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            var occupied = Set(try FileManager.default.contentsOfDirectory(atPath: parent.path))
+            occupied.insert(claimed.snapshot.lastPathComponent)
+            claimed.snapshot = HvfWindowsSnapshotStore.nextURL(bundle: plan.bundle,
+                now: HvfWindowsSnapshotStore.timestamp(plan.snapshot.lastPathComponent) ?? Date(), occupied: occupied)
+        }
+        // Remove only an empty failed reservation, never a published snapshot or unexpected data.
+        defer { _ = rmdir(claimed.snapshot.path) }
+        var arguments = arguments
+        arguments[3] = claimed.snapshot.path
+        _ = try invoke(claimed.executable, arguments)
+        return claimed
+    }
+
+    static func verifyCreated(_ plan: Plan) throws -> String? {
+        _ = try invoke(plan.executable, ["verify", plan.snapshot.path])
+        if let name = plan.name, !name.isEmpty {
+            do {
+                try name.write(to: HvfWindowsSnapshotStore.nameFile(plan.snapshot), atomically: true, encoding: .utf8)
+            } catch {
+                return "스냅샷은 생성했지만 이름을 저장하지 못해 날짜만 표시합니다."
+            }
+        }
+        return nil
     }
 
     static func invoke(_ executable: URL, _ arguments: [String]) throws -> String {
