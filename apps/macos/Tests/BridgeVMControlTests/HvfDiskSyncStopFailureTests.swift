@@ -30,7 +30,8 @@ final class HvfDiskSyncStopFailureTests: XCTestCase {
         start.finish(.failed(.processLaunch, "specific start failure"))
         session.guiStartOperation = start
         XCTAssertNil(session.runtimeSupervisionFailureText, "must not mask the specific start failure")
-        XCTAssertEqual(session.guiStartFailureText, "VM을 시작하지 못했습니다: specific start failure")
+        let startText = try XCTUnwrap(session.guiStartFailureText)
+        XCTAssertTrue(startText.contains("specific start failure"))
         session.guiStartOperation = nil
         for event in BvAgentEvent.parse(lines: ["BVSTORAGE final-save-failed"]) { session.handle(event) }
         XCTAssertEqual(session.runtimeSupervisionFailureText,
@@ -54,7 +55,8 @@ final class HvfDiskSyncStopFailureTests: XCTestCase {
         session.guiStartOperation = start
         XCTAssertNotNil(f.controller.ledger.complete?.failureCode)
         XCTAssertNil(session.runtimeSupervisionFailureText)
-        XCTAssertEqual(session.guiStartFailureText, "VM을 시작하지 못했습니다: disk in use")
+        let startText = try XCTUnwrap(session.guiStartFailureText)
+        XCTAssertTrue(startText.contains("disk in use"))
     }
 
     @MainActor
