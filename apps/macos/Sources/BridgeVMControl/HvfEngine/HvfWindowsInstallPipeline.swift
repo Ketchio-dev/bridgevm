@@ -33,9 +33,16 @@ extension HvfWindowsInstallSession {
         guard !acknowledgeCancellation(cleanup: true) else { return }
         guard await continueFreshInstallation() else { return }
         do {
-            try execution.prepareMedia(plan)
+            try await execution.prepareMedia(plan)
         } catch {
             failUnlessCancelled("설치 작업 파일을 준비하지 못했습니다: \(error.localizedDescription)")
+            return
+        }
+        guard !acknowledgeCancellation(cleanup: true) else { return }
+        guard await continueFreshInstallation(cleanupOnCancellation: true) else { return }
+        guard !acknowledgeCancellation(cleanup: true) else { return }
+        if let refusal = continuationAdmission?() {
+            failUnlessCancelled(refusal)
             return
         }
         let installLog = URL(fileURLWithPath: plan.stagingEvidenceDir).appendingPathComponent("run.log")

@@ -27,6 +27,13 @@ extension LibraryModel {
             return current.engineKind == .hvfEngine && current.installPending == true
                 && owner.windowsInstallSessions.owns(session, for: current)
         }
+        session.continuationAdmission = { [weak self, weak session] in
+            guard let self, let session else { return "VM 라이브러리를 사용할 수 없습니다." }
+            return self.libraryWorkRefusal(slug: slug, excludingWindowsInstall: session) { owner, current in
+                current.engineKind == .hvfEngine && current.installPending == true
+                    && owner.windowsInstallSessions.owns(session, for: current)
+            }
+        }
         session.onCompleted = { [weak self] in self?.reload() }
         return session
     }

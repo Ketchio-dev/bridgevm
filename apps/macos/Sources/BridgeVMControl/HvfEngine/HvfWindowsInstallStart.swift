@@ -41,11 +41,11 @@ extension HvfWindowsInstallSession {
     }
 
     /// Recheck inside the scheduled pipeline and after awaits, before fresh effects.
-    func continueFreshInstallation() async -> Bool {
-        guard !acknowledgeCancellation() else { return false }
+    func continueFreshInstallation(cleanupOnCancellation: Bool = false) async -> Bool {
+        guard !acknowledgeCancellation(cleanup: cleanupOnCancellation) else { return false }
         do {
             let decision = try await recovery.decision(for: plan)
-            guard !acknowledgeCancellation() else { return false }
+            guard !acknowledgeCancellation(cleanup: cleanupOnCancellation) else { return false }
             switch decision {
             case .fresh: return true
             case let .pending(ticket):
@@ -53,7 +53,7 @@ extension HvfWindowsInstallSession {
                 return false
             }
         } catch {
-            if !acknowledgeCancellation() {
+            if !acknowledgeCancellation(cleanup: cleanupOnCancellation) {
                 finish(.failed("설치 복구 상태 확인 실패: \(error.localizedDescription)"))
             }
             return false
