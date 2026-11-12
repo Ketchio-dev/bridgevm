@@ -14,7 +14,13 @@ struct CreateVMCreationState {
     ) -> (dismiss: Bool, code: String, message: String) {
         switch outcome {
         case .created(let config):
-            if adopt(config) { return (true, "", "") }
+            if adopt(config) {
+                if let notice = HvfWindowsImportNotice.read(bundlePath: config.bundlePath) {
+                    published = config
+                    return (false, "", notice)
+                }
+                return (true, "", "")
+            }
             published = config
             return (false, "library-publication-failed", "저장된 VM을 라이브러리에서 찾지 못했습니다. 파일은 보존했습니다. 다시 만들지 말고 저장된 VM을 불러오세요.")
         case .publishedButUnsynced(let config, let message):

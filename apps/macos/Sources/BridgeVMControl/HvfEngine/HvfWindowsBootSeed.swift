@@ -80,7 +80,8 @@ enum HvfWindowsBootSeed {
         let partLBA = header.readUInt64(at: 72)
         let count = header.readUInt32(at: 80)
         let entrySize = header.readUInt32(at: 84)
-        guard entrySize >= 128, count > 0, count < 1024 else { throw SeedError.gptUnreadable }
+        guard entrySize >= 128, entrySize <= 4096, count > 0, count < 1024,
+              partLBA <= UInt64.max / 512 else { throw SeedError.gptUnreadable }
         try handle.seek(toOffset: partLBA * 512)
         guard let table = try handle.read(upToCount: Int(count) * Int(entrySize)),
               table.count == Int(count) * Int(entrySize) else {
@@ -93,6 +94,7 @@ enum HvfWindowsBootSeed {
             let uniqueGUID = table.subdata(in: base + 16..<base + 32)
             let first = table.readUInt64(at: base + 32)
             let last = table.readUInt64(at: base + 40)
+            guard first > 0, last >= first else { throw SeedError.gptUnreadable }
             return EspInfo(partitionGUID: uniqueGUID, firstLBA: first, lastLBA: last,
                            partitionNumber: UInt32(i + 1))
         }

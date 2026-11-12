@@ -15,7 +15,30 @@ enum HvfMediaImport {
         defer { try? fileManager.removeItem(at: workspace) }
         try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: workspace.path)
         let members: [(member: URL, target: URL)]
-        if let format = HvfImportedDiskFormat.detect(path: disk) {
+        if vars.isEmpty {
+            let copiedDisk = workspace.appendingPathComponent("disk.raw")
+            let seededVars = workspace.appendingPathComponent("vars.fd")
+            if let format = HvfImportedDiskFormat.detect(path: disk) {
+                converting(format, 0)
+                try HvfMediaImportHelper.invoke(helper, arguments: ["convert-to-raw", disk, copiedDisk.path]) {
+                    converting(format, $0)
+                }
+            } else {
+                guard VMLibrary.cloneOrCopyFile(from: disk, to: copiedDisk.path) else {
+                    throw CocoaError(.fileWriteUnknown)
+                }
+            }
+            // Only the private copy is inspected; neither GPT reads nor seeding touch the source.
+            try HvfWindowsBootSeed.writeBundledSeed(to: seededVars.path)
+            do {
+                try HvfWindowsBootSeed.seedFile(varsPath: seededVars.path, diskPath: copiedDisk.path)
+            } catch HvfWindowsBootSeed.SeedError.gptUnreadable {
+                try HvfWindowsImportNotice.write(nextTo: toVars)
+            } catch HvfWindowsBootSeed.SeedError.espNotFound {
+                try HvfWindowsImportNotice.write(nextTo: toVars)
+            }
+            members = [(copiedDisk, toDisk), (seededVars, toVars)]
+        } else if let format = HvfImportedDiskFormat.detect(path: disk) {
             // A BridgeVM pair's disk is always RAW, so a QCOW2 or VHDX source has no managed
             // generation to select: the helper converts the chosen file and the vars are copied.
             converting(format, 0)

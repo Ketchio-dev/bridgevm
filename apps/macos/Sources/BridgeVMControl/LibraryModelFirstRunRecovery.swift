@@ -14,7 +14,8 @@ extension LibraryModel {
             }
             let adopted = adopt?(config) ?? add(config)
             if adopted { proMode = false }
-            error = adopted ? nil : "VM은 저장했지만 라이브러리에서 찾지 못했습니다. 저장된 파일은 보존했습니다."
+            error = adopted ? HvfWindowsImportNotice.read(bundlePath: config.bundlePath) : "VM은 저장했지만 라이브러리에서 찾지 못했습니다. 저장된 파일은 보존했습니다."
+            if adopted, error != nil { selectedID = Self.firstRunImportSelectionID }
             published = adopted ? nil : config
         case .publishedButUnsynced(let config, let message):
             published = config
