@@ -19,7 +19,7 @@ enum ToWriter {
     Chunk(String),
     /// The guest's time for the Mac copy, and for a preferred guest copy the Mac file it may
     /// replace (host_destination.rs MacChanged).
-    Publish(Option<SystemTime>, Option<MacStat>),
+    Publish(Option<SystemTime>, Option<MacStat>, bool),
 }
 
 pub(in crate::agent_console) enum FromWriter {
@@ -75,8 +75,8 @@ impl StageWriter {
         let _ = self.to.send(ToWriter::Chunk(b64));
     }
 
-    pub(in crate::agent_console) fn publish(&mut self, mtime: Option<SystemTime>, mac: Option<MacStat>) {
-        let _ = self.to.send(ToWriter::Publish(mtime, mac));
+    pub(in crate::agent_console) fn publish(&mut self, mtime: Option<SystemTime>, mac: Option<MacStat>, recovery: bool) {
+        let _ = self.to.send(ToWriter::Publish(mtime, mac, recovery));
     }
 
     /// The thread's next answer, without waiting.
@@ -128,7 +128,7 @@ fn run(
                 let answer = (written == size).then_some(FromWriter::Hashed(hash));
                 let _ = outbox.send((bytes.len() as u64, answer));
             }
-            ToWriter::Publish(mtime, mac) => {
+            ToWriter::Publish(mtime, mac, recovery) => {
                 if written != size {
                     break;
                 }
@@ -138,7 +138,7 @@ fn run(
                     let _ = mark(marks, [name.as_str()]);
                 }
                 // The Mac file is checked last, in the publish, right before its rename.
-                let result = destination.publish(staged, mtime, mac);
+                let result = destination.publish(staged, mtime, mac, recovery);
                 let _ = outbox.send((0, Some(FromWriter::Published(result))));
                 return;
             }

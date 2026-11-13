@@ -34,7 +34,7 @@ impl AgentConsoleHarness {
         // A preferred guest edit goes only over the Mac file it was preferred to (share_synced.rs).
         let recovery = share.engine.recovery_copy(name);
         let empty_recovery = recovery && finished.bytes.is_empty();
-        let mac = if recovery { Some(None) } else { share.fetch_mac.get(name).copied().or_else(|| share.engine.preferred_mac_stat(name).map(Some)) };
+        let mac = share.fetch_mac.get(name).copied().or_else(|| share.engine.preferred_mac_stat(name).map(Some));
         let bytes = match share
             .engine
             .on_guest_file(name.to_string(), finished.bytes, None)
@@ -58,7 +58,7 @@ impl AgentConsoleHarness {
         // The guest's copy may not be on its disk yet: marked first (share_synced.rs).
         share.mark_fetched(name, now);
         let written = Destination::from_root(root, name, true)
-            .and_then(|d| d.write_at_unless_changed(&bytes, mtime, mac));
+            .and_then(|d| d.write_at_unless_changed(&bytes, mtime, mac, recovery));
         match written {
             Ok(mtime) => {
                 share.fetch_mac.remove(name);

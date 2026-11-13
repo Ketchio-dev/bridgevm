@@ -8,7 +8,7 @@ fn unsupported_links_preserve_conflicts_without_clobbering_or_retrying() {
     std::fs::write(root.join("report (Windows copy).docx"), b"previous conflict").unwrap();
     LINK_FAULT.with(|fault| fault.set(Some(libc::ENOTSUP))); // real exFAT returned errno 45
     let result = Destination::open(&root, "report.docx", true).unwrap()
-        .write_at_unless_changed(b"Windows bytes", None, Some(Some((3, 1))));
+        .write_at_unless_changed(b"Windows bytes", None, Some(Some((3, 1))), false);
     LINK_FAULT.with(|fault| fault.set(None));
     assert!(result.as_ref().is_err_and(is_mac_changed), "expected MacChanged, got {result:?}");
     assert_eq!(std::fs::read(root.join("report.docx")).unwrap(), b"newer Mac save");
@@ -23,12 +23,29 @@ fn failed_conflict_copy_removes_partial_and_settles_mac_change() {
     LINK_FAULT.with(|fault| fault.set(Some(libc::ENOTSUP)));
     CONFLICT_COPY_FAULT.with(|fault| fault.set(Some(libc::ENOSPC)));
     let result = Destination::open(&f.root(), "report.docx", true).unwrap()
-        .write_at_unless_changed(b"Windows bytes", None, Some(Some((3, 1))));
+        .write_at_unless_changed(b"Windows bytes", None, Some(Some((3, 1))), false);
     LINK_FAULT.with(|fault| fault.set(None));
     CONFLICT_COPY_FAULT.with(|fault| fault.set(None));
     assert!(result.as_ref().is_err_and(is_mac_changed));
     assert_eq!(std::fs::read(f.root().join("report.docx")).unwrap(), b"newer Mac save");
     assert_eq!(std::fs::read_dir(f.root()).unwrap().count(), 1, "partial conflict or staging file leaked");
+}
+
+#[test]
+fn recovery_preservation_errors_are_write_failures_not_mac_changed() {
+    let f = Fixture::new();
+    std::fs::write(f.root().join("report.docx"), b"unchanged Mac").unwrap();
+    for errno in [libc::ENOSPC, libc::EIO] {
+        LINK_FAULT.with(|fault| fault.set(Some(errno)));
+        let result = Destination::open(&f.root(), "report.docx", true).unwrap()
+            .write_at_unless_changed(b"Windows edit", None, None, true);
+        LINK_FAULT.with(|fault| fault.set(None));
+        let error = result.unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(errno));
+        assert!(!is_mac_changed(&error));
+        assert_eq!(std::fs::read(f.root().join("report.docx")).unwrap(), b"unchanged Mac");
+        assert_eq!(std::fs::read_dir(f.root()).unwrap().count(), 1);
+    }
 }
 
 #[test]
@@ -38,7 +55,7 @@ fn real_exfat_conflict_publication() {
     std::fs::write(root.join("report.docx"), b"newer Mac save").unwrap();
     std::fs::write(root.join("report (Windows copy).docx"), b"previous conflict").unwrap();
     let result = Destination::open(&root, "report.docx", true).unwrap()
-        .write_at_unless_changed(b"Windows bytes", None, Some(Some((3, 1))));
+        .write_at_unless_changed(b"Windows bytes", None, Some(Some((3, 1))), false);
     println!("REAL_EXFAT_PUBLICATION {result:?}");
     assert!(result.as_ref().is_err_and(is_mac_changed), "expected settled MacChanged, got {result:?}");
     assert_eq!(std::fs::read(root.join("report.docx")).unwrap(), b"newer Mac save");
