@@ -36,6 +36,7 @@ on:
       - scripts/win-assets/bvagent-install.ps1
       - scripts/win-assets/install.cmd
       - tests/integration/guest-tools-serial-contract.ps1
+      - tests/integration/guest-tools-installer.ps1
       - .github/workflows/firstboot-provisioner-contract.yml
       - scripts/win-assets/bv-product-e2e*
       - tests/integration/t17-tpm-pcr-contract.ps1
@@ -53,11 +54,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Imported tools device detection (Windows PowerShell 5.1)
         shell: powershell
-        run: tests/integration/guest-tools-serial-contract.ps1
+        run: |
+          tests/integration/guest-tools-serial-contract.ps1
+          tests/integration/guest-tools-installer.ps1
       - name: Imported tools device detection (PowerShell 7)
         if: ${{ !cancelled() }}
         shell: pwsh
-        run: tests/integration/guest-tools-serial-contract.ps1
+        run: |
+          tests/integration/guest-tools-serial-contract.ps1
+          tests/integration/guest-tools-installer.ps1
   put-durability:
     runs-on: windows-latest
     timeout-minutes: 5

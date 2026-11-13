@@ -18,9 +18,34 @@ function Assert-ToolsFolder([string]$Path) {
 function New-ToolsFolder([string]$Path) {
     [void][IO.Directory]::CreateDirectory($Path)
     $acl = Get-Acl -LiteralPath $Path
-    $acl.SetSecurityDescriptorSddlForm('O:S-1-5-32-544D:PAI(A;OICI;FA;;;S-1-5-18)(A;OICI;FA;;;S-1-5-32-544)')
+    $acl.SetSecurityDescriptorSddlForm('O:S-1-5-32-544D:PAI(A;OICI;FA;;;S-1-5-18)(A;OICI;FA;;;S-1-5-32-544)(A;OICI;0x1200a9;;;S-1-5-32-545)')
     Set-Acl -LiteralPath $Path -AclObject $acl
     Assert-ToolsFolder $Path
+}
+function Copy-ToolsFile([string]$Source, [string]$Destination) {
+    $file = [IO.File]::Open($Destination, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
+    try { $bytes = [IO.File]::ReadAllBytes($Source); $file.Write($bytes, 0, $bytes.Length) } finally { $file.Dispose() }
+    $acl = Get-Acl -LiteralPath $Destination
+    $acl.SetSecurityDescriptorSddlForm('O:S-1-5-32-544', 'Owner')
+    Set-Acl -LiteralPath $Destination -AclObject $acl
+}
+function Install-ToolsFiles([string]$Source, [string]$Staging, [string]$Target) {
+    $files = @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs', 'bvagent-window-inventory.ps1', 'bv-window-inventory.cs', 'bvagent-task.ps1', 'bvagent-update.ps1')
+    $existing = Test-Path -LiteralPath $Target
+    if (-not $existing) {
+        if (Test-Path -LiteralPath $Staging) { Assert-ToolsFolder $Staging; Remove-Item -LiteralPath $Staging -Recurse -Force }
+        New-ToolsFolder $Staging
+        foreach ($name in $files) { Copy-ToolsFile (Join-Path $Source $name) (Join-Path $Staging $name) }
+    }
+    $directory = if ($existing) { $Target } else { $Staging }
+    Assert-ToolsFolder $directory
+    if (@(Get-ChildItem -LiteralPath $directory -Force).Count -ne $files.Count) { throw 'Unexpected existing tools' }
+    foreach ($name in $files) {
+        $destination = Join-Path $directory $name
+        Assert-ToolsFolder $destination
+        if ((Get-FileHash -LiteralPath (Join-Path $Source $name)).Hash -cne (Get-FileHash -LiteralPath $destination).Hash) { throw 'Unexpected existing tools' }
+    }
+    if (-not $existing) { [IO.Directory]::Move($Staging, $Target) }
 }
 try {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -43,25 +68,7 @@ try {
     if (-not (Test-Path -LiteralPath $root)) { New-ToolsFolder $root }
     Assert-ToolsFolder $root
     $target = Join-Path $root 'GuestTools'
-    $existing = Test-Path -LiteralPath $target
-    if (-not $existing) { New-ToolsFolder $target }
-    Assert-ToolsFolder $target
-    $files = @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs', 'bvagent-window-inventory.ps1', 'bv-window-inventory.cs', 'bvagent-task.ps1', 'bvagent-update.ps1')
-    if ($existing -and @(Get-ChildItem -LiteralPath $target -Force).Count -ne $files.Count) { throw 'Unexpected existing tools' }
-    foreach ($name in $files) {
-        $source = Join-Path $PSScriptRoot $name
-        $destination = Join-Path $target $name
-        if ($existing) {
-            Assert-ToolsFolder $destination
-            if ((Get-FileHash -LiteralPath $source).Hash -cne (Get-FileHash -LiteralPath $destination).Hash) { throw 'Unexpected existing tools' }
-        } else {
-            $file = [IO.File]::Open($destination, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
-            try { $bytes = [IO.File]::ReadAllBytes($source); $file.Write($bytes, 0, $bytes.Length) } finally { $file.Dispose() }
-            $acl = Get-Acl -LiteralPath $destination
-            $acl.SetSecurityDescriptorSddlForm('O:S-1-5-32-544', 'Owner')
-            Set-Acl -LiteralPath $destination -AclObject $acl
-        }
-    }
+    Install-ToolsFiles $PSScriptRoot (Join-Path $root 'GuestTools.new') $target
     . (Join-Path $target 'bvagent-task.ps1')
     Register-ScheduledTask -TaskName 'BridgeVM Guest Agent' -Xml (Get-GuestAgentTaskXml $user (Join-Path $target 'bvagent.ps1')) -Force | Out-Null
     Start-ScheduledTask -TaskName 'BridgeVM Guest Agent'
