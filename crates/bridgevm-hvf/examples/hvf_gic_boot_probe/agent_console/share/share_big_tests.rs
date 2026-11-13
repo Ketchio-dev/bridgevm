@@ -381,6 +381,8 @@ fn ordinary_multirange_publish_failure_mark_loses_windows_edit_after_kill() {
     let immutable=Immutable(std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap());
     // SAFETY: live C path to this test's own file; cleared by the guard even on assertion failure.
     assert_eq!(unsafe { libc::chflags(immutable.0.as_ptr(),libc::UF_IMMUTABLE as _) },0);
+    // Destination::publish first reopens O_WRONLY: prove this is the failing step, not rename.
+    assert_eq!(std::fs::OpenOptions::new().write(true).open(&path).unwrap_err().raw_os_error(),Some(libc::EPERM));
     let second=rig.step().unwrap();
     for reply in range_reply(&second,&bytes,size,TIME) { rig.reply(&reply); }
     rig.wait(|r| !r.h.big_share_active());
