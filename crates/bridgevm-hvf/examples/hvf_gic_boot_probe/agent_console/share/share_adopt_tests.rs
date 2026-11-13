@@ -3,6 +3,8 @@
 //! was off.
 
 use super::*;
+#[path = "share_settle_reproduction_tests.rs"]
+mod settle_reproductions;
 #[path = "share_unclean_tests.rs"]
 mod unclean;
 
