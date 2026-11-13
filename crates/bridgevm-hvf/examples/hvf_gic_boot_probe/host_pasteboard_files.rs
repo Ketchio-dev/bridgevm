@@ -3,8 +3,8 @@
 //! thread. The walk never follows a symlink and skips anything that is not a
 //! regular file or a folder, so no name or byte outside the copied items is
 //! read. Names go as Windows stores them (share_guest_names.rs: composed, with
-//! stand-ins for the characters Windows refuses); one with a control character
-//! (Finder's custom-icon file is `Icon\r`) is left out.
+//! stand-ins for punctuation and underscores for controls and backslashes).
+//! Finder's custom-icon metadata (`Icon\r`) is left out.
 //!
 //! No file is read here: the walk opens each one (so an unreadable file fails
 //! the copy now) and keeps its size and times, and the push reads it a chunk at
@@ -74,21 +74,41 @@ pub fn composed_path(path: &Path) -> PathBuf {
     path.to_str().map_or_else(|| path.to_path_buf(), |path| PathBuf::from(composed(path).into_owned()))
 }
 
-/// A Mac name as Windows can store and show it; None when Windows cannot. A
-/// `\` (legal in a Mac name) would be a separator in the guest path, so such
-/// a name is left out like a control character. Win32 drops a name's trailing
-/// dots and spaces (two names would meet in one file), so they go here, and a
-/// device name (`nul.txt`) is no file there.
+/// A Windows component: repair separators/controls and device names, but keep
+/// the clipboard's punctuation stand-ins. None only for Finder icon metadata.
 fn windows_name(name: &str) -> Option<String> {
-    if name.chars().any(|c| c.is_control() || c == '\\') {
-        return None;
+    if name == "Icon\r" {
+        return None; // Finder's folder icon is metadata, not a file to paste.
     }
-    let name: String = composed(name).chars().map(guest_char).collect();
+    let name: String = composed(name).chars().map(|c| if c.is_control() || c == '\\' { '_' } else { guest_char(c) }).collect();
     let name = name.trim_end_matches(['.', ' ']);
     let stem = name.split('.').next().unwrap_or_default().trim_end_matches(' ').to_ascii_uppercase();
     let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
         || matches!(stem.as_bytes(), [b'C', b'O', b'M', b'1'..=b'9'] | [b'L', b'P', b'T', b'1'..=b'9']);
-    (!name.is_empty() && !device).then(|| name.to_owned())
+    Some(if name.is_empty() { "_".to_owned() } else if device { format!("_{name}") } else { name.to_owned() })
+}
+
+/// Report unsupported components once, including when the walk exits early.
+#[derive(Default)]
+struct UnsupportedNames(usize);
+
+impl UnsupportedNames {
+    fn keep(&mut self, name: String) -> Option<String> {
+        if name.encode_utf16().count() > 255 || name.contains('/') {
+            self.0 += 1;
+            None
+        } else {
+            Some(name)
+        }
+    }
+}
+
+impl Drop for UnsupportedNames {
+    fn drop(&mut self) {
+        if self.0 > 0 {
+            println!("BVAGENT CLIPSYNC skip host-files unsupported-names count={}", self.0);
+        }
+    }
 }
 
 /// A name as NTFS compares it: each character by its simple uppercase, as the
@@ -129,10 +149,11 @@ pub fn host_files(tops: &[PathBuf]) -> Option<HostFiles> {
     // Copied items of one name (from two folders, as in search results) stay apart, as do
     // the names in each folder below.
     let mut taken = std::collections::HashSet::new();
+    let mut unsupported = UnsupportedNames::default();
     let mut pending: Vec<(PathBuf, String)> = tops
         .iter()
         .filter_map(|top| Some((top.clone(), windows_name(top.file_name()?.to_str()?)?)))
-        .map(|(top, name)| (top, unique_name(name, &mut taken)))
+        .filter_map(|(top, name)| Some((top, unsupported.keep(unique_name(name, &mut taken))?)))
         .collect();
     pending.reverse();
     while let Some((path, rel)) = pending.pop() {
@@ -159,7 +180,7 @@ pub fn host_files(tops: &[PathBuf]) -> Option<HostFiles> {
             // Two Mac names may meet in Windows (`a:b` and a literal stand-in, or a case pair).
             let mut taken = std::collections::HashSet::new();
             let names: Vec<(String, String)> =
-                names.into_iter().map(|(win, name)| (unique_name(win, &mut taken), name)).collect();
+                names.into_iter().filter_map(|(win, name)| Some((unsupported.keep(unique_name(win, &mut taken))?, name))).collect();
             pending.extend(names.iter().rev().map(|(win, name)| (path.join(name), format!("{rel}\\{win}"))));
         } else if meta.is_file() {
             bytes = bytes.saturating_add(meta.len());

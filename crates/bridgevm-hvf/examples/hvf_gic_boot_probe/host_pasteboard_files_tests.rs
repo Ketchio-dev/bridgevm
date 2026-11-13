@@ -25,7 +25,7 @@ fn entries(files: Option<HostFiles>) -> Vec<(String, Option<Vec<u8>>)> {
 }
 
 #[test]
-fn a_copy_is_its_items_and_their_tree_without_links_or_names_windows_cannot_hold() {
+fn a_copy_is_its_items_and_their_tree_without_links_or_finder_icon_metadata() {
     let dir = scratch("tree");
     let outside = dir.join("outside");
     std::fs::create_dir_all(outside.join("dir")).unwrap();
@@ -58,7 +58,7 @@ fn a_copy_is_its_items_and_their_tree_without_links_or_names_windows_cannot_hold
 }
 
 #[test]
-fn a_name_holding_a_windows_separator_is_left_out() {
+fn a_name_holding_a_windows_separator_is_repaired_without_path_traversal() {
     let dir = scratch("separator");
     // Legal in a Mac name; in a Windows path it would climb out of the copy.
     let evil = dir.join(r"..\..\victim.txt");
@@ -69,7 +69,12 @@ fn a_name_holding_a_windows_separator_is_left_out() {
     std::fs::write(folder.join("ok.txt"), b"ok").unwrap();
     assert_eq!(
         entries(host_files(&[evil, folder])),
-        [("folder".to_owned(), None), ("folder\\ok.txt".to_owned(), Some(b"ok".to_vec()))]
+        [
+            (".._.._victim.txt".to_owned(), Some(b"evil".to_vec())),
+            ("folder".to_owned(), None),
+            ("folder\\.._up.txt".to_owned(), Some(b"up".to_vec())),
+            ("folder\\ok.txt".to_owned(), Some(b"ok".to_vec())),
+        ]
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -131,7 +136,7 @@ fn names_go_as_win32_keeps_them() {
     let dir = scratch("win32");
     let folder = dir.join("folder");
     std::fs::create_dir(&folder).unwrap();
-    // Win32 drops trailing dots and spaces, and a device name is no file there.
+    // Trailing dots/spaces are trimmed; no reserved device name is sent.
     for (name, bytes) in [("report.txt", "a"), ("report.txt.", "b"), ("report.txt ", "c"), ("...", "d"), ("nul.txt", "e"), ("Com1", "f"), ("com10", "g")] {
         std::fs::write(folder.join(name), bytes).unwrap();
     }
@@ -139,6 +144,9 @@ fn names_go_as_win32_keeps_them() {
         entries(host_files(&[folder])),
         [
             ("folder".to_owned(), None),
+            ("folder\\_".to_owned(), Some(b"d".to_vec())),
+            ("folder\\_Com1".to_owned(), Some(b"f".to_vec())),
+            ("folder\\_nul.txt".to_owned(), Some(b"e".to_vec())),
             ("folder\\com10".to_owned(), Some(b"g".to_vec())),
             ("folder\\report.txt".to_owned(), Some(b"a".to_vec())),
             ("folder\\report (2).txt".to_owned(), Some(b"c".to_vec())),
@@ -220,6 +228,100 @@ fn a_large_copy_is_listed_with_its_sizes_and_times_without_reading_a_byte() {
         panic!("not read");
     };
     assert_ne!(edited.digest, copy.digest);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn clipboard_folder_never_silently_omits_windows_incompatible_regular_files() {
+    let dir = scratch("incompatible-names");
+    let folder = dir.join("folder");
+    std::fs::create_dir(&folder).unwrap();
+    for (name, bytes) in [("normal.txt", "normal"), ("NUL.txt", "reserved"), (r"back\slash.txt", "backslash")] {
+        std::fs::write(folder.join(name), bytes).unwrap();
+    }
+    let offered = host_files(&[folder]);
+    std::fs::remove_dir_all(&dir).unwrap();
+    match offered {
+        Some(HostFiles::Read(copy)) => {
+            let files: Vec<_> = copy.entries.iter().filter(|entry| entry.file.is_some()).collect();
+            assert_eq!(files.len(), 3, "clipboard copy silently omitted regular files: expected=3 offered files, seen={files:?}");
+            let mut names: Vec<_> = files.iter().map(|entry| entry.rel.as_str()).collect();
+            names.sort_unstable();
+            assert_eq!(names, ["folder\\_NUL.txt", "folder\\back_slash.txt", "folder\\normal.txt"]);
+        }
+        Some(HostFiles::Unreadable { .. } | HostFiles::TooLarge { .. }) => {} // Explicit refusal, never a partial copy.
+        None => panic!("clipboard copy vanished without an explicit refusal reason"),
+    }
+}
+
+#[test]
+fn clipboard_repaired_components_cannot_steer_a_put_path() {
+    let cases = [
+        (r"..\..\victim.txt", Some(".._.._victim.txt")),
+        (r"a\b", Some("a_b")),
+        (r"\", Some("_")),
+        ("..", Some("_")),
+        (".", Some("_")),
+        ("Icon\r", None),
+        ("NUL", Some("_NUL")),
+        ("nul.txt", Some("_nul.txt")),
+        ("COM1.tar.gz", Some("_COM1.tar.gz")),
+        ("...", Some("_")),
+        ("x\r\n", Some("x__")),
+        ("x\u{7f}\u{85}", Some("x__")),
+    ];
+    for (input, expected) in cases {
+        let repaired = windows_name(input);
+        assert_eq!(repaired.as_deref(), expected, "input={input:?}");
+        if let Some(name) = repaired {
+            assert!(!name.contains(['\\', '/']) && !name.chars().any(char::is_control) && name != "." && name != "..",
+                "unsafe repaired component: input={input:?} seen={name:?}");
+        }
+    }
+}
+
+#[test]
+fn clipboard_repaired_and_unchanged_names_share_sorted_per_folder_numbering() {
+    let dir = scratch("repaired-collisions");
+    let folder = dir.join("folder");
+    std::fs::create_dir(&folder).unwrap();
+    for name in ["NUL.txt", "_NUL.txt", "_nul.txt.", r"a\b", "a_b", "a_b.", ".DS_Store", "._normal"] {
+        std::fs::write(folder.join(name), name.as_bytes()).unwrap();
+    }
+    let first = entries(host_files(std::slice::from_ref(&folder)));
+    assert_eq!(first, entries(host_files(&[folder])));
+    let expected = ["folder", "folder\\.DS_Store", "folder\\._normal", "folder\\_NUL.txt", "folder\\_NUL (2).txt",
+        "folder\\_nul (3).txt", "folder\\a_b", "folder\\a_b (2)", "folder\\a_b (3)"];
+    assert_eq!(first.iter().map(|(rel, _)| rel.as_str()).collect::<Vec<_>>(), expected);
+    let keys: std::collections::HashSet<_> = first.iter().map(|(rel, _)| ntfs_key(rel.trim_end_matches(['.', ' ']))).collect();
+    assert_eq!(keys.len(), first.len(), "repaired names collided");
+    assert_eq!(first.iter().filter(|(_, bytes)| bytes.is_some()).count(), 8);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn clipboard_overlong_repairs_and_numbering_are_omitted_and_counted() {
+    let dir = scratch("long-names");
+    let folder = dir.join("folder");
+    std::fs::create_dir(&folder).unwrap();
+    let device = format!("NUL.{}", "a".repeat(251));
+    let plain = "b".repeat(255);
+    for name in [&device, &plain] {
+        std::fs::write(folder.join(name), b"long").unwrap();
+    }
+    let offered = entries(host_files(std::slice::from_ref(&folder)));
+    assert_eq!(offered.len(), 2, "expected folder and unchanged 255-unit name, seen={offered:?}");
+    assert_eq!(offered[1].0, format!("folder\\{plain}"));
+    // Two same-named top-level files exercise overflow from the existing numbering.
+    let other = dir.join(&plain);
+    std::fs::write(&other, b"other").unwrap();
+    assert_eq!(entries(host_files(&[folder.join(&plain), other])).len(), 1);
+    let mut unsupported = UnsupportedNames::default();
+    assert_eq!(unsupported.keep(windows_name(&device).unwrap()), None);
+    let mut taken = std::collections::HashSet::new();
+    assert_eq!(unsupported.keep(unique_name(plain.clone(), &mut taken)), Some(plain.clone()));
+    assert_eq!(unsupported.keep(unique_name(plain, &mut taken)), None);
+    assert_eq!(unsupported.0, 2, "expected=2 unsupported components");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
