@@ -293,7 +293,9 @@ impl XhciController {
                 .event_lifecycle_stats
                 .event_ring_full_episodes
                 .saturating_add(1);
-            println!("XHCI event ring full interrupter={index} segment_trbs={segment_trbs}");
+            if self.event_lifecycle_stats.event_ring_full_episodes == 1 {
+                println!("XHCI event ring full interrupter={index} segment_trbs={segment_trbs}");
+            }
         }
         let cycle = if interrupter.event_cycle {
             TRB_CYCLE

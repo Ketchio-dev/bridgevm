@@ -28,6 +28,11 @@ fn event_ring_full_is_counted_once_until_dequeue_advances() {
     xhci.mmio_write(0x1038, 8, (EVENT_RING + 4 * TRB_SIZE) | 8);
     assert!(xhci.post_event(&mut mem, 0, 1 << 24, 33 << 10));
     assert_eq!(xhci.event_lifecycle_stats().event_ring_full_episodes, 2);
+    // Guest-paced episodes keep counting; the first-episode log guard cannot
+    // fire again even if the guest repeatedly rearms the per-ring latch.
+    xhci.mmio_write(0x1038, 8, (EVENT_RING + 5 * TRB_SIZE) | 8);
+    assert!(xhci.post_event(&mut mem, 0, 1 << 24, 33 << 10));
+    assert_eq!(xhci.event_lifecycle_stats().event_ring_full_episodes, 3);
 }
 
 #[test]
