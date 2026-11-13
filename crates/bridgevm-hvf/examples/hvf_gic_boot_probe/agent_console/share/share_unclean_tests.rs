@@ -67,6 +67,54 @@ fn clean_finish_joins_latest_versions_and_keeps_other_thread_marks() {
 }
 
 #[test]
+fn unclean_stop_without_applied_listing_must_not_launder_recovery() {
+    let (mut rig,vars)=synced_from_guest("unclean-no-listing",now_ms()-2*HOUR_MS,true);
+    settle(&mut rig);rig.h.share=None;new_session(&mut rig,Some(&vars));
+    // Agent never connects: SYSTEM_OFF occurs without running the share service.
+    let share=rig.h.share.as_mut().unwrap();
+    share.sync_file.as_mut().unwrap().finish_clean(&mut share.engine);
+    rig.h.share=None;
+    rig.guest.write("doc.bin",b"damaged Windows after original crash");
+    rig.guest.stamps.insert("DOC.BIN".into(),now_ms());
+    new_session(&mut rig,Some(&vars));rig.run(24);
+    assert_eq!(rig.host("doc.bin").as_deref(),Some(&b"old version"[..]),"Mac replaced after clean stop without an applied listing");
+    assert_eq!(rig.host("doc (Windows copy).bin").as_deref(),Some(&b"damaged Windows after original crash"[..]));
+    assert_eq!(rig.guest.content("doc.bin"),Some(&b"old version"[..]));
+}
+
+#[test]
+fn unclean_rejected_listings_do_not_allow_clean_finish() {
+    for failure in ["failed","malformed","too-large"] {
+        let (mut rig,vars)=synced_from_guest(&format!("unclean-listing-{failure}"),now_ms()-2*HOUR_MS,true);
+        settle(&mut rig);rig.h.share=None;new_session(&mut rig,Some(&vars));
+        rig.h.in_flight=Some((ServiceReq::ShareLs,rig.now));
+        match failure {
+            "failed"=>rig.h.handle_service_reply("ERR LS denied",None,None,rig.now),
+            "malformed"=>rig.h.handle_service_reply("LSOK !!!",None,None,rig.now),
+            _=>rig.h.share_listing_line_too_long(),
+        }
+        let share=rig.h.share.as_mut().unwrap();
+        share.sync_file.as_mut().unwrap().finish_clean(&mut share.engine);
+        assert!(std::fs::read_to_string(state_path(&vars)).unwrap().contains("session unclean"),"{failure} listing cleared uncertainty");
+    }
+}
+
+#[test]
+fn applied_listing_without_recovery_allows_clean_finish_including_empty_folder() {
+    for empty in [false,true] {
+        let (mut rig,vars)=synced_from_guest(if empty { "unclean-empty-list" } else { "unclean-same-list" },now_ms()-2*HOUR_MS,true);
+        settle(&mut rig);rig.h.share=None;new_session(&mut rig,Some(&vars));
+        rig.h.in_flight=Some((ServiceReq::ShareLs,rig.now));
+        let listing=if empty { String::new() } else { format!("doc.bin|11|0|{}\n",super::super::dotnet_time(std::fs::metadata(rig.dir.join("doc.bin")).unwrap().modified().unwrap().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis())) };
+        rig.h.handle_service_reply(&format!("LSOK {}",base64_encode(listing.as_bytes())),None,None,rig.now);
+        let share=rig.h.share.as_mut().unwrap();
+        assert!(!share.engine.recovery_pending());
+        share.sync_file.as_mut().unwrap().finish_clean(&mut share.engine);
+        assert!(std::fs::read_to_string(state_path(&vars)).unwrap().contains("session clean"),"applied empty={empty} listing did not allow clean end");
+    }
+}
+
+#[test]
 fn clean_first_listing_still_accepts_windows_edit() {
     for in_flight in [false,true] {
         let (mut rig, vars) = synced_from_guest(if in_flight { "clean-inflight" } else { "clean-queued" },now_ms()-2*HOUR_MS,true);
