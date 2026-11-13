@@ -1,5 +1,7 @@
 //! Reading/reproduction only: these assertions deliberately expose loss if main loses an edit.
 use super::*;
+#[path = "share_clean_marks_tests.rs"]
+mod clean_marks;
 
 const EDIT: &[u8] = b"genuine later Windows edit, different size";
 
@@ -68,5 +70,3 @@ fn restart(from_guest: bool, clean: bool) {
 #[test] fn settling_reproduction_a_get_then_windows_edit_no_stop(){running(true);}
 #[test] fn settling_reproduction_b_put_then_windows_edit_clean_stop(){restart(false,true);}
 #[test] fn settling_reproduction_b_get_then_windows_edit_clean_stop(){restart(true,true);}
-#[test] fn settling_reproduction_c_put_then_windows_edit_kill(){restart(false,false);}
-#[test] fn settling_reproduction_c_get_then_windows_edit_kill(){restart(true,false);}
