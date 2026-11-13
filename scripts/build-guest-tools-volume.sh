@@ -24,10 +24,6 @@ hdiutil attach -nobrowse -mountpoint "$work/mount" "$work/tools.dmg" > "$work/at
 device=$(awk 'NR==1{print $1}' "$work/attach")
 cp -X "$work/files/"* "$work/mount/"
 /usr/sbin/dot_clean -m "$work/mount"
-# Leave only a few clusters free. Guest writes, if any, use the VMM's overlay.
-free=$(df -k "$work/mount" | awk 'END{print $4}')
-if (( free > 8 )); then /usr/sbin/mkfile "$((free - 8))k" "$work/mount/reserved.dat"; fi
-/usr/sbin/dot_clean -m "$work/mount"
 hdiutil detach "$device" -quiet
 device=""
 hdiutil convert -quiet -format UDTO "$work/tools.dmg" -o "$work/raw"
