@@ -31,6 +31,16 @@ fn bounds_regression_udp_queue_resumes_after_drain() {
     let peer = UdpSocket::bind("127.0.0.1:0").unwrap();
     peer.send_to(b"queued", flow.socket.local_addr().unwrap())
         .unwrap();
+    // Loopback delivery is not synchronous with send_to. A watched flow that reads
+    // too early is not read again until its watcher fires, and this test has none.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while flow.socket.peek(&mut [0; 1]).is_err() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "datagram never arrived"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
     handler.udp_flows.insert(key, flow);
     let mut queue = VecDeque::from(vec![Vec::new(); MAX_PENDING_REPLY_FRAMES]);
     let mut stats = NatStats::default();
