@@ -26,7 +26,7 @@ pub(in crate::agent_console) enum FromWriter {
     /// Every byte of the file is written; its FNV-1a hash.
     Hashed(u64),
     /// The publish's result: the Mac file's modification time, or why it failed.
-    Published(io::Result<Option<u128>>),
+    Published(io::Result<Option<u128>>, bool),
     /// A chunk could not be decoded or written; the temporary is gone.
     Failed(io::Error),
 }
@@ -132,18 +132,15 @@ fn run(
                 if written != size {
                     break;
                 }
-                // A mark that cannot be written turns the state off (the service sees it).
-                // Recovery does not replace the Mac original, so cannot need a fetched mark.
-                // Its reverse PUT marks itself before touching Windows.
-                if !recovery {
+                let mut marked = false;
+                let result = destination.publish(staged, mtime, mac, recovery, || {
+                    marked = true;
                     if let Some((marks, name)) = &marks {
                         // A failed mark is safe to publish past (share_state.rs mark_fetched).
                         let _ = mark(marks, [name.as_str()]);
                     }
-                }
-                // The Mac file is checked last, in the publish, right before its rename.
-                let result = destination.publish(staged, mtime, mac, recovery);
-                let _ = outbox.send((0, Some(FromWriter::Published(result))));
+                });
+                let _ = outbox.send((0, Some(FromWriter::Published(result, marked))));
                 return;
             }
         }

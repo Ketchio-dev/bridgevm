@@ -3,6 +3,58 @@ use super::*;
 fn state_path(vars: &Path) -> PathBuf { PathBuf::from(format!("{}.share-sync", vars.display())) }
 
 #[test]
+fn ordinary_fetch_stage_failure_mark_loses_windows_edit_after_kill() {
+    use crate::agent_console::share::host_destination::TEMPORARY_FAULT;
+    let (mut rig, vars) = synced_from_guest("ordinary-failed-mark", now_ms()-2*HOUR_MS, true);
+    settle(&mut rig);
+    new_session(&mut rig, Some(&vars)); // previous stop was clean
+    assert!(!rig.h.share.as_ref().unwrap().sync_file.as_ref().unwrap().previous_unclean);
+    rig.guest.write("doc.bin", b"only Windows edit");
+    rig.guest.stamps.insert("DOC.BIN".into(), now_ms());
+    let gets = rig.guest.gets.len();
+    TEMPORARY_FAULT.with(|f| f.set(Some(libc::ENOSPC)));
+    for _ in 0..16 { rig.run(1); if rig.guest.gets.len()>gets { break; } }
+    TEMPORARY_FAULT.with(|f| f.set(None));
+    assert!(rig.guest.gets.len()>gets, "ordinary edit was not fetched");
+    assert!(!rig.h.share.as_ref().unwrap().engine.recovery_copy("doc.bin"));
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"old version"[..]));
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"only Windows edit"[..]));
+    let paths = [".share-sync", ".share-sync-puts"].map(|s| PathBuf::from(format!("{}{s}",vars.display())));
+    let disk = paths.each_ref().map(|p| std::fs::read(p).ok());
+    println!("SINGLE_FAILURE_DISK_MARK={}", disk[1].as_ref().is_some_and(|b| String::from_utf8_lossy(b).contains("mark ")));
+    rig.h.share = None;
+    for (p, bytes) in paths.iter().zip(disk) {
+        if let Some(bytes)=bytes { std::fs::write(p,bytes).unwrap(); } else { let _=std::fs::remove_file(p); }
+    }
+    new_session(&mut rig,Some(&vars));
+    rig.run(24);
+    assert!(rig.guest.content("doc.bin")==Some(&b"only Windows edit"[..])
+        || rig.host("doc.bin").as_deref()==Some(&b"only Windows edit"[..])
+        || rig.host("doc (Windows copy).bin").as_deref()==Some(&b"only Windows edit"[..]),
+        "single-range Windows edit overwritten after failed publication and restart");
+}
+
+#[test]
+fn ordinary_stage_failure_then_clean_stop_fetches_windows_edit_on_restart() {
+    use crate::agent_console::share::host_destination::TEMPORARY_FAULT;
+    let (mut rig, vars)=synced_from_guest("ordinary-full-clean-stop",now_ms()-2*HOUR_MS,true);
+    settle(&mut rig);new_session(&mut rig,Some(&vars));
+    rig.guest.write("doc.bin",b"Windows edit while Mac full");
+    rig.guest.stamps.insert("DOC.BIN".into(),now_ms());
+    let gets=rig.guest.gets.len();
+    TEMPORARY_FAULT.with(|f| f.set(Some(libc::ENOSPC)));
+    for _ in 0..16 { rig.run(1);if rig.guest.gets.len()>gets { break; } }
+    TEMPORARY_FAULT.with(|f| f.set(None));
+    assert!(rig.guest.gets.len()>gets);
+    assert_eq!(rig.host("doc.bin").as_deref(),Some(&b"old version"[..]));
+    new_session(&mut rig,Some(&vars)); // observed clean finish, not a simulated kill
+    rig.run(24);
+    assert_eq!(rig.host("doc.bin").as_deref(),Some(&b"Windows edit while Mac full"[..]),"clean restart replaced Windows edit after staging failed");
+    assert_eq!(rig.guest.content("doc.bin"),Some(&b"Windows edit while Mac full"[..]));
+    assert!(rig.host("doc (Windows copy).bin").is_none());
+}
+
+#[test]
 fn missing_state_is_unclean_before_any_mutation() {
     let rig=Rig::new("missing-state");let vars=vars(&rig);
     let (file,_,_,error)=sync_file::SyncStateFile::open(&vars,&rig.dir);
