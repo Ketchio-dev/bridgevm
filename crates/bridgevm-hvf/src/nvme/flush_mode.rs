@@ -126,7 +126,9 @@ impl DiskSync {
                     crate::host_log::err(format_args!(
                         "nvme: deferred full sync failed: {error}; acknowledged writes are not durable, check the drive connection"
                     ));
-                    crate::host_log::err("BVSTORAGE durability-failed");
+                    // Share stdout's lock with complete guest command frames: stderr
+                    // could interleave this host diagnostic inside guest-controlled output.
+                    crate::host_log::out("BVSTORAGE durability-failed");
                     self.deferred_failed = true;
                 }
             }
@@ -321,7 +323,7 @@ mod tests {
         );
         assert!(log.contains("os error"), "errno missing: {log}");
         assert_eq!(
-            log.matches("BVSTORAGE durability-failed").count(),
+            String::from_utf8_lossy(&output.stdout).matches("BVSTORAGE durability-failed").count(),
             2,
             "{log}"
         );
@@ -363,11 +365,64 @@ mod tests {
         assert!(output.status.success(), "{output:?}");
         let log = String::from_utf8(output.stderr).unwrap();
         assert_eq!(
-            log.matches("BVSTORAGE final-save-failed").count(),
+            String::from_utf8_lossy(&output.stdout).matches("BVSTORAGE final-save-failed").count(),
             1,
             "{log}"
         );
         assert!(log.contains("os error 5"), "{log}");
+    }
+
+    #[test]
+    fn storage_diagnostic_cannot_split_a_stdout_command_frame() {
+        const CHILD: &str = "BRIDGEVM_TEST_SYNC_FRAME_LOCK";
+        if std::env::var_os(CHILD).is_some() {
+            use std::io::Write;
+            let path = std::env::temp_dir().join(format!("bridgevm-frame-sync-{}", std::process::id()));
+            let mut disk = DiskSync::new(File::create(&path).unwrap());
+            disk.owed = true;
+            super::super::disk_full::faults::set(&path, super::super::disk_full::faults::Op::Sync, Some(libc::EIO));
+            let (start, inside) = std::sync::mpsc::channel();
+            let writer = std::thread::spawn(move || {
+                // Same single stdout lock as println!'s multi-piece formatted CMD/END write.
+                let mut out = std::io::stdout().lock();
+                writeln!(out, "BVAGENT CMD frame exit=0").unwrap();
+                out.flush().unwrap();
+                start.send(()).unwrap();
+                std::thread::sleep(Duration::from_millis(100));
+                for _ in 0..128 { writeln!(out, "{}", "x".repeat(4096)).unwrap(); }
+                writeln!(out, "BVAGENT END frame").unwrap();
+            });
+            inside.recv().unwrap();
+            let clock = Clock::default();
+            for _ in 0..100 {
+                disk.deferred_failed = false;
+                disk.settle(&clock);
+            }
+            writer.join().unwrap();
+            super::super::disk_full::faults::set(&path, super::super::disk_full::faults::Op::Sync, None);
+            std::fs::remove_file(path).unwrap();
+            return;
+        }
+        let path = std::env::temp_dir().join(format!("bridgevm-sync-frame-log-{}", std::process::id()));
+        let log = std::fs::OpenOptions::new().create_new(true).append(true).open(&path).unwrap();
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "nvme::flush_mode::tests::storage_diagnostic_cannot_split_a_stdout_command_frame", "--nocapture"])
+            .env(CHILD, "1").stdout(log.try_clone().unwrap()).stderr(log).status().unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::remove_file(path).unwrap();
+        assert!(result.success(), "{text}");
+        let mut in_frame = false;
+        let mut diagnostics = 0;
+        for line in text.lines() {
+            if line == "BVAGENT CMD frame exit=0" { in_frame = true; }
+            if line == "BVSTORAGE durability-failed" {
+                diagnostics += 1;
+                assert!(!in_frame, "host diagnostic split a guest command frame");
+            }
+            if line == "BVAGENT END frame" { in_frame = false; }
+        }
+        assert_eq!(diagnostics, 100);
+        assert!(!in_frame);
     }
 
     #[test]

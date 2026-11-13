@@ -23,7 +23,9 @@ pub fn err(line: impl Display) {
 /// Final persistence attempts every disk before reporting failure once and ending the helper.
 pub fn assert_final_save(errors: &[String]) {
     if !errors.is_empty() {
-        err("BVSTORAGE final-save-failed");
+        // The stdout lock keeps this outside guest command frames; out flushes
+        // before the panic, and stdout uses the same reserved run.log as stderr.
+        out("BVSTORAGE final-save-failed");
         panic!("{} (all disks were attempted)", errors.join("; "));
     }
 }

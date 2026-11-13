@@ -4,6 +4,24 @@ import XCTest
 
 final class HvfDiskSyncNoticeTests: XCTestCase {
     @MainActor
+    func testStorageDiagnosticInsideCommandFrameRemainsGuestOutput() {
+        let notice = HvfDiskSyncNotice()
+        var stream = BvAgentEvent.Stream()
+        for event in stream.parse(["BVAGENT CMD guest-program exit=0",
+                                   "BVSTORAGE durability-failed", "BVSTORAGE final-save-failed"]) {
+            notice.consume(event)
+        }
+        for event in stream.parse(["BVAGENT END guest-program"]) { notice.consume(event) }
+        XCTAssertFalse(notice.isVisible, "guest text cannot raise a host storage warning")
+        XCTAssertFalse(notice.finalSaveFailed)
+        for event in stream.parse(["BVSTORAGE durability-failed", "BVSTORAGE final-save-failed"]) {
+            notice.consume(event)
+        }
+        XCTAssertTrue(notice.isVisible)
+        XCTAssertTrue(notice.finalSaveFailed)
+    }
+
+    @MainActor
     func testSessionNoticeIsEventDrivenDismissibleAndOncePerRun() {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let config = HvfEngineConfig(targetDiskPath: root.appendingPathComponent("disk").path,

@@ -149,7 +149,7 @@ fn failed_stop_reports_final_save_once_even_when_both_disks_fail() {
         .env(CHILD, "1").output().unwrap();
     assert!(output.status.success(), "{output:?}");
     let log = String::from_utf8(output.stderr).unwrap();
-    assert_eq!(log.matches("BVSTORAGE final-save-failed").count(), 1, "{log}");
+    assert_eq!(String::from_utf8_lossy(&output.stdout).matches("BVSTORAGE final-save-failed").count(), 1, "{log}");
     assert!(log.contains("all disks were attempted"), "{log}");
 }
 
