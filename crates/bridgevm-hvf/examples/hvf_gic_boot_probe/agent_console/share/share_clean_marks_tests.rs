@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn clean_stop_retires_confirmed_marks_in_both_files_after_queued_writer() {
+fn clean_stop_supersedes_confirmed_marks_after_queued_writer() {
     use std::sync::atomic::Ordering;
     let (mut rig,vars)=baseline("clean-held-writer",true);
     let share=rig.h.share.as_mut().unwrap();
@@ -13,11 +13,12 @@ fn clean_stop_retires_confirmed_marks_in_both_files_after_queued_writer() {
     let release=std::thread::spawn(move || {std::thread::sleep(Duration::from_millis(30));marks.hold.store(false,Ordering::Release);});
     file.finish_clean(&mut share.engine);release.join().unwrap();
     assert!(!share.engine.marked("doc.bin"));
-    for suffix in [".share-sync",".share-sync-puts"] {
-        let text=std::fs::read_to_string(format!("{}{suffix}",vars.display())).unwrap();
-        assert!(!text.lines().any(|l|l.starts_with("mark ")),"retired mark survived in {suffix}");
-        if suffix==".share-sync" {assert!(text.contains("session clean"));}
-    }
+    let versions=std::fs::read_to_string(format!("{}.share-sync",vars.display())).unwrap();
+    let puts=std::fs::read_to_string(format!("{}.share-sync-puts",vars.display())).unwrap();
+    assert!(!versions.lines().any(|l|l.starts_with("mark ")));
+    assert!(versions.contains("session clean"));
+    let seq=|s:&str| s.lines().find_map(|l|l.strip_prefix("seq ")).unwrap().parse::<u64>().unwrap();
+    assert!(seq(&versions)>seq(&puts),"clean snapshot did not supersede stale marks");
     rig.h.share=None;new_session(&mut rig,Some(&vars));
     assert!(!rig.h.share.as_ref().unwrap().engine.marked("doc.bin"));
 }
@@ -35,15 +36,49 @@ fn clean_stop_keeps_unconfirmed_put_mark_and_resends_mac() {
 
 #[test]
 fn failed_retirement_write_keeps_old_disk_protection() {
-    for suffix in [".share-sync-puts",".share-sync"] {
-        let (mut rig,vars)=baseline(if suffix==".share-sync" {"retire-versions-fail"}else{"retire-marks-fail"},true);
-        let immutable=super::super::Mutable::set(&PathBuf::from(format!("{}{suffix}",vars.display())));
+    for only_in_puts in [false,true] {
+        let (mut rig,vars)=baseline(if only_in_puts {"retire-only-puts-fail"}else{"retire-snapshot-fail"},true);
+        let share=rig.h.share.as_mut().unwrap();
+        // Complete current snapshot first, then optionally strip its mark to model marks-only state.
+        share.sync_file.as_mut().unwrap().finish(&mut share.engine);
+        let path=PathBuf::from(format!("{}.share-sync",vars.display()));
+        if only_in_puts {
+            let text=std::fs::read_to_string(&path).unwrap();
+            let seq=text.lines().find(|l|l.starts_with("seq ")).unwrap().to_owned();
+            let text=text.lines().filter(|l|!l.starts_with("mark ")).collect::<Vec<_>>().join("\n")+"\n";
+            std::fs::write(&path,text.replace(&seq,"seq 0")).unwrap();
+        }
+        let immutable=super::super::Mutable::set(&path);
         let share=rig.h.share.as_mut().unwrap();share.sync_file.as_mut().unwrap().finish_clean(&mut share.engine);
         let text=std::fs::read_to_string(format!("{}.share-sync",vars.display())).unwrap();
-        assert!(text.contains("session unclean"));assert!(text.contains("mark "),"failed retirement lost old versions protection");
+        assert!(text.contains("session unclean"));
         drop(immutable);rig.h.share=None;new_session(&mut rig,Some(&vars));
         assert!(rig.h.share.as_ref().unwrap().engine.marked("doc.bin"));
     }
+}
+
+#[test]
+fn marks_only_clean_retirement_survives_reopen_and_next_mark_write() {
+    let (mut rig,vars)=baseline("retire-marks-only",true);
+    let share=rig.h.share.as_mut().unwrap();
+    share.sync_file.as_mut().unwrap().finish(&mut share.engine);
+    let path=PathBuf::from(format!("{}.share-sync",vars.display()));
+    let text=std::fs::read_to_string(&path).unwrap();
+    let seq=text.lines().find(|l|l.starts_with("seq ")).unwrap().to_owned();
+    let text=text.lines().filter(|l|!l.starts_with("mark ")).collect::<Vec<_>>().join("\n")+"\n";
+    std::fs::write(&path,text.replace(&seq,"seq 0")).unwrap();
+    share.sync_file.as_mut().unwrap().finish_clean(&mut share.engine);
+    let stale=std::fs::read_to_string(format!("{}.share-sync-puts",vars.display())).unwrap();
+    assert!(stale.contains("mark ZG9jLmJpbg=="));
+    rig.h.share=None;new_session(&mut rig,Some(&vars));
+    let share=rig.h.share.as_mut().unwrap();
+    assert!(!share.sync_file.as_ref().unwrap().previous_unclean);
+    assert!(!share.engine.marked("doc.bin"));
+    share.mark_put("other.bin",rig.now);share.sync_file.as_ref().unwrap().wait_marks();
+    let rewritten=std::fs::read_to_string(format!("{}.share-sync-puts",vars.display())).unwrap();
+    assert!(!rewritten.contains("mark ZG9jLmJpbg=="),"next mark resurrected retired name");
+    edit(&mut rig);rig.run(24);
+    assert_eq!(rig.host("doc.bin").as_deref(),Some(EDIT));
 }
 
 #[test]

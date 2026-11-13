@@ -94,14 +94,10 @@ impl MarksFile {
     /// which is safe, because the versions on disk predate it (a later session finds the Mac copy
     /// newer than its last synced version: the Mac wins).
     pub(in crate::agent_console) fn write_through(&self) -> std::io::Result<()> {
-        self.write_marks(false)
-    }
-
-    fn write_marks(&self, finished: bool) -> std::io::Result<()> {
         // `off` is checked under this lock, which the write holds through its rename: once
         // `finish` or `invalidate` holds it after setting `off`, no write is under way or follows.
         let _one = self.write.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if self.off.load(Ordering::Acquire) && !finished {
+        if self.off.load(Ordering::Acquire) {
             return Err(std::io::Error::other("the share state is off"));
         }
         #[cfg(test)]
@@ -273,15 +269,15 @@ impl SyncStateFile {
             || self.marks.failed.load(Ordering::Acquire) { return; }
         if let Some((files, _, _)) = self.load() {
             // SYSTEM_OFF flushed Windows. Retire only confirmed deadlines, never loaded/held PUTs.
-            // finish joined older snapshots and disabled publishers; rewrite both files at this seq.
+            // finish joined older snapshots and disabled publishers. A newer versions seq
+            // supersedes stale marks atomically with the clean marker; no marks-file rewrite.
             let retired = engine.retire_confirmed_marks();
             {
                 let mut held = self.lock();
                 for name in &retired { held.names.remove(name); }
                 if !retired.is_empty() { held.seq += 1; }
             }
-            let result = self.marks.write_marks(true).and_then(|()| self.write_session(true, &files));
-            if let Err(error) = result {
+            if let Err(error) = self.write_session(true, &files) {
                 println!("BVAGENT SHARE clean-state not-saved {error}");
             }
         }
