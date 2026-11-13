@@ -22,6 +22,28 @@ fn fetched_mark_is_on_disk_after_stage_sync_and_before_replacement() {
 }
 
 #[test]
+fn mac_save_during_mark_callback_is_kept_for_memory_and_staged_publication() {
+    for staged in [false,true] {
+        let f=Fixture::new();let root=f.root();let path=root.join("doc.bin");
+        std::fs::write(&path,b"original").unwrap();
+        let meta=std::fs::metadata(&path).unwrap();
+        let seen=(meta.len(),super::super::file_mtime_ms_from_meta(&meta).unwrap());
+        let destination=Destination::open(&root,"doc.bin",true).unwrap();
+        let save=|| std::fs::write(&path,b"new Mac save during mark barrier").unwrap();
+        let result=if staged {
+            let mut stage=destination.stage().unwrap();stage.file.write_all(b"Windows edit").unwrap();
+            destination.publish(stage,None,Some(Some(seen)),false,save)
+        } else {
+            destination.write_at_unless_changed(b"Windows edit",None,Some(Some(seen)),false,save)
+        };
+        assert_eq!(std::fs::read(&path).unwrap(),b"new Mac save during mark barrier","Mac save during mark callback was overwritten");
+        assert!(result.as_ref().is_err_and(is_mac_changed));
+        assert_eq!(std::fs::read(root.join("doc (Windows copy).bin")).unwrap(),b"Windows edit");
+        assert_eq!(std::fs::read_dir(root).unwrap().count(),2);
+    }
+}
+
+#[test]
 fn unsupported_links_preserve_conflicts_without_clobbering_or_retrying() {
     let f = Fixture::new();
     let root = f.root();
