@@ -499,11 +499,13 @@ final class HvfEngineSession: ObservableObject {
         inputDriver.attachUnknown(binding: inputBinding)
         // The terminal receipt can arrive before the next log poll. Drain the stopped helper's
         // final diagnostics before cancelling polling, including a final-save failure.
+        // Owned cleanup has reaped the helper; legacy callers also observed exit. Cap at
+        // 64 one-MiB reads anyway so an unexpected external appender cannot spin this actor.
         let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")
-        while true {
+        for _ in 0..<64 {
             let lines = tailReader.readNewLines(from: logURL)
-            if lines.isEmpty { break }
             for event in agentEvents.parse(lines) { diskSyncNotice.consume(event) }
+            if tailReader.bytesReadLastCall == 0 { break }
         }
         timer?.invalidate()
         timer = nil

@@ -73,6 +73,21 @@ final class HvfDiskSyncStopFailureTests: XCTestCase {
     }
 
     @MainActor
+    func testStopDrainsPastAChunkWithoutACompleteLine() throws {
+        let f = try HvfOwnedRuntimeControllerTests.Fixture()
+        defer { f.clean() }
+        let session = HvfEngineSession(config: f.base.config, repoRoot: f.base.root) { _ in false }
+        let log = URL(fileURLWithPath: f.base.config.evidenceDir).appendingPathComponent("run.log")
+        try FileManager.default.createDirectory(at: log.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var data = Data(repeating: 120, count: 1_100_000)
+        data.append(Data("\nBVSTORAGE final-save-failed\n".utf8))
+        try data.write(to: log)
+        session.markStopped()
+        XCTAssertTrue(session.diskSyncNotice.finalSaveFailed,
+            "a partial line advances the reader but must not end the final drain")
+    }
+
+    @MainActor
     func testStopDrainsFinalStorageDiagnosticBeforePollingEnds() throws {
         let f = try HvfOwnedRuntimeControllerTests.Fixture()
         defer { f.clean() }
