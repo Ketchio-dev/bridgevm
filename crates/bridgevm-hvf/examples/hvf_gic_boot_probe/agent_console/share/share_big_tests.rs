@@ -237,8 +237,13 @@ fn unclean_multirange_recovery_keeps_both_versions_and_then_accepts_normal_edits
 }
 
 #[test]
-fn failed_recovery_copy_multirange_keeps_windows_until_retry_succeeds() {
-    let mut rig = rig("unclean-recovery-fails", 1 << 30);
+fn failed_recovery_copy_multirange_keeps_windows_until_retry_succeeds() { failed_multirange(false); }
+
+#[test]
+fn failed_recovery_copy_multirange_survives_killed_session() { failed_multirange(true); }
+
+fn failed_multirange(restart: bool) {
+    let mut rig = rig(if restart { "unclean-recovery-restart" } else { "unclean-recovery-fails" }, 1 << 30);
     let vars = rig.dir.with_extension("vars");
     let path = rig.dir.join("doc.bin");
     let original = b"complete Mac original";
@@ -277,9 +282,19 @@ fn failed_recovery_copy_multirange_keeps_windows_until_retry_succeeds() {
     assert_eq!(rig.files(), ["doc.bin"], "partial conflict or stage leaked");
     assert!(!rig.h.enqueue_one_share_host_change(rig.now), "Mac version queued over Windows after preservation failed");
     assert!(rig.h.queue.is_empty());
+    if restart {
+        let paths=[".share-sync",".share-sync-puts"].map(|suffix| PathBuf::from(format!("{}{suffix}",vars.display())));
+        let disk=paths.each_ref().map(|p| std::fs::read(p).ok());
+        rig.h.share=None;
+        for (p,bytes) in paths.iter().zip(disk) { if let Some(bytes)=bytes { std::fs::write(p,bytes).unwrap(); } else { let _=std::fs::remove_file(p); } }
+        let mut share=ShareState::new(ShareSync::new(1<<30),rig.dir.clone(),ROOT.into(),Duration::from_secs(3600));
+        share.last_poll=Some(rig.now);share.attach_sync_state(&vars);
+        scan_share_host_dir(&mut share,rig.now).unwrap();share.plan_host_scan();rig.h.share=Some(share);
+    }
     super::super::host_destination::LINK_FAULT.with(|f| f.set(None));
     super::super::host_destination::CONFLICT_COPY_FAULT.with(|f| f.set(None));
     rig.list("doc.bin", size, TIME);
+    assert!(rig.h.share.as_ref().unwrap().engine.recovery_copy("doc.bin"), "Windows version overwritten after restart: recovery skipped and Mac PUT allowed");
     while let Some(line) = rig.step().filter(|line| line.starts_with("GETRANGE ")) {
         for reply in range_reply(&line, &bytes, size, TIME) { rig.reply(&reply); }
         rig.wait(|r| writer_backlog(r) <= SHARE_RANGE_BYTES);
