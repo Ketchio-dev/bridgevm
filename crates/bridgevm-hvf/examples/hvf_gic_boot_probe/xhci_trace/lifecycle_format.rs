@@ -150,7 +150,7 @@ impl InterruptEndpointLifecycleSummary {
 
 fn format_event_lifecycle_stats(stats: XhciEventLifecycleStats) -> String {
     format!(
-        "xhci_event_posts attempts={} successes={} failures={} command_completion={} transfer={} port_status_change={} model_erdp_updates={} model_erdp_ehb_consumed={} model_last_erdp={:#x} last_event_interrupter={} last_event_gpa={:#x} last_event_parameter={:#x} last_event_status={:#x} last_event_control={:#x}",
+        "xhci_event_posts attempts={} successes={} failures={} command_completion={} transfer={} port_status_change={} model_erdp_updates={} model_erdp_ehb_consumed={} model_last_erdp={:#x} last_event_interrupter={} last_event_gpa={:#x} last_event_parameter={:#x} last_event_status={:#x} last_event_control={:#x} event_ring_full_episodes={}",
         stats.event_post_attempts,
         stats.event_post_successes,
         stats.event_post_failures,
@@ -164,7 +164,8 @@ fn format_event_lifecycle_stats(stats: XhciEventLifecycleStats) -> String {
         stats.last_event_gpa,
         stats.last_event_parameter,
         stats.last_event_status,
-        stats.last_event_control
+        stats.last_event_control,
+        stats.event_ring_full_episodes
     )
 }
 
