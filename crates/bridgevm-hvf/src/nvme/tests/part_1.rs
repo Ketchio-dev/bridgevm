@@ -232,6 +232,25 @@ fn second_namespace_raw_file_overlay_exports_snapshot() {
         "read-only NSID2 raw file keeps guest writes in the overlay"
     );
     assert_eq!(
+        fs::read(&source).unwrap(),
+        disk,
+        "every host image byte is unchanged"
+    );
+    let mut restarted = NvmeController::new(LBA_SIZE);
+    restarted
+        .attach_second_namespace_raw_file(&source, false)
+        .unwrap();
+    let after_restart = temp_path("raw-nsid2-restarted");
+    restarted
+        .export_second_namespace_disk_image(&after_restart)
+        .unwrap();
+    assert_eq!(
+        fs::read(&after_restart).unwrap(),
+        disk,
+        "guest writes do not survive a new run"
+    );
+    fs::remove_file(after_restart).unwrap();
+    assert_eq!(
         ctrl.export_second_namespace_disk_image(&snapshot).unwrap(),
         disk.len() as u64
     );

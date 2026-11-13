@@ -74,6 +74,52 @@ final class HvfAgentSilenceNoticeTests: XCTestCase {
 
     /// The probe repeats the overdue line every 20 s while a request waits; once the probe has run on
     /// 30 s without one, or the agent says READY again, the notice clears.
+    func testAnOldImportedVMWithoutAnAgentOffersToolsButISOFirstLogonDoesNot() throws {
+        let clock = Clock()
+        let session = try session(clock, agentSeen: false)
+        let root = URL(fileURLWithPath: session.config.evidenceDir)
+        let vm = VMConfig(name: "imported", displayName: "imported", backendKind: "hvf-engine",
+            bundlePath: root.path, runnerPath: "", launchSpecPath: "", handoffPath: "",
+            sshKeyPath: "", sshUser: "", leasesPath: "", guestName: "imported", displayWidth: 1280, displayHeight: 800)
+        session.config.libraryContext = HvfLibraryLaunchContext(config: vm, rootURL: root)
+        try run(session)
+        clock.value += 121
+        try run(session)
+        XCTAssertEqual(session.agentSilenceNotice.text,
+            "게스트 도구가 설치되지 않아 클립보드와 공유 폴더를 사용할 수 없으니 ‘게스트 도구 설치’를 누르세요.")
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("metadata"), withIntermediateDirectories: true)
+        for name in [HvfWindowsInstallRequest.fileName, HvfWindowsInstallRequest.doneFileName] {
+            try Data().write(to: root.appendingPathComponent(name))
+            session.agentSilenceNotice.reset()
+            try run(session)
+            clock.value += 121
+            try run(session)
+            XCTAssertNil(session.agentSilenceNotice.text, "our own ISO install stays quiet through first logon")
+            try FileManager.default.removeItem(at: root.appendingPathComponent(name))
+        }
+        var pending = vm
+        pending.installPending = true
+        session.config.libraryContext = HvfLibraryLaunchContext(config: pending, rootURL: root)
+        XCTAssertFalse(HvfGuestTools.eligible(session.config))
+        session.config.libraryContext = HvfLibraryLaunchContext(config: vm, rootURL: root)
+        let image = try XCTUnwrap(HvfGuestTools.image(session.config))
+        try Data(repeating: 0, count: 512).write(to: image)
+        XCTAssertEqual(HvfGuestTools.attachment(session.config), image.path)
+        try run(session, ["BVGUESTTOOLS failed: missing file"])
+        XCTAssertEqual(session.guestToolsMessage, HvfGuestTools.failed)
+        XCTAssertEqual(session.connectionState, .booting, "attachment failure does not stop Windows")
+        try run(session, ["BVGUESTTOOLS attached"])
+        XCTAssertEqual(session.guestToolsMessage, HvfGuestTools.attached)
+        try run(session, ready)
+        XCTAssertNil(session.agentSilenceNotice.text)
+        XCTAssertNil(session.guestToolsMessage)
+        XCTAssertNil(HvfGuestTools.attachment(session.config), "later starts omit the tools image")
+        try run(session, [HvfGuestResetRecord.processRecreation])
+        clock.value += 121
+        try run(session)
+        XCTAssertEqual(session.agentSilenceNotice.shown, .notConnected, "an imported VM whose installed agent breaks keeps the old notice")
+    }
+
     func testAnOverdueRequestShowsUntilTheProbeRunsOnWithoutOne() throws {
         let session = try session(Clock())
         try run(session, ready)

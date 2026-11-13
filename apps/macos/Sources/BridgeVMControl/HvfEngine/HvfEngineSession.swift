@@ -19,6 +19,8 @@ final class HvfEngineSession: ObservableObject {
     let clipboardImageNotice = HvfClipboardImageNotice()
     let agentSilenceNotice = HvfAgentSilenceNotice() // the guest agent is not there (HvfEngineSessionAgentSilence)
     @Published var events: [BvAgentEvent] = []
+    @Published var guestToolsMessage: String?
+    @Published var guestToolsPreparing = false
     @Published var displayDriverFlagMessage: String? // why HvfDisplayDriverFlag could not save yet
     @Published var displayDriverNoticeDismissed = false // per VM, only for this app session
     @Published var displayDriverRestartRequired = false
@@ -438,6 +440,8 @@ final class HvfEngineSession: ObservableObject {
         if guiStartCleanupOnly { pollGUIStartCleanup(); return }
         let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")
         let lines = tailReader.readNewLines(from: logURL)
+        if lines.contains(where: { $0.hasPrefix("BVGUESTTOOLS failed") }) { guestToolsMessage = HvfGuestTools.failed }
+        else if lines.contains(where: { $0.hasPrefix("BVGUESTTOOLS attached") }) { guestToolsMessage = HvfGuestTools.attached }
         finishLegacyPaste(lines: lines)
         answerGuestCaret(lines: lines)
         for event in agentEvents.parse(lines) {

@@ -42,6 +42,7 @@ struct LibraryDashboardRuntimeControls: View {
                 Text(failure).font(.caption).foregroundStyle(.red).textSelection(.enabled)
             }
             HvfAgentSilenceNoticeView(notice: session.agentSilenceNotice)
+            HvfGuestToolsAction(session: session)
             HvfShareRootNoticeView(notice: session.shareRootNotice)
             HvfDiskSyncNoticeView(notice: session.diskSyncNotice)
             HvfMicrophoneNoticeView(session: session)
