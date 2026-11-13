@@ -13,6 +13,7 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
     let validate: HvfWindowsInstallValidationWorker.Validator
     let schedule: (@escaping @MainActor () async -> Void) -> Void
     let recovery: HvfWindowsInstallRecoveryWorker
+    var continuationAdmission: (@MainActor () -> String?)?
     var admissionPending = false
     var attemptActive = false
     var cancelled = false

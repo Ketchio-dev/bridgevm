@@ -22,12 +22,30 @@ extension LibraryModel {
     }
 
     func bindWindowsInstallSession(_ session: HvfWindowsInstallSession, slug: String) -> HvfWindowsInstallSession {
-        session.workAdmission = boundWorkAdmission(slug: slug) { [weak session] owner, current in
-            guard let session else { return false }
-            return current.engineKind == .hvfEngine && current.installPending == true
-                && owner.windowsInstallSessions.owns(session, for: current)
-        }
-        session.onCompleted = { [weak self] in self?.reload() }
+        bindInstallAdmissions(session, slug: slug)
         return session
+    }
+
+    /// Resolve CLI ownership at check time: detail-view adoption may rebind this
+    /// session, and operation.start installs its session before checking admission.
+    func bindInstallAdmissions(_ session: HvfWindowsInstallSession, slug: String) {
+        let admission: @MainActor (Bool, Bool) -> String? = { [weak self, weak session] continuing, report in
+            guard let self, let session else {
+                return "VM 라이브러리를 사용할 수 없습니다. 라이브러리 화면에서 다시 시도하세요."
+            }
+            let candidate = self.windowsInstallSessions.cliOperations.records[slug]?.operation
+            let operation = candidate?.session === session ? candidate : nil
+            let refusal = self.libraryWorkRefusal(slug: slug, excludingInstall: operation,
+                excludingWindowsInstall: continuing ? session : nil,
+                owns: { owner, current in
+                    current.engineKind == .hvfEngine && current.installPending == true
+                        && owner.windowsInstallSessions.owns(session, for: current)
+                })
+            if report, let refusal { self.operationError = refusal }
+            return refusal
+        }
+        session.workAdmission = { admission(false, $0) }
+        session.continuationAdmission = { admission(true, false) }
+        session.onCompleted = { [weak self] in self?.reload() }
     }
 }

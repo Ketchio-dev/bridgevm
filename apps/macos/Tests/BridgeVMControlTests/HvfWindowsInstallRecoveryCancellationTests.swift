@@ -66,7 +66,9 @@ final class HvfWindowsInstallRecoveryCancellationTests: XCTestCase {
         assertRecoveryReservedAfterCancellation(f)
         f.recoveryProbe.release(); await pipeline.value
         guard case .failed(let detail) = f.session.stage else { XCTFail("Recovery failure must not become cancellation"); return }
-        XCTAssertTrue(detail.contains("synthetic recovery seed failure"))
+        XCTAssertEqual(detail, WindowsFileFailureFeedback.recovery)
+        XCTAssertFalse(detail.contains("synthetic recovery seed failure"))
+        XCTAssertTrue(f.session.logLines.contains { $0.contains("synthetic recovery seed failure") })
         XCTAssertFalse(f.session.isRunning); XCTAssertEqual(f.completions, 0)
         XCTAssertTrue(FileManager.default.fileExists(atPath: f.paths.journal.path))
         XCTAssertEqual(try Data(contentsOf: f.paths.stagedDisk), f.originalDisk)

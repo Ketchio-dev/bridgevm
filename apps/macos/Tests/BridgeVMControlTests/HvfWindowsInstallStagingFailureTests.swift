@@ -15,9 +15,9 @@ final class HvfWindowsInstallStagingFailureTests: XCTestCase {
         let media = try f.media()
         let installer = FailingInstaller()
 
-        let stage = try await runFreshAttempt(f.plan, installer)
+        let result = try await runFreshAttempt(f.plan, installer)
 
-        guard case let .failed(message) = stage else { return XCTFail("stage=\(stage)") }
+        guard case let .failed(message) = result.stage else { return XCTFail("stage=\(result.stage)") }
         let log = media.evidence.appendingPathComponent("run.log")
         XCTAssertTrue(message.contains(log.path), message)
         XCTAssertEqual(installer.mediaPresentAtRun, [true], "the installer ran without prepared media")
@@ -34,19 +34,19 @@ final class HvfWindowsInstallStagingFailureTests: XCTestCase {
             try FileManager.default.setAttributes([.posixPermissions: 0o775], ofItemAtPath: directory.path)
             let installer = FailingInstaller()
 
-            let stage = try await runFreshAttempt(f.plan, installer)
+            let result = try await runFreshAttempt(f.plan, installer)
 
-            guard case let .failed(message) = stage else { return XCTFail("\(directory.path): stage=\(stage)") }
+            guard case let .failed(message) = result.stage else { return XCTFail("\(directory.path): stage=\(result.stage)") }
             XCTAssertEqual(installer.mediaPresentAtRun, [], directory.path)
-            XCTAssertTrue(message.contains("현재 사용자만 쓸 수 있는 디렉터리가 아니어서 거부했습니다: \(directory.path)"),
-                          message)
+            XCTAssertEqual(message, WindowsFileFailureFeedback.preparation)
+            XCTAssertTrue(result.log.contains { $0.contains("현재 사용자만 쓸 수 있는 디렉터리가 아니어서 거부했습니다: \(directory.path)") }, "permission cause must remain in diagnostics")
             XCTAssertFalse(message.contains("심볼릭 링크"), message)
         }
     }
 
     private func runFreshAttempt(
         _ plan: HvfWindowsInstallPlan, _ installer: FailingInstaller
-    ) async throws -> HvfWindowsInstallStage {
+    ) async throws -> (stage: HvfWindowsInstallStage, log: [String]) {
         let queue = HvfWindowsInstallPipelineQueue()
         defer { queue.discard() }
         let session = HvfWindowsInstallSession(plan: plan, validate: { _ in nil }, schedule: queue.enqueue,
@@ -54,7 +54,7 @@ final class HvfWindowsInstallStagingFailureTests: XCTestCase {
         let acknowledgment = try XCTUnwrap(session.start())
         await acknowledgment.value
         if !queue.jobs.isEmpty { await queue.runNext() }
-        return session.stage
+        return (session.stage, session.logLines)
     }
 }
 

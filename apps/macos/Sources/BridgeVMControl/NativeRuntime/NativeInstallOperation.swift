@@ -6,7 +6,7 @@ final class NativeInstallOperation {
     let expectedSavedConfigurationDigest: String
     let acceptedUptime: Double
     private var preparationTask: Task<Void, Never>?
-    private var session: HvfWindowsInstallSession?
+    private(set) var session: HvfWindowsInstallSession?
     private var terminal: (NativeInstallObservation.Phase, String?, [String])?
 
     init(operationID: UUID, expectedSavedConfigurationDigest: String,

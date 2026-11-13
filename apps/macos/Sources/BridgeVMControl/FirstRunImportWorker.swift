@@ -21,7 +21,7 @@ enum FirstRunImportWorker {
             progress(.saving)
             return finishPublication(publish(prepared.config, libraryRoot), prepared: prepared)
         } catch {
-            return .failed("VM 번들을 만들지 못했습니다: \(error.localizedDescription)")
+            return .failed(WindowsFileFailureFeedback.report("import", error, sentence: WindowsFileFailureFeedback.importing))
         }
     }
 }
