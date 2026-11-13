@@ -27,7 +27,7 @@ final class HvfWindowsInstallStagingRunnerTests: XCTestCase {
         let source = URL(fileURLWithPath: plan.sourceImagePath)
         try FileManager.default.createDirectory(at: source.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("synthetic source".utf8).write(to: source)
-        try HvfWindowsInstallExecution().prepareMedia(plan)
+        try HvfWindowsInstallStaging.prepare(plan)
         let before = try XCTUnwrap(HvfWindowsInstallStagingFixture.status(URL(fileURLWithPath: plan.stagingTargetPath)))
 
         let output = root.appendingPathComponent("runner output.txt")

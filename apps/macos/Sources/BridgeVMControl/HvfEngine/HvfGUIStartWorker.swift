@@ -44,7 +44,19 @@ enum HvfGUIStartWorker {
             }
             try await checkAdmission(input)
             do { key = try VTPMRuntimeKey.withKey(for: config, provider: input.keyProvider) { $0 } }
-            catch { return .init(result: .failed(.keyAccess, error.localizedDescription)) }
+            catch {
+                let stage: HvfRuntimeStartFailureStage
+                switch error as? VTPMStateSecurityError {
+                case .keychainRead(-25308), .keychainRead(-25293), .keychainRead(-128),
+                     .keychainWrite(-25308), .keychainWrite(-25293), .keychainWrite(-128):
+                    stage = .keyAccessDenied
+                case .missingKeyForExistingState: stage = .keyStateMissing
+                case .invalidVMIdentifier, .invalidKeyLength: stage = .keyStateInvalid
+                case .randomGeneration: stage = .keyGeneration
+                default: stage = .keyAccess
+                }
+                return .init(result: .failed(stage, error.localizedDescription))
+            }
             try await checkAdmission(input)
             let launch: (Process) throws -> Void = { process in
                 try checkEffect(input)

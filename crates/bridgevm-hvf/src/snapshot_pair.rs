@@ -21,6 +21,9 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+#[path = "snapshot_import_disk.rs"]
+pub mod import_disk;
+
 #[path = "snapshot_copy.rs"]
 mod copy;
 #[path = "snapshot_free_space.rs"]

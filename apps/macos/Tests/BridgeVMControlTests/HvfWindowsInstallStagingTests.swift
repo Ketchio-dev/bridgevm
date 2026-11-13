@@ -40,7 +40,7 @@ final class HvfWindowsInstallStagingTests: XCTestCase {
     func testPreparedStagingIsOwnerOnlyAndHoldsTheBundledSeed() throws {
         let f = try Fixture(diskGiB: 1)
         defer { f.remove() }
-        try HvfWindowsInstallExecution().prepareMedia(f.plan)
+        try HvfWindowsInstallStaging.prepare(f.plan)
         let media = try f.media()
         for directory in [media.evidence.deletingLastPathComponent(), media.evidence] {
             let status = try XCTUnwrap(Fixture.status(directory), "missing \(directory.path)")
@@ -58,7 +58,7 @@ final class HvfWindowsInstallStagingTests: XCTestCase {
     func testPreparedMediaCreatesTheInstallTargetExclusivelyAtTheRequestedSize() throws {
         let f = try Fixture(diskGiB: 1)
         defer { f.remove() }
-        try HvfWindowsInstallExecution().prepareMedia(f.plan)
+        try HvfWindowsInstallStaging.prepare(f.plan)
         let target = try f.media().target
         let status = try XCTUnwrap(Fixture.status(target),
                                    "the app, not the runner's shared-/tmp recreate path, must create \(target.path)")
@@ -85,7 +85,7 @@ final class HvfWindowsInstallStagingTests: XCTestCase {
         try FileManager.default.createSymbolicLink(at: media.evidence, withDestinationURL: foreign)
         try FileManager.default.createSymbolicLink(at: media.vars, withDestinationURL: sentinel)
 
-        let prepared = (try? HvfWindowsInstallExecution().prepareMedia(f.plan)) != nil
+        let prepared = (try? HvfWindowsInstallStaging.prepare(f.plan)) != nil
 
         XCTAssertEqual(try Data(contentsOf: sentinel), Data("foreign".utf8))
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: foreign.path), ["sentinel"])
@@ -110,7 +110,7 @@ final class HvfWindowsInstallStagingTests: XCTestCase {
         try FileManager.default.createDirectory(at: root.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.createSymbolicLink(at: root, withDestinationURL: foreign)
 
-        XCTAssertThrowsError(try HvfWindowsInstallExecution().prepareMedia(f.plan))
+        XCTAssertThrowsError(try HvfWindowsInstallStaging.prepare(f.plan))
 
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: foreign.path), [])
         let link = try XCTUnwrap(Fixture.status(root))
@@ -124,11 +124,11 @@ final class HvfWindowsInstallStagingTests: XCTestCase {
         let staging = try f.media().evidence.deletingLastPathComponent()
         for (directory, mode) in [(f.bundle, 0o775), (f.bundle.appendingPathComponent("metadata"), 0o757)] {
             try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: directory.path)
-            XCTAssertThrowsError(try HvfWindowsInstallExecution().prepareMedia(f.plan), directory.path)
+            XCTAssertThrowsError(try HvfWindowsInstallStaging.prepare(f.plan), directory.path)
             XCTAssertNil(Fixture.status(staging), "staging was created under \(directory.path)")
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
         }
-        try HvfWindowsInstallExecution().prepareMedia(f.plan)
+        try HvfWindowsInstallStaging.prepare(f.plan)
         XCTAssertNotNil(Fixture.status(staging))
     }
 
