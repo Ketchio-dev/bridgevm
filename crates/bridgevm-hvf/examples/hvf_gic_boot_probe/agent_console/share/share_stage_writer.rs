@@ -49,9 +49,17 @@ impl StageWriter {
         let staged = destination.stage()?;
         let (to, inbox) = mpsc::channel();
         let (outbox, from) = mpsc::channel();
+        #[cfg(test)]
+        let faults = (super::host_destination::LINK_FAULT.with(std::cell::Cell::get), super::host_destination::CONFLICT_COPY_FAULT.with(std::cell::Cell::get));
         let spawned = std::thread::Builder::new()
             .name("bvagent-share-stage".into())
-            .spawn(move || run(&destination, staged, size, marks, &inbox, &outbox));
+            .spawn(move || {
+                #[cfg(test)] {
+                    super::host_destination::LINK_FAULT.with(|f| f.set(faults.0));
+                    super::host_destination::CONFLICT_COPY_FAULT.with(|f| f.set(faults.1));
+                }
+                run(&destination, staged, size, marks, &inbox, &outbox)
+            });
         // A failed spawn drops the closure, and with it the staged file, unremoved.
         spawned?;
         Ok(Self {

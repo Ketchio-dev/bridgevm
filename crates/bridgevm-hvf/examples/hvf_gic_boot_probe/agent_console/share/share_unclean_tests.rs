@@ -102,6 +102,29 @@ fn recovery_does_not_divert_a_later_normal_edit_or_loop_on_restart() {
 }
 
 #[test]
+fn failed_recovery_copy_single_keeps_windows_until_retry_succeeds() {
+    use crate::agent_console::share::host_destination::{LINK_FAULT, CONFLICT_COPY_FAULT};
+    let (mut rig, vars) = synced_from_guest("recovery-copy-fails", now_ms()-2*HOUR_MS, true);
+    settle(&mut rig);
+    rig.guest.write("doc.bin", b"legitimate Windows edit before stop");
+    rig.guest.stamps.insert("DOC.BIN".into(),now_ms());
+    rig.h.share=None;new_session(&mut rig,Some(&vars));
+    let puts=rig.guest.puts.len();
+    LINK_FAULT.with(|f| f.set(Some(libc::ENOTSUP)));
+    CONFLICT_COPY_FAULT.with(|f| f.set(Some(libc::ENOSPC)));
+    rig.run(24);
+    LINK_FAULT.with(|f| f.set(None));CONFLICT_COPY_FAULT.with(|f| f.set(None));
+    assert_eq!(rig.guest.content("doc.bin"),Some(&b"legitimate Windows edit before stop"[..]),"Windows version was overwritten after its copy could not be kept");
+    assert_eq!(rig.guest.puts.len(),puts,"Mac version sent after failed preservation");
+    assert_eq!(rig.host("doc.bin").as_deref(),Some(&b"old version"[..]));
+    assert!(rig.h.share.as_ref().unwrap().engine.recovery_copy("doc.bin"));
+    assert!(rig.host("doc (Windows copy).bin").is_none());
+    rig.run(24);
+    assert_eq!(rig.host("doc (Windows copy).bin").as_deref(),Some(&b"legitimate Windows edit before stop"[..]));
+    assert_eq!(rig.guest.content("doc.bin"),Some(&b"old version"[..]));
+}
+
+#[test]
 fn unclean_first_listing_keeps_mac_and_windows_versions() {
     for empty in [false, true] {
         let (mut rig, vars) = synced_from_guest(if empty { "unclean-empty" } else { "unclean-edit" }, now_ms()-2*HOUR_MS, true);

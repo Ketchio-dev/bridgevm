@@ -236,6 +236,101 @@ fn unclean_multirange_recovery_keeps_both_versions_and_then_accepts_normal_edits
     for suffix in [".share-sync", ".share-sync-puts"] { let _ = std::fs::remove_file(format!("{}{suffix}", vars.display())); }
 }
 
+#[test]
+fn failed_recovery_copy_multirange_keeps_windows_until_retry_succeeds() {
+    let mut rig = rig("unclean-recovery-fails", 1 << 30);
+    let vars = rig.dir.with_extension("vars");
+    let path = rig.dir.join("doc.bin");
+    let original = b"complete Mac original";
+    std::fs::write(&path, original).unwrap();
+    let mtime = file_mtime_ms_from_meta(&std::fs::metadata(&path).unwrap()).unwrap();
+    let share = rig.h.share.as_mut().unwrap();
+    share.attach_sync_state(&vars);
+    share.engine.on_guest_file("doc.bin".into(), original.to_vec(), Some(TIME));
+    share.engine.on_host_write_succeeded("doc.bin", Some(mtime));
+    rig.h.share = None; // Persist the baseline, WITHOUT finish_clean.
+    let mut share = ShareState::new(ShareSync::new(1 << 30), rig.dir.clone(), ROOT.into(), Duration::from_secs(3600));
+    share.last_poll = Some(rig.now);
+    share.attach_sync_state(&vars);
+    assert!(share.sync_file.as_ref().unwrap().previous_unclean);
+    scan_share_host_dir(&mut share, rig.now).unwrap();
+    share.plan_host_scan(); // first listing compares against the actual Mac scan
+    rig.h.share = Some(share);
+
+    // Includes zero-filled and nonzero bytes: recovery must not judge guest content.
+    let bytes = data(2 * SHARE_RANGE_BYTES as usize + 12_345);
+    let size = bytes.len() as u64;
+    super::super::host_destination::LINK_FAULT.with(|f| f.set(Some(libc::ENOTSUP)));
+    super::super::host_destination::CONFLICT_COPY_FAULT.with(|f| f.set(Some(libc::ENOSPC)));
+    rig.list("doc.bin", size, TIME);
+    assert!(rig.h.share.as_ref().unwrap().engine.recovery_copy("doc.bin"));
+    let mut ranges = 0;
+    while let Some(line) = rig.step().filter(|line| line.starts_with("GETRANGE ")) {
+        for reply in range_reply(&line, &bytes, size, TIME) { rig.reply(&reply); }
+        ranges += 1;
+        rig.wait(|r| writer_backlog(r) <= SHARE_RANGE_BYTES);
+    }
+    assert_eq!(ranges, 3);
+    rig.wait(|r| !r.h.big_share_active());
+    assert!(std::fs::read(&path).unwrap() == original, "multi-range recovery replaced Mac original");
+    assert!(rig.h.share.as_ref().unwrap().engine.recovery_copy("doc.bin"), "Windows version would be overwritten after its copy could not be kept");
+    assert_eq!(rig.files(), ["doc.bin"], "partial conflict or stage leaked");
+    assert!(!rig.h.enqueue_one_share_host_change(rig.now), "Mac version queued over Windows after preservation failed");
+    assert!(rig.h.queue.is_empty());
+    super::super::host_destination::LINK_FAULT.with(|f| f.set(None));
+    super::super::host_destination::CONFLICT_COPY_FAULT.with(|f| f.set(None));
+    rig.list("doc.bin", size, TIME);
+    while let Some(line) = rig.step().filter(|line| line.starts_with("GETRANGE ")) {
+        for reply in range_reply(&line, &bytes, size, TIME) { rig.reply(&reply); }
+        rig.wait(|r| writer_backlog(r) <= SHARE_RANGE_BYTES);
+    }
+    rig.wait(|r| !r.h.big_share_active());
+    assert_eq!(std::fs::read(rig.dir.join("doc (Windows copy).bin")).unwrap(), bytes);
+    assert_eq!(rig.files(), ["doc (Windows copy).bin", "doc.bin"], "stage temporary survived conflict publication");
+    assert!(!rig.h.share.as_ref().unwrap().engine.recovery_copy("doc.bin"), "published recovery retained guard");
+
+    // The ordinary host scan sends the original back. Put it before the independent conflict upload.
+    let share = rig.h.share.as_mut().unwrap();
+    scan_share_host_dir(share, rig.now).unwrap();
+    let mut actions = share.plan_host_scan();
+    actions.sort_by_key(|action| !matches!(action, SyncAction::Get { name } if name == "doc.bin"));
+    share.host_actions = actions.into();
+    share.host_actions_at = Some(rig.now);
+    for _ in 0..4 {
+        rig.h.enqueue_one_share_host_change(rig.now);
+        if rig.h.share.as_ref().unwrap().held_put.iter().chain(rig.h.queue.iter()).any(|r| matches!(r, ServiceReq::SharePut { name, .. } if name == "doc.bin")) { break; }
+    }
+    let share = rig.h.share.as_mut().unwrap();
+    if let Some(file) = share.sync_file.as_ref() { file.wait_marks(); }
+    // Make the original's queued PUT next, leaving the conflict copy's independent upload aside.
+    let req = if matches!(share.held_put.as_ref(), Some(ServiceReq::SharePut { name, .. }) if name == "doc.bin") {
+        share.held_put.take().unwrap()
+    } else {
+        let i = rig.h.queue.iter().position(|r| matches!(r, ServiceReq::SharePut { name, .. } if name == "doc.bin")).expect("Mac original was not queued for Windows");
+        rig.h.queue.remove(i).unwrap()
+    };
+    let ServiceReq::SharePut { bytes: sent, .. } = &req else { unreachable!() };
+    assert_eq!(sent, original, "Windows did not receive Mac original");
+    rig.h.queue.clear();rig.h.queue.push_front(req);
+    let line = rig.step().unwrap();assert!(line.starts_with("PUT "), "{line}");
+    rig.reply(&format!("PUTOK {} {}", base64_encode(b"C:\\share\\doc.bin"), original.len()));
+
+    // A normal Windows edit in this same session must publish over Mac, not make another copy.
+    let edited = data(SHARE_RANGE_BYTES as usize + 321);
+    let later = "2026-11-09T01:02:09.0000000Z";
+    rig.list("doc.bin", edited.len() as u64, later);
+    while let Some(line) = rig.step().filter(|line| line.starts_with("GETRANGE ")) {
+        for reply in range_reply(&line, &edited, edited.len() as u64, later) { rig.reply(&reply); }
+        rig.wait(|r| writer_backlog(r) <= SHARE_RANGE_BYTES);
+    }
+    rig.wait(|r| !r.h.big_share_active());
+    assert_eq!(std::fs::read(&path).unwrap(), edited, "later legitimate edit was not adopted");
+    assert_eq!(std::fs::read(rig.dir.join("doc (Windows copy).bin")).unwrap(), bytes);
+    assert_eq!(rig.files(), ["doc (Windows copy).bin", "doc.bin"]);
+    rig.h.share = None;
+    for suffix in [".share-sync", ".share-sync-puts"] { let _ = std::fs::remove_file(format!("{}{suffix}", vars.display())); }
+}
+
 fn writer_backlog(rig: &mut Rig) -> u64 {
     rig.h.big_get().map_or(0, |get| get.writer.backlog)
 }
