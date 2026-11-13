@@ -19,7 +19,7 @@ enum ToWriter {
     Chunk(String),
     /// The guest's time for the Mac copy, and for a preferred guest copy the Mac file it may
     /// replace (host_destination.rs MacChanged).
-    Publish(Option<SystemTime>, Option<MacStat>),
+    Publish(Option<SystemTime>, Option<MacStat>, bool),
 }
 
 pub(in crate::agent_console) enum FromWriter {
@@ -49,9 +49,17 @@ impl StageWriter {
         let staged = destination.stage()?;
         let (to, inbox) = mpsc::channel();
         let (outbox, from) = mpsc::channel();
+        #[cfg(test)]
+        let faults = (super::host_destination::LINK_FAULT.with(std::cell::Cell::get), super::host_destination::CONFLICT_COPY_FAULT.with(std::cell::Cell::get));
         let spawned = std::thread::Builder::new()
             .name("bvagent-share-stage".into())
-            .spawn(move || run(&destination, staged, size, marks, &inbox, &outbox));
+            .spawn(move || {
+                #[cfg(test)] {
+                    super::host_destination::LINK_FAULT.with(|f| f.set(faults.0));
+                    super::host_destination::CONFLICT_COPY_FAULT.with(|f| f.set(faults.1));
+                }
+                run(&destination, staged, size, marks, &inbox, &outbox)
+            });
         // A failed spawn drops the closure, and with it the staged file, unremoved.
         spawned?;
         Ok(Self {
@@ -67,8 +75,8 @@ impl StageWriter {
         let _ = self.to.send(ToWriter::Chunk(b64));
     }
 
-    pub(in crate::agent_console) fn publish(&mut self, mtime: Option<SystemTime>, mac: Option<MacStat>) {
-        let _ = self.to.send(ToWriter::Publish(mtime, mac));
+    pub(in crate::agent_console) fn publish(&mut self, mtime: Option<SystemTime>, mac: Option<MacStat>, recovery: bool) {
+        let _ = self.to.send(ToWriter::Publish(mtime, mac, recovery));
     }
 
     /// The thread's next answer, without waiting.
@@ -120,17 +128,21 @@ fn run(
                 let answer = (written == size).then_some(FromWriter::Hashed(hash));
                 let _ = outbox.send((bytes.len() as u64, answer));
             }
-            ToWriter::Publish(mtime, mac) => {
+            ToWriter::Publish(mtime, mac, recovery) => {
                 if written != size {
                     break;
                 }
                 // A mark that cannot be written turns the state off (the service sees it).
-                if let Some((marks, name)) = &marks {
-                    // A failed mark is safe to publish past (share_state.rs mark_fetched).
-                    let _ = mark(marks, [name.as_str()]);
+                // Recovery does not replace the Mac original, so cannot need a fetched mark.
+                // Its reverse PUT marks itself before touching Windows.
+                if !recovery {
+                    if let Some((marks, name)) = &marks {
+                        // A failed mark is safe to publish past (share_state.rs mark_fetched).
+                        let _ = mark(marks, [name.as_str()]);
+                    }
                 }
                 // The Mac file is checked last, in the publish, right before its rename.
-                let result = destination.publish(staged, mtime, mac);
+                let result = destination.publish(staged, mtime, mac, recovery);
                 let _ = outbox.send((0, Some(FromWriter::Published(result))));
                 return;
             }

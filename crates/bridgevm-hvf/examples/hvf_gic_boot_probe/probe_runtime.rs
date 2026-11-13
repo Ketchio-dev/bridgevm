@@ -1002,6 +1002,7 @@ pub(crate) fn run() -> ExitCode {
             if stop_reason == format!("PSCI {PSCI_SYSTEM_OFF:#x} (system off)") {
                 // The guest's shutdown ends here; vm_bench times it to this line.
                 println!("guest powered off; host teardown follows");
+                if let Some(agent) = agent_console.as_mut() { agent.guest_powered_off(); }
             }
             invalidate_watchdog_generation(&watchdog_generation);
             let secondary_stop = secondary_vcpus

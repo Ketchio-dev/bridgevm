@@ -58,6 +58,7 @@ struct Shared {
     dns_server_changes: AtomicU64,
     paused_ms: AtomicU64,
     stop: AtomicBool,
+    guest_powered_off: AtomicBool,
 }
 
 pub struct ServiceThread {
@@ -146,6 +147,16 @@ impl ServiceThread {
         self.shared.desktop_ready.load(Ordering::Acquire)
     }
 
+    /// Called only at the observed PSCI SYSTEM_OFF boundary, never reset or host teardown.
+    pub fn guest_powered_off(&mut self) {
+        self.shared.guest_powered_off.store(true, Ordering::Release);
+        self.shared.stop.store(true, Ordering::Release);
+        if let Some(thread) = self.thread.take() {
+            thread.thread().unpark();
+            let _ = thread.join();
+        }
+    }
+
     /// Windows' clock is behind by `paused` (time_resync.rs).
     pub fn note_vm_pause(&self, paused: Duration) {
         let paused_ms = u64::try_from(paused.as_millis()).unwrap_or(u64::MAX);
@@ -186,6 +197,14 @@ fn serve(
         // so an unpark is never used up elsewhere.
         std::thread::park_timeout(tick);
         if shared.stop.load(Ordering::Acquire) {
+            if shared.guest_powered_off.load(Ordering::Acquire) {
+                if let Some(share) = harness.share.as_mut() {
+                    // A still-running piecewise publisher has not finished the share state.
+                    if share.big.is_none() {
+                        if let Some(file) = share.sync_file.as_mut() { file.finish_clean(&mut share.engine); }
+                    }
+                }
+            }
             return;
         }
         // A guest reply's bytes are in the device already; no vCPU0 exit needed.

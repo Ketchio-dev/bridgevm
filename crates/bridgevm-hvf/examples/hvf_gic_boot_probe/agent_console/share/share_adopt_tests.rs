@@ -3,6 +3,8 @@
 //! was off.
 
 use super::*;
+#[path = "share_unclean_tests.rs"]
+mod unclean;
 
 #[test]
 fn a_new_session_sends_only_what_changed_while_the_vm_was_off() {
@@ -149,6 +151,10 @@ pub(super) fn vars(rig: &Rig) -> PathBuf {
 
 /// A new session (a VM start or guest restart), with the state at `vars` when given.
 pub(super) fn new_session(rig: &mut Rig, vars: Option<&Path>) {
+    // Existing adoption tests model a normal shutdown unless they explicitly drop the share.
+    if let Some(share) = rig.h.share.as_mut() {
+        if let Some(file) = share.sync_file.as_mut() { file.finish_clean(&mut share.engine); }
+    }
     rig.h.share = None; // the old session ends first and leaves its state on disk
     let mut share = ShareState::new(ShareSync::new(512), rig.dir.clone(), ROOT.into(), Duration::from_millis(500));
     if let Some(vars) = vars {
@@ -558,7 +564,11 @@ fn a_state_with_an_unusable_marks_file_is_removed_so_a_later_mark_is_not_outrank
     rig.guest.write("doc.bin", b"reverted, from before");
     rig.guest.stamps.insert("DOC.BIN".into(), now_ms() - 3 * HOUR_MS);
     new_session(&mut rig, Some(&vars));
-    let kept = versions.exists() || marks.exists();
+    // Session start replaces the invalid state with fresh unclean state before any mutation.
+    let fresh = std::fs::read_to_string(&versions).unwrap();
+    assert!(fresh.contains("seq 0\nsession unclean\n"));
+    assert!(!fresh.lines().any(|line| line.starts_with("file ")));
+    assert!(!marks.exists(), "the unusable marks file stayed on disk");
     let mut sent = false;
     for _ in 0..16 {
         rig.run(1);
@@ -586,7 +596,7 @@ fn a_state_with_an_unusable_marks_file_is_removed_so_a_later_mark_is_not_outrank
     assert_eq!(rig.guest.gets[gets..], [] as [String; 0], "the cut-short guest copy was fetched");
     assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"old version"[..]));
     assert_eq!(rig.guest.content("doc.bin"), Some(&b"old version"[..]));
-    assert!(!kept, "a state not taken whole stayed on disk");
+    // The old seq 5 and its versions were discarded; the new PUT's mark was not outranked.
 }
 
 /// Clears a file's user-immutable flag when dropped, so a failing test leaves nothing behind.
