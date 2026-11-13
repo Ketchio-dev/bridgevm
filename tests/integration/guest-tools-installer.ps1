@@ -17,10 +17,17 @@ function Get-Acl {
     return $acl
 }
 Assert-ToolsFolder 'safe'
+# Recorded after the app's agent update created BridgeVM with inherited Program Files ACLs.
+$script:rules=@([pscustomobject]@{PropagationFlags=0;AccessControlType='Allow';IdentityReference=[pscustomobject]@{Value='S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464'};FileSystemRights=2032127})
+$accepted=$true; try { Assert-ToolsFolder 'safe' } catch { $accepted=$false }
+if (-not $accepted) { throw 'ASSERT: recorded TrustedInstaller FullControl on an administrator-owned folder is safe' }
 $script:rules=@([pscustomobject]@{PropagationFlags=0;AccessControlType='Allow';IdentityReference=[pscustomobject]@{Value='S-1-5-32-545'};FileSystemRights=0x116})
 $rejected=$false; try { Assert-ToolsFolder 'unsafe' } catch { $rejected=$true }
 if (-not $rejected) { throw 'user-writable folder was accepted' }
+$script:rules=@([pscustomobject]@{PropagationFlags=0;AccessControlType='Allow';IdentityReference=[pscustomobject]@{Value='S-1-15-2-1'};FileSystemRights=0x116})
+$rejected=$false; try { Assert-ToolsFolder 'unsafe' } catch { $rejected=$true }
+if (-not $rejected) { throw 'application-package write access was accepted' }
 $script:rules=@(); $script:owner='S-1-5-21-1234'
 $rejected=$false; try { Assert-ToolsFolder 'unsafe' } catch { $rejected=$true }
 if (-not $rejected) { throw 'user-owned folder was accepted' }
-'PASS: installer parse and safe/user-writable/user-owned ACL behavior'
+'PASS: installer parses; safe and TrustedInstaller accepted; user/package writers and user owner rejected'

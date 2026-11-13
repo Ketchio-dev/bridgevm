@@ -7,8 +7,8 @@ function Assert-ToolsFolder([string]$Path) {
     if ((Get-Item -LiteralPath $Path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Unsafe installation folder' }
     $acl = Get-Acl -LiteralPath $Path
     $sid = [Security.Principal.SecurityIdentifier]
-    $trusted = @('S-1-5-18', 'S-1-5-32-544')
-    if ($Path -eq $env:ProgramFiles) { $trusted += 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464' }
+    # Windows Modules Installer is privileged like SYSTEM; its inherited Program Files ACE is safe below that folder too.
+    $trusted = @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
     if ($acl.GetOwner($sid).Value -notin $trusted) { throw 'Unsafe folder owner' }
     foreach ($rule in $acl.GetAccessRules($true, $true, $sid)) {
         if (($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -ne 0) { continue }
@@ -66,6 +66,10 @@ try {
     Register-ScheduledTask -TaskName 'BridgeVM Guest Agent' -Xml (Get-GuestAgentTaskXml $user (Join-Path $target 'bvagent.ps1')) -Force | Out-Null
     Start-ScheduledTask -TaskName 'BridgeVM Guest Agent'
 } catch {
+    try {
+        $detail = ($_.Exception.GetType().FullName + ': ' + $_.Exception.Message + ' line=' + $_.InvocationInfo.ScriptLineNumber) -replace '[\r\n]+', ' '
+        [IO.File]::WriteAllText((Join-Path $env:TEMP 'BridgeVM-guest-tools-install.log'), $detail)
+    } catch { }
     Write-Host '게스트 도구를 설치하지 못했으니 이 창을 닫고 다시 실행하세요.'
     Write-Host 'Guest tools could not be installed; close this window and run install.cmd again.'
     Read-Host 'Enter'
