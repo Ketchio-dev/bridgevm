@@ -156,6 +156,69 @@ fn failed_recovery_copy_single_survives_killed_session() {
 }
 
 #[test]
+fn failed_recovery_copy_single_survives_clean_shutdown() {
+    use crate::agent_console::share::host_destination::{LINK_FAULT, CONFLICT_COPY_FAULT};
+    let (mut rig, vars) = synced_from_guest("recovery-copy-clean-stop", now_ms()-2*HOUR_MS, true);
+    settle(&mut rig);
+    rig.guest.write("doc.bin", b"legitimate Windows edit before stop");
+    rig.guest.stamps.insert("DOC.BIN".into(),now_ms());
+    rig.h.share=None;new_session(&mut rig,Some(&vars));
+    let puts=rig.guest.puts.len();
+    LINK_FAULT.with(|f| f.set(Some(libc::ENOTSUP)));
+    CONFLICT_COPY_FAULT.with(|f| f.set(Some(libc::ENOSPC)));
+    let gets=rig.guest.gets.len();
+    for _ in 0..16 { rig.run(1); if rig.guest.gets.len()>gets { break; } }
+    let share=rig.h.share.as_mut().unwrap();
+    share.sync_file.as_mut().unwrap().finish_clean(&mut share.engine);
+    assert!(std::fs::read_to_string(format!("{}.share-sync",vars.display())).unwrap().contains("session unclean"), "unresolved recovery was cleared on clean shutdown");
+    new_session(&mut rig,Some(&vars));
+    LINK_FAULT.with(|f| f.set(None));CONFLICT_COPY_FAULT.with(|f| f.set(None));
+    assert_eq!(rig.guest.content("doc.bin"),Some(&b"legitimate Windows edit before stop"[..]),"Windows version overwritten after restart");
+    assert_eq!(rig.guest.puts.len(),puts,"Mac version sent after failed preservation");
+    assert_eq!(rig.host("doc.bin").as_deref(),Some(&b"old version"[..]));
+
+    assert!(rig.host("doc (Windows copy).bin").is_none());
+    rig.run(24);
+    assert_eq!(rig.host("doc.bin").as_deref(),Some(&b"old version"[..]));
+    assert!(rig.host("doc (Windows copy).bin").is_some(),"Windows version overwritten after restart");
+    assert_eq!(rig.host("doc (Windows copy).bin").as_deref(),Some(&b"legitimate Windows edit before stop"[..]));
+    assert_eq!(rig.guest.content("doc.bin"),Some(&b"old version"[..]));
+}
+
+#[test]
+fn recovery_kept_then_killed_before_put_keeps_both_with_or_without_put_mark() { kept_before_put(false); }
+
+#[test]
+fn recovery_kept_then_clean_shutdown_before_put_keeps_both() { kept_before_put(true); }
+
+fn kept_before_put(clean: bool) {
+    for marked in [false,true] {
+        let (mut rig,vars)=synced_from_guest(if clean { if marked { "kept-clean-mark" } else { "kept-clean-unmarked" } } else if marked { "kept-kill-mark" } else { "kept-kill-unmarked" },now_ms()-2*HOUR_MS,true);
+        settle(&mut rig);rig.guest.write("doc.bin",b"Windows before kill");rig.guest.stamps.insert("DOC.BIN".into(),now_ms());
+        rig.h.share=None;new_session(&mut rig,Some(&vars));
+        let gets=rig.guest.gets.len();
+        for _ in 0..16 { rig.run(1);if rig.guest.gets.len()>gets { break; } }
+        assert_eq!(rig.host("doc (Windows copy).bin").as_deref(),Some(&b"Windows before kill"[..]));
+        if marked {
+            let share=rig.h.share.as_mut().unwrap();share.mark_put("doc.bin",rig.now);
+            if let Some(file)=share.sync_file.as_ref() { file.wait_marks(); }
+        }
+        if clean {
+            let share=rig.h.share.as_mut().unwrap();
+            share.sync_file.as_mut().unwrap().finish_clean(&mut share.engine);
+            assert!(std::fs::read_to_string(format!("{}.share-sync",vars.display())).unwrap().contains("session unclean"),"recovery PUT not confirmed but session marked clean");
+        }
+        let paths=[".share-sync",".share-sync-puts"].map(|suffix| PathBuf::from(format!("{}{suffix}",vars.display())));
+        let disk=paths.each_ref().map(|p| std::fs::read(p).ok());rig.h.share=None;
+        for (p,bytes) in paths.iter().zip(disk) { if let Some(bytes)=bytes { std::fs::write(p,bytes).unwrap(); }else{let _=std::fs::remove_file(p);} }
+        new_session(&mut rig,Some(&vars));rig.run(24);
+        assert_eq!(rig.host("doc.bin").as_deref(),Some(&b"old version"[..]));
+        assert_eq!(rig.host("doc (Windows copy).bin").as_deref(),Some(&b"Windows before kill"[..]));
+        assert_eq!(rig.guest.content("doc.bin"),Some(&b"old version"[..]));
+    }
+}
+
+#[test]
 fn unclean_first_listing_keeps_mac_and_windows_versions() {
     for empty in [false, true] {
         let (mut rig, vars) = synced_from_guest(if empty { "unclean-empty" } else { "unclean-edit" }, now_ms()-2*HOUR_MS, true);

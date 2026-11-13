@@ -56,7 +56,8 @@ impl AgentConsoleHarness {
             .and_then(share_sync::share_mtime::system_time);
         share.forget_host_walk();
         // The guest's copy may not be on its disk yet: marked first (share_synced.rs).
-        share.mark_fetched(name, now);
+        // Recovery never replaces the Mac original; its later PUT marks itself.
+        if !recovery { share.mark_fetched(name, now); }
         let written = Destination::from_root(root, name, true)
             .and_then(|d| d.write_at_unless_changed(&bytes, mtime, mac, recovery));
         match written {

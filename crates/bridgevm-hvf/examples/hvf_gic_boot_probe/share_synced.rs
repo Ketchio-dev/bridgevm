@@ -91,6 +91,7 @@ impl ShareSync {
     /// Mac's time when one was sent (otherwise no version both sides share is known). It settles.
     pub fn put_confirmed(&mut self, name: &str, size: u64, mtime_ms: Option<u128>, now: Instant) {
         let key = normalize_rel(name);
+        self.recovery_puts.remove(&key);
         self.marks.insert(key.clone(), Some(now + SYNC_SETTLE));
         match mtime_ms {
             Some(mtime_ms) => self.note_synced(key, SyncedVersion { size, mtime_ms }),
@@ -164,7 +165,10 @@ impl ShareSync {
             }
             self.pending_host_changed.remove(name);
             self.guest_changed.insert(name.clone(), *host);
-            if self.previous_unclean { self.recovery_copies.insert(name.clone(), entry.clone()); }
+            if self.previous_unclean {
+                self.recovery_copies.insert(name.clone(), entry.clone());
+                self.recovery_puts.insert(name.clone());
+            }
         }
     }
 

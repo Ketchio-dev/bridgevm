@@ -133,9 +133,13 @@ fn run(
                     break;
                 }
                 // A mark that cannot be written turns the state off (the service sees it).
-                if let Some((marks, name)) = &marks {
-                    // A failed mark is safe to publish past (share_state.rs mark_fetched).
-                    let _ = mark(marks, [name.as_str()]);
+                // Recovery does not replace the Mac original, so cannot need a fetched mark.
+                // Its reverse PUT marks itself before touching Windows.
+                if !recovery {
+                    if let Some((marks, name)) = &marks {
+                        // A failed mark is safe to publish past (share_state.rs mark_fetched).
+                        let _ = mark(marks, [name.as_str()]);
+                    }
                 }
                 // The Mac file is checked last, in the publish, right before its rename.
                 let result = destination.publish(staged, mtime, mac, recovery);

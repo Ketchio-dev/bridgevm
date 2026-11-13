@@ -260,8 +260,11 @@ impl SyncStateFile {
 
     /// Only observed PSCI SYSTEM_OFF calls this, after the service writer has ended.
     pub(in crate::agent_console) fn finish_clean(&mut self, engine: &mut ShareSync) {
+        // Pending recovery still has two different originals: even SYSTEM_OFF must not turn
+        // the next first-listing retry into ordinary replacement of the Mac original.
+        let pending_recovery = engine.recovery_pending();
         self.finish(engine);
-        if self.marks.failed.load(Ordering::Acquire) { return; }
+        if pending_recovery || self.marks.failed.load(Ordering::Acquire) { return; }
         if let Some((files, _, _)) = self.load() {
             if let Err(error) = self.write_session(true, &files) {
                 println!("BVAGENT SHARE clean-state not-saved {error}");

@@ -354,7 +354,7 @@ impl AgentConsoleHarness {
         };
         share.forget_host_walk();
         // Marked on disk by the writer thread before it published (share_stage_writer.rs).
-        share.engine.mark_settling(&get.name, now);
+        if !share.engine.recovery_copy(&get.name) { share.engine.mark_settling(&get.name, now); }
         match result {
             Ok(mtime) => {
                 share.fetch_mac.remove(&get.name);

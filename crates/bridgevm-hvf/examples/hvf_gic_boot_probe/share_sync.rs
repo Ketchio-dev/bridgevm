@@ -113,6 +113,8 @@ pub struct ShareSync {
     previous_unclean: bool,
     // Only the version from the first listing, retained through retries of that version.
     recovery_copies: HashMap<String, GuestFileStat>,
+    /// Recovery's original must stay protected across clean stop until its reverse PUT confirms.
+    recovery_puts: HashSet<String>,
     /// Names with a PUT held, queued or in flight, as the service holds them at each listing.
     puts_under_way: HashSet<String>,
     /// A pass, or the setup before it, changed what a later pass reads (share_sync_idle.rs).
@@ -152,6 +154,7 @@ impl ShareSync {
 
     pub fn set_previous_unclean(&mut self, unclean: bool) { self.previous_unclean = unclean; }
     pub fn recovery_copy(&self, name: &str) -> bool { self.recovery_copies.contains_key(name) }
+    pub fn recovery_pending(&self) -> bool { !self.recovery_puts.is_empty() }
 
     /// The size and time the last guest listing gave `name`.
     pub fn listed_file(&self, name: &str) -> Option<(u64, &str)> {
