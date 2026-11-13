@@ -223,6 +223,29 @@ fn a_large_copy_is_listed_with_its_sizes_and_times_without_reading_a_byte() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+#[test]
+fn clipboard_folder_never_silently_omits_windows_incompatible_regular_files() {
+    let dir = scratch("incompatible-names");
+    let folder = dir.join("folder");
+    std::fs::create_dir(&folder).unwrap();
+    for (name, bytes) in [("normal.txt", "normal"), ("NUL.txt", "reserved"), (r"back\slash.txt", "backslash")] {
+        std::fs::write(folder.join(name), bytes).unwrap();
+    }
+    let offered = host_files(&[folder]);
+    std::fs::remove_dir_all(&dir).unwrap();
+    match offered {
+        Some(HostFiles::Read(copy)) => {
+            let files: Vec<_> = copy.entries.iter().filter(|entry| entry.file.is_some()).collect();
+            assert_eq!(files.len(), 3, "clipboard copy silently omitted regular files: expected=3 offered files, seen={files:?}");
+            let mut names: Vec<_> = files.iter().map(|entry| entry.rel.as_str()).collect();
+            names.sort_unstable();
+            assert_eq!(names, ["folder\\_NUL.txt", "folder\\back_slash.txt", "folder\\normal.txt"]);
+        }
+        Some(HostFiles::Unreadable { .. } | HostFiles::TooLarge { .. }) => {} // Explicit refusal, never a partial copy.
+        None => panic!("clipboard copy vanished without an explicit refusal reason"),
+    }
+}
+
 /// A pasteboard with text and file URLs; it counts the image reads (NSPasteboard
 /// has no image beside file URLs, read_image).
 #[derive(Default)]
