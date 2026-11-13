@@ -171,7 +171,7 @@ impl Destination {
         // Require write access to an existing destination before replacing it.
         let existing = self.existing(libc::O_WRONLY)?;
         let (temporary, mut file) = self.temporary()?;
-        let result = write(&mut file).and_then(|()| self.seal_and_rename(existing.as_ref(), &file, &temporary, mtime, mac, recovery, before_replace));
+        let result = write(&mut file).and_then(|()| self.seal_and_rename(existing.as_ref(), (&file, &temporary), mtime, mac, recovery, before_replace));
         if result.is_err() {
             // SAFETY: remove the unpublished exclusive temporary name.
             unsafe { libc::unlinkat(self.parent.as_raw_fd(), temporary.as_ptr(), 0) };
@@ -179,8 +179,9 @@ impl Destination {
         result
     }
 
-    fn seal_and_rename(&self, existing: Option<&File>, file: &File, temporary: &CStr,
+    fn seal_and_rename(&self, existing: Option<&File>, staged: (&File, &CStr),
                        mtime: Option<std::time::SystemTime>, mac: Option<MacStat>, recovery: bool, before_replace: impl FnOnce()) -> io::Result<Option<u128>> {
+        let (file, temporary) = staged;
         // The guest write policy's mode and quarantine mark, or no write.
         policy::seal(existing, file, &self.parent)?;
         // Only the date shown in Finder: the content is what must land.
@@ -299,7 +300,7 @@ impl Destination {
     pub(super) fn publish(&self, staged: Staged, mtime: Option<std::time::SystemTime>,
                           mac: Option<MacStat>, recovery: bool, before_replace: impl FnOnce()) -> io::Result<Option<u128>> {
         let result = self.existing(libc::O_WRONLY)
-            .and_then(|existing| self.seal_and_rename(existing.as_ref(), &staged.file, &staged.temporary, mtime, mac, recovery, before_replace));
+            .and_then(|existing| self.seal_and_rename(existing.as_ref(), (&staged.file, &staged.temporary), mtime, mac, recovery, before_replace));
         if result.is_err() {
             self.discard(staged);
         }
