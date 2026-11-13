@@ -5,6 +5,15 @@
   "summary": "BridgeVM presents a QEMU virt-compatible guest contract so stock ArmVirtQemu firmware and stock Windows 11 ARM media work unmodified. It is not bit-identical. Every known deviation is listed here.",
   "deviations": [
     {
+      "id": "guest-tools-disposable-namespace",
+      "area": "storage",
+      "qemu_behavior": "Additional NVMe namespaces depend on launch configuration.",
+      "bridgevm_behavior": "On the user's guest-tools action, the next full start attaches a content-sized non-bootable FAT tools image as NSID 2. The host file is opened without write access; guest writes go to an in-memory overlay and are discarded when the VM stops. NSID 1 and boot order are unchanged. Once the agent has started, later full starts omit the tools image. An attachment failure leaves the VM booting without it.",
+      "guest_visible": true,
+      "impact": "Imported Windows with an existing serial driver can install the agent without guest networking; no third-party drivers are included.",
+      "evidence": "apps/macos/Tests/BridgeVMControlTests/HvfAgentSilenceNoticeTests.swift; crates/bridgevm-hvf/examples/hvf_gic_boot_probe/boot_media_setup_tests.rs"
+    },
+    {
       "id": "runner-death-helper-stop",
       "area": "lifecycle",
       "qemu_behavior": "A separately launched VM process can outlive its launcher.",

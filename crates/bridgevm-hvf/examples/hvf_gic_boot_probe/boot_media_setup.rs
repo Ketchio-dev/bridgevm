@@ -75,6 +75,11 @@ pub(crate) fn attach_boot_media(
             }
         );
     }
+    if media.nvme_target.is_none() {
+        if let Some(path) = std::env::var_os("BRIDGEVM_GUEST_TOOLS") {
+            attach_guest_tools(platform, std::path::Path::new(&path));
+        }
+    }
     let mut pci_installer_iso_attached = false;
     let mut legacy_mmio_installer_iso_attached = false;
     if let Some(path) = media.installer_iso_path.as_ref() {
@@ -144,6 +149,19 @@ pub(crate) fn attach_boot_media(
             linux.cmdline_bytes().len()
         );
         platform.set_linux_boot_blobs(kernel, initrd, linux.cmdline_bytes());
+    }
+}
+
+fn attach_guest_tools(platform: &mut VirtPlatform, path: &std::path::Path) -> bool {
+    match platform.attach_nvme_second_namespace_raw_file(path, false) {
+        Ok(()) => {
+            println!("BVGUESTTOOLS attached");
+            true
+        }
+        Err(error) => {
+            eprintln!("BVGUESTTOOLS failed: {error}");
+            false
+        }
     }
 }
 

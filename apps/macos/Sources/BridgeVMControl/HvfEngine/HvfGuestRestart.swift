@@ -113,6 +113,7 @@ extension HvfEngineSession {
         guestBoot += 1
         pauseEnded()
         agentSilenceNotice.reset()
+        guestToolsMessage = nil
         if restartRequest != nil { restartRequest = nil }
         if resetConfirmation != nil { resetConfirmation = nil }
         if restartNotice != nil { restartNotice = nil }

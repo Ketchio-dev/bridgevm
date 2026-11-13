@@ -44,6 +44,9 @@ pub(crate) struct LaunchSpecArgs {
     /// these files (agent_console/agent_update.rs).
     #[arg(long, value_name = "DIR", requires_all = ["helper", "helper_agent_update_marker", "helper_agent_update_session"])]
     pub(crate) helper_agent_update: Option<PathBuf>,
+    /// Disposable tools image; writes remain in memory for this run only.
+    #[arg(long, value_name = "PATH", requires_all = ["helper", "helper_evidence_dir"])]
+    pub(crate) helper_guest_tools: Option<PathBuf>,
     /// The VM bundle's record of the last update, which allows one attempt per app session.
     #[arg(long, value_name = "PATH", requires = "helper_agent_update")]
     pub(crate) helper_agent_update_marker: Option<PathBuf>,

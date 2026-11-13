@@ -19,8 +19,18 @@ fn surfaces() -> DeviceSurfaces {
         hda_audio: false,
         hda_microphone: false,
         agent_update: None,
+        guest_tools: None,
         host_diagnostic_stop: false,
     }
+}
+
+#[test]
+fn tools_never_replace_or_enable_writes_to_the_boot_disk() {
+    let mut surfaces = surfaces();
+    surfaces.guest_tools = Some("/tools.raw".into());
+    assert_eq!(values(&surfaces, "BRIDGEVM_GUEST_TOOLS"), ["/tools.raw"]);
+    assert!(values(&surfaces, "BRIDGEVM_NVME_DISK").is_empty());
+    assert!(values(&surfaces, "BRIDGEVM_NVME_DISK2_WRITABLE").is_empty());
 }
 
 #[test]

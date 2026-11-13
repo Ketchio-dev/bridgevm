@@ -109,6 +109,9 @@ struct HvfEngineConfig: Equatable {
             "--helper-agent-control", ctlFilePath,
             "--helper-evidence-dir", evidenceDir
         ]
+        if let tools = HvfGuestTools.attachment(self) {
+            args.append(contentsOf: ["--helper-guest-tools", tools])
+        }
         if let watchdogMs {
             args.append(contentsOf: ["--watchdog-ms", String(watchdogMs)])
         }
