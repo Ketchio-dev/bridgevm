@@ -15,6 +15,8 @@ fn baseline(label: &str, from_guest: bool) -> (Rig, PathBuf) {
     }
     assert_eq!(rig.guest.content("doc.bin"),Some(&b"old version"[..]));
     assert!(rig.h.share.as_ref().unwrap().engine.marked("doc.bin"));
+    rig.run(4); // allow normal state flush while remaining well inside SYNC_SETTLE
+    assert!(rig.h.share.as_ref().unwrap().engine.marked("doc.bin"));
     (rig,vars)
 }
 
