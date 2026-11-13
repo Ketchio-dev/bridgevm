@@ -91,6 +91,7 @@ impl ShareSync {
     /// Mac's time when one was sent (otherwise no version both sides share is known). It settles.
     pub fn put_confirmed(&mut self, name: &str, size: u64, mtime_ms: Option<u128>, now: Instant) {
         let key = normalize_rel(name);
+        self.recovery_puts.remove(&key);
         self.marks.insert(key.clone(), Some(now + SYNC_SETTLE));
         match mtime_ms {
             Some(mtime_ms) => self.note_synced(key, SyncedVersion { size, mtime_ms }),
@@ -132,6 +133,7 @@ impl ShareSync {
     /// had failed and waited for a retry.
     pub(super) fn prefer_changed_guest_copies(&mut self) {
         let listed = &self.guest_file_entries_scratch;
+        self.recovery_copies.retain(|name, first| listed.get(name) == Some(first));
         let gone: Vec<String> = (self.guest_changed.keys())
             .filter(|name| !listed.contains_key(*name))
             .cloned()
@@ -163,6 +165,10 @@ impl ShareSync {
             }
             self.pending_host_changed.remove(name);
             self.guest_changed.insert(name.clone(), *host);
+            if self.previous_unclean {
+                self.recovery_copies.insert(name.clone(), entry.clone());
+                self.recovery_puts.insert(name.clone());
+            }
         }
     }
 
@@ -190,6 +196,7 @@ impl ShareSync {
     pub fn on_host_copy_kept(&mut self, name: &str) {
         let name = normalize_rel(name);
         self.guest_changed.remove(&name);
+        self.recovery_copies.remove(&name);
         if let Some(record) = self.records.get_mut(&name) {
             record.host_write_failed = false;
             record.host_mtime_ms = None;

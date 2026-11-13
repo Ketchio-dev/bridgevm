@@ -29,6 +29,10 @@ impl ShareSync {
         !self.listed && !self.records.contains_key(name)
     }
 
+    /// Failed/refused listings never increment this count. Empty applied listings count too:
+    /// there are no Windows versions in them to mistake for edits on a later boot.
+    pub fn applied_listing(&self) -> bool { self.listings > 0 }
+
     /// As after an applied listing: tests that send without one.
     #[cfg(test)]
     pub fn end_first_listing_wait(&mut self) {

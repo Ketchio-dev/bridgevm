@@ -323,6 +323,7 @@ impl AgentConsoleHarness {
         };
         let name = get.name.clone();
         // A preferred guest edit goes only over the Mac file it was preferred to (share_synced.rs).
+        let recovery = share.engine.recovery_copy(&name);
         let mac = share.fetch_mac.get(&name).copied().or_else(|| share.engine.preferred_mac_stat(&name).map(Some));
         match share.engine.on_guest_version(name.clone(), get.size, hash, None) {
             GuestVersion::AlreadySynced => {
@@ -337,7 +338,7 @@ impl AgentConsoleHarness {
                 let mtime = (share.engine.guest_mtime(&name))
                     .and_then(share_sync::share_mtime::guest_mtime_ms)
                     .and_then(share_sync::share_mtime::system_time);
-                get.writer.publish(mtime, mac);
+                get.writer.publish(mtime, mac, recovery);
                 get.publishing = true;
             }
         }
@@ -353,7 +354,7 @@ impl AgentConsoleHarness {
         };
         share.forget_host_walk();
         // Marked on disk by the writer thread before it published (share_stage_writer.rs).
-        share.engine.mark_settling(&get.name, now);
+        if !share.engine.recovery_copy(&get.name) { share.engine.mark_settling(&get.name, now); }
         match result {
             Ok(mtime) => {
                 share.fetch_mac.remove(&get.name);

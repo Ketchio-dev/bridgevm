@@ -1,6 +1,10 @@
 //! The share's synced state on disk (share_synced.rs), beside the VM's own UEFI vars:
 //! `<vars>.share-sync` holds each name's last and previous synced version and the marks as of a
 //! sequence number; `<vars>.share-sync-puts` holds the marks as of every later number.
+//! Versions header 2 adds `session unclean` (durably set before share mutations) or `session clean`
+//! (only observed guest SYSTEM_OFF after the share state finishes). Header 1 still loads, but
+//! missing/old/unreadable state is unclean. Every running-session rewrite keeps `unclean`.
+//! This share-only fact cannot detect a Windows crash in a run with sharing switched off.
 //!
 //! A mark reaches the disk before what it guards: before a PUT goes out and before a fetched copy
 //! is published: the names, renamed into place and ordered with F_BARRIERFSYNC before any later
@@ -155,6 +159,7 @@ pub(in crate::agent_console) struct SyncStateFile {
     /// `invalidate` removed a file and its folder is not synced yet.
     removed_unsynced: bool,
     last_flush: Option<Instant>,
+    pub(in crate::agent_console) previous_unclean: bool,
 }
 
 type Loaded = (HashMap<String, SyncedFile>, HashSet<String>, u64);
@@ -210,6 +215,7 @@ impl SyncStateFile {
             thread: None,
             removed_unsynced: false,
             last_flush: None,
+            previous_unclean: true,
         };
         let mut unremoved = None;
         let (files, marks, seq) = file.load().unwrap_or_else(|| {
@@ -228,7 +234,44 @@ impl SyncStateFile {
         }
         file.marks.durable.store(seq, Ordering::Release);
         file.base = Some(files.clone());
+        file.previous_unclean = std::fs::read_to_string(&file.versions).ok()
+            .is_none_or(|text| !text.lines().any(|line| line == "session clean"));
+        // Persist uncertainty before any share mutation, including when old state was loaded.
+        if let Err(error) = file.write_session(false, &files) {
+            file.previous_unclean = true;
+            unremoved = Some(error);
+        }
         (file, files, marks, unremoved)
+    }
+
+    fn write_session(&self, clean: bool, files: &HashMap<String, SyncedFile>) -> std::io::Result<()> {
+        let held = self.lock();
+        let mut text = format!("bridgevm-share-sync 2\nroot {}\nseq {}\nsession {}\n", self.root, held.seq, if clean { "clean" } else { "unclean" });
+        push_marks(&mut text, held.names.iter());
+        for (name, file) in files {
+            let mut b64 = String::new(); base64_encode_into(name.as_bytes(), &mut b64);
+            let prev = file.prev.map_or("- -".to_string(), |v| format!("{} {}", v.size, v.mtime_ms));
+            let _ = writeln!(text, "file {b64} {} {} {prev}", file.last.size, file.last.mtime_ms);
+        }
+        let file = write_replace(&self.versions, text.as_bytes())?;
+        file.sync_all()?;
+        std::fs::File::open(self.versions.parent().unwrap())?.sync_all()
+    }
+
+    /// Only observed PSCI SYSTEM_OFF calls this, after the service writer has ended.
+    pub(in crate::agent_console) fn finish_clean(&mut self, engine: &mut ShareSync) {
+        // Pending recovery still has two different originals: even SYSTEM_OFF must not turn
+        // the next first-listing retry into ordinary replacement of the Mac original.
+        let pending_recovery = engine.recovery_pending();
+        self.finish(engine);
+        // An unclean run can only be cleared by a session that actually compared a listing.
+        if pending_recovery || (self.previous_unclean && !engine.applied_listing())
+            || self.marks.failed.load(Ordering::Acquire) { return; }
+        if let Some((files, _, _)) = self.load() {
+            if let Err(error) = self.write_session(true, &files) {
+                println!("BVAGENT SHARE clean-state not-saved {error}");
+            }
+        }
     }
 
     fn lock(&self) -> MutexGuard<'_, Marks> {
@@ -437,7 +480,7 @@ fn run(versions: &Path, marks: &MarksFile, root: &str, mut files: HashMap<String
                 None => files.remove(&name),
             };
         }
-        let mut text = format!("{VERSIONS_HEADER}\nroot {root}\nseq {seq}\n");
+        let mut text = format!("bridgevm-share-sync 2\nroot {root}\nseq {seq}\nsession unclean\n");
         push_marks(&mut text, marked.iter());
         let mut b64 = String::new();
         for (name, file) in &files {
@@ -454,6 +497,7 @@ fn run(versions: &Path, marks: &MarksFile, root: &str, mut files: HashMap<String
             continue;
         }
         if let Err(error) = write_replace(versions, text.as_bytes()) {
+            marks.failed.store(true, Ordering::Release);
             if !warned {
                 println!("BVAGENT SHARE sync-state unwritable {error}");
                 warned = true;
@@ -483,7 +527,8 @@ fn write_replace(path: &Path, bytes: &[u8]) -> std::io::Result<std::fs::File> {
 /// A state file's versions, marks and number; None when it is not one for `root`.
 fn parse(text: &str, header: &str, root: &str) -> Option<Loaded> {
     let mut lines = text.lines();
-    if lines.next()? != header || lines.next()?.strip_prefix("root ")? != root {
+    let found = lines.next()?;
+    if (found != header && !(header == VERSIONS_HEADER && found == "bridgevm-share-sync 2")) || lines.next()?.strip_prefix("root ")? != root {
         return None;
     }
     let seq = lines.next()?.strip_prefix("seq ")?.parse().ok()?;
@@ -492,6 +537,7 @@ fn parse(text: &str, header: &str, root: &str) -> Option<Loaded> {
     for line in lines {
         let mut it = line.split(' ');
         match it.next()? {
+            "session" => {},
             "mark" => {
                 marks.insert(name(it.next()?)?);
             }
