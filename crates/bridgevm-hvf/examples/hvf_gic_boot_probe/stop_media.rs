@@ -47,7 +47,7 @@ pub(crate) fn persist_stop_media(
             }
         }
     }
-    assert!(errors.is_empty(), "{} (all disks were attempted)", errors.join("; "));
+    bridgevm_hvf::host_log::assert_final_save(&errors);
     records
 }
 
