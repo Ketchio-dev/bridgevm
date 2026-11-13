@@ -346,6 +346,71 @@ fn failed_multirange(restart: bool) {
     for suffix in [".share-sync", ".share-sync-puts"] { let _ = std::fs::remove_file(format!("{}{suffix}", vars.display())); }
 }
 
+#[test]
+fn ordinary_multirange_publish_failure_mark_loses_windows_edit_after_kill() {
+    let mut rig = rig("ordinary-failed-mark", 1 << 30);
+    let vars = rig.dir.with_extension("vars");
+    let path = rig.dir.join("doc.bin");
+    let original = b"Mac old version";
+    std::fs::write(&path, original).unwrap();
+    let mtime = file_mtime_ms_from_meta(&std::fs::metadata(&path).unwrap()).unwrap();
+    let share = rig.h.share.as_mut().unwrap();
+    share.attach_sync_state(&vars);
+    share.engine.on_guest_listing(Vec::new());
+    share.engine.on_guest_file("doc.bin".into(), original.to_vec(), Some(TIME));
+    share.engine.on_host_write_succeeded("doc.bin", Some(mtime));
+    share.sync_file.as_mut().unwrap().finish_clean(&mut share.engine);
+    rig.h.share = None;
+    let mut share = ShareState::new(ShareSync::new(1 << 30), rig.dir.clone(), ROOT.into(), Duration::from_secs(3600));
+    share.last_poll=Some(rig.now);share.attach_sync_state(&vars);
+    assert!(!share.sync_file.as_ref().unwrap().previous_unclean);
+    scan_share_host_dir(&mut share,rig.now).unwrap();share.plan_host_scan();rig.h.share=Some(share);
+    let bytes = data(SHARE_RANGE_BYTES as usize + 123);
+    let size=bytes.len() as u64;
+    rig.list("doc.bin",size,TIME);
+    assert!(!rig.h.share.as_ref().unwrap().engine.recovery_copy("doc.bin"));
+    let first=rig.step().unwrap();
+    for reply in range_reply(&first,&bytes,size,TIME) { rig.reply(&reply); }
+    rig.wait(|r| writer_backlog(r)<=SHARE_RANGE_BYTES);
+    // Stage already exists. Block final publication, not initial staging, with the real filesystem.
+    struct Immutable(std::ffi::CString);
+    impl Drop for Immutable { fn drop(&mut self) {
+        // SAFETY: this test's own temporary Mac file, CString remains alive.
+        unsafe { libc::chflags(self.0.as_ptr(),0) };
+    } }
+    let immutable=Immutable(std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap());
+    // SAFETY: live C path to this test's own file; cleared by the guard even on assertion failure.
+    assert_eq!(unsafe { libc::chflags(immutable.0.as_ptr(),libc::UF_IMMUTABLE as _) },0);
+    let second=rig.step().unwrap();
+    for reply in range_reply(&second,&bytes,size,TIME) { rig.reply(&reply); }
+    rig.wait(|r| !r.h.big_share_active());
+    assert_eq!(std::fs::read(&path).unwrap(),original);
+    let paths=[".share-sync",".share-sync-puts"].map(|s| PathBuf::from(format!("{}{s}",vars.display())));
+    let disk=paths.each_ref().map(|p| std::fs::read(p).ok());
+    assert!(disk[1].as_ref().is_some_and(|b| String::from_utf8_lossy(b).contains("mark ")),"publication did not leave disk mark");
+    drop(immutable);
+    rig.h.share=None;
+    for (p,bytes) in paths.iter().zip(disk) { if let Some(bytes)=bytes { std::fs::write(p,bytes).unwrap(); }else{let _=std::fs::remove_file(p);} }
+    let mut share=ShareState::new(ShareSync::new(1<<30),rig.dir.clone(),ROOT.into(),Duration::from_secs(3600));
+    share.last_poll=Some(rig.now);share.attach_sync_state(&vars);
+    scan_share_host_dir(&mut share,rig.now).unwrap();share.plan_host_scan();rig.h.share=Some(share);
+    rig.list("doc.bin",size,TIME);
+    // Perform the ordinary host step and apply any real outgoing legacy PUT to simulated Windows.
+    rig.h.enqueue_one_share_host_change(rig.now);
+    if let Some(file)=rig.h.share.as_ref().unwrap().sync_file.as_ref() { file.wait_marks(); }
+    rig.h.release_held_share_put(rig.now);
+    let mut windows=bytes.clone();
+    if let Some(line)=rig.step() {
+        if line.starts_with("PUT ") {
+            windows=base64_decode(line.split_whitespace().nth(2).unwrap()).unwrap();
+            rig.reply(&format!("PUTOK {} {}",base64_encode(b"C:\\share\\doc.bin"),windows.len()));
+        }
+    }
+    let kept=std::fs::read(rig.dir.join("doc (Windows copy).bin")).ok();
+    assert!(windows==bytes || std::fs::read(&path).unwrap()==bytes || kept.as_deref()==Some(bytes.as_slice()),
+        "multi-range Windows edit overwritten after failed publication and restart");
+}
+
 fn writer_backlog(rig: &mut Rig) -> u64 {
     rig.h.big_get().map_or(0, |get| get.writer.backlog)
 }
