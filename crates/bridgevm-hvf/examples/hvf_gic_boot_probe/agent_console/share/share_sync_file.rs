@@ -264,7 +264,9 @@ impl SyncStateFile {
         // the next first-listing retry into ordinary replacement of the Mac original.
         let pending_recovery = engine.recovery_pending();
         self.finish(engine);
-        if pending_recovery || self.marks.failed.load(Ordering::Acquire) { return; }
+        // An unclean run can only be cleared by a session that actually compared a listing.
+        if pending_recovery || (self.previous_unclean && !engine.applied_listing())
+            || self.marks.failed.load(Ordering::Acquire) { return; }
         if let Some((files, _, _)) = self.load() {
             if let Err(error) = self.write_session(true, &files) {
                 println!("BVAGENT SHARE clean-state not-saved {error}");

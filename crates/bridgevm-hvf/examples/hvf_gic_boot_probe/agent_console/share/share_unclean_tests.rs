@@ -31,7 +31,9 @@ fn old_format_loads_versions_but_is_unclean() {
 fn clean_end_reopens_unclean_before_a_new_boot_can_mutate() {
     let rig=Rig::new("clean-reboot");let vars=vars(&rig);
     let (mut file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir);
-    file.finish_clean(&mut ShareSync::new(512));
+    let mut engine=ShareSync::new(512);
+    engine.on_guest_listing(Vec::new()); // a clean stop must have examined the unclean state
+    file.finish_clean(&mut engine);
     assert!(std::fs::read_to_string(state_path(&vars)).unwrap().contains("session clean"));
     let (file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir);
     assert!(!file.previous_unclean);
@@ -56,6 +58,7 @@ fn clean_finish_joins_latest_versions_and_keeps_other_thread_marks() {
     let rig=Rig::new("finish-marks");let vars=vars(&rig);
     let (mut file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir);
     let mut engine=ShareSync::new(512);
+    engine.on_guest_listing(Vec::new());
     engine.on_guest_file("latest".into(),b"latest bytes".to_vec(),Some("g"));
     engine.on_host_write_succeeded("latest",Some(123));
     let marks=file.marks();
@@ -112,6 +115,16 @@ fn applied_listing_without_recovery_allows_clean_finish_including_empty_folder()
         share.sync_file.as_mut().unwrap().finish_clean(&mut share.engine);
         assert!(std::fs::read_to_string(state_path(&vars)).unwrap().contains("session clean"),"applied empty={empty} listing did not allow clean end");
     }
+}
+
+#[test]
+fn clean_start_can_finish_clean_without_a_listing() {
+    let (mut rig,vars)=synced_from_guest("clean-no-listing",now_ms()-2*HOUR_MS,true);
+    settle(&mut rig);new_session(&mut rig,Some(&vars));
+    let share=rig.h.share.as_mut().unwrap();
+    assert!(!share.sync_file.as_ref().unwrap().previous_unclean);
+    share.sync_file.as_mut().unwrap().finish_clean(&mut share.engine);
+    assert!(std::fs::read_to_string(state_path(&vars)).unwrap().contains("session clean"));
 }
 
 #[test]
