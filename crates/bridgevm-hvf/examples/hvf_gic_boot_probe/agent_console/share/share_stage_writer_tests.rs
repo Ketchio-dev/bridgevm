@@ -29,7 +29,7 @@ fn chunks_are_hashed_written_and_published_whole() {
     assert_eq!(writer.backlog, 0);
     assert!(!dir.join("sub/out.bin").exists(), "visible before the publish");
     writer.publish(None, None, false);
-    assert!(matches!(answer(&mut writer), FromWriter::Published(Ok(Some(_)))));
+    assert!(matches!(answer(&mut writer), FromWriter::Published(Ok(Some(_)), true)));
     assert_eq!(std::fs::read(dir.join("sub/out.bin")).unwrap(), b"abcdefg");
     assert_eq!(std::fs::read_dir(dir.join("sub")).unwrap().count(), 1, "a temporary is left");
     let _ = std::fs::remove_dir_all(&dir);
@@ -65,7 +65,7 @@ fn a_preferred_copy_is_not_published_over_a_mac_file_changed_since_the_first_sca
     assert!(matches!(answer(&mut writer), FromWriter::Hashed(_)));
     std::fs::write(&mac, b"edited on the Mac").unwrap();
     writer.publish(None, Some(Some(seen)), false);
-    assert!(matches!(answer(&mut writer), FromWriter::Published(Err(e)) if super::super::host_destination::is_mac_changed(&e)));
+    assert!(matches!(answer(&mut writer), FromWriter::Published(Err(e), false) if super::super::host_destination::is_mac_changed(&e)));
     assert_eq!(std::fs::read(&mac).unwrap(), b"edited on the Mac");
     let conflicts: Vec<_> = std::fs::read_dir(&dir).unwrap().filter_map(Result::ok).filter(|e| e.file_name().to_string_lossy().contains("Windows copy")).collect();
     assert_eq!(conflicts.len(), 1);
@@ -77,7 +77,7 @@ fn a_preferred_copy_is_not_published_over_a_mac_file_changed_since_the_first_sca
     writer.chunk(base64_encode(b"guest"), 5);
     assert!(matches!(answer(&mut writer), FromWriter::Hashed(_)));
     writer.publish(None, Some(Some(seen)), false);
-    assert!(matches!(answer(&mut writer), FromWriter::Published(Ok(_))));
+    assert!(matches!(answer(&mut writer), FromWriter::Published(Ok(_), true)));
     assert_eq!(std::fs::read(&mac).unwrap(), b"guest");
     let _ = std::fs::remove_dir_all(&dir);
 }

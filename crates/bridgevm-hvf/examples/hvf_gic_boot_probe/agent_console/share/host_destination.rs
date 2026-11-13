@@ -150,28 +150,28 @@ impl Destination {
 
     /// `mtime`: the guest file's modification time, which the Mac copy keeps.
     pub(super) fn write_at(&self, bytes: &[u8], mtime: Option<std::time::SystemTime>) -> io::Result<Option<u128>> {
-        self.write_at_unless_changed(bytes, mtime, None, false)
+        self.write_at_unless_changed(bytes, mtime, None, false, || {})
     }
 
     /// As `write_at`, but with `mac` (a preferred guest copy) not over a Mac file that is no
     /// longer as `mac` says: MacChanged. `recovery` instead requires a Windows copy even
     /// without a Mac change; preservation failure must remain a retryable write failure.
     pub(super) fn write_at_unless_changed(&self, bytes: &[u8], mtime: Option<std::time::SystemTime>,
-                                          mac: Option<MacStat>, recovery: bool) -> io::Result<Option<u128>> {
-        self.write_with_at(|file| file.write_all(bytes), mtime, mac, recovery)
+                                          mac: Option<MacStat>, recovery: bool, before_replace: impl FnOnce()) -> io::Result<Option<u128>> {
+        self.write_with_at(|file| file.write_all(bytes), mtime, mac, recovery, before_replace)
     }
 
     #[cfg(test)]
     fn write_with(&self, write: impl FnOnce(&mut File) -> io::Result<()>) -> io::Result<Option<u128>> {
-        self.write_with_at(write, None, None, false)
+        self.write_with_at(write, None, None, false, || {})
     }
 
     fn write_with_at(&self, write: impl FnOnce(&mut File) -> io::Result<()>,
-                     mtime: Option<std::time::SystemTime>, mac: Option<MacStat>, recovery: bool) -> io::Result<Option<u128>> {
+                     mtime: Option<std::time::SystemTime>, mac: Option<MacStat>, recovery: bool, before_replace: impl FnOnce()) -> io::Result<Option<u128>> {
         // Require write access to an existing destination before replacing it.
         let existing = self.existing(libc::O_WRONLY)?;
         let (temporary, mut file) = self.temporary()?;
-        let result = write(&mut file).and_then(|()| self.seal_and_rename(existing.as_ref(), &file, &temporary, mtime, mac, recovery));
+        let result = write(&mut file).and_then(|()| self.seal_and_rename(existing.as_ref(), &file, &temporary, mtime, mac, recovery, before_replace));
         if result.is_err() {
             // SAFETY: remove the unpublished exclusive temporary name.
             unsafe { libc::unlinkat(self.parent.as_raw_fd(), temporary.as_ptr(), 0) };
@@ -180,7 +180,7 @@ impl Destination {
     }
 
     fn seal_and_rename(&self, existing: Option<&File>, file: &File, temporary: &CStr,
-                       mtime: Option<std::time::SystemTime>, mac: Option<MacStat>, recovery: bool) -> io::Result<Option<u128>> {
+                       mtime: Option<std::time::SystemTime>, mac: Option<MacStat>, recovery: bool, before_replace: impl FnOnce()) -> io::Result<Option<u128>> {
         // The guest write policy's mode and quarantine mark, or no write.
         policy::seal(existing, file, &self.parent)?;
         // Only the date shown in Finder: the content is what must land.
@@ -236,6 +236,10 @@ impl Destination {
                     return Err(io::Error::other(MacChanged));
                 }
         }
+        // Staging, policy and sync succeeded; conflict-only publication returned above.
+        // A fetched copy must be marked durably BEFORE replacing the Mac file: Windows may
+        // still hold it only in cache. Never mark a failed stage or a conflict-only copy.
+        before_replace();
         // SAFETY: both names and the owning directory remain live. renameat
         // replaces a concurrently inserted leaf symlink instead of following it.
         let status = unsafe { libc::renameat(self.parent.as_raw_fd(), temporary.as_ptr(),
@@ -293,9 +297,9 @@ impl Destination {
     /// Seal, date, F_FULLFSYNC and rename the filled temporary, not over a Mac file that is no
     /// longer as `mac` says (MacChanged); on failure it is removed.
     pub(super) fn publish(&self, staged: Staged, mtime: Option<std::time::SystemTime>,
-                          mac: Option<MacStat>, recovery: bool) -> io::Result<Option<u128>> {
+                          mac: Option<MacStat>, recovery: bool, before_replace: impl FnOnce()) -> io::Result<Option<u128>> {
         let result = self.existing(libc::O_WRONLY)
-            .and_then(|existing| self.seal_and_rename(existing.as_ref(), &staged.file, &staged.temporary, mtime, mac, recovery));
+            .and_then(|existing| self.seal_and_rename(existing.as_ref(), &staged.file, &staged.temporary, mtime, mac, recovery, before_replace));
         if result.is_err() {
             self.discard(staged);
         }

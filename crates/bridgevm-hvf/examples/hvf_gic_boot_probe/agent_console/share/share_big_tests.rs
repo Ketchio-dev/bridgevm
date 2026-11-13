@@ -388,6 +388,7 @@ fn ordinary_multirange_publish_failure_mark_loses_windows_edit_after_kill() {
     let paths=[".share-sync",".share-sync-puts"].map(|s| PathBuf::from(format!("{}{s}",vars.display())));
     let disk=paths.each_ref().map(|p| std::fs::read(p).ok());
     println!("MULTIRANGE_FAILURE_DISK_MARK={}", disk[1].as_ref().is_some_and(|b| String::from_utf8_lossy(b).contains("mark ")));
+    assert!(disk[1].is_none(), "immutable fault reached rename after callback; replace with staging-side fault");
     drop(immutable);
     rig.h.share=None;
     for (p,bytes) in paths.iter().zip(disk) { if let Some(bytes)=bytes { std::fs::write(p,bytes).unwrap(); }else{let _=std::fs::remove_file(p);} }

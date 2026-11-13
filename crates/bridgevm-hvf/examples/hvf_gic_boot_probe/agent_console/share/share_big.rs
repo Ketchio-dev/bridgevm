@@ -282,7 +282,7 @@ impl AgentConsoleHarness {
         while let Some(answer) = self.big_get().and_then(|get| get.writer.poll()) {
             match answer {
                 FromWriter::Hashed(hash) => self.big_get_hashed(hash),
-                FromWriter::Published(result) => self.big_get_published(result, now),
+                FromWriter::Published(result, marked) => self.big_get_published(result, marked, now),
                 FromWriter::Failed(error) if error.kind() == std::io::ErrorKind::InvalidData => {
                     self.abort_big_share("bad-chunk", now)
                 }
@@ -344,7 +344,7 @@ impl AgentConsoleHarness {
         }
     }
 
-    fn big_get_published(&mut self, result: std::io::Result<Option<u128>>, now: Instant) {
+    fn big_get_published(&mut self, result: std::io::Result<Option<u128>>, marked: bool, now: Instant) {
         let t = self.t_ms(now);
         let Some(share) = self.share.as_mut() else {
             return;
@@ -354,7 +354,7 @@ impl AgentConsoleHarness {
         };
         share.forget_host_walk();
         // Marked on disk by the writer thread before it published (share_stage_writer.rs).
-        if !share.engine.recovery_copy(&get.name) { share.engine.mark_settling(&get.name, now); }
+        if marked { share.engine.mark_settling(&get.name, now); }
         match result {
             Ok(mtime) => {
                 share.fetch_mac.remove(&get.name);

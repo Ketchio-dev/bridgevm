@@ -35,6 +35,26 @@ fn ordinary_fetch_stage_failure_mark_loses_windows_edit_after_kill() {
 }
 
 #[test]
+fn ordinary_stage_failure_then_clean_stop_fetches_windows_edit_on_restart() {
+    use crate::agent_console::share::host_destination::TEMPORARY_FAULT;
+    let (mut rig, vars)=synced_from_guest("ordinary-full-clean-stop",now_ms()-2*HOUR_MS,true);
+    settle(&mut rig);new_session(&mut rig,Some(&vars));
+    rig.guest.write("doc.bin",b"Windows edit while Mac full");
+    rig.guest.stamps.insert("DOC.BIN".into(),now_ms());
+    let gets=rig.guest.gets.len();
+    TEMPORARY_FAULT.with(|f| f.set(Some(libc::ENOSPC)));
+    for _ in 0..16 { rig.run(1);if rig.guest.gets.len()>gets { break; } }
+    TEMPORARY_FAULT.with(|f| f.set(None));
+    assert!(rig.guest.gets.len()>gets);
+    assert_eq!(rig.host("doc.bin").as_deref(),Some(&b"old version"[..]));
+    new_session(&mut rig,Some(&vars)); // observed clean finish, not a simulated kill
+    rig.run(24);
+    assert_eq!(rig.host("doc.bin").as_deref(),Some(&b"Windows edit while Mac full"[..]),"clean restart replaced Windows edit after staging failed");
+    assert_eq!(rig.guest.content("doc.bin"),Some(&b"Windows edit while Mac full"[..]));
+    assert!(rig.host("doc (Windows copy).bin").is_none());
+}
+
+#[test]
 fn missing_state_is_unclean_before_any_mutation() {
     let rig=Rig::new("missing-state");let vars=vars(&rig);
     let (file,_,_,error)=sync_file::SyncStateFile::open(&vars,&rig.dir);
