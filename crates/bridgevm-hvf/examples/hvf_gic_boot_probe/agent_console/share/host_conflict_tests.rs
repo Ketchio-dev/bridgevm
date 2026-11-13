@@ -27,7 +27,7 @@ fn mac_save_during_mark_callback_is_kept_for_memory_and_staged_publication() {
         let f=Fixture::new();let root=f.root();let path=root.join("doc.bin");
         std::fs::write(&path,b"original").unwrap();
         let meta=std::fs::metadata(&path).unwrap();
-        let seen=(meta.len(),super::super::file_mtime_ms_from_meta(&meta).unwrap());
+        let seen=(meta.len(),crate::agent_console::file_mtime_ms_from_meta(&meta).unwrap());
         let destination=Destination::open(&root,"doc.bin",true).unwrap();
         let save=|| std::fs::write(&path,b"new Mac save during mark barrier").unwrap();
         let result=if staged {

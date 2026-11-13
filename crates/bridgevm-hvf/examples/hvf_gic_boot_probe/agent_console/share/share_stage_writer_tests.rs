@@ -65,7 +65,7 @@ fn a_preferred_copy_is_not_published_over_a_mac_file_changed_since_the_first_sca
     assert!(matches!(answer(&mut writer), FromWriter::Hashed(_)));
     std::fs::write(&mac, b"edited on the Mac").unwrap();
     writer.publish(None, Some(Some(seen)), false);
-    assert!(matches!(answer(&mut writer), FromWriter::Published(Err(e), false) if super::super::host_destination::is_mac_changed(&e)));
+    assert!(matches!(answer(&mut writer), FromWriter::Published(Err(e), true) if super::super::host_destination::is_mac_changed(&e)));
     assert_eq!(std::fs::read(&mac).unwrap(), b"edited on the Mac");
     let conflicts: Vec<_> = std::fs::read_dir(&dir).unwrap().filter_map(Result::ok).filter(|e| e.file_name().to_string_lossy().contains("Windows copy")).collect();
     assert_eq!(conflicts.len(), 1);

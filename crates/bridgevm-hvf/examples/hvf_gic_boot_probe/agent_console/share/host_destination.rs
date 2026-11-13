@@ -192,6 +192,10 @@ impl Destination {
         file.sync_all()?;
         let mtime = file.metadata()?.modified().ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|t| t.as_millis());
+        // Staging, policy and sync succeeded. A fetched copy must be marked durably BEFORE
+        // replacing the Mac file: Windows may still hold it only in cache. The mark can wait
+        // on disk, so compare the Mac AFTER it. Recovery never marks its unchanged original.
+        if !recovery { before_replace(); }
         // Last, right before the rename: a Mac edit since the first scan wins over a preferred
         // copy. A Mac file deleted since does not: the guest's edit wins over the deletion.
         if recovery || mac.is_some_and(|mac| self.mac_stat().is_some_and(|now| now != mac)) {
@@ -237,10 +241,6 @@ impl Destination {
                     return Err(io::Error::other(MacChanged));
                 }
         }
-        // Staging, policy and sync succeeded; conflict-only publication returned above.
-        // A fetched copy must be marked durably BEFORE replacing the Mac file: Windows may
-        // still hold it only in cache. Never mark a failed stage or a conflict-only copy.
-        before_replace();
         // SAFETY: both names and the owning directory remain live. renameat
         // replaces a concurrently inserted leaf symlink instead of following it.
         let status = unsafe { libc::renameat(self.parent.as_raw_fd(), temporary.as_ptr(),
