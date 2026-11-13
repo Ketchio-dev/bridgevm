@@ -268,6 +268,15 @@ impl SyncStateFile {
         if pending_recovery || (self.previous_unclean && !engine.applied_listing())
             || self.marks.failed.load(Ordering::Acquire) { return; }
         if let Some((files, _, _)) = self.load() {
+            // SYSTEM_OFF flushed Windows. Retire only confirmed deadlines, never loaded/held PUTs.
+            // finish joined older snapshots and disabled publishers. A newer versions seq
+            // supersedes stale marks atomically with the clean marker; no marks-file rewrite.
+            let retired = engine.retire_confirmed_marks();
+            {
+                let mut held = self.lock();
+                for name in &retired { held.names.remove(name); }
+                if !retired.is_empty() { held.seq += 1; }
+            }
             if let Err(error) = self.write_session(true, &files) {
                 println!("BVAGENT SHARE clean-state not-saved {error}");
             }

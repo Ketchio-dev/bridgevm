@@ -3,6 +3,8 @@
 //! was off.
 
 use super::*;
+#[path = "share_settle_reproduction_tests.rs"]
+mod settle_reproductions;
 #[path = "share_unclean_tests.rs"]
 mod unclean;
 
@@ -318,6 +320,7 @@ fn a_put_the_guest_had_not_settled_when_the_session_ended_is_sent_again_not_fetc
     assert_eq!(rig.guest.content("doc.bin"), Some(&b"the Mac's version"[..]));
     // Confirmed, then a force-stop within SYNC_SETTLE: Windows had not written it all.
     cut_short(&mut rig);
+    rig.h.share = None; // force-stop is NOT observed SYSTEM_OFF
     new_session(&mut rig, Some(&vars));
     rig.run(16);
     assert!(rig.guest.gets.is_empty(), "the cut-short guest copy was fetched: {:?}", rig.guest.gets);
@@ -329,6 +332,7 @@ fn a_put_the_guest_had_not_settled_when_the_session_ended_is_sent_again_not_fetc
 fn a_fetched_copy_the_guest_had_not_settled_when_the_session_ended_is_not_fetched_again() {
     let (mut rig, vars) = synced_from_guest("get-unsettled", now_ms() - HOUR_MS, true);
     cut_short(&mut rig);
+    rig.h.share = None; // force-stop is NOT observed SYSTEM_OFF
     new_session(&mut rig, Some(&vars));
     let gets = rig.guest.gets.len();
     rig.run(16);

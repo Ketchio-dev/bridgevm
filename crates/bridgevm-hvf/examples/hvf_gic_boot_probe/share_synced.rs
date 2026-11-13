@@ -70,9 +70,17 @@ impl ShareSync {
 
     /// Settled marks leave (the next versions write drops them on disk): their names.
     pub fn expire_marks(&mut self, now: Instant) -> Vec<String> {
+        self.expire_marks_when(|until| until <= now)
+    }
+
+    pub fn retire_confirmed_marks(&mut self) -> Vec<String> {
+        self.expire_marks_when(|_| true)
+    }
+
+    fn expire_marks_when(&mut self, expired_at: impl Fn(Instant) -> bool) -> Vec<String> {
         let mut expired = Vec::new();
         self.marks.retain(|name, until| {
-            let keep = until.is_none_or(|until| until > now);
+            let keep = until.is_none_or(|until| !expired_at(until));
             if !keep {
                 expired.push(name.clone());
             }
