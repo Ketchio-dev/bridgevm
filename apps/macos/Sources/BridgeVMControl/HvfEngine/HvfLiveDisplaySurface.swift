@@ -20,6 +20,7 @@ struct HvfLiveDisplaySurface: View {
                 VStack(spacing: 0) {
                     HvfAgentSilenceStrip(notice: session.agentSilenceNotice)
                     HvfDisplayDriverNoticeView(session: session)
+                    HvfDiskSyncNoticeView(notice: session.diskSyncNotice)
                 }
             }
             .overlay(alignment: .bottom) { HvfFileDropNoticeView(drops: session.fileDrops) }

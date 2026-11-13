@@ -14,6 +14,7 @@ struct HvfRuntimeStatusMessages: View {
                 .accessibilityValue(failureText ?? "none")
             HvfAgentSilenceNoticeView(notice: session.agentSilenceNotice)
             HvfShareRootNoticeView(notice: session.shareRootNotice)
+            HvfDiskSyncNoticeView(notice: session.diskSyncNotice)
             HvfMicrophoneNoticeView(session: session)
             HvfAgentUpdateNoticeView(notice: session.agentUpdateNotice)
             HvfClipboardImageNoticeView(notice: session.clipboardImageNotice)

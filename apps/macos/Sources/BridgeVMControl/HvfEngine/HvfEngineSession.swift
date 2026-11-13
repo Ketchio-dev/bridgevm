@@ -13,6 +13,7 @@ final class HvfEngineSession: ObservableObject {
     @Published var connectionState: HvfConnectionState = .stopped { didSet { updateSleepPrevention() } }
     let heartbeat = HvfRuntimeHeartbeat() // publishes the per-poll heartbeat age apart from the session
     let shareRootNotice = HvfShareRootNotice()
+    let diskSyncNotice = HvfDiskSyncNotice()
     let agentUpdateNotice = HvfAgentUpdateNotice()
     let fileDrops = HvfFileDropQueue() // Finder drops copied to the guest Desktop
     let clipboardImageNotice = HvfClipboardImageNotice()
@@ -496,6 +497,16 @@ final class HvfEngineSession: ObservableObject {
         legacyPaste = HvfLegacyPasteState()
         heldKeys = HvfHeldKeys()
         inputDriver.attachUnknown(binding: inputBinding)
+        // The terminal receipt can arrive before the next log poll. Drain the stopped helper's
+        // final diagnostics before cancelling polling, including a final-save failure.
+        // Owned cleanup has reaped the helper; legacy callers also observed exit. Cap at
+        // 64 one-MiB reads anyway so an unexpected external appender cannot spin this actor.
+        let logURL = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log")
+        for _ in 0..<64 {
+            let lines = tailReader.readNewLines(from: logURL)
+            for event in agentEvents.parse(lines) { diskSyncNotice.consume(event) }
+            if tailReader.bytesReadLastCall == 0 { break }
+        }
         timer?.invalidate()
         timer = nil
         process = nil
@@ -537,6 +548,7 @@ final class HvfEngineSession: ObservableObject {
         lastHeartbeatAge = nil
         serviceStarted = false
         shareRootNotice.reset(missingFolder: config.missingShareFolder())
+        diskSyncNotice.reset()
         agentUpdateNotice.reset()
         fileDrops.reset()
         clipboardImageNotice.reset()
