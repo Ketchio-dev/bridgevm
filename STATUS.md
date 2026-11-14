@@ -97,17 +97,15 @@ compatibility:
   scope;
 - some historical tools and evidence paths are still more lab-oriented than
   product-oriented;
-- the legacy `.qemuCompat` engine runs swtpm, qemu-system-aarch64 and the edk2
-  firmware from fixed Homebrew paths, so on that path anything a user places
-  there decides what the app runs and what the guest boots. That is how the
-  backend is meant to work -- it refuses to start when those files are absent --
-  but it is still outside the signed bundle, which the HVF and Apple VZ paths
-  are not. `scripts/check-release-overrides.sh` records all three as known
-  violations and fails if any is fixed without the record being removed.
+- the legacy `.qemuCompat` engine runs qemu-system-aarch64 and its edk2
+  firmware from Homebrew (`/opt/homebrew`, then `/usr/local`), outside the
+  signed bundle, so on that path whatever is installed there decides what the
+  app runs and what the guest boots; it refuses to start when they are absent.
+  Its swtpm is the bundled helper the HVF path uses.
 
 ## Evidence discipline
 
-BridgeVM uses the hierarchy defined in [`AGENTS.md`](AGENTS.md):
+BridgeVM ranks evidence as in [`CONTRIBUTING.md`](CONTRIBUTING.md#evidence-levels):
 
 1. live gate receipts on real hardware;
 2. live single runs;

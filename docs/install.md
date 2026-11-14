@@ -107,8 +107,11 @@ anything else. The installer then fails closed at every step:
    automatically. On success the backup is removed unless you pass
    `--keep-backup`.
 
-Your VM data (disks, UEFI variables, vTPM state under `~/BridgeVM`) and app
-settings are never touched by install or update.
+Install and update replace only the app bundle. Your VMs (disks, UEFI
+variables and vTPM state, by default under
+`~/Library/Application Support/BridgeVM/vms` or in the storage folder you
+chose), their shared folders under `~/BridgeVM 공유` and app settings are never
+touched.
 
 Useful options (forwarded through the one-liner with `bash -s --`):
 
@@ -163,8 +166,10 @@ on current macOS, so the Settings route is the real one.
 
 ## What you need after installing
 
-- A Windows 11 ARM64 ISO. The app guides you through Microsoft's official
-  download; nothing is fetched from third-party mirrors.
+To install Windows from an ISO:
+
+- A Windows 11 ARM64 ISO, downloaded from Microsoft yourself. The app does not
+  fetch Windows media; it asks you to choose the ISO file.
 - A user-supplied signed ARM64 driver payload containing exactly the storage,
   serial and network roles, plus an external manifest derived from
   [`windows-guest-payload-v1.example.tsv`](../scripts/win-assets/windows-guest-payload-v1.example.tsv).
@@ -172,11 +177,20 @@ on current macOS, so the Settings route is the real one.
   list every file and exact SHA-256; the app copies and seals both inputs in
   the VM bundle before installation.
 - About 64 GiB of free disk for the guest image.
-- No graphics-driver package is needed or accepted by the General Preview.
-  Windows-HVF creation shows that 3D injection is unavailable and proceeds
-  without it.
 
-The ISO by itself is therefore not enough today. Payload preflight verifies
+To import instead: an installed Windows 11 Arm disk (RAW, QCOW2 or Hyper-V
+VHDX), with its UEFI variables if you have them. Import copies or converts the
+disk into the library and leaves the source unchanged; it needs no driver
+payload.
+
+The General Preview bundles no Windows driver and accepts no graphics-driver
+package at creation; Windows-HVF creation shows that 3D injection is
+unavailable and proceeds without it. Once Windows runs, VM settings offer an
+optional install of the Microsoft-signed Red Hat virtio-win display driver,
+which Windows downloads itself. After a VM restart the display follows the
+window size; without it the resolution is fixed per VM (1280x800 by default).
+
+For installation, the ISO by itself is therefore not enough today. Payload preflight verifies
 the declared ARM64 PE identity and each catalog's embedded CMS integrity; it
 does not claim that Windows accepted or bound a driver. That remains live guest
 evidence, and a missing or rejected payload leaves installation blocked rather
@@ -190,9 +204,11 @@ than falling back to unsigned drivers.
   updated with `--keep-backup`, remove the new app and rename the
   `BridgeVM.app.backup-*` bundle back.
 - **Uninstall**: delete `/Applications/BridgeVM.app`. That removes the app
-  only. Your virtual machines live separately under `~/BridgeVM`; delete that
-  directory only if you also want to destroy the VMs, their disks, and their
-  vTPM state.
+  only. Your VMs live under `~/Library/Application Support/BridgeVM/vms` (or
+  the storage folder you chose); delete them only if you also want to destroy
+  their disks and vTPM state. Each VM's shared folder `~/BridgeVM 공유/<VM name>`
+  holds your own files and is not removed. vTPM keys stay in the Keychain
+  (`com.bridgevm.vtpm-state-key.v1`).
 
 ## Known limits of the unsigned distribution
 
