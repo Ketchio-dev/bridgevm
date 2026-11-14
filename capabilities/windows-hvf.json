@@ -245,7 +245,7 @@
         "docs/history/windows-hvf/t17-selection-attempt-and-failed-pilot-20261004.md",
         "docs/windows-arm/evidence/t17-5da403e7-fresh-selection-pilot-failure-20261004.json"
       ],
-      "known_defect": "No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off. In the 3D-off configuration the app's live display window was choppy in recent hardware runs; its smoothness has not been measured since. Guest audio stuttered audibly: until 2026-11-03 every other 10 ms of Windows playback reached the host as silence, because the sound controller answered Windows' position reads at the 0x2084 alias with 0. Since that fix, 60-second live runs had 2-6 silent 10 ms blocks out of about 6,330 and no host underruns, and under host load 0-8 blocks per run still repeated stale audio; no listening check has confirmed the stutter is gone."
+      "known_defect": "No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off. In the 3D-off configuration the app's live display window was choppy in recent hardware runs; its smoothness has not been measured since. Guest audio stuttered audibly: until 2026-11-03 every other 10 ms of Windows playback reached the host as silence, because the sound controller answered Windows' position reads at the 0x2084 alias with 0. Since that fix, 60-second live runs had 2-6 silent 10 ms blocks out of about 6,330, and under host load 0-8 blocks per run still repeated stale audio; at the v1.1.0 release head (2026-11-14) six such runs had 2-6 silent and 0-3 stale blocks out of about 6,400, and one of them had 2 host underrun callbacks. No listening check has confirmed the stutter is gone."
     },
     {
       "id": "A10",
@@ -570,7 +570,7 @@
         "docs/history/windows-hvf/t22-loader-admission-required-check-failure-20261003.md",
         "docs/history/windows-hvf/t22-loader-admission-hosted-full-failure-20261003.md"
       ],
-      "known_defect": "Legacy managed storage relocated before identity migration is refused. Full interrupted-operation coverage is unproven. The ten-lane product lifecycle campaign passed 10/10 once, at 949f4c26, which the operator accepted before a release head was designated. Physical power loss during a snapshot operation is outside this criterion and is not tested."
+      "known_defect": "Legacy managed storage relocated before identity migration is refused. Full interrupted-operation coverage is unproven. The ten-lane product lifecycle campaign passed 10/10 through the live queue at 949f4c26, which the operator accepted before a release head was designated, and 10/10 again on 2026-11-14 on the v1.1.0 release-head app f73b66bf, run locally without a queue seal. Physical power loss during a snapshot operation is outside this criterion and is not tested."
     },
     {
       "id": "A20",
