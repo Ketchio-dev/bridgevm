@@ -63,8 +63,8 @@ and the QEMU Compatibility Engine remain separate backends.
 
 ## Distribution
 
-Use the [current-source build](docs/install.md#build-the-current-source) while
-a safe General Preview successor is pending. The published `v1.0.0` predates the
+The General Preview `v1.1.0` is published; see the
+[installation guide](docs/install.md). The older `v1.0.0` predates the
 fail-closed driver boundary and is not recommended. The terminal installer
 requires a `BridgeVM-release.json` contract and refuses releases without it,
 even when an archive checksum is valid.
@@ -77,7 +77,8 @@ it cannot satisfy A9. Windows rejection of test mode remains an explicit error.
 See the [distribution channel contract](docs/distribution-channels.md).
 
 The Mac app uses ad-hoc signing, without Developer ID signing or Apple
-notarization. Downloaded builds require an explicit trust step. Windows driver
+notarization. A DMG downloaded in a browser needs the one-time Open Anyway
+step; the copy the terminal installer fetches does not. Windows driver
 trust is a separate constraint; owning an ISO does not establish it. Packaging,
 update/rollback UX and stronger artifact provenance remain development work.
 
@@ -87,7 +88,8 @@ The Engineering Preview boundary is the proven evidence set, not universal
 compatibility:
 
 - driver setup and recovery remain developer-oriented;
-- ad-hoc Mac distribution requires a user trust override for downloaded builds;
+- ad-hoc Mac distribution requires a one-time Open Anyway override for a DMG
+  downloaded in a browser;
 - clean-machine coverage is smaller than a mature VM product needs, and the
   declared host matrix (B8) covers only the M4 and M5 Apple-silicon
   generations this project can run on; M1, M2 and M3 are uncovered, not

@@ -11,8 +11,8 @@ win.
 
 - [Project overview](../README.md) — what BridgeVM is, current capability state,
   quick start, preview distribution, and repository map.
-- [Build and install](install.md) — current-source build, driver payload, and
-  the release installer that remains blocked pending a safe successor.
+- [Build and install](install.md) — current-source build, driver payload,
+  the release installer, the DMG and its trust step.
 - [Distribution channels](distribution-channels.md) — General Preview versus
   the isolated Graphics Lab security boundary.
 - [Current status](../STATUS.md) — concise evidence-backed product boundary.

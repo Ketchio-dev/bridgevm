@@ -16,7 +16,8 @@ The main engineering focus is CPU execution, interrupts and timers, device I/O,
 and VM lifecycle reliability. Apple VZ and QEMU compatibility backends remain
 separate engine paths.
 
-**[Build and try the current source](docs/install.md#build-the-current-source)** ·
+**[Install the General Preview](docs/install.md)** ·
+**[Build the current source](docs/install.md#build-the-current-source)** ·
 **[Current status](STATUS.md)** · **[Contribute](CONTRIBUTING.md)** ·
 **[Documentation](docs/README.md)**
 
@@ -55,12 +56,15 @@ separately; a documentation update does not renew either.
 
 ## Try BridgeVM
 
-There is currently no safe downloadable General Preview. The published
-`v1.0.0` predates the fail-closed driver policy, so `install.sh` intentionally
-refuses it. Use the [source-build guide](docs/install.md#build-the-current-source)
+The General Preview `v1.1.0` is the current downloadable build: install it with
+the terminal installer or the DMG as described in the
+[installation guide](docs/install.md). The older `v1.0.0` predates the
+fail-closed driver policy and is refused by the installer. To build from
+source instead, use the [source-build guide](docs/install.md#build-the-current-source)
 and [development setup](CONTRIBUTING.md#set-up-a-development-checkout).
 
-Requirements: Apple silicon, macOS 14+, Xcode/Swift, and Rust 1.85+.
+Requirements: Apple-silicon Mac with macOS 14+; building from source also needs
+Xcode/Swift and Rust 1.85+.
 Host coverage is limited; see [known limitations](STATUS.md#known-limitations).
 
 To install Windows, bring your own licensed Windows 11 Arm ISO and a signed
@@ -72,8 +76,10 @@ payload contract, bundle dependencies, and local ad-hoc-signed build. The
 General Preview contains no Windows test driver, does not enable TESTSIGNING,
 and keeps 3D acceleration outside the release scope.
 
-The Mac app is not Developer ID signed or Apple-notarized. Downloaded builds
-require the documented trust step. Running-state suspend is outside v1;
+The Mac app is not Developer ID signed or Apple-notarized. A DMG downloaded in
+a browser needs the one-time
+[Open Anyway step](docs/install.md#dmg-from-the-releases-page); the copy the
+terminal installer fetches does not. Running-state suspend is outside v1;
 see the [powered-off snapshot scope](docs/windows-arm/snapshot-scope-v1.md).
 
 ## Develop the VMM
