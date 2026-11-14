@@ -61,7 +61,6 @@ pub struct XhciEventLifecycleStats {
     pub event_post_attempts: u64,
     pub event_post_successes: u64,
     pub event_post_failures: u64,
-    pub event_ring_full_episodes: u64,
     pub command_completion_event_posts: u64,
     pub transfer_event_posts: u64,
     pub port_status_change_event_posts: u64,

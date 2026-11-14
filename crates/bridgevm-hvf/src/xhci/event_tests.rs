@@ -8,34 +8,6 @@ use super::*;
 mod event_address_tests;
 
 #[test]
-fn event_ring_full_is_counted_once_until_dequeue_advances() {
-    let mut xhci = XhciController::new();
-    let mut mem = TestRam::new(0x5000);
-    super::test_support::setup_event_ring(&mut xhci, &mut mem);
-    for _ in 0..15 {
-        assert!(xhci.post_event(&mut mem, 0, 1 << 24, 33 << 10));
-    }
-    assert_eq!(xhci.event_lifecycle_stats().event_ring_full_episodes, 0);
-    // Section 4.9.4 reserves the last slot for a full-error event. We only
-    // observe this condition: even the following overwrite still succeeds.
-    for _ in 0..3 {
-        assert!(xhci.post_event(&mut mem, 0, 1 << 24, 33 << 10));
-        assert_eq!(xhci.event_lifecycle_stats().event_ring_full_episodes, 1);
-    }
-    xhci.mmio_write(0x1038, 8, EVENT_RING | 8); // EHB alone is not progress.
-    assert!(xhci.post_event(&mut mem, 0, 1 << 24, 33 << 10));
-    assert_eq!(xhci.event_lifecycle_stats().event_ring_full_episodes, 1);
-    xhci.mmio_write(0x1038, 8, (EVENT_RING + 4 * TRB_SIZE) | 8);
-    assert!(xhci.post_event(&mut mem, 0, 1 << 24, 33 << 10));
-    assert_eq!(xhci.event_lifecycle_stats().event_ring_full_episodes, 2);
-    // Guest-paced episodes keep counting; the first-episode log guard cannot
-    // fire again even if the guest repeatedly rearms the per-ring latch.
-    xhci.mmio_write(0x1038, 8, (EVENT_RING + 5 * TRB_SIZE) | 8);
-    assert!(xhci.post_event(&mut mem, 0, 1 << 24, 33 << 10));
-    assert_eq!(xhci.event_lifecycle_stats().event_ring_full_episodes, 3);
-}
-
-#[test]
 fn iman_write_one_to_clear_preserves_interrupt_enable() {
     // Given: an enabled interrupter with one pending Enable Slot completion event.
     let mut xhci = XhciController::new();

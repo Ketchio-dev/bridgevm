@@ -37,7 +37,6 @@ pub(super) struct Interrupter {
     pub(super) event_handler_busy: bool,
     pub(super) event_enqueue: u32,
     pub(super) event_cycle: bool,
-    event_ring_full: bool,
 }
 
 impl Interrupter {
@@ -51,7 +50,6 @@ impl Interrupter {
             event_handler_busy: false,
             event_enqueue: 0,
             event_cycle: true,
-            event_ring_full: false,
         }
     }
 }
@@ -134,7 +132,6 @@ impl XhciController {
         interrupter.event_enqueue = 0;
         interrupter.event_handler_busy = false;
         interrupter.event_cycle = true;
-        interrupter.event_ring_full = false;
     }
 
     pub(super) fn mark_port_status_change_pending(&mut self) {
@@ -192,16 +189,12 @@ impl XhciController {
                 },
             );
         }
-        self.interrupters[index].event_ring_full &=
-            (self.interrupters[index].erdp & !0xf) == (next_erdp & !0xf);
         self.interrupters[index].erdp = next_erdp;
     }
 
     pub(super) fn write_erdp_high(&mut self, index: usize, value: u32) {
         let next_erdp = (self.interrupters[index].erdp & 0xffff_ffff) | (u64::from(value) << 32);
         self.record_erdp_update(next_erdp);
-        self.interrupters[index].event_ring_full &=
-            (self.interrupters[index].erdp & !0xf) == (next_erdp & !0xf);
         self.interrupters[index].erdp = next_erdp;
     }
 
@@ -282,21 +275,6 @@ impl XhciController {
             self.record_event_post_failure();
             return false;
         };
-        // xHCI 1.2 section 4.9.4: next EREP == ERDP reserves the last slot.
-        // This model wraps only ERST[0]; observe, but retain its existing writes.
-        let next = (interrupter.event_enqueue + 1) % segment_trbs;
-        let full = segment_base.checked_add(u64::from(next) * TRB_SIZE_BYTES)
-            == Some(interrupter.erdp & !0xf);
-        if full && !interrupter.event_ring_full {
-            self.interrupters[index].event_ring_full = true;
-            self.event_lifecycle_stats.event_ring_full_episodes = self
-                .event_lifecycle_stats
-                .event_ring_full_episodes
-                .saturating_add(1);
-            if self.event_lifecycle_stats.event_ring_full_episodes == 1 {
-                println!("XHCI event ring full interrupter={index} segment_trbs={segment_trbs}");
-            }
-        }
         let cycle = if interrupter.event_cycle {
             TRB_CYCLE
         } else {
