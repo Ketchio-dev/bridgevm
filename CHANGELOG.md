@@ -18,7 +18,7 @@ a clean Mac) and A19 (disk safety) are open. See `STATUS.md`.
 
 ### Added
 
-- **Import:** UTM (QCOW2) and Hyper-V (VHDX) disks are converted to sparse RAW,
+- **Import:** QCOW2 and Hyper-V VHDX disks are converted to sparse RAW,
   the UEFI vars file is optional, and an imported Windows that has the virtio
   serial driver but no guest tools is offered a guest tools installer.
 - **Display:** One-click install of the Microsoft-signed virtio-win display
