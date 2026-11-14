@@ -37,9 +37,9 @@ swift build --package-path apps/macos
 scripts/check-project.sh --fast
 ```
 
-QEMU is needed for the Compatibility Engine. It also provides `qemu-img` for
-offline image conversion and qcow2 disk operations. Raw-only Windows HVF import
-does not need that helper. Native Venus, packaging, and live Windows work have
+QEMU is needed for the Compatibility Engine, including `qemu-img` for its qcow2
+disk operations. Windows HVF import does not need QEMU: it converts QCOW2 and
+VHDX disks to RAW with BridgeVM's own converter. Native Venus, packaging, and live Windows work have
 additional dependencies documented beside their scripts; do not install them
 for an unrelated documentation or Rust-only change.
 

@@ -101,7 +101,11 @@ Before publishing a General Preview draft:
    `BridgeVM-release.json`, `SHA256SUMS`, the DMG, and the tarball;
 5. confirm the app bundle contains no `.sys`, `.cat`, `.inf`, `.cer`, `.pfx`,
    or `.p12` files;
-6. test the terminal installer with `--dry-run` and then on a clean Mac account;
+6. test the installer against the dry-run artifacts with
+   `BRIDGEVM_INSTALL_ASSET_DIR` and `--dry-run` (as
+   `tests/integration/install-verify-smoke.sh` does); the installer skips draft
+   releases, so run the real `install.sh` right after publishing and return the
+   release to draft if it fails;
 7. exercise Windows install from a user-supplied ISO and sealed signed ARM64
    storage/serial/network payload with 3D injection absent;
 8. review release notes against `capabilities/windows-hvf.json` and publish only

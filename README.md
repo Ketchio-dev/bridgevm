@@ -63,9 +63,11 @@ and [development setup](CONTRIBUTING.md#set-up-a-development-checkout).
 Requirements: Apple silicon, macOS 14+, Xcode/Swift, and Rust 1.85+.
 Host coverage is limited; see [known limitations](STATUS.md#known-limitations).
 
-Bring your own licensed Windows 11 Arm ISO and a signed ARM64
-storage/serial/network driver payload with an external SHA-256 manifest. An ISO
-alone is insufficient. The [installation guide](docs/install.md) explains the
+To install Windows, bring your own licensed Windows 11 Arm ISO and a signed
+ARM64 storage/serial/network driver payload with an external SHA-256 manifest;
+an ISO alone is insufficient. To import instead, bring an installed Windows 11
+Arm disk (RAW, QCOW2 or Hyper-V VHDX); import needs no driver payload. The
+[installation guide](docs/install.md) explains the
 payload contract, bundle dependencies, and local ad-hoc-signed build. The
 General Preview contains no Windows test driver, does not enable TESTSIGNING,
 and keeps 3D acceleration outside the release scope.
@@ -109,8 +111,11 @@ corresponding sealed [physical-Mac live gate](docs/testing/apple-silicon-live-ga
 
 The Windows guest platform is a QEMU `virt`-compatible contract with
 [documented deviations](docs/machine-contract/qemu-virt-deviations.json).
-QEMU also provides `qemu-img` for offline image conversion and qcow2 disk
-operations. Raw-only Windows HVF import does not need that helper.
+The Compatibility Engine also uses QEMU's `qemu-img` for its qcow2 disk
+operations. Windows HVF import does not need QEMU: it takes RAW, QCOW2 or
+Hyper-V VHDX disks and converts QCOW2 and VHDX to RAW with BridgeVM's own
+converter. A disk using compression, encryption or a backing file is refused,
+and the app says how to convert it with `qemu-img` first.
 
 Graphics Lab is a separate future research path, excluded from General Preview
 and v1. Its retained campaigns include
