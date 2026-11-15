@@ -55,7 +55,7 @@ struct LibraryDashboardDetail: View {
                 quickActions
             }
             .padding(24)
-            .frame(maxWidth: 960, alignment: .topLeading)
+            .frame(maxWidth: 760, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .top)
         }
         .background(LibraryAppearance.canvas)
