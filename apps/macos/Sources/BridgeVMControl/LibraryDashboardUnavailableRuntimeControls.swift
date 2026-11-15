@@ -7,7 +7,7 @@ struct LibraryDashboardUnavailableRuntimeControls: View {
     let showAdvanced: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        LazyVGrid(columns: DashboardActionButton.columns, spacing: 10) {
             DashboardActionButton(title: model.running ? "창 열기" : "시작",
                 symbol: "play.fill", prominent: true, disabled: model.lifecycleBusy) {
                 LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library)

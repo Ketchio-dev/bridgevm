@@ -7,8 +7,12 @@ struct LibraryDashboardRoute: View {
     var body: some View {
         if !library.proMode, let detail = library.selectedDetail,
            !library.shouldShowWindowsInstall(for: detail.config) {
-            LibraryDashboardDetail(config: detail.config, model: detail.model, library: library)
-                .id(detail.config.slug)
+            let dashboard = LibraryDashboardDetail(config: detail.config, model: detail.model, library: library)
+            if let session = library.hvfRuntimeDetailSession(for: detail.config) {
+                LibraryDashboardObservedRuntime(session: session, detail: dashboard).id(detail.config.slug)
+            } else {
+                dashboard.id(detail.config.slug)
+            }
         } else {
             LibraryDetailView(library: library)
         }
@@ -19,6 +23,7 @@ struct LibraryDashboardDetail: View {
     let config: VMConfig
     @ObservedObject var model: ControlModel
     @ObservedObject var library: LibraryModel
+    var runtimeState: LibraryDashboardRuntimeState? = nil
     @State private var showingAdvanced = false
     @State private var showingSettings = false
 
@@ -50,7 +55,7 @@ struct LibraryDashboardDetail: View {
                 quickActions
             }
             .padding(24)
-            .frame(maxWidth: 850, alignment: .topLeading)
+            .frame(maxWidth: 960, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .top)
         }
         .background(LibraryAppearance.canvas)
@@ -59,13 +64,7 @@ struct LibraryDashboardDetail: View {
 
     private var hero: some View {
         HStack(alignment: .top, spacing: 20) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(LinearGradient(colors: heroColors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                LibraryVMEmblem(engine: config.engineKind)
-                    .scaleEffect(1.25)
-            }
-            .frame(width: 190, height: 120)
+            LibraryVMEmblem(engine: config.engineKind)
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Text(config.name).font(.system(size: 27, weight: .bold)).lineLimit(2)
@@ -78,44 +77,37 @@ struct LibraryDashboardDetail: View {
                         session: library.hvfRuntimeSessions.existingRecord(slug: config.slug)?.session, dot: 10)
                 }
                 .font(.headline)
-                Text(config.displayName).foregroundStyle(.secondary).lineLimit(2)
+                if config.displayName != config.name {
+                    Text(config.displayName).foregroundStyle(.secondary).lineLimit(2)
+                }
                 Text([config.engineDetailLabel, model.graphicsPresentation?.label].compactMap { $0 }.joined(separator: " · ")).font(.callout).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private var actionStrip: some View {
-        HStack {
-            if config.engineKind == .hvfEngine {
-                if let session = library.hvfRuntimeDetailSession(for: config) {
-                    LibraryDashboardRuntimeControls(config: config, model: model,
-                        library: library, session: session,
-                        showAdvanced: { showingAdvanced = true })
-                } else {
-                    LibraryDashboardUnavailableRuntimeControls(config: config, model: model,
-                        library: library, showAdvanced: { showingAdvanced = true })
-                }
+    @ViewBuilder private var actionStrip: some View {
+        if config.engineKind == .hvfEngine {
+            if let session = settingsSession {
+                LibraryDashboardRuntimeControls(config: config, model: model,
+                    library: library, session: session,
+                    showAdvanced: { showingAdvanced = true }, showSettings: { showingSettings = true })
             } else {
-                LibraryDashboardLegacyControls(model: model, showAdvanced: { showingAdvanced = true })
+                LibraryDashboardUnavailableRuntimeControls(config: config, model: model,
+                    library: library, showAdvanced: { showingAdvanced = true })
             }
-            if settingsSession != nil {
-                DashboardActionButton(title: "설정", symbol: "gearshape") { showingSettings = true }
-                    .accessibilityIdentifier("bridgevm.runtime.settings.open")
-            }
+        } else {
+            LibraryDashboardLegacyControls(model: model, showAdvanced: { showingAdvanced = true })
         }
     }
 
     private var configurationCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("구성").font(.headline)
-            HStack(spacing: 0) {
+            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: 20) {
                 metric("프로세서", value: "\(model.cpu) vCPU", symbol: "cpu")
-                Divider().frame(height: 50)
                 metric("메모리", value: memoryText, symbol: "memorychip")
-                Divider().frame(height: 50)
                 metric("디스플레이", value: displayText, symbol: "display")
-                Divider().frame(height: 50)
                 metric("엔진", value: config.engineShortLabel, symbol: "cube")
             }
         }
@@ -131,15 +123,14 @@ struct LibraryDashboardDetail: View {
             }
             HStack(spacing: 24) {
                 LibraryMetadataLabel(title: "상태", value: statusText, symbol: "power")
-                LibraryMetadataLabel(title: "IP 주소", value: model.running ? model.ip : "—", symbol: "network")
+                LibraryMetadataLabel(title: "IP 주소", value: isActive ? model.ip : "—", symbol: "network")
                 Spacer(minLength: 0)
             }
-            if !model.statusNote.isEmpty {
+            if let note = visibleStatusNote {
                 Divider()
-                Text(model.statusNote).font(.callout).foregroundStyle(.secondary)
+                Text(note).font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text("CPU·메모리 사용률은 게스트 측 측정값이 연결된 뒤 표시됩니다.")
-                .font(.caption).foregroundStyle(.secondary)
         }
         .padding(20).modifier(LibraryCardSurface())
     }
@@ -182,7 +173,7 @@ struct LibraryDashboardDetail: View {
         Label {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.caption).foregroundStyle(.secondary)
-                Text(value).font(.callout.weight(.semibold)).lineLimit(1)
+                Text(value).font(.callout.weight(.semibold)).lineLimit(2)
             }
         } icon: {
             Image(systemName: symbol).font(.title3).foregroundStyle(.secondary)
@@ -194,12 +185,18 @@ struct LibraryDashboardDetail: View {
 
     private var statusText: String {
         if config.installPending == true { return "설치 필요" }
-        return model.running ? "실행 중" : "정지됨"
+        return runtimeState?.title ?? (model.running ? "실행 중" : "정지됨")
+    }
+
+    private var isActive: Bool { runtimeState?.isActive ?? model.running }
+    private var visibleStatusNote: String? {
+        if let runtimeState { return runtimeState.note(model.statusNote) }
+        return model.statusNote.isEmpty ? nil : model.statusNote
     }
 
     private var statusColor: Color {
         if config.installPending == true { return .orange }
-        return model.running ? .green : .secondary
+        return runtimeState?.color ?? (model.running ? .green : .secondary)
     }
 
     private var memoryText: String {
@@ -210,13 +207,8 @@ struct LibraryDashboardDetail: View {
 
     private var displayText: String {
         config.engineKind == .hvfEngine
-            ? "게스트 화면 기준" : "\(config.displayWidth) × \(config.displayHeight)"
-    }
-
-    private var heroColors: [Color] {
-        config.engineKind == .hvfEngine
-            ? [Color.blue.opacity(0.16), Color.purple.opacity(0.08)]
-            : [Color.teal.opacity(0.17), Color.blue.opacity(0.07)]
+            ? (config.retinaResolution == true ? "Retina · 창 크기에 맞춤" : "창 크기에 맞춤")
+            : "\(config.displayWidth) × \(config.displayHeight)"
     }
 
     private func revealBundle() {
@@ -225,6 +217,7 @@ struct LibraryDashboardDetail: View {
 }
 
 struct DashboardActionButton: View {
+    static let columns = [GridItem(.adaptive(minimum: 140), spacing: 10)]
     let title: String
     let symbol: String
     var prominent = false
@@ -236,16 +229,19 @@ struct DashboardActionButton: View {
             if prominent { actionButton.buttonStyle(.borderedProminent) }
             else { actionButton.buttonStyle(.bordered) }
         }
+        .controlSize(.large)
         .disabled(disabled)
     }
 
     private var actionButton: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: symbol).font(.title3)
-                Text(title).font(.callout)
+            Label {
+                Text(title).font(.callout.weight(.medium)).fixedSize()
+            } icon: {
+                Image(systemName: symbol).font(.body)
             }
-            .frame(maxWidth: .infinity).frame(height: 64)
+            .frame(maxWidth: .infinity, minHeight: 28)
+            .padding(.vertical, 4)
         }
     }
 }
