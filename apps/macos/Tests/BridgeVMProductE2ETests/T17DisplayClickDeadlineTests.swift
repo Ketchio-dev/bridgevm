@@ -80,9 +80,9 @@ final class T17DisplayClickDeadlineTests: XCTestCase {
     }
 
     func testTopOwnerIsTheFrontmostWindowUnderThePoint() {
-        func window(_ pid: Int, _ name: String, _ rect: CGRect, alpha: Double = 1) -> [String: Any] {
+        func window(_ pid: Int, _ name: String, _ rect: CGRect, alpha: Double = 1, layer: Int = 0) -> [String: Any] {
             [kCGWindowOwnerPID as String: pid, kCGWindowOwnerName as String: name, kCGWindowAlpha as String: alpha,
-             kCGWindowBounds as String: rect.dictionaryRepresentation]
+             kCGWindowBounds as String: rect.dictionaryRepresentation, kCGWindowLayer as String: layer]
         }
         let point = CGPoint(x: 740, y: 450), app: pid_t = 42
         let behind = window(42, "BridgeVM", CGRect(x: 100, y: 50, width: 1280, height: 800))
@@ -93,6 +93,14 @@ final class T17DisplayClickDeadlineTests: XCTestCase {
             windows: [window(7, "Overlay", CGRect(x: 0, y: 0, width: 4000, height: 3000), alpha: 0), behind]))
         XCTAssertNil(T17DisplayClick.topOwner(at: point, pid: app,
             windows: [window(7, "Elsewhere", CGRect(x: 0, y: 0, width: 50, height: 50)), behind]))
+        // The window list seen on the Studio during T17 r99 (macOS 27.0.1): system full-screen
+        // windows above the app's window must not count as covering it.
+        let screen = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        XCTAssertNil(T17DisplayClick.topOwner(at: point, pid: app, windows: [
+            window(1, "Window Server", CGRect(x: 0, y: 0, width: 1920, height: 30), layer: 24),
+            window(2, "알림 센터", screen, layer: 21), window(3, "Dock", screen, layer: 20), behind]))
+        XCTAssertEqual(T17DisplayClick.topOwner(at: point, pid: app, windows: [
+            window(3, "Dock", screen, layer: 20), window(7, "Tart", screen), behind]), "Tart")
     }
 
     private func assertTimeout(_ error: Error) {

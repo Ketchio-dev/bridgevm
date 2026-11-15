@@ -36,7 +36,10 @@ enum T17DisplayClick {
 
     static func topOwner(at point: CGPoint, pid: pid_t, windows: [[String: Any]]) -> String? {
         for window in windows {   // front to back
-            guard let bounds = (window[kCGWindowBounds as String] as? NSDictionary).flatMap({
+            // Only app windows (layer 0) cover the display. The Dock (20) and Notification Center (21)
+            // keep full-screen windows above every app on macOS 27, which withheld T17 r99's click.
+            guard (window[kCGWindowLayer as String] as? Int ?? 0) == 0,
+                  let bounds = (window[kCGWindowBounds as String] as? NSDictionary).flatMap({
                 CGRect(dictionaryRepresentation: $0)
             }), bounds.contains(point), (window[kCGWindowAlpha as String] as? Double ?? 1) > 0 else { continue }
             let owner = (window[kCGWindowOwnerPID as String] as? Int).map { pid_t($0) }
