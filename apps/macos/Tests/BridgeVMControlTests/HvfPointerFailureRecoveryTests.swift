@@ -10,7 +10,7 @@ final class HvfPointerFailureRecoveryTests: XCTestCase {
         fixture.assertFailedClosed()
         _ = fixture.poll()
         let cleanup = fixture.commands.last!
-        XCTAssertEqual(fixture.payloads(), ["press:1x2", "fail", "releaseall:1x2"])
+        XCTAssertEqual(fixture.payloads(), ["press:1x2", "fail", "release:1x2"])
         _ = fixture.router.cancelTarget(now: fixture.now)
         XCTAssertEqual(fixture.poll(), .waiting)
         _ = fixture.poll(lines: fixture.receipt(cleanup))
@@ -31,7 +31,7 @@ final class HvfPointerFailureRecoveryTests: XCTestCase {
         _ = fixture.poll()
         let cleanup = fixture.commands.last!
         XCTAssertNotEqual(press.split(separator: " ")[1], cleanup.split(separator: " ")[1])
-        XCTAssertEqual(fixture.payloads(), ["rightpress:3x4", "releaseall:3x4"])
+        XCTAssertEqual(fixture.payloads(), ["rightpress:3x4", "rightrelease:3x4"])
         XCTAssertEqual(fixture.poll(lines: fixture.receipt(press)), .waiting)
         XCTAssertEqual(fixture.router.count, 1)
         _ = fixture.poll(lines: fixture.receipt(cleanup))

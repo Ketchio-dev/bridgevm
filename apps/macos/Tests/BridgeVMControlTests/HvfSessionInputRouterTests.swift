@@ -177,14 +177,14 @@ final class HvfSessionInputRouterTests: XCTestCase {
         _ = poll(&router, at: 0.2, lines: ["live input accepted: command=Pointer(\"release:1x2\")"])
         var cleanup = ""
         _ = poll(&router, at: 1.2) { cleanup = $0 }
-        XCTAssertEqual(payload(cleanup), "POINTERINPUT releaseall:1x2", "the owed release goes to the agent first")
+        XCTAssertEqual(payload(cleanup), "POINTERINPUT release:1x2", "the owed release goes to the agent first")
         XCTAssertEqual(router.route(.pointer("move:3x4"), binding: binding, now: now), .legacy, "nothing ordered before it")
         XCTAssertEqual(poll(&router, at: 1.3, lines: shortfall(cleanup)), .cancelled(.notInserted, discarded: 0))
         XCTAssertTrue(router.fallback, "still owed, so input stays on the HID route")
         _ = poll(&router, at: 2.2)
         var again = ""
         _ = poll(&router, at: 2.3) { again = $0 }
-        XCTAssertEqual(payload(again), "POINTERINPUT releaseall:1x2", "retried after the next quiet second")
+        XCTAssertEqual(payload(again), "POINTERINPUT release:1x2", "retried after the next quiet second")
         guard case .inserted = poll(&router, at: 2.4, lines: inserted(again)) else { return XCTFail("not inserted") }
         XCTAssertFalse(router.fallback)
         XCTAssertEqual(router.route(.pointer("move:3x4"), binding: binding, now: now), .queued)

@@ -68,7 +68,7 @@ final class HvfOrderedPointerCoalescingTests: XCTestCase {
         rejected.poll(lines: rejected.receipt(rejected.commands[rejected.commands.count - 1], inserted: nil))
         XCTAssertEqual(rejected.router.failure, .requestFailed)
         rejected.poll()
-        XCTAssertEqual(rejected.payloads().last, "releaseall:3x3", "the cleanup release uses the sent position")
+        XCTAssertEqual(rejected.payloads().last, "release:3x3", "the cleanup release uses the sent position")
 
         var completed = HvfPointerFailureFixture()
         completed.route([.pointer("press:1x1"), .pointer("move:2x2"), .pointer("move:3x3"), .pointer("releaseall:3x3")])
