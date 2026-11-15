@@ -22,6 +22,7 @@ struct HvfVMSettingsSheet: View {
                 Text("설정").font(.title2.bold())
                 Spacer()
                 Button("완료", action: finish).keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("bridgevm.runtime.settings.done")
             }
             .padding(20)
             Form {
@@ -76,6 +77,8 @@ struct HvfVMSettingsSheet: View {
             .formStyle(.grouped)
         }
         .frame(width: 680, height: captureHeight)
+        // Without a container element the sheet's identifier replaces the 완료 button's own.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("bridgevm.runtime.settings")
         .onAppear { session.settingsSheetOpen = true }
         .onDisappear { _ = draft.finish(); session.settingsSheetOpen = false }
