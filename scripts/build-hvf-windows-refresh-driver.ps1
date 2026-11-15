@@ -50,6 +50,10 @@ if ($null -eq $msbuild) {
 } else {
     $msbuildPath = $msbuild.Source
 }
+# The ARM64 NuGet kit provides x64/ARM64 verifier DLLs. The VS Bin entry
+# found on PATH can be 32-bit; use the x64 MSBuild host for its native tasks.
+$amd64Msbuild = Join-Path (Split-Path $msbuildPath -Parent) "amd64\MSBuild.exe"
+if (Test-Path -LiteralPath $amd64Msbuild) { $msbuildPath = $amd64Msbuild }
 Push-Location $SourceDirectory
 $previousLib = $env:LIB
 $previousPath = $env:PATH
@@ -65,7 +69,7 @@ try {
     $env:LIB = "$(Join-Path $SourceDirectory 'VirtIO\objfre_win11_arm64\arm64');$previousLib"
     foreach ($project in @("VirtIO\VirtioLib.vcxproj", "viogpu\viogpudo\viogpudo.vcxproj")) {
         & $msbuildPath $project /m /t:Build "/p:Configuration=Win11 Release" /p:Platform=ARM64 `
-            /p:SignMode=Off /p:Feature_PackOne=false /p:_BUILD_MINOR_VERSION_=58001
+            /p:PreferredToolArchitecture=x64 /p:SignMode=Off /p:Feature_PackOne=false /p:_BUILD_MINOR_VERSION_=58001
         if ($LASTEXITCODE -ne 0) { throw "ARM64 build failed: $project" }
     }
     $built = Join-Path $SourceDirectory "viogpu\viogpudo\objfre_win11_arm64\arm64"
