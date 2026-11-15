@@ -101,6 +101,10 @@ final class T17DisplayClickDeadlineTests: XCTestCase {
             window(2, "알림 센터", screen, layer: 21), window(3, "Dock", screen, layer: 20), behind]))
         XCTAssertEqual(T17DisplayClick.topOwner(at: point, pid: app, windows: [
             window(3, "Dock", screen, layer: 20), window(7, "Tart", screen), behind]), "Tart")
+        // r100: a floating panel (layer 3) over the display took the click.
+        XCTAssertEqual(T17DisplayClick.topOwner(at: point, pid: app, windows: [
+            window(2, "알림 센터", screen, layer: 21),
+            window(9, "Passwords", CGRect(x: 524, y: 382, width: 480, height: 228), layer: 3), behind]), "Passwords")
     }
 
     private func assertTimeout(_ error: Error) {
