@@ -7,6 +7,7 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 $SourceDirectory = (Resolve-Path -LiteralPath $SourceDirectory).Path
+$OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 if (-not (Test-Path (Join-Path $SourceDirectory "viogpu\viogpudo\viogpudo.vcxproj"))) {
     throw "Use the source exported by prepare-hvf-windows-refresh-build-kit.sh"
 }
@@ -51,7 +52,14 @@ if ($null -eq $msbuild) {
 }
 Push-Location $SourceDirectory
 $previousLib = $env:LIB
+$previousPath = $env:PATH
 try {
+    if ($UseNuGet) {
+        # Upstream's INF stamping step invokes stampinf.exe by name. NuGet
+        # supplies the host tools without modifying the process environment.
+        $kitBin = Join-Path $SourceDirectory "packages\Microsoft.Windows.WDK.arm64.10.0.26100.6584\c\bin\10.0.26100.0"
+        $env:PATH = "$(Join-Path $kitBin 'x64');$(Join-Path $kitBin 'x86');$previousPath"
+    }
     # Some WDK toolsets normalize OutDir to an absolute path; the upstream
     # relative LIBPATH then contains two roots. Supply the real library path.
     $env:LIB = "$(Join-Path $SourceDirectory 'VirtIO\objfre_win11_arm64\arm64');$previousLib"
@@ -75,5 +83,6 @@ try {
     Write-Host "Microsoft production signing and disposable-VM validation remain required."
 } finally {
     $env:LIB = $previousLib
+    $env:PATH = $previousPath
     Pop-Location
 }
