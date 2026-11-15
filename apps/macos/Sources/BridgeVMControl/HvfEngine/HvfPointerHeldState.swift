@@ -6,9 +6,15 @@ struct HvfPointerHeldState {
     private var location: String?
     private(set) var keys: [String] = []
     var release: String? { buttons == 0 ? nil : location.map { "releaseall:" + $0 } }
-    /// What lifts all of it: each held key's `up:` half, then one `releaseall` for the buttons.
+    /// Lift only buttons we sent down. A spurious right up opens a Windows context menu.
     var releases: [HvfOrderedInputQueue.Event] {
-        keys.map { .key(HvfModifierChord.up + $0) } + (release.map { [.pointer($0)] } ?? [])
+        var events = keys.map { HvfOrderedInputQueue.Event.key(HvfModifierChord.up + $0) }
+        if let location {
+            for (mask, verb) in [(1, "release"), (2, "rightrelease"), (4, "middlerelease")] where buttons & mask != 0 {
+                events.append(.pointer(verb + ":" + location))
+            }
+        }
+        return events
     }
 
     mutating func sent(_ event: HvfOrderedInputQueue.Event) {

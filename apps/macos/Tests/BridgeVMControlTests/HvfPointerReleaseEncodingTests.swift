@@ -3,6 +3,12 @@ import XCTest
 @testable import BridgeVMControl
 
 final class HvfPointerReleaseEncodingTests: XCTestCase {
+    @MainActor
+    func testSeparateButtonReleasesStillReachHIDOnTheSecureDesktop() {
+        for verb in ["release", "rightrelease", "middlerelease"] {
+            XCTAssertEqual(HvfEngineSession.legacyPointerLine(verb + ":12x34:cs"), "release:12x34")
+        }
+    }
     func testCommonAndSeparateReleaseCountsRemainOne() {
         for command in ["releaseall:0x32767", "release:0x0", "rightrelease:32767x0"] {
             let encoding = HvfGuestInputEncoding(.pointer(command))

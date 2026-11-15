@@ -237,7 +237,9 @@ final class FBLayerView: HvfFramebufferTextInput {
         guard hasGuestSize else { return }
         let location = point(event)
         pointerMoves.offer(location)
-        if let release = pointerRelease(at: location) { pointerCapture.updateRelease(release) }
+        if let release = pointerRelease(at: location, button: event.buttonNumber) {
+            pointerCapture.updateRelease(release, button: event.buttonNumber)
+        }
     }
 
     override func rightMouseDragged(with event: NSEvent) { mouseDragged(with: event) }
@@ -277,9 +279,13 @@ final class FBLayerView: HvfFramebufferTextInput {
     }
 
     override func mouseUp(with event: NSEvent) {
+        releasePointer(with: event, button: 0)
+    }
+
+    private func releasePointer(with event: NSEvent, button: Int) {
         pointerMoves.reset()
-        if let release = pointerRelease(at: point(event), modifiers: guestModifiers(event)) {
-            pointerCapture.disarm()
+        if let release = pointerRelease(at: point(event), modifiers: guestModifiers(event), button: button) {
+            pointerCapture.disarm(button: button)
             release()
         } else {
             pointerCapture.cancel()
@@ -302,15 +308,15 @@ final class FBLayerView: HvfFramebufferTextInput {
             imageSize: guestSize,
             modifiers: guestModifiers(event)
         )
-        if let release = pointerRelease(at: point(event)) { pointerCapture.arm(window: window, release: release) }
+        if let release = pointerRelease(at: point(event), button: 1) { pointerCapture.arm(window: window, button: 1, release: release) }
     }
 
     override func rightMouseUp(with event: NSEvent) {
-        mouseUp(with: event)
+        releasePointer(with: event, button: 1)
     }
 
     /// The middle button (2) reaches an agent that takes it; other buttons, and every button without it, stay
-    /// with the Mac as before. Its release is the common one (`releaseall` lifts the middle button too).
+    /// with the Mac as before.
     override func otherMouseDown(with event: NSEvent) {
         cancelModifierTap()
         guard event.buttonNumber == 2, let session, hasGuestSize, session.guestMiddleButton else {
@@ -321,12 +327,12 @@ final class FBLayerView: HvfFramebufferTextInput {
         pointerMoves.reset()
         session.sendPointerMiddlePress(location: point(event), viewSize: bounds.size, imageSize: guestSize,
                                        modifiers: guestModifiers(event))
-        if let release = pointerRelease(at: point(event)) { pointerCapture.arm(window: window, release: release) }
+        if let release = pointerRelease(at: point(event), button: 2) { pointerCapture.arm(window: window, button: 2, release: release) }
     }
 
     override func otherMouseUp(with event: NSEvent) {
         guard event.buttonNumber == 2, session?.guestMiddleButton == true else { return super.otherMouseUp(with: event) }
-        mouseUp(with: event)
+        releasePointer(with: event, button: 2)
     }
 
     override func otherMouseDragged(with event: NSEvent) {
@@ -431,14 +437,14 @@ final class FBLayerView: HvfFramebufferTextInput {
     }
 
     /// `modifiers` are those held at the button's release; a release from focus loss or a drag's update has none.
-    private func pointerRelease(at location: CGPoint, modifiers: String = "") -> (() -> Void)? {
+    private func pointerRelease(at location: CGPoint, modifiers: String = "", button: Int = 0) -> (() -> Void)? {
         let viewSize = bounds.size, imageSize = guestSize
         guard let session, HvfDisplayCoordinates.absolutePointer(
             location: location, viewSize: viewSize, imageSize: imageSize
         ) != nil else { return nil }
         return { [weak self, weak session] in
             self?.pointerMoves.reset()
-            session?.sendPointerRelease(location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
+            session?.sendPointerRelease(location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers, button: button)
         }
     }
 

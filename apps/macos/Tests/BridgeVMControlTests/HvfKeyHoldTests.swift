@@ -219,9 +219,9 @@ final class HvfKeyHoldTests: XCTestCase {
         held.sent(.key("down:left"))
         held.sent(.key("down:left")) // a Mac repeat
         held.sent(.pointer("press:3x4"))
-        XCTAssertEqual(held.releases, [.key("up:left"), .pointer("releaseall:3x4")])
+        XCTAssertEqual(held.releases, [.key("up:left"), .pointer("release:3x4")])
         held.inserted(.key("up:left"))
-        XCTAssertEqual(held.releases, [.pointer("releaseall:3x4")])
+        XCTAssertEqual(held.releases, [.pointer("release:3x4")])
 
         var activity = HvfLegacyInputActivity()
         let start = Date(timeIntervalSince1970: 1000)

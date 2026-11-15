@@ -1,39 +1,42 @@
 #if canImport(AppKit)
 import AppKit
 
-/// Owns one pending pointer release; notification objects need not create windows in tests.
+/// Owns each pressed button's release; notification objects need not create windows in tests.
 @MainActor
 final class HvfPointerCapture: NSObject {
     private let center: NotificationCenter
-    private var pendingRelease: (() -> Void)?
+    private var pendingReleases: [Int: () -> Void] = [:]
 
     init(center: NotificationCenter = .default) {
         self.center = center
         super.init()
     }
 
-    func arm(window: AnyObject?, release: @escaping () -> Void) {
-        disarm()
-        pendingRelease = release
+    func arm(window: AnyObject?, button: Int = 0, release: @escaping () -> Void) {
+        center.removeObserver(self, name: NSWindow.didResignKeyNotification, object: nil)
+        pendingReleases[button] = release
         if let window {
             center.addObserver(self, selector: #selector(cancel),
                                name: NSWindow.didResignKeyNotification, object: window)
         }
     }
 
-    func updateRelease(_ release: @escaping () -> Void) {
-        if pendingRelease != nil { pendingRelease = release }
+    func updateRelease(_ release: @escaping () -> Void, button: Int = 0) {
+        if pendingReleases[button] != nil { pendingReleases[button] = release }
     }
 
-    func disarm() {
-        center.removeObserver(self, name: NSWindow.didResignKeyNotification, object: nil)
-        pendingRelease = nil
+    func disarm(button: Int? = nil) {
+        if let button { pendingReleases.removeValue(forKey: button) }
+        else { pendingReleases.removeAll() }
+        if pendingReleases.isEmpty {
+            center.removeObserver(self, name: NSWindow.didResignKeyNotification, object: nil)
+        }
     }
 
     @objc func cancel() {
-        let release = pendingRelease
+        let releases = pendingReleases.sorted { $0.key < $1.key }.map(\.value)
         disarm()
-        release?()
+        for release in releases { release() }
     }
 }
 #endif
