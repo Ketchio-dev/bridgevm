@@ -15,25 +15,7 @@ struct HvfLiveDisplaySurface: View {
     var body: some View {
         HvfFramebufferView(session: session)
             .background(Color.black)
-            .overlay {
-                if session.hasPendingRuntimeStart || session.guiStartFailureText != nil || !session.hasActiveRuntimeWork {
-                    VStack(spacing: 16) {
-                        if session.hasPendingRuntimeStart {
-                            ProgressView()
-                            Text(session.runtimePendingWorkText ?? "Windows 시작 준비 중")
-                        } else {
-                            Image(systemName: session.guiStartFailureText == nil ? "power" : "exclamationmark.triangle")
-                                .font(.largeTitle)
-                            Text(session.guiStartFailureText ?? "Windows가 종료되었습니다.")
-                                .multilineTextAlignment(.center).textSelection(.enabled)
-                            Button("창 닫기") { window.window?.performClose(nil) }
-                                .keyboardShortcut(.cancelAction)
-                        }
-                    }
-                    .padding(28).frame(maxWidth: 480)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-                }
-            }
+            .overlay { HvfStartupDisplayOverlay(session: session, window: window) }
             .overlay { HvfPausedDisplayOverlay(session: session) }
             .overlay(alignment: .top) {
                 VStack(spacing: 0) {
