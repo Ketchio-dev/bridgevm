@@ -428,12 +428,19 @@ impl VirtioGpu {
         // written into the num_scanouts slot, so Linux saw "number of cap
         // sets: 0" and never queried the venus capset (and a 2D-only device
         // reported zero scanouts).
-        let mut config = [0u8; 16];
+        let mut config = [0u8; 32];
         config[0..4].copy_from_slice(&self.events_read.to_le_bytes());
         config[4..8].copy_from_slice(&self.events_clear.to_le_bytes());
         config[8..12].copy_from_slice(&1u32.to_le_bytes());
         let num_capsets = self.three_d.capset_count();
         config[12..16].copy_from_slice(&num_capsets.to_le_bytes());
+        // BridgeVM private display-timing extension v1. Stock virtio drivers
+        // read only the standard 16-byte prefix. A matching DOD must check
+        // this magic before enabling its ControlInterrupt/GetScanLine path.
+        config[16..20].copy_from_slice(&u32::from_le_bytes(*b"BVR1").to_le_bytes());
+        config[20..24].copy_from_slice(&self.refresh_hz.to_le_bytes());
+        config[24..28].copy_from_slice(&u32::from(self.refresh_interrupt_enabled).to_le_bytes());
+        config[28..32].copy_from_slice(&720u32.to_le_bytes());
         let value = read_le_from_bytes(&config, offset, size).unwrap_or(0);
         if venus_start_trace_enabled() {
             static COUNT: AtomicU64 = AtomicU64::new(0);
@@ -448,6 +455,24 @@ impl VirtioGpu {
     }
 
     pub(crate) fn config_write(&mut self, offset: u64, size: u8, value: u64) {
+        // Guest-controlled timing is bounded here, at the device boundary.
+        // Aligned 32-bit writes make a mode change atomic, including at 720Hz.
+        if offset == 20 && size == 4 && (30..=720).contains(&value) {
+            self.refresh_hz = value as u32;
+            self.set_vblank_interval(std::time::Duration::from_nanos(1_000_000_000 / value));
+        }
+        if offset == 24 && size == 4 && value <= 1 {
+            self.refresh_interrupt_enabled = value == 1;
+            if self.refresh_interrupt_enabled && self.vblank_interval.is_zero() {
+                self.set_vblank_interval(std::time::Duration::from_nanos(
+                    1_000_000_000 / u64::from(self.refresh_hz),
+                ));
+            }
+            if !self.refresh_interrupt_enabled {
+                self.events_read &= !(1 << 31);
+            }
+            self.publish_vblank_wake();
+        }
         if common_access_touches(4, 4, offset, size) {
             self.events_clear =
                 write_common_register(self.events_clear.into(), 4, 4, offset, size, value) as u32;

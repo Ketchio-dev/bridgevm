@@ -1,0 +1,51 @@
+name: Windows refresh driver candidate
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/windows-refresh-driver.yml
+      - scripts/build-hvf-windows-refresh-driver.ps1
+      - scripts/patches/virtio-win-viogpudo-refresh.patch
+permissions:
+  contents: read
+jobs:
+  arm64-dod:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: virtio-win/kvm-guest-drivers-windows
+          ref: 47e330f26153619255c3190c6aa8810cd9e7b7fd
+          path: driver-source
+          fetch-depth: 1
+      - name: Apply the pinned display-only timing patch
+        shell: pwsh
+        run: |
+          git -C driver-source apply --check "$env:GITHUB_WORKSPACE/scripts/patches/virtio-win-viogpudo-refresh.patch"
+          if ($LASTEXITCODE -ne 0) { throw "Refresh patch does not apply" }
+          git -C driver-source apply "$env:GITHUB_WORKSPACE/scripts/patches/virtio-win-viogpudo-refresh.patch"
+          if ($LASTEXITCODE -ne 0) { throw "Refresh patch failed" }
+          git -C driver-source diff --check
+          if ($LASTEXITCODE -ne 0) { throw "Patched source whitespace failed" }
+      - name: Build unsigned Windows ARM64 driver
+        shell: pwsh
+        run: |
+          & "$env:GITHUB_WORKSPACE/scripts/build-hvf-windows-refresh-driver.ps1" `
+            -SourceDirectory "$env:GITHUB_WORKSPACE/driver-source" `
+            -OutputDirectory "$env:GITHUB_WORKSPACE/refresh-arm64" -UseNuGet
+      - name: Include exact source and licence provenance
+        shell: pwsh
+        run: |
+          Copy-Item scripts/patches/virtio-win-viogpudo-refresh.patch refresh-arm64
+          Copy-Item docs/windows-refresh-driver.md refresh-arm64/README.md
+          "upstream=virtio-win/kvm-guest-drivers-windows`ncommit=47e330f26153619255c3190c6aa8810cd9e7b7fd`nsigning=unsigned`nboot_validation=pending" |
+            Set-Content refresh-arm64/source-version.txt -Encoding UTF8
+          Get-ChildItem refresh-arm64 -File | Get-FileHash -Algorithm SHA256 |
+            Format-Table -AutoSize | Out-String | Set-Content refresh-arm64/SHA256.txt -Encoding UTF8
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bridgevm-refresh-unsigned-arm64
+          path: refresh-arm64
+          if-no-files-found: error
