@@ -69,6 +69,8 @@ are being developed with a separate Windows driver. They are not a supported
 General Preview feature; a virtual Hz setting does not establish rendered FPS
 or a physical display's refresh rate. GPU/3D acceleration remains a
 [Graphics Lab research path](docs/distribution-channels.md).
+That experimental path still has
+[known title, tab and menu glyph defects](docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md).
 
 The dated registry snapshot below is the detailed validation record. Later code
 changes need their own checks and hardware evidence.
