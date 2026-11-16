@@ -8,7 +8,6 @@ using ULONG = unsigned long;
 using NTSTATUS = int;
 using LONG_PTR = long long;
 constexpr NTSTATUS STATUS_SUCCESS = 0;
-constexpr NTSTATUS STATUS_NOT_SUPPORTED = -3;
 constexpr NTSTATUS STATUS_GRAPHICS_MODE_ALREADY_IN_MODESET = -1;
 constexpr NTSTATUS addFailure = -2;
 #define NT_SUCCESS(status) ((status) >= 0)
@@ -66,43 +65,8 @@ struct MonitorInterface {
 };
 struct DXGKARG_RECOMMENDMONITORMODES {
     Modes* hMonitorSourceModeSet;
-    const MonitorInterface* pMonitorSourceModeSetInterface;
-    UINT VideoPresentTargetId{};
+    MonitorInterface* pMonitorSourceModeSetInterface;
 };
-using D3DDDI_VIDEO_PRESENT_TARGET_ID = UINT;
-constexpr int DXGK_MONITOR_INTERFACE_VERSION_V1 = 1;
-struct MonitorAdapter {
-    Modes modes;
-    MonitorInterface callbacks;
-    int acquired = 0, released = 0;
-    NTSTATUS acquireStatus = STATUS_SUCCESS;
-};
-NTSTATUS acquireMonitor(void* handle, UINT target, Modes** modes, const MonitorInterface** callbacks) {
-    assert(target == 0);
-    auto* adapter = static_cast<MonitorAdapter*>(handle);
-    if (!NT_SUCCESS(adapter->acquireStatus)) return adapter->acquireStatus;
-    ++adapter->acquired;
-    *modes = &adapter->modes;
-    *callbacks = &adapter->callbacks;
-    return STATUS_SUCCESS;
-}
-NTSTATUS releaseMonitor(void* handle, Modes* modes) {
-    auto* adapter = static_cast<MonitorAdapter*>(handle);
-    assert(modes == &adapter->modes);
-    ++adapter->released;
-    return STATUS_SUCCESS;
-}
-struct DXGK_MONITOR_INTERFACE {
-    int Version = DXGK_MONITOR_INTERFACE_VERSION_V1;
-    decltype(&acquireMonitor) pfnAcquireMonitorSourceModeSet = acquireMonitor;
-    decltype(&releaseMonitor) pfnReleaseMonitorSourceModeSet = releaseMonitor;
-};
-NTSTATUS queryMonitor(void* handle, int version, const DXGK_MONITOR_INTERFACE** monitor) {
-    assert(handle != nullptr && version == DXGK_MONITOR_INTERFACE_VERSION_V1);
-    static DXGK_MONITOR_INTERFACE api;
-    *monitor = &api;
-    return STATUS_SUCCESS;
-}
 struct Hardware {
     std::vector<VIDEO_MODE_INFORMATION> modes{{1920,1200,120}, {3600,2260,120}};
     UINT GetCurrentModeIndex() { return 0; }
@@ -111,18 +75,16 @@ struct Hardware {
 };
 struct VioGpuDod {
     Hardware* m_pHWDevice;
-    struct { void* DeviceHandle{}; decltype(&queryMonitor) DxgkCbQueryMonitorInterface{}; } m_DxgkInterface;
     static void BuildVideoSignalInfo(Signal* signal, PVIDEO_MODE_INFORMATION mode) {
         *signal = {mode->VisScreenWidth, mode->VisScreenHeight, mode->Frequency};
     }
     NTSTATUS AddSingleMonitorMode(const DXGKARG_RECOMMENDMONITORMODES*);
-    NTSTATUS UpdateConnectedMonitorModes(D3DDDI_VIDEO_PRESENT_TARGET_ID);
 };
 #include "monitor-body.inc"
 
 int main() {
     Hardware hardware;
-    VioGpuDod driver{&hardware, {}};
+    VioGpuDod driver{&hardware};
     MonitorInterface callbacks;
     // A monitor set already holds the current mode when the new host size arrives.
     Modes set;
@@ -140,17 +102,4 @@ int main() {
     request.hMonitorSourceModeSet = &failing;
     assert(driver.AddSingleMonitorMode(&request) == addFailure);
     assert(failing.allocated == 0);
-    // Updating an acquired, retained monitor set adds new timings without HPD.
-    MonitorAdapter adapter;
-    adapter.modes.registered.push_back({1920,1200,120});
-    driver.m_DxgkInterface = {&adapter, queryMonitor};
-    assert(driver.UpdateConnectedMonitorModes(0) == STATUS_SUCCESS);
-    assert(adapter.modes.registered.size() == 28);
-    assert(adapter.acquired == 1 && adapter.released == 1);
-    adapter.modes.failCustom = true;
-    assert(driver.UpdateConnectedMonitorModes(0) == addFailure);
-    assert(adapter.acquired == 2 && adapter.released == 2 && adapter.modes.allocated == 0);
-    adapter.acquireStatus = STATUS_NOT_SUPPORTED;
-    assert(driver.UpdateConnectedMonitorModes(0) == STATUS_NOT_SUPPORTED);
-    assert(adapter.acquired == 2 && adapter.released == 2);
 }

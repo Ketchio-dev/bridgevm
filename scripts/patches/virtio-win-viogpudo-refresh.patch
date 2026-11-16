@@ -64,7 +64,7 @@ index 361f476..baad45d 100644
  NTSTATUS
  APIENTRY
 diff --git a/viogpu/viogpudo/viogpudo.cpp b/viogpu/viogpudo/viogpudo.cpp
-index f950814..596e4de 100644
+index f950814..0e3d067 100644
 --- a/viogpu/viogpudo/viogpudo.cpp
 +++ b/viogpu/viogpudo/viogpudo.cpp
 @@ -34,12 +34,18 @@
@@ -188,55 +188,7 @@ index f950814..596e4de 100644
          }
      }
 
-@@ -1078,6 +1096,33 @@ NTSTATUS VioGpuDod::AddSingleMonitorMode(_In_ CONST DXGKARG_RECOMMENDMONITORMODE
-     return Status;
- }
-
-+// VidPN enumeration does not automatically refresh the connected monitor's
-+// retained timing set when GET_DISPLAY_INFO replaces the custom geometry.
-+// Update that set in the documented enumeration callback context, without
-+// disconnecting the display or restarting its adapter.
-+NTSTATUS VioGpuDod::UpdateConnectedMonitorModes(D3DDDI_VIDEO_PRESENT_TARGET_ID targetId)
-+{
-+    PAGED_CODE();
-+    const DXGK_MONITOR_INTERFACE *monitor = NULL;
-+    NTSTATUS status = m_DxgkInterface.DxgkCbQueryMonitorInterface(m_DxgkInterface.DeviceHandle,
-+                                                                  DXGK_MONITOR_INTERFACE_VERSION_V1,
-+                                                                  &monitor);
-+    if (!NT_SUCCESS(status)) { return status; }
-+    if (!monitor || monitor->Version != DXGK_MONITOR_INTERFACE_VERSION_V1) { return STATUS_NOT_SUPPORTED; }
-+
-+    DXGKARG_RECOMMENDMONITORMODES modes = {};
-+    modes.VideoPresentTargetId = targetId;
-+    status = monitor->pfnAcquireMonitorSourceModeSet(m_DxgkInterface.DeviceHandle,
-+                                                       targetId,
-+                                                       &modes.hMonitorSourceModeSet,
-+                                                       &modes.pMonitorSourceModeSetInterface);
-+    if (!NT_SUCCESS(status)) { return status; }
-+    status = AddSingleMonitorMode(&modes);
-+    const NTSTATUS releaseStatus = monitor->pfnReleaseMonitorSourceModeSet(m_DxgkInterface.DeviceHandle,
-+                                                                            modes.hMonitorSourceModeSet);
-+    return NT_SUCCESS(status) ? releaseStatus : status;
-+}
-+
- NTSTATUS VioGpuDod::EnumVidPnCofuncModality(_In_ CONST DXGKARG_ENUMVIDPNCOFUNCMODALITY *CONST pEnumCofuncModality)
- {
-     PAGED_CODE();
-@@ -1315,6 +1360,13 @@ NTSTATUS VioGpuDod::EnumVidPnCofuncModality(_In_ CONST DXGKARG_ENUMVIDPNCOFUNCMO
-                     break;
-                 }
-                 hVidPnTargetModeSet = 0;
-+                // Update monitor timings only after assigning an unpinned target
-+                // set. A pinned target/pivot must keep its existing constraints.
-+                const NTSTATUS monitorStatus = UpdateConnectedMonitorModes(pVidPnPresentPath->VidPnTargetId);
-+                if (!NT_SUCCESS(monitorStatus))
-+                {
-+                    DbgPrint(TRACE_LEVEL_WARNING, ("Connected monitor modes unavailable: %x\n", monitorStatus));
-+                }
-             }
-             else
-             {
-@@ -1689,9 +1741,23 @@ NTSTATUS VioGpuDod::CommitVidPn(_In_ CONST DXGKARG_COMMITVIDPN *CONST pCommitVid
+@@ -1689,9 +1707,23 @@ NTSTATUS VioGpuDod::CommitVidPn(_In_ CONST DXGKARG_COMMITVIDPN *CONST pCommitVid
          }
 
          Status = SetSourceModeAndPath(pPinnedVidPnSourceModeInfo, pVidPnPresentPath);
@@ -262,7 +214,7 @@ index f950814..596e4de 100644
          }
 
          Status = pVidPnTopologyInterface->pfnReleasePathInfo(hVidPnTopology, pVidPnPresentPath);
-@@ -2316,6 +2382,11 @@ VioGpuAdapter::VioGpuAdapter(_In_ VioGpuDod *pVioGpuDod)
+@@ -2316,6 +2348,11 @@ VioGpuAdapter::VioGpuAdapter(_In_ VioGpuDod *pVioGpuDod)
      m_pFrameBuf = NULL;
      m_pCursorBuf = NULL;
      KeInitializeGuardedMutex(&m_CursorMutex);
@@ -274,7 +226,7 @@ index f950814..596e4de 100644
      // No sprite is attached until the first shape is set.
      m_bCursorHidden = TRUE;
      m_CursorHotX = 0;
-@@ -2402,6 +2473,15 @@ NTSTATUS VioGpuAdapter::VioGpuAdapterInit(DXGK_DISPLAY_INFORMATION *pDispInfo)
+@@ -2402,6 +2439,15 @@ NTSTATUS VioGpuAdapter::VioGpuAdapterInit(DXGK_DISPLAY_INFORMATION *pDispInfo)
          return status;
      }
 
@@ -290,7 +242,7 @@ index f950814..596e4de 100644
      m_u64HostFeatures = virtio_get_features(&m_VioDev);
      m_u64GuestFeatures = 0;
      do
-@@ -2450,6 +2530,7 @@ NTSTATUS VioGpuAdapter::VioGpuAdapterInit(DXGK_DISPLAY_INFORMATION *pDispInfo)
+@@ -2450,6 +2496,7 @@ NTSTATUS VioGpuAdapter::VioGpuAdapterInit(DXGK_DISPLAY_INFORMATION *pDispInfo)
      {
          virtio_device_ready(&m_VioDev);
          m_pVioGpuDod->SetHardwareInit(TRUE);
@@ -298,7 +250,7 @@ index f950814..596e4de 100644
      }
      else
      {
-@@ -2697,6 +2778,9 @@ NTSTATUS VioGpuAdapter::HWInit(PCM_RESOURCE_LIST pResList, DXGK_DISPLAY_INFORMAT
+@@ -2697,6 +2744,9 @@ NTSTATUS VioGpuAdapter::HWInit(PCM_RESOURCE_LIST pResList, DXGK_DISPLAY_INFORMAT
      }
 
      req_size = max(req_size, (max_res_size * 4));
@@ -308,7 +260,7 @@ index f950814..596e4de 100644
 
      if (fb_pa.QuadPart != 0LL)
      {
-@@ -2745,13 +2829,13 @@ NTSTATUS VioGpuAdapter::HWClose(void)
+@@ -2745,13 +2795,13 @@ NTSTATUS VioGpuAdapter::HWClose(void)
      m_bStopWorkThread = TRUE;
      KeSetEvent(&m_ConfigUpdateEvent, IO_NO_INCREMENT, FALSE);
 
@@ -324,7 +276,7 @@ index f950814..596e4de 100644
 
      m_FrameSegment.Close();
      m_CursorSegment.Close();
-@@ -3524,6 +3608,7 @@ void VioGpuAdapter::SetVideoModeInfo(UINT Idx, PVIOGPU_DISP_MODE pModeInfo)
+@@ -3524,6 +3574,7 @@ void VioGpuAdapter::SetVideoModeInfo(UINT Idx, PVIOGPU_DISP_MODE pModeInfo)
      pMode = &m_ModeInfo[Idx];
      pMode->Length = sizeof(VIDEO_MODE_INFORMATION);
      pMode->ModeIndex = Idx;
@@ -332,7 +284,7 @@ index f950814..596e4de 100644
      pMode->VisScreenWidth = pModeInfo->XResolution;
      pMode->VisScreenHeight = pModeInfo->YResolution;
      pMode->ScreenStride = (pModeInfo->XResolution * 4 + 3) & ~0x3;
-@@ -3649,8 +3734,82 @@ NTSTATUS VioGpuAdapter::BuildModeList(DXGK_DISPLAY_INFORMATION *pDispInfo)
+@@ -3649,8 +3700,82 @@ NTSTATUS VioGpuAdapter::BuildModeList(DXGK_DISPLAY_INFORMATION *pDispInfo)
      DbgPrint(TRACE_LEVEL_VERBOSE, ("<--- %s\n", __FUNCTION__));
      return Status;
  }
@@ -415,7 +367,7 @@ index f950814..596e4de 100644
  BOOLEAN VioGpuAdapter::ResetToVgaMode(void)
  {
      DestroyFrameBufferObj(TRUE, TRUE);
-@@ -3694,6 +3853,8 @@ void VioGpuAdapter::VioGpuAdapterClose()
+@@ -3694,6 +3819,8 @@ void VioGpuAdapter::VioGpuAdapterClose()
 
      if (m_pVioGpuDod->IsHardwareInit())
      {
@@ -424,7 +376,7 @@ index f950814..596e4de 100644
          m_pVioGpuDod->SetHardwareInit(FALSE);
          m_CtrlQueue.DisableInterrupt();
          m_CursorQueue.DisableInterrupt();
-@@ -3740,21 +3901,32 @@ BOOLEAN VioGpuAdapter::InterruptRoutine(_In_ PDXGKRNL_INTERFACE pDxgkInterface,
+@@ -3740,21 +3867,32 @@ BOOLEAN VioGpuAdapter::InterruptRoutine(_In_ PDXGKRNL_INTERFACE pDxgkInterface,
          UNREFERENCED_PARAMETER(MessageNumber);
          UCHAR isrstat = virtio_read_isr_status(&m_VioDev);
 
@@ -468,7 +420,7 @@ index f950814..596e4de 100644
          if (m_pVioGpuDod->IsUsePresentProgress() && (intReason & ISR_REASON_DISPLAY) == ISR_REASON_DISPLAY)
          {
              DXGKARGCB_NOTIFY_INTERRUPT_DATA NotifyInterrupt = {};
-@@ -4059,7 +4231,11 @@ BOOLEAN VioGpuAdapter::GpuObjectAttach(UINT res_id, VioGpuObj *obj)
+@@ -4059,7 +4197,11 @@ BOOLEAN VioGpuAdapter::GpuObjectAttach(UINT res_id, VioGpuObj *obj)
      PSCATTER_GATHER_LIST sgl = NULL;
      UINT size = 0;
      sgl = obj->GetSGList();
@@ -481,7 +433,7 @@ index f950814..596e4de 100644
      ents = reinterpret_cast<PGPU_MEM_ENTRY>(new (NonPagedPoolNx) BYTE[size]);
 
      if (!ents)
-@@ -4068,20 +4244,20 @@ BOOLEAN VioGpuAdapter::GpuObjectAttach(UINT res_id, VioGpuObj *obj)
+@@ -4068,20 +4210,20 @@ BOOLEAN VioGpuAdapter::GpuObjectAttach(UINT res_id, VioGpuObj *obj)
                   ("<--- %s cannot allocate memory %x bytes numberofentries = %d\n",
                    __FUNCTION__,
                    size,
@@ -506,7 +458,7 @@ index f950814..596e4de 100644
      DbgPrint(TRACE_LEVEL_VERBOSE, ("<--- %s\n", __FUNCTION__));
      return TRUE;
 diff --git a/viogpu/viogpudo/viogpudo.h b/viogpu/viogpudo/viogpudo.h
-index 41533c7..a351181 100644
+index 41533c7..7e20b2b 100644
 --- a/viogpu/viogpudo/viogpudo.h
 +++ b/viogpu/viogpudo/viogpudo.h
 @@ -87,6 +87,10 @@ class VioGpuAdapter : IVioGpuPCI
@@ -542,14 +494,6 @@ index 41533c7..a351181 100644
      BOOLEAN IsDriverActive() const
      {
          return m_Flags.DriverStarted;
-@@ -385,6 +397,7 @@ class VioGpuDod
-     NTSTATUS ReadRegistryDWORD(_In_ HANDLE DevInstRegKeyHandle, _In_ PCWSTR pszwValueName, _Inout_ PDWORD pdwValue);
-     NTSTATUS SetSourceModeAndPath(CONST D3DKMDT_VIDPN_SOURCE_MODE *pSourceMode,
-                                   CONST D3DKMDT_VIDPN_PRESENT_PATH *pPath);
-+    NTSTATUS UpdateConnectedMonitorModes(D3DDDI_VIDEO_PRESENT_TARGET_ID targetId);
-     NTSTATUS AddSingleMonitorMode(_In_ CONST DXGKARG_RECOMMENDMONITORMODES *CONST pRecommendMonitorModes);
-     NTSTATUS AddSingleSourceMode(_In_ CONST DXGK_VIDPNSOURCEMODESET_INTERFACE *pVidPnSourceModeSetInterface,
-                                  D3DKMDT_HVIDPNSOURCEMODESET hVidPnSourceModeSet,
 diff --git a/viogpu/viogpudo/viogpudo.inx b/viogpu/viogpudo/viogpudo.inx
 index 3b0b996..19c6fa3 100755
 --- a/viogpu/viogpudo/viogpudo.inx

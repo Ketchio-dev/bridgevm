@@ -7,23 +7,16 @@ import sys
 import tempfile
 
 source = Path(sys.argv[1]).read_text()
-
-
-def body(name):
-    start = source.index("NTSTATUS VioGpuDod::" + name + "(")
-    opening = source.index("{", start)
-    depth = 1
-    end = opening + 1
-    while depth:
-        depth += (source[end] == "{") - (source[end] == "}")
-        end += 1
-    return source[start:end]
-
-
+start = source.index("NTSTATUS VioGpuDod::AddSingleMonitorMode(")
+opening = source.index("{", start)
+depth = 1
+end = opening + 1
+while depth:
+    depth += (source[end] == "{") - (source[end] == "}")
+    end += 1
 with tempfile.TemporaryDirectory(prefix="bridgevm-monitor-") as temporary:
     work = Path(temporary)
-    (work / "monitor-body.inc").write_text(
-        body("AddSingleMonitorMode") + "\n" + body("UpdateConnectedMonitorModes"))
+    (work / "monitor-body.inc").write_text(source[start:end])
     fixture = Path(__file__).with_suffix(".cpp")
     binary = work / "monitor-test"
     subprocess.run([os.environ.get("CXX", "c++"), "-std=c++17", "-Wall", "-Wextra", "-Werror",
