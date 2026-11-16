@@ -59,6 +59,7 @@ jobs:
           if-no-files-found: error
       - name: Prepare development-only test package
         if: ${{ inputs.test_sign == true }}
+        timeout-minutes: 3
         shell: pwsh
         run: |
           & "$env:GITHUB_WORKSPACE/scripts/sign-hvf-windows-refresh-test-package.ps1" `

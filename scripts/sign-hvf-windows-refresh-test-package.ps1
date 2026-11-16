@@ -1,4 +1,5 @@
-# Development signing only. Never use this certificate for a product release.
+# Development signing only, on an elevated disposable Windows builder.
+# Never use this certificate for a product release.
 param(
     [Parameter(Mandatory = $true)][string]$InputDirectory,
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
@@ -29,7 +30,7 @@ $certificate = New-SelfSignedCertificate -Type CodeSigningCert `
     -Subject "CN=BridgeVM Refresh Development Test" -KeyAlgorithm RSA -KeyLength 3072 `
     -HashAlgorithm SHA256 -KeyExportPolicy NonExportable -CertStoreLocation Cert:\CurrentUser\My `
     -NotBefore (Get-Date).AddMinutes(-15) -NotAfter (Get-Date).AddDays(30)
-$rootPath = "Cert:\CurrentUser\Root\$($certificate.Thumbprint)"
+$rootPath = "Cert:\LocalMachine\Root\$($certificate.Thumbprint)"
 $myPath = "Cert:\CurrentUser\My\$($certificate.Thumbprint)"
 try {
     $sys = Join-Path $OutputDirectory "viogpudo.sys"
@@ -42,9 +43,11 @@ try {
     & $signtool sign /fd SHA256 /sha1 $certificate.Thumbprint /s My $cat
     if ($LASTEXITCODE -ne 0) { throw "Test catalog signing failed" }
     Export-Certificate -Cert $certificate -FilePath $cer | Out-Null
-    # Trust only on this disposable builder while checking its own test output.
-    # The private key is non-exportable and is never included in the package.
-    Import-Certificate -FilePath $cer -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+    # A user's Root store can display an interactive trust prompt. This
+    # disposable elevated builder uses machine trust only for this verification,
+    # then removes it below. The non-exportable private key stays in My.
+    Write-Host "Checking test signatures with temporary disposable-builder trust"
+    Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
     foreach ($file in @($sys, $cat)) {
         & $signtool verify /pa $file
         if ($LASTEXITCODE -ne 0) { throw "Test signature verification failed: $file" }
