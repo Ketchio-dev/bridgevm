@@ -63,7 +63,7 @@ class Guest:
         if self.current() != self.identity:
             raise ControlError("VM run changed; command was not retried.")
 
-    def run(self, command):
+    def run(self, command, timeout=None):
         encoded = (command + "\n").encode()
         if len(encoded) > 87435:
             raise ControlError("Command exceeds guest control line limit.")
@@ -75,10 +75,10 @@ class Guest:
             with regular(self.bundle / "metadata/hvf.ctl", os.O_WRONLY | os.O_APPEND) as ctl:
                 if os.write(ctl.fileno(), encoded) != len(encoded):
                     raise ControlError("Incomplete control write; command was not retried.")
-            return self.reply(log, log_path, command)
+            return self.reply(log, log_path, command, timeout)
 
-    def reply(self, log, path, command):
-        deadline = time.monotonic() + self.options.timeout
+    def reply(self, log, path, command, timeout=None):
+        deadline = time.monotonic() + (self.options.timeout if timeout is None else timeout)
         result = b""
         if command.split(" ", 1)[0] in ("KEYINPUT", "TEXTINPUT", "POINTERINPUT"):
             command = " ".join(command.split(" ")[:2])  # relay redacts the input payload
@@ -121,6 +121,26 @@ def powershell(script):
     return command
 
 
+def input_command(verb, value):
+    return verb + " " + str(uuid.uuid4()) + " " + base64.b64encode(value.encode()).decode()
+
+
+def send_text(guest, text):
+    if not text or len(text.encode("utf-16-le")) > 131072:
+        raise ControlError("Text must contain 1..65536 UTF-16 code units.")
+    deadline = time.monotonic() + guest.options.timeout
+    # A single SendInput array lost intermediate VK_PACKET characters in live WinUI Notepad.
+    # Receipt-paced codepoints preserve Korean and supplementary characters without the clipboard.
+    for index, char in enumerate(text):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ControlError(f"Text deadline exceeded after {index} codepoints; no input was replayed.")
+        code, output = guest.run(input_command("TEXTINPUT", char), timeout=remaining)
+        if code:
+            return code, f"Text stopped after {index} codepoints.\n" + output
+    return 0, f"BVCLI_TEXT inserted_codepoints={len(text)} (guest input receipts)"
+
+
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--bridgevm", default="/Applications/BridgeVM.app/Contents/Resources/target/release/bridgevm")
@@ -153,6 +173,10 @@ def main(argv=None):
             operands = ([] if options.command == "list" else [options.vm]) + (["--json"] if options.json else [])
             return native(options, options.command, *operands)
         guest = Guest(options)
+        if options.command == "text":
+            code, output = send_text(guest, options.value)
+            print(output)
+            return code if 0 <= code <= 255 else 1
         if options.command == "screenshot":
             with regular(guest.evidence / "display.fb", os.O_RDONLY) as source:
                 png, metadata = capture(source, min(options.timeout, 5))
@@ -172,8 +196,8 @@ def main(argv=None):
                 raise ControlError("Expected WIDTHxHEIGHT, each 100..16384.")
             command = "DISPLAYMODE " + " ".join(match.groups())
         else:
-            verb = {"key": "KEYINPUT", "text": "TEXTINPUT", "pointer": "POINTERINPUT"}[options.command]
-            command = verb + " " + str(uuid.uuid4()) + " " + base64.b64encode(options.value.encode()).decode()
+            verb = {"key": "KEYINPUT", "pointer": "POINTERINPUT"}[options.command]
+            command = input_command(verb, options.value)
         code, output = guest.run(command)
         print(output)
         if options.command == "resize" and not re.search(r"\bresult=0(?:\s|$)", output):

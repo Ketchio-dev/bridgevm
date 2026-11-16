@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise CLI correlation, failed-run protection and real framebuffer bytes."""
 import io
+import base64
 import os
 from pathlib import Path
 import struct
@@ -8,7 +9,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import zlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
@@ -56,6 +57,16 @@ class FrameTests(unittest.TestCase):
 
 
 class GuestTests(unittest.TestCase):
+    def test_text_paces_complete_codepoints_and_stops_on_a_failed_receipt(self):
+        guest = SimpleNamespace(options=SimpleNamespace(timeout=5), run=Mock(return_value=(0, "inserted")))
+        self.assertEqual(vmctl.send_text(guest, "A한🙂")[0], 0)
+        commands = [call.args[0] for call in guest.run.call_args_list]
+        self.assertEqual([base64.b64decode(c.split()[2]).decode() for c in commands], ["A", "한", "🙂"])
+        self.assertEqual(len(set(c.split()[1] for c in commands)), 3)
+        guest.run = Mock(side_effect=[(0, "inserted"), (1, "failed")])
+        self.assertEqual(vmctl.send_text(guest, "ABC"), (1, "Text stopped after 1 codepoints.\nfailed"))
+        self.assertEqual(guest.run.call_count, 2)
+
     def test_oversize_shell_source_is_rejected_before_sending(self):
         with self.assertRaisesRegex(vmctl.ControlError, "cmd.exe limit"):
             vmctl.powershell("Write-Output '" + "x" * 5000 + "'")
