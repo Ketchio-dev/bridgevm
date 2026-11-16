@@ -36,6 +36,10 @@ across interrupted storage operations remain open release criteria. The
 [capability matrix](docs/windows-arm/capability-matrix.md) records the evidence
 for each feature.
 
+Long text commits can repeat or lose characters in Windows Notepad
+([#665](https://github.com/Ketchio-dev/bridgevm/issues/665)). Use clipboard
+sharing and paste for longer passages while the native input issue is being fixed.
+
 ## Try BridgeVM
 
 **Host:** Apple silicon and macOS 14+. The declared host matrix is M4/M5;
