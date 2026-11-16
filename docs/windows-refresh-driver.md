@@ -89,8 +89,10 @@ queue descriptors and exceeds the 64-entry control queue; the host receives no
 backing command and displays black pixels. Validate actual visible updates as
 well as successful mode API results. After the resource-page fix, a single run at
 3600x2260 passed all fourteen mode changes and VBlank waits (eight samples/rate;
-medians 120=8.34ms, 144=6.86ms, 720=1.43ms). Earlier builds had black frames and
-occluded/timeout waits; these failures remain relevant to wider stability testing.
+medians 120=8.34ms, 144=6.86ms, 720=1.43ms). Earlier builds had black frames. A later native-app run after Windows Update
+passed all fourteen mode changes but its first 30Hz VBlank wait returned timeout;
+the other 13 rates waited successfully. Idle/power transitions still need broader
+stability testing.
 
 Before production distribution: compile with the WDK, verify the INF/catalog, submit through
 the owner's Microsoft Hardware Developer account, and obtain a valid production
