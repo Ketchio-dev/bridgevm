@@ -75,7 +75,9 @@ capture is not a guest-health or display-correctness check. 3D/IOSurface
 capture is outside this command. `resize` updates the VMM's display geometry
 and asks Windows to use it, following the same channel as the app window.
 It can resynchronize the display after a guest restart while the VM window
-was closed. Resizing needs the guest driver;
+was closed. The app also reapplies an explicit saved startup resolution after
+guest restart when no display window has been laid out. Once a window opens,
+its size and Retina scale take precedence. Resizing needs the guest driver;
 an unavailable mode returns failure instead of pretending the resize worked.
 
 Optional short command, from the source checkout:
