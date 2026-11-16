@@ -3,8 +3,9 @@
 The installed Red Hat display-only driver does not implement selectable refresh
 timings. The experimental patch in `scripts/patches/virtio-win-viogpudo-refresh.patch`
 adds 30, 60, 75, 90, 120, 144, 165, 180, 240, 360, 480, 540, 600 and 720Hz
-virtual modes for each resolution. This is source under development, **not a
-signed or boot-validated driver**. General Preview still uses the upstream driver.
+virtual modes for each resolution. This remains experimental source, **without
+a Microsoft production signature**. A development-signed ARM64 candidate has
+booted in a disposable Windows clone. General Preview still uses the upstream driver.
 
 ## Device contract
 
@@ -57,10 +58,12 @@ certificate nor installs the driver nor changes Secure Boot/test-signing setting
 ## Development-only test signing
 
 `scripts/sign-hvf-windows-refresh-test-package.ps1` can prepare a temporary
-self-signed package on a disposable Windows builder. It signs the PE before
+self-signed package on an elevated disposable Windows builder. It signs the PE before
 creating/signing the catalog, exports only the public certificate, checks the
 signatures, and removes its temporary builder certificate/key. This does not
 produce a Microsoft production signature or change any VM's boot settings.
+The hosted workflow accepts an explicit `test_sign` dispatch input, default false;
+ordinary PR builds remain unsigned. Only the public test certificate is exported.
 
 Installing that package requires separate authorization to use a disposable VM
 with Secure Boot disabled and TESTSIGNING enabled. Never apply that change to
@@ -74,7 +77,22 @@ Host unit tests cover 2D config-vector delivery at every listed rate, the deadli
 boundary, stop/reset, invalid guest rates, and independence from the 3D backend.
 They do not establish Windows compatibility or measured frame throughput.
 
-Before installation: compile with the WDK, verify the INF/catalog, submit through
+A development-signed ARM64 candidate has enumerated and switched all fourteen
+rates in a disposable Windows 11 guest. At 1280x800, eight virtual VBlank waits
+per rate gave median intervals of 8.40ms at 120Hz, 7.07ms at 144Hz and 1.40ms
+at 720Hz. These samples do not measure unique rendered frames or physical output.
+The guest resize helper now retains the selected rate across geometry changes.
+
+The experimental DOD reserves 64MiB of framebuffer headroom, but attaches only
+the pages used by each resource. Attaching the entire reserve needs 66 direct
+queue descriptors and exceeds the 64-entry control queue; the host receives no
+backing command and displays black pixels. Validate actual visible updates as
+well as successful mode API results. After the resource-page fix, a single run at
+3600x2260 passed all fourteen mode changes and VBlank waits (eight samples/rate;
+medians 120=8.34ms, 144=6.86ms, 720=1.43ms). Earlier builds had black frames and
+occluded/timeout waits; these failures remain relevant to wider stability testing.
+
+Before production distribution: compile with the WDK, verify the INF/catalog, submit through
 the owner's Microsoft Hardware Developer account, and obtain a valid production
 signature. The upstream Red Hat catalog cannot sign a modified binary. Apple's
 app certificate cannot sign a Windows kernel driver.
