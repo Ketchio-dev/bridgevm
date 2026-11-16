@@ -73,6 +73,9 @@ the working VM as part of routine setup or updates.
 
 Kit preparation compiles and runs the actual portable GetScanLine raster helper,
 checking the 720Hz blank interval, frame wrap and a late query after 24 hours.
+It also compiles the patched monitor enumeration against WDDM callback fixtures:
+an already-registered current mode must not skip newly advertised sizes/rates,
+and a real add-mode failure must survive releasing the unowned mode record.
 Host unit tests cover 2D config-vector delivery at every listed rate, the deadline
 boundary, stop/reset, invalid guest rates, and independence from the 3D backend.
 They do not establish Windows compatibility or measured frame throughput.

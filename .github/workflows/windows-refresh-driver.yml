@@ -11,9 +11,23 @@ on:
       - .github/workflows/windows-refresh-driver.yml
       - scripts/build-hvf-windows-refresh-driver.ps1
       - scripts/patches/virtio-win-viogpudo-refresh.patch
+      - tests/integration/viogpudo-refresh-monitor-test.*
 permissions:
   contents: read
 jobs:
+  monitor-modes:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: virtio-win/kvm-guest-drivers-windows
+          ref: 47e330f26153619255c3190c6aa8810cd9e7b7fd
+          path: driver-source
+      - name: Keep custom monitor modes when the current mode already exists
+        run: |
+          git -C driver-source apply "$GITHUB_WORKSPACE/scripts/patches/virtio-win-viogpudo-refresh.patch"
+          python3 tests/integration/viogpudo-refresh-monitor-test.py driver-source/viogpu/viogpudo/viogpudo.cpp
   arm64-dod:
     runs-on: windows-2022
     timeout-minutes: 30

@@ -30,6 +30,8 @@ trap 'rm -rf "$RASTER_TEST_DIR"' EXIT
   -I "$OUT_DIR/source/viogpu/viogpudo" \
   "$ROOT/tests/integration/viogpudo-refresh-raster-test.cpp" -o "$RASTER_TEST_DIR/raster-test"
 "$RASTER_TEST_DIR/raster-test"
+python3 "$ROOT/tests/integration/viogpudo-refresh-monitor-test.py" \
+  "$OUT_DIR/source/viogpu/viogpudo/viogpudo.cpp"
 cp "$ROOT/scripts/build-hvf-windows-refresh-driver.ps1" "$OUT_DIR/build.ps1"
 cp "$ROOT/scripts/sign-hvf-windows-refresh-test-package.ps1" "$OUT_DIR/test-sign.ps1"
 cp "$ROOT/docs/windows-refresh-driver.md" "$OUT_DIR/README.md"
