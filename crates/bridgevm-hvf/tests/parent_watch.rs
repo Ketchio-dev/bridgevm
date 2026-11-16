@@ -3,6 +3,7 @@
 mod parent_watch;
 use std::{
     fs,
+    io::Write,
     process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
@@ -36,11 +37,14 @@ fn worker() {
         }
     }
     let exited = parent_watch::wait_for_runner_exit();
-    fs::write(
-        root.join("hook"),
-        if exited { "shutdown" } else { "unwatched" },
-    )
-    .unwrap();
+    // Make the visible-but-unwritten file window deterministic. The observer must wait
+    // for this worker to exit before reading the shutdown result, not just for creation.
+    let mut hook = fs::File::create(root.join("hook")).unwrap();
+    while !root.join("hook-seen").exists() {
+        thread::sleep(Duration::from_millis(1));
+    }
+    hook.write_all(if exited { b"shutdown" } else { b"unwatched" })
+        .unwrap();
 }
 
 fn wait(path: &std::path::Path) {
@@ -83,11 +87,8 @@ fn run(marked: bool, race: bool) {
     }
     parent.wait().unwrap();
     fs::write(root.join("go"), "go").unwrap();
-    let until = Instant::now() + Duration::from_secs(3);
-    while !root.join("hook").exists() && Instant::now() < until {
-        thread::sleep(Duration::from_millis(5));
-    }
-    let hook = fs::read_to_string(root.join("hook")).unwrap_or_default();
+    wait(&root.join("hook"));
+    fs::write(root.join("hook-seen"), "seen").unwrap();
     let until = Instant::now() + Duration::from_secs(3);
     // SAFETY: observation only; this is the child this test spawned.
     while unsafe { libc::kill(child, 0) } == 0 && Instant::now() < until {
@@ -100,6 +101,7 @@ fn run(marked: bool, race: bool) {
             libc::kill(child, libc::SIGKILL);
         }
     }
+    let hook = fs::read_to_string(root.join("hook")).unwrap_or_default();
     fs::remove_dir_all(root).unwrap();
     assert!(exited, "shutdown hook must be followed by process exit");
     assert_eq!(hook, if marked { "shutdown" } else { "unwatched" });
