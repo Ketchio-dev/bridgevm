@@ -53,6 +53,9 @@ operator's own data, images or VMs.
 
 ## 4. Honest product claims
 
+- Treat the README as the product's front door: explain its purpose, current
+  availability and the first-use path before engineering detail. Keep it current
+  when user-facing behavior changes, and clearly label experimental work.
 - README, STATUS and app text describe what actually works. User-facing
   capability wording comes from `capabilities/windows-hvf.json`; its
   `product_state` changes only with the operator.
