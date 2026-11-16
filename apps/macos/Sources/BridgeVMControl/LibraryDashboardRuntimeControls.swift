@@ -6,11 +6,12 @@ struct LibraryDashboardRuntimeControls: View {
     @ObservedObject var library: LibraryModel
     @ObservedObject var session: HvfEngineSession
     let showAdvanced: () -> Void
+    var showSettings: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                DashboardActionButton(title: runtimeActive ? "창 열기" : "시작",
+            LazyVGrid(columns: DashboardActionButton.columns, spacing: 10) {
+                DashboardActionButton(title: lifecycleBusy ? "작업 중" : (runtimeActive ? "창 열기" : "시작"),
                     symbol: "play.fill", prominent: true, disabled: lifecycleBusy) {
                     LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library)
                 }
@@ -34,6 +35,10 @@ struct LibraryDashboardRuntimeControls: View {
                 }
                 DashboardActionButton(title: "고급", symbol: "gearshape", action: showAdvanced)
                     .accessibilityIdentifier("bridgevm.dashboard.advanced")
+                if let showSettings {
+                    DashboardActionButton(title: "설정", symbol: "slider.horizontal.3", action: showSettings)
+                        .accessibilityIdentifier("bridgevm.runtime.settings.open")
+                }
             }
             if let pending = session.runtimePendingWorkText {
                 Label(pending, systemImage: "hourglass").font(.caption).foregroundStyle(.secondary)

@@ -5,7 +5,7 @@ struct LibraryDashboardLegacyControls: View {
     let showAdvanced: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        LazyVGrid(columns: DashboardActionButton.columns, spacing: 10) {
             DashboardActionButton(title: model.running ? "실행 중" : "시작",
                 symbol: "play.fill", prominent: true, disabled: model.hasActiveRuntimeWork,
                 action: model.start)
