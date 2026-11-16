@@ -219,18 +219,19 @@ var a=new byte[p*72];var b=new byte[m*64];QueryDisplayConfig(2,ref p,a,ref m,b,I
 if(k==0){for(int i=0;i<m;i++)if(G(b,i*64)==1){P(b,i*64+16,w);P(b,i*64+20,h);}for(int i=0;i<p;i++)P(a,i*72+32,-1);}
 int r=SetDisplayConfig(p,a,m,b,0x80|0x20|0x400|0x1000);s+=r+";";if(r==0)break;}return s;}
 public static string Run(int w,int h){
-Scan();string t=V,want=w+"x"+h,before=S(t),res="not_listed",force="none",lay="none";var det=new List<string>();
+Scan();string t=V,v=w+"x"+h,b=S(t),res="not_listed",x="none",lay="none";var det=new List<string>();
 var cur=V!=null&&A?M(V,-1):null;
 if(cur!=null&&O.Count>0){P(cur,72,0x20);P(cur,76,0);P(cur,80,0);lay=""+C(V,cur,0x10000011);
 foreach(var o in O){var z=new byte[220];z[68]=220;P(z,72,0x180020);det.Add(o+"="+C(o,z,0x10000001));}
 lay+="/"+C(null,null,0);Scan();}
 var end=DateTime.Now.AddSeconds(10);
-if(t==null){res="0";if(S(t)!=want){var m=M(null,-1);P(m,72,0x180000);P(m,172,w);P(m,176,h);res=""+C(null,m,1);}}
+if(t==null){res="0";if(S(t)!=v){var m=M(null,-1);P(m,72,0x180000);P(m,172,w);P(m,176,h);res=""+C(null,m,1);}}
 else while(true){byte[] f=null;for(int n=0;f==null;n++){var m=M(t,n);if(m==null)break;if(G(m,172)==w&&G(m,176)==h)f=m;}
-res=f==null?"not_listed":""+C(t,f,1);if(res=="0"&&S(t)==want||DateTime.Now>end)break;
-force=Force(w,h);Thread.Sleep(400);}
+if(f!=null&&cur!=null)P(f,184,G(cur,184));
+res=f==null?"not_listed":""+C(t,f,1);if(res=="0"&&S(t)==v||DateTime.Now>end)break;
+x=Force(w,h);Thread.Sleep(400);}
 Scan();
-return "BVDISPLAY target="+want+" virtio="+(t==null?"none":"found")+" before="+before+" after="+S(t)+" primary="+Pr+" layout="+lay+" detached="+(det.Count==0?"none":string.Join(",",det))+" force="+force+" result="+res;}}
+return "BVDISPLAY target="+v+" virtio="+(t==null?"none":"found")+" before="+b+" after="+S(t)+" primary="+Pr+" layout="+lay+" detached="+(det.Count==0?"none":string.Join(",",det))+" force="+x+" result="+res;}}
 '@
     'DISPLAYSCALE' = @'
 using System;using System.Runtime.InteropServices;

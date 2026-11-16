@@ -64,7 +64,8 @@ Expires: $($certificate.NotAfter.ToUniversalTime().ToString('o'))
         $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
         "$digest  $($_.Name)"
     }
-    $sums | Set-Content (Join-Path $OutputDirectory "SHA256SUMS") -Encoding Ascii
+    [System.IO.File]::WriteAllText((Join-Path $OutputDirectory "SHA256SUMS"),
+        ($sums -join "`n") + "`n", [System.Text.Encoding]::ASCII)
 } finally {
     if (Test-Path $rootPath) { Remove-Item $rootPath -Force }
     if (Test-Path $myPath) { Remove-Item $myPath -DeleteKey -Force }

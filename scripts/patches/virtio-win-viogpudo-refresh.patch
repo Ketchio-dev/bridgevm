@@ -34,7 +34,7 @@ index 33f18c7..25c462e 100644
 @@ -549,6 +551,18 @@ VioGpuDodQueryVidPnHWCapability(_In_ CONST HANDLE hAdapter, _Inout_ DXGKARG_QUER
      return pVioGpuDod->QueryVidPnHWCapability(pVidPnHWCaps);
  }
- 
+
 +NTSTATUS APIENTRY VioGpuDodControlInterrupt(CONST HANDLE hAdapter, CONST DXGK_INTERRUPT_TYPE InterruptType, BOOLEAN EnableInterrupt)
 +{
 +    PAGED_CODE();
@@ -49,22 +49,22 @@ index 33f18c7..25c462e 100644
 +
  // END: Paged Code
  #pragma code_seg(pop)
- 
+
 diff --git a/viogpu/viogpudo/driver.h b/viogpu/viogpudo/driver.h
 index 361f476..baad45d 100644
 --- a/viogpu/viogpudo/driver.h
 +++ b/viogpu/viogpudo/driver.h
 @@ -82,6 +82,8 @@ BOOLEAN
  VioGpuDodInterruptRoutine(_In_ VOID *pDeviceContext, _In_ ULONG MessageNumber);
- 
+
  VOID VioGpuDodDpcRoutine(_In_ VOID *pDeviceContext);
 +NTSTATUS APIENTRY VioGpuDodControlInterrupt(CONST HANDLE hAdapter, CONST DXGK_INTERRUPT_TYPE InterruptType, BOOLEAN EnableInterrupt);
 +NTSTATUS APIENTRY VioGpuDodGetScanLine(CONST HANDLE hAdapter, DXGKARG_GETSCANLINE *pGetScanLine);
- 
+
  NTSTATUS
  APIENTRY
 diff --git a/viogpu/viogpudo/viogpudo.cpp b/viogpu/viogpudo/viogpudo.cpp
-index f950814..d2a9c83 100644
+index f950814..394ce92 100644
 --- a/viogpu/viogpudo/viogpudo.cpp
 +++ b/viogpu/viogpudo/viogpudo.cpp
 @@ -34,12 +34,18 @@
@@ -72,31 +72,31 @@ index f950814..d2a9c83 100644
  #include "viogpum.h"
  #include "edid.h"
 +#include "bridgevm_refresh.h"
- 
+
  #if !DBG
  #include "viogpudo.tmh"
  #endif
- 
+
  static UINT g_InstanceId = 0;
 +// BridgeVM private config extension v1, following the standard GPU_CONFIG.
 +static const ULONG BVM_REFRESH_MAGIC = 0x31525642; // little endian "BVR1"
 +static const ULONG BVM_VSYNC_EVENT = 0x80000000;
 +static const ULONG g_BridgeRefreshRates[] = {120, 30, 60, 75, 90, 144, 165, 180, 240, 360, 480, 540, 600, 720};
 +static const UINT g_BridgeRefreshRateCount = RTL_NUMBER_OF(g_BridgeRefreshRates);
- 
+
  PAGED_CODE_SEG_BEGIN
  VioGpuDod::VioGpuDod(_In_ DEVICE_OBJECT *pPhysicalDeviceObject)
 @@ -240,6 +246,7 @@ NTSTATUS VioGpuDod::StopDevice(VOID)
  {
      PAGED_CODE();
- 
+
 +    if (m_pHWDevice) { m_pHWDevice->ControlVsync(FALSE); }
      m_Flags.DriverStarted = FALSE;
      return STATUS_SUCCESS;
  }
 @@ -888,14 +895,18 @@ VOID VioGpuDod::BuildVideoSignalInfo(D3DKMDT_VIDEO_SIGNAL_INFO *pVideoSignalInfo
      PAGED_CODE();
- 
+
      pVideoSignalInfo->VideoStandard = D3DKMDT_VSS_OTHER;
 -    pVideoSignalInfo->TotalSize.cx = pModeInfo->VisScreenWidth;
 -    pVideoSignalInfo->TotalSize.cy = pModeInfo->VisScreenHeight;
@@ -120,11 +120,11 @@ index f950814..d2a9c83 100644
 +    pVideoSignalInfo->PixelRate = UINT64(hz) * pVideoSignalInfo->TotalSize.cx * pVideoSignalInfo->TotalSize.cy;
      pVideoSignalInfo->ScanLineOrdering = D3DDDI_VSSLO_PROGRESSIVE;
  }
- 
+
 @@ -912,9 +923,12 @@ NTSTATUS VioGpuDod::AddSingleTargetMode(_In_ CONST DXGK_VIDPNTARGETMODESET_INTER
      D3DKMDT_VIDPN_TARGET_MODE *pVidPnTargetModeInfo = NULL;
      NTSTATUS Status = STATUS_SUCCESS;
- 
+
 -    for (UINT ModeIndex = 0; ModeIndex < m_pHWDevice->GetModeCount(); ++ModeIndex)
 +    UNREFERENCED_PARAMETER(SourceId);
 +    for (UINT ModeIndex = 0; ModeIndex < m_pHWDevice->GetModeCount() * g_BridgeRefreshRateCount; ++ModeIndex)
@@ -142,7 +142,7 @@ index f950814..d2a9c83 100644
          }
 -        pVidPnTargetModeInfo->VideoSignalInfo.ActiveSize = pVidPnTargetModeInfo->VideoSignalInfo.TotalSize;
          BuildVideoSignalInfo(&pVidPnTargetModeInfo->VideoSignalInfo, pModeInfo);
- 
+
 -        if (pModeInfo->VisScreenWidth == NOM_WIDTH_SIZE && pModeInfo->VisScreenHeight == NOM_HEIGHT_SIZE)
 +        if (pModeInfo->VisScreenWidth == NOM_WIDTH_SIZE && pModeInfo->VisScreenHeight == NOM_HEIGHT_SIZE && pModeInfo->Frequency == 120)
          {
@@ -151,7 +151,7 @@ index f950814..d2a9c83 100644
 @@ -1016,9 +1029,11 @@ NTSTATUS VioGpuDod::AddSingleMonitorMode(_In_ CONST DXGKARG_RECOMMENDMONITORMODE
          return Status;
      }
- 
+
 -    for (UINT Idx = 0; Idx < m_pHWDevice->GetModeCount(); ++Idx)
 +    for (UINT Idx = 0; Idx < m_pHWDevice->GetModeCount() * g_BridgeRefreshRateCount; ++Idx)
      {
@@ -159,7 +159,7 @@ index f950814..d2a9c83 100644
 +        VIDEO_MODE_INFORMATION mode = *m_pHWDevice->GetModeInfo(Idx / g_BridgeRefreshRateCount);
 +        mode.Frequency = g_BridgeRefreshRates[Idx % g_BridgeRefreshRateCount];
 +        pVbeModeInfo = &mode;
- 
+
          Status = pRecommendMonitorModes->pMonitorSourceModeSetInterface->pfnCreateNewModeInfo(pRecommendMonitorModes->hMonitorSourceModeSet,
                                                                                                &pMonitorSourceMode);
 @@ -1045,7 +1060,7 @@ NTSTATUS VioGpuDod::AddSingleMonitorMode(_In_ CONST DXGKARG_RECOMMENDMONITORMODE
@@ -173,7 +173,7 @@ index f950814..d2a9c83 100644
          }
 @@ -1689,9 +1704,23 @@ NTSTATUS VioGpuDod::CommitVidPn(_In_ CONST DXGKARG_COMMITVIDPN *CONST pCommitVid
          }
- 
+
          Status = SetSourceModeAndPath(pPinnedVidPnSourceModeInfo, pVidPnPresentPath);
 -        if (!NT_SUCCESS(Status))
 +        if (!NT_SUCCESS(Status)) { goto CommitVidPnExit; }
@@ -195,7 +195,7 @@ index f950814..d2a9c83 100644
 +            }
 +            if (!NT_SUCCESS(Status)) { goto CommitVidPnExit; }
          }
- 
+
          Status = pVidPnTopologyInterface->pfnReleasePathInfo(hVidPnTopology, pVidPnPresentPath);
 @@ -2316,6 +2345,11 @@ VioGpuAdapter::VioGpuAdapter(_In_ VioGpuDod *pVioGpuDod)
      m_pFrameBuf = NULL;
@@ -212,7 +212,7 @@ index f950814..d2a9c83 100644
 @@ -2402,6 +2436,15 @@ NTSTATUS VioGpuAdapter::VioGpuAdapterInit(DXGK_DISPLAY_INFORMATION *pDispInfo)
          return status;
      }
- 
+
 +    ULONG timingMagic = 0;
 +    virtio_get_config(&m_VioDev, 16, &timingMagic, sizeof(timingMagic));
 +    if (timingMagic != BVM_REFRESH_MAGIC)
@@ -233,23 +233,33 @@ index f950814..d2a9c83 100644
      }
      else
      {
-@@ -2745,13 +2789,13 @@ NTSTATUS VioGpuAdapter::HWClose(void)
+@@ -2697,6 +2741,9 @@ NTSTATUS VioGpuAdapter::HWInit(PCM_RESOURCE_LIST pResList, DXGK_DISPLAY_INFORMAT
+     }
+
+     req_size = max(req_size, (max_res_size * 4));
++    // WDDM can pad a Retina primary surface beyond its visible geometry.
++    // Reserve 64 MiB so 3600x2260 can be selected after a smaller boot mode.
++    req_size = max(req_size, 64U * 1024U * 1024U);
+
+     if (fb_pa.QuadPart != 0LL)
+     {
+@@ -2745,13 +2792,13 @@ NTSTATUS VioGpuAdapter::HWClose(void)
      m_bStopWorkThread = TRUE;
      KeSetEvent(&m_ConfigUpdateEvent, IO_NO_INCREMENT, FALSE);
- 
+
 -    if (KeWaitForSingleObject(m_pWorkThread, Executive, KernelMode, FALSE, &timeout) == STATUS_TIMEOUT)
 +    if (m_pWorkThread && KeWaitForSingleObject(m_pWorkThread, Executive, KernelMode, FALSE, &timeout) == STATUS_TIMEOUT)
      {
          DbgPrint(TRACE_LEVEL_FATAL, ("---> Failed to exit the worker thread\n"));
          VioGpuDbgBreak();
      }
- 
+
 -    ObDereferenceObject(m_pWorkThread);
 +    if (m_pWorkThread) { ObDereferenceObject(m_pWorkThread); m_pWorkThread = NULL; }
- 
+
      m_FrameSegment.Close();
      m_CursorSegment.Close();
-@@ -3524,6 +3568,7 @@ void VioGpuAdapter::SetVideoModeInfo(UINT Idx, PVIOGPU_DISP_MODE pModeInfo)
+@@ -3524,6 +3571,7 @@ void VioGpuAdapter::SetVideoModeInfo(UINT Idx, PVIOGPU_DISP_MODE pModeInfo)
      pMode = &m_ModeInfo[Idx];
      pMode->Length = sizeof(VIDEO_MODE_INFORMATION);
      pMode->ModeIndex = Idx;
@@ -257,7 +267,7 @@ index f950814..d2a9c83 100644
      pMode->VisScreenWidth = pModeInfo->XResolution;
      pMode->VisScreenHeight = pModeInfo->YResolution;
      pMode->ScreenStride = (pModeInfo->XResolution * 4 + 3) & ~0x3;
-@@ -3649,8 +3694,82 @@ NTSTATUS VioGpuAdapter::BuildModeList(DXGK_DISPLAY_INFORMATION *pDispInfo)
+@@ -3649,8 +3697,82 @@ NTSTATUS VioGpuAdapter::BuildModeList(DXGK_DISPLAY_INFORMATION *pDispInfo)
      DbgPrint(TRACE_LEVEL_VERBOSE, ("<--- %s\n", __FUNCTION__));
      return Status;
  }
@@ -327,7 +337,7 @@ index f950814..d2a9c83 100644
 +}
 +
  PAGED_CODE_SEG_END
- 
+
 +void VioGpuAdapter::ApplyVsync()
 +{
 +    if (!m_pVioGpuDod->IsHardwareInit()) { return; }
@@ -340,8 +350,8 @@ index f950814..d2a9c83 100644
  BOOLEAN VioGpuAdapter::ResetToVgaMode(void)
  {
      DestroyFrameBufferObj(TRUE, TRUE);
-@@ -3694,6 +3813,8 @@ void VioGpuAdapter::VioGpuAdapterClose()
- 
+@@ -3694,6 +3816,8 @@ void VioGpuAdapter::VioGpuAdapterClose()
+
      if (m_pVioGpuDod->IsHardwareInit())
      {
 +        ULONG disabled = 0;
@@ -349,10 +359,10 @@ index f950814..d2a9c83 100644
          m_pVioGpuDod->SetHardwareInit(FALSE);
          m_CtrlQueue.DisableInterrupt();
          m_CursorQueue.DisableInterrupt();
-@@ -3740,21 +3861,32 @@ BOOLEAN VioGpuAdapter::InterruptRoutine(_In_ PDXGKRNL_INTERFACE pDxgkInterface,
+@@ -3740,21 +3864,32 @@ BOOLEAN VioGpuAdapter::InterruptRoutine(_In_ PDXGKRNL_INTERFACE pDxgkInterface,
          UNREFERENCED_PARAMETER(MessageNumber);
          UCHAR isrstat = virtio_read_isr_status(&m_VioDev);
- 
+
 -        switch (isrstat)
 -        {
 -            case 1:
@@ -368,7 +378,7 @@ index f950814..d2a9c83 100644
 +                  | ((isrstat & 2) ? ISR_REASON_CHANGE : 0);
 +        serviced = intReason != 0;
      }
- 
+
      if (serviced)
      {
 +        if (intReason & ISR_REASON_CHANGE)
@@ -435,13 +445,13 @@ index 3b0b996..19c6fa3 100755
 --- a/viogpu/viogpudo/viogpudo.inx
 +++ b/viogpu/viogpudo/viogpudo.inx
 @@ -85,8 +85,8 @@ HKR, "Interrupt Management\Affinity Policy", DevicePriority, 0x00010001, 3
- 
+
  ;  *******Localizable Strings*******
  diskId1 = "INX_PREFIX_VENDORVirtIO GPU controller Installation Disk"
 -VioGpuDod.DeviceDesc = "INX_PREFIX_VENDORVirtIO GPU DOD controller"
 -VENDOR = "INX_COMPANY"
 +VioGpuDod.DeviceDesc = "BridgeVM Virtual Display (experimental)"
 +VENDOR = "BridgeVM Experimental"
- 
+
  ;  *******Non Localizable Strings*******
  SERVICE_BOOT_START = 0x0

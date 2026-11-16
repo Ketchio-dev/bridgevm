@@ -51,7 +51,8 @@ jobs:
             $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
             "$digest  $($_.Name)"
           }
-          $sums | Set-Content refresh-arm64/SHA256SUMS -Encoding Ascii
+          [System.IO.File]::WriteAllText((Join-Path $env:GITHUB_WORKSPACE "refresh-arm64/SHA256SUMS"),
+            ($sums -join "`n") + "`n", [System.Text.Encoding]::ASCII)
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bridgevm-refresh-unsigned-arm64
