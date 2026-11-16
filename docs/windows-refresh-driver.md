@@ -54,6 +54,18 @@ An optional `-UseNuGet` route pins Microsoft's WDK and SDK packages to
 that installation before using the option. The script neither creates a signing
 certificate nor installs the driver nor changes Secure Boot/test-signing settings.
 
+## Development-only test signing
+
+`scripts/sign-hvf-windows-refresh-test-package.ps1` can prepare a temporary
+self-signed package on a disposable Windows builder. It signs the PE before
+creating/signing the catalog, exports only the public certificate, checks the
+signatures, and removes its temporary builder certificate/key. This does not
+produce a Microsoft production signature or change any VM's boot settings.
+
+Installing that package requires separate authorization to use a disposable VM
+with Secure Boot disabled and TESTSIGNING enabled. Never apply that change to
+the working VM as part of routine setup or updates.
+
 ## Validation and signing still required
 
 Kit preparation compiles and runs the actual portable GetScanLine raster helper,
