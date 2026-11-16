@@ -13,6 +13,7 @@ constexpr NTSTATUS addFailure = -2;
 #define NT_SUCCESS(status) ((status) >= 0)
 #define PAGED_CODE() ((void)0)
 #define _In_
+#define _In_opt_
 #define CONST const
 #define DbgPrint(...) ((void)0)
 #define NT_ASSERT(value) assert(value)
@@ -63,6 +64,13 @@ struct MonitorInterface {
     decltype(&add) pfnAddMode = add;
     decltype(&release) pfnReleaseModeInfo = release;
 };
+using D3DKMDT_VIDPN_TARGET_MODE = D3DKMDT_MONITOR_SOURCE_MODE;
+using DXGK_VIDPNTARGETMODESET_INTERFACE = MonitorInterface;
+using D3DKMDT_HVIDPNTARGETMODESET = Modes*;
+using D3DDDI_VIDEO_PRESENT_SOURCE_ID = UINT;
+struct D3DKMDT_VIDPN_SOURCE_MODE {
+    struct { struct { struct { UINT cx{}, cy{}; } VisibleRegionSize; } Graphics; } Format;
+};
 struct DXGKARG_RECOMMENDMONITORMODES {
     Modes* hMonitorSourceModeSet;
     MonitorInterface* pMonitorSourceModeSetInterface;
@@ -79,6 +87,8 @@ struct VioGpuDod {
         *signal = {mode->VisScreenWidth, mode->VisScreenHeight, mode->Frequency};
     }
     NTSTATUS AddSingleMonitorMode(const DXGKARG_RECOMMENDMONITORMODES*);
+    NTSTATUS AddSingleTargetMode(const DXGK_VIDPNTARGETMODESET_INTERFACE*,
+        D3DKMDT_HVIDPNTARGETMODESET, const D3DKMDT_VIDPN_SOURCE_MODE*, D3DDDI_VIDEO_PRESENT_SOURCE_ID);
 };
 #include "monitor-body.inc"
 
@@ -102,4 +112,18 @@ int main() {
     request.hMonitorSourceModeSet = &failing;
     assert(driver.AddSingleMonitorMode(&request) == addFailure);
     assert(failing.allocated == 0);
+    // A pinned source constrains identity scanout targets to its visible geometry.
+    D3DKMDT_VIDPN_SOURCE_MODE source;
+    source.Format.Graphics.VisibleRegionSize = {3600,2260};
+    Modes targets;
+    assert(driver.AddSingleTargetMode(&callbacks, &targets, &source, 0) == STATUS_SUCCESS);
+    assert(targets.registered.size() == 14);
+    for (const auto& mode : targets.registered) assert(mode.width == 3600 && mode.height == 2260);
+    Modes unconstrained;
+    assert(driver.AddSingleTargetMode(&callbacks, &unconstrained, nullptr, 0) == STATUS_SUCCESS);
+    assert(unconstrained.registered.size() == 28);
+    Modes targetFailure;
+    targetFailure.failCustom = true;
+    assert(driver.AddSingleTargetMode(&callbacks, &targetFailure, &source, 0) == addFailure);
+    assert(targetFailure.allocated == 0);
 }
