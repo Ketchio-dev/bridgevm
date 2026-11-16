@@ -375,9 +375,19 @@ final class HvfEngineSession: ObservableObject {
 
     private func flushDisplayResize() {
         displayResize.retina = config.retinaResizeSetting
-        guard let size = displayResize.take(at: ProcessInfo.processInfo.systemUptime),
+        guard let size = displayResize.take(at: ProcessInfo.processInfo.systemUptime, fallback: savedDisplaySize),
               appendDisplayResize(size) else { return }
         displayResize.didSend(size)
+    }
+
+    /// With no laid-out window, restore the saved pixel mode after each service start.
+    /// Keep Windows' DPI until a window supplies its actual backing scale.
+    private var savedDisplaySize: HvfDisplayResizeRequest.Size? {
+        guard serviceStarted, !attachedToExistingProcess,
+              let mode = HvfGuestResolutionPicker.firmwareMode(config.guestResolution) else { return nil }
+        let parts = mode.split(separator: "x")
+        guard let width = Int(parts[0]), let height = Int(parts[1]) else { return nil }
+        return .init(width: width, height: height)
     }
 
     private func appendDisplayResize(_ size: HvfDisplayResizeRequest.Size) -> Bool {
