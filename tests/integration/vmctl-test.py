@@ -56,6 +56,10 @@ class FrameTests(unittest.TestCase):
 
 
 class GuestTests(unittest.TestCase):
+    def test_oversize_shell_source_is_rejected_before_sending(self):
+        with self.assertRaisesRegex(vmctl.ControlError, "cmd.exe limit"):
+            vmctl.powershell("Write-Output '" + "x" * 5000 + "'")
+
     def test_unique_reply_skips_old_results_and_input_payload_is_redacted(self):
         with tempfile.TemporaryDirectory() as directory:
             bundle = Path(directory)

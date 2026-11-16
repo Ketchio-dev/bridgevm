@@ -52,6 +52,10 @@ map to 1). Commands and their output remain in the VM's local run log, so do
 not use it to transmit passwords or keys. `--timeout 120` before the command
 extends the default 40-second reply wait. A timeout does not cancel guest work
 and never resends it automatically.
+Windows' `cmd.exe` command-line limit also bounds encoded PowerShell source.
+For a larger script, copy it through the shared folder and invoke that guest
+path from a short command. Replies over 8 MiB are refused; write large results
+to the shared folder instead.
 
 Guest operations require one live app-owned own-HVF run whose saved
 configuration still matches. The tool checks the run identity before writing

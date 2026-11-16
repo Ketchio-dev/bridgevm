@@ -115,7 +115,10 @@ def regular(path, flags):
 def powershell(script):
     # A unique prefix correlates this command even with another CLI or the GUI active.
     payload = ("# vmctl " + str(uuid.uuid4()) + "\n$ProgressPreference='SilentlyContinue'\n" + script).encode("utf-16-le")
-    return "powershell.exe -NoProfile -NonInteractive -EncodedCommand " + base64.b64encode(payload).decode()
+    command = "powershell.exe -NoProfile -NonInteractive -EncodedCommand " + base64.b64encode(payload).decode()
+    if len(command) > 8157:  # cmd.exe /c wrapper leaves this much of Windows' 8191-character limit
+        raise ControlError("PowerShell source exceeds the guest cmd.exe limit; place a larger script in the shared folder and invoke its guest path.")
+    return command
 
 
 def parser():
