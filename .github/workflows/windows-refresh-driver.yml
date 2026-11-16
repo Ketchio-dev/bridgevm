@@ -1,6 +1,11 @@
 name: Windows refresh driver candidate
 on:
   workflow_dispatch:
+    inputs:
+      test_sign:
+        description: Prepare a temporary development signature for an authorized disposable VM
+        type: boolean
+        default: false
   pull_request:
     paths:
       - .github/workflows/windows-refresh-driver.yml
@@ -51,4 +56,18 @@ jobs:
         with:
           name: bridgevm-refresh-unsigned-arm64
           path: refresh-arm64
+          if-no-files-found: error
+      - name: Prepare development-only test package
+        if: ${{ inputs.test_sign == true }}
+        shell: pwsh
+        run: |
+          & "$env:GITHUB_WORKSPACE/scripts/sign-hvf-windows-refresh-test-package.ps1" `
+            -InputDirectory "$env:GITHUB_WORKSPACE/refresh-arm64" `
+            -OutputDirectory "$env:GITHUB_WORKSPACE/refresh-test-signed-arm64" `
+            -ToolRoot "$env:GITHUB_WORKSPACE/driver-source/packages"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ inputs.test_sign == true }}
+        with:
+          name: bridgevm-refresh-TEST-ONLY-arm64
+          path: refresh-test-signed-arm64
           if-no-files-found: error
