@@ -61,13 +61,14 @@ final class HvfOrderedSessionTransportTests: XCTestCase {
     }
 
     @MainActor
-    func testFullSizedTextUsesBoundedInputTransportWithoutRelaxingGeneralCommands() throws {
+    func testFullSizedTextUsesPacedInputWithoutRelaxingGeneralCommands() throws {
         try withSession { session, root, control in
-            session.sendText(String(repeating: "a", count: 65_536))
+            XCTAssertEqual(session.sendText(String(repeating: "a", count: 65_536)), .acceptedForProcessing)
             let sent = try commands(control)
             XCTAssertEqual(sent.count, 2)
             XCTAssertTrue(sent[1].hasPrefix("TEXTINPUT "))
-            XCTAssertGreaterThan(sent[1].utf8.count, HvfGuestCommand.maximumBytes)
+            XCTAssertEqual(sent[1].split(separator: " ").last, "YQ==", "Only the first scalar is sent")
+            XCTAssertEqual(session.sendText("a"), .refused, "The full commit still owns its byte budget")
             XCTAssertFalse(session.sendCtl(String(repeating: "x", count: 65_537)))
             XCTAssertEqual(try commands(control).count, 2)
         }

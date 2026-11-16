@@ -10,7 +10,7 @@ final class HvfPointerFailureRecoveryTests: XCTestCase {
         fixture.assertFailedClosed()
         _ = fixture.poll()
         let cleanup = fixture.commands.last!
-        XCTAssertEqual(fixture.payloads(), ["press:1x2", "fail", "release:1x2"])
+        XCTAssertEqual(fixture.payloads(), ["press:1x2", "f", "release:1x2"])
         _ = fixture.router.cancelTarget(now: fixture.now)
         XCTAssertEqual(fixture.poll(), .waiting)
         _ = fixture.poll(lines: fixture.receipt(cleanup))

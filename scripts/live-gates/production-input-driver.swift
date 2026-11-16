@@ -8,6 +8,12 @@ final class ProductionInputDiagnostic {
     let log: FileHandle
     let binding: [String]
     let events: [HvfOrderedInputQueue.Event]
+    var packets: [HvfOrderedInputQueue.Event] {
+        events.flatMap { event in
+            if case let .text(text) = event { return text.unicodeScalars.map { HvfOrderedInputQueue.Event.text(String($0)) } }
+            return [event]
+        }
+    }
     var pendingBytes = Data()
     var observed: HvfUnicodeInputRequest?
     var ready = false
@@ -50,9 +56,9 @@ final class ProductionInputDiagnostic {
         guard failure == nil else { return false }
         let parts = command.split(separator: " ")
         if parts.first != "INPUTCAPS" {
-            guard sent < events.count, observed == nil, parts.count == 3,
+            guard sent < packets.count, observed == nil, parts.count == 3,
                   let id = UUID(uuidString: String(parts[1])),
-                  let request = HvfUnicodeInputRequest(event: events[sent], now: Date(), id: id),
+                  let request = HvfUnicodeInputRequest(event: packets[sent], now: Date(), id: id),
                   request.command == command else {
                 failure = "unexpected-production-command"
                 return false
@@ -70,7 +76,7 @@ final class ProductionInputDiagnostic {
     }
 
     func pump() {
-        guard failure == nil, inserted < events.count else { return }
+        guard failure == nil, inserted < packets.count else { return }
         do {
             let batch = try lines()
             if var request = observed {
@@ -100,15 +106,15 @@ final class ProductionInputDiagnostic {
         driver.onPoll = { [weak self] in self?.pump() }
         driver.beginOwnedBoot(binding: binding)
         let deadline = Date().addingTimeInterval(35)
-        while failure == nil && inserted < events.count && Date() < deadline {
+        while failure == nil && inserted < packets.count && Date() < deadline {
             pump()
             // Normal log polling is 100 ms; the real driver's 10 ms timer also runs.
             RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         }
         driver.onPoll = nil
         driver.cancelTarget()
-        if failure == nil && inserted != events.count { failure = "deadline" }
-        return failure == nil && sent == events.count && inserted == events.count
+        if failure == nil && inserted != packets.count { failure = "deadline" }
+        return failure == nil && sent == packets.count && inserted == packets.count
     }
 }
 

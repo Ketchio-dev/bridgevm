@@ -105,7 +105,7 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
         try fixture.withSession { session in
             try fixture.negotiateOrderedInput(session)
             var draft = "순서대로 입력 🙂"
-            let encoded = Data(draft.utf8).base64EncodedString()
+            let encoded = Data(String(draft.unicodeScalars.first!).utf8).base64EncodedString()
 
             XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .acceptedForProcessing)
 

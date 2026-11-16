@@ -196,7 +196,7 @@ final class HvfLateGuestResetInputTests: XCTestCase {
         XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .acceptedForProcessing, message)
         let texts = try fixture.commands().filter { $0.hasPrefix("TEXTINPUT ") }
         XCTAssertEqual(texts.count, 2, "the failed generation's request is never resent: \(message)")
-        XCTAssertEqual(texts.last?.split(separator: " ").last, "bmV3", message)
+        XCTAssertEqual(texts.last?.split(separator: " ").last, "bg==", message)
         XCTAssertNil(try fixture.bytes(fixture.input), message)
     }
 

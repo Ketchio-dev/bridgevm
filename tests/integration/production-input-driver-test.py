@@ -33,8 +33,8 @@ class DriverIntegration(unittest.TestCase):
                             marker = "BVINPUT_CAPS " + parts[1] + " 3 TEXTINPUT KEYINPUT POINTERINPUT 65536"
                         else:
                             payloads.append((parts[0], base64.b64decode(parts[2]).decode()))
-                            counts = [16, 2, 8, 2]
-                            count = counts[len(payloads) - 1]
+                            verb, value = payloads[-1]
+                            count = len(value.encode("utf-16-le")) if verb == "TEXTINPUT" else 2
                             if mode == "bad-count":
                                 count += 1
                             marker = "BVINPUT_INSERTED " + parts[1] + " " + str(count)
@@ -59,12 +59,13 @@ class DriverIntegration(unittest.TestCase):
         status, report, payloads = self.exercise("success")
         self.assertEqual(status, 0)
         self.assertTrue(report["driver_receipts_observed"])
-        self.assertEqual(report["sent"], 4)
-        self.assertEqual(report["inserted"], 4)
+        self.assertEqual(report["sent"], 13)
+        self.assertEqual(report["inserted"], 13)
         self.assertFalse(report["production_ui_proven"])
         self.assertFalse(report["guest_application_proven"])
-        self.assertEqual(payloads, [("TEXTINPUT", "BridgeVM"), ("KEYINPUT", "enter"),
-                                    ("TEXTINPUT", "\uD55C\uAE00\U0001F642"), ("POINTERINPUT", "click:123x32767")])
+        self.assertEqual(payloads, [("TEXTINPUT", char) for char in "BridgeVM"] + [("KEYINPUT", "enter")]
+                         + [("TEXTINPUT", char) for char in "\uD55C\uAE00\U0001F642"]
+                         + [("POINTERINPUT", "click:123x32767")])
 
     def test_rejected_receipt_never_advances(self):
         for mode in ("bad-count", "restart"):

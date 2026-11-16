@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class HvfShiftKeyCompatibilityTests: XCTestCase {
-    private let now = Date(timeIntervalSince1970: 4_000)
+    private var now = Date(timeIntervalSince1970: 4_000)
     private let binding = ["disk", "vars", "evidence", "control"]
 
     func testOldGuestRefusesNewChordsWithoutDisturbingQueuedOrLaterText() throws {
@@ -20,14 +20,17 @@ final class HvfShiftKeyCompatibilityTests: XCTestCase {
         }
         XCTAssertEqual(router.route(.text("after"), binding: binding, now: now), .queued)
         for text in ["before", "after"] {
-            var command = ""
-            _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { command = $0; return true }
-            XCTAssertTrue(command.hasPrefix("TEXTINPUT "))
-            XCTAssertEqual(command.split(separator: " ").last.map(String.init), Data(text.utf8).base64EncodedString())
-            let label = command.split(separator: " ").prefix(2).joined(separator: " ")
-            let id = try XCTUnwrap(command.split(separator: " ").dropFirst().first)
-            let lines = ["BVAGENT CMD \(label) exit=0", "BVINPUT_INSERTED \(id) \(text.utf16.count * 2)", "BVAGENT END \(label)"]
-            _ = router.poll(binding: binding, serviceReady: true, lines: lines, now: now) { _ in XCTFail("receipt replay"); return false }
+            for part in text.unicodeScalars.map(String.init) {
+                now += 0.1
+                var command = ""
+                _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { command = $0; return true }
+                XCTAssertTrue(command.hasPrefix("TEXTINPUT "))
+                XCTAssertEqual(command.split(separator: " ").last.map(String.init), Data(part.utf8).base64EncodedString())
+                let label = command.split(separator: " ").prefix(2).joined(separator: " ")
+                let id = try XCTUnwrap(command.split(separator: " ").dropFirst().first)
+                let lines = ["BVAGENT CMD \(label) exit=0", "BVINPUT_INSERTED \(id) \(part.utf16.count * 2)", "BVAGENT END \(label)"]
+                _ = router.poll(binding: binding, serviceReady: true, lines: lines, now: now) { _ in XCTFail("receipt replay"); return false }
+            }
         }
         XCTAssertEqual(router.count, 0)
         XCTAssertEqual(router.state, .ready)

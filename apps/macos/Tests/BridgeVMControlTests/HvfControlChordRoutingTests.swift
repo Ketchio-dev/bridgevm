@@ -4,7 +4,7 @@ import XCTest
 
 /// An old resident refuses unknown keys and drops queued input, so the host must never send one.
 final class HvfControlChordRoutingTests: XCTestCase {
-    private let now = Date(timeIntervalSince1970: 7_000)
+    private var now = Date(timeIntervalSince1970: 7_000)
     private let binding = ["disk", "vars", "evidence", "control"]
     private let chords = ["ctrl+s", "ctrl+f", "ctrl+n", "ctrl+o", "ctrl+p", "ctrl+w", "ctrl+t", "ctrl+l", "ctrl+h",
                           "ctrl+r", "ctrl+enter", "ctrl+tab", "ctrl+shift+tab", "shift+f10", "shift+delete"]
@@ -76,16 +76,20 @@ final class HvfControlChordRoutingTests: XCTestCase {
     }
 
     private func deliverNext(_ router: inout HvfSessionInputRouter, verb: String, value: String, count: Int) throws {
-        var command = ""
-        _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { command = $0; return true }
-        let fields = command.split(separator: " ").map(String.init)
-        XCTAssertEqual(fields.count, 3, command)
-        XCTAssertEqual(fields.first, verb, value)
-        XCTAssertEqual(fields.last, Data(value.utf8).base64EncodedString(), value)
-        let id = try XCTUnwrap(fields.dropFirst().first)
-        let label = "\(verb) \(id)"
-        let receipt = ["BVAGENT CMD \(label) exit=0", "BVINPUT_INSERTED \(id) \(count)", "BVAGENT END \(label)"]
-        _ = router.poll(binding: binding, serviceReady: true, lines: receipt, now: now) { _ in XCTFail("receipt replay"); return false }
-        XCTAssertFalse(router.failed, value)
+        let parts = verb == "TEXTINPUT" ? value.unicodeScalars.map(String.init) : [value]
+        for part in parts {
+            now += 0.1
+            var command = ""
+            _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { command = $0; return true }
+            let fields = command.split(separator: " ").map(String.init)
+            XCTAssertEqual(fields.count, 3, command)
+            XCTAssertEqual(fields.first, verb, value)
+            XCTAssertEqual(fields.last, Data(part.utf8).base64EncodedString(), value)
+            let id = try XCTUnwrap(fields.dropFirst().first)
+            let label = "\(verb) \(id)"
+            let receipt = ["BVAGENT CMD \(label) exit=0", "BVINPUT_INSERTED \(id) \(verb == "TEXTINPUT" ? part.utf16.count * 2 : count)", "BVAGENT END \(label)"]
+            _ = router.poll(binding: binding, serviceReady: true, lines: receipt, now: now) { _ in XCTFail("receipt replay"); return false }
+            XCTAssertFalse(router.failed, value)
+        }
     }
 }

@@ -15,7 +15,7 @@ final class HvfCompositionCommitTests: XCTestCase {
             type(view, committed: "감사합니", composing: "다")
             XCTAssertTrue(view.performKeyEquivalent(with: try key("s", code: 0x01, flags: .command)))
             XCTAssertFalse(view.hasMarkedText())
-            XCTAssertEqual(try deliver(fixture, session), ["TEXTINPUT 감사합니", "TEXTINPUT 다", "KEYINPUT ctrl+s"])
+            XCTAssertEqual(try deliver(fixture, session), ["TEXTINPUT 감", "TEXTINPUT 사", "TEXTINPUT 합", "TEXTINPUT 니", "TEXTINPUT 다", "KEYINPUT ctrl+s"])
         }
     }
 
@@ -97,8 +97,12 @@ final class HvfCompositionCommitTests: XCTestCase {
     private func deliver(_ fixture: HvfRuntimeKeyboardDraftFixture, _ session: HvfEngineSession) throws -> [String] {
         var sent: [String] = []
         var seen = negotiated
+        var clock = Date()
+        session.inputDriver.now = { clock }
         while true {
+            clock += 0.1
             session.poll()
+            clock += 0.1
             session.poll()
             let commands = try fixture.commands()
             guard commands.count > seen else { return sent }

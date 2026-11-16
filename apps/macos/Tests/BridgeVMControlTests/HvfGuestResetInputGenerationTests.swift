@@ -40,7 +40,7 @@ final class HvfGuestResetInputGenerationTests: XCTestCase {
                 XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .acceptedForProcessing, reset)
                 let texts = try fixture.commands().filter { $0.hasPrefix("TEXTINPUT ") }
                 XCTAssertEqual(texts.count, 2, "the cancelled request is never replayed: \(reset)")
-                XCTAssertEqual(texts.last?.split(separator: " ").last, "bmV3", reset)
+                XCTAssertEqual(texts.last?.split(separator: " ").last, "bg==", reset)
                 XCTAssertNil(try fixture.bytes(fixture.input), reset)
             }
         }
