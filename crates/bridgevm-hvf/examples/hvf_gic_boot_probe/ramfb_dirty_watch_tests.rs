@@ -73,18 +73,41 @@ fn an_unwritten_frame_is_not_read_again_and_a_write_is_seen_once() {
 }
 
 #[test]
-fn only_write_permission_faults_inside_the_range_are_taken() {
+fn only_watched_ram_write_faults_inside_the_range_are_taken() {
     let watch = FbWatch::new(fake);
     assert!(!watch.take_write_fault(FB.0, WRITE_FAULT), "nothing protected yet");
     watch.may_have_changed(Some(FB), &Ram);
     calls();
-    assert!(!watch.take_write_fault(FB.0, TRANSLATION_FAULT), "MMIO exits are translation faults");
+    assert!(watch.take_write_fault(FB.0, TRANSLATION_FAULT), "HVF reports a protected RAM write as translation too");
     assert!(!watch.take_write_fault(FB.0, READ_FAULT));
     assert!(!watch.take_write_fault(PAGES.0 - 1, WRITE_FAULT));
     assert!(!watch.take_write_fault(PAGES.0 + PAGES.1, WRITE_FAULT));
     assert!(watch.take_write_fault(PAGES.0, WRITE_FAULT), "the rounded-out page counts");
     assert!(watch.take_write_fault(PAGES.0 + PAGES.1 - 1, WRITE_FAULT));
-    assert_eq!(calls().len(), 2);
+    assert_eq!(calls().len(), 3);
+}
+
+#[test]
+fn hvf_dczva_translation_faults_restore_only_previously_protected_ram() {
+    let watch = FbWatch::new(fake);
+    watch.may_have_changed(Some(FB), &Ram);
+    calls();
+    // Actual M5 HVF DC ZVA exit after hv_vm_protect(READ|EXEC), ISV=0.
+    for esr in [0x9200_0046, 0x9200_0047] {
+        assert!(watch.take_write_fault(FB.0, esr));
+        assert_eq!(calls(), [(PAGES.0, PAGES.1, WRITABLE)]);
+    }
+    let moved = (0x5000_0000, 0x4000);
+    watch.may_have_changed(Some(moved), &Ram);
+    calls();
+    assert!(!watch.take_write_fault(0x4800_0000, TRANSLATION_FAULT), "the gap was never protected");
+    assert!(!watch.take_write_fault(FLASH_CODE.base, TRANSLATION_FAULT), "MMIO/firmware is not watched RAM");
+    assert!(!watch.take_write_fault(FB.0, 0x9200_0007), "read translation faults are not ours");
+    assert!(!watch.take_write_fault(FB.0, 0x9200_00c7), "page-table walks are not framebuffer stores");
+    assert!(!watch.take_write_fault(FB.0, 0x9200_0147), "cache maintenance is not a framebuffer store");
+    assert_eq!(calls(), []);
+    assert!(watch.take_write_fault(FB.0, TRANSLATION_FAULT), "a late fault after moving is still ours");
+    assert_eq!(calls(), []);
 }
 
 #[test]
@@ -111,8 +134,19 @@ fn a_refused_protection_falls_back_to_reading_every_tick() {
     assert!(watch.may_have_changed(Some(FB), &Ram), "every tick reads");
     assert!(watch.may_have_changed(Some(FB), &Ram));
     assert_eq!(calls(), [], "and nothing is retried");
-    assert!(watch.take_write_fault(FB.0, WRITE_FAULT), "a store there still completes");
+    assert!(!watch.take_write_fault(FB.0, WRITE_FAULT), "no successful protection was recorded");
     assert_eq!(calls(), []);
+}
+
+#[test]
+fn a_failed_write_restore_does_not_report_a_successful_retry() {
+    let watch = FbWatch::new(fake);
+    watch.may_have_changed(Some(FB), &Ram);
+    calls();
+    REFUSE.with(|refuse| refuse.set(true));
+    assert!(!watch.take_write_fault(FB.0, TRANSLATION_FAULT));
+    REFUSE.with(|refuse| refuse.set(false));
+    assert_eq!(calls(), [(PAGES.0, PAGES.1, WRITABLE)]);
 }
 
 #[test]
