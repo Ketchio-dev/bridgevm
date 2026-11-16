@@ -92,6 +92,8 @@ operator's own data, images or VMs.
 
 ## 7. Practical conventions
 
+- Prefer the native app CLI and `scripts/vmctl.py` for VM lifecycle, guest
+  commands, input and captures. Use computer use when testing the Mac UI itself.
 - Source `../../env.sh` before building when it exists.
 - Files under `scripts/win-assets/**` keep CRLF line endings; normalise guest
   logs with `tr '\r' '\n'` before parsing.

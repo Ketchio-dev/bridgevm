@@ -106,6 +106,10 @@ State reviewed 2026-11-14 at commit `c4f4e9cbeb6fc27caf2a9ba24ec624592da1f01c`. 
 
 ## Develop the VMM
 
+Control test VMs from the terminal with the [native app CLI](docs/app-cli.md)
+and [guest development CLI](docs/vmctl.md): start/stop/status, PowerShell,
+keyboard/mouse input, display-mode requests and 2D PNG captures.
+
 Start with [CONTRIBUTING.md](CONTRIBUTING.md) for toolchains and focused checks,
 [AGENTS.md](AGENTS.md) for working rules, and the
 [machine contract](docs/machine-contract/qemu-virt.md) for guest-visible behavior.
