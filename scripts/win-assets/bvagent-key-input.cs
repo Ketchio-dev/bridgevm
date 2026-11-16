@@ -147,6 +147,10 @@ namespace BridgeVM {
             if (size != 40) { throw new InvalidOperationException("guest-input-layout"); }
             uint inserted = SendInput((uint)inputs.Length, inputs, size);
             RequireComplete(inserted, (uint)inputs.Length);
+            // Injected remote input can leave the guest monitor asleep. Reset
+            // its display idle timer for each accepted input, without holding
+            // a continuous request or changing the user's power plan.
+            SetThreadExecutionState(2); // ES_DISPLAY_REQUIRED, pulse only
             return inserted;
         }
     }
