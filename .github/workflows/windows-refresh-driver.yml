@@ -42,8 +42,11 @@ jobs:
           Copy-Item docs/windows-refresh-driver.md refresh-arm64/README.md
           "upstream=virtio-win/kvm-guest-drivers-windows`ncommit=47e330f26153619255c3190c6aa8810cd9e7b7fd`nsigning=unsigned`nboot_validation=pending" |
             Set-Content refresh-arm64/source-version.txt -Encoding UTF8
-          Get-ChildItem refresh-arm64 -File | Get-FileHash -Algorithm SHA256 |
-            Format-Table -AutoSize | Out-String | Set-Content refresh-arm64/SHA256.txt -Encoding UTF8
+          $sums = Get-ChildItem refresh-arm64 -File | Sort-Object Name | ForEach-Object {
+            $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+            "$digest  $($_.Name)"
+          }
+          $sums | Set-Content refresh-arm64/SHA256SUMS -Encoding Ascii
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bridgevm-refresh-unsigned-arm64

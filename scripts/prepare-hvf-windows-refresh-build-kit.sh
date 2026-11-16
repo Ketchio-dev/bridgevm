@@ -31,7 +31,8 @@ trap 'rm -rf "$RASTER_TEST_DIR"' EXIT
   "$ROOT/tests/integration/viogpudo-refresh-raster-test.cpp" -o "$RASTER_TEST_DIR/raster-test"
 "$RASTER_TEST_DIR/raster-test"
 cp "$ROOT/scripts/build-hvf-windows-refresh-driver.ps1" "$OUT_DIR/build.ps1"
+cp "$ROOT/scripts/sign-hvf-windows-refresh-test-package.ps1" "$OUT_DIR/test-sign.ps1"
 cp "$ROOT/docs/windows-refresh-driver.md" "$OUT_DIR/README.md"
 printf 'upstream=https://github.com/virtio-win/kvm-guest-drivers-windows\ncommit=%s\n' "$PIN" > "$OUT_DIR/source-version.txt"
-shasum -a 256 "$OUT_DIR/virtio-win-viogpudo-refresh.patch" "$OUT_DIR/build.ps1" > "$OUT_DIR/build-input-sha256.txt"
+(cd "$OUT_DIR" && shasum -a 256 virtio-win-viogpudo-refresh.patch build.ps1 test-sign.ps1 > build-input-sha256.txt)
 echo "Prepared $OUT_DIR (source only; no compiled or signed driver)."
