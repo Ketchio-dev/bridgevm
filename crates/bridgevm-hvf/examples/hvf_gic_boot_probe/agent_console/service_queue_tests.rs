@@ -80,3 +80,35 @@ fn foreground_queue_ceiling_is_preserved_alongside_background_share_work() {
     assert!(matches!(pop_next_request(&mut queue, |_| false), Some(ServiceReq::Ctl(c)) if c == "0"));
     assert!(has_foreground_capacity(&queue));
 }
+
+#[test]
+fn a_copy_observed_after_a_queued_paste_reaches_windows_before_the_paste_key() {
+    const ID: &str = "12345678-1234-1234-1234-123456789abc";
+    for action in ["ctrl+v", "down:ctrl+v", "shift+insert", "down:shift+insert"] {
+        let mut h = harness();
+        let paste = format!("KEYINPUT {ID} {}", base64_encode(action.as_bytes()));
+        // The native copy poll can arrive after the app queued the shortcut.
+        h.queue.push_back(ServiceReq::Ctl(paste.clone()));
+        h.queue.push_back(ServiceReq::Ctl("PING".into()));
+        h.queue.push_back(ServiceReq::ClipPush("new copy".into(), None));
+        let now = Instant::now();
+        h.service_pump_with_sender(now, &mut |_| {});
+        assert_eq!(h.service_line_scratch, "CLIPSET bmV3IGNvcHk=\n");
+        h.handle_service_reply("OK CLIPSET", None, None, now);
+        h.service_pump_with_sender(now, &mut |_| {});
+        assert_eq!(h.service_line_scratch, paste + "\n");
+        assert!(matches!(h.queue.front(), Some(ServiceReq::Ctl(command)) if command == "PING"));
+    }
+}
+
+#[test]
+fn a_clipboard_dependency_preserves_the_commands_before_a_paste() {
+    let mut queue = VecDeque::from([
+        ServiceReq::Ctl("PING".into()),
+        ServiceReq::Ctl("KEYINPUT 12345678-1234-1234-1234-123456789abc Y3RybCt2".into()),
+        ServiceReq::ClipPush("new copy".into(), None),
+    ]);
+    assert!(matches!(pop_next_request(&mut queue, |_| false), Some(ServiceReq::Ctl(command)) if command == "PING"));
+    assert!(matches!(pop_next_request(&mut queue, |_| false), Some(ServiceReq::ClipPush(..))));
+    assert!(matches!(pop_next_request(&mut queue, |_| false), Some(ServiceReq::Ctl(_))));
+}
