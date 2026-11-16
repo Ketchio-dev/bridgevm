@@ -72,7 +72,10 @@ sequence guard and save a new PNG without overwriting another file. They do
 not capture the Mac desktop, app chrome or hardware cursor, and a published
 frame can be stale or black if the guest display is asleep. A successful
 capture is not a guest-health or display-correctness check. 3D/IOSurface
-capture is outside this command. Display-mode requests need the guest driver;
+capture is outside this command. `resize` updates the VMM's display geometry
+and asks Windows to use it, following the same channel as the app window.
+It can resynchronize the display after a guest restart while the VM window
+was closed. Resizing needs the guest driver;
 an unavailable mode returns failure instead of pretending the resize worked.
 
 Optional short command, from the source checkout:

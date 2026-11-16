@@ -57,6 +57,34 @@ class FrameTests(unittest.TestCase):
 
 
 class GuestTests(unittest.TestCase):
+    def test_resize_updates_the_vmm_then_waits_for_its_guest_mode_reply(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory)
+            (bundle / "logs/hvf").mkdir(parents=True)
+            (bundle / "metadata").mkdir()
+            log, control = bundle / "logs/hvf/run.log", bundle / "logs/hvf/input.ctl"
+            log.touch()
+            control.touch()
+            agent = bundle / "metadata/hvf.ctl"
+            agent.write_text("unchanged\n")
+            guest = vmctl.Guest.__new__(vmctl.Guest)
+            guest.bundle, guest.evidence = bundle, bundle / "logs/hvf"
+            guest.options = SimpleNamespace(timeout=1)
+            guest.identity = ("app", "run", os.getpid())
+
+            def reply(_):
+                with log.open("a") as output:
+                    output.write("BVAGENT CMD DISPLAYMODE 2560 1600 exit=0\n"
+                                 "BVDISPLAY target=2560x1600 after=2560x1600 result=0\n"
+                                 "BVAGENT END DISPLAYMODE 2560 1600\n")
+
+            with patch.object(guest, "check"), patch.object(vmctl.time, "sleep", side_effect=reply):
+                code, result = guest.run("RESIZE 2560x1600", vmm=True, expected="DISPLAYMODE 2560 1600")
+            self.assertEqual(code, 0)
+            self.assertIn("after=2560x1600 result=0", result)
+            self.assertEqual(control.read_text(), "RESIZE 2560x1600\n")
+            self.assertEqual(agent.read_text(), "unchanged\n")
+
     def test_text_paces_complete_codepoints_and_stops_on_a_failed_receipt(self):
         guest = SimpleNamespace(options=SimpleNamespace(timeout=5), run=Mock(return_value=(0, "inserted")))
         self.assertEqual(vmctl.send_text(guest, "A한🙂")[0], 0)

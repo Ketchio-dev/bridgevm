@@ -63,7 +63,7 @@ class Guest:
         if self.current() != self.identity:
             raise ControlError("VM run changed; command was not retried.")
 
-    def run(self, command, timeout=None):
+    def run(self, command, timeout=None, vmm=False, expected=None):
         encoded = (command + "\n").encode()
         if len(encoded) > 87435:
             raise ControlError("Command exceeds guest control line limit.")
@@ -72,10 +72,11 @@ class Guest:
             # Only replies produced after this invocation may satisfy the request.
             log.seek(0, os.SEEK_END)
             self.check()
-            with regular(self.bundle / "metadata/hvf.ctl", os.O_WRONLY | os.O_APPEND) as ctl:
+            control = self.evidence / "input.ctl" if vmm else self.bundle / "metadata/hvf.ctl"
+            with regular(control, os.O_WRONLY | os.O_APPEND) as ctl:
                 if os.write(ctl.fileno(), encoded) != len(encoded):
                     raise ControlError("Incomplete control write; command was not retried.")
-            return self.reply(log, log_path, command, timeout)
+            return self.reply(log, log_path, expected or command, timeout)
 
     def reply(self, log, path, command, timeout=None):
         deadline = time.monotonic() + (self.options.timeout if timeout is None else timeout)
@@ -194,11 +195,14 @@ def main(argv=None):
             match = re.fullmatch(r"([1-9][0-9]{2,4})x([1-9][0-9]{2,4})", options.value)
             if not match or any(int(n) > 16384 for n in match.groups()):
                 raise ControlError("Expected WIDTHxHEIGHT, each 100..16384.")
-            command = "DISPLAYMODE " + " ".join(match.groups())
+            command = "RESIZE " + options.value
         else:
             verb = {"key": "KEYINPUT", "pointer": "POINTERINPUT"}[options.command]
             command = input_command(verb, options.value)
-        code, output = guest.run(command)
+        if options.command == "resize":
+            code, output = guest.run(command, vmm=True, expected="DISPLAYMODE " + " ".join(match.groups()))
+        else:
+            code, output = guest.run(command)
         print(output)
         if options.command == "resize" and not re.search(r"\bresult=0(?:\s|$)", output):
             return 1
