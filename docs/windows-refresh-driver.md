@@ -76,6 +76,10 @@ checking the 720Hz blank interval, frame wrap and a late query after 24 hours.
 It also compiles the patched monitor enumeration against WDDM callback fixtures:
 an already-registered current mode must not skip newly advertised sizes/rates,
 and a real add-mode failure must survive releasing the unowned mode record.
+During VidPN enumeration, the candidate also acquires and augments the connected
+monitor's source-mode set; replacing the virtio custom slot alone leaves its
+retained timings stale. Acquisitions are released on success and failure. This
+uses the WIN8 monitor interface, without disconnecting or restarting the adapter.
 Host unit tests cover 2D config-vector delivery at every listed rate, the deadline
 boundary, stop/reset, invalid guest rates, and independence from the 3D backend.
 They do not establish Windows compatibility or measured frame throughput.
