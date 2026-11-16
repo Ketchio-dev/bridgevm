@@ -4,26 +4,79 @@
 [![Security and quality](https://github.com/Ketchio-dev/bridgevm/actions/workflows/security-quality.yml/badge.svg)](https://github.com/Ketchio-dev/bridgevm/actions/workflows/security-quality.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-**Run Windows 11 Arm on Apple silicon with a Mac-native, QEMU-free
-Hypervisor.framework VMM.**
+**Windows 11 Arm on Apple silicon, in a native Mac app.**
+
+BridgeVM runs Windows alongside macOS using its own
+[Hypervisor.framework VMM](crates/bridgevm-hvf/). The main Windows engine runs
+without QEMU. Apple VZ and QEMU compatibility backends are separate paths.
+
+**Current access: source builds · Engineering Preview · 3D-off.**
+A supported public download is still being prepared. The terminal installer
+refuses the superseded `v1.0.0` preview.
+
+**[Build from source](docs/install.md#build-the-current-source)** ·
+**[Set up Windows](docs/install.md#what-you-need-after-installing)** ·
+**[Current status](STATUS.md)** · **[Contribute](CONTRIBUTING.md)**
 
 <p align="center">
-  <img src="docs/media/windows-hvf-boot.gif" alt="Windows 11 Arm booting to the desktop on BridgeVM's Hypervisor.framework VMM" width="800">
+  <img src="docs/media/windows-hvf-boot.gif" alt="Recorded boot of Windows 11 Arm to the desktop on BridgeVM's own Hypervisor.framework VMM" width="800">
 </p>
 
-BridgeVM develops its own Windows 11 Arm VMM on Apple's Hypervisor.framework.
-The main engineering focus is CPU execution, interrupts and timers, device I/O,
-and VM lifecycle reliability. Apple VZ and QEMU compatibility backends remain
-separate engine paths.
+## What you can try
 
-**[Build and try the current source](docs/install.md#build-the-current-source)** ·
-**[Current status](STATUS.md)** · **[Contribute](CONTRIBUTING.md)** ·
-**[Documentation](docs/README.md)**
+| Area | Current scope |
+| --- | --- |
+| Windows desktop | Windows 11 Arm on BridgeVM's native HVF engine; create a VM from an ISO or import an installed disk. |
+| Display and input | A native Mac window, keyboard and mouse, local text composition, and configurable Command-key mapping. Window-following resolution needs the guest display driver and a restart. |
+| Mac integration | Clipboard sharing, shared folders, networking and audio output. Display smoothness and audio continuity still need broader validation. |
+| VM lifecycle | Start, shut down and restart; persistent storage and TPM/Secure Boot workflows; [powered-off snapshots](docs/windows-arm/snapshot-scope-v1.md). Running-state suspend is outside v1. |
+
+These are preview capabilities. Setup on a genuinely clean Mac and recovery
+across interrupted storage operations remain open release criteria. The
+[capability matrix](docs/windows-arm/capability-matrix.md) records the evidence
+for each feature.
+
+## Try BridgeVM
+
+**Host:** Apple silicon and macOS 14+. The declared host matrix is M4/M5;
+M1–M3 are not yet covered. Source builds require Xcode/Swift, Rust 1.85+ and
+pinned native dependencies. Follow the complete
+[build and packaging guide](docs/install.md#build-the-current-source);
+`cargo build` and `swift build` alone do not prepare a Windows-installation app.
+
+Choose the Windows setup path that matches what you have:
+
+| Starting point | What you provide |
+| --- | --- |
+| **Install from ISO** | Your own licensed Windows 11 Arm ISO, plus signed ARM64 storage/serial/network drivers and their external SHA-256 manifest. An ISO alone is insufficient. |
+| **Import an installed VM** | A Windows 11 Arm disk in RAW, QCOW2 or Hyper-V VHDX format. Import needs no driver payload. |
+
+The [installation guide](docs/install.md) covers both paths, required bundle
+resources and first-open trust. After Windows starts, install the signed guest
+display driver from the VM's settings and restart to enable window-following
+resolution.
+
+Source builds use local development signing. Developer ID signing and Apple
+notarization for public distribution remain unfinished. Standard preview
+packaging includes no Windows test driver and requires no TESTSIGNING setup.
 
 ## Engineering Preview
 
-Product wording and known defects come from the capability registry. Its dated
-snapshot describes retained evidence, not a guarantee for every later commit:
+Current work focuses on reliable Retina/window transitions, input and clipboard
+ordering, audio/display continuity, and lifecycle recovery. Experimental
+[selectable virtual refresh rates](https://github.com/Ketchio-dev/bridgevm/pull/660)
+are being developed with a separate Windows driver. They are not a supported
+General Preview feature; a virtual Hz setting does not establish rendered FPS
+or a physical display's refresh rate. GPU/3D acceleration remains a
+[Graphics Lab research path](docs/distribution-channels.md).
+That experimental path still has
+[known title, tab and menu glyph defects](docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md).
+
+The dated registry snapshot below is the detailed validation record. Later code
+changes need their own checks and hardware evidence.
+
+<details>
+<summary>Detailed capability status and known defects</summary>
 
 <!-- BEGIN GENERATED: capability-summary -->
 **Product state: Engineering Preview.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots and window Coherence verbs. 3D acceleration is excluded from General Preview and v1; release-blocking evidence remains open and known defects are disclosed below.
@@ -49,84 +102,56 @@ Other known open defects:
 State reviewed 2026-11-14 at commit `c4f4e9cbeb6fc27caf2a9ba24ec624592da1f01c`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
-The [capability matrix](docs/windows-arm/capability-matrix.md) contains the fixed
-thresholds and exact receipts. Test results and live guest evidence are tracked
-separately; a documentation update does not renew either.
-
-## Try BridgeVM
-
-There is currently no safe downloadable General Preview. The published
-`v1.0.0` predates the fail-closed driver policy, so `install.sh` intentionally
-refuses it. Use the [source-build guide](docs/install.md#build-the-current-source)
-and [development setup](CONTRIBUTING.md#set-up-a-development-checkout).
-
-Requirements: Apple silicon, macOS 14+, Xcode/Swift, and Rust 1.85+.
-Host coverage is limited; see [known limitations](STATUS.md#known-limitations).
-
-To install Windows, bring your own licensed Windows 11 Arm ISO and a signed
-ARM64 storage/serial/network driver payload with an external SHA-256 manifest;
-an ISO alone is insufficient. To import instead, bring an installed Windows 11
-Arm disk (RAW, QCOW2 or Hyper-V VHDX); import needs no driver payload. The
-[installation guide](docs/install.md) explains the
-payload contract, bundle dependencies, and local ad-hoc-signed build. The
-General Preview contains no Windows test driver, does not enable TESTSIGNING,
-and keeps 3D acceleration outside the release scope.
-
-The Mac app is not Developer ID signed or Apple-notarized. Downloaded builds
-require the documented trust step. Running-state suspend is outside v1;
-see the [powered-off snapshot scope](docs/windows-arm/snapshot-scope-v1.md).
+</details>
 
 ## Develop the VMM
 
+Control test VMs from the terminal with the [native app CLI](docs/app-cli.md)
+and [guest development CLI](docs/vmctl.md): start/stop/status, PowerShell,
+keyboard/mouse input, display-mode requests and 2D PNG captures.
+
 Start with [CONTRIBUTING.md](CONTRIBUTING.md) for toolchains and focused checks,
-[AGENTS.md](AGENTS.md) for evidence and safety rules, and the
+[AGENTS.md](AGENTS.md) for working rules, and the
 [machine contract](docs/machine-contract/qemu-virt.md) for guest-visible behavior.
 
 | Area | Source |
 | --- | --- |
-| Own Hypervisor.framework VMM and devices | [`crates/bridgevm-hvf/`](crates/bridgevm-hvf/) |
+| Hypervisor.framework VMM and devices | [`crates/bridgevm-hvf/`](crates/bridgevm-hvf/) |
 | Windows HVF runtime lifecycle | [`crates/bridgevm-hvf-runtime/`](crates/bridgevm-hvf-runtime/), [`runners/`](runners/) |
 | Mac app and helper boundaries | [`apps/macos/`](apps/macos/) |
-| App packaging and release verification | [`packaging/macos/`](packaging/macos/) |
-| Deterministic checks and sealed live gates | [`scripts/`](scripts/), [`tests/integration/`](tests/integration/) |
+| Packaging and release verification | [`packaging/macos/`](packaging/macos/) |
+| Deterministic checks and live tests | [`scripts/`](scripts/), [`tests/integration/`](tests/integration/) |
 
-For quick deterministic feedback, run `scripts/check-project.sh --fast`.
-Run the complete gate before treating a repository change as done:
+Use focused tests while making a change. The fast project check covers
+formatting, contracts and documentation; release candidates run the full check:
 
 ```sh
+scripts/check-project.sh --fast
 scripts/check-project.sh
 ```
 
-Deterministic checks run on GitHub-hosted CI. Real Windows boots,
-Hypervisor.framework behavior and clean-machine product journeys require the
-corresponding sealed [physical-Mac live gate](docs/testing/apple-silicon-live-gates.md).
+Deterministic CI runs on GitHub-hosted runners. Windows boots, HVF behavior and
+clean-machine product journeys need the corresponding
+[physical-Mac tests](docs/testing/apple-silicon-live-gates.md).
 
 ## Engine boundaries
 
 | Engine | Backend | Focus |
 | --- | --- | --- |
-| **Windows HVF** | Hypervisor.framework + BridgeVM device model | Main Windows 11 Arm engineering path |
+| **Windows HVF** | Hypervisor.framework + BridgeVM device model | Main Windows 11 Arm path |
 | **Apple VZ** | Virtualization.framework | Narrow Linux/macOS Arm path |
 | **Compatibility** | QEMU + HVF/TCG | Compatibility and architecture emulation |
 
-The Windows guest platform is a QEMU `virt`-compatible contract with
+Windows HVF uses a QEMU `virt`-compatible guest contract with
 [documented deviations](docs/machine-contract/qemu-virt-deviations.json).
-The Compatibility Engine also uses QEMU's `qemu-img` for its qcow2 disk
-operations. Windows HVF import does not need QEMU: it takes RAW, QCOW2 or
-Hyper-V VHDX disks and converts QCOW2 and VHDX to RAW with BridgeVM's own
-converter. A disk using compression, encryption or a backing file is refused,
-and the app says how to convert it with `qemu-img` first.
-
-Graphics Lab is a separate future research path, excluded from General Preview
-and v1. Its retained campaigns include
-[known glyph defects](docs/windows-arm/evidence/windows-glyph-text-integer-attributes-20260814.md).
-Read the [distribution channel contract](docs/distribution-channels.md) before
-using its test-signed packages on disposable guests.
+Its RAW, QCOW2 and VHDX import uses BridgeVM's own converter; compressed,
+encrypted or backing-file disks need conversion first. The Compatibility
+Engine uses QEMU and its `qemu-img` disk tooling.
 
 ## More information
 
-- [Documentation index](docs/README.md) — current guides, plans, and dated history.
-- [Current status](STATUS.md) — priorities, open criteria, and evidence limits.
+- [Documentation](docs/README.md) — guides, plans and dated engineering records.
+- [Current status](STATUS.md) — priorities, evidence and known limitations.
 - [Security model](docs/security/model.md) and [private vulnerability reporting](SECURITY.md).
 - [Good first issues](https://github.com/Ketchio-dev/bridgevm/labels/good%20first%20issue)
   and [contribution guide](CONTRIBUTING.md).

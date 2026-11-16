@@ -94,29 +94,13 @@ struct LibraryWorkspaceRow: View {
     let config: VMConfig
     @ObservedObject var model: ControlModel
     let selected: Bool
+    var runtimeState: LibraryDashboardRuntimeState? = nil
 
     var body: some View {
         HStack(spacing: 8) {
-            Button(action: select) {
-                HStack(spacing: 16) {
-                LibraryVMEmblem(engine: config.engineKind)
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(config.name).font(.title3.weight(.semibold)).lineLimit(1)
-                    HStack(spacing: 7) {
-                        LibraryVMRunState(text: stateText, color: stateColor,
-                            session: library.hvfRuntimeSessions.existingRecord(slug: config.slug)?.session, dot: 8)
-                    }
-                    .font(.callout.weight(.medium))
-                    Text(resourceText)
-                        .font(.callout).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(config.name), \(stateText), \(resourceText)")
-            .accessibilityHint("VM 상세 정보 보기")
+            if let session = library.hvfRuntimeDetailSession(for: config) {
+                LibraryObservedWorkspaceRow(session: session, row: self)
+            } else { selectionButton }
             LibraryVMActionsMenu(library: library, config: config, size: CGSize(width: 30, height: 30))
         }
         .padding(16)
@@ -131,6 +115,29 @@ struct LibraryWorkspaceRow: View {
         .contextMenu { LibraryVMContextMenu(library: library, config: config) }
     }
 
+    fileprivate var selectionButton: some View {
+        Button(action: select) {
+            HStack(spacing: 16) {
+                LibraryVMEmblem(engine: config.engineKind)
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(config.name).font(.title3.weight(.semibold)).lineLimit(1)
+                    HStack(spacing: 7) {
+                        LibraryVMRunState(text: stateText, color: stateColor,
+                            session: library.hvfRuntimeSessions.existingRecord(slug: config.slug)?.session, dot: 8)
+                    }
+                    .font(.callout.weight(.medium))
+                    Text(resourceText)
+                        .font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(config.name), \(stateText), \(resourceText)")
+        .accessibilityHint("VM 상세 정보 보기")
+    }
+
     private func select() {
         library.proMode = false
         library.selectedID = config.slug
@@ -138,17 +145,29 @@ struct LibraryWorkspaceRow: View {
 
     private var stateText: String {
         if config.installPending == true { return "설치 필요" }
-        return model.running ? "실행 중" : "정지됨"
+        return runtimeState?.title ?? (model.running ? "실행 중" : "정지됨")
     }
 
     private var stateColor: Color {
         if config.installPending == true { return .orange }
-        return model.running ? .green : .secondary
+        return runtimeState?.color ?? (model.running ? .green : .secondary)
     }
 
     private var resourceText: String {
         let cpu = config.cpuCount.map { "\($0) vCPU" } ?? "CPU 자동"
         let memory = config.memMiB.map { $0.isMultiple(of: 1024) ? "\($0 / 1024) GiB RAM" : "\($0) MiB RAM" } ?? "메모리 자동"
         return "\(cpu)  ·  \(memory)  ·  \(config.engineShortLabel)"
+    }
+}
+
+/// The row label and its accessibility summary follow the same session as the detail.
+private struct LibraryObservedWorkspaceRow: View {
+    @ObservedObject var session: HvfEngineSession
+    let row: LibraryWorkspaceRow
+
+    var body: some View {
+        var presentation = row
+        presentation.runtimeState = LibraryDashboardRuntimeState(session: session, observedRunning: row.model.running)
+        return presentation.selectionButton
     }
 }

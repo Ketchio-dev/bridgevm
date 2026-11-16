@@ -1,5 +1,5 @@
 name: Host Python contracts
-on: {push: {branches: [main]}, pull_request: {paths: ['scripts/b6-cell-capture.sh', 'scripts/doc_code_identity.py', 'scripts/live-gates/b6_*', 'scripts/win-assets/bv-b6-*', 'scripts/win-assets/bv-windows-closure-*', 'scripts/win-assets/bvgpu-apply-host-resolution.ps1', 'tests/integration/b6-asset-staging-contract.py', 'tests/integration/b6-cell-observation-contract.py', 'tests/integration/b6-renderer-*', 'tests/integration/doc-code-identity-contract.py', '.github/workflows/host-python-contracts.yml']}}
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/b6-cell-capture.sh', 'scripts/doc_code_identity.py', 'scripts/vmctl.py', 'scripts/vmctl_frame.py', 'tests/integration/vmctl-test.py', 'scripts/live-gates/b6_*', 'scripts/win-assets/bv-b6-*', 'scripts/win-assets/bv-windows-closure-*', 'scripts/win-assets/bvgpu-apply-host-resolution.ps1', 'tests/integration/b6-asset-staging-contract.py', 'tests/integration/b6-cell-observation-contract.py', 'tests/integration/b6-renderer-*', 'tests/integration/doc-code-identity-contract.py', '.github/workflows/host-python-contracts.yml']}}
 permissions:
   contents: read
 jobs:
@@ -19,6 +19,8 @@ jobs:
             command: python3 tests/integration/b6-renderer-startup-contract.py
           - check: typed-hashes
             command: python3 tests/integration/doc-code-identity-contract.py
+          - check: vm-control
+            command: python3 tests/integration/vmctl-test.py
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: ${{ matrix.command }}
