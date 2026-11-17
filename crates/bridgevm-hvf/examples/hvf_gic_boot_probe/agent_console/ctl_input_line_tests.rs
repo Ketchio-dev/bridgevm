@@ -86,3 +86,14 @@ fn lines_past_the_app_input_guard_are_still_rejected_and_resynchronized() {
     let buffered = h.ctl_framer.pending.capacity();
     assert!(buffered < 256 * 1024, "4 MiB line buffered: {buffered}");
 }
+
+#[test]
+fn maximum_queued_text_dispatch_is_forwarded_raw_with_its_extension() {
+    let line = format!("{} S", maximum_text_input_line());
+    assert_eq!(line.len(), 87_433);
+    let ctl = format!("{line}\r\n");
+    let mut h = ingest_service_ctl("max-queued-text", &[ctl.as_bytes()]);
+    let req = h.queue.pop_front().expect("queued text was not admitted");
+    assert!(h.write_service_req_line(&req, Instant::now()));
+    assert_eq!(h.service_line_scratch, format!("{line}\n"));
+}

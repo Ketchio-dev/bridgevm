@@ -12,7 +12,7 @@ cleanup() {
 }
 trap cleanup EXIT
 mkdir "$work/files" "$work/mount"
-for name in bvagent.ps1 bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-pointer-input.cs bvagent-window-inventory.ps1 bv-window-inventory.cs bvagent-task.ps1 bvagent-update.ps1 install.cmd bvagent-install.ps1; do
+for name in bvagent.ps1 bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-pointer-input.cs bvagent-text-packets.cs bvagent-text-packets-arm64.dll bvagent-window-inventory.ps1 bv-window-inventory.cs bvagent-task.ps1 bvagent-update.ps1 install.cmd bvagent-install.ps1; do
   cp -X "$assets/$name" "$work/files/$name"
 done
 # Content-sized FAT media, rounded up for partition/filesystem overhead.

@@ -1,0 +1,29 @@
+name: Windows Unicode helper reproducibility
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'scripts/win-assets/bvagent-text-packets.c'
+      - 'scripts/win-assets/bvagent-text-packets-arm64.dll'
+      - 'scripts/build-windows-text-packets.sh'
+      - '.github/workflows/windows-text-packets.yml'
+permissions:
+  contents: read
+jobs:
+  reproduce:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install pinned Zig 0.16.0
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz -o "$RUNNER_TEMP/zig.tar.xz"
+          printf '%s  %s\n' '70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00' "$RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/zig"
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" --strip-components=1 -C "$RUNNER_TEMP/zig"
+          printf '%s\n' "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+      - name: Reproduce the bundled helper
+        run: |
+          scripts/build-windows-text-packets.sh "$RUNNER_TEMP/text-packets.dll"
+          cmp "$RUNNER_TEMP/text-packets.dll" scripts/win-assets/bvagent-text-packets-arm64.dll

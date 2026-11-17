@@ -1,10 +1,11 @@
 /// The guest validates base64 decoding and strict UTF-8 before any insertion.
 pub(super) fn is_command(command: &str) -> bool {
-    if command.len() > 87_431 || command.contains(['\r', '\n']) {
+    if command.len() > 87_433 || command.contains(['\r', '\n']) {
         return false;
     }
     let mut fields = command.split(' ');
-    if !["TEXTINPUT", "KEYINPUT", "POINTERINPUT"].contains(&fields.next().unwrap_or("")) {
+    let verb = fields.next().unwrap_or("");
+    if !["TEXTINPUT", "KEYINPUT", "POINTERINPUT"].contains(&verb) {
         return false;
     }
     let Some(id) = fields.next() else {
@@ -13,7 +14,8 @@ pub(super) fn is_command(command: &str) -> bool {
     let Some(payload) = fields.next() else {
         return false;
     };
-    fields.next().is_none()
+    let extension = fields.next();
+    (extension.is_none() || (verb == "TEXTINPUT" && extension == Some("S") && fields.next().is_none()))
         && id.len() == 36
         && id.bytes().enumerate().all(|(i, b)| {
             if matches!(i, 8 | 13 | 18 | 23) {

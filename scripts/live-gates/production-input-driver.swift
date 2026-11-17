@@ -12,6 +12,8 @@ final class ProductionInputDiagnostic {
     var observed: HvfUnicodeInputRequest?
     var ready = false
     var queued = false
+    var queuedTextDispatch = false
+    var fallingBack = false
     var sent = 0
     var inserted = 0
     var failure: String?
@@ -50,9 +52,9 @@ final class ProductionInputDiagnostic {
         guard failure == nil else { return false }
         let parts = command.split(separator: " ")
         if parts.first != "INPUTCAPS" {
-            guard sent < events.count, observed == nil, parts.count == 3,
+            guard inserted < events.count, observed == nil, (parts.count == 3 || parts.count == 4),
                   let id = UUID(uuidString: String(parts[1])),
-                  let request = HvfUnicodeInputRequest(event: events[sent], now: Date(), id: id),
+                  let request = HvfUnicodeInputRequest(event: events[inserted], now: Date(), id: id, queuedTextDispatch: queuedTextDispatch && !fallingBack),
                   request.command == command else {
                 failure = "unexpected-production-command"
                 return false
@@ -73,10 +75,12 @@ final class ProductionInputDiagnostic {
         guard failure == nil, inserted < events.count else { return }
         do {
             let batch = try lines()
+            if batch.contains(where: { $0.hasPrefix("BVINPUT_TEXT ") && $0.hasSuffix(" QUEUED_DISPATCH") }) { queuedTextDispatch = true }
             if var request = observed {
                 if let outcome = request.consume(lines: batch, now: Date()) {
                     switch outcome {
-                    case .inserted: inserted += 1; observed = nil
+                    case .inserted: inserted += 1; observed = nil; fallingBack = false
+                    case .unsupported: observed = nil; fallingBack = true
                     case .failed: failure = "receipt-rejected"
                     }
                 } else { observed = request }
@@ -108,7 +112,7 @@ final class ProductionInputDiagnostic {
         driver.onPoll = nil
         driver.cancelTarget()
         if failure == nil && inserted != events.count { failure = "deadline" }
-        return failure == nil && sent == events.count && inserted == events.count
+        return failure == nil && sent >= events.count && inserted == events.count
     }
 }
 
