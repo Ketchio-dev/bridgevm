@@ -19,7 +19,11 @@ refuses the superseded `v1.0.0` preview.
 **[Current status](STATUS.md)** · **[Contribute](CONTRIBUTING.md)**
 
 <p align="center">
-  <img src="docs/media/windows-hvf-boot.gif" alt="Recorded boot of Windows 11 Arm to the desktop on BridgeVM's own Hypervisor.framework VMM" width="800">
+  <a href="docs/media/windows-hvf-desktop-20261116.webp">
+    <img src="docs/media/windows-hvf-desktop-20261116.webp" alt="Windows 11 Arm desktop on BridgeVM's native HVF engine, captured on an M5 development Mac at 2560×1600 on November 16, 2026; experimental test-signed display driver enabled" width="960">
+  </a><br>
+  <sub>Actual development VM · November 16, 2026 · 2560×1600 lossless capture · <a href="docs/media/windows-hvf-desktop-20261116.webp">Open full resolution</a></sub><br>
+  <sub>The visible Windows Test Mode watermark belongs to this VM's experimental display driver; this is not a public release screenshot.</sub>
 </p>
 
 ## What you can try
