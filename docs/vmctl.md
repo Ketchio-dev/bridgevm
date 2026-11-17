@@ -41,13 +41,19 @@ python3 scripts/vmctl.py stop MY_VM --json
 ```
 
 Pointer coordinates cover the whole guest desktop from 0 to 32767 on each
-axis. `text` inserts Unicode directly through the guest agent, waiting for a
-receipt per codepoint: bulk Unicode input lost intermediate characters in
-Windows' WinUI Notepad during live testing. Korean and emoji stay intact, and
-the whole text operation shares the reply deadline. `key` accepts
+axis. `text` sends Unicode through the guest agent without using the clipboard.
+With a current agent and compatible ARM64 editor, it dispatches text on the
+focused editor thread after earlier queued keys. Windows 11 Notepad uses one
+undoable selection replacement; other compatible controls receive Unicode
+character messages. Requests split at 64 KiB of UTF-8 without splitting a
+Unicode scalar. Older agents and unsupported editors retain receipt-paced
+codepoints. That path can still corrupt long commits in some Windows apps.
+The whole operation shares one reply deadline, and an unknown result is never
+automatically replayed. `key` accepts
 the guest key protocol, including `enter`, `ctrl+v`, `win+r` and held-key
-forms such as `down:ctrl` / `up:ctrl`. An input receipt confirms Windows
-accepted the input events; verify the application result separately.
+forms such as `down:ctrl` / `up:ctrl`. An input receipt confirms event insertion
+or window-message dispatch, depending on the negotiated path; verify the application result separately. It does not
+prove that an arbitrary application changed or saved its document.
 
 `exec` runs PowerShell as the existing guest agent user, with that user's
 permissions. Its exit code is returned to the shell (unsupported exit values

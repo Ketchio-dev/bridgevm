@@ -61,10 +61,10 @@ Remove-Item Function:\Add-Type
 . (Join-Path $assets 'bvagent-input.ps1')
 $id = '12345678-1234-1234-1234-123456789abc'
 $caps = Get-InputCapabilities $id
-if ($caps.Exit -ne 0 -or -not $caps.Out.EndsWith("`nBVINPUT_TEXT $id CARET") -or -not $caps.Out.StartsWith("BVINPUT_CAPS $id 3 ")) { throw 'caret marker missing' }
+if ($caps.Exit -ne 0 -or ($caps.Out.Split("`n") -cnotcontains "BVINPUT_TEXT $id CARET") -or -not $caps.Out.StartsWith("BVINPUT_CAPS $id 3 ")) { throw 'caret marker missing' }
 $script:BvCaretReady = $false
 $caps = Get-InputCapabilities $id
-if ($caps.Exit -ne 0 -or $caps.Out.Contains('BVINPUT_TEXT')) { throw 'caret marker advertised without its helper' }
+if ($caps.Exit -ne 0 -or ($caps.Out.Split("`n") -ccontains "BVINPUT_TEXT $id CARET")) { throw 'caret marker advertised without its helper' }
 $r = Get-BvCaretCore { 'BVCARET 1 2 3 4' }
 if ($r.Exit -ne 1 -or $r.Out -cne 'BVCARET unavailable') { throw 'uncompiled helper was called' }
 $script:BvCaretReady = $true

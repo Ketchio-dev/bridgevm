@@ -425,13 +425,13 @@ if exist %DRV%\..\bvagent.ps1 (
     goto :end
   )
   rem BVINPUT_COMPANIONS_BEGIN
-  for %%F in (bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-pointer-input.cs bvagent-window-inventory.ps1 bv-window-inventory.cs) do (
+  for %%F in (bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-pointer-input.cs bvagent-text-packets.cs bvagent-text-packets-arm64.dll bvagent-window-inventory.ps1 bv-window-inventory.cs) do (
     if not exist "%DRV%\..\%%F" (
       echo BVINJECT ERROR: guest agent companion missing: %%F
       goto :end
     )
   )
-  for %%F in (bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-pointer-input.cs bvagent-window-inventory.ps1 bv-window-inventory.cs) do (
+  for %%F in (bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-pointer-input.cs bvagent-text-packets.cs bvagent-text-packets-arm64.dll bvagent-window-inventory.ps1 bv-window-inventory.cs) do (
     copy /y "%DRV%\..\%%F" "%WIN%\%%F" >nul
     if errorlevel 1 (
       echo BVINJECT ERROR: guest agent companion copy failed: %%F

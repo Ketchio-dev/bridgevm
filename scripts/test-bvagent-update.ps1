@@ -27,7 +27,7 @@ function Assert-True([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw ('FAIL: ' + $Message) }
 }
 
-$agentFiles = @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs', 'bvagent-window-inventory.ps1', 'bv-window-inventory.cs', 'bvagent-task.ps1', 'bvagent-update.ps1')
+$agentFiles = @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs', 'bvagent-text-packets.cs', 'bvagent-text-packets-arm64.dll', 'bvagent-window-inventory.ps1', 'bv-window-inventory.cs', 'bvagent-task.ps1', 'bvagent-update.ps1')
 
 # 1. The agent ID: the same fixture and ID as agent_update_tests.rs, with
 #    bvagent-update.ps1 missing.
@@ -35,9 +35,9 @@ $agentFiles = @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 
 $fixture = Join-Path ([IO.Path]::GetTempPath()) ('bvagent-id-' + [guid]::NewGuid())
 [void](New-Item -ItemType Directory -Path $fixture)
 try {
-    foreach ($name in $agentFiles[0..7]) { [IO.File]::WriteAllText((Join-Path $fixture $name), "fixture $name`r`n") }
+    foreach ($name in $agentFiles[0..($agentFiles.Count - 2)]) { [IO.File]::WriteAllText((Join-Path $fixture $name), "fixture $name`r`n") }
     $id = Get-BvAgentId $fixture
-    Assert-True ($id -ceq '287c4fd3fa27761d') ('agent ID ' + $id + ' differs from the probe fixture ID')
+    Assert-True ($id -ceq 'ab6905f5faf4ba06') ('agent ID ' + $id + ' differs from the probe fixture ID')
 } finally {
     Remove-Item -LiteralPath $fixture -Recurse -Force
 }

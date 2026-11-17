@@ -2,7 +2,7 @@ use super::*;
 
 /// The same fixture as scripts/test-bvagent-update.ps1: every file holds
 /// "fixture <name>\r\n", and bvagent-update.ps1 is missing.
-const FIXTURE_ID: &str = "287c4fd3fa27761d";
+const FIXTURE_ID: &str = "ab6905f5faf4ba06";
 
 fn fixture_digests() -> Vec<(&'static str, Option<[u8; 32]>)> {
     AGENT_FILES
@@ -60,7 +60,7 @@ fn bundled_agent_loads_every_file_and_its_id() {
     }
     let bundled = BundledAgent::load(&dir).unwrap();
     let mut digests = fixture_digests();
-    digests[8].1 = Some(Sha256::digest(b"fixture bvagent-update.ps1\r\n").into());
+    digests.last_mut().unwrap().1 = Some(Sha256::digest(b"fixture bvagent-update.ps1\r\n").into());
     assert_eq!(bundled.id, agent_id(&digests));
     assert_eq!(bundled.files.len(), AGENT_FILES.len());
     assert_eq!(bundled.files[0].bytes, b"fixture bvagent.ps1\r\n");

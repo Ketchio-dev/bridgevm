@@ -54,7 +54,7 @@ try {
     [void][IO.Directory]::CreateDirectory($stage)
     [IO.File]::WriteAllText((Join-Path $stage 'junk'),'leftover')
     $installed=$true;try { Install-ToolsFiles $source $stage $target } catch { $installed=$false }
-    if (-not $installed -or (Test-Path $stage) -or @(Get-ChildItem $target).Count -ne 9 -or (Test-Path (Join-Path $target 'junk'))) { throw 'ASSERT: leftover staging must be replaced and complete tools published' }
+    if (-not $installed -or (Test-Path $stage) -or @(Get-ChildItem $target).Count -ne 11 -or (Test-Path (Join-Path $target 'junk'))) { throw 'ASSERT: leftover staging must be replaced and complete tools published' }
     Install-ToolsFiles $source $stage $target
     Remove-Item -LiteralPath (Join-Path $target 'bvagent.ps1')
     $rejected=$false;try { Install-ToolsFiles $source $stage $target } catch { $rejected=$_.Exception.Message -eq 'Unexpected existing tools' }

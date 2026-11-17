@@ -36,9 +36,11 @@ across interrupted storage operations remain open release criteria. The
 [capability matrix](docs/windows-arm/capability-matrix.md) records the evidence
 for each feature.
 
-Long text commits can repeat or lose characters in Windows Notepad
-([#665](https://github.com/Ketchio-dev/bridgevm/issues/665)). Use clipboard
-sharing and paste for longer passages while the native input issue is being fixed.
+Current source uses queued text dispatch for compatible Windows editors; long
+Korean and emoji input, selection replacement and undo were checked in Windows
+11 Notepad. Older builds and unsupported editors retain the input path tracked
+in [#665](https://github.com/Ketchio-dev/bridgevm/issues/665), where long commits
+can repeat or lose characters. Use clipboard sharing and paste if this occurs.
 
 ## Try BridgeVM
 
