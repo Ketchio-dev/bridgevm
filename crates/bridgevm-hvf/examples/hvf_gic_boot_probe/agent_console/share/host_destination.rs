@@ -31,6 +31,8 @@ thread_local! {
     pub(super) static TEMPORARY_FAULT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
     pub(super) static LINK_FAULT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
     pub(super) static CONFLICT_COPY_FAULT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+    /// The errno the final rename fails with, after staging, sync and the mark (tests).
+    pub(super) static RENAME_FAULT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
 }
 
 /// The Mac file a preferred guest copy is to replace, as the session's first scan saw it: size
@@ -240,6 +242,10 @@ impl Destination {
                     // Recovery reaches here only after preservation succeeded.
                     return Err(io::Error::other(MacChanged));
                 }
+        }
+        #[cfg(test)]
+        if let Some(errno) = RENAME_FAULT.with(std::cell::Cell::get) {
+            return Err(io::Error::from_raw_os_error(errno));
         }
         // SAFETY: both names and the owning directory remain live. renameat
         // replaces a concurrently inserted leaf symlink instead of following it.

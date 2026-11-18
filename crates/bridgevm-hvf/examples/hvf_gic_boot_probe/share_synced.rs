@@ -11,13 +11,19 @@
 //! one, whose guest copy is neither that nor the previous one and that is not marked is a guest
 //! edit: it is fetched, not overwritten, unless the Mac file changes first. Anything else, an
 //! unknown name, a marked name, a guest copy back at the previous version, a changed Mac file,
-//! keeps the Mac winning as before.
+//! keeps the Mac winning as before. After an unclean stop the edit cannot be told from a copy
+//! Windows lost in its cache: the Mac copy stays and the guest copy is kept beside it (recovery).
 //!
 //! A confirmed transfer is not yet on the guest's disk: a PUT's data and the guest's own edit
 //! (that a GET just copied) can sit in Windows' cache, and a force-stop or a probe kill then
 //! brings back a cut-short copy with the guest's time. So a name stays marked for `SYNC_SETTLE`
 //! after a confirmed PUT and after its fetched copy is published (marked on disk before the
-//! publish). A fetch under way is not marked: a copy a restart cut off stays fetchable.
+//! publish). A fetch under way is not marked: a copy a restart cut off stays fetchable. After an
+//! unclean stop (a Force Stop, a crash, a guest restart) a marked name's differing guest copy may
+//! as well be a genuine edit made inside that window, or one whose publish failed after its mark
+//! (#643, #648): it is kept beside the Mac copy too, whatever versions reached the disk (they
+//! follow the mark by about a second). After a clean stop the marks left are PUTs the host chose
+//! to send (share_sync_file.rs finish_clean retires the others): the Mac wins.
 
 use super::*;
 use std::time::{Duration, Instant};
@@ -136,9 +142,11 @@ impl ShareSync {
 
     /// The session's first applied listing (it ends the wait, share_adopt.rs): a guest edit
     /// of a name whose Mac copy is the last synced version is fetched, not held for the Mac
-    /// copy. A later listing without the name gives the preference up the way a refused publish
-    /// does (on_host_copy_kept), so the Mac file is sent again, also when that copy's publish
-    /// had failed and waited for a retry.
+    /// copy. After an unclean stop, a marked name's differing guest copy is kept beside the Mac
+    /// copy (recovery) even when its versions did not reach the disk with its mark or the Mac
+    /// copy is newer. A later listing without the name gives the preference up the way a refused
+    /// publish does (on_host_copy_kept), so the Mac file is sent again, also when that copy's
+    /// publish had failed and waited for a retry.
     pub(super) fn prefer_changed_guest_copies(&mut self) {
         let listed = &self.guest_file_entries_scratch;
         self.recovery_copies.retain(|name, first| listed.get(name) == Some(first));
@@ -155,20 +163,23 @@ impl ShareSync {
             return;
         }
         for (name, entry) in listed {
-            if self.records.contains_key(name) || self.marks.contains_key(name) {
+            if self.records.contains_key(name) {
                 continue;
             }
-            let (Some(host), Some(synced)) = (self.host_files_scratch.get(name), self.synced.get(name)) else {
+            let Some(host) = self.host_files_scratch.get(name) else {
                 continue;
             };
-            if (SyncedVersion { size: host.size, mtime_ms: host.mtime_ms }) != synced.last {
+            let (synced, marked) = (self.synced.get(name), self.marks.contains_key(name));
+            let mac = SyncedVersion { size: host.size, mtime_ms: host.mtime_ms };
+            let unknown = synced.is_none_or(|synced| synced.last != mac);
+            if (marked && !self.previous_unclean) || (!marked && unknown) {
                 continue;
             }
             let Some(mtime_ms) = share_mtime::guest_mtime_ms(&entry.mtime) else {
                 continue;
             };
             let guest = SyncedVersion { size: entry.size, mtime_ms };
-            if guest == synced.last || Some(guest) == synced.prev {
+            if guest == mac || synced.is_some_and(|synced| guest == synced.last || Some(guest) == synced.prev) {
                 continue;
             }
             self.pending_host_changed.remove(name);
