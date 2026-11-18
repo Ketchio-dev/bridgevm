@@ -34,6 +34,46 @@ fn ordinary_fetch_stage_failure_mark_loses_windows_edit_after_kill() {
         "single-range Windows edit overwritten after failed publication and restart");
 }
 
+/// #643: the fetched copy is marked on disk, then its rename fails (or the VM dies before it):
+/// the Mac never received the Windows edit, but the next session finds the name marked.
+fn rename_failure_after_mark_then(clean: bool) {
+    use crate::agent_console::share::host_destination::RENAME_FAULT;
+    let label = if clean { "rename-failed-clean" } else { "rename-failed-kill" };
+    let (mut rig, vars) = synced_from_guest(label, now_ms()-2*HOUR_MS, true);
+    settle(&mut rig);
+    new_session(&mut rig, Some(&vars));
+    rig.guest.write("doc.bin", b"only Windows edit");
+    rig.guest.stamps.insert("DOC.BIN".into(), now_ms());
+    let gets = rig.guest.gets.len();
+    RENAME_FAULT.with(|f| f.set(Some(libc::EIO)));
+    for _ in 0..16 { rig.run(1); if rig.guest.gets.len()>gets { break; } }
+    RENAME_FAULT.with(|f| f.set(None));
+    assert!(rig.guest.gets.len()>gets, "ordinary edit was not fetched");
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"old version"[..]));
+    let paths = [".share-sync", ".share-sync-puts"].map(|s| PathBuf::from(format!("{}{s}",vars.display())));
+    if clean {
+        let share = rig.h.share.as_mut().unwrap();
+        share.sync_file.as_mut().unwrap().finish_clean(&mut share.engine);
+    }
+    let disk = paths.each_ref().map(|p| std::fs::read(p).ok());
+    assert!(disk.iter().flatten().any(|b| String::from_utf8_lossy(b).contains("mark ")) || clean, "no mark on disk before the failed rename");
+    rig.h.share = None;
+    for (p, bytes) in paths.iter().zip(disk) {
+        if let Some(bytes)=bytes { std::fs::write(p,bytes).unwrap(); } else { let _=std::fs::remove_file(p); }
+    }
+    new_session(&mut rig, Some(&vars));
+    rig.run(24);
+    let kept = |name: &str| rig.host(name).as_deref()==Some(&b"only Windows edit"[..]);
+    assert!(rig.guest.content("doc.bin")==Some(&b"only Windows edit"[..]) || kept("doc.bin") || kept("doc (Windows copy).bin"),
+        "clean={clean}: Windows edit overwritten after a failed rename and restart");
+}
+
+#[test]
+fn ordinary_fetch_rename_failure_then_kill_keeps_windows_edit() { rename_failure_after_mark_then(false); }
+
+#[test]
+fn ordinary_fetch_rename_failure_then_clean_stop_keeps_windows_edit() { rename_failure_after_mark_then(true); }
+
 #[test]
 fn ordinary_stage_failure_then_clean_stop_fetches_windows_edit_on_restart() {
     use crate::agent_console::share::host_destination::TEMPORARY_FAULT;
