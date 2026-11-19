@@ -570,7 +570,7 @@
         "docs/history/windows-hvf/t22-loader-admission-required-check-failure-20261003.md",
         "docs/history/windows-hvf/t22-loader-admission-hosted-full-failure-20261003.md"
       ],
-      "known_defect": "Legacy managed storage relocated before identity migration is refused. Full interrupted-operation coverage is unproven. The ten-lane product lifecycle campaign passed 10/10 through the live queue at 949f4c26, which the operator accepted before a release head was designated, and 10/10 again on 2026-11-14 on the v1.1.0 release-head app f73b66bf, run locally without a queue seal. Physical power loss during a snapshot operation is outside this criterion and is not tested."
+      "known_defect": "Legacy managed storage relocated before identity migration is refused. Full interrupted-operation coverage is unproven. The ten-lane product lifecycle campaign passed 10/10 through the live queue at 949f4c26, which the operator accepted before a release head was designated, and 10/10 again on 2026-11-14 on the earlier v1.1.0 candidate app f73b66bf, and 10/10 on 2026-11-19 on the v1.1.0 candidate app 6647c818 (release dry run 44563308193, installed through the installer), each run locally without a queue seal. Physical power loss during a snapshot operation is outside this criterion and is not tested."
     },
     {
       "id": "A20",
