@@ -18,7 +18,7 @@ struct FirstRunWelcomeView: View {
             .padding(.vertical, 16)
             HStack(alignment: .top, spacing: 20) {
                 FirstRunChoiceCard(title: "새 Windows VM 만들기", symbol: "opticaldisc",
-                    description: "Windows ARM64 ISO로 설치를 준비합니다. 설치 ISO와 드라이버 파일은 다음 화면에서 선택합니다.",
+                    description: "Windows ARM64 ISO로 설치를 준비합니다. 다음 화면에서 ISO를 고르고, 드라이버는 자동으로 받거나 직접 선택합니다.",
                     actionTitle: "설치 준비하기", prominent: true, action: createAction)
                     .accessibilityIdentifier("bridgevm.first-run.create")
                 FirstRunChoiceCard(title: "기존 VM 가져오기", symbol: "square.and.arrow.down",

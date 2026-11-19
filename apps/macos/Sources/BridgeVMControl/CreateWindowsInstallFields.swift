@@ -7,6 +7,9 @@ struct CreateWindowsInstallFields: View {
     let pickISO: () -> Void
     let pickGuestPayload: () -> Void
     let pickGuestPayloadManifest: () -> Void
+    var fetchingDrivers = false
+    var driverFetchError = ""
+    var fetchDrivers: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -22,6 +25,18 @@ struct CreateWindowsInstallFields: View {
                             .accessibilityIdentifier("bridgevm.create.windows.iso.selection").accessibilityValue(isoPath)
                     }
                     HStack {
+                        Button("드라이버 자동 준비", action: fetchDrivers)
+                            .disabled(fetchingDrivers)
+                            .accessibilityIdentifier("bridgevm.create.windows.guest-payload.fetch")
+                        if fetchingDrivers {
+                            ProgressView().controlSize(.small)
+                            Text("공식 드라이버를 내려받는 중…").font(.caption).foregroundColor(.secondary)
+                        }
+                    }
+                    if !driverFetchError.isEmpty {
+                        Text(driverFetchError).font(.caption).foregroundColor(.red)
+                    }
+                    HStack {
                         Button("ARM64 드라이버 폴더…", action: pickGuestPayload)
                             .accessibilityIdentifier("bridgevm.create.windows.guest-payload")
                         Text(guestPayloadPath.isEmpty ? "선택된 payload 없음" : (guestPayloadPath as NSString).lastPathComponent)
@@ -35,7 +50,7 @@ struct CreateWindowsInstallFields: View {
                             .font(.caption).foregroundColor(.secondary).lineLimit(1)
                             .accessibilityIdentifier("bridgevm.create.windows.guest-manifest.selection").accessibilityValue(guestPayloadManifestPath)
                     }
-                    Text("저장장치·직렬·네트워크용 서명된 ARM64 드라이버와 SHA-256 manifest가 필요합니다. 선택한 원본은 VM 번들에 복사·봉인됩니다.")
+                    Text("ISO만 있으면 됩니다. '드라이버 자동 준비'를 누르면 Microsoft 서명된 Red Hat virtio-win 저장장치·직렬·네트워크 드라이버(약 95 MB)를 공식 배포처에서 내려받아 확인합니다. 직접 준비한 ARM64 드라이버 폴더와 SHA-256 manifest를 골라도 됩니다. 드라이버는 VM 번들에 복사·봉인됩니다.")
                         .font(.caption).foregroundColor(.secondary)
                 }
                 .padding(6)

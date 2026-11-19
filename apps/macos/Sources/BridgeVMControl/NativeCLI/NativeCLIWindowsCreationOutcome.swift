@@ -17,6 +17,8 @@ extension NativeCLICreateWindows {
                                       _ libraryRoot: URL) -> HVFCreationOutcome? {
         VMLibrary.createWindowsHVFInstall(name: request.name, isoPath: request.isoPath,
             diskGiB: request.diskGiB, injectViogpu3d: false, driverPackageDir: nil,
+            guestPayloadDirectory: request.guestPayload?.payloadDirectory,
+            guestPayloadManifest: request.guestPayload?.manifestPath,
             storageDir: nil, width: request.resolution.width, height: request.resolution.height,
             memMiB: request.memoryMiB, cpuCount: request.cpuCount,
             networkEnabled: request.networkEnabled, libraryRoot: libraryRoot)

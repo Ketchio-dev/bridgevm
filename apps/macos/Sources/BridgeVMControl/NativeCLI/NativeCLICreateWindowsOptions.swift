@@ -14,6 +14,10 @@ struct NativeCLICreateWindowsOptions: Equatable {
     let cpuCount: Int
     let resolution: Resolution
     let networkEnabled: Bool
+    /// `--fetch-drivers`: prepare the pinned virtio-win payload and seal it with the VM.
+    var fetchDrivers = false
+    /// The prepared payload, filled in just before creation.
+    var guestPayload: HvfWindowsDriverPayloadFetch.Prepared? = nil
 
     static let diskChoices = [64, 96, 128, 256, 512]
     static let memoryChoices = [2_048, 4_096, 6_144, 8_192, 12_288, 16_384, 24_576, 32_768]
