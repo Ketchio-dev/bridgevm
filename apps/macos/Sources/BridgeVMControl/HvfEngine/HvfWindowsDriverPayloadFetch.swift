@@ -103,7 +103,7 @@ enum HvfWindowsDriverPayloadFetch {
             throw Failure(message: "드라이버를 내려받지 못했습니다(curl \(status)). 인터넷 연결을 확인한 뒤 다시 시도하세요.")
         }
         guard matchesPins(partial, source) else {
-            throw Failure(message: "내려받은 드라이버 파일이 공식 파일과 달라 사용하지 않았습니다. 잠시 후 다시 시도하세요.")
+            throw Failure(message: "내려받은 드라이버 파일의 크기나 SHA-256이 공식 파일과 달라 사용하지 않았습니다. 잠시 후 다시 시도하세요.")
         }
         guard rename(partial.path, archive.path) == 0 else {
             throw Failure(message: "내려받은 드라이버 파일을 저장하지 못했습니다: \(archive.path)")

@@ -17,8 +17,14 @@ final class HvfWindowsDriverPayloadFetchTests: XCTestCase {
 
         let payload = URL(fileURLWithPath: prepared.payloadDirectory)
         let entries = try FileManager.default.subpathsOfDirectory(atPath: payload.path)
-        XCTAssertEqual(entries.sorted(), ["network"] + payloadFiles[0..<4] + ["serial"] + payloadFiles[4..<7]
-            + ["storage"] + payloadFiles[7...])
+        // Typed pieces: one long `+` chain is too slow for the CI compiler to type-check.
+        var expectedEntries: [String] = ["network"]
+        expectedEntries += Array(payloadFiles[0..<4])
+        expectedEntries.append("serial")
+        expectedEntries += Array(payloadFiles[4..<7])
+        expectedEntries.append("storage")
+        expectedEntries += Array(payloadFiles[7...])
+        XCTAssertEqual(entries.sorted(), expectedEntries)
         for path in payloadFiles {
             let name = (path as NSString).lastPathComponent
             XCTAssertEqual(try Data(contentsOf: payload.appendingPathComponent(path)), Data("arm64 \(name)".utf8))
