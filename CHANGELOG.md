@@ -61,6 +61,8 @@ a clean Mac) and A19 (disk safety) are open. See `STATUS.md`.
 - **Dashboard:** Actions stay readable at any window width, the status shows
   the VM as observed, and the VM window shows startup progress or the failure
   instead of staying black.
+- **First run:** The empty library shows one set of create and import choices
+  in plain words; the sidebar no longer shows a fixed engine list.
 - **Security:** The installer checks a General Preview release contract,
   checksum, archive and signature, rolls back on failure and refuses v1.0.0;
   new Windows installs let only administrators change `C:\BridgeVM`.
