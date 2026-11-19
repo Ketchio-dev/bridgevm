@@ -19,8 +19,10 @@ $dir = Join-Path ([IO.Path]::GetTempPath()) ('bv-run-test-' + [guid]::NewGuid().
 [void][IO.Directory]::CreateDirectory($dir)
 $child = Join-Path $dir 'child.ps1'
 $pidFile = Join-Path $dir 'child.pid'
-# Inherit stdout/stderr, print the child PID for cleanup, then hold the handles for 12 s.
-[IO.File]::WriteAllText($child, "[IO.File]::WriteAllText('$pidFile', [string]`$PID); Start-Sleep -Seconds 12")
+# Inherit stdout/stderr, print the child PID for cleanup, then hold the handles for 60 s: a RUN
+# that waits for them takes a minute, while a correct one replies in seconds even on a slow hosted
+# runner (5.3-6.3 s seen, which failed the earlier 5 s bound).
+[IO.File]::WriteAllText($child, "[IO.File]::WriteAllText('$pidFile', [string]`$PID); Start-Sleep -Seconds 60")
 try {
     foreach ($ps in @($false, $true)) {
         $spawn = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $child + '"'
@@ -30,7 +32,7 @@ try {
         $watch = [Diagnostics.Stopwatch]::StartNew()
         $reply = Invoke-B64 (B64 $command) $ps
         $watch.Stop()
-        if ($watch.Elapsed.TotalSeconds -ge 5) { throw "RUN sleeping child blocked reply: elapsed=$($watch.Elapsed.TotalSeconds) seconds (expected <5)" }
+        if ($watch.Elapsed.TotalSeconds -ge 30) { throw "RUN sleeping child blocked reply: elapsed=$($watch.Elapsed.TotalSeconds) seconds (expected <30)" }
         if ($reply.Exit -ne 7 -or $reply.Out -notmatch 'before' -or $reply.Out -notmatch 'error') { throw "RUN lost output/exit: exit=$($reply.Exit); output=$($reply.Out)" }
         $next = Invoke-B64 (B64 'echo channel-alive') $false
         if ($next.Exit -ne 0 -or $next.Out.Trim() -cne 'channel-alive') { throw 'second RUN did not reply' }
