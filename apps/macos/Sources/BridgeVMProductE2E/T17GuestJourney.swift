@@ -23,12 +23,12 @@ struct T17GuestJourney {
         try prove(.audio); try prove(.firstShutdown)
         let first = try archiveLog(named: T17FirstRunHostRecords.archive, ready: "first-ready", shutdown: "first-shutdown")
         T17FirstRunAppPacing.archive(since: pacing, bundle: bundle)
-        try createSnapshot()
+        try createSnapshot(); try verifySnapshot(restored: false)
         _ = try bootReady(); readTPM(.mutation)
         try workload("MarkerB", output: "t17-snapshot-b-\(prefix).txt")
         try shutdown()
         let mutation = try archiveLog(named: "mutation-run.log", ready: "mutation-ready", shutdown: "mutation-shutdown")
-        try restoreSnapshot()
+        try restoreSnapshot(); try verifySnapshot(restored: true)
         _ = try bootReady(); readTPM(.final)
         try workload("MarkerRestoredA", output: "t17-snapshot-restored-a-\(prefix).txt")
         try workload("AgentResult", output: "t17-agent-result-\(prefix).json", includeIdentity: true)
@@ -38,7 +38,7 @@ struct T17GuestJourney {
         let final = try T17RunLogProof.capture(runLog, nonce: request.nonce,
                                                readyTag: "final-ready", shutdownTag: "second-shutdown")
         try artifacts.write(request: request, first: first, mutation: mutation, final: final)
-        try restoreSnapshot()
+        try restoreSnapshot(); try verifySnapshot(restored: true)
     }
 
     private func keyboardAndPointer() throws {
@@ -121,21 +121,24 @@ struct T17GuestJourney {
         return proof
     }
 
-    private func createSnapshot() throws {
-        try ui.press("bridgevm.runtime.snapshot.create", timeout: 15)
-        guard wait(timeout: 900, predicate: {
-            (try? ui.text("bridgevm.runtime.snapshot.status", timeout: 1)) == "스냅샷 생성 완료"
-        }) else { throw T17Blocker(code: "snapshot-unavailable", detail: "product UI did not complete snapshot creation") }
-        try verifySnapshot(restored: false)
+    /// The snapshot card is in the 설정 sheet (T17 r98).
+    func createSnapshot() throws {
+        try T17SettingsSheet.edit(ui) {
+            try ui.press("bridgevm.runtime.snapshot.create", timeout: 15)
+            guard wait(timeout: 900, predicate: {
+                (try? ui.text("bridgevm.runtime.snapshot.status", timeout: 1)) == "스냅샷 생성 완료"
+            }) else { throw T17Blocker(code: "snapshot-unavailable", detail: "product UI did not complete snapshot creation") }
+        }
     }
 
-    private func restoreSnapshot() throws {
-        try ui.press("bridgevm.runtime.snapshot.restore", timeout: 15)
-        try ui.press("bridgevm.runtime.snapshot.confirm", timeout: 15) // the product asks before it restores
-        guard wait(timeout: 900, predicate: {
-            (try? ui.text("bridgevm.runtime.snapshot.status", timeout: 1)) == "스냅샷 복원 완료"
-        }) else { throw T17Blocker(code: "snapshot-unavailable", detail: "product UI did not complete snapshot restore") }
-        try verifySnapshot(restored: true)
+    func restoreSnapshot() throws {
+        try T17SettingsSheet.edit(ui) {
+            try ui.press("bridgevm.runtime.snapshot.restore", timeout: 15)
+            try ui.press("bridgevm.runtime.snapshot.confirm", timeout: 15) // the product asks before it restores
+            guard wait(timeout: 900, predicate: {
+                (try? ui.text("bridgevm.runtime.snapshot.status", timeout: 1)) == "스냅샷 복원 완료"
+            }) else { throw T17Blocker(code: "snapshot-unavailable", detail: "product UI did not complete snapshot restore") }
+        }
     }
 
     private func waitForSharedAsset() throws {

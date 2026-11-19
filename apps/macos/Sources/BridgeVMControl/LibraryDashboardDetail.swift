@@ -158,6 +158,7 @@ struct LibraryDashboardDetail: View {
                 Button { showingAdvanced = false } label: {
                     Label("대시보드", systemImage: "chevron.left")
                 }
+                .accessibilityIdentifier("bridgevm.dashboard.back")
                 Spacer()
                 Text("고급 제어").font(.headline)
                 Spacer()
