@@ -129,7 +129,7 @@ struct CreateVMSheet: View {
                     .font(.caption).foregroundColor(.secondary)
                 Text(HvfWindowsImportNotice.bitLockerHelp)
                     .font(.caption).foregroundColor(.secondary)
-                Text("3D 가속은 Future Path이며 이번 출시 범위에 포함되지 않습니다. 기본 디스플레이 구성으로 가져옵니다.")
+                Text("이번 버전은 3D 가속을 지원하지 않습니다. 기본 디스플레이 구성으로 가져옵니다.")
                     .font(.caption).foregroundColor(.secondary)
             } else if mode == .windowsHVFInstall {
                 CreateWindowsInstallFields(isoPath: isoPath, guestPayloadPath: guestPayloadPath,

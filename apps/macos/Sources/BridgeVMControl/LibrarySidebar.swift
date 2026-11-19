@@ -26,7 +26,6 @@ struct LibrarySidebar: View {
             LibraryRetainedControlsNavigation(library: library)
             VStack(spacing: 16) {
                 LibraryHostSummary(library: library)
-                LibraryEngineLegend()
             }
             .padding(14)
         }

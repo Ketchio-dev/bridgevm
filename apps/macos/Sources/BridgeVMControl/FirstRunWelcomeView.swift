@@ -12,7 +12,7 @@ struct FirstRunWelcomeView: View {
                     Text("BridgeVM 시작하기").font(.system(size: 30, weight: .bold))
                     Text("새 Windows 환경을 만들거나 사용하던 VM을 가져오세요.")
                         .font(.title3).foregroundStyle(.secondary)
-                    Text("HVF Engine (Experimental)").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    Text("Engineering Preview · 3D 가속 없음").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                 }
             }
             .padding(.vertical, 16)
