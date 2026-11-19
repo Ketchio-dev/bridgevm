@@ -15,6 +15,12 @@ extension HvfEngineSession {
             }
         case .serviceStart:
             serviceStarted = true
+            // An already-running guest agent can answer the initial probe with
+            // PONG instead of READY. The resident service still proves the link
+            // is usable; otherwise ordered input never starts on that boot.
+            if (connectionState == .booting || connectionState == .timedOut), ownedController?.failure == nil {
+                connectionState = .connected(host: "BRIDGEVM")
+            }
             noteAgentServiceStarted()
             // A guest reboot recreates the helper, whose display device starts at its default size
             // and reads input.ctl from its end: poll() sends the window size again.

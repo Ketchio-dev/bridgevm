@@ -53,6 +53,9 @@ operator's own data, images or VMs.
 
 ## 4. Honest product claims
 
+- Treat the README as the product's front door: explain its purpose, current
+  availability and the first-use path before engineering detail. Keep it current
+  when user-facing behavior changes, and clearly label experimental work.
 - README, STATUS and app text describe what actually works. User-facing
   capability wording comes from `capabilities/windows-hvf.json`; its
   `product_state` changes only with the operator.
@@ -89,6 +92,8 @@ operator's own data, images or VMs.
 
 ## 7. Practical conventions
 
+- Prefer the native app CLI and `scripts/vmctl.py` for VM lifecycle, guest
+  commands, input and captures. Use computer use when testing the Mac UI itself.
 - Source `../../env.sh` before building when it exists.
 - Files under `scripts/win-assets/**` keep CRLF line endings; normalise guest
   logs with `tr '\r' '\n'` before parsing.

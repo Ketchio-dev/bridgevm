@@ -15,6 +15,7 @@ struct HvfLiveDisplaySurface: View {
     var body: some View {
         HvfFramebufferView(session: session)
             .background(Color.black)
+            .overlay { HvfStartupDisplayOverlay(session: session, window: window) }
             .overlay { HvfPausedDisplayOverlay(session: session) }
             .overlay(alignment: .top) {
                 VStack(spacing: 0) {

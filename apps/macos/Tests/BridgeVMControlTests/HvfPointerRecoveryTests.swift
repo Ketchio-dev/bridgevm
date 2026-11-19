@@ -40,7 +40,7 @@ final class HvfPointerRecoveryTests: XCTestCase {
             cleanup = $0; return true
         }
         XCTAssertNotEqual(cleanup, press)
-        XCTAssertEqual(Data(base64Encoded: String(cleanup.split(separator: " ")[2])), Data("releaseall:1x2".utf8))
+        XCTAssertEqual(Data(base64Encoded: String(cleanup.split(separator: " ")[2])), Data("rightrelease:1x2".utf8))
         _ = router.cancelTarget(now: now)
         XCTAssertEqual(router.poll(binding: binding, serviceReady: true, lines: receipt(press, count: 1), now: now) {
             _ in XCTFail("cleanup resent"); return true
@@ -93,7 +93,7 @@ final class HvfPointerRecoveryTests: XCTestCase {
         var again = ""
         _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { again = $0; return true }
         XCTAssertNotEqual(again, cleanup)
-        XCTAssertEqual(Data(base64Encoded: String(again.split(separator: " ")[2])), Data("releaseall:1x2".utf8))
+        XCTAssertEqual(Data(base64Encoded: String(again.split(separator: " ")[2])), Data("release:1x2".utf8))
         _ = router.poll(binding: binding, serviceReady: true, lines: receipt(again, count: 1), now: now) { _ in false }
         XCTAssertEqual(router.count, 0)
         XCTAssertFalse(router.failed)

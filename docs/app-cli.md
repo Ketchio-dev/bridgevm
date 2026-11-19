@@ -29,6 +29,8 @@ before a store is opened or a daemon connection is attempted. `bridgevm hvf`
 continues to expose local queries and explicitly enabled probes; it does not
 replace native library inventory commands.
 See [native app diagnostics](app-cli-doctor.md) for read-only executable discovery checks.
+For guest commands, keyboard/mouse input and framebuffer captures from a source
+checkout, see the [development VM control CLI](vmctl.md).
 
 ## Installing the command
 Use a current `BridgeVM.app` or `BridgeVMControl.app` package containing the native CLI protocol

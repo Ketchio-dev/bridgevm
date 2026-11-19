@@ -5,6 +5,16 @@ import XCTest
 
 @MainActor
 final class HvfPointerCaptureTests: XCTestCase {
+    func testReleasingOneButtonKeepsTheOthersCaptured() {
+        let capture = HvfPointerCapture(center: NotificationCenter())
+        var calls: [Int] = []
+        capture.arm(window: nil, button: 0) { calls.append(0) }
+        capture.arm(window: nil, button: 1) { calls.append(1) }
+        capture.arm(window: nil, button: 2) { calls.append(2) }
+        capture.disarm(button: 0)
+        capture.cancel()
+        XCTAssertEqual(calls, [1, 2])
+    }
     func testCancellationEmitsLatestReleaseExactlyOnce() {
         let capture = HvfPointerCapture(center: NotificationCenter())
         var calls: [Int] = []

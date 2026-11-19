@@ -13,7 +13,8 @@ struct HvfInputCapabilityReceipt {
         ["BVINPUT_KEYS \(id) SHIFT_ENTER_SPACE", "BVINPUT_CHORDS \(id) \(HvfControlChordKeys.token)",
          "BVINPUT_CHORDS \(id) \(HvfModifierChord.token)", "BVINPUT_POINTER \(id) SCROLL_UNITS",
          "BVINPUT_POINTER \(id) MODIFIERS", "BVINPUT_POINTER \(id) MIDDLE", "BVINPUT_TEXT \(id) CARET",
-         "BVINPUT_KEYS \(id) PRINTSCREEN", "BVINPUT_KEYS \(id) HOLD"]
+         "BVINPUT_KEYS \(id) PRINTSCREEN", "BVINPUT_KEYS \(id) HOLD",
+         "BVINPUT_TEXT \(id) QUEUED_DISPATCH"]
     }
     /// Any modifiers plus a key and a bare modifier tap (HvfModifierChord); the agent builds every key then.
     var modifierChords: Bool { accepted.contains(markers[2]) }
@@ -27,6 +28,9 @@ struct HvfInputCapabilityReceipt {
     var caret: Bool { accepted.contains(markers[6]) }
     /// A held key's halves, `down:<key>` and `up:<key>` (HvfModifierChord.down); an older agent taps every key.
     var keyHold: Bool { accepted.contains(markers[8]) }
+
+    /// A text request may use the queued editor-dispatch extension.
+    var queuedTextDispatch: Bool { accepted.contains(markers[9]) }
 
     init(id: UUID) { self.id = id.uuidString }
 

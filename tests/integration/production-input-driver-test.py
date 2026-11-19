@@ -31,13 +31,18 @@ class DriverIntegration(unittest.TestCase):
                         label = " ".join(parts[:2])
                         if parts[0] == "INPUTCAPS":
                             marker = "BVINPUT_CAPS " + parts[1] + " 3 TEXTINPUT KEYINPUT POINTERINPUT 65536"
+                            if mode in ("sync", "unsupported"):
+                                marker += "\nBVINPUT_TEXT " + parts[1] + " QUEUED_DISPATCH"
                         else:
                             payloads.append((parts[0], base64.b64decode(parts[2]).decode()))
-                            counts = [16, 2, 8, 2]
-                            count = counts[len(payloads) - 1]
+                            count = len(payloads[-1][1].encode("utf-16-le")) if parts[0] == "TEXTINPUT" else 2
                             if mode == "bad-count":
                                 count += 1
-                            marker = "BVINPUT_INSERTED " + parts[1] + " " + str(count)
+                            if len(parts) == 4 and parts[3] == "S":
+                                marker = ("BVTEXT_UNSUPPORTED " + parts[1] if mode == "unsupported" else
+                                          "BVTEXT_DISPATCHED " + parts[1] + " " + str(count // 2))
+                            else:
+                                marker = "BVINPUT_INSERTED " + parts[1] + " " + str(count)
                         response = "BVAGENT CMD " + label + " exit=0\n" + marker + "\r\nBVAGENT END " + label + "\n"
                         if mode == "restart" and payloads:
                             response += "BVAGENT SERVICE start t=2\n"
@@ -65,6 +70,16 @@ class DriverIntegration(unittest.TestCase):
         self.assertFalse(report["guest_application_proven"])
         self.assertEqual(payloads, [("TEXTINPUT", "BridgeVM"), ("KEYINPUT", "enter"),
                                     ("TEXTINPUT", "\uD55C\uAE00\U0001F642"), ("POINTERINPUT", "click:123x32767")])
+
+    def test_queued_dispatch_and_explicit_unsupported_keep_event_order(self):
+        for mode, requests in (("sync", 4), ("unsupported", 6)):
+            with self.subTest(mode=mode):
+                status, report, payloads = self.exercise(mode)
+                self.assertEqual(status, 0)
+                self.assertEqual(report["sent"], requests)
+                self.assertEqual(report["inserted"], 4)
+                self.assertEqual(payloads[0], ("TEXTINPUT", "BridgeVM"))
+                self.assertEqual(payloads[-1], ("POINTERINPUT", "click:123x32767"))
 
     def test_rejected_receipt_never_advances(self):
         for mode in ("bad-count", "restart"):

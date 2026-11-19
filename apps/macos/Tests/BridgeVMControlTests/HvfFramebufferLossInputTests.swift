@@ -78,7 +78,7 @@ final class HvfFramebufferLossInputTests: XCTestCase {
             let cleanup = try XCTUnwrap(after.last)
             XCTAssertNotEqual(cleanup, press)
             let payload = try XCTUnwrap(Data(base64Encoded: String(cleanup.split(separator: " ")[2])))
-            XCTAssertTrue(String(decoding: payload, as: UTF8.self).hasPrefix("releaseall:"))
+            XCTAssertTrue(String(decoding: payload, as: UTF8.self).hasPrefix("release:"))
             XCTAssertFalse(view.guestInputAvailable)
             let target = session.textInputTarget
             view.refreshFrame(at: 2)

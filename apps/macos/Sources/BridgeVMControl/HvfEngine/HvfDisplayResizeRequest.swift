@@ -96,10 +96,11 @@ struct HvfDisplayResizeRequest {
     }
 
     /// The size to write now, if any; the caller reports a successful write with `didSend`.
-    mutating func take(at now: TimeInterval) -> Size? {
+    mutating func take(at now: TimeInterval, fallback: Size? = nil) -> Size? {
         guard let dueAt, now >= dueAt else { return nil }
         self.dueAt = nil
-        return latest == sent ? nil : latest
+        let size = latest ?? fallback
+        return size == sent ? nil : size
     }
 
     mutating func didSend(_ size: Size) {

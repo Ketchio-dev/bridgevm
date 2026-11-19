@@ -296,8 +296,9 @@ final class HvfEngineSession: ObservableObject {
         sendPointerAction(.move, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
-    func sendPointerRelease(location: CGPoint, viewSize: CGSize, imageSize: CGSize, modifiers: String = "") {
-        sendPointerAction(.release, location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
+    func sendPointerRelease(location: CGPoint, viewSize: CGSize, imageSize: CGSize, modifiers: String = "", button: Int = 0) {
+        let action: HvfPointerAction = button == 1 ? .rightRelease : button == 2 ? .middleRelease : .release
+        sendPointerAction(action, location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
     }
 
     func sendPointerRightClick(location: CGPoint, viewSize: CGSize, imageSize: CGSize) {
@@ -308,7 +309,7 @@ final class HvfEngineSession: ObservableObject {
         sendPointerAction(.rightPress, location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
     }
 
-    /// Only for an agent that takes the middle button (`guestMiddleButton`); the release is the common one.
+    /// Only for an agent that takes the middle button (`guestMiddleButton`).
     func sendPointerMiddlePress(location: CGPoint, viewSize: CGSize, imageSize: CGSize, modifiers: String = "") {
         guard guestMiddleButton else { return }
         sendPointerAction(.middlePress, location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
@@ -342,7 +343,7 @@ final class HvfEngineSession: ObservableObject {
         let admission = inputDriver.route(.pointer("\(action.orderedVerb):\(point.x)x\(point.y)" + heldModifiers(modifiers)),
                                           binding: inputBinding)
         if admission != .legacy { return admission == .queued ? "queued" : "refused-" + inputDriver.routeDiagnostic(attached: attachedToExistingProcess) }
-        appendLiveInput("POINTER \(action.rawValue):\(point.x)x\(point.y)"); return "legacy-" + inputDriver.routeDiagnostic(attached: attachedToExistingProcess)
+        appendLiveInput("POINTER \(action.legacyVerb):\(point.x)x\(point.y)"); return "legacy-" + inputDriver.routeDiagnostic(attached: attachedToExistingProcess)
     }
 
     /// The `:<modifiers>` field for an agent that takes held modifiers on a pointer action, else nothing. Each
@@ -374,9 +375,19 @@ final class HvfEngineSession: ObservableObject {
 
     private func flushDisplayResize() {
         displayResize.retina = config.retinaResizeSetting
-        guard let size = displayResize.take(at: ProcessInfo.processInfo.systemUptime),
+        guard let size = displayResize.take(at: ProcessInfo.processInfo.systemUptime, fallback: savedDisplaySize),
               appendDisplayResize(size) else { return }
         displayResize.didSend(size)
+    }
+
+    /// With no laid-out window, restore the saved pixel mode after each service start.
+    /// Keep Windows' DPI until a window supplies its actual backing scale.
+    private var savedDisplaySize: HvfDisplayResizeRequest.Size? {
+        guard serviceStarted, !attachedToExistingProcess,
+              let mode = HvfGuestResolutionPicker.firmwareMode(config.guestResolution) else { return nil }
+        let parts = mode.split(separator: "x")
+        guard let width = Int(parts[0]), let height = Int(parts[1]) else { return nil }
+        return .init(width: width, height: height)
     }
 
     private func appendDisplayResize(_ size: HvfDisplayResizeRequest.Size) -> Bool {

@@ -29,6 +29,20 @@ final class HvfPointerModifierInputTests: XCTestCase {
     /// agent.ctl lines up to the end of negotiation; `deliver` acknowledges everything after them.
     private var negotiated = 0
 
+    /// A left release must never inject WM_RBUTTONUP: Windows opens a context menu even without a right down.
+    func testButtonReleasesStaySeparateDuringAChord() throws {
+        try withOrderedDisplay(pointer: ["MIDDLE"]) { view, session, fixture in
+            view.mouseDown(with: PointerEvent())
+            view.rightMouseDown(with: PointerEvent(button: 1))
+            view.mouseUp(with: PointerEvent())
+            view.otherMouseDown(with: PointerEvent(button: 2))
+            view.rightMouseUp(with: PointerEvent(button: 1))
+            view.otherMouseUp(with: PointerEvent(button: 2))
+            XCTAssertEqual(try deliver(fixture, session), ["press:16384x16384", "rightpress:16384x16384",
+                "release:16384x16384", "middlepress:16384x16384", "rightrelease:16384x16384", "middlerelease:16384x16384"])
+        }
+    }
+
     /// Before this change the guest got a plain press and release: Shift+click could not extend a selection.
     func testAShiftClickReachesTheGuestWithShiftHeldOnItsPressAndRelease() throws {
         try withOrderedDisplay(pointer: ["MODIFIERS"]) { view, session, fixture in
@@ -36,8 +50,8 @@ final class HvfPointerModifierInputTests: XCTestCase {
             view.mouseUp(with: PointerEvent(.shift))
             view.mouseDown(with: PointerEvent())
             view.mouseUp(with: PointerEvent())
-            XCTAssertEqual(try deliver(fixture, session), ["press:16384x16384:s", "releaseall:16384x16384:s",
-                                                           "press:16384x16384", "releaseall:16384x16384"])
+            XCTAssertEqual(try deliver(fixture, session), ["press:16384x16384:s", "release:16384x16384:s",
+                                                           "press:16384x16384", "release:16384x16384"])
         }
     }
 
@@ -50,9 +64,9 @@ final class HvfPointerModifierInputTests: XCTestCase {
             session.config.commandKeyMode = .windows
             view.mouseDown(with: PointerEvent([.command, .shift]))
             view.mouseUp(with: PointerEvent(.capsLock))
-            XCTAssertEqual(try deliver(fixture, session), ["press:16384x16384:ca", "releaseall:16384x16384:cs",
-                                                           "rightpress:16384x16384:c", "releaseall:16384x16384",
-                                                           "press:16384x16384:s", "releaseall:16384x16384"])
+            XCTAssertEqual(try deliver(fixture, session), ["press:16384x16384:ca", "release:16384x16384:cs",
+                                                           "rightpress:16384x16384:c", "rightrelease:16384x16384",
+                                                           "press:16384x16384:s", "release:16384x16384"])
         }
     }
 
@@ -69,7 +83,7 @@ final class HvfPointerModifierInputTests: XCTestCase {
             XCTAssertEqual(sent.first, "press:16384x16384:a")
             XCTAssertEqual(sent.dropFirst().first?.hasPrefix("move:"), true, "\(sent)")
             XCTAssertEqual(sent.dropFirst().first?.contains(":a"), false, "\(sent)")
-            XCTAssertEqual(sent.last, "releaseall:16384x16384:a")
+            XCTAssertEqual(sent.last, "release:16384x16384:a")
         }
     }
 
@@ -96,12 +110,12 @@ final class HvfPointerModifierInputTests: XCTestCase {
             XCTAssertEqual(sent.count, 3, "\(sent)")
             XCTAssertEqual(sent.first, "middlepress:16384x16384", "no MODIFIERS marker: Command is dropped")
             XCTAssertEqual(sent.dropFirst().first?.hasPrefix("move:"), true, "\(sent)")
-            XCTAssertEqual(sent.last, "releaseall:16384x16384", "button 3 stays with the Mac")
+            XCTAssertEqual(sent.last, "middlerelease:16384x16384", "button 3 stays with the Mac")
         }
         try withOrderedDisplay(pointer: ["MIDDLE", "MODIFIERS"]) { view, session, fixture in
             view.otherMouseDown(with: PointerEvent(.command, button: 2))
             view.otherMouseUp(with: PointerEvent(.command, button: 2))
-            XCTAssertEqual(try deliver(fixture, session), ["middlepress:16384x16384:c", "releaseall:16384x16384:c"])
+            XCTAssertEqual(try deliver(fixture, session), ["middlepress:16384x16384:c", "middlerelease:16384x16384:c"])
         }
     }
 
@@ -113,7 +127,7 @@ final class HvfPointerModifierInputTests: XCTestCase {
             view.otherMouseDown(with: PointerEvent(button: 2))
             view.otherMouseUp(with: PointerEvent(button: 2))
             view.scrollWheel(with: PointerEvent(.command))
-            XCTAssertEqual(try deliver(fixture, session), ["press:16384x16384", "releaseall:16384x16384",
+            XCTAssertEqual(try deliver(fixture, session), ["press:16384x16384", "release:16384x16384",
                                                            "scrollunits:120,0@16384x16384"])
         }
         let fixture = try HvfRuntimeKeyboardDraftFixture()
@@ -138,7 +152,7 @@ final class HvfPointerModifierInputTests: XCTestCase {
             view.flagsChanged(with: try modifier(0x37, flags: []))
             view.flagsChanged(with: try modifier(0x37, flags: .command))
             view.flagsChanged(with: try modifier(0x37, flags: []))
-            XCTAssertEqual(try deliver(fixture, session), ["press:16384x16384:c", "releaseall:16384x16384:c", "KEYINPUT win"])
+            XCTAssertEqual(try deliver(fixture, session), ["press:16384x16384:c", "release:16384x16384:c", "KEYINPUT win"])
         }
     }
 

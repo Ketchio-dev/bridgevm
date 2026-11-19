@@ -17,7 +17,7 @@ struct HvfAcknowledgedInputStream {
         return queue.enqueue(event, now: now)
     }
 
-    mutating func advance(lines: [String], now: Date, send: (String) -> Bool) -> Update {
+    mutating func advance(lines: [String], now: Date, queuedTextDispatch: Bool = false, send: (String) -> Bool) -> Update {
         // A restart cancels even a batch whose earlier lines contain a valid receipt.
         if lines.contains(where: {
             $0.hasPrefix("BVAGENT READY") || $0.hasPrefix("BVAGENT re-READY") ||
@@ -25,7 +25,7 @@ struct HvfAcknowledgedInputStream {
         }) { return cancel(.sessionChanged) }
         switch queue.poll(now: now) {
         case let .send(ticket):
-            guard let request = HvfUnicodeInputRequest(event: ticket.event, now: now, id: ticket.id) else {
+            guard let request = HvfUnicodeInputRequest(event: ticket.event, now: now, id: ticket.id, queuedTextDispatch: queuedTextDispatch) else {
                 return cancel(.transportFailed)
             }
             pending = (ticket, request)
@@ -47,6 +47,15 @@ struct HvfAcknowledgedInputStream {
                 }
                 guard transition == .completed else { return cancel(.transportFailed) }
                 return .inserted(active.ticket.id)
+            case .unsupported:
+                guard active.request.queuedTextDispatch,
+                      let fallback = HvfUnicodeInputRequest(event: active.ticket.event, now: now) else { return cancel(.transportFailed) }
+                active.request = fallback
+                pending = active
+                // The guest positively dispatched no text. Keep the same logical event,
+                // with a fresh receipt ID, rather than popping the recovery ledger again.
+                guard send(fallback.command) else { return cancel(.transportFailed) }
+                return .waiting
             case let .failed(failure):
                 switch failure {
                 case .expired: return cancel(.expired)

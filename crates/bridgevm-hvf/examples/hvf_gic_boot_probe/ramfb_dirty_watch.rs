@@ -1,9 +1,9 @@
 //! Write tracking for the guest's ramfb framebuffer, so the display exporter
 //! reads guest pixels only after the guest wrote them. The exporter
 //! write-protects the framebuffer's pages in the stage-2 tables
-//! (`hv_vm_protect`); the guest's next store there exits with a permission
-//! fault, which a vCPU answers by making the pages writable again and marking
-//! the frame dirty, then retries the store. An idle desktop therefore costs no
+//! (`hv_vm_protect`); the guest's next store there exits with a permission or
+//! translation fault, which a vCPU answers by making the pages writable again,
+//! marking the frame dirty, then retrying the store. An idle desktop costs no
 //! exits and no frame compare, and a drawing guest at most one exit per export
 //! tick. `BRIDGEVM_RAMFB_DIRTY_WATCH=0` turns it off (every tick compares).
 //!
@@ -16,7 +16,7 @@
 //! records it, on the exporter and the vCPU side, so a vCPU always sees the
 //! watch state that matches the protection. A store can still fault while its
 //! page is protected and reach its vCPU's handler only after the exporter made
-//! the page writable and moved or dropped the watch: every write permission
+//! the page writable and moved or dropped the watch: every matching write
 //! fault inside the pages the watch ever protected is therefore retried, never
 //! emulated as MMIO.
 
@@ -51,9 +51,9 @@ pub(crate) struct FbWatch {
 struct State {
     /// The protected page range `(ipa, len)`, when armed.
     armed: Option<(u64, u64)>,
-    /// Bounds `[lo, hi)` of every range the watch ever protected, all of them
-    /// in guest RAM.
-    ever_protected: Option<(u64, u64)>,
+    /// Exact intervals `[lo, hi)` the watch protected, all in guest RAM.
+    /// Keep gaps out: a translation fault there is not caused by this watch.
+    ever_protected: Vec<(u64, u64)>,
     /// The guest wrote the armed range since the exporter last looked.
     dirty: bool,
     /// `hv_vm_protect` refused a range once: compare every tick from then on.
@@ -67,7 +67,7 @@ impl FbWatch {
         Self {
             state: Mutex::new(State {
                 armed: None,
-                ever_protected: None,
+                ever_protected: Vec::new(),
                 dirty: false,
                 unavailable: false,
             }),
@@ -79,24 +79,27 @@ impl FbWatch {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// vCPU side, first thing on a data abort: a stage-2 write permission
+    /// vCPU side, first thing on a data abort: a stage-2 write protection
     /// fault inside the watched range makes it writable again, marks the frame
     /// dirty, and returns true; the vCPU then retries the store without
-    /// advancing its PC. A write permission fault elsewhere in the pages the
-    /// watch ever protected is retried too. Every other abort returns false,
-    /// and every non-permission fault (all MMIO exits) without taking the lock.
+    /// advancing its PC. M5 HVF can report the protected DC ZVA as a translation
+    /// fault (DFSC6/7), so DFSC alone cannot distinguish it from MMIO. Only the
+    /// exact previously protected RAM intervals admit either kind of write.
     pub(crate) fn take_write_fault(&self, ipa: u64, esr: u64) -> bool {
         const WNR: u64 = 1 << 6;
-        if esr & 0x3c != 0x0c || esr & WNR == 0 {
+        const CM_OR_S1PTW: u64 = (1 << 8) | (1 << 7);
+        if !matches!(esr & 0x3c, 0x04 | 0x0c) || esr & WNR == 0 || esr & CM_OR_S1PTW != 0 {
             return false;
         }
         let mut state = self.state();
-        if !state.ever_protected.is_some_and(|(lo, hi)| (lo..hi).contains(&ipa)) {
+        if !state.ever_protected.iter().any(|&(lo, hi)| (lo..hi).contains(&ipa)) {
             return false;
         }
         let watched = |&(start, len): &(u64, u64)| (start..start + len).contains(&ipa);
         if let Some((start, len)) = state.armed.filter(watched) {
-            (self.protect)(start, len, WRITABLE);
+            if !(self.protect)(start, len, WRITABLE) {
+                return false;
+            }
             state.dirty = true;
         }
         // Otherwise it faulted before the exporter made the page writable
@@ -128,8 +131,6 @@ impl FbWatch {
                     give_up(&mut state, (start, len), "framebuffer outside guest RAM");
                     return true;
                 }
-                let (lo, hi) = state.ever_protected.unwrap_or((start, start + len));
-                state.ever_protected = Some((lo.min(start), hi.max(start + len)));
                 state.dirty = false;
                 self.protect_or_give_up(&mut state, (start, len));
             }
@@ -149,6 +150,7 @@ impl FbWatch {
     /// refuses, leave the range writable and compare every tick from now on.
     fn protect_or_give_up(&self, state: &mut State, (start, len): (u64, u64)) {
         if (self.protect)(start, len, READ_ONLY) {
+            remember_range(&mut state.ever_protected, start, start + len);
             state.armed = Some((start, len));
         } else {
             (self.protect)(start, len, WRITABLE);
@@ -168,6 +170,20 @@ impl FbWatch {
             (self.protect)(start, len, WRITABLE);
         }
     }
+}
+
+/// Merge only touching/overlapping intervals, never the gap between frames.
+fn remember_range(ranges: &mut Vec<(u64, u64)>, mut lo: u64, mut hi: u64) {
+    ranges.retain(|&(start, end)| {
+        if start <= hi && lo <= end {
+            lo = lo.min(start);
+            hi = hi.max(end);
+            false
+        } else {
+            true
+        }
+    });
+    ranges.push((lo, hi));
 }
 
 /// Stop tracking for good: every tick compares from now on.

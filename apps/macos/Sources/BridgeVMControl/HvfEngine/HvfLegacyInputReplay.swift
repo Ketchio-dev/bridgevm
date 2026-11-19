@@ -50,6 +50,7 @@ extension HvfEngineSession {
             return notches == 0 ? nil : "scroll:\(notches)@\(parts[1])"
         }
         let verbs = ["move": "move", "click": "click", "press": "press", "releaseall": "release",
+                     "release": "release", "rightrelease": "release", "middlerelease": "release",
                      "rightclick": "right-click", "rightpress": "right-press", "scroll": "scroll"]
         return verbs[String(fields[0])].map { "\($0):\(fields[1])" }
     }

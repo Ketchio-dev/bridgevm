@@ -44,7 +44,7 @@ final class HvfFailedPointerReleaseTests: XCTestCase {
             let fields = cleanup.split(separator: " ")
             if fields.count == 3 {
                 let payload = Data(base64Encoded: String(fields[2])).map { String(decoding: $0, as: UTF8.self) }
-                XCTAssertTrue(payload?.hasPrefix("releaseall:") == true, "Expected releaseall, got \(payload ?? "invalid")")
+                XCTAssertTrue(payload?.hasPrefix("release:") == true, "Expected left release, got \(payload ?? "invalid")")
             } else { XCTFail("Expected encoded cleanup command") }
             if failed { XCTAssertEqual(session.sendText("still refused"), .refused) }
             XCTAssertNil(try fixture.bytes(fixture.input))

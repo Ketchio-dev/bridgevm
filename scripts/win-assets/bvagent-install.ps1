@@ -30,7 +30,7 @@ function Copy-ToolsFile([string]$Source, [string]$Destination) {
     Set-Acl -LiteralPath $Destination -AclObject $acl
 }
 function Install-ToolsFiles([string]$Source, [string]$Staging, [string]$Target) {
-    $files = @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs', 'bvagent-window-inventory.ps1', 'bv-window-inventory.cs', 'bvagent-task.ps1', 'bvagent-update.ps1')
+    $files = @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs', 'bvagent-text-packets.cs', 'bvagent-text-packets-arm64.dll', 'bvagent-window-inventory.ps1', 'bv-window-inventory.cs', 'bvagent-task.ps1', 'bvagent-update.ps1')
     $existing = Test-Path -LiteralPath $Target
     if (-not $existing) {
         if (Test-Path -LiteralPath $Staging) { Assert-ToolsFolder $Staging; Remove-Item -LiteralPath $Staging -Recurse -Force }
