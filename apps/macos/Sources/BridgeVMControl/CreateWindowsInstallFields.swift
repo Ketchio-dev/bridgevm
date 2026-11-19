@@ -42,7 +42,7 @@ struct CreateWindowsInstallFields: View {
             } label: {
                 Label("설치 파일", systemImage: "opticaldisc")
             }
-            Text("3D 가속은 Future Path이며 이번 출시 범위에 포함되지 않습니다. Windows는 기본 디스플레이로 설치합니다.")
+            Text("이번 버전은 3D 가속을 지원하지 않습니다. Windows는 기본 디스플레이로 설치합니다.")
                 .font(.caption).foregroundColor(.secondary)
         }
     }
