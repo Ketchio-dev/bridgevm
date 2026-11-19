@@ -4,7 +4,7 @@ All notable changes to BridgeVM are documented in this file.
 
 ## Unreleased
 
-## [1.1.0] - 2026-11-14
+## [1.1.0] - 2026-11-19
 
 First General Preview release, replacing the superseded 1.0.0. The product is
 still an **Engineering Preview**: Windows 11 Arm on BridgeVM's own
@@ -58,6 +58,9 @@ a clean Mac) and A19 (disk safety) are open. See `STATUS.md`.
   keep their dates, and sync handles 16 GiB files and 262,144-entry shares.
 - **Messages:** Start, install, import and snapshot failures read as one plain
   Korean sentence; a missing shared folder only turns sharing off for a start.
+- **Dashboard:** Actions stay readable at any window width, the status shows
+  the VM as observed, and the VM window shows startup progress or the failure
+  instead of staying black.
 - **Security:** The installer checks a General Preview release contract,
   checksum, archive and signature, rolls back on failure and refuses v1.0.0;
   new Windows installs let only administrators change `C:\BridgeVM`.
@@ -74,15 +77,27 @@ a clean Mac) and A19 (disk safety) are open. See `STATUS.md`.
   before a shutdown or in folders over the listing limit; a Force Stop or crash
   could leave uploads as zeros or fetch an empty Windows copy over the Mac's; a
   junction deleted Mac files; Korean names split; 260+ character paths failed.
+- **Shared folder:** A Windows edit saved within about 20 seconds of a sync, or
+  one whose copy to the Mac failed, was overwritten by the Mac's older copy
+  after a Force Stop, a crash or a Windows restart; it is now kept beside the
+  Mac's file as "(Windows copy)" (#643, #648).
 - **Clipboard:** The "클립보드 공유" switch is saved per VM, so dashboard and
   command-line starts no longer turn sync back on; change it while stopped.
 - **Clipboard:** Some Mac copies, including any text over 8 KiB, were lost or
-  reverted, and legacy paste text could reach the Mac pasteboard.
+  reverted, and legacy paste text could reach the Mac pasteboard; a copy made
+  just before Ctrl+V or Shift+Insert could paste the previous text.
 - **Input:** Input stopped after a Windows restart, an agent restart or update,
-  or at the lock screen, and trackpads scrolled far too fast.
+  or at the lock screen, and trackpads scrolled far too fast; a left click
+  could open a context menu; input could stay off when the guest agent
+  answered before the app saw it start.
+- **Korean input:** Long text committed into Windows 11 Notepad repeated or
+  lost characters; compatible editors now receive it in one piece.
+- **Display:** A VM started without its window came back from a Windows
+  restart at the boot resolution instead of the saved one.
 - **Lifecycle:** Windows was powered off without a shutdown after 50 million
   hypervisor exits on one vCPU (about a day idle or 4-8 hours busy, estimated
-  from exit rates), and a quote in a disk path crashed the app at Start.
+  from exit rates), and a quote in a disk path crashed the app at Start; on
+  M5 Macs some boots stopped in the firmware before Windows started.
 - **vTPM:** A failed TPM reset could destroy the VM's TPM state, and a deleted
   VM's TPM key could be picked up by a new VM with the same name.
 - **Security:** Guest-controlled values could crash device models, exhaust host
@@ -107,12 +122,12 @@ a clean Mac) and A19 (disk safety) are open. See `STATUS.md`.
   power loss during a snapshot not at all, and VMs relocated by older builds
   before identity migration are refused; snapshot on mains power, keep backups.
 - Titles, tabs and menus can be blank on the Graphics Lab 3D path (B6).
-- In two rare cases the next start can still send the Mac's older copy of a
-  shared file over a Windows edit: a stop within milliseconds of the Mac copy
-  being replaced, or that replacement itself failing (#643).
-- A Windows edit saved within about 20 seconds of a shared file's last sync can
-  be overwritten after a Force Stop, a crash or a Windows restart (#648); shut
-  down with Stop rather than Force Stop.
+- After a Force Stop, a crash or a Windows restart within about 20 seconds of a
+  shared file's last sync, a differing Windows copy arrives beside the Mac's as
+  "(Windows copy)", even when it is only damage from the stop; keep the one you
+  want. A second stop during that recovery can add a "(Windows copy 2)" (#675).
+- Long text into editors other than Windows 11 Notepad and compatible controls
+  can still repeat or lose characters (#665); paste through the clipboard.
 - Files added to the share while an older guest agent updates come back once,
   unchanged but with a new date and quarantine flag (#651); wait a minute first.
 
