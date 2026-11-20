@@ -247,7 +247,12 @@ impl VirtBootMediaConfig {
         cfg.platform_devices.xhci_present = !env_flag("BRIDGEVM_DISABLE_XHCI");
         cfg.platform_devices.hda_present = env_flag("BRIDGEVM_HDA");
         let virtio_iso_present = !env_flag("BRIDGEVM_DISABLE_VIRTIO_ISO");
-        cfg.platform_devices.virtio_boot_media_present = virtio_iso_present;
+        // Expose the PCI installer slot only with an ISO in it: an empty slot is a
+        // controller Windows binds viostor to and cannot start (code 10, #685).
+        // Device numbers are fixed, so leaving 00:03.0 out moves nothing else.
+        cfg.platform_devices.virtio_boot_media_present = virtio_iso_present
+            && cfg.installer_iso_path.is_some()
+            && cfg.installer_iso_transport == InstallerIsoTransport::Pci;
         cfg.platform_devices.virtio_net_present = env_flag("BRIDGEVM_VIRTIO_NET");
         cfg.platform_devices.virtio_gpu_present = env_flag("BRIDGEVM_VIRTIO_GPU");
         // The BOOT_TIMER desktop probe communicates exclusively over the
@@ -334,6 +339,8 @@ mod tests {
             "BRIDGEVM_VIRTIO_NET_BACKEND",
             "BRIDGEVM_RAMFB",
             "BRIDGEVM_DISABLE_RAMFB_DEVICE",
+            "BRIDGEVM_INSTALLER_ISO",
+            "BRIDGEVM_INSTALLER_ISO_TRANSPORT",
         ] {
             env::remove_var(name);
         }
@@ -439,6 +446,7 @@ mod tests {
         clear_probe_disable_env();
         env::set_var("BRIDGEVM_DISABLE_XHCI", "0");
         env::set_var("BRIDGEVM_DISABLE_VIRTIO_ISO", "false");
+        env::set_var("BRIDGEVM_INSTALLER_ISO", "/installer.iso");
         env::set_var("BRIDGEVM_RAMFB", "1");
         env::set_var("BRIDGEVM_DISABLE_RAMFB_DEVICE", "no");
         env::set_var("BRIDGEVM_BOOT_TIMER_DESKTOP_AGENT", "false");
@@ -451,6 +459,27 @@ mod tests {
         assert!(!cfg.platform_devices.virtio_console_present);
         assert!(cfg.platform_devices.legacy_virtio_mmio_present);
         assert!(cfg.platform_devices.ramfb_present);
+        clear_probe_disable_env();
+    }
+
+    #[test]
+    fn probe_env_omits_the_pci_installer_slot_without_an_iso() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_probe_disable_env();
+
+        let cfg = VirtBootMediaConfig::from_probe_env();
+        assert!(!cfg.platform_devices.virtio_boot_media_present);
+        assert!(cfg.platform_devices.legacy_virtio_mmio_present);
+
+        env::set_var("BRIDGEVM_INSTALLER_ISO", "/installer.iso");
+        env::set_var("BRIDGEVM_INSTALLER_ISO_TRANSPORT", "mmio");
+        let cfg = VirtBootMediaConfig::from_probe_env();
+        assert!(!cfg.platform_devices.virtio_boot_media_present);
+        assert!(cfg.platform_devices.legacy_virtio_mmio_present);
+
+        env::remove_var("BRIDGEVM_INSTALLER_ISO_TRANSPORT");
+        let cfg = VirtBootMediaConfig::from_probe_env();
+        assert!(cfg.platform_devices.virtio_boot_media_present);
         clear_probe_disable_env();
     }
 

@@ -44,7 +44,7 @@ pub(crate) unsafe fn prepare_platform(
         println!("qemu-xhci: disabled by BRIDGEVM_DISABLE_XHCI");
     }
     if !platform_cfg.devices.virtio_boot_media_present {
-        println!("virtio installer ISO surfaces: disabled by BRIDGEVM_DISABLE_VIRTIO_ISO");
+        println!("virtio installer ISO PCI slot: absent (no installer ISO on PCI, or BRIDGEVM_DISABLE_VIRTIO_ISO)");
     }
     let xhci_report_interval = parse_xhci_report_interval_env();
     platform.set_xhci_report_interval(xhci_report_interval);
