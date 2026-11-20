@@ -11,6 +11,7 @@ fn create_windows_forwards_one_exact_request_without_a_shell() {
             cpus: 6,
             resolution: "1920x1080".into(),
             no_network: true,
+            fetch_drivers: true,
         }),
         library: Some(PathBuf::from("/owned library")),
         json: true,
@@ -32,6 +33,7 @@ fn create_windows_forwards_one_exact_request_without_a_shell() {
             "--resolution",
             "1920x1080",
             "--no-network",
+            "--fetch-drivers",
             "--library",
             "/owned library",
             "--json",
@@ -51,11 +53,34 @@ fn create_windows_default_network_adds_no_disable_flag() {
             cpus: 4,
             resolution: "1440x900".into(),
             no_network: false,
+            fetch_drivers: false,
         }),
         library: None,
         json: false,
     };
     let forwarded = native_arguments(args);
     assert!(!forwarded.contains(&OsString::from("--no-network")));
+    assert!(!forwarded.contains(&OsString::from("--fetch-drivers")));
     assert_eq!(forwarded.first(), Some(&OsString::from("--cli")));
+}
+
+#[test]
+fn create_windows_fetch_drivers_flag_is_parsed_and_forwarded() {
+    let cli = Cli::try_parse_from([
+        "bridgevm",
+        "app",
+        "create-windows",
+        "VM",
+        "--iso",
+        "/Windows.iso",
+        "--fetch-drivers",
+    ])
+    .unwrap();
+    let Command::App(args) = cli.command else {
+        panic!("expected native app command")
+    };
+    assert_eq!(
+        native_arguments(args).last(),
+        Some(&OsString::from("--fetch-drivers"))
+    );
 }

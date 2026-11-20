@@ -58,7 +58,7 @@ Choose the Windows setup path that matches what you have:
 
 | Starting point | What you provide |
 | --- | --- |
-| **Install from ISO** | Your own licensed Windows 11 Arm ISO, plus signed ARM64 storage/serial/network drivers and their external SHA-256 manifest. An ISO alone is insufficient. |
+| **Install from ISO** | Your own licensed Windows 11 Arm ISO. On your click the app downloads the Microsoft-signed Red Hat virtio-win storage/serial/network drivers (about 95 MB) from the official source and checks them against a pinned SHA-256; you can still choose your own signed ARM64 driver folder and manifest instead. A complete install from the ISO plus downloaded drivers is not yet proven by a live run. |
 | **Import an installed VM** | A Windows 11 Arm disk in RAW, QCOW2 or Hyper-V VHDX format. Import needs no driver payload. |
 
 The [installation guide](docs/install.md) covers both paths, required bundle

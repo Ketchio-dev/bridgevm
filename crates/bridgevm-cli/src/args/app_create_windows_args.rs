@@ -24,6 +24,10 @@ pub(crate) struct AppCreateWindowsArgs {
     /// Disable the default shared NAT network.
     #[arg(long)]
     pub(crate) no_network: bool,
+    /// Download the pinned Microsoft-signed Red Hat virtio-win storage, serial and network
+    /// drivers (about 95 MB) and seal them with the VM so `app install` can complete it.
+    #[arg(long)]
+    pub(crate) fetch_drivers: bool,
 }
 
 fn absolute_iso(value: &str) -> Result<PathBuf, String> {

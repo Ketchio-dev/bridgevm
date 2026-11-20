@@ -18,7 +18,7 @@ enum NativeCLICreateWindowsParser {
         var name: String?, iso: String?, library: URL?
         var disk = 64, memory = 6_144, cpus = 4
         var resolution = NativeCLICreateWindowsOptions.resolutions["1440x900"]!
-        var json = false, help = false, network = true, index = 0
+        var json = false, help = false, network = true, fetchDrivers = false, index = 0
         var seen = Set<String>()
         while index < arguments.count {
             let argument = arguments[index]
@@ -40,6 +40,7 @@ enum NativeCLICreateWindowsParser {
                 library = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
             case "--json": try once(argument, seen: &seen); json = true
             case "--no-network": try once(argument, seen: &seen); network = false
+            case "--fetch-drivers": try once(argument, seen: &seen); fetchDrivers = true
             case "--help", "-h": try once("help", seen: &seen); help = true
             default:
                 guard !argument.hasPrefix("-"), name == nil else {
@@ -64,7 +65,8 @@ enum NativeCLICreateWindowsParser {
             throw NativeCLIError.invalid("Invalid create-windows name, ISO, or resource value.")
         }
         let request = NativeCLICreateWindowsOptions(name: name, isoPath: iso, diskGiB: disk,
-            memoryMiB: memory, cpuCount: cpus, resolution: resolution, networkEnabled: network)
+            memoryMiB: memory, cpuCount: cpus, resolution: resolution, networkEnabled: network,
+            fetchDrivers: fetchDrivers)
         return .init(command: .createWindows(request), libraryRoot: library ?? defaultLibrary,
                      json: json, showHelp: false)
     }

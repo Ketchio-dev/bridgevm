@@ -12,11 +12,13 @@ struct NativeCLICreateWindowsOutput: Encodable, Equatable {
     let diskGiB: Int
     let resolution: String
     let networkEnabled: Bool
+    /// The pinned virtio-win payload from `--fetch-drivers` is sealed in the bundle.
+    let guestDriversSealed: Bool
     let configurationDigest: String
 
     var text: String {
         "Created pending Windows VM \(id) (\(displayName)).\n" +
         "Saved resources: \(cpuCount) CPU, \(memoryMiB) MiB, \(diskGiB) GiB, \(resolution).\n" +
-        NativeCLICreateWindowsGuidance.text(id: id)
+        (guestDriversSealed ? NativeCLICreateWindowsGuidance.sealedText(id: id) : NativeCLICreateWindowsGuidance.text(id: id))
     }
 }

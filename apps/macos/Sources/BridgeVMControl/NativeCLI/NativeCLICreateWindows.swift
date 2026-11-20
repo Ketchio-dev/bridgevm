@@ -15,13 +15,15 @@ enum NativeCLICreateWindows {
               saved.displayWidth == request.resolution.width, saved.displayHeight == request.resolution.height,
               saved.networkEnabled == request.networkEnabled,
               let pending = HvfWindowsInstallRequest.load(bundlePath: saved.bundlePath),
-              pending.diskGiB == request.diskGiB, pending.isoSHA256 != nil else {
+              pending.diskGiB == request.diskGiB, pending.isoSHA256 != nil,
+              (request.guestPayload == nil) == (pending.guestPayloadIdentity == nil) else {
             throw NativeCLIError.unavailable("Saved VM registration did not match the accepted creation request.")
         }
         return NativeCLICreateWindowsOutput(id: saved.slug, displayName: saved.displayName,
             backendKind: saved.backendKind, bootMode: saved.bootMode ?? "", installPending: true,
             cpuCount: request.cpuCount, memoryMiB: request.memoryMiB, diskGiB: request.diskGiB,
             resolution: request.resolution.text, networkEnabled: request.networkEnabled,
+            guestDriversSealed: pending.guestPayloadIdentity != nil,
             configurationDigest: try NativeRuntimeConfigurationIdentity.digest(config: saved))
     }
 
@@ -30,8 +32,15 @@ enum NativeCLICreateWindows {
 
 extension NativeCLI {
     static func executeCreateWindows(_ options: NativeCLIOptions) throws -> Int32 {
-        guard case .createWindows(let request) = options.command else {
+        guard case .createWindows(var request) = options.command else {
             throw NativeCLIError.invalid("Expected create-windows command.")
+        }
+        if request.fetchDrivers {
+            write("BridgeVM: preparing the pinned Red Hat virtio-win drivers (about 95 MB on first use)...\n", to: .standardError)
+            do { request.guestPayload = try HvfWindowsDriverPayloadFetch.prepare() } catch {
+                throw NativeCLIError.unavailable((error as? HvfWindowsDriverPayloadFetch.Failure)?.message
+                    ?? "드라이버를 준비하지 못했습니다. 다시 시도하세요.")
+            }
         }
         let result = try NativeCLICreateWindows.create(request, libraryRoot: options.libraryRoot)
         try output(result, json: options.json, text: result.text)

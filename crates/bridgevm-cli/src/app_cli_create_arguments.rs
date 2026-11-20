@@ -28,6 +28,9 @@ impl AppCreateWindowsArgs {
         if self.no_network {
             result.push("--no-network".into());
         }
+        if self.fetch_drivers {
+            result.push("--fetch-drivers".into());
+        }
         result
     }
 }

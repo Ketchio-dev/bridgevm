@@ -170,12 +170,21 @@ To install Windows from an ISO:
 
 - A Windows 11 ARM64 ISO, downloaded from Microsoft yourself. The app does not
   fetch Windows media; it asks you to choose the ISO file.
-- A user-supplied signed ARM64 driver payload containing exactly the storage,
-  serial and network roles, plus an external manifest derived from
-  [`windows-guest-payload-v1.example.tsv`](../scripts/win-assets/windows-guest-payload-v1.example.tsv).
-  The General Preview does not redistribute this payload. Its manifest must
-  list every file and exact SHA-256; the app copies and seals both inputs in
-  the VM bundle before installation.
+- Signed ARM64 storage, serial and network drivers. Either:
+  - click **드라이버 자동 준비** in the create sheet (or pass `--fetch-drivers` to
+    `bridgevm app create-windows`): the app downloads the pinned Red Hat
+    virtio-win 0.1-299 archive (about 95 MB, Microsoft-signed) from the official
+    fedorapeople.org source, refuses it unless its length and SHA-256 match the
+    pins, keeps it under `~/Library/Application Support/BridgeVM/driver-payloads`,
+    and writes the `Win11/ARM64` viostor, vioser and netkvm (with `netkvmp.exe`)
+    files plus their manifest there; or
+  - choose your own payload folder containing exactly the storage, serial and
+    network roles, plus an external manifest derived from
+    [`windows-guest-payload-v1.example.tsv`](../scripts/win-assets/windows-guest-payload-v1.example.tsv).
+    Its manifest must list every file and exact SHA-256.
+
+  BridgeVM itself does not redistribute these drivers. Either way the app copies
+  and seals the payload and manifest in the VM bundle before installation.
 - About 64 GiB of free disk for the guest image.
 
 To import instead: an installed Windows 11 Arm disk (RAW, QCOW2 or Hyper-V
@@ -190,7 +199,9 @@ optional install of the Microsoft-signed Red Hat virtio-win display driver,
 which Windows downloads itself. After a VM restart the display follows the
 window size; without it the resolution is fixed per VM (1280x800 by default).
 
-For installation, the ISO by itself is therefore not enough today. Payload preflight verifies
+With the automatic driver download, an ISO is the only file you provide. A
+complete Windows install from an ISO plus the downloaded drivers has not yet
+been proven by a live run. Payload preflight verifies
 the declared ARM64 PE identity and each catalog's embedded CMS integrity; it
 does not claim that Windows accepted or bound a driver. That remains live guest
 evidence, and a missing or rejected payload leaves installation blocked rather

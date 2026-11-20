@@ -8,7 +8,8 @@ final class NativeCLICreateWindowsParserTests: XCTestCase {
         defer { fixture.remove() }
         let arguments = ["--json", "create-windows", "개발 VM", "--iso", fixture.iso.path,
                          "--disk-gib", "128", "--memory-mib", "8192", "--cpus", "6",
-                         "--resolution", "1920x1080", "--no-network", "--library", fixture.library.path]
+                         "--resolution", "1920x1080", "--no-network", "--fetch-drivers",
+                         "--library", fixture.library.path]
         let parsed = try NativeCLICreateWindowsParser.parse(
             arguments: arguments, defaultLibrary: fixture.root, hostCPU: 12)
         guard case .createWindows(let request) = parsed.command else { return XCTFail("wrong command") }
@@ -19,6 +20,7 @@ final class NativeCLICreateWindowsParserTests: XCTestCase {
         XCTAssertEqual(request.cpuCount, 6)
         XCTAssertEqual(request.resolution.text, "1920x1080")
         XCTAssertFalse(request.networkEnabled)
+        XCTAssertTrue(request.fetchDrivers)
         XCTAssertEqual(parsed.libraryRoot, fixture.library)
         XCTAssertTrue(parsed.json)
     }
@@ -35,6 +37,7 @@ final class NativeCLICreateWindowsParserTests: XCTestCase {
         XCTAssertEqual(request.cpuCount, 4)
         XCTAssertEqual(request.resolution.text, "1440x900")
         XCTAssertTrue(request.networkEnabled)
+        XCTAssertFalse(request.fetchDrivers)
     }
 
     func testRejectsDuplicateUnsafeMissingAndHostInvalidInputs() throws {

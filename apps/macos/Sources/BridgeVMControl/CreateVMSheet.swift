@@ -14,6 +14,8 @@ struct CreateVMSheet: View {
     @State var isoPath: String = ""
     @State var guestPayloadPath: String = ""
     @State var guestPayloadManifestPath: String = ""
+    @State var fetchingDrivers = false
+    @State var driverFetchError = ""
     @State var hvfTargetPath: String = ""
     @State var hvfVarsPath: String = ""
     @State var diskGiB = 64
@@ -134,7 +136,9 @@ struct CreateVMSheet: View {
             } else if mode == .windowsHVFInstall {
                 CreateWindowsInstallFields(isoPath: isoPath, guestPayloadPath: guestPayloadPath,
                     guestPayloadManifestPath: guestPayloadManifestPath, pickISO: pickISO,
-                    pickGuestPayload: pickGuestPayload, pickGuestPayloadManifest: pickGuestPayloadManifest)
+                    pickGuestPayload: pickGuestPayload, pickGuestPayloadManifest: pickGuestPayloadManifest,
+                    fetchingDrivers: fetchingDrivers, driverFetchError: driverFetchError,
+                    fetchDrivers: fetchGuestDrivers)
             } else {
                 Text(mode == .windows
                      ? "Windows 11 ARM ISO를 선택하면 QEMU + TPM 2.0으로 설치 마법사를 부팅합니다."
@@ -256,6 +260,27 @@ struct CreateVMSheet: View {
 
     private func pickGuestPayloadManifest() {
         FileSelection.choose(directories: false, extensions: ["tsv"]) { guestPayloadManifestPath = $0.path }
+    }
+
+    /// Only on the user's click: the sheet opens with every source selection empty.
+    private func fetchGuestDrivers() {
+        guard !fetchingDrivers else { return }
+        fetchingDrivers = true
+        driverFetchError = ""
+        Task.detached {
+            let result = Result { try HvfWindowsDriverPayloadFetch.prepare() }
+            await MainActor.run {
+                fetchingDrivers = false
+                switch result {
+                case .success(let prepared):
+                    guestPayloadPath = prepared.payloadDirectory
+                    guestPayloadManifestPath = prepared.manifestPath
+                case .failure(let failure):
+                    driverFetchError = (failure as? HvfWindowsDriverPayloadFetch.Failure)?.message
+                        ?? "드라이버를 준비하지 못했습니다. 다시 시도하세요."
+                }
+            }
+        }
     }
 
     private func pickHVFTarget() {
