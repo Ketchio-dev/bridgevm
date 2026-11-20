@@ -10,14 +10,19 @@ First General Preview release, replacing the superseded 1.0.0. The product is
 still an **Engineering Preview**: Windows 11 Arm on BridgeVM's own
 Hypervisor.framework VMM, 3D-off, in an ad-hoc-signed app without Developer ID
 or notarization (`docs/install.md` has the first-open step). ISO installation
-needs your own Windows 11 Arm ISO and a signed ARM64 storage/serial/network
-driver payload. BridgeVM has only been run on M4 and M5 Macs; M1, M2 and M3
+needs your own Windows 11 Arm ISO; the app downloads the signed ARM64
+storage/serial/network drivers from the official virtio-win source on your
+click, or you choose your own payload. BridgeVM has only been run on M4 and M5 Macs; M1, M2 and M3
 are untested. The 1.0.0 claim that every release-blocking criterion was proven
 no longer stands: 2 of 5 release scenarios are met, and A9 (in-app install on
 a clean Mac) and A19 (disk safety) are open. See `STATUS.md`.
 
 ### Added
 
+- **Install from an ISO alone:** "드라이버 자동 준비" in the create sheet, or
+  `bridgevm app create-windows --fetch-drivers`, downloads the pinned
+  Microsoft-signed Red Hat virtio-win drivers (about 95 MB) once, checks their
+  SHA-256 and seals them in the VM; your own payload still works.
 - **Import:** QCOW2 and Hyper-V VHDX disks are converted to sparse RAW,
   the UEFI vars file is optional, and an imported Windows that has the virtio
   serial driver but no guest tools is offered a guest tools installer.
