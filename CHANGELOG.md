@@ -4,7 +4,7 @@ All notable changes to BridgeVM are documented in this file.
 
 ## Unreleased
 
-## [1.1.0] - 2026-11-19
+## [1.1.0] - 2026-11-20
 
 First General Preview release, replacing the superseded 1.0.0. The product is
 still an **Engineering Preview**: Windows 11 Arm on BridgeVM's own
