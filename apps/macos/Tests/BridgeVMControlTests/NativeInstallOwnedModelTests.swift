@@ -55,6 +55,28 @@ final class NativeInstallOwnedModelTests: XCTestCase {
         XCTAssertEqual(try accepted.operation.observation().phase, .cancelled)
     }
 
+    /// #684: the CLI publishes vm.json while the app is running; install must find it without a relaunch.
+    func testInstallAcceptsAVMPublishedAfterTheAppLaunched() async throws {
+        let fixture = HvfWindowsInstallStoreFixture(), config = fixture.config()
+        defer { fixture.clean() }
+        let library = fixture.library()
+        XCTAssertFalse(library.vms.contains { $0.slug == config.slug })
+        try fixture.save(config)
+        let handle = try NativeRuntimeLibraryHandle.open(rootURL: fixture.root, create: false)
+        let digest = try NativeRuntimeConfigurationIdentity.digest(config: config)
+        let app = UUID().uuidString
+        let install = request(.install, config: config, library: handle.identity,
+            digest: digest, app: app, operationID: UUID())
+
+        let accepted = try library.requestOwnedInstall(install, validateOwner: {})
+        XCTAssertEqual(accepted.disposition, .accepted)
+        let observedSession = await waitForSession(fixture, library: library, slug: config.slug)
+        let session = try XCTUnwrap(observedSession)
+        let cancel = request(.installCancel, config: config, library: handle.identity, digest: digest, app: app)
+        XCTAssertEqual(try library.requestOwnedInstall(cancel, validateOwner: {}).disposition, .cancelAccepted)
+        await fixture.finishCancelled(session)
+    }
+
     func testExistingUIInstallAndChangedConfigurationFailClosed() async throws {
         let fixture = HvfWindowsInstallStoreFixture(), config = fixture.config()
         defer { fixture.clean() }
