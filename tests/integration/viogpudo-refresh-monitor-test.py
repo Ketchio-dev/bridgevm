@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile the patched driver's real monitor enumeration against WDDM callbacks."""
+"""Compile the patched driver's real monitor/target enumeration against WDDM callbacks."""
 import os
 from pathlib import Path
 import subprocess
@@ -29,4 +29,5 @@ with tempfile.TemporaryDirectory(prefix="bridgevm-monitor-") as temporary:
     subprocess.run([os.environ.get("CXX", "c++"), "-std=c++17", "-Wall", "-Wextra", "-Werror",
                     "-I", str(work), str(fixture), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-print("PASS: existing monitor modes retain every newly advertised timing; callback errors survive")
+print("PASS: per-rate targets are independent of the source size, each has a matching monitor mode, "
+      "120Hz is preferred; callback errors survive")
