@@ -69,7 +69,7 @@ try {
     $env:LIB = "$(Join-Path $SourceDirectory 'VirtIO\objfre_win11_arm64\arm64');$previousLib"
     foreach ($project in @("VirtIO\VirtioLib.vcxproj", "viogpu\viogpudo\viogpudo.vcxproj")) {
         & $msbuildPath $project /m /t:Build "/p:Configuration=Win11 Release" /p:Platform=ARM64 `
-            /p:PreferredToolArchitecture=x64 /p:SignMode=Off /p:Feature_PackOne=false /p:_BUILD_MINOR_VERSION_=58010
+            /p:PreferredToolArchitecture=x64 /p:SignMode=Off /p:Feature_PackOne=false /p:_BUILD_MINOR_VERSION_=58011
         if ($LASTEXITCODE -ne 0) { throw "ARM64 build failed: $project" }
     }
     $built = Join-Path $SourceDirectory "viogpu\viogpudo\objfre_win11_arm64\arm64"

@@ -26,14 +26,14 @@ The host's deadline waker remains idle until enabled; it uses nanosecond
 intervals and an absolute schedule, resynchronizing after long gaps without
 issuing a burst of missed frames. Reset disables retrace interrupts.
 
-The patched DOD checks `BVR1` before starting and enumerates explicit pixel/H/V
-timings for the pinned source size. It also tries to add the stock driver's
-single size-independent target, with no timing specified, so a host size the
-monitor did not approve can still be used (not yet validated in Windows). If
-Windows rejects that target, the exact timings are kept. It commits the pinned
-target's rate to offset 20 (keeping the current rate for the stock target),
-takes the raster height from the pinned source, and implements both
-ControlInterrupt and GetScanLine. Its ISR reports `DISPLAYONLY_VSYNC` only for
+The patched DOD checks `BVR1` before starting. For a pinned source size that
+its latest monitor-mode recommendation offered, it enumerates explicit pixel/H/V
+timings at every rate. Windows prunes rate-specific targets of any other size
+(for example after a host resize), so such a size gets only the stock driver's
+size-independent target with no timing specified, at the stock rate (not yet
+validated in Windows). It commits the pinned target's rate to offset 20
+(keeping the current rate for the stock target), takes the raster height from
+the pinned source, and implements both ControlInterrupt and GetScanLine. Its ISR reports `DISPLAYONLY_VSYNC` only for
 the retrace event. Ordinary queue completions do not become vsync notifications.
 Power-down/reset stop the host source; no guest timer or DPC rearm loop is used.
 
@@ -80,9 +80,9 @@ Kit preparation compiles and runs the actual portable GetScanLine raster helper,
 checking the 720Hz blank interval, frame wrap and a late query after 24 hours.
 It also compiles the patched mode enumeration and rate commit against WDDM
 callback fixtures: an already-registered current mode must not skip newly
-advertised sizes/rates, an unlisted source size still gets the stock target, a
-rejected stock target leaves the exact targets in place, committing the stock
-target keeps the current rate, and a real exact-mode add failure must survive
+advertised sizes/rates, a recommended size gets the exact timings, any other
+pinned size gets exactly the stock target set, committing the stock target
+keeps the current rate, and a real exact-mode add failure must survive
 releasing the unowned mode record.
 Host unit tests cover 2D config-vector delivery at every listed rate, the deadline
 boundary, stop/reset, invalid guest rates, and independence from the 3D backend.

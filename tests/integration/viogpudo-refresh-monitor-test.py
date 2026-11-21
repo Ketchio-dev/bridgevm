@@ -24,7 +24,10 @@ with tempfile.TemporaryDirectory(prefix="bridgevm-monitor-") as temporary:
     work = Path(temporary)
     (work / "monitor-body.inc").write_text("\n".join(body(signature) for signature in (
         "VOID VioGpuDod::BuildVideoSignalInfo",
+        "VOID VioGpuDod::BuildStockVideoSignalInfo",
+        "VOID VioGpuDod::RecordRecommendedSize",
         "NTSTATUS VioGpuDod::AddSingleMonitorMode",
+        "NTSTATUS VioGpuDod::AddStockTargetMode",
         "NTSTATUS VioGpuDod::AddSingleTargetMode",
         "NTSTATUS VioGpuAdapter::SetRefreshTiming")))
     fixture = Path(__file__).with_suffix(".cpp")
@@ -32,5 +35,5 @@ with tempfile.TemporaryDirectory(prefix="bridgevm-monitor-") as temporary:
     subprocess.run([os.environ.get("CXX", "c++"), "-std=c++17", "-Wall", "-Wextra", "-Werror",
                     "-I", str(work), str(fixture), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-print("PASS: exact pinned-size timings plus one stock wildcard target; a rejected wildcard keeps the exact "
-      "targets; wildcard commits keep the rate; callback errors survive")
+print("PASS: recommended sizes get exact timings, other pinned sizes only the stock target; "
+      "committing it keeps the rate; callback errors survive")
