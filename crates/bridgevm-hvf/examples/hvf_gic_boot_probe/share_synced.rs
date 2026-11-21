@@ -13,7 +13,8 @@
 //! file's own bytes, it is not written over it: on_host_copy_same). Anything else, an
 //! unknown name, a marked name, a guest copy back at the previous version, a changed Mac file,
 //! keeps the Mac winning as before. After an unclean stop the edit cannot be told from a copy
-//! Windows lost in its cache: the Mac copy stays and the guest copy is kept beside it (recovery).
+//! Windows lost in its cache: the Mac copy stays and the guest copy is kept beside it (recovery);
+//! the kept version then counts as the previous one (on_recovery_copy_kept).
 //!
 //! A confirmed transfer is not yet on the guest's disk: a PUT's data and the guest's own edit
 //! (that a GET just copied) can sit in Windows' cache, and a force-stop or a probe kill then
@@ -226,6 +227,30 @@ impl ShareSync {
             last: SyncedVersion { size: mac.0, mtime_ms: mac.1 },
             prev: guest.map(|mtime_ms| SyncedVersion { size: record.size, mtime_ms }),
         };
+        self.synced.insert(name.clone(), file);
+        self.synced_changes.insert(name, Some(file));
+        self.synced_dirty = true;
+    }
+
+    /// A recovery copy of `name` is kept beside the Mac file, which is sent back next (the caller
+    /// saves the versions now, before that PUT's mark). Synced as on_host_copy_same takes it: the
+    /// Mac file's version the copy was preferred to is the last, the kept guest version (its size
+    /// and listed time) the previous. A session stopped again before that PUT is confirmed left
+    /// the guest copy at the kept version, and the next one takes it for no edit (the Mac copy is
+    /// sent again) instead of keeping a second, identical copy (#675). A guest copy changed since
+    /// is neither version and is kept or fetched as before.
+    pub fn on_recovery_copy_kept(&mut self, name: &str) {
+        let name = normalize_rel(name);
+        let mac = self.guest_changed.get(&name).copied();
+        let kept = self.records.get(&name).and_then(|record| {
+            let mtime_ms = share_mtime::guest_mtime_ms(record.guest_mtime.as_deref()?)?;
+            Some(SyncedVersion { size: record.size, mtime_ms })
+        });
+        self.on_host_copy_kept(&name);
+        let (Some(mac), Some(kept)) = (mac, kept) else {
+            return;
+        };
+        let file = SyncedFile { last: SyncedVersion { size: mac.size, mtime_ms: mac.mtime_ms }, prev: Some(kept) };
         self.synced.insert(name.clone(), file);
         self.synced_changes.insert(name, Some(file));
         self.synced_dirty = true;
