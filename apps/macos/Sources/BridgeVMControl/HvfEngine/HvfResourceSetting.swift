@@ -20,7 +20,7 @@ struct HvfResourceSetting: View {
     }
 
     static func memoryText(_ mib: Int) -> String {
-        mib % 1024 == 0 ? "\(mib / 1024)GB" : String(format: "%.2fGB", Double(mib) / 1024)
+        mib % 1024 == 0 ? "\(mib / 1024) GiB" : String(format: "%.2f GiB", Double(mib) / 1024)
     }
 
     var body: some View {

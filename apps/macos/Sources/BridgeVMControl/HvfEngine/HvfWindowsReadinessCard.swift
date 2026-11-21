@@ -50,7 +50,7 @@ struct HvfWindowsReadinessCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(6)
         } label: {
-            Label("Windows HVF Readiness", systemImage: "checklist")
+            Label("Windows 실행 준비 상태", systemImage: "checklist")
         }
     }
 }

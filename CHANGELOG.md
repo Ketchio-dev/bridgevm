@@ -4,6 +4,22 @@ All notable changes to BridgeVM are documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- `bridgevm app install` and `start` find a VM that `bridgevm app create-windows`
+  created while the app was already open, instead of answering
+  `targetUnavailable` until the app is reopened (#684).
+- Windows no longer shows a warning "Red Hat VirtIO SCSI controller" in Device
+  Manager: the unused installer slot is left out when no ISO is attached (#685).
+
+### Changed
+
+- The remaining English labels in the 가상 머신 menu (Windows 창 목록…) and the
+  고급 view are in Korean; the developer diagnostics say what they are for.
+- Memory and disk sizes say GiB everywhere, as the create sheet already did.
+- The snapshot name field looks like a field, and 고급 has one entry point (the
+  action grid) instead of three.
+
 ## [1.1.0] - 2026-11-20
 
 First General Preview release, replacing the superseded 1.0.0. The product is

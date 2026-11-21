@@ -11,7 +11,7 @@ struct HvfRuntimeKeyboardInput: View {
                 TextField("Windows에 입력할 텍스트", text: $draft, onCommit: submit)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("bridgevm.runtime.keyboard.input")
-                Button("Type", action: submit)
+                Button("입력", action: submit)
                     .disabled(draft.isEmpty)
                     .accessibilityIdentifier("bridgevm.runtime.keyboard.send")
                 Button("Tab") { submissionRefused = !session.sendToolbarKey("tab") }

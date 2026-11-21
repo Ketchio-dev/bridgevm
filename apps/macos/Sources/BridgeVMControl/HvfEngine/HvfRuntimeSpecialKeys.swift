@@ -18,12 +18,12 @@ struct HvfRuntimeSpecialKeys: View {
                 Button("Home") { send("home") }
                 Button("End") { send("end") }
                 Spacer()
-                Button("Win") { send("win") }.help("Windows key (Start)")
+                Button("Win") { send("win") }.help("Windows 키 (시작 메뉴)")
                     .accessibilityIdentifier("bridgevm.runtime.specialkeys.windows")
                 Button("Ctrl-Alt-Delete") { send("ctrl+alt+delete") }
             }
             if inputRefused {
-                Label("Key input refused. Check the event log.", systemImage: "exclamationmark.circle")
+                Label("키 입력이 거부되었습니다. 이벤트 기록을 확인하세요.", systemImage: "exclamationmark.circle")
                     .font(.callout).foregroundStyle(.orange)
                     .accessibilityIdentifier("bridgevm.runtime.specialkeys.refusal")
             }
