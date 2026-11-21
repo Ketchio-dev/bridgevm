@@ -27,8 +27,9 @@ intervals and an absolute schedule, resynchronizing after long gaps without
 issuing a burst of missed frames. Reset disables retrace interrupts.
 
 The patched DOD checks `BVR1` before starting, enumerates explicit pixel/H/V
-timings, commits the pinned target's rate to offset 20, and implements both
-ControlInterrupt and GetScanLine. Its ISR reports `DISPLAYONLY_VSYNC` only for
+timings, prefers 120Hz (the initial rate) at the pinned or host size, commits
+the pinned target's rate to offset 20, and implements both ControlInterrupt and
+GetScanLine. Its ISR reports `DISPLAYONLY_VSYNC` only for
 the retrace event. Ordinary queue completions do not become vsync notifications.
 Power-down/reset stop the host source; no guest timer or DPC rearm loop is used.
 
@@ -75,7 +76,8 @@ Kit preparation compiles and runs the actual portable GetScanLine raster helper,
 checking the 720Hz blank interval, frame wrap and a late query after 24 hours.
 It also compiles the patched monitor enumeration against WDDM callback fixtures:
 an already-registered current mode must not skip newly advertised sizes/rates,
-and a real add-mode failure must survive releasing the unowned mode record.
+exactly one 120Hz mode is preferred per set, and a real add-mode failure must
+survive releasing the unowned mode record.
 Host unit tests cover 2D config-vector delivery at every listed rate, the deadline
 boundary, stop/reset, invalid guest rates, and independence from the 3D backend.
 They do not establish Windows compatibility or measured frame throughput.
