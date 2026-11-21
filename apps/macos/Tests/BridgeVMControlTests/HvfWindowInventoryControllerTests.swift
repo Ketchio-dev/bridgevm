@@ -25,7 +25,7 @@ final class HvfWindowInventoryControllerTests: XCTestCase {
             model.poll()
             XCTAssertTrue(model.records.isEmpty)
             XCTAssertFalse(model.isLoading)
-            XCTAssertEqual(model.status, "Guest restarted")
+            XCTAssertEqual(model.status, "Windows가 다시 시작되었습니다. 새로 고침을 누르세요.")
             model.stop()
         }
     }

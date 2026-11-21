@@ -39,9 +39,9 @@ struct HvfRuntimeStatusCard: View {
                 }
                 HvfRuntimeStatusMessages(session: session, refusal: refusal)
                 HStack(spacing: 24) {
-                    infoItem("State", stateText, "bridgevm.windows.runtime.state")
+                    infoItem("상태", stateText, "bridgevm.windows.runtime.state")
                     HvfRuntimeHeartbeatItem(heartbeat: session.heartbeat)
-                    infoItem("Events", "\(session.events.count)", "bridgevm.windows.runtime.events")
+                    infoItem("이벤트", "\(session.events.count)", "bridgevm.windows.runtime.events")
                 }
             }
             .padding(6)
@@ -54,7 +54,7 @@ struct HvfRuntimeStatusCard: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.caption).foregroundColor(.secondary)
             Text(value).font(.body.monospaced()).accessibilityIdentifier(identifier)
-                .accessibilityValue(label == "State" ? stateCode : value)
+                .accessibilityValue(identifier == "bridgevm.windows.runtime.state" ? stateCode : value)
         }
     }
 }

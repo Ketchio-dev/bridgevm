@@ -68,7 +68,7 @@ final class HvfVirtualMachineMenuTests: XCTestCase {
         XCTAssertNil(target.display, "the library window is in front")
 
         a.perform(.windows)
-        XCTAssertTrue(a.showsWindowInventory, "Guest windows… opens the window's sheet")
+        XCTAssertTrue(a.showsWindowInventory, "Windows 창 목록… opens the window's sheet")
         XCTAssertFalse(b.showsWindowInventory)
     }
 

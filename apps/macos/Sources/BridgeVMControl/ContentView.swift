@@ -177,7 +177,7 @@ struct VMDetailPanel: View {
                 }
                 HStack(spacing: 24) {
                     infoItem("IP 주소", model.ip)
-                    infoItem("메모리", String(format: "%.0f GB", model.memGiB))
+                    infoItem("메모리", String(format: "%.0f GiB", model.memGiB))
                     infoItem("CPU", "\(model.cpu) 코어")
                 }
                 HStack(spacing: 10) {
@@ -212,7 +212,7 @@ struct VMDetailPanel: View {
                         in: Double(VMResourceLimits.minimumMemoryMiB) / 1024...Double(VMResourceLimits.maximumMemoryMiB) / 1024,
                         step: 1
                     )
-                    Text("\(Int(model.pendingMemGiB)) GB").frame(width: 60, alignment: .trailing).font(.body.monospaced())
+                    Text("\(Int(model.pendingMemGiB)) GiB").frame(width: 60, alignment: .trailing).font(.body.monospaced())
                 }
                 HStack {
                     Text("CPU").frame(width: 60, alignment: .leading)

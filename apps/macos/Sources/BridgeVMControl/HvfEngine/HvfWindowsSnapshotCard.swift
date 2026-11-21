@@ -24,7 +24,11 @@ struct HvfWindowsSnapshotCard: View {
                     .disabled(session.hasActiveRuntimeWork || model.busy)
                 }
                 HStack(spacing: 8) {
-                    TextField("이름 (선택 사항)", text: $name)
+                    // In the grouped settings form a titled field turns into a row label with a borderless
+                    // input; a hidden label with a prompt and a border reads as something to type into.
+                    TextField("스냅샷 이름", text: $name, prompt: Text("스냅샷 이름 (선택 사항)"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
                         .accessibilityIdentifier("bridgevm.runtime.snapshot.name")
                     Button("새 스냅샷") {
                         let chosenName = name

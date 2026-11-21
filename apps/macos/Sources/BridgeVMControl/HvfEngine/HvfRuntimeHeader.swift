@@ -13,7 +13,7 @@ struct HvfRuntimeHeader: View {
                 LibraryVMEmblem(engine: .hvfEngine)
                 VStack(alignment: .leading, spacing: 8) {
                     Text(title).font(.system(size: 28, weight: .bold)).textSelection(.enabled)
-                    Text("HVF Engine (Experimental)").font(.callout.weight(.medium)).foregroundStyle(.secondary)
+                    Text("Engineering Preview · 3D 가속 없음").font(.callout.weight(.medium)).foregroundStyle(.secondary)
                     Label {
                         Text(state).font(.callout.weight(.medium)).textSelection(.enabled)
                     } icon: {
