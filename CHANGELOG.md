@@ -4,6 +4,14 @@ All notable changes to BridgeVM are documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- After an unclean stop, the shared folder keeps the Windows version of a file
+  beside the Mac one as "(Windows copy)". If the VM stopped again before the
+  Mac version was sent back, the next start made a second, identical
+  "(Windows copy 2)"; now it keeps one copy and sends the Mac version again
+  (#675).
+
 ## [1.1.1] - 2026-11-21
 
 Fixes and interface polish for the 1.1.0 General Preview; the product state
