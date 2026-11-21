@@ -26,8 +26,13 @@ The host's deadline waker remains idle until enabled; it uses nanosecond
 intervals and an absolute schedule, resynchronizing after long gaps without
 issuing a burst of missed frames. Reset disables retrace interrupts.
 
-The patched DOD checks `BVR1` before starting, enumerates explicit pixel/H/V
-timings, commits the pinned target's rate to offset 20, and implements both
+The patched DOD checks `BVR1` before starting and enumerates explicit pixel/H/V
+timings for the pinned source size. It also tries to add the stock driver's
+single size-independent target, with no timing specified, so a host size the
+monitor did not approve can still be used (not yet validated in Windows). If
+Windows rejects that target, the exact timings are kept. It commits the pinned
+target's rate to offset 20 (keeping the current rate for the stock target),
+takes the raster height from the pinned source, and implements both
 ControlInterrupt and GetScanLine. Its ISR reports `DISPLAYONLY_VSYNC` only for
 the retrace event. Ordinary queue completions do not become vsync notifications.
 Power-down/reset stop the host source; no guest timer or DPC rearm loop is used.
@@ -73,9 +78,12 @@ the working VM as part of routine setup or updates.
 
 Kit preparation compiles and runs the actual portable GetScanLine raster helper,
 checking the 720Hz blank interval, frame wrap and a late query after 24 hours.
-It also compiles the patched monitor enumeration against WDDM callback fixtures:
-an already-registered current mode must not skip newly advertised sizes/rates,
-and a real add-mode failure must survive releasing the unowned mode record.
+It also compiles the patched mode enumeration and rate commit against WDDM
+callback fixtures: an already-registered current mode must not skip newly
+advertised sizes/rates, an unlisted source size still gets the stock target, a
+rejected stock target leaves the exact targets in place, committing the stock
+target keeps the current rate, and a real exact-mode add failure must survive
+releasing the unowned mode record.
 Host unit tests cover 2D config-vector delivery at every listed rate, the deadline
 boundary, stop/reset, invalid guest rates, and independence from the 3D backend.
 They do not establish Windows compatibility or measured frame throughput.
