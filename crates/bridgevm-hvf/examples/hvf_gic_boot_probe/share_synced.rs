@@ -9,7 +9,8 @@
 //! once synced, share_mtime.rs), and every PUT is marked before it can touch the guest copy
 //! until it is confirmed. At the first listing, a name whose Mac copy is still the last synced
 //! one, whose guest copy is neither that nor the previous one and that is not marked is a guest
-//! edit: it is fetched, not overwritten, unless the Mac file changes first. Anything else, an
+//! edit: it is fetched, not overwritten, unless the Mac file changes first (fetched with the Mac
+//! file's own bytes, it is not written over it: on_host_copy_same). Anything else, an
 //! unknown name, a marked name, a guest copy back at the previous version, a changed Mac file,
 //! keeps the Mac winning as before. After an unclean stop the edit cannot be told from a copy
 //! Windows lost in its cache: the Mac copy stays and the guest copy is kept beside it (recovery).
@@ -204,6 +205,30 @@ impl ShareSync {
     pub fn preferred_mac_stat(&self, name: &str) -> Option<(u64, u128)> {
         let stat = self.guest_changed.get(&normalize_rel(name))?;
         Some((stat.size, stat.mtime_ms))
+    }
+
+    /// A preferred copy turned out to hold the bytes of the Mac file `mac` (size, time) it was
+    /// preferred to, so it was not published (#651: an agent from before putmtime keeps its own
+    /// write time on an upload). Synced as it is: the Mac's time is the last version, the guest's
+    /// listed one the previous, so the next session takes that guest copy for no edit (the Mac
+    /// copy wins and is sent once, with its time).
+    pub fn on_host_copy_same(&mut self, name: &str, mac: (u64, u128)) {
+        let name = normalize_rel(name);
+        self.guest_changed.remove(&name);
+        self.recovery_copies.remove(&name);
+        let Some(record) = self.records.get_mut(&name) else {
+            return;
+        };
+        record.host_write_failed = false;
+        record.host_mtime_ms = Some(mac.1);
+        let guest = record.guest_mtime.as_deref().and_then(share_mtime::guest_mtime_ms);
+        let file = SyncedFile {
+            last: SyncedVersion { size: mac.0, mtime_ms: mac.1 },
+            prev: guest.map(|mtime_ms| SyncedVersion { size: record.size, mtime_ms }),
+        };
+        self.synced.insert(name.clone(), file);
+        self.synced_changes.insert(name, Some(file));
+        self.synced_dirty = true;
     }
 
     /// A preferred copy is not to be published (the Mac file changed, seen by its publish or by
