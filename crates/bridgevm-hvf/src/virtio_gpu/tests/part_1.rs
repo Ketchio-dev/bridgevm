@@ -15,7 +15,12 @@ use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_GET_CAPSET_INFO;
 
 /// The preferred detailed timing: active size, refresh and pixel clock (10 kHz).
 fn edid_preferred_timing(edid: &[u8]) -> ((u32, u32), u32, u32) {
-    let dtd = &edid[54..72];
+    edid_timing(&edid[54..72])
+}
+
+/// One detailed timing descriptor: active size, whole-Hz refresh (rounded
+/// down) and pixel clock (10 kHz).
+fn edid_timing(dtd: &[u8]) -> ((u32, u32), u32, u32) {
     let pixel_clock_10khz = u32::from(u16::from_le_bytes([dtd[0], dtd[1]]));
     let h_active = u32::from(dtd[2]) | (u32::from(dtd[4] >> 4) << 8);
     let h_blank = u32::from(dtd[3]) | (u32::from(dtd[4] & 0x0f) << 8);
@@ -31,8 +36,8 @@ fn edid_preferred_timing_is_120_hz_with_valid_ranges_and_checksum() {
     let ((h_active, v_active), refresh_hz, _) = edid_preferred_timing(&edid);
 
     assert_eq!((h_active, v_active), (1280, 800));
-    assert_eq!(refresh_hz, 119); // Integer 10 kHz clock encoding rounds just below 120 Hz.
-    assert_eq!(&edid[75..82], &[0xfd, 0, 48, 144, 30, 160, 15]);
+    assert_eq!(refresh_hz, 120); // The clock rounds up: never below 120 Hz.
+    assert_eq!(&edid[75..82], &[0xfd, 0b1010, 24, 255, 1, 255, 255]);
     assert_eq!(
         edid.iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte)),
         0
@@ -47,15 +52,44 @@ fn edid_describes_a_retina_size_at_60_hz_instead_of_clamping_the_clock() {
     let (size, refresh_hz, pixel_clock_10khz) = edid_preferred_timing(&edid);
 
     assert_eq!(size, (3456, 2234));
-    assert_eq!(pixel_clock_10khz, 54_704, "(3456+432)x(2234+111) at 60 Hz");
-    assert_eq!(refresh_hz, 59); // 59.998 Hz in whole 10 kHz clock steps.
-    assert_eq!(&edid[75..82], &[0xfd, 0, 48, 144, 30, 160, 55]);
+    assert_eq!(
+        pixel_clock_10khz, 54_705,
+        "(3456+432)x(2234+111) at 60 Hz, rounded up"
+    );
+    assert_eq!(refresh_hz, 60);
     assert_eq!(
         edid.iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte)),
         0
     );
     // 2560x1600 still fits at 120 Hz.
-    assert_eq!(edid_preferred_timing(&build_edid(2560, 1600)).1, 119);
+    assert_eq!(edid_preferred_timing(&build_edid(2560, 1600)).1, 120);
+}
+
+#[test]
+fn edid_covers_later_host_sizes_at_120_and_60_hz() {
+    // Windows offers a size it did not list at monitor arrival only at rates
+    // where a base-block timing at least that large runs at least that fast.
+    // Live (2026-11-21): 2560x1656 got 30-90 Hz under a 119.999 Hz timing and
+    // 120 Hz once the clock rounded up.
+    for boot in [(1280, 800), (3456, 2234)] {
+        let edid = build_edid(boot.0, boot.1);
+        let (size, refresh_hz, clock) = edid_timing(&edid[90..108]);
+        assert_eq!((size, refresh_hz), ((2880, 1800), 120));
+        assert!(
+            u64::from(clock) * 10_000 >= 2960 * 1830 * 120,
+            "never below 120 Hz"
+        );
+        let (size, refresh_hz, clock) = edid_timing(&edid[108..126]);
+        assert_eq!((size, refresh_hz), ((4000, 2600), 60));
+        assert!(
+            u64::from(clock) * 10_000 >= 4080 * 2630 * 60,
+            "never below 60 Hz"
+        );
+        assert_eq!(
+            edid[..128].iter().fold(0u8, |sum, b| sum.wrapping_add(*b)),
+            0
+        );
+    }
 }
 
 #[test]
