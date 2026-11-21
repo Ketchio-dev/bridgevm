@@ -82,7 +82,12 @@ impl AgentConsoleHarness {
             }
             Err(e) if crate::agent_console::share::host_destination::is_mac_changed(&e) => {
                 share.fetch_mac.remove(name);
-                share.engine.on_host_copy_kept(name);
+                // A recovery returns this only once its copy is kept beside the Mac file.
+                if recovery {
+                    share.recovery_copy_kept(name, now);
+                } else {
+                    share.engine.on_host_copy_kept(name);
+                }
                 println!("BVAGENT SHARE skip {name} mac-changed");
             }
             Err(e) => {

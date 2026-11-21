@@ -370,7 +370,12 @@ impl AgentConsoleHarness {
             }
             Err(error) if super::host_destination::is_mac_changed(&error) => {
                 share.fetch_mac.remove(&get.name);
-                share.engine.on_host_copy_kept(&get.name);
+                // Still a recovery copy: published as one (only a first listing makes them), so kept.
+                if share.engine.recovery_copy(&get.name) {
+                    share.recovery_copy_kept(&get.name, now);
+                } else {
+                    share.engine.on_host_copy_kept(&get.name);
+                }
                 println!("BVAGENT SHARE skip {} mac-changed", get.name);
             }
             Err(error) => self.big_get_write_failed(&get.name, get.size, &error),

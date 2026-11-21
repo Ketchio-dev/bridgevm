@@ -387,7 +387,9 @@ impl SyncStateFile {
         drop(self.marks.write.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
     }
 
-    fn flush_now(&mut self, engine: &mut ShareSync, now: Instant) {
+    /// The versions changed since the last flush to the state thread now, ahead of any mark asked
+    /// after this.
+    pub(in crate::agent_console) fn flush_now(&mut self, engine: &mut ShareSync, now: Instant) {
         let Some(changes) = engine.take_synced_changes() else {
             return;
         };

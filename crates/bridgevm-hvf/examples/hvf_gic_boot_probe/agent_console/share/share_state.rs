@@ -266,6 +266,16 @@ impl ShareState {
         }
     }
 
+    /// A recovery copy of `name` is kept beside the Mac file: its version goes to the state
+    /// thread now, so it is written before the mark of the PUT that sends the Mac copy back
+    /// (share_synced.rs on_recovery_copy_kept).
+    pub(in crate::agent_console) fn recovery_copy_kept(&mut self, name: &str, now: Instant) {
+        self.engine.on_recovery_copy_kept(name);
+        if let Some(file) = self.sync_file.as_mut() {
+            file.flush_now(self.engine.for_pass(), now);
+        }
+    }
+
     pub(in crate::agent_console) fn flush_sync_state(&mut self, now: Instant) {
         let Some(file) = self.sync_file.as_mut() else {
             return;
