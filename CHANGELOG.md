@@ -11,6 +11,9 @@ All notable changes to BridgeVM are documented in this file.
   `targetUnavailable` until the app is reopened (#684).
 - Windows no longer shows a warning "Red Hat VirtIO SCSI controller" in Device
   Manager: the unused installer slot is left out when no ISO is attached (#685).
+- A Mac file put into the shared folder while Windows still ran an older guest
+  agent is no longer copied back over itself at the next start (new date,
+  quarantine mark): an identical Windows copy is recognised and left alone (#651).
 
 ### Changed
 
