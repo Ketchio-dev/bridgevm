@@ -357,6 +357,52 @@ fn a_guest_edit_after_the_last_transfer_settled_is_still_fetched() {
 }
 
 #[test]
+fn a_windows_copy_fetched_with_the_mac_files_own_bytes_leaves_the_mac_file_as_it_is() {
+    // #651: an agent from before putmtime (no READY here says putmtime) keeps its own write time
+    // on an upload, so the next session took its copy for a Windows edit and fetched it: the
+    // same bytes, yet the Mac file was replaced, dated with Windows' time and quarantined.
+    let mut rig = Rig::new("same-bytes");
+    let vars = vars(&rig);
+    new_session(&mut rig, Some(&vars));
+    std::fs::write(rig.dir.join("doc.bin"), b"the Mac's version").unwrap();
+    for _ in 0..24 {
+        rig.run(1);
+        if !rig.guest.puts.is_empty() {
+            break;
+        }
+    }
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"the Mac's version"[..]));
+    // Windows' own write time, before the next listing.
+    rig.guest.stamps.insert("DOC.BIN".into(), now_ms() - HOUR_MS);
+    settle(&mut rig);
+    let mac = |rig: &Rig| (rig.inode("doc.bin"), std::fs::metadata(rig.dir.join("doc.bin")).unwrap().modified().unwrap());
+    let quarantined = |rig: &Rig| {
+        let path = std::ffi::CString::new(rig.dir.join("doc.bin").into_os_string().into_encoded_bytes()).unwrap();
+        // SAFETY: NUL-terminated path and name; a size query, no buffer.
+        let len = unsafe {
+            libc::getxattr(path.as_ptr(), c"com.apple.quarantine".as_ptr(), std::ptr::null_mut(), 0, 0, libc::XATTR_NOFOLLOW)
+        };
+        len >= 0
+    };
+    let before = mac(&rig);
+    new_session(&mut rig, Some(&vars));
+    let gets = rig.guest.gets.len();
+    rig.run(16);
+    assert_eq!(rig.guest.gets[gets..], ["doc.bin"]);
+    assert_eq!(mac(&rig), before, "the Mac file was rewritten");
+    assert!(!quarantined(&rig), "the Mac file was quarantined");
+    assert_eq!(rig.host_names(), ["doc.bin"], "a Windows copy was kept beside");
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"the Mac's version"[..]));
+    // The next session does not fetch it again, and the Mac file stays as it is.
+    new_session(&mut rig, Some(&vars));
+    let gets = rig.guest.gets.len();
+    rig.run(16);
+    assert_eq!(rig.guest.gets.len(), gets, "{:?}", rig.guest.gets);
+    assert_eq!(mac(&rig), before, "the Mac file was rewritten in the third session");
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"the Mac's version"[..]));
+}
+
+#[test]
 fn one_scan_pass_of_several_puts_writes_the_marks_once() {
     let mut rig = Rig::new("mark-batch");
     let vars = vars(&rig);
