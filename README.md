@@ -10,10 +10,15 @@ BridgeVM runs Windows alongside macOS using its own
 [Hypervisor.framework VMM](crates/bridgevm-hvf/). The main Windows engine runs
 without QEMU. Apple VZ and QEMU compatibility backends are separate paths.
 
-**Current access: source builds · Engineering Preview · 3D-off.**
-A supported public download is still being prepared. The terminal installer
-refuses the superseded `v1.0.0` preview.
+**Current access: [General Preview v1.1.0](https://github.com/Ketchio-dev/bridgevm/releases/tag/v1.1.0) · Engineering Preview · 3D-off.**
+Install it with the terminal installer or the DMG. The app is ad-hoc signed,
+not notarized; the installer refuses the superseded `v1.0.0` preview.
 
+```sh
+curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash
+```
+
+**[Install guide](docs/install.md)** ·
 **[Build from source](docs/install.md#build-the-current-source)** ·
 **[Set up Windows](docs/install.md#what-you-need-after-installing)** ·
 **[Current status](STATUS.md)** · **[Contribute](CONTRIBUTING.md)**
@@ -49,16 +54,18 @@ can repeat or lose characters. Use clipboard sharing and paste if this occurs.
 ## Try BridgeVM
 
 **Host:** Apple silicon and macOS 14+. The declared host matrix is M4/M5;
-M1–M3 are not yet covered. Source builds require Xcode/Swift, Rust 1.85+ and
-pinned native dependencies. Follow the complete
-[build and packaging guide](docs/install.md#build-the-current-source);
-`cargo build` and `swift build` alone do not prepare a Windows-installation app.
+M1–M3 are not yet covered. The [installation guide](docs/install.md) has the
+terminal installer, the DMG and its one-time Open Anyway step. Source builds
+require Xcode/Swift, Rust 1.85+ and pinned native dependencies; follow the
+complete [build and packaging guide](docs/install.md#build-the-current-source),
+because `cargo build` and `swift build` alone do not prepare a
+Windows-installation app.
 
 Choose the Windows setup path that matches what you have:
 
 | Starting point | What you provide |
 | --- | --- |
-| **Install from ISO** | Your own licensed Windows 11 Arm ISO. On your click the app downloads the Microsoft-signed Red Hat virtio-win storage/serial/network drivers (about 95 MB) from the official source and checks them against a pinned SHA-256; you can still choose your own signed ARM64 driver folder and manifest instead. A complete install from the ISO plus downloaded drivers is not yet proven by a live run. |
+| **Install from ISO** | Your own licensed Windows 11 Arm ISO. On your click the app downloads the Microsoft-signed Red Hat virtio-win storage/serial/network drivers (about 95 MB) from the official source and checks them against a pinned SHA-256; you can still choose your own signed ARM64 driver folder and manifest instead. One live install from an ISO with the downloaded drivers reached Windows setup with storage, serial and network working (2026-11-20, development Mac); a clean-Mac run through the app is not yet recorded. |
 | **Import an installed VM** | A Windows 11 Arm disk in RAW, QCOW2 or Hyper-V VHDX format. Import needs no driver payload. |
 
 The [installation guide](docs/install.md) covers both paths, required bundle
@@ -66,9 +73,9 @@ resources and first-open trust. After Windows starts, install the signed guest
 display driver from the VM's settings and restart to enable window-following
 resolution.
 
-Source builds use local development signing. Developer ID signing and Apple
-notarization for public distribution remain unfinished. Standard preview
-packaging includes no Windows test driver and requires no TESTSIGNING setup.
+Release and source builds are ad-hoc signed. Developer ID signing and Apple
+notarization remain unfinished. Standard preview packaging includes no Windows
+test driver and requires no TESTSIGNING setup.
 
 ## Engineering Preview
 
