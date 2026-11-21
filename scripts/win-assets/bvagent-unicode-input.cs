@@ -41,6 +41,9 @@ namespace BridgeVM {
         [DllImport("user32.dll", SetLastError = true)]
         private static extern uint SendInput(uint count, [In] Input[] inputs, int size);
 
+        [DllImport("kernel32.dll")]
+        private static extern uint SetThreadExecutionState(uint flags);
+
         public static Input[] Build(string text) {
             if (String.IsNullOrEmpty(text) || text.Length > MaximumCodeUnits) {
                 throw new ArgumentException("unicode-input-length");

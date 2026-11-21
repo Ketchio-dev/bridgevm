@@ -57,6 +57,11 @@ while IFS=$'\t' read -r patch_file component revision license scope output licen
       expected_license=MIT
       expected_scope=graphics-lab-artifact
       expected_license_text=docs/licenses/Mesa-patched-files-MIT.txt ;;
+    scripts/patches/virtio-win-viogpudo-refresh.patch)
+      expected_revision=47e330f26153619255c3190c6aa8810cd9e7b7fd
+      expected_license=BSD-3-Clause
+      expected_scope=graphics-lab-artifact
+      expected_license_text=docs/licenses/virtio-win-viogpudo-BSD-3-Clause.txt ;;
     scripts/patches/dxvk-macos-venus-relax.patch)
       expected_revision=6b20f622a77b87b2921fe5d2c1774d2f2ba3e9b7
       expected_license=Zlib

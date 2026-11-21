@@ -45,11 +45,13 @@ const POWERSHELL: &str = "powershell -NoProfile -NonInteractive -EncodedCommand 
 
 /// Everything but the final `[BvD]::Run(W,H)` call. C# inside a PowerShell
 /// single-quoted string: no single quotes. DEVMODEW is 220 bytes (dmSize at
-/// 68, dmFields 72, position 76/80, width/height 172/176), DISPLAY_DEVICEW is
+/// 68, dmFields 72, position 76/80, width/height 172/176, frequency 184), DISPLAY_DEVICEW is
 /// 840 bytes (name at 4, StateFlags 324, DeviceID 328). Display-config paths
 /// are 72 bytes (target mode index at 32), modes 64 (type at 0, source mode
 /// width/height at 16/20). No line breaks: they would only cost length.
 /// bvagent.ps1 holds the same C#, one piece per line (display_verbs_tests.rs).
+/// Copy the active frequency to the listed geometry: each BridgeVM size has
+/// the same rate set. Short local names keep the encoded fallback within cmd.exe.
 pub(super) const SCRIPT_BODY: &str = concat!(
     r#"Add-Type -TypeDefinition '"#,
     r#"using System;using System.Collections.Generic;using System.Runtime.InteropServices;using System.Threading;"#,
@@ -76,18 +78,19 @@ pub(super) const SCRIPT_BODY: &str = concat!(
     r#"if(k==0){for(int i=0;i<m;i++)if(G(b,i*64)==1){P(b,i*64+16,w);P(b,i*64+20,h);}for(int i=0;i<p;i++)P(a,i*72+32,-1);}"#,
     r#"int r=SetDisplayConfig(p,a,m,b,0x80|0x20|0x400|0x1000);s+=r+";";if(r==0)break;}return s;}"#,
     r#"public static string Run(int w,int h){"#,
-    r#"Scan();string t=V,want=w+"x"+h,before=S(t),res="not_listed",force="none",lay="none";var det=new List<string>();"#,
+    r#"Scan();string t=V,v=w+"x"+h,b=S(t),res="not_listed",x="none",lay="none";var det=new List<string>();"#,
     r#"var cur=V!=null&&A?M(V,-1):null;"#,
     r#"if(cur!=null&&O.Count>0){P(cur,72,0x20);P(cur,76,0);P(cur,80,0);lay=""+C(V,cur,0x10000011);"#,
     r#"foreach(var o in O){var z=new byte[220];z[68]=220;P(z,72,0x180020);det.Add(o+"="+C(o,z,0x10000001));}"#,
     r#"lay+="/"+C(null,null,0);Scan();}"#,
     r#"var end=DateTime.Now.AddSeconds(10);"#,
-    r#"if(t==null){res="0";if(S(t)!=want){var m=M(null,-1);P(m,72,0x180000);P(m,172,w);P(m,176,h);res=""+C(null,m,1);}}"#,
+    r#"if(t==null){res="0";if(S(t)!=v){var m=M(null,-1);P(m,72,0x180000);P(m,172,w);P(m,176,h);res=""+C(null,m,1);}}"#,
     r#"else while(true){byte[] f=null;for(int n=0;f==null;n++){var m=M(t,n);if(m==null)break;if(G(m,172)==w&&G(m,176)==h)f=m;}"#,
-    r#"res=f==null?"not_listed":""+C(t,f,1);if(res=="0"&&S(t)==want||DateTime.Now>end)break;"#,
-    r#"force=Force(w,h);Thread.Sleep(400);}"#,
+    r#"if(f!=null&&cur!=null)P(f,184,G(cur,184));"#,
+    r#"res=f==null?"not_listed":""+C(t,f,1);if(res=="0"&&S(t)==v||DateTime.Now>end)break;"#,
+    r#"x=Force(w,h);Thread.Sleep(400);}"#,
     r#"Scan();"#,
-    r#"return "BVDISPLAY target="+want+" virtio="+(t==null?"none":"found")+" before="+before+" after="+S(t)+" primary="+Pr+" layout="+lay+" detached="+(det.Count==0?"none":string.Join(",",det))+" force="+force+" result="+res;}}';"#,
+    r#"return "BVDISPLAY target="+v+" virtio="+(t==null?"none":"found")+" before="+b+" after="+S(t)+" primary="+Pr+" layout="+lay+" detached="+(det.Count==0?"none":string.Join(",",det))+" force="+x+" result="+res;}}';"#,
 );
 
 fn requested() -> &'static AtomicU64 {
