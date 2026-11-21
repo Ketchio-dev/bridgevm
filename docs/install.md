@@ -80,7 +80,7 @@ its required [pinned wimlib runtime builder](../scripts/build-pinned-wimlib-runt
 curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash -s -- --launch
 ```
 
-This command installs the newest General Preview (currently `v1.1.0`).
+This command installs the newest General Preview (currently `v1.1.1`).
 
 The bootstrap fetches the full installer at a pinned SHA-256 and refuses to run
 anything else. The installer then fails closed at every step:
@@ -209,8 +209,8 @@ than falling back to unsigned drivers.
   The previous app is preserved until the new one verifies in place.
 - **Roll back**: run the installer with `--version <older-tag>`, or if you
   updated with `--keep-backup`, remove the new app and rename the
-  `BridgeVM.app.backup-*` bundle back. The first General Preview, `v1.1.0`,
-  has no installable predecessor: the installer refuses `v1.0.0`.
+  `BridgeVM.app.backup-*` bundle back. `v1.1.0` is the oldest release you can
+  roll back to: the installer refuses `v1.0.0`.
 - **Uninstall**: delete `/Applications/BridgeVM.app`. That removes the app
   only. Your VMs live under `~/Library/Application Support/BridgeVM/vms` (or
   the storage folder you chose); delete them only if you also want to destroy
