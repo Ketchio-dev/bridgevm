@@ -4,6 +4,11 @@ All notable changes to BridgeVM are documented in this file.
 
 ## Unreleased
 
+## [1.1.1] - 2026-11-21
+
+Fixes and interface polish for the 1.1.0 General Preview; the product state
+and the release contract are unchanged.
+
 ### Fixed
 
 - `bridgevm app install` and `start` find a VM that `bridgevm app create-windows`
