@@ -34,7 +34,8 @@ impl AgentConsoleHarness {
         // A preferred guest edit goes only over the Mac file it was preferred to (share_synced.rs).
         let recovery = share.engine.recovery_copy(name);
         let empty_recovery = recovery && finished.bytes.is_empty();
-        let mac = share.fetch_mac.get(name).copied().or_else(|| share.engine.preferred_mac_stat(name).map(Some));
+        let preferred = share.engine.preferred_mac_stat(name);
+        let mac = share.fetch_mac.get(name).copied().or_else(|| preferred.map(Some));
         let bytes = match share
             .engine
             .on_guest_file(name.to_string(), finished.bytes, None)
@@ -51,11 +52,23 @@ impl AgentConsoleHarness {
             share.engine.on_host_copy_kept(name);
             return;
         }
+        let destination = Destination::from_root(root, name, true);
+        // A preferred copy holding the very bytes of the Mac file it was preferred to (an agent
+        // from before putmtime kept its own write time on the upload, #651) is not published: it
+        // would only date the Mac file anew and mark it quarantined. Anything else as before.
+        if let (false, Some(stat), Ok(d)) = (recovery, preferred, &destination) {
+            if d.same_content(&bytes, stat) {
+                share.fetch_mac.remove(name);
+                share.engine.on_host_copy_same(name, stat);
+                println!("BVAGENT SHARE skip {name} same-as-mac");
+                return;
+            }
+        }
         let mtime = (share.engine.guest_mtime(name))
             .and_then(share_sync::share_mtime::guest_mtime_ms)
             .and_then(share_sync::share_mtime::system_time);
         share.forget_host_walk();
-        let written = Destination::from_root(root, name, true)
+        let written = destination
             .and_then(|d| d.write_at_unless_changed(&bytes, mtime, mac, recovery, || share.mark_fetched(name, now)));
         match written {
             Ok(mtime) => {
@@ -69,7 +82,12 @@ impl AgentConsoleHarness {
             }
             Err(e) if crate::agent_console::share::host_destination::is_mac_changed(&e) => {
                 share.fetch_mac.remove(name);
-                share.engine.on_host_copy_kept(name);
+                // A recovery returns this only once its copy is kept beside the Mac file.
+                if recovery {
+                    share.recovery_copy_kept(name, now);
+                } else {
+                    share.engine.on_host_copy_kept(name);
+                }
                 println!("BVAGENT SHARE skip {name} mac-changed");
             }
             Err(e) => {

@@ -16,7 +16,7 @@ Release scenarios met: **2 / 5**.
 | S1 | Get Windows running | `OPEN` | A9 (open), A1, A10 | **A9**: No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off. In the 3D-off configuration the app's live display window was choppy in recent hardware runs; its smoothness has not been measured since. Guest audio stuttered audibly: until 2026-11-03 every other 10 ms of Windows playback reached the host as silence, because the sound controller answered Windows' position reads at the 0x2084 alias with 0. Since that fix, 60-second live runs had 2-6 silent 10 ms blocks out of about 6,330, and under host load 0-8 blocks per run still repeated stale audio; at the v1.1.0 release head (2026-11-14) six such runs had 2-6 silent and 0-3 stale blocks out of about 6,400, and one of them had 2 host underrun callbacks. No listening check has confirmed the stutter is gone. |
 | S2 | Use the Windows desktop | `OPEN` | A4, B4, A5, A8 | The Windows display follows the window size only after the one-time display driver install in the VM view (Red Hat virtio-win, Microsoft-signed, downloaded by the guest) and a VM restart; until then the resolution is fixed per VM before it starts (1280x800 by default, up to 2560x1600). The app window was choppy in earlier runs and its smoothness has not been measured since, and no listening check has confirmed that the audio stutter is gone (see A9). |
 | S3 | Work with the Mac | `MET` | A6, A7 | none |
-| S4 | Keep the VM safe | `OPEN` | A19 (open), A15, A16, A12 | **A19**: Legacy managed storage relocated before identity migration is refused. Full interrupted-operation coverage is unproven. The ten-lane product lifecycle campaign passed 10/10 through the live queue at 949f4c26, which the operator accepted before a release head was designated, and 10/10 again on 2026-11-14 on the v1.1.0 release-head app f73b66bf, run locally without a queue seal. Physical power loss during a snapshot operation is outside this criterion and is not tested. |
+| S4 | Keep the VM safe | `OPEN` | A19 (open), A15, A16, A12 | **A19**: Legacy managed storage relocated before identity migration is refused. Full interrupted-operation coverage is unproven. The ten-lane product lifecycle campaign passed 10/10 through the live queue at 949f4c26, which the operator accepted before a release head was designated, and 10/10 again on 2026-11-14 on the earlier v1.1.0 candidate app f73b66bf, and 10/10 on 2026-11-19 on the superseded candidate app 6647c818 (release dry run 44563308193), and 10/10 twice on 2026-11-19 at the first v1.1.0 tag head 7d2c7b9e (withdrawn before publication): once on its release dry-run app (run 44604775627) and once on the tag-build draft release app (run 44618936971), and 10/10 twice on 2026-11-20 at the published v1.1.0 tag head 18cf96c6 (dry run 44660980419, tag build 44671169772), and 10/10 twice on 2026-11-21 at the v1.1.1 tag head 3b01ef93 (dry run 44928977909, tag build 44937416528), each installed through the installer and run locally without a queue seal. Physical power loss during a snapshot operation is outside this criterion and is not tested. |
 | S5 | Go online | `MET` | A20 | none |
 
 Release-blocking criteria proven: **12 / 14**. Open: A9, A19.
@@ -27,7 +27,7 @@ Other known open defects:
 - Graphics future path: Vulkan is a Graphics Lab future path, excluded from General Preview and v1; D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-11-14 at commit `c4f4e9cbeb6fc27caf2a9ba24ec624592da1f01c`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-11-21 at commit `f66c2ed5f001d8cced6dba321b1eb1ef1661365d`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 ## How to read the generated status
@@ -63,8 +63,8 @@ and the QEMU Compatibility Engine remain separate backends.
 
 ## Distribution
 
-Use the [current-source build](docs/install.md#build-the-current-source) while
-a safe General Preview successor is pending. The published `v1.0.0` predates the
+The General Preview is published (latest `v1.1.1`); see the
+[installation guide](docs/install.md). The older `v1.0.0` predates the
 fail-closed driver boundary and is not recommended. The terminal installer
 requires a `BridgeVM-release.json` contract and refuses releases without it,
 even when an archive checksum is valid.
@@ -77,7 +77,8 @@ it cannot satisfy A9. Windows rejection of test mode remains an explicit error.
 See the [distribution channel contract](docs/distribution-channels.md).
 
 The Mac app uses ad-hoc signing, without Developer ID signing or Apple
-notarization. Downloaded builds require an explicit trust step. Windows driver
+notarization. A DMG downloaded in a browser needs the one-time Open Anyway
+step; the copy the terminal installer fetches does not. Windows driver
 trust is a separate constraint; owning an ISO does not establish it. Packaging,
 update/rollback UX and stronger artifact provenance remain development work.
 
@@ -87,7 +88,8 @@ The Engineering Preview boundary is the proven evidence set, not universal
 compatibility:
 
 - driver setup and recovery remain developer-oriented;
-- ad-hoc Mac distribution requires a user trust override for downloaded builds;
+- ad-hoc Mac distribution requires a one-time Open Anyway override for a DMG
+  downloaded in a browser;
 - clean-machine coverage is smaller than a mature VM product needs, and the
   declared host matrix (B8) covers only the M4 and M5 Apple-silicon
   generations this project can run on; M1, M2 and M3 are uncovered, not

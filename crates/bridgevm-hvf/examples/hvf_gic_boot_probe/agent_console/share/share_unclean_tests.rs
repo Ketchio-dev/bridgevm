@@ -34,6 +34,46 @@ fn ordinary_fetch_stage_failure_mark_loses_windows_edit_after_kill() {
         "single-range Windows edit overwritten after failed publication and restart");
 }
 
+/// #643: the fetched copy is marked on disk, then its rename fails (or the VM dies before it):
+/// the Mac never received the Windows edit, but the next session finds the name marked.
+fn rename_failure_after_mark_then(clean: bool) {
+    use crate::agent_console::share::host_destination::RENAME_FAULT;
+    let label = if clean { "rename-failed-clean" } else { "rename-failed-kill" };
+    let (mut rig, vars) = synced_from_guest(label, now_ms()-2*HOUR_MS, true);
+    settle(&mut rig);
+    new_session(&mut rig, Some(&vars));
+    rig.guest.write("doc.bin", b"only Windows edit");
+    rig.guest.stamps.insert("DOC.BIN".into(), now_ms());
+    let gets = rig.guest.gets.len();
+    RENAME_FAULT.with(|f| f.set(Some(libc::EIO)));
+    for _ in 0..16 { rig.run(1); if rig.guest.gets.len()>gets { break; } }
+    RENAME_FAULT.with(|f| f.set(None));
+    assert!(rig.guest.gets.len()>gets, "ordinary edit was not fetched");
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"old version"[..]));
+    let paths = [".share-sync", ".share-sync-puts"].map(|s| PathBuf::from(format!("{}{s}",vars.display())));
+    if clean {
+        let share = rig.h.share.as_mut().unwrap();
+        share.sync_file.as_mut().unwrap().finish_clean(&mut share.engine);
+    }
+    let disk = paths.each_ref().map(|p| std::fs::read(p).ok());
+    assert!(disk.iter().flatten().any(|b| String::from_utf8_lossy(b).contains("mark ")) || clean, "no mark on disk before the failed rename");
+    rig.h.share = None;
+    for (p, bytes) in paths.iter().zip(disk) {
+        if let Some(bytes)=bytes { std::fs::write(p,bytes).unwrap(); } else { let _=std::fs::remove_file(p); }
+    }
+    new_session(&mut rig, Some(&vars));
+    rig.run(24);
+    let kept = |name: &str| rig.host(name).as_deref()==Some(&b"only Windows edit"[..]);
+    assert!(rig.guest.content("doc.bin")==Some(&b"only Windows edit"[..]) || kept("doc.bin") || kept("doc (Windows copy).bin"),
+        "clean={clean}: Windows edit overwritten after a failed rename and restart");
+}
+
+#[test]
+fn ordinary_fetch_rename_failure_then_kill_keeps_windows_edit() { rename_failure_after_mark_then(false); }
+
+#[test]
+fn ordinary_fetch_rename_failure_then_clean_stop_keeps_windows_edit() { rename_failure_after_mark_then(true); }
+
 #[test]
 fn ordinary_stage_failure_then_clean_stop_fetches_windows_edit_on_restart() {
     use crate::agent_console::share::host_destination::TEMPORARY_FAULT;
@@ -299,19 +339,40 @@ fn failed_recovery_copy_single_survives_clean_shutdown() {
 }
 
 #[test]
-fn recovery_kept_then_killed_before_put_keeps_both_with_or_without_put_mark() { kept_before_put(false); }
+fn recovery_kept_then_killed_before_put_keeps_both_with_or_without_put_mark() { kept_before_put(false, false); }
 
 #[test]
-fn recovery_kept_then_clean_shutdown_before_put_keeps_both() { kept_before_put(true); }
+fn recovery_kept_then_clean_shutdown_before_put_keeps_both() { kept_before_put(true, false); }
 
-fn kept_before_put(clean: bool) {
+#[test]
+fn recovery_kept_then_a_windows_edit_before_the_stop_is_kept_too() { kept_before_put(false, true); kept_before_put(true, true); }
+
+/// The state thread has written `needle` to the versions (bounded: a failing test goes on).
+fn wait_versions(vars: &Path, needle: &str) {
+    for _ in 0..2000 {
+        if std::fs::read_to_string(state_path(vars)).is_ok_and(|text| text.contains(needle)) { return; }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+/// #675: the recovery kept the Windows version beside the Mac copy, and the VM stops before the
+/// Mac copy's PUT is confirmed. The next session sends the Mac copy again and keeps no second,
+/// identical Windows copy; a Windows edit made after the first copy (`edited`) is kept as well.
+fn kept_before_put(clean: bool, edited: bool) {
     for marked in [false,true] {
-        let (mut rig,vars)=synced_from_guest(if clean { if marked { "kept-clean-mark" } else { "kept-clean-unmarked" } } else if marked { "kept-kill-mark" } else { "kept-kill-unmarked" },now_ms()-2*HOUR_MS,true);
-        settle(&mut rig);rig.guest.write("doc.bin",b"Windows before kill");rig.guest.stamps.insert("DOC.BIN".into(),now_ms());
+        let label=format!("kept-{}-{}{}",if clean { "clean" } else { "kill" },if marked { "mark" } else { "unmarked" },if edited { "-edited" } else { "" });
+        let (mut rig,vars)=synced_from_guest(&label,now_ms()-2*HOUR_MS,true);
+        let kept_ms=now_ms();
+        settle(&mut rig);rig.guest.write("doc.bin",b"Windows before kill");rig.guest.stamps.insert("DOC.BIN".into(),kept_ms);
         rig.h.share=None;new_session(&mut rig,Some(&vars));
         let gets=rig.guest.gets.len();
         for _ in 0..16 { rig.run(1);if rig.guest.gets.len()>gets { break; } }
         assert_eq!(rig.host("doc (Windows copy).bin").as_deref(),Some(&b"Windows before kill"[..]));
+        // The kept version as the previous one, written before the Mac copy's PUT can be marked.
+        wait_versions(&vars,&format!(" {} {kept_ms}\n",b"Windows before kill".len()));
+        if edited {
+            rig.guest.write("doc.bin",b"Windows edited again");rig.guest.stamps.insert("DOC.BIN".into(),kept_ms+60_000);
+        }
         if marked {
             let share=rig.h.share.as_mut().unwrap();share.mark_put("doc.bin",rig.now);
             if let Some(file)=share.sync_file.as_ref() { file.wait_marks(); }
@@ -324,9 +385,18 @@ fn kept_before_put(clean: bool) {
         let paths=[".share-sync",".share-sync-puts"].map(|suffix| PathBuf::from(format!("{}{suffix}",vars.display())));
         let disk=paths.each_ref().map(|p| std::fs::read(p).ok());rig.h.share=None;
         for (p,bytes) in paths.iter().zip(disk) { if let Some(bytes)=bytes { std::fs::write(p,bytes).unwrap(); }else{let _=std::fs::remove_file(p);} }
-        new_session(&mut rig,Some(&vars));rig.run(24);
+        new_session(&mut rig,Some(&vars));
+        let puts=rig.guest.puts.len();
+        rig.run(24);
         assert_eq!(rig.host("doc.bin").as_deref(),Some(&b"old version"[..]));
         assert_eq!(rig.host("doc (Windows copy).bin").as_deref(),Some(&b"Windows before kill"[..]));
+        if edited {
+            assert_eq!(rig.host("doc (Windows copy 2).bin").as_deref(),Some(&b"Windows edited again"[..]),"{label}: the Windows edit made since was not kept");
+            assert_eq!(rig.host_names(),["doc (Windows copy 2).bin","doc (Windows copy).bin","doc.bin"],"{label}");
+        } else {
+            assert_eq!(rig.host_names(),["doc (Windows copy).bin","doc.bin"],"{label}: the kept Windows version was kept again");
+        }
+        assert!(rig.guest.puts[puts..].iter().any(|name| name=="doc.bin"),"{label}: the Mac copy was not sent: {:?}",&rig.guest.puts[puts..]);
         assert_eq!(rig.guest.content("doc.bin"),Some(&b"old version"[..]));
     }
 }

@@ -52,3 +52,13 @@ fn pointer_wire_requests_are_correlated_bounded_and_routed() {
         assert!(!is_command(&command), "invalid pointer framing");
     }
 }
+
+#[test]
+fn queued_text_extension_is_bounded_and_never_applies_to_keys_or_pointers() {
+    assert!(is_command(&format!("TEXTINPUT {ID} YQ== S")));
+    assert!(is_command(&format!("TEXTINPUT {ID} {} S", "A".repeat(87_384))));
+    for command in [format!("KEYINPUT {ID} YQ== S"), format!("POINTERINPUT {ID} YQ== S"),
+        format!("TEXTINPUT {ID} YQ== S extra"), format!("TEXTINPUT {ID} YQ== s")] {
+        assert!(!is_command(&command), "{command}");
+    }
+}

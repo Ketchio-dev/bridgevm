@@ -63,7 +63,7 @@ class Guest:
         if self.current() != self.identity:
             raise ControlError("VM run changed; command was not retried.")
 
-    def run(self, command, timeout=None):
+    def run(self, command, timeout=None, vmm=False, expected=None):
         encoded = (command + "\n").encode()
         if len(encoded) > 87435:
             raise ControlError("Command exceeds guest control line limit.")
@@ -72,10 +72,11 @@ class Guest:
             # Only replies produced after this invocation may satisfy the request.
             log.seek(0, os.SEEK_END)
             self.check()
-            with regular(self.bundle / "metadata/hvf.ctl", os.O_WRONLY | os.O_APPEND) as ctl:
+            control = self.evidence / "input.ctl" if vmm else self.bundle / "metadata/hvf.ctl"
+            with regular(control, os.O_WRONLY | os.O_APPEND) as ctl:
                 if os.write(ctl.fileno(), encoded) != len(encoded):
                     raise ControlError("Incomplete control write; command was not retried.")
-            return self.reply(log, log_path, command, timeout)
+            return self.reply(log, log_path, expected or command, timeout)
 
     def reply(self, log, path, command, timeout=None):
         deadline = time.monotonic() + (self.options.timeout if timeout is None else timeout)
@@ -129,16 +130,44 @@ def send_text(guest, text):
     if not text or len(text.encode("utf-16-le")) > 131072:
         raise ControlError("Text must contain 1..65536 UTF-16 code units.")
     deadline = time.monotonic() + guest.options.timeout
-    # A single SendInput array lost intermediate VK_PACKET characters in live WinUI Notepad.
-    # Receipt-paced codepoints preserve Korean and supplementary characters without the clipboard.
-    for index, char in enumerate(text):
+    capability_id = str(uuid.uuid4())
+    code, capabilities = guest.run("INPUTCAPS " + capability_id, timeout=max(0.001, deadline - time.monotonic()))
+    offset = 0
+    if code == 0 and ("BVINPUT_TEXT " + capability_id + " QUEUED_DISPATCH") in capabilities.splitlines():
+        # Chunk by UTF-8 bytes without splitting a scalar; keep one deadline.
+        while offset < len(text):
+            end, byte_count = offset, 0
+            while end < len(text) and byte_count + len(text[end].encode()) <= 65536:
+                byte_count += len(text[end].encode())
+                end += 1
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ControlError(f"Text deadline exceeded after {offset} codepoints; no input was replayed.")
+            chunk = text[offset:end]
+            command = input_command("TEXTINPUT", chunk) + " S"
+            request_id = command.split()[1]
+            code, output = guest.run(command, timeout=remaining)
+            if code:
+                return code, f"Text stopped after {offset} codepoints; dispatch may be partial.\n" + output
+            lines = [line for line in output.splitlines() if line.startswith((f"BVTEXT_DISPATCHED {request_id} ", f"BVTEXT_UNSUPPORTED {request_id}"))]
+            units = len(chunk.encode("utf-16-le")) // 2
+            if lines == [f"BVTEXT_DISPATCHED {request_id} {units}"]:
+                offset = end
+            elif lines == [f"BVTEXT_UNSUPPORTED {request_id}"]:
+                break  # Positively no text dispatched; retain the paced compatibility path.
+            else:
+                raise ControlError("Invalid text dispatch receipt; input was not replayed.")
+        if offset == len(text):
+            return 0, f"BVCLI_TEXT dispatched_codepoints={offset} (guest window dispatch receipts)"
+    # Older agents and unsupported editors keep receipt-paced complete scalars.
+    for index, char in enumerate(text[offset:], start=offset):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise ControlError(f"Text deadline exceeded after {index} codepoints; no input was replayed.")
         code, output = guest.run(input_command("TEXTINPUT", char), timeout=remaining)
         if code:
             return code, f"Text stopped after {index} codepoints.\n" + output
-    return 0, f"BVCLI_TEXT inserted_codepoints={len(text)} (guest input receipts)"
+    return 0, f"BVCLI_TEXT accepted_codepoints={len(text)} (guest input/window dispatch receipts)"
 
 
 def parser():
@@ -194,11 +223,14 @@ def main(argv=None):
             match = re.fullmatch(r"([1-9][0-9]{2,4})x([1-9][0-9]{2,4})", options.value)
             if not match or any(int(n) > 16384 for n in match.groups()):
                 raise ControlError("Expected WIDTHxHEIGHT, each 100..16384.")
-            command = "DISPLAYMODE " + " ".join(match.groups())
+            command = "RESIZE " + options.value
         else:
             verb = {"key": "KEYINPUT", "pointer": "POINTERINPUT"}[options.command]
             command = input_command(verb, options.value)
-        code, output = guest.run(command)
+        if options.command == "resize":
+            code, output = guest.run(command, vmm=True, expected="DISPLAYMODE " + " ".join(match.groups()))
+        else:
+            code, output = guest.run(command)
         print(output)
         if options.command == "resize" and not re.search(r"\bresult=0(?:\s|$)", output):
             return 1

@@ -24,7 +24,7 @@ final class ControlModelResourceDisplayTests: XCTestCase {
         XCTAssertEqual(completion.cpu, 4)
         XCTAssertEqual(completion.pendingMemoryGiB, editDraft ? 16 : 8)
         XCTAssertEqual(completion.pendingCPU, editDraft ? 8 : 4)
-        XCTAssertEqual(fixture.model.statusNote, "리소스 적용됨: 8GB / 4코어")
+        XCTAssertEqual(fixture.model.statusNote, "리소스 적용됨: 8 GiB / 4코어")
     }
 
     func testFailedActualWriterPreservesDisplayFilesAndRequestedDraft() async throws {
@@ -51,7 +51,7 @@ final class ControlModelResourceDisplayTests: XCTestCase {
         XCTAssertEqual(completion.cpu, 2)
         XCTAssertEqual(completion.pendingMemoryGiB, 4)
         XCTAssertEqual(completion.pendingCPU, 2)
-        XCTAssertEqual(fixture.model.statusNote, "리소스 적용됨: 4GB / 2코어")
+        XCTAssertEqual(fixture.model.statusNote, "리소스 적용됨: 4 GiB / 2코어")
     }
 
     func testSuccessfulApplyInvalidatesActualOldReadAdmittedDuringApply() async throws {

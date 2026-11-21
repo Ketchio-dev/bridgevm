@@ -33,24 +33,3 @@ struct LibraryHostSummary: View {
         .help("호스트의 전체 메모리와 사용 가능한 프로세서 수입니다. 실시간 사용률이 아닙니다.")
     }
 }
-
-struct LibraryEngineLegend: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            row(.green, "리눅스 (Fast VZ)", "사용 가능")
-            row(.gray, "윈도우 (QEMU)", "준비중")
-            row(.orange, "윈도우 (HVF 엔진)", "실험")
-        }
-        .padding(.horizontal, 6)
-    }
-
-    private func row(_ color: Color, _ title: String, _ state: String) -> some View {
-        HStack(spacing: 7) {
-            Circle().fill(color).frame(width: 6, height: 6).accessibilityHidden(true)
-            Text(title).font(.caption)
-            Spacer(minLength: 4)
-            Text(state).font(.caption).foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
-    }
-}

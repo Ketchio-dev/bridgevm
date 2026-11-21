@@ -310,8 +310,16 @@ fn cut_short(rig: &mut Rig) {
     rig.guest.stamps.insert("DOC.BIN".into(), now_ms() + 4 * HOUR_MS);
 }
 
+/// After a force-stop a marked name's differing guest copy may be cut short or a genuine edit
+/// (#648): it never replaces the Mac copy, and is kept only beside it.
+fn assert_kept_beside(rig: &Rig, mac: &[u8], cut: &[u8]) {
+    assert_eq!(rig.host("doc.bin").as_deref(), Some(mac), "the cut-short guest copy replaced the Mac copy");
+    assert_eq!(rig.guest.content("doc.bin"), Some(mac));
+    assert_eq!(rig.host("doc (Windows copy).bin").as_deref(), Some(cut));
+}
+
 #[test]
-fn a_put_the_guest_had_not_settled_when_the_session_ended_is_sent_again_not_fetched() {
+fn a_put_the_guest_had_not_settled_when_the_session_ended_is_sent_again_and_its_guest_copy_kept_beside() {
     let mut rig = Rig::new("put-unsettled");
     let vars = vars(&rig);
     new_session(&mut rig, Some(&vars));
@@ -323,22 +331,17 @@ fn a_put_the_guest_had_not_settled_when_the_session_ended_is_sent_again_not_fetc
     rig.h.share = None; // force-stop is NOT observed SYSTEM_OFF
     new_session(&mut rig, Some(&vars));
     rig.run(16);
-    assert!(rig.guest.gets.is_empty(), "the cut-short guest copy was fetched: {:?}", rig.guest.gets);
-    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"the Mac's version"[..]));
-    assert_eq!(rig.guest.content("doc.bin"), Some(&b"the Mac's version"[..]));
+    assert_kept_beside(&rig, b"the Mac's version", b"the Mac'");
 }
 
 #[test]
-fn a_fetched_copy_the_guest_had_not_settled_when_the_session_ended_is_not_fetched_again() {
+fn a_fetched_copy_the_guest_had_not_settled_when_the_session_ended_is_kept_only_beside() {
     let (mut rig, vars) = synced_from_guest("get-unsettled", now_ms() - HOUR_MS, true);
     cut_short(&mut rig);
     rig.h.share = None; // force-stop is NOT observed SYSTEM_OFF
     new_session(&mut rig, Some(&vars));
-    let gets = rig.guest.gets.len();
     rig.run(16);
-    assert_eq!(rig.guest.gets.len(), gets, "the cut-short guest copy was fetched: {:?}", rig.guest.gets);
-    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"old version"[..]));
-    assert_eq!(rig.guest.content("doc.bin"), Some(&b"old version"[..]));
+    assert_kept_beside(&rig, b"old version", b"old v");
 }
 
 #[test]
@@ -351,6 +354,52 @@ fn a_guest_edit_after_the_last_transfer_settled_is_still_fetched() {
     rig.run(16);
     assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"edited after it settled"[..]));
     assert_eq!(rig.guest.content("doc.bin"), Some(&b"edited after it settled"[..]));
+}
+
+#[test]
+fn a_windows_copy_fetched_with_the_mac_files_own_bytes_leaves_the_mac_file_as_it_is() {
+    // #651: an agent from before putmtime (no READY here says putmtime) keeps its own write time
+    // on an upload, so the next session took its copy for a Windows edit and fetched it: the
+    // same bytes, yet the Mac file was replaced, dated with Windows' time and quarantined.
+    let mut rig = Rig::new("same-bytes");
+    let vars = vars(&rig);
+    new_session(&mut rig, Some(&vars));
+    std::fs::write(rig.dir.join("doc.bin"), b"the Mac's version").unwrap();
+    for _ in 0..24 {
+        rig.run(1);
+        if !rig.guest.puts.is_empty() {
+            break;
+        }
+    }
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"the Mac's version"[..]));
+    // Windows' own write time, before the next listing.
+    rig.guest.stamps.insert("DOC.BIN".into(), now_ms() - HOUR_MS);
+    settle(&mut rig);
+    let mac = |rig: &Rig| (rig.inode("doc.bin"), std::fs::metadata(rig.dir.join("doc.bin")).unwrap().modified().unwrap());
+    let quarantined = |rig: &Rig| {
+        let path = std::ffi::CString::new(rig.dir.join("doc.bin").into_os_string().into_encoded_bytes()).unwrap();
+        // SAFETY: NUL-terminated path and name; a size query, no buffer.
+        let len = unsafe {
+            libc::getxattr(path.as_ptr(), c"com.apple.quarantine".as_ptr(), std::ptr::null_mut(), 0, 0, libc::XATTR_NOFOLLOW)
+        };
+        len >= 0
+    };
+    let before = mac(&rig);
+    new_session(&mut rig, Some(&vars));
+    let gets = rig.guest.gets.len();
+    rig.run(16);
+    assert_eq!(rig.guest.gets[gets..], ["doc.bin"]);
+    assert_eq!(mac(&rig), before, "the Mac file was rewritten");
+    assert!(!quarantined(&rig), "the Mac file was quarantined");
+    assert_eq!(rig.host_names(), ["doc.bin"], "a Windows copy was kept beside");
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"the Mac's version"[..]));
+    // The next session does not fetch it again, and the Mac file stays as it is.
+    new_session(&mut rig, Some(&vars));
+    let gets = rig.guest.gets.len();
+    rig.run(16);
+    assert_eq!(rig.guest.gets.len(), gets, "{:?}", rig.guest.gets);
+    assert_eq!(mac(&rig), before, "the Mac file was rewritten in the third session");
+    assert_eq!(rig.guest.content("doc.bin"), Some(&b"the Mac's version"[..]));
 }
 
 #[test]
@@ -595,11 +644,8 @@ fn a_state_with_an_unusable_marks_file_is_removed_so_a_later_mark_is_not_outrank
     rig.guest.write("doc.bin", b"old ver");
     rig.guest.stamps.insert("DOC.BIN".into(), now_ms() + 4 * HOUR_MS);
     new_session(&mut rig, Some(&vars));
-    let gets = rig.guest.gets.len();
     rig.run(16);
-    assert_eq!(rig.guest.gets[gets..], [] as [String; 0], "the cut-short guest copy was fetched");
-    assert_eq!(rig.host("doc.bin").as_deref(), Some(&b"old version"[..]));
-    assert_eq!(rig.guest.content("doc.bin"), Some(&b"old version"[..]));
+    assert_kept_beside(&rig, b"old version", b"old ver");
     // The old seq 5 and its versions were discarded; the new PUT's mark was not outranked.
 }
 

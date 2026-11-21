@@ -41,13 +41,19 @@ python3 scripts/vmctl.py stop MY_VM --json
 ```
 
 Pointer coordinates cover the whole guest desktop from 0 to 32767 on each
-axis. `text` inserts Unicode directly through the guest agent, waiting for a
-receipt per codepoint: bulk Unicode input lost intermediate characters in
-Windows' WinUI Notepad during live testing. Korean and emoji stay intact, and
-the whole text operation shares the reply deadline. `key` accepts
+axis. `text` sends Unicode through the guest agent without using the clipboard.
+With a current agent and compatible ARM64 editor, it dispatches text on the
+focused editor thread after earlier queued keys. Windows 11 Notepad uses one
+undoable selection replacement; other compatible controls receive Unicode
+character messages. Requests split at 64 KiB of UTF-8 without splitting a
+Unicode scalar. Older agents and unsupported editors retain receipt-paced
+codepoints. That path can still corrupt long commits in some Windows apps.
+The whole operation shares one reply deadline, and an unknown result is never
+automatically replayed. `key` accepts
 the guest key protocol, including `enter`, `ctrl+v`, `win+r` and held-key
-forms such as `down:ctrl` / `up:ctrl`. An input receipt confirms Windows
-accepted the input events; verify the application result separately.
+forms such as `down:ctrl` / `up:ctrl`. An input receipt confirms event insertion
+or window-message dispatch, depending on the negotiated path; verify the application result separately. It does not
+prove that an arbitrary application changed or saved its document.
 
 `exec` runs PowerShell as the existing guest agent user, with that user's
 permissions. Its exit code is returned to the shell (unsupported exit values
@@ -72,7 +78,12 @@ sequence guard and save a new PNG without overwriting another file. They do
 not capture the Mac desktop, app chrome or hardware cursor, and a published
 frame can be stale or black if the guest display is asleep. A successful
 capture is not a guest-health or display-correctness check. 3D/IOSurface
-capture is outside this command. Display-mode requests need the guest driver;
+capture is outside this command. `resize` updates the VMM's display geometry
+and asks Windows to use it, following the same channel as the app window.
+It can resynchronize the display after a guest restart while the VM window
+was closed. The app also reapplies an explicit saved startup resolution after
+guest restart when no display window has been laid out. Once a window opens,
+its size and Retina scale take precedence. Resizing needs the guest driver;
 an unavailable mode returns failure instead of pretending the resize worked.
 
 Optional short command, from the source checkout:

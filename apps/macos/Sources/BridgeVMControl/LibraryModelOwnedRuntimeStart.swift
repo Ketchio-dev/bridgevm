@@ -10,6 +10,9 @@ extension LibraryModel {
         try validateOwner()
         let library = try NativeRuntimeLibraryHandle.open(rootURL: rootURL, create: false)
         guard library.identity == request.library else { throw NativeRuntimeStartRefusal.configurationChanged }
+        // A VM the CLI published after this app launched is not in `vms` yet: read the library once,
+        // as the manual refresh does; every check below still applies (#684).
+        if !vms.contains(where: { $0.slug == request.vmID }) { reload() }
         let saved = try validatedStartConfiguration(request, library: library)
         guard saved.engineKind == .hvfEngine, saved.installPending != true,
               let launch = HvfEngineConfig.libraryVM(saved, rootURL: rootURL) else {

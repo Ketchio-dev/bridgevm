@@ -25,8 +25,8 @@ class TpmJourneyContract(unittest.TestCase):
         self.assertEqual(re.findall(r"try\s+readTPM", journey), [])
         # Boot 1 after the input proof (its form needs the foreground), boots 2 and 3 right after READY.
         steps = ["try keyboardAndPointer(); try prove(.keyboardPointer); readTPM(.first)\n        try clipboard()",
-                 'try createSnapshot()\n        _ = try bootReady(); readTPM(.mutation)\n        try workload("MarkerB"',
-                 'try restoreSnapshot()\n        _ = try bootReady(); readTPM(.final)\n        try workload("MarkerRestoredA"']
+                 'try createSnapshot(); try verifySnapshot(restored: false)\n        _ = try bootReady(); readTPM(.mutation)\n        try workload("MarkerB"',
+                 'try restoreSnapshot(); try verifySnapshot(restored: true)\n        _ = try bootReady(); readTPM(.final)\n        try workload("MarkerRestoredA"']
         self.assertEqual([run.count(step) for step in steps], [1] * len(steps))
         positions = [run.index(step) for step in steps]
         self.assertEqual(positions, sorted(positions))

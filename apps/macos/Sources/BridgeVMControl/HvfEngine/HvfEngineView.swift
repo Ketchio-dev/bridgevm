@@ -114,8 +114,8 @@ struct HvfEngineView: View {
     private var configCard: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 12) {
-                pathRow("Target disk", text: $targetDiskPath, chooseDirectory: false)
-                pathRow("UEFI vars", text: $uefiVarsPath, chooseDirectory: false)
+                pathRow("대상 디스크", text: $targetDiskPath, chooseDirectory: false)
+                pathRow("UEFI 변수", text: $uefiVarsPath, chooseDirectory: false)
                 if session.config.allowsExperimental3D {
                     Toggle("Graphics Lab 3D", isOn: $virtioGpu3d)
                 }
@@ -124,7 +124,7 @@ struct HvfEngineView: View {
             }
             .padding(6)
         } label: {
-            Label("Boot Configuration", systemImage: "gearshape.2")
+            Label("부팅 구성", systemImage: "gearshape.2")
         }
     }
 
@@ -178,7 +178,7 @@ struct HvfEngineView: View {
             }
             .padding(6)
         } label: {
-            Label("vTPM Identity & Recovery", systemImage: "key.horizontal")
+            Label("vTPM 식별 정보와 복구", systemImage: "key.horizontal")
         }
     }
 
@@ -233,21 +233,12 @@ struct HvfEngineView: View {
             .foregroundColor(Color(white: 0.9))
             .cornerRadius(6)
         } label: {
-            Label("BVAGENT Event Feed", systemImage: "list.bullet.rectangle")
+            Label("게스트 에이전트 이벤트", systemImage: "list.bullet.rectangle")
         }
     }
 
     private var pendingWorkText: String? { session.runtimePendingWorkText }
-    private var stateText: String {
-        if let pendingWorkText { return pendingWorkText }
-        switch session.connectionState {
-        case .stopped: return "Stopped"
-        case .booting: return "Booting"
-        case let .connected(host): return "Connected: \(host)"
-        case .stopping: return "Stopping"
-        case .timedOut: return "Timed out"
-        }
-    }
+    private var stateText: String { displayConnectionStateText }
 
     private var stateColor: Color {
         if pendingWorkText != nil { return .orange }
@@ -285,14 +276,14 @@ struct HvfEngineView: View {
     private func pathRow(_ label: String, text: Binding<String>, chooseDirectory: Bool, identifier: String = "", chooseIdentifier: String = "") -> some View {
         HStack {
             Text(label).frame(width: 92, alignment: .leading)
-            TextField("", text: text, prompt: Text(label == "Target disk" ? "대상 디스크 경로" : label == "UEFI vars" ? "UEFI vars 경로" : label))
+            TextField("", text: text, prompt: Text("\(label) 경로"))
                 .labelsHidden()
                 .textFieldStyle(.roundedBorder)
                 .font(.body.monospaced())
                 .accessibilityIdentifier(identifier)
             Button { choosePath(text: text, directory: chooseDirectory) } label: { Image(systemName: "folder") }
             .accessibilityIdentifier(chooseIdentifier)
-            .help("Choose \(label)")
+            .help("\(label) 선택")
         }
     }
 

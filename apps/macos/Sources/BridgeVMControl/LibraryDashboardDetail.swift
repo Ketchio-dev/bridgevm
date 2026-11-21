@@ -69,8 +69,6 @@ struct LibraryDashboardDetail: View {
                 HStack(spacing: 8) {
                     Text(config.name).font(.system(size: 27, weight: .bold)).lineLimit(2)
                     Spacer(minLength: 0)
-                    Button { showingAdvanced = true } label: { Image(systemName: "slider.horizontal.3") }
-                        .buttonStyle(.plain).help("고급 제어 열기")
                 }
                 HStack(spacing: 7) {
                     LibraryVMRunState(text: statusText, color: statusColor,
@@ -139,14 +137,8 @@ struct LibraryDashboardDetail: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("빠른 작업").font(.headline)
             HStack(spacing: 12) {
-                Button { revealBundle() } label: {
-                    Label("Finder에서 보기", systemImage: "folder")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                Button { showingAdvanced = true } label: {
-                    Label("고급 도구", systemImage: "ellipsis.circle")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                // 고급 is in the action grid above; one route is enough (UI review 2026-11-19).
+                Button { revealBundle() } label: { Label("Finder에서 보기", systemImage: "folder") }
             }
             .buttonStyle(.bordered).controlSize(.large)
         }
@@ -158,6 +150,7 @@ struct LibraryDashboardDetail: View {
                 Button { showingAdvanced = false } label: {
                     Label("대시보드", systemImage: "chevron.left")
                 }
+                .accessibilityIdentifier("bridgevm.dashboard.back")
                 Spacer()
                 Text("고급 제어").font(.headline)
                 Spacer()

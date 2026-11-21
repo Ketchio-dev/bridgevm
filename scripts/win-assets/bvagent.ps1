@@ -176,6 +176,10 @@ function Get-InputCapabilities([string]$Request) {
         } catch { }
         # The text caret query (CARET, Get-BvCaret), once its helper compiled.
         try { if (Initialize-BvCaret) { $keySupport += "`nBVINPUT_TEXT $Request CARET" } } catch { }
+        # Queued committed-text dispatch is optional; older hosts ignore the marker.
+        if (('BridgeVM.BvTextPackets' -as [type]) -and (Test-Path -LiteralPath (Join-Path $script:BvInputSourceRoot 'bvagent-text-packets-arm64.dll'))) {
+            $keySupport += "`nBVINPUT_TEXT $Request QUEUED_DISPATCH"
+        }
         return @{ Exit = 0; Out = (('BVINPUT_CAPS {0} 3 TEXTINPUT KEYINPUT POINTERINPUT 65536' -f $Request) + $keySupport) }
     } catch {
         return @{ Exit = 1; Out = 'BVINPUT_CAPS_FAILED unavailable' }
@@ -2440,7 +2444,7 @@ if (Is-BadHandle $probeC) {
 # "<name> <sha256 hex|missing>" line per file, in this order. READY carries the
 # first 16 hex digits; the app updates an agent whose READY has none or another.
 function Get-BvAgentId([string]$Dir) {
-    $files = @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs', 'bvagent-window-inventory.ps1', 'bv-window-inventory.cs', 'bvagent-task.ps1', 'bvagent-update.ps1')
+    $files = @('bvagent.ps1', 'bvagent-input.ps1', 'bvagent-unicode-input.cs', 'bvagent-key-input.cs', 'bvagent-pointer-input.cs', 'bvagent-text-packets.cs', 'bvagent-text-packets-arm64.dll', 'bvagent-window-inventory.ps1', 'bv-window-inventory.cs', 'bvagent-task.ps1', 'bvagent-update.ps1')
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try {
         $list = New-Object System.Text.StringBuilder

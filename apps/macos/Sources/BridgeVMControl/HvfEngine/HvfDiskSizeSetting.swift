@@ -13,10 +13,8 @@ struct HvfDiskSizeSetting: View {
     private var plan: HvfDiskGrow.Plan? { HvfDiskGrow.plan(config: config, repoRoot: session.repoRoot) }
     private var stopped: Bool { session.libraryPreferencesEditable && !session.hasActiveRuntimeWork }
 
-    /// Display uses the familiar GB label; all sizing and limits remain binary GiB.
-    static func sizeText(_ bytes: UInt64) -> String {
-        HvfDiskGrow.gibText(bytes).replacingOccurrences(of: " GiB", with: "GB")
-    }
+    /// Sizes are binary and labelled GiB, as in the create sheet and the dashboard.
+    static func sizeText(_ bytes: UInt64) -> String { HvfDiskGrow.gibText(bytes) }
 
     var body: some View {
         if session.persistsLibraryPreferences, plan != nil {
@@ -30,7 +28,7 @@ struct HvfDiskSizeSetting: View {
                             .labelsHidden().frame(width: 52)
                         Stepper("디스크 크기", value: $targetGiB, in: range).labelsHidden()
                             .fixedSize()
-                        Text("GB (최대 \(range.upperBound)GB)").font(.caption).foregroundColor(.secondary)
+                        Text("GiB (최대 \(range.upperBound) GiB)").font(.caption).foregroundColor(.secondary)
                         Button("디스크 늘리기") { confirming = range.contains(targetGiB) }
                             .accessibilityIdentifier("bridgevm.runtime.disk-grow")
                     }
@@ -44,7 +42,7 @@ struct HvfDiskSizeSetting: View {
             .help(HvfDiskGrow.sparseHelp)
             .onAppear(perform: refresh)
             .onChange(of: stopped) { _, _ in refresh() }
-            .confirmationDialog("디스크를 \(targetGiB)GB로 늘리시겠습니까?", isPresented: $confirming,
+            .confirmationDialog("디스크를 \(targetGiB) GiB로 늘리시겠습니까?", isPresented: $confirming,
                                 titleVisibility: .visible) {
                 Button("디스크 늘리기") { grow(to: targetGiB) }
                 Button("취소", role: .cancel) {}

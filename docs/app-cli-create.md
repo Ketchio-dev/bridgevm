@@ -13,8 +13,16 @@ The canonical ID may differ from the name or gain a collision suffix. Inspect it
 bridgevm app inspect 개발-vm
 ```
 
-**Installation is blocked for CLI-created entries:** this command does not stage
-the required signed ARM64 guest driver payload or its manifest. Neither the app
+**Add `--fetch-drivers` to make the entry installable:** the command then
+downloads (once) the pinned Microsoft-signed Red Hat virtio-win archive, refuses
+it unless its length and SHA-256 match, builds the storage, serial and network
+payload and manifest from it, and seals them in the new VM bundle exactly as the
+app does. The text output then ends with `Next: bridgevm app install <ID>`. A
+failed download exits 1 before any library entry is created.
+
+**Without `--fetch-drivers`, installation is blocked for CLI-created entries:**
+the command does not stage the required signed ARM64 guest driver payload or its
+manifest. Neither the app
 nor CLI can add those inputs to an existing entry. For installation, create a new
 VM in the app with the ISO, signed payload and manifest described in
 [installation prerequisites](install.md#what-you-need-after-installing).
@@ -35,16 +43,17 @@ Optional settings use the same product choices as the app:
 --cpus COUNT
 --resolution 1280x800|1440x900|1920x1080|2560x1440
 --no-network
+--fetch-drivers
 ```
 
 Defaults: 64 GiB, 6144 MiB, 4 CPUs, 1440x900, shared NAT; CPUs must fit the host.
 Duplicate/unknown flags, relative paths, `..`, invalid values/names, directories,
 missing media and final-component symlinks fail before library creation.
 
-No password, recovery key, unattended answer file, payload, driver override or
+No password, recovery key, unattended answer file, payload path, driver override or
 experimental graphics option is accepted. JSON `bridgevm.app-create-windows.v1`
-contains ID/name, saved resources, pending state, backend/boot mode, network and
-configuration digest—not ISO paths or media identity. Its schema is unchanged;
+contains ID/name, saved resources, pending state, backend/boot mode, network,
+`guestDriversSealed` and configuration digest—not ISO paths or media identity;
 `installPending: true` is not installation readiness.
 
 Exit 0 confirms saved registration read-back, not installability. Exit 1 means

@@ -80,10 +80,6 @@ struct LibraryWorkspaceList: View {
             Label("등록된 VM이 없습니다", systemImage: "desktopcomputer")
         } description: {
             Text("새 VM을 만들거나 기존 VM을 가져오세요.")
-        } actions: {
-            Button("새 VM 만들기") { library.showingCreate = true }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier(createIdentifier)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

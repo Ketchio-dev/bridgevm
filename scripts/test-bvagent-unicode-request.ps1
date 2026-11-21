@@ -32,6 +32,19 @@ $oversized = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(('a' * 655
 $script:seen = $null
 $result = Invoke-UnicodeInput "$id $oversized" $sender
 if ($result.Exit -eq 0 -or $null -ne $script:seen) { throw 'oversized request reached sender' }
+# A generic fake sender cannot prove editor dispatch. S mode must report a
+# positive no-dispatch result without invoking it, so a host can fall back.
+$script:seen = $null
+$result = Invoke-UnicodeInput "$id $payload S" $sender
+if ($result.Exit -ne 0 -or $result.Out -cne "BVTEXT_UNSUPPORTED $id" -or $null -ne $script:seen) { throw 'queued text did not preserve the unsupported boundary' }
+foreach ($bad in @("$id $payload s", "$id $payload S extra")) {
+    $result = Invoke-UnicodeInput $bad $sender
+    if ($result.Exit -eq 0) { throw 'invalid queued extension accepted' }
+}
+$result = Invoke-UnicodeInput "$id $payload S" $sender $true
+if ($result.Exit -eq 0) { throw 'queued text extension accepted on KEYINPUT' }
+Write-Output 'Queued text framing and no-dispatch fallback: PASS'
+
 Write-Output 'Unicode encoding and resident request contracts: PASS (no native input injected)'
 & (Join-Path $PSScriptRoot 'test-bvagent-input-assets.ps1')
 & (Join-Path $PSScriptRoot 'test-bvagent-key-input.ps1')

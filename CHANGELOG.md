@@ -4,20 +4,57 @@ All notable changes to BridgeVM are documented in this file.
 
 ## Unreleased
 
-## [1.1.0] - 2026-11-14
+### Fixed
+
+- After an unclean stop, the shared folder keeps the Windows version of a file
+  beside the Mac one as "(Windows copy)". If the VM stopped again before the
+  Mac version was sent back, the next start made a second, identical
+  "(Windows copy 2)"; now it keeps one copy and sends the Mac version again
+  (#675).
+
+## [1.1.1] - 2026-11-21
+
+Fixes and interface polish for the 1.1.0 General Preview; the product state
+and the release contract are unchanged.
+
+### Fixed
+
+- `bridgevm app install` and `start` find a VM that `bridgevm app create-windows`
+  created while the app was already open, instead of answering
+  `targetUnavailable` until the app is reopened (#684).
+- Windows no longer shows a warning "Red Hat VirtIO SCSI controller" in Device
+  Manager: the unused installer slot is left out when no ISO is attached (#685).
+- A Mac file put into the shared folder while Windows still ran an older guest
+  agent is no longer copied back over itself at the next start (new date,
+  quarantine mark): an identical Windows copy is recognised and left alone (#651).
+
+### Changed
+
+- The remaining English labels in the 가상 머신 menu (Windows 창 목록…) and the
+  고급 view are in Korean; the developer diagnostics say what they are for.
+- Memory and disk sizes say GiB everywhere, as the create sheet already did.
+- The snapshot name field looks like a field, and 고급 has one entry point (the
+  action grid) instead of three.
+
+## [1.1.0] - 2026-11-20
 
 First General Preview release, replacing the superseded 1.0.0. The product is
 still an **Engineering Preview**: Windows 11 Arm on BridgeVM's own
 Hypervisor.framework VMM, 3D-off, in an ad-hoc-signed app without Developer ID
 or notarization (`docs/install.md` has the first-open step). ISO installation
-needs your own Windows 11 Arm ISO and a signed ARM64 storage/serial/network
-driver payload. BridgeVM has only been run on M4 and M5 Macs; M1, M2 and M3
+needs your own Windows 11 Arm ISO; the app downloads the signed ARM64
+storage/serial/network drivers from the official virtio-win source on your
+click, or you choose your own payload. BridgeVM has only been run on M4 and M5 Macs; M1, M2 and M3
 are untested. The 1.0.0 claim that every release-blocking criterion was proven
 no longer stands: 2 of 5 release scenarios are met, and A9 (in-app install on
 a clean Mac) and A19 (disk safety) are open. See `STATUS.md`.
 
 ### Added
 
+- **Install from an ISO alone:** "드라이버 자동 준비" in the create sheet, or
+  `bridgevm app create-windows --fetch-drivers`, downloads the pinned
+  Microsoft-signed Red Hat virtio-win drivers (about 95 MB) once, checks their
+  SHA-256 and seals them in the VM; your own payload still works.
 - **Import:** QCOW2 and Hyper-V VHDX disks are converted to sparse RAW,
   the UEFI vars file is optional, and an imported Windows that has the virtio
   serial driver but no guest tools is offered a guest tools installer.
@@ -58,6 +95,11 @@ a clean Mac) and A19 (disk safety) are open. See `STATUS.md`.
   keep their dates, and sync handles 16 GiB files and 262,144-entry shares.
 - **Messages:** Start, install, import and snapshot failures read as one plain
   Korean sentence; a missing shared folder only turns sharing off for a start.
+- **Dashboard:** Actions stay readable at any window width, the status shows
+  the VM as observed, and the VM window shows startup progress or the failure
+  instead of staying black.
+- **First run:** The empty library shows one set of create and import choices
+  in plain words; the sidebar no longer shows a fixed engine list.
 - **Security:** The installer checks a General Preview release contract,
   checksum, archive and signature, rolls back on failure and refuses v1.0.0;
   new Windows installs let only administrators change `C:\BridgeVM`.
@@ -74,15 +116,27 @@ a clean Mac) and A19 (disk safety) are open. See `STATUS.md`.
   before a shutdown or in folders over the listing limit; a Force Stop or crash
   could leave uploads as zeros or fetch an empty Windows copy over the Mac's; a
   junction deleted Mac files; Korean names split; 260+ character paths failed.
+- **Shared folder:** A Windows edit saved within about 20 seconds of a sync, or
+  one whose copy to the Mac failed, was overwritten by the Mac's older copy
+  after a Force Stop, a crash or a Windows restart; it is now kept beside the
+  Mac's file as "(Windows copy)" (#643, #648).
 - **Clipboard:** The "클립보드 공유" switch is saved per VM, so dashboard and
   command-line starts no longer turn sync back on; change it while stopped.
 - **Clipboard:** Some Mac copies, including any text over 8 KiB, were lost or
-  reverted, and legacy paste text could reach the Mac pasteboard.
+  reverted, and legacy paste text could reach the Mac pasteboard; a copy made
+  just before Ctrl+V or Shift+Insert could paste the previous text.
 - **Input:** Input stopped after a Windows restart, an agent restart or update,
-  or at the lock screen, and trackpads scrolled far too fast.
+  or at the lock screen, and trackpads scrolled far too fast; a left click
+  could open a context menu; input could stay off when the guest agent
+  answered before the app saw it start.
+- **Korean input:** Long text committed into Windows 11 Notepad repeated or
+  lost characters; compatible editors now receive it in one piece.
+- **Display:** A VM started without its window came back from a Windows
+  restart at the boot resolution instead of the saved one.
 - **Lifecycle:** Windows was powered off without a shutdown after 50 million
   hypervisor exits on one vCPU (about a day idle or 4-8 hours busy, estimated
-  from exit rates), and a quote in a disk path crashed the app at Start.
+  from exit rates), and a quote in a disk path crashed the app at Start; on
+  M5 Macs some boots stopped in the firmware before Windows started.
 - **vTPM:** A failed TPM reset could destroy the VM's TPM state, and a deleted
   VM's TPM key could be picked up by a new VM with the same name.
 - **Security:** Guest-controlled values could crash device models, exhaust host
@@ -107,12 +161,12 @@ a clean Mac) and A19 (disk safety) are open. See `STATUS.md`.
   power loss during a snapshot not at all, and VMs relocated by older builds
   before identity migration are refused; snapshot on mains power, keep backups.
 - Titles, tabs and menus can be blank on the Graphics Lab 3D path (B6).
-- In two rare cases the next start can still send the Mac's older copy of a
-  shared file over a Windows edit: a stop within milliseconds of the Mac copy
-  being replaced, or that replacement itself failing (#643).
-- A Windows edit saved within about 20 seconds of a shared file's last sync can
-  be overwritten after a Force Stop, a crash or a Windows restart (#648); shut
-  down with Stop rather than Force Stop.
+- After a Force Stop, a crash or a Windows restart within about 20 seconds of a
+  shared file's last sync, a differing Windows copy arrives beside the Mac's as
+  "(Windows copy)", even when it is only damage from the stop; keep the one you
+  want. A second stop during that recovery can add a "(Windows copy 2)" (#675).
+- Long text into editors other than Windows 11 Notepad and compatible controls
+  can still repeat or lose characters (#665); paste through the clipboard.
 - Files added to the share while an older guest agent updates come back once,
   unchanged but with a new date and quarantine flag (#651); wait a minute first.
 

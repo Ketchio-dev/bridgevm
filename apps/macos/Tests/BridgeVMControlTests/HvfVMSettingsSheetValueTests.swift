@@ -17,11 +17,11 @@ final class HvfVMSettingsSheetValueTests: XCTestCase {
         XCTAssertEqual(values(type, in: advanced).count, 0, "no \(type) in advanced", file: file, line: line)
     }
 
-    func testMemoryUsesPlainGBAndDriverExplainsUnavailableState() throws {
-        XCTAssertEqual(HvfDiskSizeSetting.sizeText(64 << 30), "64GB")
-        XCTAssertEqual(HvfDiskSizeSetting.sizeText(3 << 29), "1.5GB")
-        XCTAssertEqual(HvfResourceSetting.memoryText(6144), "6GB")
-        XCTAssertEqual(HvfResourceSetting.memoryText(1536), "1.50GB")
+    func testSizesUseGiBAndDriverExplainsUnavailableState() throws {
+        XCTAssertEqual(HvfDiskSizeSetting.sizeText(64 << 30), "64 GiB")
+        XCTAssertEqual(HvfDiskSizeSetting.sizeText(3 << 29), "1.5 GiB")
+        XCTAssertEqual(HvfResourceSetting.memoryText(6144), "6 GiB")
+        XCTAssertEqual(HvfResourceSetting.memoryText(1536), "1.50 GiB")
         let fixture = try HvfRuntimeSessionStoreFixture()
         defer { fixture.clean() }
         let saved = fixture.config(); fixture.save(saved)

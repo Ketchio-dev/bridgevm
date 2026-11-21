@@ -22,12 +22,14 @@ use sha2::{Digest, Sha256};
 mod tests;
 
 /// The guest agent's files, in the order both sides hash them.
-pub(super) const AGENT_FILES: [&str; 9] = [
+pub(super) const AGENT_FILES: [&str; 11] = [
     "bvagent.ps1",
     "bvagent-input.ps1",
     "bvagent-unicode-input.cs",
     "bvagent-key-input.cs",
     "bvagent-pointer-input.cs",
+    "bvagent-text-packets.cs",
+    "bvagent-text-packets-arm64.dll",
     "bvagent-window-inventory.ps1",
     "bv-window-inventory.cs",
     "bvagent-task.ps1",

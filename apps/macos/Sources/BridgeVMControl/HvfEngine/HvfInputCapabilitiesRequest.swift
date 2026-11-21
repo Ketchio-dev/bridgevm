@@ -22,6 +22,7 @@ struct HvfInputCapabilitiesRequest {
     var middleButton: Bool { supported && receipt.middleButton }
     var caret: Bool { supported && receipt.caret }
     var keyHold: Bool { supported && receipt.keyHold }
+    var queuedTextDispatch: Bool { supported && receipt.queuedTextDispatch }
 
     mutating func consume(lines: [String], now: Date) -> Outcome? {
         guard !finished else { return nil }

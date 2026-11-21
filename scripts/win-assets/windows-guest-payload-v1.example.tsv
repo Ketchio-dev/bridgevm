@@ -3,7 +3,7 @@ schema	bridgevm-windows-guest-payload-v1
 architecture	arm64
 driver	storage	storage/viostor.inf	storage/viostor.cat	storage/viostor.sys
 driver	serial	serial/vioser.inf	serial/vioser.cat	serial/vioser.sys
-driver	network	network/netkvm.inf	network/netkvm.cat	network/netkvm.sys,network/netkvmco.dll
+driver	network	network/netkvm.inf	network/netkvm.cat	network/netkvm.sys,network/netkvmp.exe
 file	storage/viostor.inf	REPLACE_WITH_LOWERCASE_SHA256
 file	storage/viostor.cat	REPLACE_WITH_LOWERCASE_SHA256
 file	storage/viostor.sys	REPLACE_WITH_LOWERCASE_SHA256
@@ -13,4 +13,4 @@ file	serial/vioser.sys	REPLACE_WITH_LOWERCASE_SHA256
 file	network/netkvm.inf	REPLACE_WITH_LOWERCASE_SHA256
 file	network/netkvm.cat	REPLACE_WITH_LOWERCASE_SHA256
 file	network/netkvm.sys	REPLACE_WITH_LOWERCASE_SHA256
-file	network/netkvmco.dll	REPLACE_WITH_LOWERCASE_SHA256
+file	network/netkvmp.exe	REPLACE_WITH_LOWERCASE_SHA256

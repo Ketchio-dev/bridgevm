@@ -15,6 +15,8 @@ final class HvfWindowsAgentAssetsTests: XCTestCase {
             "scripts/win-assets/bvagent-unicode-input.cs",
             "scripts/win-assets/bvagent-key-input.cs",
             "scripts/win-assets/bvagent-pointer-input.cs",
+            "scripts/win-assets/bvagent-text-packets.cs",
+            "scripts/win-assets/bvagent-text-packets-arm64.dll",
             "scripts/win-assets/bvagent-task.ps1",
             "scripts/win-assets/bvagent-update.ps1",
             "scripts/win-assets/bvagent-window-inventory.ps1",

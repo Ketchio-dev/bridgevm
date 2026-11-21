@@ -3,8 +3,9 @@
 # Every step verifies before it destroys: the release asset is pinned by name,
 # checked against SHA256SUMS, extracted only after an archive-safety audit,
 # codesign-verified, and only then swapped into place atomically with the old
-# app preserved as a backup until the new one verifies in place. VM data under
-# ~/BridgeVM and app settings are never touched.
+# app preserved as a backup until the new one verifies in place. Your VMs
+# (~/Library/Application Support/BridgeVM/vms or the storage folder you chose),
+# their shared folders and app settings are never touched.
 # Trust root, stated honestly: HTTPS to github.com plus the SHA256SUMS file
 # published in the same GitHub release. The checksum proves the bytes you got
 # are the bytes the release carries; it does not prove who built them. The
@@ -22,7 +23,7 @@ VERBOSE=0
 usage() {
   cat >&2 <<'EOF'
 usage: install-bridgevm.sh [options]
-  --version <tag>   install an exact release tag (e.g. v1.0.0)
+  --version <tag>   install an exact release tag (e.g. v1.1.0)
   --latest          install the latest verified General Preview (default)
   --dest <dir>      install directory, defaults to /Applications
   --dry-run         verify everything, change nothing
@@ -204,6 +205,6 @@ elif [[ -n "$backup" ]]; then
   backup=""  # do not let the rollback trap touch a deliberately kept backup
 fi
 echo "Installed $final_app ($VERSION)"
-echo "VM data under ~/BridgeVM was not touched."
+echo "Your VMs and their data were not touched."
 [[ $LAUNCH -eq 1 ]] && open "$final_app"
-echo "First run: open it from Launchpad or:  open '$final_app'"
+echo "First run: open BridgeVM from Applications or:  open '$final_app'"

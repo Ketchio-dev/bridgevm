@@ -9,15 +9,23 @@
 //! once synced, share_mtime.rs), and every PUT is marked before it can touch the guest copy
 //! until it is confirmed. At the first listing, a name whose Mac copy is still the last synced
 //! one, whose guest copy is neither that nor the previous one and that is not marked is a guest
-//! edit: it is fetched, not overwritten, unless the Mac file changes first. Anything else, an
+//! edit: it is fetched, not overwritten, unless the Mac file changes first (fetched with the Mac
+//! file's own bytes, it is not written over it: on_host_copy_same). Anything else, an
 //! unknown name, a marked name, a guest copy back at the previous version, a changed Mac file,
-//! keeps the Mac winning as before.
+//! keeps the Mac winning as before. After an unclean stop the edit cannot be told from a copy
+//! Windows lost in its cache: the Mac copy stays and the guest copy is kept beside it (recovery);
+//! the kept version then counts as the previous one (on_recovery_copy_kept).
 //!
 //! A confirmed transfer is not yet on the guest's disk: a PUT's data and the guest's own edit
 //! (that a GET just copied) can sit in Windows' cache, and a force-stop or a probe kill then
 //! brings back a cut-short copy with the guest's time. So a name stays marked for `SYNC_SETTLE`
 //! after a confirmed PUT and after its fetched copy is published (marked on disk before the
-//! publish). A fetch under way is not marked: a copy a restart cut off stays fetchable.
+//! publish). A fetch under way is not marked: a copy a restart cut off stays fetchable. After an
+//! unclean stop (a Force Stop, a crash, a guest restart) a marked name's differing guest copy may
+//! as well be a genuine edit made inside that window, or one whose publish failed after its mark
+//! (#643, #648): it is kept beside the Mac copy too, whatever versions reached the disk (they
+//! follow the mark by about a second). After a clean stop the marks left are PUTs the host chose
+//! to send (share_sync_file.rs finish_clean retires the others): the Mac wins.
 
 use super::*;
 use std::time::{Duration, Instant};
@@ -136,9 +144,11 @@ impl ShareSync {
 
     /// The session's first applied listing (it ends the wait, share_adopt.rs): a guest edit
     /// of a name whose Mac copy is the last synced version is fetched, not held for the Mac
-    /// copy. A later listing without the name gives the preference up the way a refused publish
-    /// does (on_host_copy_kept), so the Mac file is sent again, also when that copy's publish
-    /// had failed and waited for a retry.
+    /// copy. After an unclean stop, a marked name's differing guest copy is kept beside the Mac
+    /// copy (recovery) even when its versions did not reach the disk with its mark or the Mac
+    /// copy is newer. A later listing without the name gives the preference up the way a refused
+    /// publish does (on_host_copy_kept), so the Mac file is sent again, also when that copy's
+    /// publish had failed and waited for a retry.
     pub(super) fn prefer_changed_guest_copies(&mut self) {
         let listed = &self.guest_file_entries_scratch;
         self.recovery_copies.retain(|name, first| listed.get(name) == Some(first));
@@ -155,20 +165,23 @@ impl ShareSync {
             return;
         }
         for (name, entry) in listed {
-            if self.records.contains_key(name) || self.marks.contains_key(name) {
+            if self.records.contains_key(name) {
                 continue;
             }
-            let (Some(host), Some(synced)) = (self.host_files_scratch.get(name), self.synced.get(name)) else {
+            let Some(host) = self.host_files_scratch.get(name) else {
                 continue;
             };
-            if (SyncedVersion { size: host.size, mtime_ms: host.mtime_ms }) != synced.last {
+            let (synced, marked) = (self.synced.get(name), self.marks.contains_key(name));
+            let mac = SyncedVersion { size: host.size, mtime_ms: host.mtime_ms };
+            let unknown = synced.is_none_or(|synced| synced.last != mac);
+            if (marked && !self.previous_unclean) || (!marked && unknown) {
                 continue;
             }
             let Some(mtime_ms) = share_mtime::guest_mtime_ms(&entry.mtime) else {
                 continue;
             };
             let guest = SyncedVersion { size: entry.size, mtime_ms };
-            if guest == synced.last || Some(guest) == synced.prev {
+            if guest == mac || synced.is_some_and(|synced| guest == synced.last || Some(guest) == synced.prev) {
                 continue;
             }
             self.pending_host_changed.remove(name);
@@ -193,6 +206,54 @@ impl ShareSync {
     pub fn preferred_mac_stat(&self, name: &str) -> Option<(u64, u128)> {
         let stat = self.guest_changed.get(&normalize_rel(name))?;
         Some((stat.size, stat.mtime_ms))
+    }
+
+    /// A preferred copy turned out to hold the bytes of the Mac file `mac` (size, time) it was
+    /// preferred to, so it was not published (#651: an agent from before putmtime keeps its own
+    /// write time on an upload). Synced as it is: the Mac's time is the last version, the guest's
+    /// listed one the previous, so the next session takes that guest copy for no edit (the Mac
+    /// copy wins and is sent once, with its time).
+    pub fn on_host_copy_same(&mut self, name: &str, mac: (u64, u128)) {
+        let name = normalize_rel(name);
+        self.guest_changed.remove(&name);
+        self.recovery_copies.remove(&name);
+        let Some(record) = self.records.get_mut(&name) else {
+            return;
+        };
+        record.host_write_failed = false;
+        record.host_mtime_ms = Some(mac.1);
+        let guest = record.guest_mtime.as_deref().and_then(share_mtime::guest_mtime_ms);
+        let file = SyncedFile {
+            last: SyncedVersion { size: mac.0, mtime_ms: mac.1 },
+            prev: guest.map(|mtime_ms| SyncedVersion { size: record.size, mtime_ms }),
+        };
+        self.synced.insert(name.clone(), file);
+        self.synced_changes.insert(name, Some(file));
+        self.synced_dirty = true;
+    }
+
+    /// A recovery copy of `name` is kept beside the Mac file, which is sent back next (the caller
+    /// saves the versions now, before that PUT's mark). Synced as on_host_copy_same takes it: the
+    /// Mac file's version the copy was preferred to is the last, the kept guest version (its size
+    /// and listed time) the previous. A session stopped again before that PUT is confirmed left
+    /// the guest copy at the kept version, and the next one takes it for no edit (the Mac copy is
+    /// sent again) instead of keeping a second, identical copy (#675). A guest copy changed since
+    /// is neither version and is kept or fetched as before.
+    pub fn on_recovery_copy_kept(&mut self, name: &str) {
+        let name = normalize_rel(name);
+        let mac = self.guest_changed.get(&name).copied();
+        let kept = self.records.get(&name).and_then(|record| {
+            let mtime_ms = share_mtime::guest_mtime_ms(record.guest_mtime.as_deref()?)?;
+            Some(SyncedVersion { size: record.size, mtime_ms })
+        });
+        self.on_host_copy_kept(&name);
+        let (Some(mac), Some(kept)) = (mac, kept) else {
+            return;
+        };
+        let file = SyncedFile { last: SyncedVersion { size: mac.size, mtime_ms: mac.mtime_ms }, prev: Some(kept) };
+        self.synced.insert(name.clone(), file);
+        self.synced_changes.insert(name, Some(file));
+        self.synced_dirty = true;
     }
 
     /// A preferred copy is not to be published (the Mac file changed, seen by its publish or by

@@ -8,16 +8,14 @@ notarized. That changes how macOS establishes trust on first open; it does not
 authorize Windows test drivers. General Preview installs and imports Windows in 3D-off mode.
 
 > [!WARNING]
-> The published `v1.0.0` predates the current fail-closed driver policy and is
-> no longer recommended. It has no General Preview channel manifest, so the
-> installer below refuses it. Until a successor is published, use the
-> [current-source build](#build-the-current-source) instead.
+> The older `v1.0.0` predates the current fail-closed driver policy and has no
+> General Preview channel manifest, so the installer below refuses it. Use
+> `v1.1.0` or later.
 
 ## Build the current source
 
-Use this path while the safe successor to `v1.0.0` is still being prepared, or
-whenever you want to inspect exactly what you run. Requirements are Apple silicon,
-macOS 14+, Xcode/Swift, and Rust 1.85+. Follow the
+Use this path when you want to inspect exactly what you run. Requirements are
+Apple silicon, macOS 14+, Xcode/Swift, and Rust 1.85+. Follow the
 [development setup](../CONTRIBUTING.md#set-up-a-development-checkout) for toolchains.
 The app bundle also needs the native dependencies below; the Rust and Swift
 build commands alone do not prepare them.
@@ -76,15 +74,13 @@ payload does not supply those resources. For that separate package, see the
 [Windows HVF app packager](../apps/macos/scripts/package-hvf-control-app.sh) and
 its required [pinned wimlib runtime builder](../scripts/build-pinned-wimlib-runtime.sh).
 
-## Terminal installer (waiting for a safe release)
+## Terminal installer
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash -s -- --launch
 ```
 
-Today this command exits without installing because no published release has
-the required General Preview contract. It is documented here for the safe
-successor; use the source-build path above in the meantime.
+This command installs the newest General Preview (currently `v1.1.1`).
 
 The bootstrap fetches the full installer at a pinned SHA-256 and refuses to run
 anything else. The installer then fails closed at every step:
@@ -143,7 +139,7 @@ without the Gatekeeper dialog. That is a UX property, not a security property �
 the integrity guarantees come from the checks above, not from skipping
 quarantine.
 
-## DMG from the Releases page (waiting for a safe release)
+## DMG from the Releases page
 
 Download the `.dmg`, `BridgeVM-release.json`, and `SHA256SUMS` from a release
 identified as **General Preview**. Do not use the historical `v1.0.0`. Verify
@@ -170,12 +166,21 @@ To install Windows from an ISO:
 
 - A Windows 11 ARM64 ISO, downloaded from Microsoft yourself. The app does not
   fetch Windows media; it asks you to choose the ISO file.
-- A user-supplied signed ARM64 driver payload containing exactly the storage,
-  serial and network roles, plus an external manifest derived from
-  [`windows-guest-payload-v1.example.tsv`](../scripts/win-assets/windows-guest-payload-v1.example.tsv).
-  The General Preview does not redistribute this payload. Its manifest must
-  list every file and exact SHA-256; the app copies and seals both inputs in
-  the VM bundle before installation.
+- Signed ARM64 storage, serial and network drivers. Either:
+  - click **드라이버 자동 준비** in the create sheet (or pass `--fetch-drivers` to
+    `bridgevm app create-windows`): the app downloads the pinned Red Hat
+    virtio-win 0.1-299 archive (about 95 MB, Microsoft-signed) from the official
+    fedorapeople.org source, refuses it unless its length and SHA-256 match the
+    pins, keeps it under `~/Library/Application Support/BridgeVM/driver-payloads`,
+    and writes the `Win11/ARM64` viostor, vioser and netkvm (with `netkvmp.exe`)
+    files plus their manifest there; or
+  - choose your own payload folder containing exactly the storage, serial and
+    network roles, plus an external manifest derived from
+    [`windows-guest-payload-v1.example.tsv`](../scripts/win-assets/windows-guest-payload-v1.example.tsv).
+    Its manifest must list every file and exact SHA-256.
+
+  BridgeVM itself does not redistribute these drivers. Either way the app copies
+  and seals the payload and manifest in the VM bundle before installation.
 - About 64 GiB of free disk for the guest image.
 
 To import instead: an installed Windows 11 Arm disk (RAW, QCOW2 or Hyper-V
@@ -190,7 +195,9 @@ optional install of the Microsoft-signed Red Hat virtio-win display driver,
 which Windows downloads itself. After a VM restart the display follows the
 window size; without it the resolution is fixed per VM (1280x800 by default).
 
-For installation, the ISO by itself is therefore not enough today. Payload preflight verifies
+With the automatic driver download, an ISO is the only file you provide. A
+complete Windows install from an ISO plus the downloaded drivers has not yet
+been proven by a live run. Payload preflight verifies
 the declared ARM64 PE identity and each catalog's embedded CMS integrity; it
 does not claim that Windows accepted or bound a driver. That remains live guest
 evidence, and a missing or rejected payload leaves installation blocked rather
@@ -202,7 +209,8 @@ than falling back to unsigned drivers.
   The previous app is preserved until the new one verifies in place.
 - **Roll back**: run the installer with `--version <older-tag>`, or if you
   updated with `--keep-backup`, remove the new app and rename the
-  `BridgeVM.app.backup-*` bundle back.
+  `BridgeVM.app.backup-*` bundle back. `v1.1.0` is the oldest release you can
+  roll back to: the installer refuses `v1.0.0`.
 - **Uninstall**: delete `/Applications/BridgeVM.app`. That removes the app
   only. Your VMs live under `~/Library/Application Support/BridgeVM/vms` (or
   the storage folder you chose); delete them only if you also want to destroy

@@ -4,7 +4,7 @@ use std::ffi::{CStr, CString};
 use std::fs::File;
 #[cfg(test)]
 use std::fs::OpenOptions;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
 #[cfg(test)]
 use std::os::unix::fs::OpenOptionsExt;
@@ -31,6 +31,8 @@ thread_local! {
     pub(super) static TEMPORARY_FAULT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
     pub(super) static LINK_FAULT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
     pub(super) static CONFLICT_COPY_FAULT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+    /// The errno the final rename fails with, after staging, sync and the mark (tests).
+    pub(super) static RENAME_FAULT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
 }
 
 /// The Mac file a preferred guest copy is to replace, as the session's first scan saw it: size
@@ -117,6 +119,12 @@ fn link_at(parent: &File, from: &CStr, to: &CStr) -> io::Result<()> {
         return Err(io::Error::last_os_error());
     }
     Ok(())
+}
+
+/// An open file's size and modification time (ms), as the scan reads them.
+fn file_stat(file: &File) -> MacStat {
+    let meta = file.metadata().ok()?;
+    Some((meta.len(), super::file_mtime_ms_from_meta(&meta)?))
 }
 
 fn open_at(parent: &File, leaf: &CStr, flags: i32, mode: libc::mode_t) -> io::Result<File> {
@@ -241,6 +249,10 @@ impl Destination {
                     return Err(io::Error::other(MacChanged));
                 }
         }
+        #[cfg(test)]
+        if let Some(errno) = RENAME_FAULT.with(std::cell::Cell::get) {
+            return Err(io::Error::from_raw_os_error(errno));
+        }
         // SAFETY: both names and the owning directory remain live. renameat
         // replaces a concurrently inserted leaf symlink instead of following it.
         let status = unsafe { libc::renameat(self.parent.as_raw_fd(), temporary.as_ptr(),
@@ -291,8 +303,24 @@ impl Destination {
             Ok(None) => return None,
             Err(_) => return Some(None),
         };
-        let stat = file.metadata().ok().and_then(|meta| Some((meta.len(), super::file_mtime_ms_from_meta(&meta)?)));
-        Some(stat)
+        Some(file_stat(&file))
+    }
+
+    /// Whether the destination is the plain file `mac` says (size and time, as the scan saw it)
+    /// and holds exactly `bytes`, the same file before and after it is read.
+    pub(super) fn same_content(&self, bytes: &[u8], mac: (u64, u128)) -> bool {
+        let Ok(Some(mut file)) = self.existing(libc::O_RDONLY) else {
+            return false;
+        };
+        if mac.0 != bytes.len() as u64 || file_stat(&file) != Some(mac) {
+            return false;
+        }
+        // One byte past the expected size: a file that grew since differs.
+        let mut content = Vec::with_capacity(bytes.len());
+        if (&mut file).take(mac.0 + 1).read_to_end(&mut content).is_err() || content != bytes {
+            return false;
+        }
+        file_stat(&file) == Some(mac)
     }
 
     /// Seal, date, F_FULLFSYNC and rename the filled temporary, not over a Mac file that is no

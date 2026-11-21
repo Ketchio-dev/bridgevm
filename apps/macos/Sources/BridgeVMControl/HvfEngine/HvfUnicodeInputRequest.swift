@@ -5,11 +5,14 @@ struct HvfUnicodeInputRequest {
     /// `notInserted`: the agent's SendInput inserted none of the request's events, as on a Windows secure
     /// desktop (lock or sign-in screen, UAC prompt); unlike any other failure nothing of it reached Windows.
     enum Failure: Equatable { case expired, restarted, guestRejected, invalidReceipt, notInserted }
-    enum Outcome: Equatable { case inserted, failed(Failure) }
-    private enum Phase { case header, marker, end, rejected, finished }
+    enum Outcome: Equatable { case inserted, unsupported, failed(Failure) }
+    private enum Phase { case header, marker, end, unsupported, rejected, finished }
 
+    let queuedTextDispatch: Bool
     let command: String
     let insertedEventCount: Int
+    private let dispatchMarker: String?
+    private let unsupportedMarker: String?
     private let deadline: Date
     private let marker: String
     private let markerPrefix: String
@@ -17,9 +20,12 @@ struct HvfUnicodeInputRequest {
     private var phase = Phase.header
     private var envelope: HvfInputReceiptEnvelope
 
-    init?(event: HvfOrderedInputQueue.Event, now: Date, id: UUID = UUID()) {
+    init?(event: HvfOrderedInputQueue.Event, now: Date, id: UUID = UUID(), queuedTextDispatch: Bool = false) {
         guard let encoding = HvfGuestInputEncoding(event) else { return nil }
-        command = "\(encoding.verb) \(id.uuidString) \(encoding.base64)"
+        if case .text = event { self.queuedTextDispatch = queuedTextDispatch } else { self.queuedTextDispatch = false }
+        command = "\(encoding.verb) \(id.uuidString) \(encoding.base64)" + (self.queuedTextDispatch ? " S" : "")
+        dispatchMarker = self.queuedTextDispatch ? "BVTEXT_DISPATCHED \(id.uuidString) \(encoding.insertedEventCount / 2)" : nil
+        unsupportedMarker = self.queuedTextDispatch ? "BVTEXT_UNSUPPORTED \(id.uuidString)" : nil
         envelope = HvfInputReceiptEnvelope(command: command)
         insertedEventCount = encoding.insertedEventCount
         markerPrefix = "BVINPUT_INSERTED \(id.uuidString) "
@@ -48,10 +54,17 @@ struct HvfUnicodeInputRequest {
                     return finish(.failed(Self.insertedNothing(line) ? .notInserted : .guestRejected))
                 }
                 if envelope.isEnd(line) { return finish(.failed(.guestRejected)) }
+            } else if line == unsupportedMarker {
+                guard phase == .marker else { return finish(.failed(.invalidReceipt)) }
+                phase = .unsupported
+            } else if line == dispatchMarker {
+                guard phase == .marker else { return finish(.failed(.invalidReceipt)) }
+                phase = .end
             } else if line.hasPrefix(markerPrefix) {
-                guard phase == .marker, line == marker else { return finish(.failed(.invalidReceipt)) }
+                guard !queuedTextDispatch, phase == .marker, line == marker else { return finish(.failed(.invalidReceipt)) }
                 phase = .end
             } else if envelope.isEnd(line) {
+                if phase == .unsupported, envelope.matchesEnd(line) { return finish(.unsupported) }
                 guard phase == .end, envelope.matchesEnd(line) else { return finish(.failed(.invalidReceipt)) }
                 return finish(.inserted)
             }

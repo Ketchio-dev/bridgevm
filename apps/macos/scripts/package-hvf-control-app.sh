@@ -133,7 +133,7 @@ for asset in \
   bvgpu-diagnostics.ps1 \
   bvgpu-vulkan-probe.ps1 \
   bvgpu-diagnostics-startup.cmd \
-  bvagent.ps1 bvagent-firstboot.ps1 bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-pointer-input.cs bvagent-window-inventory.ps1 bv-window-inventory.cs bvagent-task.ps1 bvagent-update.ps1 bv-product-e2e-launch.ps1 bv-product-e2e-bitlocker-launch.ps1 bv-product-e2e-bitlocker.ps1 \
+  bvagent.ps1 bvagent-firstboot.ps1 bvagent-input.ps1 bvagent-unicode-input.cs bvagent-key-input.cs bvagent-pointer-input.cs bvagent-text-packets.cs bvagent-text-packets-arm64.dll bvagent-window-inventory.ps1 bv-window-inventory.cs bvagent-task.ps1 bvagent-update.ps1 bv-product-e2e-launch.ps1 bv-product-e2e-bitlocker-launch.ps1 bv-product-e2e-bitlocker.ps1 \
   bv-product-e2e.ps1 bv-product-e2e-tpm.ps1 bv-product-e2e-tpm.cs \
   windows-guest-payload-v1.example.tsv \
   bvagent-install-service.c bvagent-install.ps1 install.cmd
@@ -175,5 +175,22 @@ codesign --verify --deep --strict "$stage_app"
 "$ROOT/scripts/verify-app-hvf-entitlements.sh" "$stage_app" >/dev/null
 "$MACOS_DIR/scripts/bundle-swtpm-runtime.sh" --verify-only "$stage_app" >/dev/null
 "$ROOT/scripts/verify-app-third-party-notices.sh" "$stage_app" >/dev/null
+# The app refuses an ISO install, and the probe turns guest-tools updates off, when a file it
+# requires is missing. The asset list above once lacked two agent files for three days (#672).
+required_listings=("$MACOS_DIR/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallResources.swift"
+  "$MACOS_DIR/Sources/BridgeVMControl/HvfEngine/HvfWindowsAgentAssets.swift")
+required_resources=()
+while IFS= read -r required; do required_resources+=("$required"); done \
+  < <(sed -n 's/^ *"\([a-z][^"]*\/[^"]*\)",\{0,1\}$/\1/p' "${required_listings[@]}")
+(( ${#required_resources[@]} >= 20 )) || {
+  echo "could not read the app's required resource list (${#required_resources[@]} entries)" >&2
+  exit 1
+}
+for required in "${required_resources[@]}"; do
+  [[ -e "$stage_app/Contents/Resources/$required" ]] || {
+    echo "packaged app lacks a resource the app requires: $required" >&2
+    exit 1
+  }
+done
 mv "$stage_app" "$OUTPUT"
 printf '%s\n' "$OUTPUT"

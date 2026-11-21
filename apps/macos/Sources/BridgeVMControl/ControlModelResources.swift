@@ -20,7 +20,7 @@ extension ControlModel {
         invalidateRefreshes()
         busy = true
         setLifecycleBusy(true)
-        statusNote = "리소스 적용 중 (\(Int(pendingMemGiB))GB / \(cpus)코어)… VM 재시작"
+        statusNote = "리소스 적용 중 (\(Int(pendingMemGiB)) GiB / \(cpus)코어)… VM 재시작"
         let backend = self.backend
         let previousOwner = ownedRuntime
         Task.detached {
@@ -74,7 +74,7 @@ extension ControlModel {
             await MainActor.run {
                 self.busy = false
                 self.setLifecycleBusy(false)
-                self.statusNote = "리소스 적용됨: \(mem / 1024)GB / \(cpus)코어"
+                self.statusNote = "리소스 적용됨: \(mem / 1024) GiB / \(cpus)코어"
                 self.scheduleRefreshBurst()
             }
         }

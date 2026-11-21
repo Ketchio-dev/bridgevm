@@ -17,7 +17,7 @@ struct HvfRuntimeReadinessView: View {
                         Spacer()
                     }.padding(6)
                 } label: {
-                    Label("Windows HVF Readiness", systemImage: "checklist")
+                    Label("Windows 실행 준비 상태", systemImage: "checklist")
                 }
             }
             Button {

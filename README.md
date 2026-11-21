@@ -10,16 +10,25 @@ BridgeVM runs Windows alongside macOS using its own
 [Hypervisor.framework VMM](crates/bridgevm-hvf/). The main Windows engine runs
 without QEMU. Apple VZ and QEMU compatibility backends are separate paths.
 
-**Current access: source builds · Engineering Preview · 3D-off.**
-A supported public download is still being prepared. The terminal installer
-refuses the superseded `v1.0.0` preview.
+**Current access: [General Preview v1.1.1](https://github.com/Ketchio-dev/bridgevm/releases/tag/v1.1.1) · Engineering Preview · 3D-off.**
+Install it with the terminal installer or the DMG. The app is ad-hoc signed,
+not notarized; the installer refuses the superseded `v1.0.0` preview.
 
+```sh
+curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash
+```
+
+**[Install guide](docs/install.md)** ·
 **[Build from source](docs/install.md#build-the-current-source)** ·
 **[Set up Windows](docs/install.md#what-you-need-after-installing)** ·
 **[Current status](STATUS.md)** · **[Contribute](CONTRIBUTING.md)**
 
 <p align="center">
-  <img src="docs/media/windows-hvf-boot.gif" alt="Recorded boot of Windows 11 Arm to the desktop on BridgeVM's own Hypervisor.framework VMM" width="800">
+  <a href="docs/media/windows-hvf-desktop-20261116.webp">
+    <img src="docs/media/windows-hvf-desktop-20261116.webp" alt="Windows 11 Arm desktop on BridgeVM's native HVF engine, captured on an M5 development Mac at 2560×1600 on November 16, 2026; experimental test-signed display driver enabled" width="960">
+  </a><br>
+  <sub>Actual development VM · November 16, 2026 · 2560×1600 lossless capture · <a href="docs/media/windows-hvf-desktop-20261116.webp">Open full resolution</a></sub><br>
+  <sub>The visible Windows Test Mode watermark belongs to this VM's experimental display driver; this is not a public release screenshot.</sub>
 </p>
 
 ## What you can try
@@ -36,19 +45,27 @@ across interrupted storage operations remain open release criteria. The
 [capability matrix](docs/windows-arm/capability-matrix.md) records the evidence
 for each feature.
 
+Current source uses queued text dispatch for compatible Windows editors; long
+Korean and emoji input, selection replacement and undo were checked in Windows
+11 Notepad. Older builds and unsupported editors retain the input path tracked
+in [#665](https://github.com/Ketchio-dev/bridgevm/issues/665), where long commits
+can repeat or lose characters. Use clipboard sharing and paste if this occurs.
+
 ## Try BridgeVM
 
 **Host:** Apple silicon and macOS 14+. The declared host matrix is M4/M5;
-M1–M3 are not yet covered. Source builds require Xcode/Swift, Rust 1.85+ and
-pinned native dependencies. Follow the complete
-[build and packaging guide](docs/install.md#build-the-current-source);
-`cargo build` and `swift build` alone do not prepare a Windows-installation app.
+M1–M3 are not yet covered. The [installation guide](docs/install.md) has the
+terminal installer, the DMG and its one-time Open Anyway step. Source builds
+require Xcode/Swift, Rust 1.85+ and pinned native dependencies; follow the
+complete [build and packaging guide](docs/install.md#build-the-current-source),
+because `cargo build` and `swift build` alone do not prepare a
+Windows-installation app.
 
 Choose the Windows setup path that matches what you have:
 
 | Starting point | What you provide |
 | --- | --- |
-| **Install from ISO** | Your own licensed Windows 11 Arm ISO, plus signed ARM64 storage/serial/network drivers and their external SHA-256 manifest. An ISO alone is insufficient. |
+| **Install from ISO** | Your own licensed Windows 11 Arm ISO. On your click the app downloads the Microsoft-signed Red Hat virtio-win storage/serial/network drivers (about 95 MB) from the official source and checks them against a pinned SHA-256; you can still choose your own signed ARM64 driver folder and manifest instead. One live install from an ISO with the downloaded drivers reached Windows setup with storage, serial and network working (2026-11-20, development Mac); a clean-Mac run through the app is not yet recorded. |
 | **Import an installed VM** | A Windows 11 Arm disk in RAW, QCOW2 or Hyper-V VHDX format. Import needs no driver payload. |
 
 The [installation guide](docs/install.md) covers both paths, required bundle
@@ -56,9 +73,9 @@ resources and first-open trust. After Windows starts, install the signed guest
 display driver from the VM's settings and restart to enable window-following
 resolution.
 
-Source builds use local development signing. Developer ID signing and Apple
-notarization for public distribution remain unfinished. Standard preview
-packaging includes no Windows test driver and requires no TESTSIGNING setup.
+Release and source builds are ad-hoc signed. Developer ID signing and Apple
+notarization remain unfinished. Standard preview packaging includes no Windows
+test driver and requires no TESTSIGNING setup.
 
 ## Engineering Preview
 
@@ -88,7 +105,7 @@ Release scenarios met: **2 / 5**.
 | S1 | Get Windows running | `OPEN` | A9 (open), A1, A10 | **A9**: No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off. In the 3D-off configuration the app's live display window was choppy in recent hardware runs; its smoothness has not been measured since. Guest audio stuttered audibly: until 2026-11-03 every other 10 ms of Windows playback reached the host as silence, because the sound controller answered Windows' position reads at the 0x2084 alias with 0. Since that fix, 60-second live runs had 2-6 silent 10 ms blocks out of about 6,330, and under host load 0-8 blocks per run still repeated stale audio; at the v1.1.0 release head (2026-11-14) six such runs had 2-6 silent and 0-3 stale blocks out of about 6,400, and one of them had 2 host underrun callbacks. No listening check has confirmed the stutter is gone. |
 | S2 | Use the Windows desktop | `OPEN` | A4, B4, A5, A8 | The Windows display follows the window size only after the one-time display driver install in the VM view (Red Hat virtio-win, Microsoft-signed, downloaded by the guest) and a VM restart; until then the resolution is fixed per VM before it starts (1280x800 by default, up to 2560x1600). The app window was choppy in earlier runs and its smoothness has not been measured since, and no listening check has confirmed that the audio stutter is gone (see A9). |
 | S3 | Work with the Mac | `MET` | A6, A7 | none |
-| S4 | Keep the VM safe | `OPEN` | A19 (open), A15, A16, A12 | **A19**: Legacy managed storage relocated before identity migration is refused. Full interrupted-operation coverage is unproven. The ten-lane product lifecycle campaign passed 10/10 through the live queue at 949f4c26, which the operator accepted before a release head was designated, and 10/10 again on 2026-11-14 on the v1.1.0 release-head app f73b66bf, run locally without a queue seal. Physical power loss during a snapshot operation is outside this criterion and is not tested. |
+| S4 | Keep the VM safe | `OPEN` | A19 (open), A15, A16, A12 | **A19**: Legacy managed storage relocated before identity migration is refused. Full interrupted-operation coverage is unproven. The ten-lane product lifecycle campaign passed 10/10 through the live queue at 949f4c26, which the operator accepted before a release head was designated, and 10/10 again on 2026-11-14 on the earlier v1.1.0 candidate app f73b66bf, and 10/10 on 2026-11-19 on the superseded candidate app 6647c818 (release dry run 44563308193), and 10/10 twice on 2026-11-19 at the first v1.1.0 tag head 7d2c7b9e (withdrawn before publication): once on its release dry-run app (run 44604775627) and once on the tag-build draft release app (run 44618936971), and 10/10 twice on 2026-11-20 at the published v1.1.0 tag head 18cf96c6 (dry run 44660980419, tag build 44671169772), and 10/10 twice on 2026-11-21 at the v1.1.1 tag head 3b01ef93 (dry run 44928977909, tag build 44937416528), each installed through the installer and run locally without a queue seal. Physical power loss during a snapshot operation is outside this criterion and is not tested. |
 | S5 | Go online | `MET` | A20 | none |
 
 Release-blocking criteria proven: **12 / 14**. Open: A9, A19.
@@ -99,7 +116,7 @@ Other known open defects:
 - Graphics future path: Vulkan is a Graphics Lab future path, excluded from General Preview and v1; D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-11-14 at commit `c4f4e9cbeb6fc27caf2a9ba24ec624592da1f01c`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-11-21 at commit `f66c2ed5f001d8cced6dba321b1eb1ef1661365d`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 </details>

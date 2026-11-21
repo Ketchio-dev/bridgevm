@@ -15,6 +15,8 @@ struct HvfRuntimeDiagnosticsSettings<PathRow: View>: View {
         GroupBox {
             DisclosureGroup(isExpanded: $expanded) {
                 VStack(alignment: .leading, spacing: 12) {
+                    Text("개발자용 진단 도구입니다. 일반 사용에는 필요하지 않습니다.")
+                        .font(.caption).foregroundStyle(.secondary)
                     pathRow("Evidence dir", $evidenceDir, true)
                     pathRow("CTL file", $ctlFilePath, false)
                     HStack {

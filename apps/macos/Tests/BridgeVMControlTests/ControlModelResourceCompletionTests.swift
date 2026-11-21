@@ -69,7 +69,7 @@ final class ControlModelResourceCompletionTests: XCTestCase {
             XCTAssertEqual(resources["cpu"], "4")
         }
         XCTAssertEqual(library.latestConfiguration(for: saved), persisted)
-        XCTAssertEqual(model.statusNote, "리소스 적용됨: 8GB / 4코어")
+        XCTAssertEqual(model.statusNote, "리소스 적용됨: 8 GiB / 4코어")
         XCTAssertEqual(model.pendingMemGiB, editDraft ? 16 : 8)
         XCTAssertEqual(model.pendingCPU, editDraft ? 8 : 4)
     }
