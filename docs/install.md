@@ -8,16 +8,14 @@ notarized. That changes how macOS establishes trust on first open; it does not
 authorize Windows test drivers. General Preview installs and imports Windows in 3D-off mode.
 
 > [!WARNING]
-> The published `v1.0.0` predates the current fail-closed driver policy and is
-> no longer recommended. It has no General Preview channel manifest, so the
-> installer below refuses it. Until a successor is published, use the
-> [current-source build](#build-the-current-source) instead.
+> The older `v1.0.0` predates the current fail-closed driver policy and has no
+> General Preview channel manifest, so the installer below refuses it. Use
+> `v1.1.0` or later.
 
 ## Build the current source
 
-Use this path while the safe successor to `v1.0.0` is still being prepared, or
-whenever you want to inspect exactly what you run. Requirements are Apple silicon,
-macOS 14+, Xcode/Swift, and Rust 1.85+. Follow the
+Use this path when you want to inspect exactly what you run. Requirements are
+Apple silicon, macOS 14+, Xcode/Swift, and Rust 1.85+. Follow the
 [development setup](../CONTRIBUTING.md#set-up-a-development-checkout) for toolchains.
 The app bundle also needs the native dependencies below; the Rust and Swift
 build commands alone do not prepare them.
@@ -76,15 +74,13 @@ payload does not supply those resources. For that separate package, see the
 [Windows HVF app packager](../apps/macos/scripts/package-hvf-control-app.sh) and
 its required [pinned wimlib runtime builder](../scripts/build-pinned-wimlib-runtime.sh).
 
-## Terminal installer (waiting for a safe release)
+## Terminal installer
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash -s -- --launch
 ```
 
-Today this command exits without installing because no published release has
-the required General Preview contract. It is documented here for the safe
-successor; use the source-build path above in the meantime.
+This command installs the newest General Preview (currently `v1.1.0`).
 
 The bootstrap fetches the full installer at a pinned SHA-256 and refuses to run
 anything else. The installer then fails closed at every step:
@@ -143,7 +139,7 @@ without the Gatekeeper dialog. That is a UX property, not a security property â€
 the integrity guarantees come from the checks above, not from skipping
 quarantine.
 
-## DMG from the Releases page (waiting for a safe release)
+## DMG from the Releases page
 
 Download the `.dmg`, `BridgeVM-release.json`, and `SHA256SUMS` from a release
 identified as **General Preview**. Do not use the historical `v1.0.0`. Verify
@@ -213,7 +209,8 @@ than falling back to unsigned drivers.
   The previous app is preserved until the new one verifies in place.
 - **Roll back**: run the installer with `--version <older-tag>`, or if you
   updated with `--keep-backup`, remove the new app and rename the
-  `BridgeVM.app.backup-*` bundle back.
+  `BridgeVM.app.backup-*` bundle back. The first General Preview, `v1.1.0`,
+  has no installable predecessor: the installer refuses `v1.0.0`.
 - **Uninstall**: delete `/Applications/BridgeVM.app`. That removes the app
   only. Your VMs live under `~/Library/Application Support/BridgeVM/vms` (or
   the storage folder you chose); delete them only if you also want to destroy
