@@ -28,14 +28,7 @@ pub(crate) unsafe fn create_vm() {
     assert_eq!(vc, 0, "hv_vm_create");
 }
 
-pub(crate) unsafe fn create_gic(num_cpus: usize) {
-    // A1: the in-kernel GICv3 loses trapped EOIs / swallows vtimer fires
-    // (14/40 boots), while the retained control boots 10/10 with a userspace
-    // GIC. BRIDGEVM_USERSPACE_GIC=1 selects that model and skips kernel GIC creation.
-    if crate::usgic_bridge::init_if_enabled(num_cpus) {
-        println!("userspace GICv3 active: {num_cpus} CPUs, hv_gic_create skipped");
-        return;
-    }
+pub(crate) unsafe fn create_gic() {
     // In-kernel GICv3 must be created after the VM and before any vCPU.
     let gic = hv_gic_config_create();
     assert_eq!(

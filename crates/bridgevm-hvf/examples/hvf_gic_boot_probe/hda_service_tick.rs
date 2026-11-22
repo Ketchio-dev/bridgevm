@@ -20,8 +20,6 @@
 //!   sends that MSI, through the vCPU drains' `deliver_pending_msix`.
 //! - It never calls `hv_vcpus_exit` and holds no vCPU handle, so it adds no
 //!   EXIT_CANCELED, each of which rolls the A1 swallow race (probe_runtime.rs).
-//!   Under BRIDGEVM_USERSPACE_GIC an MSI send is itself a vCPU kick
-//!   (usgic_bridge.rs), so there the tick stays off and exits poll as before.
 //! - One per probe process, started outside the reboot loop beside
 //!   RamfbDisplayThread and declared after the guest RAM backing. The probe
 //!   drops it before the final report, so no tick runs during teardown, and
@@ -171,8 +169,7 @@ impl HdaServiceTick {
     /// `ram`/`len` are the live guest-RAM mapping at `machine::RAM_BASE`.
     pub fn start(platform: &Arc<Mutex<VirtPlatform>>, ram: *mut u8, len: usize) -> Self {
         let (ram, owner) = (ram as usize, Arc::clone(platform));
-        let userspace_gic = crate::usgic_bridge::usgic().is_some();
-        Self::start_with(platform, userspace_gic, TICK_INTERVAL, move || ProbePort {
+        Self::start_with(platform, TICK_INTERVAL, move || ProbePort {
             platform: owner,
             memory: MappedRam {
                 base: machine::RAM_BASE,
@@ -184,7 +181,6 @@ impl HdaServiceTick {
 
     pub(crate) fn start_with<P: TickPort>(
         platform: &Mutex<VirtPlatform>,
-        userspace_gic: bool,
         interval: Duration,
         port: impl FnOnce() -> P + Send + 'static,
     ) -> Self {
@@ -198,10 +194,6 @@ impl HdaServiceTick {
         let Some(activity) = activity else {
             return Self::inert();
         };
-        if userspace_gic {
-            println!("hda service tick: off, the userspace GIC sends MSIs as vCPU kicks");
-            return Self::inert();
-        }
         Self::spawn(activity, interval, port)
     }
 

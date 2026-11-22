@@ -112,7 +112,7 @@ impl PauseGate {
     }
 
     /// vCPU0, outside `hv_vcpu_run`: stop every secondary. `kick` makes each
-    /// running secondary leave `hv_vcpu_run` (or a userspace-GIC WFI sleep);
+    /// running secondary leave `hv_vcpu_run`;
     /// `now` reads the host counter once all are parked.
     pub(crate) fn pause(&self, kick: impl Fn(), counters: &impl HostCounters) -> PauseOutcome {
         let mut state = self.lock();
@@ -245,7 +245,7 @@ pub(crate) struct Host;
 
 impl HostCounters for Host {
     fn mach(&self) -> u64 {
-        crate::usgic_bridge::host_time_ticks()
+        crate::host_time_ticks()
     }
 
     fn raw(&self) -> u64 {
@@ -353,7 +353,6 @@ pub(crate) fn pause_and_wait(
         for control in secondaries.map_or(&[][..], |set| set.controls.as_slice()) {
             control.request_exit_if_published();
         }
-        crate::usgic_bridge::kick_secondaries();
     };
     let started = std::time::Instant::now();
     if let PauseOutcome::Abandoned = GATE.pause(kick, &Host) {

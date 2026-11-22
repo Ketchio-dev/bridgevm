@@ -134,20 +134,21 @@ pub(crate) unsafe fn emulate_debug_os_lock_sysreg(vcpu: HvVcpuT, trap: SysRegTra
         }
         // PMCCNTR_EL0: winload measures CPU frequency with cycle-counter
         // deltas and __fastfail()s (BRK #0xf004) when the delta is zero
-        // (usgic-diag2 stall: MRS x9,S3_3_C9_C13_0; MUL; CBNZ; BRK). A
-        // counter that actually advances is required -- scale the 24 MHz
-        // host timebase up to a plausible CPU clock.
+        // (MRS x9,S3_3_C9_C13_0; MUL; CBNZ; BRK). A counter that actually
+        // advances is required -- scale the 24 MHz host timebase up to a
+        // plausible CPU clock. This and the PMU/CNTPCT arms below were only
+        // seen trapping without the in-kernel GIC; they stay so such a trap is
+        // answered instead of stopping the VM.
         (3, 3, 9, 13, 0, true) => {
             if trap.rt != 31 {
-                let cycles = crate::usgic_bridge::host_time_ticks().wrapping_mul(100);
+                let cycles = crate::host_time_ticks().wrapping_mul(100);
                 hv_vcpu_set_reg(vcpu, HV_REG_X0 + trap.rt, cycles);
             }
             true
         }
-        // Remaining PMU group (PMCR/PMSELR/PMXEVCNTR/...): the
-        // userspace-GIC configuration traps these (Windows reads them
-        // during kernel bringup; first seen at usgic-boot3). RAZ/WI
-        // matches a PMU that counts nothing.
+        // Remaining PMU group (PMCR/PMSELR/PMXEVCNTR/...): Windows reads
+        // them during kernel bringup. RAZ/WI matches a PMU that counts
+        // nothing.
         (3, 3, 9, 12..=14, _, is_read) | (3, 0, 9, 14, _, is_read) => {
             if is_read && trap.rt != 31 {
                 hv_vcpu_set_reg(vcpu, HV_REG_X0 + trap.rt, 0);
@@ -161,15 +162,14 @@ pub(crate) unsafe fn emulate_debug_os_lock_sysreg(vcpu: HvVcpuT, trap: SysRegTra
             }
             true
         }
-        // CNTPCT_EL0: the physical counter traps in the userspace-GIC
-        // configuration (ntoskrnl reads it once past timer bringup;
-        // usgic-diag6). The host timebase ticks at the advertised CNTFRQ
+        // CNTPCT_EL0: ntoskrnl reads the physical counter once past timer
+        // bringup. The host timebase ticks at the advertised CNTFRQ
         // (24 MHz), so mach_absolute_time IS the counter, less the pause offset
         // that CNTVCT_EL0 leaves out too (pause_gate).
         (3, 3, 14, 0, 1, true) => {
             if trap.rt != 31 {
                 let ticks = crate::pause_gate::GATE
-                    .guest_count(crate::usgic_bridge::host_time_ticks());
+                    .guest_count(crate::host_time_ticks());
                 hv_vcpu_set_reg(vcpu, HV_REG_X0 + trap.rt, ticks);
             }
             true
