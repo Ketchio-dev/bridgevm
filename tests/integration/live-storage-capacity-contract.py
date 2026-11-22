@@ -78,7 +78,7 @@ class Capacity(unittest.TestCase):
     def test_actual_conditional_worker_stops_before_git_on_probe_refusal(self):
         source = (LIVE / "bridgevm-live-worker.sh").read_text()
         function = source[source.index("run_job() {"):source.index("\nmain() {")]
-        (self.queue / "job.env").write_text("job_id=fixture\ntier=t1-vtimer\ncommit=" + "a" * 40 + "\n")
+        (self.queue / "job.env").write_text("job_id=fixture\ntier=t1-snapshot\ncommit=" + "a" * 40 + "\n")
         marker = self.root / "git-called"
         command = 'set -euo pipefail\nlog() { :; }\ngit() { touch "$MARKER"; return 77; }\n' + function + '\nrun_job "$JOB" || exit 29\n'
         bin_dir = self.root / "bin"; bin_dir.mkdir(); provider = bin_dir / "python3"

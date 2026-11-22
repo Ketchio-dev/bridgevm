@@ -15,7 +15,7 @@ checks=0
 fail() { echo "FAIL: $*" >&2; exit 1; }
 for id in t17-64b2ecbb-integration-tpm-pilot-r92 job-vtpm-1 job-SWTPM-1 t1-secret-run run-token-1 disk.iso.1 vars-copy-1; do
     status=0
-    "$LIVE" submit t1-vtimer --sha "$SHA" --job-id "$id" > "$WORK/out" 2>&1 || status=$?
+    "$LIVE" submit t1-snapshot --sha "$SHA" --job-id "$id" > "$WORK/out" 2>&1 || status=$?
     [[ "$status" -eq 2 ]] || fail "$id: expected refusal status 2, got $status"
     grep -Fq 'job id would be refused by receipt redaction' "$WORK/out" || fail "$id: refusal did not name redaction"
     [[ ! -e "$BRIDGEVM_LIVE_ROOT/job-ledger/$id" ]] || fail "$id: a refused id was burned"
@@ -23,7 +23,7 @@ for id in t17-64b2ecbb-integration-tpm-pilot-r92 job-vtpm-1 job-SWTPM-1 t1-secre
 done
 # Ids redaction publishes are still recorded and queued as before.
 for id in t17-5de1f8ca-main-pilot-r91 bvm-5de1f8ca-native-ui-v2-20261023-01; do
-    "$LIVE" submit t1-vtimer --sha "$SHA" --job-id "$id" > "$WORK/out" 2>&1 || fail "$id: a publishable id was refused"
+    "$LIVE" submit t1-snapshot --sha "$SHA" --job-id "$id" > "$WORK/out" 2>&1 || fail "$id: a publishable id was refused"
     [[ -d "$BRIDGEVM_LIVE_ROOT/job-ledger/$id" ]] || fail "$id: a publishable id was not recorded"
     checks=$((checks + 2))
 done
