@@ -60,7 +60,10 @@ struct HvfInputCapabilityReceipt {
             guard line == header + "0" else { return .failed(.unsupported) }
             phase = .marker
         } else if line.hasPrefix("BVINPUT_CAPS \(id) ") {
-            guard phase == .marker, line == "BVINPUT_CAPS \(id) 3 TEXTINPUT KEYINPUT POINTERINPUT 65536" else {
+            // Guest bytes: bounded, version 3 with all three inputs and the 64 KiB limit; extra keywords are ignored.
+            let fields = line.split(separator: " ")
+            guard phase == .marker, line.utf8.count <= 512, fields.count >= 7, fields[2] == "3",
+                  Set(fields.dropFirst(3)).isSuperset(of: ["TEXTINPUT", "KEYINPUT", "POINTERINPUT", "65536"]) else {
                 return .failed(.invalidReceipt)
             }
             phase = .end

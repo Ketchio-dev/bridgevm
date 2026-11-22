@@ -16,6 +16,13 @@ final class HvfInputCapabilitiesRequestTests: XCTestCase {
         XCTAssertNil(request.consume(lines: [marker], now: now))
     }
 
+    func testExtraCapabilityKeywordFromANewerAgentIsAccepted() {
+        var request = HvfInputCapabilitiesRequest(now: now, id: id)
+        XCTAssertEqual(request.consume(lines: ["BVAGENT CMD \(request.command) exit=0",
+            "BVINPUT_CAPS \(id.uuidString) 3 TEXTINPUT KEYINPUT POINTERINPUT 65536 CLIPBOARDINPUT",
+            "BVAGENT END \(request.command)"], now: now), .supported)
+    }
+
     func testUnknownVersionMissingKeySupportAndWrongLimitFailClosed() {
         for value in ["2 TEXTINPUT KEYINPUT 65536", "1 TEXTINPUT 65536", "1 TEXTINPUT KEYINPUT 999999"] {
             var request = HvfInputCapabilitiesRequest(now: now, id: id)

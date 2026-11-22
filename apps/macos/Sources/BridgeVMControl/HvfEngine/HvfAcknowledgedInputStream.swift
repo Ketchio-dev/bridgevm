@@ -26,6 +26,7 @@ struct HvfAcknowledgedInputStream {
         switch queue.poll(now: now) {
         case let .send(ticket):
             guard let request = HvfUnicodeInputRequest(event: ticket.event, now: now, id: ticket.id, queuedTextDispatch: queuedTextDispatch) else {
+                assertionFailure("enqueue admits only encodable events")
                 return cancel(.transportFailed)
             }
             pending = (ticket, request)
@@ -33,7 +34,10 @@ struct HvfAcknowledgedInputStream {
             // Lines collected before this send cannot acknowledge this new request.
             return .sent(ticket.id)
         case .waiting:
-            guard var active = pending else { return cancel(.transportFailed) }
+            guard var active = pending else {
+                assertionFailure("the queue waits only on a request this stream sent")
+                return cancel(.transportFailed)
+            }
             guard let outcome = active.request.consume(lines: lines, now: now) else {
                 pending = active
                 return .waiting
@@ -45,7 +49,7 @@ struct HvfAcknowledgedInputStream {
                 if case let .cancelled(reason, discarded) = transition {
                     return .cancelled(reason, discarded: discarded)
                 }
-                guard transition == .completed else { return cancel(.transportFailed) }
+                assert(transition == .completed, "the active ticket is always acknowledged")
                 return .inserted(active.ticket.id)
             case .unsupported:
                 guard active.request.queuedTextDispatch,
@@ -70,7 +74,8 @@ struct HvfAcknowledgedInputStream {
         case .idle:
             return .idle
         case .completed, .ignored:
-            return cancel(.transportFailed)
+            assertionFailure("poll never completes or ignores a ticket")
+            return .idle
         }
     }
 
