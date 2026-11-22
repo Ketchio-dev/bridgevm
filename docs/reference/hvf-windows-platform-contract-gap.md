@@ -70,15 +70,14 @@ BridgeVM's declared contract and tests.
 
 ## Independent-platform direction
 
-The planned BridgeVM Virtual ARM PC is a separate, versioned board contract
-built from public Arm BSA/SBSA/SBBR/SystemReady, UEFI, ACPI, SMBIOS, PSCI/SMCCC,
-GICv3, PCIe ECAM, NVMe, xHCI, TCG and virtio specifications. Its firmware must be
-independently auditable and must not require the legacy `fw_cfg` boundary.
-
-That board remains experimental until it satisfies the same real-hardware boot,
-installation, input, graphics, storage, security and performance gates as the
-current platform. Until then, the existing contract and its documented
-deviations remain the shipping truth.
+An independent BridgeVM-owned board (the BridgeVM Virtual ARM PC, with its own
+firmware package and boot-info handoff) was prototyped through UEFI BDS exit in
+2026-08/09 and removed in 2026-11 because the shipped app never used it; its
+receipts remain in `docs/windows-arm/evidence/` (the `bridgevm-pc-` files). The existing
+contract and its documented deviations are the shipping truth. A future
+independent board would need to pass the same real-hardware boot, installation,
+input, graphics, storage, security and performance gates as the current
+platform before replacing it.
 
 ## Evidence discipline
 

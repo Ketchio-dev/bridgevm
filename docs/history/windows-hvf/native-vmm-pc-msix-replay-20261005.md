@@ -20,7 +20,8 @@ requires no duplicate message after repeated unmask. Baseline raw SHA-256:
 
 ## Existing flush connected to the BAR path
 
-`crates/bridgevm-hvf/src/platform_pc_nvme_process.rs` extracts the unchanged
+bridgevm-hvf's `platform_pc_nvme_process.rs` (removed with the BridgeVM PC
+platform in 2026-11; last present at 84e665c6) extracts the unchanged
 queue-processing tail and adds the existing pending MSI-X flush. The PC BAR
 write path invokes this helper after its existing MMIO write. Controller
 queues, reset behavior, generic MSI-X masks and ECAM unmask handling are
