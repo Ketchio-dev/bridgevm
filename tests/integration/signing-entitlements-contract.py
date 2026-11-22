@@ -107,8 +107,7 @@ class EntitlementContracts(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='bridgevm-builder-signing-') as temporary:
             root = Path(temporary)
             # Only the release probe, under the hardened runtime, opens the microphone.
-            for name, key, release_extra in [('hvf-runner', HVF, {}), ('hvf-windows-probe', HVF, {AUDIO: True}),
-                                             ('apple-vz-runner', 'com.apple.security.virtualization', {})]:
+            for name, key, release_extra in [('hvf-runner', HVF, {}), ('hvf-windows-probe', HVF, {AUDIO: True})]:
                 script = ROOT / f'apps/macos/scripts/build-sign-{name}.sh'
                 cases = [({key: False, OTHER: True}, False, False),
                          ({key: True, DEBUG: True}, False, True),

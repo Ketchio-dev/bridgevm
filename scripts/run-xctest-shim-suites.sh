@@ -52,12 +52,10 @@ bash "$ROOT/scripts/xctest-swiftc.sh" -emit-module -emit-library -static -module
 logged() { local n="$1"; shift; suite "$n" "$@" > "$WORK/log-$n" 2>&1; }
 
 logged BridgeVMControl apps/macos/Sources/BridgeVMControl apps/macos/Tests/BridgeVMControlTests -I "$WORK" -L "$WORK" -lBridgeVMWindowProtocol & pids=($!)
-logged AppleVzRunnerCore apps/macos/Sources/AppleVzRunnerCore apps/macos/Tests/AppleVzRunnerTests \
-    -framework Virtualization & pids+=($!)
 logged BridgeVMProductE2E apps/macos/Sources/BridgeVMProductE2E apps/macos/Tests/BridgeVMProductE2ETests -I "$WORK" -L "$WORK" -lBridgeVMWindowProtocol -framework AppKit -framework ApplicationServices -F "$SWIFT_TESTING_FRAMEWORKS" -framework Testing -load-plugin-library "$SWIFT_TESTING_MACROS" -Xlinker -rpath -Xlinker "$SWIFT_TESTING_FRAMEWORKS" -Xlinker -rpath -Xlinker "$SWIFT_TESTING_INTEROP_LIBS" & pids+=($!)
 failed=0
 for pid in "${pids[@]}"; do wait "$pid" || failed=1; done
-for name in BridgeVMControl AppleVzRunnerCore BridgeVMProductE2E; do
+for name in BridgeVMControl BridgeVMProductE2E; do
     cat "$WORK/log-$name"
     if [[ "${BV_XCTEST_BUILD_ONLY:-0}" == 1 ]]; then
         grep -qx "COMPILED: $name (tests not run)" "$WORK/log-$name" || failed=1

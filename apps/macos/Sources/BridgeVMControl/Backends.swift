@@ -34,8 +34,7 @@ struct VMConfig: Codable, Identifiable, Equatable, Sendable {
     var displayHeight: Int
     var startWithBridgeVM: Bool? = nil
     var installPending: Bool? = nil  // true for a freshly-created ISO VM not yet installed
-    // QEMU (qemu-compat) backend fields:
-    var isoPath: String? = nil       // install ISO (Windows / Linux)
+    var isoPath: String? = nil       // Windows install ISO
     var diskPath: String? = nil      // qcow2/raw install target
     var memMiB: Int? = nil
     var cpuCount: Int? = nil
@@ -59,7 +58,7 @@ struct VMConfig: Codable, Identifiable, Equatable, Sendable {
     /// VM library even when an ID contains separators or traversal components.
     var slug: String { VMConfig.slugify(id ?? name) }
     var effectiveBootMode: String { bootMode ?? "direct-kernel" }
-    var engineKind: BackendKind { BackendKind(rawValue: backendKind) ?? .fastVZ }
+    var engineKind: BackendKind { BackendKind(savedKind: backendKind) }
     var engineShortLabel: String { engineKind.shortLabel }
     var engineDetailLabel: String { engineKind.detailLabel }
 
@@ -86,9 +85,8 @@ extension VMConfig {
     /// Resolve the concrete backend for this VM (the engine seam).
     func makeBackend(libraryRoot: URL = VMLibrary.root) -> VMBackend {
         switch engineKind {
-        case .fastVZ: return FastVZBackend(self, libraryRoot: libraryRoot)
-        case .qemuCompat: return QemuCompatBackend(self)
         case .hvfEngine: return HvfWindowsBackend(self, libraryRoot: libraryRoot)
+        case .unsupported: return UnsupportedEngineBackend(self)
         }
     }
 }
@@ -288,9 +286,8 @@ enum Shell {
 
 // MARK: - Backend abstraction
 
-/// The single control surface every engine plugs into. FastVZBackend (Apple VZ
-/// Linux) and QemuCompatBackend (QEMU Windows) are wired; future engines conform
-/// to the same protocol so the app stays one unified front-end.
+/// The single control surface every engine plugs into. HvfWindowsBackend is the
+/// only engine; UnsupportedEngineBackend stands in for a VM saved with a removed one.
 protocol VMBackend: AnyObject {
     var displayName: String { get }
     var kind: String { get }

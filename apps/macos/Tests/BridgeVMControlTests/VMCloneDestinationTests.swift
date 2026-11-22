@@ -5,7 +5,7 @@ final class VMCloneDestinationTests: XCTestCase {
     // The real clone entry points run through reservation. Always stop before cp:
     // a regressed guard must never recursively copy its own source in this test.
     private func checkDestination(allowed: Bool, make: (VMCloneDestinationFixture) throws -> URL) throws {
-        for windows in [false, true] {
+        do {
             let fixture = try VMCloneDestinationFixture()
             let destination = try make(fixture)
             let sourceEntries = try fixture.fm.contentsOfDirectory(atPath: fixture.source.path).sorted()
@@ -17,13 +17,9 @@ final class VMCloneDestinationTests: XCTestCase {
                 XCTAssertFalse(fixture.fm.fileExists(atPath: destination.appendingPathComponent("copy/bundle.vmbridge").path))
                 return false
             }
-            let config = fixture.config(windows: windows)
-            let result = windows
-                ? VMLibrary.cloneWindowsHVF(name: "Copy", template: config, storageDir: destination,
-                                           libraryRoot: fixture.library, beforeCopy: beforeCopy)
-                : VMLibrary.cloneUbuntu(name: "Copy", template: config, storageDir: destination,
-                                       libraryRoot: fixture.library, beforeCopy: beforeCopy)
-            let label = windows ? "Windows HVF" : "Ubuntu"
+            let result = VMLibrary.cloneWindowsHVF(name: "Copy", template: fixture.config(windows: true),
+                storageDir: destination, libraryRoot: fixture.library, beforeCopy: beforeCopy)
+            let label = "Windows HVF"
             XCTAssertNil(result, label)
             XCTAssertEqual(reachedCopy, allowed, "\(label): unsafe destination reached pre-copy after reservation")
             XCTAssertEqual(fixture.fm.fileExists(atPath: fixture.library.path), allowed,
@@ -76,26 +72,6 @@ final class VMCloneDestinationTests: XCTestCase {
 
     func testRegularFileAncestorIsRejectedBeforeReservation() throws {
         try checkDestination(allowed: false) { $0.sentinel.appendingPathComponent("missing/deeper") }
-    }
-
-    func testSafeUbuntuCloneCopiesAndRegistersInIsolatedLibrary() throws {
-        let fixture = try VMCloneDestinationFixture()
-        let metadata = fixture.source.appendingPathComponent("metadata")
-        try fixture.fm.createDirectory(at: metadata, withIntermediateDirectories: true)
-        for file in ["apple-vz-launch.json", "handoff.json"] {
-            XCTAssertTrue(JSONFile.writeDict(["vm_name": "Source", "bundle_path": fixture.source.path],
-                                              to: metadata.appendingPathComponent(file).path))
-        }
-        let storage = fixture.root.appendingPathComponent("source-copy/missing/deeper")
-        let clone = try XCTUnwrap(VMLibrary.cloneUbuntu(name: "Copy", template: fixture.config(windows: false),
-                                                        storageDir: storage, libraryRoot: fixture.library))
-        XCTAssertEqual(clone.bundlePath, storage.appendingPathComponent("copy/bundle.vmbridge").path)
-        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: clone.bundlePath).appendingPathComponent("sentinel")),
-                       Data("keep source unchanged".utf8))
-        XCTAssertEqual(JSONFile.loadDict(clone.launchSpecPath)?["bundle_path"] as? String, clone.bundlePath)
-        XCTAssertEqual(JSONFile.loadDict(clone.handoffPath)?["vm_name"] as? String, "Copy")
-        XCTAssertTrue(fixture.fm.fileExists(atPath: fixture.library.appendingPathComponent("copy/vm.json").path))
-        XCTAssertEqual(try Data(contentsOf: fixture.sentinel), Data("keep source unchanged".utf8))
     }
 
     func testGenericContainmentStillAcceptsRegularFileCandidates() throws {

@@ -3,11 +3,11 @@ import XCTest
 
 @MainActor
 final class RetainedTerminalRecoveryTests: XCTestCase {
-    func testFastVZDismissalReopensCurrentRegistrationWithFreshControl() async throws {
+    func testRemovedVZEngineDismissalReopensCurrentRegistrationWithFreshControl() async throws {
         try await assertTerminalRecovery(kind: "fast-vz")
     }
 
-    func testQemuDismissalReopensCurrentRegistrationWithFreshControl() async throws {
+    func testRemovedQemuEngineDismissalReopensCurrentRegistrationWithFreshControl() async throws {
         try await assertTerminalRecovery(kind: "qemu-compat")
     }
 
@@ -23,9 +23,9 @@ final class RetainedTerminalRecoveryTests: XCTestCase {
         XCTAssertEqual(f.library.selectedID, current.slug)
 
         let controls = try f.ordinaryControls()
-        XCTAssertFalse(controls.model === f.accepted, "Current registration needs its own ordinary control")
-        XCTAssertEqual(controls.model.config, current)
-        XCTAssertFalse(controls.model.isRetained)
+        XCTAssertFalse(controls === f.accepted, "Current registration needs its own ordinary control")
+        XCTAssertEqual(controls.config, current)
+        XCTAssertFalse(controls.isRetained)
         try await f.start(controls)
         XCTAssertEqual(f.factory.backends.last?.startCalls, 1, "Actual ordinary Start must reach only the current fake backend")
         XCTAssertEqual(f.factory.backends.first?.startCalls, 0)
@@ -72,7 +72,7 @@ final class RetainedTerminalRecoveryTests: XCTestCase {
         XCTAssertFalse(f.accepted.hasActiveRuntimeWork)
         XCTAssertFalse(f.accepted.isRetained)
         let controls = try f.ordinaryControls()
-        XCTAssertTrue(controls.model === f.accepted)
+        XCTAssertTrue(controls === f.accepted)
         XCTAssertTrue(f.library.model(for: f.original) === f.accepted)
         XCTAssertEqual(f.factory.models.count, 1)
         XCTAssertTrue(f.library.retainedControlRecords.isEmpty)

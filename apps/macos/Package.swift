@@ -7,7 +7,6 @@ let package = Package(
     name: "BridgeVMApp",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "AppleVzRunner", targets: ["AppleVzRunner"]),
         .executable(name: "BridgeVMControl", targets: ["BridgeVMControl"]),
         .executable(name: "BridgeVMProductE2E", targets: ["BridgeVMProductE2E"]),
     ],
@@ -23,17 +22,6 @@ let package = Package(
             ]
         ),
         .executableTarget(name: "BridgeVMProductE2E", dependencies: ["BridgeVMWindowProtocol"], path: "Sources/BridgeVMProductE2E"),
-        .target(name: "AppleVzRunnerCore", path: "Sources/AppleVzRunnerCore"),
-        .executableTarget(
-            name: "AppleVzRunner",
-            dependencies: ["AppleVzRunnerCore"],
-            path: "Sources/AppleVzRunner"
-        ),
-        .testTarget(
-            name: "AppleVzRunnerTests",
-            dependencies: ["AppleVzRunnerCore"],
-            path: "Tests/AppleVzRunnerTests"
-        ),
         .testTarget(
             name: "BridgeVMControlTests",
             dependencies: ["BridgeVMControl", "BridgeVMWindowProtocol"],

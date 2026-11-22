@@ -2,14 +2,7 @@ import XCTest
 @testable import BridgeVMControl
 
 final class WindowsHVFProductPolicyTests: XCTestCase {
-    func testInstallDoesNotRequireTemplateAndOwnsISO() throws {
-        for mode in [CreateVMSheet.Mode.ubuntu, .iso, .windows] {
-            XCTAssertTrue(WindowsHVFProductPolicy.requiresTemplate(mode))
-        }
-        for mode in [CreateVMSheet.Mode.windowsHVF, .windowsHVFInstall] {
-            XCTAssertFalse(WindowsHVFProductPolicy.requiresTemplate(mode))
-        }
-
+    func testInstallOwnsISO() throws {
         let temp = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: temp) }
         let iso = temp.appendingPathComponent("selected.iso")
