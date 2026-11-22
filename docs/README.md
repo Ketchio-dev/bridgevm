@@ -130,7 +130,7 @@ material and they do not override current product state.
 
 Examples include:
 
-- [July Windows engine guide](windows-arm/README.md), including its old gate table;
+- [July Windows engine guide](history/windows-hvf/windows-guide-20260722.md), including its old gate table;
 - [July in-app install through 3D desktop](windows-arm/evidence/app-install-to-3d-desktop-20260730.md)
   — historical graphics-enabled flow, not the current 3D-off product journey;
 - [Vulkan/D3D title measurement](windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md)

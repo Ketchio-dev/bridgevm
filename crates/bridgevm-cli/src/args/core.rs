@@ -99,10 +99,10 @@ A dry run still prepares disk and runner metadata. --spawn requests an eligible 
     Recommend(GuestArgs),
     #[command(
         subcommand,
-        about = "Own-HVF local-only queries and opt-in probes",
-        long_about = "Own-HVF local-only queries and opt-in probes.
+        about = "Own-HVF local-only GPU reports",
+        long_about = "Own-HVF local-only GPU reports.
 
-Host-capabilities and plan commands inspect metadata. Probes may access files or create a VM when their documented opt-ins are supplied. These commands do not manage native app VM registrations. Omit --socket."
+These commands read trace and log files and run the synthetic 3D host preflight; they do not create a VM or manage native app VM registrations. Omit --socket."
     )]
     Hvf(HvfCommand),
     #[command(subcommand)]

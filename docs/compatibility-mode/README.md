@@ -14,8 +14,6 @@ Parallels-like performance architecture. QEMU/HVF can validate installer
 reachability and a controlled Windows profile, but it shares the same broad
 ceiling as other QEMU/HVF frontends. The no-QEMU Windows fast path belongs in a
 separate Apple Hypervisor.framework VMM/device/display/driver effort.
-The separate HVF `machine-plan` gate tracks that future custom VMM path; it is
-not a Compatibility launch path.
 
 ## Implemented scaffold
 

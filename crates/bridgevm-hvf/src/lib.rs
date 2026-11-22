@@ -6,16 +6,8 @@
 //! is a from-scratch Rust implementation rather than a wrapper around an existing
 //! VMM, which is why the device models and boot contract live here in full.
 
-use std::{
-    any::Any,
-    fs::{File, OpenOptions},
-    io::Read,
-    path::{Path, PathBuf},
-};
-
-// Modules of BridgeVM's current firmware-compatible platform. New code lands in
-// dedicated files like these rather than growing the legacy probe monolith
-// below. See docs/decisions/hvf-windows-engine-strategy.md and docs/reference/hvf-windows-platform-contract-gap.md.
+// See docs/decisions/hvf-windows-engine-strategy.md and
+// docs/reference/hvf-windows-platform-contract-gap.md.
 pub mod acpi;
 pub mod acpi_ged;
 pub mod checkpoint;
@@ -61,56 +53,11 @@ mod virtio_gpu_trace;
 pub mod virtio_net;
 mod virtio_queue;
 pub mod vm_clock;
-mod windows_arm_xhci_hid_boot_key_probe;
 pub mod xhci;
 
-// Extracted from the legacy probe monolith. Private, re-exported explicitly.
-mod machine_plan;
-mod no_qemu_plan;
-mod probe_mmio;
-mod probes;
-mod support;
 pub mod userspace_gic;
-
-mod windows_arm;
-
-// Glob re-exports preserve each moved item's original visibility, so the
-// crate-root public surface is byte-identical and internal helpers stay so.
-pub use probes::*;
-pub use windows_arm::*;
-
-// Crate-internal synthetic MMIO harness. Glob import keeps the (formerly
-// file-local) names resolving unqualified; every item is pub(crate), so this
-// does not widen the public API.
-use probe_mmio::*;
-
-pub use machine_plan::{
-    build_windows_11_arm_hvf_machine_plan, plan_windows_11_arm_hvf_machine,
-    windows_11_arm_hvf_machine_devices, HvfDevicePlan, HvfMachinePlan, HvfMachinePlanOptions,
-    HvfMemoryRegionPlan, HvfVcpuLifecyclePlan,
-};
-pub use no_qemu_plan::{
-    plan_windows_11_arm_no_qemu, windows_11_arm_no_qemu_vmm_gates, WindowsArmNoQemuPlan,
-    WindowsArmVmmGate,
-};
-pub use support::{detect_hvf_support, HvfSupport, WindowsArmVmmGateStatus};
-pub(crate) use support::{
-    hv_exit_reason_name, hv_return_name, HV_EXIT_REASON_CANCELED_VALUE,
-    HV_EXIT_REASON_EXCEPTION_VALUE, HV_EXIT_REASON_VTIMER_ACTIVATED_VALUE, HV_SUCCESS_VALUE,
-};
 
 pub use virtio_gpu_3d_preflight::{
     probe_virtio_gpu_3d_host_preflight, probe_virtio_gpu_3d_host_preflight_for,
     VirtioGpu3dHostPreflight, VirtioGpu3dHostPreflightProtocol,
 };
-pub use windows_arm_xhci_hid_boot_key_probe::{
-    probe_windows_11_arm_xhci_hid_boot_key_report, WindowsArmXhciHidBootKeyReportProbe,
-};
-
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-#[path = "platform/apple/mod.rs"]
-mod platform;
-
-#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-#[path = "platform/unsupported/mod.rs"]
-mod platform;

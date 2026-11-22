@@ -12,8 +12,7 @@ fn top_level_help_identifies_store_and_own_hvf_route() {
             "vm.json",
             "--store",
             "--socket",
-            "bridgevm hvf host-capabilities",
-            "bridgevm hvf machine-plan",
+            "bridgevm hvf virtio-gpu-trace-report",
         ] {
             assert!(help.contains(expected), "Missing {expected}: {help}");
         }
@@ -37,17 +36,15 @@ fn lifecycle_help_distinguishes_recording_from_execution() {
 }
 
 #[test]
-fn hvf_help_and_parser_preserve_explicit_opt_ins() {
+fn hvf_help_lists_the_reports_and_rejects_unknown_options() {
     let fixture = Fixture::new();
     let help = fixture.help(&["hvf", "--help"]);
-    assert!(help.contains("local-only queries and opt-in probes"));
-    assert!(help.contains("host-capabilities") && help.contains("vm-probe"));
-    let probe = fixture.help(&["hvf", "vm-probe", "--allow-create", "--help"]);
-    assert!(probe.contains("--allow-create"));
+    assert!(help.contains("local-only"));
+    assert!(help.contains("virtio-gpu-trace-report") && help.contains("title-gate-report"));
     for args in [
         &["start"][..],
         &["run", "--spawn"][..],
-        &["hvf", "vm-probe", "--not-a-real-option"][..],
+        &["hvf", "virtio-gpu-trace-report", "--not-a-real-option"][..],
     ] {
         let output = fixture.invoke(args);
         assert_eq!(output.status.code(), Some(2), "Parser contract: {args:?}");
@@ -57,14 +54,17 @@ fn hvf_help_and_parser_preserve_explicit_opt_ins() {
 }
 
 #[test]
-fn hvf_socket_refusal_does_not_mislabel_effectful_probes() {
+fn hvf_socket_refusal_names_the_local_only_route() {
     let fixture = Fixture::new();
     let socket = fixture.0.join("absent.sock");
+    let trace = fixture.0.join("absent-trace.jsonl");
     let output = fixture.invoke(&[
         "--socket",
         socket.to_str().unwrap(),
         "hvf",
-        "host-capabilities",
+        "virtio-gpu-trace-report",
+        "--trace",
+        trace.to_str().unwrap(),
     ]);
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());

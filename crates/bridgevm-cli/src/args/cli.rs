@@ -12,15 +12,14 @@ Native app inventory (no app window or guest launch):
   bridgevm app list --json
   bridgevm app inspect VM_ID
 
-Own-HVF queries (no guest launch):
-  bridgevm hvf host-capabilities
-  bridgevm hvf windows-plan
-  bridgevm hvf machine-plan --memory-gib 6 --vcpus 4
+Own-HVF reports (no guest launch):
+  bridgevm hvf virtio-gpu-trace-report --trace PATH
+  bridgevm hvf title-gate-report --help
 
 Legacy store inspection:
   bridgevm --store PATH list
 
-Use COMMAND --help for effects and explicit probe opt-ins."
+Use COMMAND --help for details."
 )]
 pub(crate) struct Cli {
     #[command(subcommand)]

@@ -37,16 +37,6 @@ pub(crate) fn hex_option(value: Option<u64>) -> String {
         .unwrap_or_else(|| "missing".to_string())
 }
 
-pub(crate) fn env_truthy(name: &str) -> bool {
-    match env::var(name) {
-        Ok(value) => matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        ),
-        Err(_) => false,
-    }
-}
-
 pub(crate) fn print_mode_recommendation(rec: &ModeRecommendation, choice: Option<&GuestChoice>) {
     println!("Recommended mode: {}", rec.mode);
     print_recommendation_engine_context(rec, choice);

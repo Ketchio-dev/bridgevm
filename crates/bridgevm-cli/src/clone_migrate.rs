@@ -353,26 +353,6 @@ mod tests {
     }
 
     #[test]
-    fn hvf_virtio_block_file_backing_probe_cli_requires_disk() {
-        let error = Cli::try_parse_from(["bridgevm", "hvf", "virtio-block-file-backing-probe"])
-            .unwrap_err();
-
-        assert!(error.to_string().contains("--disk"));
-    }
-
-    #[test]
-    fn hvf_virtio_block_writable_file_backing_probe_cli_requires_disk() {
-        let error = Cli::try_parse_from([
-            "bridgevm",
-            "hvf",
-            "virtio-block-writable-file-backing-probe",
-        ])
-        .unwrap_err();
-
-        assert!(error.to_string().contains("--disk"));
-    }
-
-    #[test]
     fn title_gate_report_rejects_duplicate_title_ids() {
         let mut root = unique_trace_path("bridgevm-title-duplicate");
         root.set_extension("dir");
@@ -409,28 +389,6 @@ mod tests {
 
         fs::remove_dir_all(root).unwrap();
         assert!(error.contains("duplicate title manifest id 'duplicate'"));
-    }
-
-    #[test]
-    fn windows_hvf_machine_plan_render_is_blocked_and_qemu_free() {
-        let plan = plan_windows_11_arm_hvf_machine(HvfMachinePlanOptions {
-            installer: Some(PathBuf::from("ISO/Win11_25H2_English_Arm64_v2.iso")),
-            memory_gib: 6,
-            vcpu_count: 4,
-        });
-        let output = plan.render_text();
-
-        assert!(output.contains("Windows 11 Arm HVF machine plan"));
-        assert!(output.contains("QEMU: not used"));
-        assert!(output.contains("Memory: 6 GiB"));
-        assert!(output.contains("vCPU lifecycle:"));
-        assert!(output.contains("Devices:"));
-        assert!(output.contains("firmware UART and RTC skeletons"));
-        assert!(output.contains("read-only installer media"));
-        assert!(output.contains("system boot disk"));
-        assert!(output.contains("Overall: blocked"));
-        assert!(!output.contains("qemu-system"));
-        assert!(!output.contains('%'));
     }
 
     #[test]
