@@ -51,7 +51,7 @@ for an unrelated documentation or Rust-only change.
 | Windows HVF VMM | `crates/bridgevm-hvf/` | `cargo test -p bridgevm-hvf --locked` |
 | Runtime lifecycle | `crates/bridgevm-hvf-runtime/`, `runners/` | focused crate tests |
 | macOS UI | `apps/macos/` | `scripts/run-swift-tests.sh` |
-| Packaging | `packaging/macos/`, release scripts | relevant integration smoke plus full check |
+| Packaging | `apps/macos/scripts/package-hvf-control-app.sh`, release scripts | relevant integration smoke plus full check |
 | Documentation | `README.md`, `STATUS.md`, `docs/` | `bash scripts/check-documentation-system.sh` |
 | Live evidence | `scripts/live-gates/` | policy smoke first; real runs use the physical-Mac live queue |
 

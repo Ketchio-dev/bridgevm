@@ -136,7 +136,7 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md) for toolchains and focused checks,
 | Hypervisor.framework VMM and devices | [`crates/bridgevm-hvf/`](crates/bridgevm-hvf/) |
 | Windows HVF runtime lifecycle | [`crates/bridgevm-hvf-runtime/`](crates/bridgevm-hvf-runtime/), [`runners/`](runners/) |
 | Mac app and helper boundaries | [`apps/macos/`](apps/macos/) |
-| Packaging and release verification | [`packaging/macos/`](packaging/macos/) |
+| Packaging and release verification | [`apps/macos/scripts/package-hvf-control-app.sh`](apps/macos/scripts/package-hvf-control-app.sh), [`release.yml`](.github/workflows/release.yml) |
 | Deterministic checks and live tests | [`scripts/`](scripts/), [`tests/integration/`](tests/integration/) |
 
 Use focused tests while making a change. The fast project check covers

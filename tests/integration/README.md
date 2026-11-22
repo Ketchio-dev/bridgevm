@@ -123,63 +123,9 @@ tests/integration/fast-mode-template-boot-media-smoke.sh
 tests/integration/apple-vz-live-opt-in-skip-smoke.sh
 tests/integration/apple-vz-live-evidence-verifier-smoke.sh
 tests/integration/qemu-live-evidence-verifier-smoke.sh
-tests/integration/macos-metadata-overrides-smoke.sh
-tests/integration/macos-bundle-helper-verify-smoke.sh
-tests/integration/macos-bundled-daemon-supervisor-smoke.sh
-tests/integration/macos-settings-defaults-smoke.sh
-tests/integration/macos-app-start-path-smoke.sh
-tests/integration/macos-release-candidate-dry-run-smoke.sh
-tests/integration/macos-release-verifier-custom-app-smoke.sh
-tests/integration/macos-artifact-manifest-apple-vz-runner-smoke.sh
-tests/integration/macos-debug-app-clean-build-smoke.sh
-tests/integration/macos-debug-dmg-custom-app-name-smoke.sh
 tests/integration/hvf-windows-installed-boot-p3-gpu-policy-smoke.sh
 tests/integration/hvf-windows-installed-boot-ramfb-display-cadence-smoke.sh
 tests/integration/hvf-runner-installed-boot-launch-policy-smoke.sh
-```
-
-To run the local release-readiness lane that combines Rust formatting, Rust
-workspace tests, macOS Swift tests, local `.app` bundle build/signature
-verification including the default bundled AppleVzRunner helper, clean app
-rebuild coverage, the nested Windows HVF Lab, its wrapper resources and signed
-release probe, the macOS metadata override smoke, bundled AppleVzRunner
-helper verification smoke, bundled `bridgevmd` supervisor smoke, local debug
-DMG build/mounted-content verification, custom app-name DMG coverage that
-rejects stale default app bundles, release-candidate command dry-run coverage,
-release verifier custom app bundle coverage, AppleVzRunner artifact-manifest
-coverage, Apple VZ and QEMU preserved live-evidence verifier coverage,
-artifact manifest generation, and a
-debug-vs-public-release boundary check:
-
-```sh
-tests/integration/local-release-readiness-suite.sh
-```
-
-This lane verifies local debug artifacts only. It does not replace the public
-notarized release checklist or the default public-gate mode of
-`packaging/macos/verify-release-candidate.sh`.
-
-For stronger local app usability evidence without mounting or launching the
-DMG, add the metadata-safe smoke suite, skip DMG packaging gates, and require
-the bundled app executable to show a main window, supervise the bundled
-`bridgevmd` child, and answer a daemon-backed `store doctor` request. This is
-the credential-free local `.app` proof; it does not need DMG packaging,
-notarization, or a Developer ID identity:
-
-```sh
-tests/integration/local-release-readiness-suite.sh --app-only --with-metadata-smokes --locally-usable-app
-```
-
-Use `--app-only` when you want the fastest local `.app` readiness pass and do
-not need to build, mount, verify, or launch a DMG. It still writes an app-only
-artifact manifest with bundle/helper hashes and signing diagnostics. Omit it
-for full local debug packaging coverage.
-
-For the fullest interactive packaging path, add the LaunchServices GUI window
-checks for the app, mounted DMG app, and quarantined DMG app:
-
-```sh
-tests/integration/local-release-readiness-suite.sh --with-metadata-smokes --with-gui-launch
 ```
 
 `hvf-windows-viogpu3d-render-stage-smoke.sh` is intentionally parser-only: it
@@ -461,95 +407,6 @@ harness skips without explicit opt-in. They do not start a real VM, launch real
 QEMU or Apple VZ, open a graphical console or host browser/SSH client, run guest
 benchmarks, freeze real host mounts, claim live guest OS state changes, mutate
 live networking, or fetch network artifacts.
-
-The macOS metadata override smoke runs in the default local release-readiness
-lane. It is credential-free and builds a disposable debug app bundle with
-ad-hoc signing. It sets
-`BRIDGEVM_MACOS_APP_NAME`, `BRIDGEVM_BUNDLE_DISPLAY_NAME`,
-`BRIDGEVM_BUNDLE_NAME`, `BRIDGEVM_BUNDLE_IDENTIFIER`,
-`BRIDGEVM_BUNDLE_SHORT_VERSION`, `BRIDGEVM_BUNDLE_VERSION`, and
-`BRIDGEVM_BUNDLE_COPYRIGHT`, then verifies that the generated `.app` path and
-`Info.plist` metadata reflect those override values. It also supplies a
-disposable `BRIDGEVM_MACOS_ICON_FILE` fixture and verifies that the icon is
-copied into `Contents/Resources` and recorded as `CFBundleIconFile`.
-
-The macOS debug app clean build smoke is credential-free. It seeds stale helper
-and resource files into a disposable app bundle and verifies that the next
-debug app build removes old `Contents` before installing the expected
-executable, resources, and bundled AppleVzRunner helper.
-
-The macOS bundle helper verify smoke is credential-free. It builds a disposable
-debug app fixture with a bundled `Contents/Helpers/AppleVzRunner` that lacks the
-required virtualization entitlement and verifies that bundle `--verify-only`
-rejects it before release packaging can treat the helper as valid.
-
-The macOS bundled daemon supervisor smoke is credential-free. It builds a
-disposable debug app bundle, isolates `HOME` and `BRIDGEVM_HOME`, and launches
-the bundled app executable to verify that `BundledDaemonSupervisor` starts the
-bundled `Contents/Helpers/bridgevmd`. It waits for the isolated daemon socket,
-checks that the app spawned the bundled helper, and sends a daemon-backed
-`store doctor` request through that socket. To make that local `.app`
-executable/window plus bundled socket-doctor proof explicit, without any DMG,
-notarization, or Developer ID dependency, run:
-
-```sh
-BRIDGEVM_MACOS_BUNDLED_DAEMON_REQUIRE_GUI=1 \
-BRIDGEVM_MACOS_BUNDLED_DAEMON_REQUIRE_WINDOW=1 \
-  tests/integration/macos-bundled-daemon-supervisor-smoke.sh
-```
-
-If the GUI app launch path is not available in the current macOS session, the
-smoke falls back to the strongest non-GUI coverage: starting the bundled
-`bridgevmd` directly with the same helper environment that the supervisor
-provides, then verifying the isolated socket and daemon response. Set
-`BRIDGEVM_MACOS_BUNDLED_DAEMON_REQUIRE_GUI=1` to make the GUI supervisor path
-mandatory, set `BRIDGEVM_MACOS_BUNDLED_DAEMON_REQUIRE_WINDOW=1` to also require
-an app-owned main window, or
-`BRIDGEVM_MACOS_BUNDLED_DAEMON_FORCE_HELPER_ONLY=1` to run only the non-GUI
-helper environment path. The force-helper-only mode conflicts with required
-GUI/window proof and fails fast if both are requested.
-
-The macOS settings defaults smoke is credential-free and GUI-free. It runs the
-focused `AppSettingsTests` coverage that proves persisted defaults select real
-daemon mode, keep mock inventory disabled, preserve the default local socket,
-and pass `BRIDGEVM_APPLE_VZ_ALLOW_REAL_START=1` to the bundled daemon supervisor
-only when the Apple VZ live-start setting is enabled:
-
-```sh
-tests/integration/macos-settings-defaults-smoke.sh
-```
-
-The macOS app start path smoke is credential-free and metadata-safe. It ties
-together the focused tests that prove the persisted Apple VZ live-start setting
-reaches the bundled daemon supervisor environment, the dashboard primary Start
-action calls the app client with `.start` only after launch readiness is ready,
-and the daemon client serializes that action as `run_backend` with
-`spawn=true`:
-
-```sh
-tests/integration/macos-app-start-path-smoke.sh
-```
-
-This smoke does not boot a live VM. It proves the app-to-daemon start handoff
-up to the existing runner spawn request; live boot proof remains covered by the
-manual Apple VZ/QEMU opt-in harnesses.
-
-The macOS release-candidate dry-run smoke is also credential-free. It verifies
-that `packaging/macos/build-release-candidate.sh --dry-run` requires release
-inputs and plans the expected Developer ID signing, hardened runtime,
-app and DMG notarization/stapling, artifact manifest, and public release gate
-commands without running those credentialed commands.
-
-The macOS release verifier custom app smoke builds a disposable `BridgeVM.app`
-debug bundle, packages it into a disposable DMG under that same basename, and
-verifies that `verify-release-candidate.sh --expect-debug-boundary` checks the
-app name supplied by the caller rather than assuming `BridgeVMApp.app`.
-
-The macOS artifact manifest smoke is credential-free. It writes a disposable
-app fixture with `Contents/Helpers/AppleVzRunner` and nested Windows HVF Lab
-artifacts, then verifies that the manifest records their paths, presence,
-executability, sizes, SHA-256 values, codesign sections, and entitlement command
-sections.
 
 Manifest schema coverage asserts that `bridgevm metadata manifest-schema`
 prints the VM manifest JSON Schema v1 contract and that
