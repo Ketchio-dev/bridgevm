@@ -1,26 +1,10 @@
 [workspace]
 members = [
-  "crates/bridgevm-agent-protocol",
-  "crates/bridgevm-agentd",
-  "crates/bridgevm-apple-vz",
-  "crates/bridgevm-api",
   "crates/bridgevm-cli",
-  "crates/bridgevm-config",
-  "crates/bridgevm-core",
-  "crates/bridgevm-daemon",
   "crates/bridgevm-hvf",
   "crates/bridgevm-hvf-runtime",
   "crates/bridgevm-media",
-  "crates/bridgevm-network",
-  "crates/bridgevm-qemu",
-  "crates/bridgevm-resource-manager",
-  "crates/bridgevm-storage",
-  "runners/bridgevm-tools-linux",
-  "runners/displayd",
-  "runners/fullvm-runner",
   "runners/hvf-runner",
-  "runners/lightvm-runner",
-  "runners/networkd",
 ]
 resolver = "2"
 

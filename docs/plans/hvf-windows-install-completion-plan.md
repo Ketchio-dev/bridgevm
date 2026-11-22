@@ -389,8 +389,7 @@ Profile and fix *measured* bottlenecks, not guessed ones.
 ## Workstream F — Parallels-like integration   *(far future; optional for v1)*
 Not required for "usable Windows". Sequence after D+E only if the product needs it.
 - A Windows guest agent + paravirtual channel for dynamic resolution/resize, clipboard
-  sharing, shared folders, drag-drop, graceful shutdown, audio. Prior art to reuse/extend:
-  `crates/bridgevm-agentd`, `crates/bridgevm-agent-protocol`, `runners/bridgevm-tools-linux`.
+  sharing, shared folders, drag-drop, graceful shutdown, audio.
 
 ---
 
