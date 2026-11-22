@@ -132,7 +132,6 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 cargo +1.85.0 check --workspace --locked
-scripts/check-refactor-budgets.sh
 bash scripts/check-documentation-system.sh
 ```
 

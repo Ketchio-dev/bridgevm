@@ -4,8 +4,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Relative links must resolve, so a moved or renamed file cannot leave a
-# document pointing at nothing. docs/archive holds point-in-time snapshots whose
-# links describe the tree as it was, so rewriting them would falsify the record.
+# document pointing at nothing. docs/archive, docs/history and the dated evidence
+# in docs/windows-arm/evidence are point-in-time records whose paths describe the
+# tree as it was, so rewriting them would falsify the record. They are not
+# checked; check-doc-references.py treats them the same way.
 link_errors=$(cd "$ROOT" && python3 - <<'PY'
 import os
 import re
@@ -16,12 +18,13 @@ LINK = re.compile(r'\[[^\]]*\]\(([^)]+)\)')
 # PowerShell cast like `![bool](Get-Tpm).OwnerAuth`.
 CODE = re.compile(r'`[^`]*`')
 roots = ['docs']
+RECORDS = ('docs/archive', 'docs/history', 'docs/windows-arm/evidence')
 extra = ['README.md', 'STATUS.md', 'AGENTS.md', 'THIRD-PARTY-NOTICES.md']
 
 files = []
 for root in roots:
     for dirpath, _dirnames, filenames in os.walk(root):
-        if 'archive' in dirpath.split(os.sep):
+        if (dirpath + os.sep).startswith(tuple(r + os.sep for r in RECORDS)):
             continue
         files.extend(
             os.path.join(dirpath, name)

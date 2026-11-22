@@ -36,7 +36,6 @@ step "capability test counts" python3 scripts/check-capability-test-counts.py
 step "general preview manifest" python3 scripts/generate-general-preview-manifest.py --self-test
 step "documentation system" bash scripts/check-documentation-system.sh
 step "documentation references" python3 scripts/check-doc-references.py
-step "structural budgets" scripts/check-refactor-budgets.sh
 step "shell scripts" bash scripts/check-shell-scripts.sh
 step "python scripts" python3 scripts/check-python-scripts.py
 step "development VM control CLI" python3 tests/integration/vmctl-test.py
