@@ -25,7 +25,6 @@ impl Fixture {
         let output = Command::new(env!("CARGO_BIN_EXE_bridgevm"))
             .env_clear()
             .env("PATH", &self.0)
-            .args(["--store", self.0.join("unused-store").to_str().unwrap()])
             .args(args)
             .output()
             .unwrap();

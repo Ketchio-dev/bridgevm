@@ -61,10 +61,6 @@ app, runner, packaging and test code.
 - [SMCCC TRNG / PSCI contract](windows-arm/smccc-trng-psci-contract.md)
 - [v1 suspend decision](decisions/hvf-windows-v1-suspend-decision.md)
 
-## Guest integration
-
-- [Guest tools protocol](guest-tools/protocol.md)
-
 ## Engineering plans and research
 
 Plans preserve scoped design work, not current product promises or a replacement
@@ -141,7 +137,6 @@ defined by the present source tree, the current docs above, `LICENSE`, and
 
 ## Reference material
 
-- [Phase 0 architecture](architecture/phase-0.md) — early architecture history.
 - [BridgeVM virt platform register map](reference/bridgevm-virt-platform.md) —
   independently maintained guest-visible layout and public interface sources.
 - [Windows platform contract gap](reference/hvf-windows-platform-contract-gap.md) — earlier

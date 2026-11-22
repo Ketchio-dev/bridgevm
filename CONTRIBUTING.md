@@ -37,9 +37,9 @@ swift build --package-path apps/macos
 scripts/check-project.sh --fast
 ```
 
-QEMU is needed for the Compatibility Engine, including `qemu-img` for its qcow2
-disk operations. Windows HVF import does not need QEMU: it converts QCOW2 and
-VHDX disks to RAW with BridgeVM's own converter. Native Venus, packaging, and live Windows work have
+Windows HVF import does not need QEMU: it converts QCOW2 and VHDX disks to RAW
+with BridgeVM's own converter. When `qemu-img` is installed, the converter tests
+also compare against it. Native Venus, packaging, and live Windows work have
 additional dependencies documented beside their scripts; do not install them
 for an unrelated documentation or Rust-only change.
 
@@ -47,9 +47,9 @@ for an unrelated documentation or Rust-only change.
 
 | Area | Main paths | Useful first check |
 | --- | --- | --- |
-| Rust product/API | `crates/bridgevm-{api,cli,core,config}/` | `cargo test --workspace --locked` |
+| Rust CLI | `crates/bridgevm-cli/` | `cargo test -p bridgevm-cli --locked` |
 | Windows HVF VMM | `crates/bridgevm-hvf/` | `cargo test -p bridgevm-hvf --locked` |
-| Runtime lifecycle | `crates/bridgevm-hvf-runtime/`, `runners/` | focused crate tests |
+| Runtime lifecycle | `crates/bridgevm-hvf-runtime/`, `runners/hvf-runner/` | focused crate tests |
 | macOS UI | `apps/macos/` | `scripts/run-swift-tests.sh` |
 | Packaging | `apps/macos/scripts/package-hvf-control-app.sh`, release scripts | relevant integration smoke plus full check |
 | Documentation | `README.md`, `STATUS.md`, `docs/` | `bash scripts/check-documentation-system.sh` |

@@ -7,8 +7,7 @@ let a lint or MSRV break through review, so this runs the step itself, taken
 from ci.yml, with a stub `git diff`. It also resolves every include_str! and
 include_bytes! in the tree and requires each target to count as a build
 input, and requires the build scripts to read no files, which the list
-assumes. The macOS host contracts also run for the files they read that the
-`rust` area ignores; HOST_CONTRACT_INPUTS has one fixture per such file.
+assumes. The macOS host contracts run exactly when the `rust` area does.
 
     python3 tests/integration/ci-changed-areas-test.py
 """
@@ -33,7 +32,7 @@ SKIP_BUILD = {
 }
 RUN_BUILD = {
     ".rs": ["crates/bridgevm-hvf/src/lib.rs"],
-    ".rs outside the crates": ["scripts/live-gates/qmp-close-race-baseline.rs"],
+    ".rs outside the crates": ["scripts/live-gates/example-tool.rs"],
     "Cargo.lock": ["Cargo.lock"],
     "rust-toolchain": ["rust-toolchain"],
     "rust-toolchain.toml": ["rust-toolchain.toml"],
@@ -45,12 +44,7 @@ RUN_BUILD = {
         "apps/macos/Sources/BridgeVMControl/HvfEngine/HvfLegacyInputActivity.swift"],
     "include_str! windows-hvf.json": ["capabilities/windows-hvf.json"],
     "include_str! bvagent.ps1": ["scripts/win-assets/bvagent.ps1"],
-    "Swift plus one .rs": ["apps/macos/Sources/BridgeVMControl/AppUIHost.swift", "crates/bridgevm-core/src/lib.rs"],
-}
-# Files the four macOS host contract suites read that the `rust` area ignores,
-# found by running the suites and recording which such files they read.
-HOST_CONTRACT_INPUTS = {
-    "qmp-stress.yml only (live gate policy)": [".github/workflows/qmp-stress.yml"],
+    "Swift plus one .rs": ["apps/macos/Sources/BridgeVMControl/AppUIHost.swift", "crates/bridgevm-media/src/lib.rs"],
 }
 INCLUDE_TOKEN = re.compile(r"\binclude(?:_str|_bytes)?!")
 INCLUDE = re.compile(r'include(?:_str|_bytes)?!\s*\(\s*(?:concat!\s*\(\s*env!\s*\(\s*"(CARGO_MANIFEST_DIR|OUT_DIR)"'
@@ -99,13 +93,6 @@ class ChangedAreas(unittest.TestCase):
                 # test (macos-15) and the macOS host contracts still run.
                 expected = "false" if name == "docs-only" else "true"
                 self.assertEqual((areas["rust"], areas.get("host_contracts")), (expected, expected))
-
-    def test_host_contracts_run_for_the_files_they_read(self):
-        for name, files in HOST_CONTRACT_INPUTS.items():
-            with self.subTest(name):
-                areas = self.areas(files)
-                self.assertEqual(areas["rust"], "false")  # the explicit list is what runs them
-                self.assertEqual(areas.get("host_contracts"), "true")
 
     def test_rust_build_inputs_run_them(self):
         for name, files in RUN_BUILD.items():

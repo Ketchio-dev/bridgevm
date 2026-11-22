@@ -604,7 +604,7 @@ implementation source material for the BridgeVM HVF engine.
 8. **Optimize toward Parallels-like lightness**
    - Replace polling and heavyweight device paths.
    - Add resource and power policy hooks.
-   - Move display presentation into the Metal/displayd path.
+   - Move display presentation into the Metal path.
    - Treat WDDM/Direct3D-to-Metal as a later R&D track, not an MVP promise.
 
 ## Historical gate status

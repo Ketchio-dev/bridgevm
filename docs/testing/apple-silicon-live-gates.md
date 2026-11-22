@@ -82,10 +82,6 @@ Properties the queue must hold:
 | T17 | Packaged Windows-HVF 3D-off product E2E | One-lane diagnostic pilot or fixed three-lane release campaign |
 | T18 | Fixed CoreAudio playback and shutdown | B7 typed callback teardown evidence; exactly ten isolated lanes |
 | T19 | Packaged installed-disk import product E2E | One-lane diagnostic pilot or fixed three-lane release campaign |
-The deterministic QMP close-race negative control and exactly 60 loaded
-full-workspace rounds run as the GitHub-hosted macOS `qmp-stress` CI job. They
-are not a physical-Mac live tier and make no guest-behaviour claim.
-
 T0–T4 filter candidates. Only T5 produces A1 shipping evidence, and no faster
 tier may be used to lower a threshold. T6 requires all three runs to report
 guest samples, p50 at or above 30 FPS, and exact title-local DXVK module hashes.
