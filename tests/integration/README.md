@@ -113,15 +113,7 @@ tests/integration/application-consistent-freeze-thaw-cli-smoke.sh
 tests/integration/application-consistent-fsfreeze-backend-smoke.sh
 tests/integration/resource-profile-readiness-smoke.sh
 tests/integration/runtime-resource-policy-cli-smoke.sh
-tests/integration/vz-display-demo-cli-smoke.sh
-tests/integration/vz-proxy-crop-evidence-verifier-smoke.sh
 tests/integration/readiness-report-cli-smoke.sh
-tests/integration/fast-mode-readiness-smoke.sh
-tests/integration/fast-mode-readiness-unsupported-smoke.sh
-tests/integration/fast-mode-readiness-template-matrix-smoke.sh
-tests/integration/fast-mode-template-boot-media-smoke.sh
-tests/integration/apple-vz-live-opt-in-skip-smoke.sh
-tests/integration/apple-vz-live-evidence-verifier-smoke.sh
 tests/integration/qemu-live-evidence-verifier-smoke.sh
 tests/integration/hvf-windows-installed-boot-p3-gpu-policy-smoke.sh
 tests/integration/hvf-windows-installed-boot-ramfb-display-cadence-smoke.sh
@@ -433,7 +425,6 @@ Manual opt-in live boot coverage is intentionally separate from that default
 list:
 
 ```sh
-tests/integration/apple-vz-live-boot-opt-in-smoke.sh
 tests/integration/qemu-live-boot-opt-in-smoke.sh
 ```
 
@@ -447,7 +438,6 @@ VM, a GUI, or a network download.
 To prepare the recommended Debian arm64 netboot fixture for that smoke:
 
 ```sh
-tests/integration/prepare-apple-vz-debian-fixture.sh
 ```
 
 The Debian helper downloads the stable arm64 netboot `linux` and `initrd.gz`
@@ -470,7 +460,6 @@ and verify the downloaded kernel/initrd bytes.
 An older Alpine arm64 netboot fixture helper is also available:
 
 ```sh
-tests/integration/prepare-apple-vz-alpine-fixture.sh
 ```
 
 The helper downloads `vmlinuz-virt` and `initramfs-virt` from Alpine's
@@ -1538,32 +1527,6 @@ drive the proxy-window crop primitive. It is still not app-direct per-window
 streaming because the framebuffer source in that harness is synthetic; the
 separate Apple VZ proof below covers whole-view app-direct framebuffer export.
 
-The local GUI proof gate for the visible app-direct path is
-`scripts/run-vz-display-demo.sh --prove-proxy-crop`. It starts the Fast/VZ
-AppKit display helper with `--proxy-framebuffer-rgba-file`, captures the actual
-`VZVirtualMachineView` window, waits for the exported whole-view RGBA file, and
-runs `displayd` to materialize a clipped crop artifact. A successful run
-preserves `app-direct-framebuffer.rgba`, `app-direct-window-crop.json`,
-`app-direct-window-crop.rgba`, and `app-direct-proxy-crop-proof.json`. This is a
-GUI-session opt-in proof path for app-direct whole-view framebuffer export
-feeding the crop primitive. A preserved local pass exists at
-`~/bridgevm-live-evidence/apple-vz-proxy-crop-2026-06-18-auto-verified/`: it
-captured a `2696x1800` viewer PNG, exported a `1280x800` raw framebuffer, wrote
-a `640x400` crop artifact, and preserved
-`app-direct-proxy-crop-verifier.output`. It is still not true per-window
-streaming or Parallels-style Coherence. `vz-display-demo-cli-smoke.sh` covers
-only the safe parser/validation boundary for that demo script, including the
-metadata-safe `--preflight` path that reports local fixture/helper/tool
-readiness without downloading, signing, launching Apple VZ, opening a GUI
-window, or running `displayd`; it also asserts the script wires the verifier.
-`verify-vz-proxy-crop-evidence.sh <dir>` validates
-that bundle without launching a VM: it checks required files, relative artifact
-paths, SHA-256 values, PNG dimensions, framebuffer and crop byte sizes, and the
-`displayd` crop summary contract. `vz-proxy-crop-evidence-verifier-smoke.sh`
-builds a tiny synthetic RGBA framebuffer/crop bundle and asserts the verifier
-accepts the good bundle and rejects corrupted byte counts, traversal paths, and
-wrong-sized crop artifacts.
-
 `guest-tools-app-window-live-gui-opt-in-smoke.sh` is the heavy proof path for
 that final guest boundary. With
 `BRIDGEVM_LIVE_GUEST_TOOLS_ALLOW_REAL_START=1`,
@@ -1878,74 +1841,6 @@ absent and the RGBA file exists. A fake runtime-control socket also proves
 `runtime-control policy` and `runtime-control pacing` can query the live helper,
 and `resources reapply` can ask that helper to read the refreshed policy and set
 `runtime_control_acknowledged`, without making `live_applied` true.
-
-`apple-vz-live-boot-opt-in-smoke.sh` is that separate manual harness. It creates
-a temporary ready `linux-kernel` + `raw` + NAT launch spec, validates the Swift
-configuration boundary, proves the missing opt-in failure, then invokes
-`lightvm-runner --apple-vz-allow-real-start` with
-`--apple-vz-stop-after-seconds` so successful fixtures do not leave the helper
-waiting indefinitely. It also passes `--apple-vz-force-stop-grace-seconds`, so a
-guest that ignores the graceful stop request is force-stopped after the grace
-period. If no signed helper is supplied through
-`BRIDGEVM_LIVE_VZ_RUNNER`, the script builds `AppleVzRunner` with SwiftPM and
-ad-hoc signs it using `apps/macos/scripts/build-sign-apple-vz-runner.sh`.
-Each non-skipped live attempt preserves `$STORE/evidence` with
-`SUMMARY.txt`, `fixture-manifest.json`, `environment.txt`,
-`apple-vz-launch.json`, `live-vz-handoff.json`, `apple-vz-runner.path`,
-`apple-vz-runner.artifact`, `apple-vz-runner.sha256`,
-`apple-vz-validate.output`, `apple-vz-live-launch.output`, the selected runner
-path, a copied runner artifact, and copied runner and serial logs referenced by
-the launch spec. The fixture manifest records source and
-bundle file size/hash pairs so reviewers can tell exactly which kernel, initrd,
-and copied raw disk were booted. The summary, environment file, and live-launch
-transcript also retain the configured stop-after and force-stop grace seconds,
-so the manual proof records the bounded lifecycle window used for the run. The
-serial log remains the strongest guest progress proof, but verifier-bound
-`boot-progress-evidence.json` can also prove graphical boot progress. Configure
-`BRIDGEVM_LIVE_VZ_SERIAL_EXPECTED` with a known sentinel, or provide
-`BRIDGEVM_LIVE_VZ_BOOT_PROGRESS_FRAME` plus matching metadata. The harness skips
-real Apple VZ starts without one of those progress signals rather than treating
-process start/stop alone as proof. Optional `BRIDGEVM_LIVE_VZ_VIEWER_FRAME` and
-`BRIDGEVM_LIVE_VZ_GUEST_TOOLS_EFFECTS_JSON` inputs are copied into the evidence
-directory and validated by the verifier when present. A non-skipped successful
-live smoke invokes `verify-apple-vz-live-evidence.sh "$STORE/evidence"` before
-printing `PASS`, so the preserved evidence contract is checked immediately.
-
-`verify-apple-vz-live-evidence.sh <evidence-dir>` validates that preserved
-bundle after the live run. It checks `SUMMARY.txt` status, fixture manifest
-hashes and sizes, launch spec and handoff JSON, validation and live-launch
-output, the selected runner path, and required serial or graphical boot-progress
-evidence from the opted-in live run. The Rust readiness ingestion path performs a bounded
-subset of those checks so local and daemon-backed readiness reports can reflect
-an already-preserved Apple VZ bundle without invoking Swift or starting Apple
-VZ. The shell verifier also cross-checks `environment.txt` against the fixture manifest's
-source paths, the launch spec's kernel command line and resources, and the
-selected runner path recorded in `apple-vz-runner.path`.
-If `apple-vz-runner.artifact` exists, it is checked as a relative executable
-artifact inside the evidence directory and matched against
-`apple-vz-runner.sha256`.
-Path lines recorded in `SUMMARY.txt` are treated as
-artifact cross-checks against the preserved bundle, so the `Store`, `Bundle`,
-`Launch spec`, `Handoff JSON`, output path, runner/serial log,
-`Fixture manifest`, and `Environment` lines must resolve to the evidence fields
-and files they name. Runner and serial log paths referenced by the launch spec
-must be regular files inside the preserved evidence directory, not external
-bundle paths or symlinks.
-The selected runner path comes from `apple-vz-runner.path`; when
-`apple-vz-runner.artifact` is present, that relative evidence file is the
-executable/SHA-256 proof, otherwise the original selected runner path must still
-resolve to an existing executable. The
-live-launch transcript must retain the expected handoff-ready, diagnostics,
-start, and finished markers. `apple-vz-live-evidence-verifier-smoke.sh` tests
-that verifier with synthetic evidence and must remain metadata-only: it does
-not start Apple VZ, QEMU, a VM, or a GUI, and it does not replace the opt-in
-live smoke as the source of real live proof. Even when the verifier accepts a
-synthetic bundle, that acceptance is coverage of the evidence artifact contract;
-it is not proof of `live-boot`, `console`, or `guest-tools-effects`. Future or
-current `guest-tools-effects` proof must come from verifier-checked
-guest-tools result artifacts or matching expected/observed values inside the
-preserved bundle, not from live boot metadata, command dispatch metadata, or the
-default metadata-safe smoke lane.
 
 Compatibility Mode can use the same readiness ingestion path with a preserved
 QEMU evidence bundle. A QEMU bundle is selected by `qemu-live-evidence.json`

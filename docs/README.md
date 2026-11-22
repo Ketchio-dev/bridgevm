@@ -61,17 +61,7 @@ app, runner, packaging and test code.
 - [SMCCC TRNG / PSCI contract](windows-arm/smccc-trng-psci-contract.md)
 - [v1 suspend decision](decisions/hvf-windows-v1-suspend-decision.md)
 
-## Other engines and guest integration
-
-### Apple VZ
-
-- [Apple VZ engine guide](fast-mode/README.md)
-
-### Compatibility Engine
-
-- [QEMU compatibility guide](compatibility-mode/README.md)
-
-### Guest integration
+## Guest integration
 
 - [Guest tools protocol](guest-tools/protocol.md)
 

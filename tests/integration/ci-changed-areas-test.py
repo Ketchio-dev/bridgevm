@@ -26,7 +26,7 @@ CI = ROOT / ".github/workflows/ci.yml"
 
 SKIP_BUILD = {
     "Swift-only": ["apps/macos/Sources/BridgeVMControl/AppUIHost.swift",
-                   "apps/macos/Tests/AppleVzRunnerTests/AppleVzRunnerCommandTests.swift"],
+                   "apps/macos/Tests/BridgeVMControlTests/VMConfigTests.swift"],
     "scripts-only": ["scripts/check-project.sh", "scripts/live-gates/guest_input_queue.py",
                      "scripts/win-assets/bv-window-inventory.cs", "tests/integration/guest-input-queue-test.py"],
     "docs-only": ["README.md", "docs/app-cli-create.md", "site/icon.png"],

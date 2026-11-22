@@ -4,19 +4,7 @@ import XCTest
 
 @MainActor
 final class CreateVMPrerequisitePresentationTests: XCTestCase {
-    func testTemplateModesExplainDisabledCreationInAnEmptyLibrary() throws {
-        try withLibrary { library in
-            for mode: CreateVMSheet.Mode in [.ubuntu, .iso, .windows] {
-                let sheet = CreateVMSheet(library: library, mode: mode, name: "Owned VM", isoPath: "/owned.iso")
-                let footer = try footer(of: sheet)
-                XCTAssertFalse(footer.canCreate)
-                XCTAssertTrue(footer.error.contains("템플릿"))
-                XCTAssertEqual(footer.failureCode, "template-unavailable")
-            }
-        }
-    }
-
-    func testTemplateIndependentWindowsModesHaveNoTemplateWarning() throws {
+    func testWindowsModesStartWithoutCreationWarning() throws {
         try withLibrary { library in
             for mode: CreateVMSheet.Mode in [.windowsHVF, .windowsHVFInstall] {
                 let sheet = CreateVMSheet(library: library, mode: mode)
@@ -30,7 +18,7 @@ final class CreateVMPrerequisitePresentationTests: XCTestCase {
 
     func testExistingCreationErrorRemainsVisibleBeforePrerequisiteGuidance() throws {
         try withLibrary { library in
-            let sheet = CreateVMSheet(library: library, mode: .iso,
+            let sheet = CreateVMSheet(library: library, mode: .windowsHVFInstall,
                 error: "Owned publication refusal", creationFailureCode: "vm-publication-unconfirmed")
             let footer = try footer(of: sheet)
             XCTAssertEqual(footer.error, "Owned publication refusal")
@@ -38,25 +26,14 @@ final class CreateVMPrerequisitePresentationTests: XCTestCase {
         }
     }
 
-    func testExistingTemplateDoesNotShowMissingTemplateGuidance() throws {
-        try withLibrary { library in
-            library.vms = [config]
-            let sheet = CreateVMSheet(library: library, mode: .iso, name: "Owned VM", isoPath: "/owned.iso")
-            let footer = try footer(of: sheet)
-            XCTAssertTrue(footer.canCreate)
-            XCTAssertEqual(footer.error, "")
-            XCTAssertEqual(footer.failureCode, "")
-        }
-    }
-
     func testWorkingAndPublishedRecoveryDoNotShowPrerequisiteGuidance() throws {
         try withLibrary { library in
-            let working = try footer(of: CreateVMSheet(library: library, mode: .iso, working: true))
+            let working = try footer(of: CreateVMSheet(library: library, mode: .windowsHVFInstall, working: true))
             XCTAssertFalse(working.canCreate)
             XCTAssertEqual(working.error, "")
             var recovery = CreateVMCreationState()
             _ = recovery.complete(.publishedButUnsynced(config, "Owned warning")) { _ in false }
-            let footer = try footer(of: CreateVMSheet(library: library, mode: .iso, creationState: recovery))
+            let footer = try footer(of: CreateVMSheet(library: library, mode: .windowsHVFInstall, creationState: recovery))
             XCTAssertTrue(footer.recoveryAvailable)
             XCTAssertEqual(footer.error, "")
             XCTAssertEqual(footer.failureCode, "")
@@ -64,7 +41,7 @@ final class CreateVMPrerequisitePresentationTests: XCTestCase {
     }
 
     private var config: VMConfig {
-        VMConfig(id: "owned", name: "Owned", displayName: "Owned", backendKind: "fast-vz",
+        VMConfig(id: "owned", name: "Owned", displayName: "Owned", backendKind: "hvf-engine",
             bootMode: "direct-kernel", bundlePath: "/owned/bundle", runnerPath: "", launchSpecPath: "",
             handoffPath: "", sshKeyPath: "", sshUser: "", leasesPath: "", guestName: "owned",
             displayWidth: 1280, displayHeight: 800)

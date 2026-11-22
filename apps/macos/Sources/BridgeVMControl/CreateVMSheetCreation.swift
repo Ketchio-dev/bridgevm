@@ -4,12 +4,6 @@ extension CreateVMSheet {
     func create() {
         guard !working, creationState.permitsCreation else { return }
         creationFailureCode = ""
-        let selectedTemplate = template
-        if WindowsHVFProductPolicy.requiresTemplate(mode) && selectedTemplate == nil {
-            creationFailureCode = "template-unavailable"
-            error = "템플릿 VM이 없습니다"
-            return
-        }
         working = true
         error = ""
         guard let normalizedName = VMLibrary.normalizedVMName(name) else {
@@ -45,20 +39,6 @@ extension CreateVMSheet {
         Task.detached {
             let config: HVFCreationOutcome?
             switch selectedMode {
-            case .ubuntu:
-                config = selectedTemplate.flatMap { VMLibrary.cloneUbuntu(
-                    name: normalizedName, template: $0, storageDir: storage,
-                    width: width, height: height, memMiB: memory, cpuCount: cpu) }.map(HVFCreationOutcome.created)
-            case .iso:
-                config = selectedTemplate.flatMap { VMLibrary.createFromISO(
-                    name: normalizedName, isoPath: selectedISO, template: $0,
-                    storageDir: storage, width: width, height: height,
-                    diskGiB: disk, memMiB: memory, cpuCount: cpu) }.map(HVFCreationOutcome.created)
-            case .windows:
-                config = selectedTemplate.flatMap { VMLibrary.createWindows(
-                    name: normalizedName, isoPath: selectedISO, template: $0,
-                    storageDir: storage, width: width, height: height,
-                    diskGiB: disk, memMiB: memory, cpuCount: cpu) }.map(HVFCreationOutcome.created)
             case .windowsHVF:
                 config = VMLibrary.createWindowsHVF(
                     name: normalizedName, targetDiskPath: target, varsPath: vars,

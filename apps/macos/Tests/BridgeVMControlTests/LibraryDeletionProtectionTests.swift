@@ -8,9 +8,9 @@ final class LibraryDeletionProtectionTests: XCTestCase {
         var config = fixture.config()
         XCTAssertEqual(LibraryDeletionProtection.mode(for: config), .nativeMediaLease)
 
-        config.backendKind = BackendKind.fastVZ.rawValue
+        config.backendKind = "fast-vz"
         XCTAssertEqual(LibraryDeletionProtection.mode(for: config), .registration)
-        config.backendKind = BackendKind.qemuCompat.rawValue
+        config.backendKind = "qemu-compat"
         XCTAssertEqual(LibraryDeletionProtection.mode(for: config), .registration)
     }
 }

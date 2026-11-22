@@ -64,23 +64,22 @@ final class RetainedTerminalRecoveryFixture {
         return view
     }
 
-    func ordinaryControls() throws -> LibraryDashboardLegacyControls {
+    /// The dashboard's ordinary control for the current registration.
+    func ordinaryControls() throws -> ControlModel {
         let dashboard = try XCTUnwrap(values(LibraryDashboardDetail.self,
             in: LibraryDashboardRoute(library: library).body).first)
         XCTAssertEqual(dashboard.config, library.vms.first)
-        return try XCTUnwrap(values(LibraryDashboardLegacyControls.self, in: dashboard.body).first)
+        return dashboard.model
     }
 
-    func start(_ controls: LibraryDashboardLegacyControls) async throws {
-        let action = try XCTUnwrap(values(DashboardActionButton.self, in: controls.body)
-            .first { $0.title == "시작" })
-        XCTAssertFalse(action.disabled)
-        action.action()
+    func start(_ model: ControlModel) async throws {
+        XCTAssertFalse(model.hasActiveRuntimeWork)
+        model.start()
         let deadline = ProcessInfo.processInfo.systemUptime + 3
-        while controls.model.lifecycleBusy, ProcessInfo.processInfo.systemUptime < deadline {
+        while model.lifecycleBusy, ProcessInfo.processInfo.systemUptime < deadline {
             try await Task.sleep(nanoseconds: 5_000_000)
         }
-        XCTAssertFalse(controls.model.lifecycleBusy)
+        XCTAssertFalse(model.lifecycleBusy)
     }
 
     func values<T>(_ type: T.Type, in value: Any) -> [T] {

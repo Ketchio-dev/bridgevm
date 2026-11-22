@@ -227,41 +227,6 @@ final class HvfWindowsImportTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: ambiguous.path))
     }
 
-    func testISOCreateRejectsMissingOrDirectoryMediaBeforeReservingDestination() throws {
-        let temp = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: temp) }
-        let storage = temp.appendingPathComponent("storage")
-        let template = VMConfig(id: "template", name: "Template", displayName: "Template",
-                                backendKind: "fast-vz", bootMode: nil, bundlePath: "", runnerPath: "",
-                                launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
-                                leasesPath: "", guestName: "", displayWidth: 1, displayHeight: 1)
-
-        XCTAssertNil(VMLibrary.createFromISO(name: "Missing", isoPath: temp.appendingPathComponent("missing.iso").path,
-                                             template: template, storageDir: storage))
-        XCTAssertNil(VMLibrary.createFromISO(name: "Directory", isoPath: temp.path,
-                                             template: template, storageDir: storage))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: storage.path))
-    }
-
-    func testCloneMetadataRewriteIsIndependentOfJSONFormatting() throws {
-        let temp = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: temp) }
-        let metadata = temp.appendingPathComponent("handoff.json")
-        let compact = "{\"vm_name\":\"Old VM\",\"bundle_path\":\"/old/bundle\",\"nested\":{\"disk\":\"/old/bundle/disks/root.raw\"}}"
-        try Data(compact.utf8).write(to: metadata)
-
-        XCTAssertTrue(VMLibrary.rewriteCloneMetadata(
-            at: metadata.path,
-            oldBundlePath: "/old/bundle",
-            newBundlePath: "/new/bundle",
-            newName: "New VM"
-        ))
-        let rewritten = try XCTUnwrap(JSONFile.loadDict(metadata.path))
-        XCTAssertEqual(rewritten["vm_name"] as? String, "New VM")
-        XCTAssertEqual(rewritten["bundle_path"] as? String, "/new/bundle")
-        XCTAssertEqual((rewritten["nested"] as? [String: Any])?["disk"] as? String, "/new/bundle/disks/root.raw")
-    }
-
     private func makeTempDir() throws -> URL {
         let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

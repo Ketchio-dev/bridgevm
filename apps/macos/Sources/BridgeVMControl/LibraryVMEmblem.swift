@@ -5,7 +5,7 @@ struct LibraryVMEmblem: View {
     let engine: BackendKind
     var compact = false
 
-    private var color: Color { engine == .hvfEngine ? .blue : engine == .fastVZ ? .teal : .purple }
+    private var color: Color { engine == .hvfEngine ? .blue : .gray }
 
     var body: some View {
         ZStack {

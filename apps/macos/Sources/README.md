@@ -24,13 +24,16 @@ historical; it stays because it prefixes the app's resource bundle
 - `BridgeVMProductE2E/` is the product end-to-end driver (T17/T19/A9 lanes). The
   packager installs it inside the app as a separate helper app; it drives the
   real app through Accessibility and is not a user-facing feature.
-- `AppleVzRunnerCore/` and `AppleVzRunner/` are the Apple Virtualization helper
-  for the legacy Fast Mode Linux backend. The release app does not bundle them.
+
+HVF is the app's only engine. A saved VM whose `backendKind` names a removed
+engine (`fast-vz`, `qemu-compat`) is listed as unsupported
+(`BackendKind.unsupported`, `UnsupportedEngineBackend`): it cannot start and its
+files are never changed automatically, but the user can still delete it.
 
 ## Tests
 
-- `Tests/BridgeVMControlTests`, `Tests/BridgeVMProductE2ETests` and
-  `Tests/AppleVzRunnerTests` are XCTest targets. Without Xcode,
+- `Tests/BridgeVMControlTests` and `Tests/BridgeVMProductE2ETests` are XCTest
+  targets. Without Xcode,
   `scripts/run-xctest-shim-suites.sh` runs them under a small XCTest shim.
   `scripts/run-control-xctest.sh` runs the app product-flow selection with
   Apple XCTest.

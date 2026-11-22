@@ -7,8 +7,8 @@
 **Windows 11 Arm on Apple silicon, in a native Mac app.**
 
 BridgeVM runs Windows alongside macOS using its own
-[Hypervisor.framework VMM](crates/bridgevm-hvf/). The main Windows engine runs
-without QEMU. Apple VZ and QEMU compatibility backends are separate paths.
+[Hypervisor.framework VMM](crates/bridgevm-hvf/), without QEMU. It is the
+app's only engine.
 
 **Current access: [General Preview v1.1.1](https://github.com/Ketchio-dev/bridgevm/releases/tag/v1.1.1) · Engineering Preview · 3D-off.**
 Install it with the terminal installer or the DMG. The app is ad-hoc signed,
@@ -151,19 +151,17 @@ Deterministic CI runs on GitHub-hosted runners. Windows boots, HVF behavior and
 clean-machine product journeys need the corresponding
 [physical-Mac tests](docs/testing/apple-silicon-live-gates.md).
 
-## Engine boundaries
+## Engine
 
-| Engine | Backend | Focus |
-| --- | --- | --- |
-| **Windows HVF** | Hypervisor.framework + BridgeVM device model | Main Windows 11 Arm path |
-| **Apple VZ** | Virtualization.framework | Narrow Linux/macOS Arm path |
-| **Compatibility** | QEMU + HVF/TCG | Compatibility and architecture emulation |
+The app has one engine, Windows HVF: Hypervisor.framework plus BridgeVM's own
+device model. The earlier Apple VZ (Linux) and QEMU compatibility engines were
+removed; a VM saved with one of them stays in the library, marked as no longer
+supported, with its files untouched, and can be deleted from there.
 
 Windows HVF uses a QEMU `virt`-compatible guest contract with
 [documented deviations](docs/machine-contract/qemu-virt-deviations.json).
 Its RAW, QCOW2 and VHDX import uses BridgeVM's own converter; compressed,
-encrypted or backing-file disks need conversion first. The Compatibility
-Engine uses QEMU and its `qemu-img` disk tooling.
+encrypted or backing-file disks need conversion first.
 
 ## More information
 

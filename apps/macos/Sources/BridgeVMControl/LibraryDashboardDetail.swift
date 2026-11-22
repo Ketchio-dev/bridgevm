@@ -95,7 +95,10 @@ struct LibraryDashboardDetail: View {
                     library: library, showAdvanced: { showingAdvanced = true })
             }
         } else {
-            LibraryDashboardLegacyControls(model: model, showAdvanced: { showingAdvanced = true })
+            Label(BackendKind.unsupportedNotice, systemImage: "exclamationmark.triangle")
+                .font(.callout).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("bridgevm.dashboard.unsupported-engine")
         }
     }
 
