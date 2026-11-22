@@ -53,6 +53,22 @@ final class HvfWindowsInstallFinalizationIntegrityTests: XCTestCase {
         try assertTamperFailsClosed(boundary: .prepared, artifact: { $0.sourceVars })
     }
 
+    /// Only the seal reads the disk in an uninterrupted run (every later copy is an APFS clone):
+    /// a byte changed after sealing reaches the final disk, where a re-hash would have refused it.
+    /// A crashed run still re-verifies everything (the tamper tests above).
+    func testUninterruptedFinalizationHashesTheDiskOnlyWhenSealing() throws {
+        let fixture = try makeFixture()
+        defer { fixture.remove() }
+        try HvfWindowsInstallFinalization.finalize(
+            plan: fixture.plan,
+            faultInjector: { if $0 == .prepared { try self.tamperOneByte(fixture.sourceDisk) } },
+            secureBootSeeder: syntheticSeeder)
+        XCTAssertEqual(try readConfig(fixture.configURL).installPending, false)
+        let handle = try FileHandle(forReadingFrom: fixture.finalDisk)
+        defer { try? handle.close() }
+        XCTAssertEqual(try handle.read(upToCount: 1), Data([0xff]))
+    }
+
     func testSameSizeTamperOfPublishedDiskAndVarsFailsClosed() throws {
         try assertTamperFailsClosed(boundary: .diskPublished, artifact: { $0.finalDisk })
         try assertTamperFailsClosed(boundary: .varsPublished, artifact: { $0.finalVars })

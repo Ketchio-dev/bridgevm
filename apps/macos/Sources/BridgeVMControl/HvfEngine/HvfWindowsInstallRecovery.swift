@@ -37,7 +37,7 @@ enum HvfWindowsInstallRecovery {
                   journal.transactionID == ticket.transactionID else {
                 throw HvfWindowsInstallFinalizationError.invalidState("복구를 기다리는 동안 설치 기록이 변경되었습니다.")
             }
-            return try HvfWindowsInstallFinalization.resume(journal, paths: paths, faultInjector: { _ in },
+            return try HvfWindowsInstallFinalization.resume(journal, paths: paths, recovering: true, faultInjector: { _ in },
                                                             secureBootSeeder: secureBootSeeder)
         }
     }

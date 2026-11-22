@@ -1,16 +1,18 @@
 import Foundation
 
 extension HvfWindowsInstallFinalization {
+    /// `recovering` re-verifies every sealed digest after a crash. A run that sealed the
+    /// pair itself hashes the disk once: every copy after the seal is an APFS clone.
     static func resume(
         _ stored: HvfWindowsInstallFinalizationJournal,
-        paths: HvfWindowsInstallFinalizationPaths,
+        paths: HvfWindowsInstallFinalizationPaths, recovering: Bool,
         faultInjector: FaultInjector, secureBootSeeder: SecureBootSeeder,
         removeTransaction: (URL) throws -> Void = { try HvfWindowsInstallDurability.durableRemove($0) }
     ) throws -> VMConfig {
         var journal = stored
         try validate(journal: journal, paths: paths)
         if journal.phase == .committed {
-            return try finishCommitted(journal, paths: paths, removeTransaction: removeTransaction)
+            return try finishCommitted(journal, paths: paths, verifying: true, removeTransaction: removeTransaction)
         }
         guard let diskSHA256 = journal.diskSHA256,
               let varsSHA256 = journal.varsSHA256 else {
@@ -21,14 +23,14 @@ extension HvfWindowsInstallFinalization {
 
         if journal.phase < .diskStaged {
             try stage(sourceDisk, to: paths.stagedDisk, bytes: journal.diskBytes,
-                      sha256: diskSHA256)
+                      sha256: diskSHA256, verifying: recovering)
             try advance(&journal, to: .diskStaged, boundary: .diskStaged,
                         paths: paths, faultInjector: faultInjector)
             try? HvfWindowsInstallStaging.consume(sourceDisk, paths: paths)
         } else { try verify(paths.stagedDisk, bytes: journal.diskBytes, sha256: diskSHA256) }
         if journal.phase < .varsStaged {
             try stage(sourceVars, to: paths.stagedVars, bytes: journal.varsBytes,
-                      sha256: varsSHA256)
+                      sha256: varsSHA256, verifying: recovering)
             try advance(&journal, to: .varsStaged, boundary: .varsStaged,
                         paths: paths, faultInjector: faultInjector)
             try? HvfWindowsInstallStaging.consume(sourceVars, paths: paths)
@@ -75,14 +77,14 @@ extension HvfWindowsInstallFinalization {
         }
 
         try publish(paths.stagedDisk, to: paths.finalDisk, bytes: journal.diskBytes,
-                    sha256: diskSHA256,
+                    sha256: diskSHA256, verifying: recovering,
                     phase: .diskPublished, boundary: .diskPublished,
                     journal: &journal, paths: paths, faultInjector: faultInjector)
         guard let provisionedVarsSHA256 = journal.provisionedVarsSHA256 else {
             throw HvfWindowsInstallFinalizationError.unsupportedJournal
         }
         try publish(paths.stagedProvisionedVars, to: paths.finalVars, bytes: journal.varsBytes,
-                    sha256: provisionedVarsSHA256,
+                    sha256: provisionedVarsSHA256, verifying: recovering,
                     phase: .varsPublished, boundary: .varsPublished,
                     journal: &journal, paths: paths, faultInjector: faultInjector)
         try publishFile(paths.stagedReceipt, to: paths.finalReceipt,
@@ -95,6 +97,7 @@ extension HvfWindowsInstallFinalization {
                         journal: &journal, paths: paths, faultInjector: faultInjector,
                         validator: { try validateRequest($0, expectedSHA256: requestSHA256) })
         try commitConfiguration(&journal, paths: paths, faultInjector: faultInjector)
-        return try finishCommitted(journal, paths: paths, removeTransaction: removeTransaction)
+        return try finishCommitted(journal, paths: paths, verifying: recovering,
+                                   removeTransaction: removeTransaction)
     }
 }

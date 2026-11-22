@@ -58,26 +58,26 @@ extension HvfWindowsInstallFinalization {
     }
 
     static func stage(
-        _ source: URL, to destination: URL, bytes: UInt64, sha256: String
+        _ source: URL, to destination: URL, bytes: UInt64, sha256: String, verifying: Bool
     ) throws {
         try HvfWindowsInstallStaging.requireOwnedSource(source)
-        try verify(source, bytes: bytes, sha256: sha256)
+        if verifying { try verify(source, bytes: bytes, sha256: sha256) }
         try HvfWindowsInstallDurability.durableCloneOrCopy(from: source, to: destination)
-        try verify(destination, bytes: bytes, sha256: sha256)
+        if verifying { try verify(destination, bytes: bytes, sha256: sha256) }
     }
 
     static func publish(
-        _ staged: URL, to final: URL, bytes: UInt64, sha256: String,
+        _ staged: URL, to final: URL, bytes: UInt64, sha256: String, verifying: Bool,
         phase: HvfWindowsInstallFinalizationJournal.Phase,
         boundary: HvfWindowsInstallFinalizationBoundary,
         journal: inout HvfWindowsInstallFinalizationJournal,
         paths: HvfWindowsInstallFinalizationPaths,
         faultInjector: FaultInjector
     ) throws {
-        try verify(staged, bytes: bytes, sha256: sha256)
+        if verifying { try verify(staged, bytes: bytes, sha256: sha256) }
         if journal.phase < phase {
             try HvfWindowsInstallDurability.durableCloneOrCopy(from: staged, to: final)
-            try verify(final, bytes: bytes, sha256: sha256)
+            if verifying { try verify(final, bytes: bytes, sha256: sha256) }
             try advance(&journal, to: phase, boundary: boundary,
                         paths: paths, faultInjector: faultInjector)
         } else { try verify(final, bytes: bytes, sha256: sha256) }
