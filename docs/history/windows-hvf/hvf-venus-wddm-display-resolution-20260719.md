@@ -58,7 +58,7 @@ development RAW clone. Injection stopped through clean PSCI `SYSTEM_OFF` with
 Activation evidence is stored at:
 
 ```text
-/Users/insighton/BridgeVM/runs/venus-activate-120.35-command-header-20260719-144347
+~/BridgeVM/runs/venus-activate-120.35-command-header-20260719-144347
 ```
 
 The installed `oem35.inf` reports `120.35.0.0`. Offline SHA-256 values for the

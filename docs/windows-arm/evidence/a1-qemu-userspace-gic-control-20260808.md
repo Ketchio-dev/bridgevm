@@ -24,7 +24,7 @@ image's own bvagent. Success requires the guest's OWN agent to reach
 `READY` (same oracle as our stack), then `RUN shutdown /p /f` for a clean
 power-off between boots. 10 sequential cold boots.
 
-## Result (run `/Users/insighton/BridgeVM/runs/qemu-a1-control-021802`)
+## Result (run `~/BridgeVM/runs/qemu-a1-control-021802`)
 
     boot 1..10: READY at 18-24 s, every boot, no exception
     RESULT: 10/10 READY under QEMU-hvf userspace-GIC

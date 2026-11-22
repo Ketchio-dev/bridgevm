@@ -31,7 +31,7 @@ configuration QEMU-hvf uses (a1-qemu-userspace-gic-control-20260808.md).
 7. **ntoskrnl brings up SMP through the same paths** — secondary vCPUs
    need the identical GIC MMIO/sysreg/WFI routing.
 
-## Result: 10/10 soak (/Users/insighton/BridgeVM/runs/usgic-soak-135206)
+## Result: 10/10 soak (~/BridgeVM/runs/usgic-soak-135206)
 
     boot 1..10: BVAGENT READY at 82-87 s, agent-driven shutdown /p /f,
     PSCI SYSTEM_OFF, clean probe exit — every boot, no exception

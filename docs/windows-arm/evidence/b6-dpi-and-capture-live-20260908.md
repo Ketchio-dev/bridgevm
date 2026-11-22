@@ -76,7 +76,7 @@ clone. Both were retained pairs from early 2026-09-07, before the caption-fix
 rebuild (`f1018e97`) and before the 2026-09-07 vtimer-recovery regression was
 removed (`13fb8213`); they are not known-good and should not be reused.
 `t7-c193b7c0-fixed-b6-observation-r1`, cited elsewhere as a successful proof
-in `HANDOFF.md`'s earlier drafts, is corrected here: its receipt actually
+in earlier handoff drafts, is corrected here: its receipt actually
 recorded `f1_driver_load: false` and the same stalled-firstboot pattern.
 That correction and this run's success point the same direction: use only a
 retained pair created by a run on or after `97c2bf4c` (the caption-fix
@@ -85,7 +85,7 @@ own fresh pair per cell.
 
 ## Retraction 2026-09-08
 
-`HANDOFF.md`'s prior text describing `t7-c193b7c0-fixed-b6-observation-r1`
+The earlier handoff text describing `t7-c193b7c0-fixed-b6-observation-r1`
 as a completed proof job is wrong: its own receipt shows
 `f1_driver_load=false`, `pass=false`, `outcome=failed`. That job never
 reached firstboot readiness. The only genuinely proven closure runs found on

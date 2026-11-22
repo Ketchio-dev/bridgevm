@@ -111,7 +111,7 @@ The reusable verifier passes the retained directory in its PPI-action mode:
 
 ```sh
 tests/integration/verify-hvf-windows-vtpm-live-evidence.sh \
-  /Users/insighton/BridgeVM/work/vtpm-ppi-clear3-20260722/evidence-ppi-action \
+  ~/BridgeVM/work/vtpm-ppi-clear3-20260722/evidence-ppi-action \
   --ppi-action
 ```
 
