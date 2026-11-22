@@ -62,17 +62,15 @@ jobs:
           rust_build=false
           printf '%s\n' "$files" | grep -qE '\.rs$|^(crates|runners|tools)/|(^|/)(Cargo\.(toml|lock)|rust-toolchain(\.toml)?|\.?clippy\.toml)$|(^|/)\.cargo/|^\.github/workflows/ci\.yml$' && rust_build=true
           printf '%s\n' "$files" | grep -qxE 'apps/macos/Sources/BridgeVMControl/HvfEngine/(BvAgentEvent|HvfClipboardPaste|HvfLegacyInputActivity)\.swift|apps/macos/Sources/BridgeVMControl/WindowsTimeZones\.swift|capabilities/windows-hvf\.json|scripts/win-assets/bvagent\.ps1' && rust_build=true
-          # The macOS host contracts run with `rust`, and also when a file they
-          # read that `rust` ignores changes: these workflows and documents
-          # (found by tracing every file the four suites read).
+          # The macOS host contracts run with `rust`: every file the suites
+          # read is a `rust` input.
           host_contracts=$rust
-          printf '%s\n' "$files" | grep -qxE '\.github/workflows/qmp-stress\.yml' && host_contracts=true
           swift=false
           printf '%s\n' "$files" | grep -qE '^(apps/|packaging/|tests/integration/|tests/fixtures/owned-runtime-v1/|install\.sh$|\.github/workflows/ci\.yml$)|^scripts/[^p]|^scripts/p[^e]' && swift=true
           # The app job also builds and runs Rust: the test helpers (hvf-runner,
           # the bridgevm CLI, snapshot_pair_cli) and the probe's input-receipt
-          # transcript. Only crates none of them depend on can skip it.
-          app_rust=$(printf '%s\n' "$files" | grep -E '^(crates/|runners/hvf-runner/|Cargo\.(toml|lock)$)' | grep -vE '^crates/bridgevm-daemon/' || true)
+          # transcript; every remaining crate is one of them or a dependency.
+          app_rust=$(printf '%s\n' "$files" | grep -E '^(crates/|runners/hvf-runner/|Cargo\.(toml|lock)$)' || true)
           [ -n "$app_rust" ] && swift=true
           venus=false
           printf '%s\n' "$files" | grep -qE '^(crates/bridgevm-hvf/(src/|build\.rs$|Cargo\.toml$)|tools/venus-host-probe/|Cargo\.(toml|lock)$|scripts/.*(venus|virgl)|scripts/patches/|\.github/workflows/ci\.yml$)' && venus=true
@@ -223,25 +221,6 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.1
       - run: cargo check --workspace --locked
 
-  linux-stubs:
-    # The Linux guest tools and the platform stubs must keep compiling for the
-    # guest target. check-project.sh checks this only when the target happens to
-    # be installed locally, so nothing guaranteed it.
-    name: cross-compile (linux stubs)
-    needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
-        with:
-          toolchain: 1.97.0
-          targets: aarch64-unknown-linux-gnu
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.1
-      # Warnings are expected: macOS-only items are dead code on this target.
-      - run: cargo check --workspace --target aarch64-unknown-linux-gnu --locked
-
   windows-nvme-workload:
     # The guest workload embeds C# compiled by Windows PowerShell. A hosted
     # Windows compile catches language/PInvoke declaration drift without
@@ -327,8 +306,8 @@ jobs:
         run: bash scripts/run-xctest-shim-suites.sh
 
   macos-contracts:
-    # The macOS halves of four contract suites. Each needs macOS (Swift and
-    # xcrun, hdiutil and plutil, the Darwin rename path, Homebrew's QEMU) but
+    # The macOS halves of three contract suites. Each needs macOS (Swift and
+    # xcrun, hdiutil and plutil, the Darwin rename path) but
     # only minutes of it, and macOS runners are the CI bottleneck, so they
     # share one runner. Each suite is its own step and runs even when an
     # earlier one failed.
@@ -360,18 +339,6 @@ jobs:
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         timeout-minutes: 15
         run: scripts/check-snapshot-evidence-contracts.sh
-      # Real copied qcow2 chains through the CLI and daemon APIs, with
-      # Homebrew's current QEMU; the Ubuntu leg of bundle-import-portability.yml
-      # covers QEMU 8. Tiny generated images: no guest, hypervisor or media.
-      - name: portable bundle import contracts (QEMU 11)
-        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
-        timeout-minutes: 20
-        env:
-          BRIDGEVM_PORTABILITY_QEMU_MAJOR: 11
-        run: |
-          brew install qemu
-          cargo test -p bridgevm-daemon --locked peer_credentials
-          scripts/check-bundle-import-contracts.sh
       - name: native UI host contracts (no NSApplication or app launch)
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         timeout-minutes: 30

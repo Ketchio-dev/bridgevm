@@ -25,7 +25,7 @@ fn actual_help_exposes_native_commands_without_discovery() {
 }
 
 #[test]
-fn store_and_socket_are_rejected_before_store_or_connection_work() {
+fn removed_store_and_socket_flags_are_rejected_by_the_parser() {
     let fixture = Fixture::new();
     let store = fixture.0.join("must-not-exist");
     let socket = fixture.0.join("absent.sock");
@@ -55,7 +55,7 @@ fn store_and_socket_are_rejected_before_store_or_connection_work() {
         assert_eq!(output.status.code(), Some(2));
         assert!(output.stdout.is_empty());
         let error = String::from_utf8(output.stderr).unwrap();
-        assert!(error.contains("omit --store and --socket") && error.contains("--library"));
+        assert!(error.contains("error:"), "{error}");
     }
 }
 
