@@ -1,7 +1,7 @@
 use super::*;
 use crate::media::lock::MediaLease;
 use crate::nvme::{NvmeController, NSID};
-use crate::snapshot_pair::snapshot_pair_tests::{Scratch, QUOTA};
+use crate::snapshot_pair::snapshot_pair_tests::Scratch;
 use crate::snapshot_pair::{
     create_snapshot, managed::LockedPair, restore_snapshot, size::selected_size, verify_snapshot,
 };
@@ -16,8 +16,8 @@ fn after_a_restore_the_selected_generation_grows_and_the_snapshot_keeps_its_size
     let disk = s.write("disk", &[1; DISK as usize]);
     let vars = s.write("vars", &[2; 17]);
     let snapshot = s.path("snapshot");
-    let taken = create_snapshot(&disk, &vars, &snapshot, "vm", false, QUOTA).unwrap();
-    restore_snapshot(&snapshot, &disk, &vars, false).unwrap();
+    let taken = create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
+    restore_snapshot(&snapshot, &disk, &vars).unwrap();
 
     assert_eq!(
         grow_selected_disk(&disk, &vars, 4 * DISK).unwrap(),
@@ -46,7 +46,7 @@ fn after_a_restore_the_selected_generation_grows_and_the_snapshot_keeps_its_size
     drop(controller);
 
     // Restoring the older snapshot brings back its own size.
-    restore_snapshot(&snapshot, &disk, &vars, false).unwrap();
+    restore_snapshot(&snapshot, &disk, &vars).unwrap();
     assert_eq!(selected_size(&disk, &vars).unwrap().disk_bytes, DISK);
 }
 

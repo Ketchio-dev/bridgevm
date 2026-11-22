@@ -35,15 +35,13 @@ fn a_previous_snapshot_that_gains_an_entry_during_copy_is_not_swapped() {
     let disk = s.write("source-disk", b"old disk");
     let vars = s.write("source-vars", b"old vars");
     let dest = s.path("snapshot");
-    let old = create_snapshot(&disk, &vars, &dest, "old", false, 1024).unwrap();
+    let old = create_snapshot(&disk, &vars, &dest, "old").unwrap();
     fs::write(&disk, b"new disk").unwrap();
     let result = create_snapshot_using(
         &disk,
         &vars,
         &dest,
         "new",
-        false,
-        1024,
         arrive_after_staging(&dest, false),
     );
     assert_eq!(
@@ -66,8 +64,6 @@ fn an_unrelated_directory_created_during_copy_is_not_swapped() {
         &vars,
         &dest,
         "new",
-        false,
-        1024,
         arrive_after_staging(&dest, true),
     );
     assert_eq!(

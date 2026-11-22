@@ -10,7 +10,7 @@ fn existing_destination_member_or_hardlink_owner_refuses_before_staging_cleanup(
         let disk = scratch.write("disk", b"disk");
         let vars = scratch.write("vars", b"vars");
         let dest = scratch.path("snapshot");
-        create_snapshot(&disk, &vars, &dest, "vm", false, 1024).unwrap();
+        create_snapshot(&disk, &vars, &dest, "vm").unwrap();
         let staged = super::super::staging_path(&dest);
         fs::create_dir(&staged).unwrap();
         fs::write(staged.join(DISK_NAME), b"debris-kept").unwrap();

@@ -18,11 +18,8 @@ enum NativeCLISnapshotExport {
             let plan = try HvfWindowsSnapshotCommand.plan(config: engine, repoRoot: repoRoot, operation: .create)
             let bundle = plan.disk.deletingLastPathComponent().deletingLastPathComponent().standardizedFileURL
             guard !resolved.output.pathComponents.starts(with: bundle.pathComponents) else { throw unavailable("Snapshot export output must be outside the managed VM bundle.") }
-            _ = try HvfWindowsSnapshotCommand.invoke(
-                plan.executable,
-                plan.createArguments(destination: resolved.output)
-            )
-            _ = try HvfWindowsSnapshotCommand.invoke(plan.executable, ["verify", resolved.output.path])
+            // Create hashes both members into the manifest; restore verifies them before use.
+            _ = try HvfWindowsSnapshotCommand.invoke(plan.executable, plan.createArguments(destination: resolved.output))
             return result(rootURL, resolved, complete: true, reason: nil)
         } catch {
             return result(rootURL, options, complete: false, reason: error.localizedDescription)

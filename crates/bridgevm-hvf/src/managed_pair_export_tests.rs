@@ -9,16 +9,16 @@ fn export_after_restore_reads_selected_generation_not_logical_originals() {
     let disk = s.write("vm/disks/disk.raw", b"restored-disk");
     let vars = s.write("vm/metadata/vars.fd", b"restored-vars");
     let source = s.path("source.snapshot");
-    create_snapshot(&disk, &vars, &source, "vm", false, 1024).unwrap();
+    create_snapshot(&disk, &vars, &source, "vm").unwrap();
 
     fs::write(&disk, b"pre-restore-stale-disk").unwrap();
     fs::write(&vars, b"pre-restore-stale-vars").unwrap();
-    restore_snapshot(&source, &disk, &vars, false).unwrap();
+    restore_snapshot(&source, &disk, &vars).unwrap();
     fs::write(&disk, b"logical-original-stale-disk").unwrap();
     fs::write(&vars, b"logical-original-stale-vars").unwrap();
 
     let exported = s.path("external.snapshot");
-    let manifest = create_snapshot(&disk, &vars, &exported, "vm", false, 1024).unwrap();
+    let manifest = create_snapshot(&disk, &vars, &exported, "vm").unwrap();
     assert_eq!(verify_snapshot(&exported).unwrap(), manifest);
     assert_eq!(
         fs::read(exported.join("disk.raw")).unwrap(),
@@ -39,6 +39,6 @@ fn export_refuses_while_another_owner_holds_the_selected_pair() {
     let vars = s.write("vars.fd", b"vars");
     let _owner = LockedPair::open(&disk, &vars).unwrap();
     let exported = s.path("external.snapshot");
-    assert!(create_snapshot(&disk, &vars, &exported, "vm", false, 1024).is_err());
+    assert!(create_snapshot(&disk, &vars, &exported, "vm").is_err());
     assert!(!exported.exists());
 }

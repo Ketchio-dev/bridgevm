@@ -212,11 +212,11 @@ fn public_api_and_native_runtime_share_the_selected_pair() {
     let s = Scratch::new("managed-api-runtime");
     let disk = s.write("disk", b"original disk");
     let vars = s.write("vars", b"original vars");
-    let original = create_snapshot(&disk, &vars, &s.path("snap"), "vm", false, 1024).unwrap();
+    let original = create_snapshot(&disk, &vars, &s.path("snap"), "vm").unwrap();
     fs::write(&disk, b"clobbered disk").unwrap();
     fs::write(&vars, b"clobbered vars").unwrap();
     assert_eq!(
-        restore_snapshot(&s.path("snap"), &disk, &vars, false).unwrap(),
+        restore_snapshot(&s.path("snap"), &disk, &vars).unwrap(),
         original
     );
     let mut media = VirtBootMediaConfig::qemu_defaults();
@@ -231,22 +231,22 @@ fn public_api_and_native_runtime_share_the_selected_pair() {
         media.flash_vars.read_bounded(128).unwrap(),
         b"original vars"
     );
-    assert!(create_snapshot(&disk, &vars, &s.path("busy"), "vm", false, 1024).is_err());
+    assert!(create_snapshot(&disk, &vars, &s.path("busy"), "vm").is_err());
     fs::write(&media.nvme_disk.as_ref().unwrap().path, b"guest disk").unwrap();
     runtime
         .persist(RuntimeMediaSlot::Vars, b"guest vars")
         .unwrap();
     drop(runtime);
-    let changed = create_snapshot(&disk, &vars, &s.path("changed"), "vm", false, 1024).unwrap();
+    let changed = create_snapshot(&disk, &vars, &s.path("changed"), "vm").unwrap();
     assert_eq!(fs::read(s.path("changed/disk.raw")).unwrap(), b"guest disk");
     assert_eq!(fs::read(s.path("changed/vars.fd")).unwrap(), b"guest vars");
     assert_ne!(changed.disk_sha256, original.disk_sha256);
     assert_eq!(
-        restore_snapshot(&s.path("snap"), &disk, &vars, false).unwrap(),
+        restore_snapshot(&s.path("snap"), &disk, &vars).unwrap(),
         original
     );
     assert_eq!(
-        create_snapshot(&disk, &vars, &s.path("again"), "vm", false, 1024).unwrap(),
+        create_snapshot(&disk, &vars, &s.path("again"), "vm").unwrap(),
         original
     );
     assert_eq!(fs::read(disk).unwrap(), b"clobbered disk");

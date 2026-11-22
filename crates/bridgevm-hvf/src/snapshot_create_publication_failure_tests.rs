@@ -2,7 +2,7 @@
 
 use crate::snapshot_pair::copy::copy_and_sync;
 use crate::snapshot_pair::creation::stopped::create_stopped;
-use crate::snapshot_pair::snapshot_pair_tests::{Scratch, QUOTA};
+use crate::snapshot_pair::snapshot_pair_tests::Scratch;
 use crate::snapshot_pair::snapshot_publish::publish_with;
 use crate::snapshot_pair::*;
 use std::path::{Path, PathBuf};
@@ -21,16 +21,7 @@ fn create_with(
     publish: impl FnOnce(&Path, &Path) -> io::Result<()>,
 ) -> Result<SnapshotManifest, SnapshotError> {
     let (disk, vars, dest) = (s.path("disk"), s.path("vars"), s.path("snapshot"));
-    create_stopped(
-        &disk,
-        &vars,
-        &dest,
-        vm_id,
-        QUOTA,
-        copy_and_sync,
-        publish,
-        |_| {},
-    )
+    create_stopped(&disk, &vars, &dest, vm_id, copy_and_sync, publish, |_| {})
 }
 
 fn assert_unsupported(result: Result<SnapshotManifest, SnapshotError>) -> String {
@@ -49,7 +40,7 @@ fn fixture(tag: &str) -> (Scratch, PathBuf, PathBuf, SnapshotManifest, Vec<u8>) 
         s.write("vars", b"v"),
         s.path("snapshot"),
     );
-    let old = create_snapshot(&disk, &vars, &dest, "old", false, QUOTA).unwrap();
+    let old = create_snapshot(&disk, &vars, &dest, "old").unwrap();
     fs::write(&disk, b"new").unwrap();
     let manifest = fs::read(dest.join(MANIFEST_NAME)).unwrap();
     let staging = staging_path(&dest);
@@ -77,7 +68,7 @@ fn a_failed_swap_clears_this_attempts_staging_and_a_retry_meets_the_same_error()
         );
         assert_old_kept(&dest, &old, &manifest);
     }
-    let created = create_snapshot(&s.path("disk"), &s.path("vars"), &dest, "vm", false, QUOTA);
+    let created = create_snapshot(&s.path("disk"), &s.path("vars"), &dest, "vm");
     assert_eq!(verify_snapshot(&dest).unwrap(), created.unwrap());
     assert_eq!(fs::read(dest.join(DISK_NAME)).unwrap(), b"new");
 }

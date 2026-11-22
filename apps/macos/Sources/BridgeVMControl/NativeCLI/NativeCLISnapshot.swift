@@ -50,7 +50,7 @@ enum NativeCLISnapshot {
             )
             if operation == .create {
                 plan = try HvfWindowsSnapshotCommand.create(plan: plan, arguments: plan.arguments(for: .create))
-                _ = try HvfWindowsSnapshotCommand.verifyCreated(plan)
+                _ = HvfWindowsSnapshotCommand.nameCreated(plan)
             } else if operation == .delete {
                 try HvfWindowsSnapshotStore.delete(plan.snapshot, bundle: plan.bundle)
             } else {

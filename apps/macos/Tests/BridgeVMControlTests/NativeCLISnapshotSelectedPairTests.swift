@@ -3,13 +3,12 @@ import XCTest
 @testable import BridgeVMControl
 
 /// Uses the shipped Rust helper: restore selects a managed generation without
-/// changing the logical originals, so their sizes must not set the create quota.
-final class NativeCLISnapshotSelectedQuotaTests: XCTestCase {
-    func testOriginalPairCanBeCreatedAndExportedAtItsExactSize() throws {
+/// changing the logical originals, so create and export must capture the selected pair.
+final class NativeCLISnapshotSelectedPairTests: XCTestCase {
+    func testOriginalPairCanBeCreatedAndExported() throws {
         let fixture = try Fixture(saved: .large)
         defer { fixture.remove() }
 
-        try assertQuota(fixture.plan(), equals: "144", export: fixture.output)
         try assertSnapshot(fixture.run(.create), at: fixture.snapshot, matches: .large)
         try assertSnapshot(fixture.export(), at: fixture.output, matches: .large)
         try assertPair(.large, disk: fixture.disk, vars: fixture.vars)
@@ -20,69 +19,27 @@ final class NativeCLISnapshotSelectedQuotaTests: XCTestCase {
         defer { fixture.remove() }
         try assertSnapshot(fixture.run(.create), at: fixture.snapshot, matches: .large)
         try fixture.writeOriginals(.small)
-        let plan = try fixture.plan()
-        try assertQuota(plan, equals: "72", export: fixture.output)
 
         for attempt in 1...3 {
             let restored = fixture.run(.restore)
             XCTAssertTrue(restored.complete, "restore \(attempt): \(restored.unavailableReason ?? "")")
-            // Even a plan formed before restore must size the selected pair now.
-            try assertQuota(plan, equals: "144", export: fixture.output)
             try assertSnapshot(fixture.export(), at: fixture.output, matches: .large)
             try assertSnapshot(fixture.run(.create), at: fixture.snapshot, matches: .large)
             try assertPair(.small, disk: fixture.disk, vars: fixture.vars)
         }
     }
 
-    func testSmallerSelectedPairNeverUsesLargerStaleOriginalsToInflateQuota() throws {
+    func testSmallerSelectedPairIsCapturedInsteadOfLargerStaleOriginals() throws {
         let fixture = try Fixture(saved: .small)
         defer { fixture.remove() }
         try assertSnapshot(fixture.run(.create), at: fixture.snapshot, matches: .small)
         try fixture.writeOriginals(.large)
-        let plan = try fixture.plan()
-        try assertQuota(plan, equals: "144", export: fixture.output)
 
         let restored = fixture.run(.restore)
         XCTAssertTrue(restored.complete, restored.unavailableReason ?? "")
-        try assertQuota(plan, equals: "72", export: fixture.output)
         try assertSnapshot(fixture.export(), at: fixture.output, matches: .small)
         try assertSnapshot(fixture.run(.create), at: fixture.snapshot, matches: .small)
-        try assertQuota(plan, equals: "72", export: fixture.output)
         try assertPair(.large, disk: fixture.disk, vars: fixture.vars)
-    }
-
-    func testPreviouslyCalculatedQuotaStillRejectsALargerNewSelection() throws {
-        let fixture = try Fixture(saved: .large)
-        defer { fixture.remove() }
-        try assertSnapshot(fixture.run(.create), at: fixture.snapshot, matches: .large)
-        try fixture.writeOriginals(.small)
-        let plan = try fixture.plan()
-        let arguments = try plan.arguments(for: .create)
-        XCTAssertEqual(arguments.last, "72")
-        let manifest = fixture.snapshot.appendingPathComponent("manifest.json")
-        let originalManifest = try Data(contentsOf: manifest)
-
-        let restored = fixture.run(.restore)
-        XCTAssertTrue(restored.complete, restored.unavailableReason ?? "")
-        XCTAssertThrowsError(try HvfWindowsSnapshotCommand.invoke(plan.executable, arguments)) { error in
-            XCTAssertTrue(error.localizedDescription.contains("144 bytes, over the 72 byte quota"),
-                          error.localizedDescription)
-        }
-        XCTAssertEqual(try Data(contentsOf: manifest), originalManifest)
-        try assertPair(.large, disk: fixture.snapshot.appendingPathComponent("disk.raw"),
-                       vars: fixture.snapshot.appendingPathComponent("vars.fd"))
-        try assertQuota(plan, equals: "144", export: fixture.output)
-        try assertSnapshot(fixture.export(), at: fixture.output, matches: .large)
-        try assertSnapshot(fixture.run(.create), at: fixture.snapshot, matches: .large)
-        try assertPair(.small, disk: fixture.disk, vars: fixture.vars)
-    }
-
-    private func assertQuota(
-        _ plan: HvfWindowsSnapshotCommand.Plan, equals bytes: String, export output: URL,
-        file: StaticString = #filePath, line: UInt = #line
-    ) throws {
-        XCTAssertEqual(try plan.arguments(for: .create).last, bytes, file: file, line: line)
-        XCTAssertEqual(try plan.createArguments(destination: output).last, bytes, file: file, line: line)
     }
 
     private func assertSnapshot(

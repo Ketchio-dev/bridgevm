@@ -1,5 +1,5 @@
 use crate::snapshot_pair::creation::create_snapshot_using;
-use crate::snapshot_pair::snapshot_pair_tests::{Scratch, QUOTA};
+use crate::snapshot_pair::snapshot_pair_tests::Scratch;
 use crate::snapshot_pair::{
     create_snapshot, staging_path, verify_snapshot, SnapshotError, SnapshotManifest, DISK_NAME,
     MANIFEST_NAME, VARS_NAME,
@@ -57,7 +57,7 @@ fn create_uncopied(
     dest: &Path,
     vm_id: &str,
 ) -> Result<SnapshotManifest, SnapshotError> {
-    create_snapshot_using(disk, vars, dest, vm_id, false, QUOTA, |stage| {
+    create_snapshot_using(disk, vars, dest, vm_id, |stage| {
         panic!("refused only after {stage:?}")
     })
 }
@@ -94,10 +94,10 @@ fn a_previous_snapshot_at_the_same_destination_is_replaced() {
     let s = Scratch::new("admission-replace");
     let (disk, vars) = sources(&s);
     let dest = s.path("snapshot");
-    let old = create_snapshot(&disk, &vars, &dest, "old", false, QUOTA).unwrap();
+    let old = create_snapshot(&disk, &vars, &dest, "old").unwrap();
     fs::write(&disk, b"newer disk").unwrap();
     fs::write(&vars, b"newer vars").unwrap();
-    let new = create_snapshot(&disk, &vars, &dest, "new", false, QUOTA).unwrap();
+    let new = create_snapshot(&disk, &vars, &dest, "new").unwrap();
     assert_ne!(new, old);
     assert_eq!(verify_snapshot(&dest).unwrap(), new);
     assert_eq!(fs::read(dest.join(DISK_NAME)).unwrap(), b"newer disk");
@@ -111,13 +111,13 @@ fn a_previous_snapshot_with_corrupt_bytes_of_the_declared_size_is_replaced() {
     let s = Scratch::new("admission-replace-corrupt");
     let (disk, vars) = sources(&s);
     let dest = s.path("snapshot");
-    create_snapshot(&disk, &vars, &dest, "old", false, QUOTA).unwrap();
+    create_snapshot(&disk, &vars, &dest, "old").unwrap();
     fs::write(dest.join(DISK_NAME), b"XXXXXXXX").unwrap();
     assert!(matches!(
         verify_snapshot(&dest),
         Err(SnapshotError::HashMismatch { .. })
     ));
-    let new = create_snapshot(&disk, &vars, &dest, "new", false, QUOTA).unwrap();
+    let new = create_snapshot(&disk, &vars, &dest, "new").unwrap();
     assert_eq!(verify_snapshot(&dest).unwrap(), new);
     assert!(!staging_path(&dest).exists());
 }
@@ -128,7 +128,7 @@ fn an_empty_existing_directory_is_accepted() {
     let (disk, vars) = sources(&s);
     let dest = s.path("empty");
     fs::create_dir(&dest).unwrap();
-    let created = create_snapshot(&disk, &vars, &dest, "vm", false, QUOTA).unwrap();
+    let created = create_snapshot(&disk, &vars, &dest, "vm").unwrap();
     assert_eq!(verify_snapshot(&dest).unwrap(), created);
     assert!(!staging_path(&dest).exists());
 }
@@ -164,7 +164,7 @@ fn a_previous_snapshot_with_an_extra_entry_is_refused_and_left_intact() {
     let s = Scratch::new("admission-extra");
     let (disk, vars) = sources(&s);
     let dest = s.path("snapshot");
-    let old = create_snapshot(&disk, &vars, &dest, "old", false, QUOTA).unwrap();
+    let old = create_snapshot(&disk, &vars, &dest, "old").unwrap();
     s.write("snapshot/notes.txt", b"user notes");
     let before = tree(&dest);
     let result = create_uncopied(&disk, &vars, &dest, "new");

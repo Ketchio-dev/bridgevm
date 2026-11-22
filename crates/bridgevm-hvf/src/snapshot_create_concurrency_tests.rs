@@ -22,7 +22,7 @@ fn assert_contention(
     let destination = scratch.path("snapshot");
     let old_disk = scratch.write("old-disk", b"old-disk");
     let old_vars = scratch.write("old-vars", b"old-vars");
-    create_snapshot(&old_disk, &old_vars, &destination, "old", false, 1024).unwrap();
+    create_snapshot(&old_disk, &old_vars, &destination, "old").unwrap();
     let second_destination = if parent_case_alias {
         let parent = destination.parent().unwrap();
         let alias_name = parent.file_name().unwrap().to_string_lossy().to_uppercase();
@@ -49,8 +49,6 @@ fn assert_contention(
             &first_vars,
             &first_destination,
             "first",
-            false,
-            1024,
             |stage| {
                 if stage == CreateStage::DiskSynced {
                     first_staged_tx.send(()).unwrap();
@@ -73,8 +71,6 @@ fn assert_contention(
             &second_vars,
             &second_target,
             "second",
-            false,
-            1024,
             |stage| {
                 if stage == CreateStage::DiskSynced {
                     second_staged_tx.send(SecondEvent::DiskSynced).unwrap();

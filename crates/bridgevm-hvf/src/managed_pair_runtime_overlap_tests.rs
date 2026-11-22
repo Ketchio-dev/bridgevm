@@ -44,7 +44,7 @@ fn managed_selection_still_protects_logical_originals() {
     let disk = media.nvme_disk.as_ref().unwrap().path.clone();
     let vars = media.flash_vars.path.clone();
     let snapshot = scratch.path("snapshot");
-    create_snapshot(&disk, &vars, &snapshot, "vm", false, 1024).unwrap();
+    create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
     LockedPair::open(&disk, &vars)
         .unwrap()
         .restore(&snapshot)

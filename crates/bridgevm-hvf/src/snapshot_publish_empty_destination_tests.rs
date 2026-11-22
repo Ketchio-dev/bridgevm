@@ -6,7 +6,7 @@ use crate::snapshot_pair::{create_snapshot, verify_snapshot, SnapshotManifest};
 fn snapshot(scratch: &Scratch, name: &str, bytes: &[u8]) -> SnapshotManifest {
     let disk = scratch.write(&format!("{name}-disk"), bytes);
     let vars = scratch.write(&format!("{name}-vars"), bytes);
-    create_snapshot(&disk, &vars, &scratch.path(name), name, false, 1024).unwrap()
+    create_snapshot(&disk, &vars, &scratch.path(name), name).unwrap()
 }
 
 #[test]

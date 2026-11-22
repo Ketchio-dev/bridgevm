@@ -1,7 +1,7 @@
 use super::*;
 use crate::media_lease::MediaLease;
-use crate::snapshot_pair::snapshot_pair_tests::{Scratch, QUOTA};
-use crate::snapshot_pair::{create_snapshot, managed::LockedPair, restore_snapshot, SnapshotError};
+use crate::snapshot_pair::snapshot_pair_tests::Scratch;
+use crate::snapshot_pair::{create_snapshot, managed::LockedPair, restore_snapshot};
 use std::fs::{self, OpenOptions};
 use std::os::unix::fs::symlink;
 use std::sync::mpsc;
@@ -26,78 +26,22 @@ fn original_pair_sizes_and_logical_aliases_are_supported() {
 }
 
 #[test]
-fn restored_selected_sizes_not_preserved_originals_supply_the_explicit_quota() {
+fn restored_selected_sizes_not_preserved_originals_are_reported_and_exported() {
     let s = Scratch::new("size-restored");
     let disk = s.write("disk", &[1; 144]);
     let vars = s.write("vars", &[2; 17]);
     let snapshot = s.path("snapshot");
-    let original = create_snapshot(&disk, &vars, &snapshot, "vm", false, QUOTA).unwrap();
+    let original = create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
     fs::write(&disk, [3; 72]).unwrap();
     fs::write(&vars, [4; 9]).unwrap();
-    restore_snapshot(&snapshot, &disk, &vars, false).unwrap();
+    restore_snapshot(&snapshot, &disk, &vars).unwrap();
 
     let size = selected_size(&disk, &vars).unwrap();
     assert_eq!((size.disk_bytes, size.vars_bytes), (144, 17));
     assert_eq!(fs::read(&disk).unwrap(), [3; 72]);
     assert_eq!(fs::read(&vars).unwrap(), [4; 9]);
-    let refused = s.path("refused");
-    assert!(matches!(
-        create_snapshot(&disk, &vars, &refused, "vm", false, 72 + 9),
-        Err(SnapshotError::QuotaExceeded {
-            bytes: 161,
-            quota: 81
-        })
-    ));
-    assert!(!refused.exists());
-    let exported = create_snapshot(
-        &disk,
-        &vars,
-        &s.path("exported"),
-        "vm",
-        false,
-        size.disk_bytes + size.vars_bytes,
-    )
-    .unwrap();
+    let exported = create_snapshot(&disk, &vars, &s.path("exported"), "vm").unwrap();
     assert_eq!(exported, original);
-}
-
-#[test]
-fn stale_size_quota_refuses_after_selection_grows_and_preserves_prior_snapshot() {
-    let s = Scratch::new("size-stale-quota");
-    let disk = s.write("disk", &[1; 72]);
-    let vars = s.write("vars", &[2; 8]);
-    let prior = s.path("prior");
-    let previous = create_snapshot(&disk, &vars, &prior, "vm", false, QUOTA).unwrap();
-    let larger_disk = s.write("larger-disk", &[3; 144]);
-    let larger_vars = s.write("larger-vars", &[4; 16]);
-    let larger = s.path("larger");
-    create_snapshot(&larger_disk, &larger_vars, &larger, "vm", false, QUOTA).unwrap();
-
-    let stale = selected_size(&disk, &vars).unwrap();
-    assert_eq!((stale.disk_bytes, stale.vars_bytes), (72, 8));
-    restore_snapshot(&larger, &disk, &vars, false).unwrap();
-    assert!(matches!(
-        create_snapshot(
-            &disk,
-            &vars,
-            &prior,
-            "vm",
-            false,
-            stale.disk_bytes + stale.vars_bytes,
-        ),
-        Err(SnapshotError::QuotaExceeded {
-            bytes: 160,
-            quota: 80
-        })
-    ));
-    assert_eq!(
-        crate::snapshot_pair::verify_snapshot(&prior).unwrap(),
-        previous
-    );
-    assert_eq!(fs::read(&disk).unwrap(), [1; 72]);
-    assert_eq!(fs::read(&vars).unwrap(), [2; 8]);
-    let selected = selected_size(&disk, &vars).unwrap();
-    assert_eq!((selected.disk_bytes, selected.vars_bytes), (144, 16));
 }
 
 #[test]
@@ -106,8 +50,8 @@ fn logical_and_selected_member_leases_refuse_size_until_released() {
     let disk = s.write("disk", b"disk");
     let vars = s.write("vars", b"vars");
     let snapshot = s.path("snapshot");
-    create_snapshot(&disk, &vars, &snapshot, "vm", false, QUOTA).unwrap();
-    restore_snapshot(&snapshot, &disk, &vars, false).unwrap();
+    create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
+    restore_snapshot(&snapshot, &disk, &vars).unwrap();
     let pair = LockedPair::open(&disk, &vars).unwrap();
     assert_eq!(
         selected_size(&disk, &vars).unwrap_err().kind(),
@@ -135,8 +79,8 @@ fn invalid_original_or_selected_member_type_fails_closed() {
             let vars = s.write("vars", b"vars");
             if restored {
                 let snapshot = s.path("snapshot");
-                create_snapshot(&disk, &vars, &snapshot, "vm", false, QUOTA).unwrap();
-                restore_snapshot(&snapshot, &disk, &vars, false).unwrap();
+                create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
+                restore_snapshot(&snapshot, &disk, &vars).unwrap();
             }
             let pair = LockedPair::open(&disk, &vars).unwrap();
             let (selected_disk, selected_vars) = pair.paths().unwrap();

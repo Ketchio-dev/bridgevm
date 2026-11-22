@@ -1,4 +1,4 @@
-use crate::snapshot_pair::snapshot_pair_tests::{Scratch, QUOTA};
+use crate::snapshot_pair::snapshot_pair_tests::Scratch;
 use crate::snapshot_pair::{
     create_snapshot, restore_snapshot, staging_path, verify_snapshot, SnapshotError, DISK_NAME,
     MANIFEST_NAME, VARS_NAME,
@@ -17,7 +17,7 @@ fn malformed_manifests_cannot_authorize_replacement_or_restore() {
         let disk = scratch.write("disk", b"snapshot disk");
         let vars = scratch.write("vars", b"snapshot vars");
         let destination = scratch.path("snapshot");
-        create_snapshot(&disk, &vars, &destination, "vm", false, QUOTA).unwrap();
+        create_snapshot(&disk, &vars, &destination, "vm").unwrap();
         let text = fs::read_to_string(destination.join(MANIFEST_NAME)).unwrap();
         let malformed = match case {
             "version-exponent" => text.replace("\"format_version\": 1", "\"format_version\": 1e2"),
@@ -39,7 +39,7 @@ fn malformed_manifests_cannot_authorize_replacement_or_restore() {
             verify_snapshot(&destination),
             Err(SnapshotError::BadManifest(_))
         ));
-        let replacement = create_snapshot(&disk, &vars, &destination, "new", false, QUOTA);
+        let replacement = create_snapshot(&disk, &vars, &destination, "new");
         let Err(SnapshotError::Io(error)) = replacement else {
             panic!("{case}: replacement accepted malformed snapshot: {replacement:?}");
         };
@@ -47,7 +47,7 @@ fn malformed_manifests_cannot_authorize_replacement_or_restore() {
         assert!(error.to_string().contains("left intact"));
         assert!(!staging_path(&destination).exists());
         assert!(matches!(
-            restore_snapshot(&destination, &disk, &vars, false),
+            restore_snapshot(&destination, &disk, &vars),
             Err(SnapshotError::BadManifest(_))
         ));
         let after = [DISK_NAME, VARS_NAME, MANIFEST_NAME]

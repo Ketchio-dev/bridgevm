@@ -1,7 +1,7 @@
-//! Stage a copied pair within quota before hashing or publishing its manifest.
+//! Stage a copied pair, then hash it and publish its manifest last.
 
-use super::super::manifest_admission::encode;
-use super::super::{quota, stage::CreateStage};
+use super::super::stage::CreateStage;
+use crate::snapshot_pair::manifest_read::MANIFEST_LIMIT;
 use crate::snapshot_pair::{
     sha256_file, sync_dir, write_file_atomically, SnapshotError, SnapshotManifest, DISK_NAME,
     MANIFEST_NAME, SNAPSHOT_FORMAT_VERSION, VARS_NAME,
@@ -13,16 +13,13 @@ pub(super) fn fill(
     [disk, vars]: [&Path; 2],
     staging: &Path,
     vm_id: &str,
-    quota_bytes: u64,
     mut copy: impl FnMut(&Path, &Path) -> io::Result<u64>,
     observe: &mut impl FnMut(CreateStage),
 ) -> Result<SnapshotManifest, SnapshotError> {
     let disk_bytes = copy(disk, &staging.join(DISK_NAME))?;
     observe(CreateStage::DiskSynced);
-    quota::admit(disk_bytes, 0, quota_bytes)?;
     let vars_bytes = copy(vars, &staging.join(VARS_NAME))?;
     observe(CreateStage::VarsSynced);
-    quota::admit(disk_bytes, vars_bytes, quota_bytes)?;
 
     let manifest = SnapshotManifest {
         format_version: SNAPSHOT_FORMAT_VERSION,
@@ -39,3 +36,20 @@ pub(super) fn fill(
     observe(CreateStage::StagingDirectorySynced);
     Ok(manifest)
 }
+
+/// Never publish a manifest the shared reader would refuse.
+fn encode(manifest: &SnapshotManifest) -> Result<String, SnapshotError> {
+    let text = manifest.to_json();
+    if text.len() as u64 > MANIFEST_LIMIT {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "snapshot manifest exceeds the 64 KiB size limit",
+        )
+        .into());
+    }
+    Ok(text)
+}
+
+#[cfg(test)]
+#[path = "snapshot_create_manifest_tests.rs"]
+mod tests;

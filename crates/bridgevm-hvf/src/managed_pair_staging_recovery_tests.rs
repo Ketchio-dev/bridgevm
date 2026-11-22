@@ -30,7 +30,7 @@ fn authenticated_old_stage_does_not_require_the_same_requested_snapshot() {
     let disk = inputs.write("different-disk", b"different snapshot disk");
     let vars = inputs.write("different-vars", b"different snapshot vars");
     let source = fixture.scratch.path("different");
-    let manifest = create_snapshot(&disk, &vars, &source, "different", false, 1024).unwrap();
+    let manifest = create_snapshot(&disk, &vars, &source, "different").unwrap();
     let before = contents(&source);
     let mut pair = fixture.pair();
     assert_eq!(pair.restore(&source).unwrap(), manifest);
@@ -49,7 +49,7 @@ fn legacy_complete_stage_and_real_foreign_export_stay_intact() {
             let inputs = Scratch::new("owned-retry-foreign-inputs");
             let disk = inputs.write("foreign-disk", b"foreign disk");
             let vars = inputs.write("foreign-vars", b"foreign vars");
-            create_snapshot(&disk, &vars, &fixture.stage, "foreign-vm", false, 1024).unwrap();
+            create_snapshot(&disk, &vars, &fixture.stage, "foreign-vm").unwrap();
             // Equivalent private admission to the actual CLI umask077 recipe,
             // without changing the process-wide umask of parallel tests.
             fs::set_permissions(&fixture.stage, fs::Permissions::from_mode(0o700)).unwrap();
