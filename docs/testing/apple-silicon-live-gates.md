@@ -12,7 +12,7 @@ they run, how they are scheduled, and what may leave the machine.
 
 | Work | Where | Why |
 | --- | --- | --- |
-| fmt, clippy, unit/integration tests, MSRV, budgets, docs and capability drift, dependency policy, fuzz smoke, host Venus build | GitHub-hosted Actions in the public repository | Deterministic, no private media, no virtualization |
+| fmt, clippy, unit/integration tests, MSRV, docs and capability drift, dependency policy, fuzz smoke, host Venus build | GitHub-hosted Actions in the public repository | Deterministic, no private media, no virtualization |
 | Bare-metal HVF boots, guest install, GPU/title measurement, reset soaks | The local physical Apple-silicon development Mac, through a local job queue | Requires Hypervisor.framework, a real GPU and private Windows media |
 
 Hosted CI stays authoritative for everything it can run. Moving an ordinary

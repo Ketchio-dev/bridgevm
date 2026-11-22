@@ -233,10 +233,9 @@ Initial message families:
   `fs-freeze` and `fs-thaw`, for the daemon-owned snapshot execution
   scaffold.
 
-Safe MVP smoke coverage lives under `tests/integration/guest-tools-*-cli-smoke.sh`.
-The core alpha surfaces below are part of
-`tests/integration/metadata-safe-smoke-suite.sh`. These smokes use disposable
-stores, local Unix sockets, the Linux tools scaffold, fake QEMU process stubs
+Safe MVP smoke coverage lives under `tests/integration/guest-tools-*-cli-smoke.sh`;
+the table below names the smoke for each core alpha surface. These smokes use
+disposable stores, local Unix sockets, the Linux tools scaffold, fake QEMU process stubs
 where daemon-owned runner metadata is needed, and fake/shadowed host helpers
 for backend primitives such as `fsfreeze`. They must not boot a real guest,
 start a real QEMU or Apple VZ VM, open a GUI console, mutate host networking,

@@ -267,14 +267,6 @@ jobs:
           & $workloadV2 -CompileOnly
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  budgets:
-    name: refactor budgets
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: scripts/check-refactor-budgets.sh
-
   swift:
     # Host the app's largest Swift suites on macOS to catch local-only test gaps.
     name: macOS app suites (${{ matrix.os }})

@@ -138,14 +138,6 @@ tests/integration/hvf-windows-installed-boot-ramfb-display-cadence-smoke.sh
 tests/integration/hvf-runner-installed-boot-launch-policy-smoke.sh
 ```
 
-To run the current metadata/socket-safe subset without a real VM, real QEMU
-backend, Apple VZ launch, host network mutation, real host mount freezing,
-network download, or live opt-in:
-
-```sh
-tests/integration/metadata-safe-smoke-suite.sh
-```
-
 To run the local release-readiness lane that combines Rust formatting, Rust
 workspace tests, macOS Swift tests, local `.app` bundle build/signature
 verification including the default bundled AppleVzRunner helper, clean app
@@ -189,41 +181,6 @@ checks for the app, mounted DMG app, and quarantined DMG app:
 ```sh
 tests/integration/local-release-readiness-suite.sh --with-metadata-smokes --with-gui-launch
 ```
-
-The suite runs `template-create-cli-smoke.sh`, `store-doctor-cli-smoke.sh`,
-`mode-recommendation-cli-smoke.sh`, `windows-arm-qemu-args-cli-smoke.sh`,
-`windows-arm-hvf-plan-cli-smoke.sh`,
-`windows-arm-hvf-runner-cli-smoke.sh`, the HVF machine-plan smokes,
-the HVF host-capabilities and default no-create VM/vCPU/run/memory-map probe smokes,
-the HVF VirtIO block request/file/writable-file/ISO backing smokes,
-`clone-cli-smoke.sh`, `metadata-repair-cli-smoke.sh`,
-`manifest-migration-cli-smoke.sh`, `manifest-schema-cli-smoke.sh`,
-`export-import-cli-smoke.sh`,
-`delete-cli-smoke.sh`, the snapshot metadata/disk/list-restore/suspend/active
-disk maintenance smokes, `displayd-plan-cli-smoke.sh`,
-`networkd-plan-cli-smoke.sh`, the guest-tools MVP and application/window
-smokes, the disk create/inspect/verify/compact smokes,
-`fast-mode-template-boot-media-smoke.sh`,
-`boot-media-download-fake-curl-smoke.sh`, the Fast Mode readiness smokes,
-`fast-mode-readiness-template-matrix-smoke.sh`,
-`readiness-report-cli-smoke.sh`,
-`shared-folder-manifest-cli-smoke.sh`, `port-forward-cli-smoke.sh`,
-`qemu-host-only-cli-smoke.sh`, the QMP control/supervisor smokes,
-`ssh-plan-cli-smoke.sh`, `lifecycle-plan-cli-smoke.sh`,
-`lifecycle-restart-cli-smoke.sh`, `lifecycle-suspend-resume-cli-smoke.sh`,
-`application-consistent-snapshot-cli-smoke.sh`,
-`application-consistent-freeze-thaw-cli-smoke.sh`,
-`application-consistent-fsfreeze-backend-smoke.sh`, `log-viewer-cli-smoke.sh`,
-`diagnostics-cli-smoke.sh`, `performance-cli-smoke.sh`,
-`resource-profile-readiness-smoke.sh`, `runtime-resource-policy-cli-smoke.sh`,
-`vz-display-demo-cli-smoke.sh`, `vz-proxy-crop-evidence-verifier-smoke.sh`,
-the Windows viogpu3d package/build-kit/render-stage smokes,
-`product-gates-report-smoke.sh`,
-`tests/sleep-wake/metadata-baseline-smoke.sh`,
-`apple-vz-live-evidence-verifier-smoke.sh`,
-`qemu-live-evidence-verifier-smoke.sh`, and
-the Apple VZ, QEMU, and guest-tools app/window live opt-in skip smokes
-sequentially and stops at the first failure.
 
 `hvf-windows-viogpu3d-render-stage-smoke.sh` is intentionally parser-only: it
 uses synthetic ARM64 PE headers and a dummy catalog to prove the pinned staging,
@@ -489,30 +446,18 @@ readiness report,
 application-consistent, sleep/wake metadata baseline, and log coverage stay
 inside the same safety boundary.
 
-To answer product-readiness questions without drifting back into percentage
-estimates, run:
-
-```sh
-tests/integration/product-gates-report.sh
-```
-
-The report prints evidence-backed PASS/PARTIAL/BLOCKED/READY gates for Fast/VZ
-GUI display, Coherence-lite, Ubuntu GUI live opt-in prerequisites, networking,
-true Coherence, and public Parallels-replacement readiness. Its smoke test
-asserts that the report contains no numeric completion percentage.
-
-It uses disposable stores, local Unix sockets, the Linux tools scaffold, fake
+These smokes use disposable stores, local Unix sockets, the Linux tools scaffold, fake
 backend stubs or presence markers where daemon-owned runner metadata is
 required, fake QMP/guest-tools sockets, fake/shadowed host helpers for backend
 primitives such as `fsfreeze`, bounded log tails, redacted diagnostic bundles,
 validate-only Apple VZ config planning, and metadata-only or bounded host-side
-disk/performance artifacts. It exercises boot-media download execution only
+disk/performance artifacts. The boot-media download smoke runs only
 through a shadow `curl` that copies a local fixture for a fixed
-`example.invalid` URL and refuses unexpected invocations, so the metadata-safe
-suite records download/result metadata without a real network fetch. It also
-exercises the Apple VZ and QEMU live evidence verifiers
-against synthetic evidence only and checks that the heavy app/window live GUI
-harness skips without explicit opt-in. It does not start a real VM, launch real
+`example.invalid` URL and refuses unexpected invocations, so it records
+download/result metadata without a real network fetch. They also exercise the
+Apple VZ and QEMU live evidence verifiers
+against synthetic evidence only and check that the heavy app/window live GUI
+harness skips without explicit opt-in. They do not start a real VM, launch real
 QEMU or Apple VZ, open a graphical console or host browser/SSH client, run guest
 benchmarks, freeze real host mounts, claim live guest OS state changes, mutate
 live networking, or fetch network artifacts.

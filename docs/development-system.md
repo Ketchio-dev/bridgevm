@@ -34,7 +34,7 @@ observations.
 
 [`AGENTS.md`](../AGENTS.md) holds the binding working rules: the evidence
 hierarchy, the ban on relaxing a criterion to pass it, claim discipline,
-fail-closed security, canonical-image safety, structural budgets, commit and CI
+fail-closed security, canonical-image safety, commit and CI
 discipline, and the execution-venue rules for deterministic checks and live work
 in [§9](../AGENTS.md#9-long-tests-use-the-correct-execution-venue).
 
@@ -202,7 +202,6 @@ in ten.
 bash scripts/check-documentation-system.sh
 cargo test --workspace
 swift test --package-path apps/macos
-tests/integration/product-gates-report.sh
 ```
 
 Run the narrow test first during iteration. The full commands are handoff gates,
@@ -219,9 +218,8 @@ Microsoft ESL payloads, and proves PK-last/idempotent/conflict-safe
 provisioning. It is E2 evidence only; the Windows guest and recovery gates stay
 open until their dated live receipts exist.
 
-The per-file line-count ratchet was removed on 2026-11-02;
-`scripts/check-refactor-budgets.sh` now only lists the largest source files.
-Split a file when that makes it easier to work with, not to satisfy a gate.
+There is no per-file size budget. Split a file when that makes it easier to
+work with, not to satisfy a gate.
 
 ### Gates that defend the gates
 
