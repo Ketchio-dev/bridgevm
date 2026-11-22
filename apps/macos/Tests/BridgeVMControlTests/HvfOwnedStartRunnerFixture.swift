@@ -129,7 +129,7 @@ final class HvfOwnedStartRunnerFixture {
         repeat {
             try? adoptChildren(); session?.poll()
             let child = effects.snapshot.child
-            let noWorker = session?.hasPendingOwnedStart != true
+            let noWorker = session?.hasPendingRuntimeStart != true
             let noRuntime = session?.mayHaveOwnedWork != true
             let exited = child == nil || (child?.isRunning != true && witnesses.count == 2 && witnesses.values.allSatisfy { $0.observe() })
             safe = noWorker && noRuntime && exited

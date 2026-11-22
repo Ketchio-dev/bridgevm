@@ -27,9 +27,9 @@ final class HvfOwnedRunnerCLIFixture {
         let library = try NativeRuntimeLibraryHandle.open(rootURL: root, create: false)
         owner = try NativeRuntimeOwner(library: library)
         router = NativeRuntimeAppControlRouter(appInstanceID: appInstanceID, library: library.identity,
-            validateOwner: { [owner] in try owner.validateCurrentOwnership() }, retainedModel: { [model] in model })
-        try owner.start(controlHandler: { [router] request, context in
-            try await router.handle(request, context: context)
+            retainedModel: { [model] in model })
+        try owner.start(controlHandler: { [router] request, _ in
+            try await router.handle(request)
         }, handler: { [model, appInstanceID] request in
             try await NativeRuntimeAppObservation.response(request, library: library.identity,
                 appInstanceID: appInstanceID, retainedModel: model)

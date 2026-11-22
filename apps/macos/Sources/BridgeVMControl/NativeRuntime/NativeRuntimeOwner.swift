@@ -5,7 +5,6 @@ final class NativeRuntimeOwner: @unchecked Sendable {
     let library: NativeRuntimeLibraryHandle
     let endpoint: NativeRuntimeEndpoint
     private let descriptor: Int32
-    private let lockIdentity: NativeRuntimeFileIdentity
     private let mutex = NSLock()
     private var closed = false
     private var server: NativeRuntimeServer?
@@ -30,7 +29,6 @@ final class NativeRuntimeOwner: @unchecked Sendable {
             try endpoint.validate()
             _ = try endpoint.socketIdentity()
             self.library = library; self.endpoint = endpoint; descriptor = fd
-            lockIdentity = NativeRuntimeFileIdentity(info)
         } catch { Darwin.close(fd); throw error }
     }
     func start(controlHandler: NativeRuntimeRequestRouter.ControlHandler? = nil,
@@ -38,7 +36,6 @@ final class NativeRuntimeOwner: @unchecked Sendable {
                handler: @escaping NativeRuntimeServer.Handler) throws {
         mutex.lock(); defer { mutex.unlock() }
         guard !closed, server == nil else { throw NativeRuntimeError.ownerBusy }
-        try validateLease()
         server = try NativeRuntimeServer(library: library, endpoint: endpoint,
             validateOwner: { [weak self] in
                 guard let self else { throw NativeRuntimeError.ownerUnavailable }
@@ -46,15 +43,11 @@ final class NativeRuntimeOwner: @unchecked Sendable {
             }, controlHandler: controlHandler, startHandler: startHandler, installHandler: installHandler, handler: handler)
     }
 
+    /// The lock file was checked (regular, 0600, ours, one link) when it was locked in `init`, and the
+    /// flock is held for the whole session, so a request only needs the owner to be still open.
     func validateCurrentOwnership() throws {
         mutex.lock(); defer { mutex.unlock() }
         guard !closed else { throw NativeRuntimeError.ownerUnavailable }
-        try validateLease()
-    }
-
-    private func validateLease() throws {
-        try NativeRuntimeOwnerLease.validate(library: library, endpoint: endpoint,
-                                             descriptor: descriptor, identity: lockIdentity)
     }
 
     func close() {

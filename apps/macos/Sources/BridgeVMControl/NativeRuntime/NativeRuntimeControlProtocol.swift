@@ -39,6 +39,7 @@ enum NativeRuntimeStopRefusal: String, Codable, Error, Sendable {
     case notOwned, unsupportedRuntime, operationUnavailable
 }
 
+/// The one stop-failure type, shared by the run controller and the wire.
 enum NativeRuntimeStopFailure: String, Codable, Sendable {
     case protocolInvalid, channelFailed, cleanupUnconfirmed, deadlineExceeded
     case runnerExitedWithoutComplete, cleanupFailed

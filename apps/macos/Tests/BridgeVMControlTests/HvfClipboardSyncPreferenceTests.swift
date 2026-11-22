@@ -57,17 +57,12 @@ final class HvfClipboardSyncPreferenceTests: XCTestCase {
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: current))
         XCTAssertEqual(HvfEngineConfig.libraryVM(current, rootURL: library.rootURL,
             e2eHostDiagnosticStopAdmitted: library.e2eHostDiagnosticStopAdmitted), session.config)
-        session.ownedStartWorker = { _ in .failure(.readiness) }
+        session.guiStartWorker = { _ in .init(result: .failed(.processLaunch, "fixture")) }
         var viewStart = session.config; viewStart.clipboardSync = false
         XCTAssertTrue(session.acceptStartConfiguration(viewStart))
         library.reload()
-        let identity = try NativeRuntimeLibraryHandle.open(rootURL: fixture.root, create: false).identity
-        let request = NativeRuntimeStartRequest(schema: NativeRuntimeStartCodec.requestSchema, operation: .start,
-            requestID: UUID().uuidString, library: identity, vmID: current.slug, appInstanceID: UUID().uuidString,
-            expectedSavedConfigurationDigest: try NativeRuntimeConfigurationIdentity.digest(config: current),
-            operationID: UUID().uuidString)
-        let result = try library.requestOwnedRuntimeStart(request, validateOwner: {}, onReserved: { _ in })
-        guard case let .accepted(ticket) = result else { return XCTFail("CLI start refused: \(result)") }
+        let result = library.requestCLIStart(vmID: current.slug)
+        guard case let .accepted(ticket, _) = result else { return XCTFail("CLI start refused: \(result)") }
         XCTAssertFalse(ticket.configuration.clipboardSync)
         XCTAssertFalse(ticket.configuration.wrapperArguments().contains("--agent-clipboard-sync"))
         try await drain { ticket.workerPending }

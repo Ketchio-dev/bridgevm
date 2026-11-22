@@ -15,7 +15,7 @@ final class NativeRuntimeRequestRoutingTests: XCTestCase {
             XCTFail("start request routed to stop"); throw NativeRuntimeError.invalidMessage
         }, start: { received, _ in
             XCTAssertEqual(received, request)
-            return F.response(received, refusal: .busy)
+            return F.response(received, refusal: .refused, reason: "busy")
         })
         var text = String(decoding: try NativeRuntimeCodec.encode(request), as: UTF8.self)
         text.removeLast()
@@ -24,7 +24,7 @@ final class NativeRuntimeRequestRoutingTests: XCTestCase {
         let reply = try await router.reply(to: Data(text.utf8), context: .init(deadline: NativeRuntimeTransport.now + 1))
         let response = try NativeRuntimeCodec.decode(NativeRuntimeStartResponse.self, from: reply,
                                                      limit: NativeRuntimeCodec.maximumResponseBytes)
-        XCTAssertEqual(response.refusal, .busy)
+        XCTAssertEqual(response.reason, "busy")
     }
 
     func testUnknownSchemaIsRefused() async throws {

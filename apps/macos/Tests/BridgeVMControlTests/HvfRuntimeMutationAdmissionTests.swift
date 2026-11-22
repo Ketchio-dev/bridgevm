@@ -13,10 +13,8 @@ final class HvfRuntimeMutationAdmissionTests: XCTestCase {
             guard session.hasPendingRuntimeMutation else { return }
             XCTAssertNil(session.reserveRuntimeMutation(kind: .snapshot))
             if case .refused = session.start() {} else { XCTFail("UI start overlaps mutation") }
-            let result = session.requestOwnedStart(configuration: f.config, operationID: UUID(),
-                expectedSavedConfigurationDigest: HvfOwnedStartTestSupport.digest,
-                onReserved: { _ in XCTFail("Mutation must refuse before registration") }, revalidate: { true })
-            if case .refused(.mutationActive) = result {} else { XCTFail("CLI start overlaps mutation") }
+            // CLI start is this same GUI start.
+            if case .refused = session.requestGUIStart(configuration: f.config, policy: .requireNew) {} else { XCTFail("CLI start overlaps mutation") }
         }
         defer { observer.cancel() }
         let reservation = try XCTUnwrap(session.reserveRuntimeMutation(kind: .vtpmReset))

@@ -75,13 +75,7 @@ final class HvfGUIStartLibraryTests: XCTestCase {
                 runtimeSessionFactory: { _ in factories += 1; return f.session }, startsModelsAutomatically: false)
             XCTAssertTrue(model.hvfRuntimeSession(for: saved) === f.session)
             let ticket = try f.start(); try await f.wait { gate.state.entered }
-            let identity = try NativeRuntimeLibraryHandle.open(rootURL: root, create: false).identity
-            let request = NativeRuntimeStartRequest(schema: NativeRuntimeStartCodec.requestSchema, operation: .start,
-                requestID: UUID().uuidString, library: identity, vmID: saved.slug, appInstanceID: UUID().uuidString,
-                expectedSavedConfigurationDigest: try NativeRuntimeConfigurationIdentity.digest(config: saved), operationID: UUID().uuidString)
-            XCTAssertThrowsError(try model.requestOwnedRuntimeStart(request, validateOwner: {}, onReserved: { _ in XCTFail("CLI overlaps pending GUI") })) {
-                XCTAssertEqual($0 as? NativeRuntimeStartRefusal, .busy)
-            }
+            guard case .refused = model.requestCLIStart(vmID: saved.slug) else { return XCTFail("CLI overlaps pending GUI") }
             XCTAssertEqual(factories, 1); XCTAssertEqual(f.effects.snapshot.launches, 0)
             gate.release(); try await f.wait { !ticket.workerPending }
         } catch { await f.clean(); throw error }

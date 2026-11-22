@@ -33,20 +33,20 @@ final class HvfOwnedStopPendingStartTests: XCTestCase {
             XCTAssertEqual(repeated["operationID"] as? String, firstOperation)
 
             let session = try XCTUnwrap(runner.session)
-            session.ownedStartWorker = { _ in
+            session.guiStartWorker = { _ in
                 while !gate.isOpen { try? await Task.sleep(nanoseconds: 5_000_000) }
-                return .failure(.readiness)
+                return .init(result: .failed(.processLaunch, "gated fixture start"))
             }
             let admitted = try await start(fixture)
             XCTAssertEqual(admitted.observation?.phase, .preparing, "\(admitted)")
-            XCTAssertTrue(session.hasPendingOwnedStart)
+            XCTAssertTrue(session.hasPendingGUIStart)
             XCTAssertEqual(session.lastOwnedExit?.identity.token.uuidString, target.runToken)
 
             let (pendingExit, pending) = try await fixture.command("stop", pairedRust: false)
             XCTAssertEqual(pendingExit, 1, "Stop must not report run 1 cleanup while a new start is pending: \(pending)")
             XCTAssertEqual(pending["complete"] as? Bool, false)
             XCTAssertEqual(pending["unavailableReason"] as? String, NativeRuntimeStopRefusal.targetUnavailable.rawValue)
-            XCTAssertTrue(session.hasPendingOwnedStart, "A refused stop must not disturb the pending start")
+            XCTAssertTrue(session.hasPendingGUIStart, "A refused stop must not disturb the pending start")
             for operation in [NativeRuntimeControlRequest.Operation.stop, .stopStatus] {
                 let replay = try await control(fixture, operation, operationID: firstOperation, target: target)
                 XCTAssertNil(replay.refusal, "Exact operation replay stays answerable: \(replay)")
@@ -56,10 +56,10 @@ final class HvfOwnedStopPendingStartTests: XCTestCase {
 
             gate.open()
             let deadline = ProcessInfo.processInfo.systemUptime + 5
-            while session.hasPendingOwnedStart, ProcessInfo.processInfo.systemUptime < deadline {
+            while session.hasPendingGUIStart, ProcessInfo.processInfo.systemUptime < deadline {
                 try await Task.sleep(nanoseconds: 10_000_000)
             }
-            XCTAssertFalse(session.hasPendingOwnedStart)
+            XCTAssertFalse(session.hasPendingGUIStart)
             let (afterExit, after) = try await fixture.command("stop", pairedRust: false)
             XCTAssertEqual(afterExit, 0, "Unspawned failed start leaves run 1 as the retained state: \(after)")
             XCTAssertEqual(after["operationID"] as? String, firstOperation)
@@ -94,7 +94,7 @@ final class HvfOwnedStopPendingStartTests: XCTestCase {
     private func start(_ f: HvfOwnedStartCLIFixture) async throws -> NativeRuntimeStartResponse {
         let request = NativeRuntimeStartRequest(schema: NativeRuntimeStartCodec.requestSchema, operation: .start,
             requestID: UUID().uuidString, library: f.library.identity, vmID: f.runner.config.slug,
-            appInstanceID: f.appInstanceID, expectedSavedConfigurationDigest: try NativeRuntimeConfigurationIdentity.digest(config: f.runner.config),
+            appInstanceID: f.appInstanceID,
             operationID: UUID().uuidString)
         let root = f.runner.libraryRoot
         return try await Task.detached { try NativeRuntimeStartClient.query(rootURL: root, request: request) }.value
