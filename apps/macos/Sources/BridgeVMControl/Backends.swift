@@ -34,7 +34,7 @@ struct VMConfig: Codable, Identifiable, Equatable, Sendable {
     var displayHeight: Int
     var startWithBridgeVM: Bool? = nil
     var installPending: Bool? = nil  // true for a freshly-created ISO VM not yet installed
-    var isoPath: String? = nil       // install ISO (Windows / Linux)
+    var isoPath: String? = nil       // Windows install ISO
     var diskPath: String? = nil      // qcow2/raw install target
     var memMiB: Int? = nil
     var cpuCount: Int? = nil

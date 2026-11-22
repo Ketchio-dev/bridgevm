@@ -16,7 +16,7 @@ struct CommandPaletteView: View {
 
     private var commands: [PaletteCommand] {
         var c = library.selectedPaletteCommands { dismiss() }
-        c.append(.init(title: "새 VM 만들기", subtitle: "Ubuntu / Linux ISO / Windows 11", systemImage: "plus") { library.showingCreate = true; dismiss() })
+        c.append(.init(title: "새 VM 만들기", subtitle: "Windows 11", systemImage: "plus") { library.showingCreate = true; dismiss() })
         c.append(.init(title: library.proMode ? "Pro 모드 끄기" : "Pro 모드 켜기", subtitle: "전체 VM 테이블", systemImage: "tablecells") { library.proMode.toggle(); dismiss() })
         for vm in library.vms {
             c.append(.init(title: "이동: \(vm.name)", subtitle: "이 VM 선택", systemImage: "desktopcomputer") {
