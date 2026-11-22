@@ -18,8 +18,6 @@ use std::{
 // below. See docs/decisions/hvf-windows-engine-strategy.md and docs/reference/hvf-windows-platform-contract-gap.md.
 pub mod acpi;
 pub mod acpi_ged;
-pub mod bridgevm_pc_boot_info;
-pub mod bridgevm_pc_gic;
 pub mod checkpoint;
 pub mod disk_import;
 pub mod display_fb;
@@ -42,7 +40,6 @@ pub mod pcie;
 pub mod pflash;
 pub mod pl011;
 pub mod pl031;
-pub mod platform_pc;
 pub mod platform_virt;
 pub mod psci;
 pub mod ramfb;

@@ -63,7 +63,7 @@ run_job() {
         log "job $job_id storage admission refused before source or tier activity"; return 1
     fi
 
-    # t14-bridgevm-pc-windows-start and future tiers are routed by seals, not names.
+    # Sealed-input tiers are routed by seals, not names.
     local tier_args=() manifest="$dir/input-manifest.tsv" sealed_binary="$dir/hvf_gic_boot_probe"
     local expected_manifest actual_manifest expected_binary actual_binary
     expected_manifest="$(awk -F= '$1=="input_manifest_sha256"{print $2}' "$dir/job.env")"
