@@ -77,7 +77,6 @@ Properties the queue must hold:
 | T6 | Three independent PPSSPP + DXVK real-title runs | A3 shipping evidence |
 | T7 | Fixed Windows closure campaign | Combined installed-guest acceptance evidence |
 | T8 | Fixed 20-lane pointer campaign | B4 pointer reliability evidence |
-| T9 | Fixed 20-lane BridgeVM PC firmware campaign | Experimental-board standard UEFI PCI development evidence |
 | T15 | One sealed 4-vCPU 3D-off release boot | Interleavable diagnostic sample for A/A noise and A/B performance comparisons |
 | T16 | Fixed sealed Windows NVMe workload | Preserved v1 STOP plus preregistered v2 A/A calibration; no live v2 result yet |
 | T17 | Packaged Windows-HVF 3D-off product E2E | One-lane diagnostic pilot or fixed three-lane release campaign |
@@ -234,13 +233,6 @@ SIGKILL 2 minutes later if it lands while the cancel's own cleanup runs
 this step again. Earlier T17 receipts reported
 `worker_cleanup_verified` without forgetting these keys.
 T19 seals a packaged app, fixed-identity helper, runner, installed disk, exact 64 MiB vars and symlink-free vTPM tree; each lane imports independent read-only clones through `--windows-import-product-e2e`, runs the full guest journey, reauthenticates canonical inputs, and retains `claim_eligible=false` because A9 also requires T17.
-T9 is deliberately not assigned a product capability criterion. It rebuilds
-the experimental BridgeVM Virtual ARM PC firmware and HVF runner from the
-sealed commit, then requires 20 independent lanes. Every lane owns a fresh
-variable-store file and must pass both a write process and a separate restore
-process, for 40 successful firmware boots. Passing T9 proves only the bounded
-standard UEFI PCI enumeration contract named in its receipt; it does not prove
-BAR operation, DMA, interrupts, Block I/O, GOP, BDS or Windows boot.
 
 ## Foreground wait policy
 

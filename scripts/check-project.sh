@@ -53,11 +53,10 @@ step "tests are reachable" python3 scripts/check-tests-are-reachable.py
 step "virgl integer attributes" scripts/check-virgl-integer-attributes.sh
 step "virtio queue narrowing" scripts/check-virtio-queue-narrowing.sh
 step "HVF boot performance and SMP scaling" bash -c 'tests/integration/hvf-boot-performance-tier-smoke.sh && tests/integration/hvf-smp-scaling-contract.sh && tests/integration/hvf-smp-confirmation-contract.sh'
-step "HVF NVMe tier contracts" bash -c 'tests/integration/hvf-nvme-performance-tier-smoke.sh && tests/integration/bridgevm-pc-nvme-block-live-tier-smoke.sh'
+step "HVF NVMe tier contracts" tests/integration/hvf-nvme-performance-tier-smoke.sh
 step "active IOSurface capture" tests/integration/active-iosurface-capture-smoke.py
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
 step "Windows product and A19 live-tier contracts" bash -c 'tests/integration/windows-product-e2e-contract-smoke.sh && python3 tests/integration/native-snapshot-restore-live-tier-contract.py && python3 tests/integration/native-snapshot-restore-receipt-seal-contract.py && python3 tests/integration/native-snapshot-restore-cli-path-contract.py && python3 tests/integration/native-snapshot-restore-cli-read-contract.py && python3 tests/integration/native-snapshot-restore-cleanup-contract.py && python3 tests/integration/native-snapshot-export-evidence-contract.py && python3 tests/integration/native-snapshot-export-json-contract.py && scripts/check-selected-windows-media-contracts.sh && scripts/check-retained-windows-contracts.sh && python3 tests/integration/hvf-install-staging-contract.py && scripts/check-a19-contracts.sh && scripts/check-d11-fixture.sh'
-step "BridgeVM PC firmware boundary" scripts/check-bridgevm-pc-firmware-boundary.sh
 step "attribution honesty" scripts/check-attribution-honesty.sh
 step "packaged HVF entitlements" bash -c 'scripts/verify-app-hvf-entitlements.sh --self-test && python3 tests/integration/package-publication-contract.py'
 step "install verify" bash -c 'python3 tests/integration/live-installer-dry-run-contract.py && python3 tests/integration/live-installer-launch-contract.py && bash tests/integration/install-verify-smoke.sh && python3 tests/integration/b8-clean-install-tier-contract.py && python3 tests/integration/b8-clean-install-adversarial-contract.py && python3 tests/integration/b8-clean-install-fifo-contract.py'
@@ -69,7 +68,7 @@ else
   step "clippy (venus)" cargo "$TOOLCHAIN" clippy -p bridgevm-hvf --all-targets --features venus --locked -- -D warnings
   step "tests (workspace and portable imports)" bash scripts/check-project-storage.sh "$TOOLCHAIN"
   step "tests (venus lib)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --lib --features venus --locked
-  step "tests (probe example)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --features venus --example hvf_gic_boot_probe --example bridgevm_pc_dxe_entry_live --locked
+  step "tests (probe example)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --features venus --example hvf_gic_boot_probe --locked
   if rustup target list --installed --toolchain "${TOOLCHAIN#+}" 2>/dev/null \
       | grep -q '^aarch64-unknown-linux-gnu$'; then
     step "cross-compile (linux stubs)" cargo "$TOOLCHAIN" check --workspace \

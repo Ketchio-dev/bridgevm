@@ -4,7 +4,7 @@
 //! records through EFI's SMBIOS protocol. Entry-point address and checksum
 //! fields remain zero until firmware places and finalizes the tables.
 
-use crate::machine::{self, bridgevm_pc};
+use crate::machine;
 
 /// fw_cfg file carrying the SMBIOS 3.0 entry point.
 pub const SMBIOS_ANCHOR_FILE: &str = "etc/smbios/smbios-anchor";
@@ -58,28 +58,11 @@ const VIRT_PLATFORM: SmbiosPlatform = SmbiosPlatform {
     max_cpus: machine::MAX_CPUS,
 };
 
-const BRIDGEVM_PC_PLATFORM: SmbiosPlatform = SmbiosPlatform {
-    firmware_vendor: "Ketchio",
-    firmware_version: "BridgeVM Firmware v1",
-    firmware_release_date: "08/30/2026",
-    manufacturer: bridgevm_pc::SMBIOS_MANUFACTURER,
-    product: bridgevm_pc::SMBIOS_PRODUCT,
-    version: "1",
-    family: "BridgeVM Virtual ARM PC",
-    ram_base: bridgevm_pc::RAM_BASE,
-    max_cpus: bridgevm_pc::MAX_CPUS,
-};
-
 /// Build BridgeVM's SMBIOS surface for a `cpu_count`-CPU guest.
 pub fn build_smbios(cpu_count: u64, ram_size: u64) -> SmbiosBlobs {
     build_smbios_for_platform(cpu_count, ram_size, VIRT_PLATFORM)
 }
 
-/// Build the independent BridgeVM Virtual ARM PC v1 SMBIOS surface.
-pub fn build_bridgevm_pc_smbios(cpu_count: u64, ram_size: u64) -> SmbiosBlobs {
-    assert!(bridgevm_pc::ram_region(ram_size).is_some());
-    build_smbios_for_platform(cpu_count, ram_size, BRIDGEVM_PC_PLATFORM)
-}
 fn build_smbios_for_platform(
     cpu_count: u64,
     ram_size: u64,

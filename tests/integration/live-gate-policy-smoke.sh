@@ -9,7 +9,7 @@ RECOVER="$REPO/scripts/live-gates/recover-stale-jobs.sh"
 INSTALL="$REPO/scripts/live-gates/install-studio-queue.sh"
 PLIST="$REPO/scripts/live-gates/com.ketchio.bridgevm-live.plist"
 REDACT="$REPO/scripts/live-gates/redact-receipt.py"; PUBLISH="$REPO/scripts/live-gates/publish-receipt.sh"; FENCE="$REPO/scripts/live-gates/t17-worker-cleanup-fence.sh"
-TIER="$REPO/scripts/live-gates/run-tier.sh"; PC_WINDOWS_TIER="$REPO/scripts/live-gates/run-bridgevm-pc-windows-start-tier.sh"; T17_TIER="$REPO/scripts/live-gates/run-windows-product-e2e-tier.sh"
+TIER="$REPO/scripts/live-gates/run-tier.sh"; T17_TIER="$REPO/scripts/live-gates/run-windows-product-e2e-tier.sh"
 A3_TIER="$REPO/scripts/live-gates/run-a3-title-tier.sh"
 A3_RECEIPT="$REPO/scripts/live-gates/write-a3-title-receipt.py"
 A3_VERIFY="$REPO/scripts/verify-d3d11-title-fps.sh"
@@ -52,7 +52,7 @@ check "the worker is executable" '[ -x "$WORKER" ]'
 check "the stale-job reconciler is executable" '[ -x "$RECOVER" ]'
 check "the installer is executable" '[ -x "$INSTALL" ]'
 check "the redactor is executable" '[ -x "$REDACT" ]'
-check "the tier dispatcher is executable" '[ -x "$TIER" ] && [ -x "$PC_WINDOWS_TIER" ]'
+check "the tier dispatcher is executable" '[ -x "$TIER" ]'
 check "the A3 tier helper is executable" '[ -x "$A3_TIER" ]'
 check "the A3 receipt writer is executable" '[ -x "$A3_RECEIPT" ]'
 check "the A3 payload validator is executable" '[ -x "$A3_PAYLOAD" ] && [ -x "$A3_PAYLOAD_VALIDATOR" ]'
@@ -126,16 +126,16 @@ check "the plist declares no socket" '! grep -q "<key>Sockets</key>" "$PLIST"'
 check "the plist is not a root daemon" '! grep -qi "UserName.*root" "$PLIST"'
 check "the agent and worker clear inherited variables and use the sealed publisher" 'grep -A1 -F "<string>/usr/bin/env</string>" "$PLIST" | grep -Fq "<string>-i</string>" && grep -Fq '\''/usr/bin/env -i HOME="$HOME"'\'' "$WORKER" && grep -Fq '\''source "$REPO/scripts/live-gates/t17-worker-cleanup-fence.sh"'\'' "$WORKER" && grep -Fq '\''bridgevm_worker_publish_receipt "$tier"'\'' "$WORKER" && grep -Fq '\''"$worktree/scripts/live-gates/publish-receipt.sh" "$tier"'\'' "$FENCE" && grep -Fq '\''redact-receipt.py'\'' "$PUBLISH"'
 no_match "no component opens a listening socket" \
-    'nc +-l|socat|LISTEN|bind\(' "$CLI" "$WORKER" "$FENCE" "$TIER" "$PC_WINDOWS_TIER" "$T17_TIER" "$PUBLISH" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
+    'nc +-l|socat|LISTEN|bind\(' "$CLI" "$WORKER" "$FENCE" "$TIER" "$T17_TIER" "$PUBLISH" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
 # Match registration rather than the installer guard's actions-runner name.
 no_match "nothing registers a GitHub runner" \
     'config\.sh +--url|RUNNER_TOKEN|--runnergroup' "$CLI" "$WORKER" "$FENCE" "$INSTALL" "$TIER" "$T17_TIER" "$PUBLISH" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
 check "the installer refuses to sit beside a runner" \
     'grep -q "actions-runner" "$INSTALL"'
 no_match "nothing in the queue path uses sudo" \
-    '^[^#]*\bsudo\b' "$CLI" "$WORKER" "$FENCE" "$INSTALL" "$TIER" "$PC_WINDOWS_TIER" "$T17_TIER" "$PUBLISH" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
+    '^[^#]*\bsudo\b' "$CLI" "$WORKER" "$FENCE" "$INSTALL" "$TIER" "$T17_TIER" "$PUBLISH" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
 check "live receipt, clone and hosted QMP stress policies pass" \
-    'python3 "$A3_RECEIPT" --self-test | grep "PASS" >/dev/null && "$REPO/tests/integration/windows-closure-live-tier-smoke.sh" | grep "PASS" >/dev/null && "$REPO/tests/integration/qmp-stress-live-tier-smoke.sh" | grep "PASS" >/dev/null && "$REPO/tests/integration/audio-teardown-live-tier-smoke.sh" | grep "PASS" >/dev/null && "$REPO/tests/integration/bridgevm-pc-windows-start-live-tier-smoke.sh" | grep "PASS" >/dev/null'
+    'python3 "$A3_RECEIPT" --self-test | grep "PASS" >/dev/null && "$REPO/tests/integration/windows-closure-live-tier-smoke.sh" | grep "PASS" >/dev/null && "$REPO/tests/integration/qmp-stress-live-tier-smoke.sh" | grep "PASS" >/dev/null && "$REPO/tests/integration/audio-teardown-live-tier-smoke.sh" | grep "PASS" >/dev/null'
 check "the A3 payload archive is fail-closed" \
     '"$A3_PAYLOAD" --self-test | grep -q "PASS"'
 check "the A3 payload uses bounded share chunks" \
