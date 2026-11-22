@@ -12,6 +12,38 @@ final class VTPMKeychainAccessTests: XCTestCase {
         XCTAssertEqual(fixture.calls, ["add", "copy"])
     }
 
+    func testAKeyStoredUnderTheOtherNormalizationFormIsFoundAndNotDuplicated() throws {
+        // #689: the keychain matches accounts byte for byte. A Korean VM ID can arrive composed
+        // (vm.json, a copied library) while its key was created decomposed (directory name), or the reverse.
+        let composed = "ISO 드라이버 검증".precomposedStringWithCanonicalMapping
+        let decomposed = composed.decomposedStringWithCanonicalMapping
+        XCTAssertNotEqual(Array(composed.utf8), Array(decomposed.utf8))
+        let key = Data(repeating: 0x5a, count: 32)
+        func accounts(_ fixture: VTPMKeychainFixture) -> [[UInt8]] {
+            fixture.queries.compactMap { $0[kSecAttrAccount as String] as? String }
+                .filter { $0 != "bridgevm-entitlement-probe" }.map { Array($0.utf8) }
+        }
+        for (asked, stored) in [(composed, decomposed), (decomposed, composed)] {
+            let existing = VTPMKeychainFixture(); existing.reads = [(nil, errSecItemNotFound), (key, errSecSuccess)]
+            XCTAssertEqual(try existing.store.existingStateKey(for: asked), key)
+            XCTAssertEqual(accounts(existing), [Array(asked.utf8), Array(stored.utf8)])
+
+            let interactive = VTPMKeychainFixture(); interactive.reads = [(nil, errSecItemNotFound), (key, errSecSuccess)]
+            XCTAssertEqual(try interactive.store.stateKey(for: asked, allowCreation: true), key)
+            XCTAssertFalse(interactive.calls.contains("random"), "a second key was created")
+
+            let deleting = VTPMKeychainFixture()
+            try deleting.store.deleteStateKey(for: asked)
+            XCTAssertEqual(accounts(deleting), [Array(asked.utf8), Array(stored.utf8)], "deleted under both forms")
+        }
+        // Neither form present: still a missing key, and an ASCII ID is looked up once.
+        let missing = VTPMKeychainFixture(); missing.read = (nil, errSecItemNotFound)
+        XCTAssertThrowsError(try missing.store.existingStateKey(for: composed)) {
+            XCTAssertEqual($0 as? VTPMExistingKeyError, .missingKey(.legacySearchList))
+        }
+        XCTAssertEqual(VTPMExistingKeyLookup.forms("win11-typed"), ["win11-typed"])
+    }
+
     func testLegacyRestoresBothInitialPolicyStatesOnReadFailure() {
         for allowed in [false, true] {
             let fixture = VTPMKeychainFixture(); fixture.allowed = allowed; fixture.read = (nil, errSecAuthFailed)

@@ -63,6 +63,17 @@ enum VTPMExistingKeyLookup {
         return account
     }
 
+    /// The account first, then its other Unicode normalization forms. The keychain matches accounts
+    /// byte for byte, and a Korean VM ID taken from a directory name can be decomposed (NFD) where
+    /// vm.json and a copied library hold it composed (NFC), or the other way round (#689). Swift `==`
+    /// treats the forms as equal, so they are told apart by their UTF-8 bytes.
+    static func forms(_ account: String) -> [String] {
+        var forms = [account]
+        for form in [account.precomposedStringWithCanonicalMapping, account.decomposedStringWithCanonicalMapping]
+            where !forms.contains(where: { Array($0.utf8) == Array(form.utf8) }) { forms.append(form) }
+        return forms
+    }
+
     static func query(account: String, backend: VTPMKeychainBackend) -> [CFString: Any] {
         var query: [CFString: Any] = [kSecClass: kSecClassGenericPassword,
             kSecAttrService: KeychainVTPMStateKeyStore.service, kSecAttrAccount: account]
