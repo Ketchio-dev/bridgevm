@@ -53,7 +53,8 @@ can repeat or lose characters. Use clipboard sharing and paste if this occurs.
 
 ## Try BridgeVM
 
-**Host:** Apple silicon and macOS 14+. The declared host matrix is M4/M5;
+**Host:** Apple silicon and macOS 15+ (the engine uses the macOS 15
+Hypervisor.framework GIC). The declared host matrix is M4/M5;
 M1–M3 are not yet covered. The [installation guide](docs/install.md) has the
 terminal installer, the DMG and its one-time Open Anyway step. Source builds
 require Xcode/Swift, Rust 1.85+ and pinned native dependencies; follow the
