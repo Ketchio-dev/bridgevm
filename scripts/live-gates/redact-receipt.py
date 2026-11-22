@@ -112,12 +112,12 @@ def _self_test() -> int:
 
     # Secret-looking values under an allowed key are refused loudly.
     for bad in (
-        "/Users/insighton/BridgeVM/win11.qcow2",
+        "/Users/example/BridgeVM/win11.qcow2",
         "/var/db/bridgevm/OVMF_VARS.fd",
         "swtpm state at /tmp/vtpm",
         "password=hunter2",
         "-----BEGIN RSA PRIVATE KEY-----",
-        "/Users/insighton/secret-notes",
+        "/Users/example/secret-notes",
     ):
         refuses({"image_hash": bad}, f"{bad!r} is refused"); refuses({"render_server_sha256": bad}, "private server identity is refused")
 

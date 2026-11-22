@@ -35,4 +35,5 @@ __pycache__/
 # Local planning docs (untracked)
 GOAL.md
 PLAN.md
+HANDOFF.md
 fuzz/target/

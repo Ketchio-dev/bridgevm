@@ -122,7 +122,7 @@ Three firstboot-flow defects surfaced while driving the runs; all are fixed in
   probe's own appends (closes the 2026-07-19 dual-writer note).
 
 The evidence chain for the 2026-07-20 wall is under
-`/Users/insighton/BridgeVM/runs/venus-activate-120.35-draw-smoke5-*` (final
+`~/BridgeVM/runs/venus-activate-120.35-draw-smoke5-*` (final
 run: stage3 probe PASS, draw smoke gate 34, host trace with the ERR_UNSPEC
 create-blob), with the WinPE asset-refresh injects in the sibling
 `venus-inject-120.35-draw-smoke*` directories.
