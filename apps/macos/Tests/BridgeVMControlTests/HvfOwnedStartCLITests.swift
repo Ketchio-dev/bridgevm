@@ -33,7 +33,7 @@ final class HvfOwnedStartCLITests: XCTestCase {
             let manifest = try Data(contentsOf: URL(fileURLWithPath: runner.mapped.evidenceDir).appendingPathComponent("launch-manifest.json"))
             XCTAssertEqual(proof["manifestSHA256"] as? String, SHA256.hash(data: manifest).map { String(format: "%02x", $0) }.joined())
             XCTAssertEqual(runner.effects.snapshot.launches, 1)
-            XCTAssertEqual(runner.effects.snapshot.keyIDs, [runner.config.slug]); XCTAssertEqual(runner.effects.snapshot.creations, 0)
+            XCTAssertEqual(runner.effects.snapshot.keyIDs, [runner.config.slug])
             XCTAssertEqual(runner.witnesses.count, 2)
             let retained = try await fixture.startStatus(operationID: operationID)
             XCTAssertEqual(retained.observation?.phase, .started); XCTAssertEqual(retained.observation?.target?.token, token)

@@ -22,7 +22,6 @@ enum NativeCLIStopWaiter {
                 operationID: operationID, target: initial.target)
             do {
                 let response = try query(request)
-                try NativeRuntimeControlCodec.validate(response, for: request)
                 guard now() < deadline else { break }
                 last = response
                 if let refusal = response.refusal {

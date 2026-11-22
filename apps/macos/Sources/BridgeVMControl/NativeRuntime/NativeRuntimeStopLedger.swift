@@ -23,8 +23,6 @@ final class NativeRuntimeStopLedger {
 
     func process(_ request: NativeRuntimeControlRequest, retainsTarget: () -> Bool = { true },
                  admit: () throws -> HvfOwnedStopAdmission) throws -> NativeRuntimeControlResponse {
-        try NativeRuntimeControlCodec.validate(request)
-        guard request.library == library else { throw NativeRuntimeError.libraryChanged }
         guard request.target.appInstanceID == appInstanceID else { return reply(request, refusal: .ownerChanged) }
         if let known = records[request.operationID] {
             guard known.vmID == request.vmID, known.target == request.target else {

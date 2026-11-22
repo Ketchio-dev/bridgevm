@@ -7,18 +7,18 @@ import uuid
 
 class NativeRuntimeStartCases:
     def start_request(self, operation="start", operation_id=None):
-        return dict(schema="bridgevm.app-runtime-start-request.v1", operation=operation,
+        # CLI start names only the VM; the app starts its current saved configuration.
+        return dict(schema="bridgevm.app-runtime-start-request.v2", operation=operation,
             requestID=str(uuid.uuid4()).upper(), library=self.identity, vmID="fixture",
             operationID=operation_id or str(uuid.uuid4()).upper(),
-            appInstanceID="A0000000-0000-0000-0000-000000000001",
-            expectedSavedConfigurationDigest="a" * 64)
+            appInstanceID="A0000000-0000-0000-0000-000000000001")
 
     def test_start_stop_and_status_share_one_owned_socket(self):
         with self.owner(mode="start") as (_, control):
             request = self.start_request()
             first = self.control_exchange(request)
             self.assertEqual(first["disposition"], "accepted")
-            self.assertEqual(first["observation"]["deadlineUptime"], 40)
+            self.assertEqual(first["observation"]["phase"], "preparing")
             self.assertNotIn("target", first["observation"])
             request["requestID"] = str(uuid.uuid4()).upper()
             self.assertEqual(self.control_exchange(request)["disposition"], "existing")
@@ -33,7 +33,7 @@ class NativeRuntimeStartCases:
             request = self.start_request()
             payload = json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
             for raw in [payload[:-1], payload.replace(b'"operation":"start"', b'"operation":"stop"'),
-                        payload.replace(b"app-runtime-start-request.v1", b"app-runtime-control-request.v2")]:
+                        payload.replace(b"app-runtime-start-request.v2", b"app-runtime-control-request.v2")]:
                 self.assertIsNone(self.control_exchange(request, raw=raw))
             changed_library = dict(request, library=dict(self.identity, inode=self.identity["inode"] + 1))
             self.assertIsNone(self.control_exchange(changed_library))
@@ -43,8 +43,10 @@ class NativeRuntimeStartCases:
             # Extra fields and formatting from our own CLI are tolerated; the schema still routes it.
             tolerated = b" " + payload[:-1] + b',"processID":123}\n'
             self.assertEqual(self.control_exchange(request, raw=tolerated)["disposition"], "accepted")
-            request["expectedSavedConfigurationDigest"] = "b" * 64
-            self.assertEqual(self.control_exchange(request)["refusal"], "operationConflict")
+            request["vmID"] = "other"
+            refused = self.control_exchange(request)
+            self.assertEqual(refused["refusal"], "refused")
+            self.assertTrue(refused["reason"])
             self.assertEqual(len(list(control.glob("start-admitted-*"))), 1)
 
     def test_unknown_start_status_and_status_only_owner_do_not_admit(self):
@@ -66,7 +68,7 @@ class NativeRuntimeStartCases:
             request["requestID"] = str(uuid.uuid4()).upper()
             result = self.control_exchange(request)
             self.assertEqual(result["disposition"], "status")
-            self.assertEqual(result["observation"]["deadlineUptime"], 40)
+            self.assertEqual(result["observation"]["phase"], "preparing")
             self.assertEqual(len(list(control.glob("start-admitted-*"))), 1)
 
     def test_start_disconnect_keeps_operation_queryable(self):

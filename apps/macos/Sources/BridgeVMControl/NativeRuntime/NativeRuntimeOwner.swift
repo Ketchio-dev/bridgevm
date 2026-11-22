@@ -44,10 +44,12 @@ final class NativeRuntimeOwner: @unchecked Sendable {
     }
 
     /// The lock file was checked (regular, 0600, ours, one link) when it was locked in `init`, and the
-    /// flock is held for the whole session, so a request only needs the owner to be still open.
+    /// flock is held for the whole session, so a request only rechecks that the owner is open and the
+    /// library folder is still the one it owns (it may have been moved or replaced).
     func validateCurrentOwnership() throws {
         mutex.lock(); defer { mutex.unlock() }
         guard !closed else { throw NativeRuntimeError.ownerUnavailable }
+        try library.validateCurrentIdentity()
     }
 
     func close() {

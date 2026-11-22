@@ -36,9 +36,18 @@ cleanup failure, not a protocol error.
 
 The endpoint is selected from the account and the physical library directory
 identity. Its private directories and socket are checked by retained file identity,
-type, owner and mode; peers must have the same effective UID. The owner retains a
-permanent lock file and verifies its lock/socket/library ownership around requests.
-This is a local account ownership boundary, not a remote authentication protocol.
+type, owner and mode; peers must have the same effective UID. The owner checks its
+permanent lock file (regular, 0600, owned by the account, one link) once when it
+takes the `flock`, and holds that lock for the whole app session. Each request is
+decoded and checked once by the server (frame size, schema, library identity, a
+canonical VM ID, the app instance ID); handlers trust it afterwards. This is a
+local account ownership boundary, not a remote authentication protocol.
+
+A start request names only the library, VM ID, app instance and operation ID. The
+app starts the VM's current saved configuration through the GUI start path, so a
+CLI start and a Start click share admission, readiness checks, key handling and
+error text. Refusals carry that path's sentence in `reason`; failures carry it in
+the observation's `failure`.
 
 A stop request binds the library identity, canonical VM ID, app instance UUID,
 run token, retained runner PID and accepted registration digest. That digest
@@ -46,8 +55,7 @@ identifies the source VM registration captured for the session; it is distinct
 from the launch-manifest digest used by the runner. Later registration edits do
 not retarget an accepted run. Missing registrations can still have retained runs.
 
-The MainActor router rechecks cancellation, the connection deadline and current
-owner identity immediately before ledger admission. It uses an existing model
+The MainActor router uses an existing model
 and exact retained session, without creating a model, attaching, scanning for a
 replacement process, or launching the app. Unsupported legacy launches and attached
 observations are refused. Multiple owned candidates are ambiguous. An attached
