@@ -7,18 +7,16 @@ extension HvfEngineSession {
         guard !settingsSheetOpen else {
             return .refused("설정을 완료한 뒤 Windows를 시작하세요.")
         }
+        // The pending flags matter only for a dead run: otherwise hasActiveRuntimeWork includes them.
         guard (!hasActiveRuntimeWork || runnerDiedWithoutCleanup), !hasPendingRuntimeStart,
               !hasPendingRuntimeMutation, !hasRetainedAttachment, !workAdmissionGate.isChecking else {
             return .refused("VM 작업이 진행 중입니다. 완료 후 다시 시도하세요.")
         }
         // A dead run remains a conflict for mutations; this retry reserves first so
         // checkReservedWork excludes only its own session, not another live owner.
+        // Every reservation path refuses while the gate is checking, so state cannot change here.
         if !runnerDiedWithoutCleanup,
            let refusal = workAdmissionGate.check(workAdmission, reportRefusal: true) { return .refused(refusal) }
-        guard (!hasActiveRuntimeWork || runnerDiedWithoutCleanup), !hasPendingRuntimeStart,
-              !hasPendingRuntimeMutation, !hasRetainedAttachment else {
-            return .refused("VM 상태가 변경되었습니다. 다시 시도하세요.")
-        }
         let ticket = HvfGUIStartOperation(configuration: configuration)
         guiStartOperation = ticket
         guiStartCleanupOnly = false

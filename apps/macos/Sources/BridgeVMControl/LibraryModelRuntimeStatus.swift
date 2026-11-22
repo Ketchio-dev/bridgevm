@@ -3,7 +3,9 @@ extension LibraryModel {
     /// Reads existing handles only, including removed registrations retained for control.
     func runtimeObservations(slug: String, requestedConfigurationIdentity: String?) throws
         -> [NativeRuntimeSessionObservation] {
-        let records = try runtimeRecords(slug: slug)
+        let records = runtimeRecords(slug: slug)
+        // The status wire carries at most this many sessions; refuse rather than truncate.
+        guard records.count <= NativeRuntimeCodec.maximumSessions else { throw NativeRuntimeError.snapshotUnavailable }
         return try records.map { record in
             let accepted = try record.sourceConfig.map { try NativeRuntimeConfigurationIdentity.digest(config: $0) }
             let graphics = record.sourceConfig.map { $0.experimental3DAllowed == true ? NativeRuntimeSessionObservation.GraphicsMode.experimental3D : .basic3DOff }

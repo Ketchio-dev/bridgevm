@@ -20,8 +20,7 @@ extension LibraryModel {
     }
 
     func runtimeWorkConflicts(slug: String, excluding reservation: (HvfEngineSession, UUID)?) -> Bool {
-        guard let records = try? runtimeRecords(slug: slug) else { return true }
-        return records.contains { record in
+        runtimeRecords(slug: slug).contains { record in
             if let (session, token) = reservation, record.session === session,
                session.matchesRuntimeReservation(token) { return false }
             return record.session.hasActiveRuntimeWork
