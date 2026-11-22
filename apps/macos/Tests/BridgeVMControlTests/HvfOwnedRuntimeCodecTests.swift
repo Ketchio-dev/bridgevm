@@ -15,43 +15,48 @@ final class HvfOwnedRuntimeCodecTests: XCTestCase {
         try HvfOwnedRuntimeCodec.decode(HvfOwnedRuntimeEvent.self, payload: data(name))
     }
 
-    func testEverySharedGoldenPayloadIsByteExactIncludingExplicitNulls() throws {
+    func testSharedGoldenPayloadsDecodeAndOwnerFramesMatchThem() throws {
         for name in ["hello-no-key", "hello-synthetic-key"] {
             let bytes = try Self.data(name)
             let value = try HvfOwnedRuntimeCodec.decode(HvfOwnedRuntimeHello.self, payload: bytes)
             XCTAssertEqual(try HvfOwnedRuntimeCodec.payload(value), bytes)
         }
-        _ = try HvfOwnedRuntimeCodec.decode(HvfOwnedRuntimeStop.self, payload: Self.data("stop"))
+        let stop = try HvfOwnedRuntimeCodec.decode(HvfOwnedRuntimeStop.self, payload: Self.data("stop"))
+        XCTAssertEqual(try HvfOwnedRuntimeCodec.payload(stop), try Self.data("stop"))
         for name in ["ready", "stop-ack", "swtpm-started", "helper-started", "helper-reaped",
                      "swtpm-reaped", "cleanup-unconfirmed", "complete", "complete-not-admitted"] {
-            let value = try Self.event(name)
-            try HvfOwnedRuntimeEventValidation.validate(value)
-            XCTAssertEqual(try HvfOwnedRuntimeCodec.payload(value), try Self.data(name))
+            try HvfOwnedRuntimeEventValidation.validate(Self.event(name))
         }
     }
 
-    func testDuplicateUnknownOmittedNullBooleanAndNoncanonicalBytesFail() throws {
+    func testRunnerFormattingDifferencesAreAcceptedButWrongTypesAreNot() throws {
         let source = String(decoding: try Self.data("ready"), as: UTF8.self)
-        for invalid in [
-            source.replacingOccurrences(of: "\"schemaVersion\":1", with: "\"schemaVersion\":1,\"schemaVersion\":1"),
-            source.replacingOccurrences(of: "\"schemaVersion\":1", with: "\"schemaVersion\":true"),
-            source.replacingOccurrences(of: "\"schemaVersion\":1", with: "\"schemaVersion\":1.0"),
+        let expected = try Self.event("ready")
+        for tolerated in [
             source.replacingOccurrences(of: "\"child\":null,", with: ""),
-            source.replacingOccurrences(of: "\"child\":null,", with: "\"alien\":null,\"child\":null,"),
-            " " + source, source + "\n"
+            source.replacingOccurrences(of: "\"child\":null,", with: "\"alien\":{\"x\":1},\"child\":null,"),
+            source.replacingOccurrences(of: "\"termMillis\":2000", with: "\"termMillis\":8000"),
+            "{\"sequence\":1," + source.dropFirst().replacingOccurrences(of: "\"sequence\":1,", with: ""),
+            " " + source + "\n"
         ] {
+            let value = try HvfOwnedRuntimeCodec.decode(HvfOwnedRuntimeEvent.self, payload: Data(tolerated.utf8))
+            XCTAssertEqual(value, expected)
+            try HvfOwnedRuntimeEventValidation.validate(value)
+        }
+        for invalid in [source.replacingOccurrences(of: "\"schemaVersion\":1", with: "\"schemaVersion\":true"),
+                        source.replacingOccurrences(of: "\"runnerPID\":1234,", with: ""), String(source.dropLast())] {
             XCTAssertThrowsError(try HvfOwnedRuntimeCodec.decode(HvfOwnedRuntimeEvent.self, payload: Data(invalid.utf8)))
         }
     }
 
     func testFragmentedFramesBoundsAndTwoFrameDrain() throws {
-        let event = try Self.event("ready")
-        let full = try HvfOwnedRuntimeCodec.frame(event)
+        let stop = try HvfOwnedRuntimeCodec.decode(HvfOwnedRuntimeStop.self, payload: Self.data("stop"))
+        let full = try HvfOwnedRuntimeCodec.frame(stop)
         for split in 0..<full.count {
             var buffer = Data(full.prefix(split))
             XCTAssertNil(try HvfOwnedRuntimeCodec.takeFrame(from: &buffer))
             buffer.append(full.dropFirst(split))
-            XCTAssertEqual(try HvfOwnedRuntimeCodec.takeFrame(from: &buffer), try Self.data("ready"))
+            XCTAssertEqual(try HvfOwnedRuntimeCodec.takeFrame(from: &buffer), try Self.data("stop"))
             XCTAssertTrue(buffer.isEmpty)
         }
         var buffer = full + full

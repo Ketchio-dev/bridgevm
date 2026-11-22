@@ -5,18 +5,15 @@ import XCTest
 final class NativeRuntimeStartCodecTests: XCTestCase {
     private typealias F = NativeRuntimeStartTestSupport
 
-    func testStartIsCanonicalAndSeparateFromStatusAndStop() throws {
+    func testStartDecodesTolerantlyAndCarriesNoRunnerIdentity() throws {
         let request = F.request(), data = try NativeRuntimeCodec.encode(request)
         try NativeRuntimeStartCodec.validate(request)
-        XCTAssertEqual(try NativeRuntimeCodec.decode(NativeRuntimeStartRequest.self, from: data, limit: 8192), request)
-        XCTAssertThrowsError(try NativeRuntimeCodec.decode(NativeRuntimeRequest.self, from: data, limit: 8192))
-        XCTAssertThrowsError(try NativeRuntimeCodec.decode(NativeRuntimeControlRequest.self, from: data, limit: 8192))
         let text = String(decoding: data, as: UTF8.self)
-        for raw in [" " + text, String(text.dropLast()) + ",\"target\":{}}",
-                    text.replacingOccurrences(of: "\"operation\":\"start\"", with: "\"operation\":\"start\",\"operation\":\"start\""),
-                    text.replacingOccurrences(of: "\"operation\":\"start\"", with: "\"operation\":\"stop\"")] {
-            XCTAssertThrowsError(try NativeRuntimeCodec.decode(NativeRuntimeStartRequest.self, from: Data(raw.utf8), limit: 8192))
+        for raw in [text, " " + text, String(text.dropLast()) + ",\"target\":{}}"] {
+            XCTAssertEqual(try NativeRuntimeCodec.decode(NativeRuntimeStartRequest.self, from: Data(raw.utf8), limit: 8192), request)
         }
+        let stop = text.replacingOccurrences(of: "\"operation\":\"start\"", with: "\"operation\":\"stop\"")
+        XCTAssertThrowsError(try NativeRuntimeCodec.decode(NativeRuntimeStartRequest.self, from: Data(stop.utf8), limit: 8192))
         XCTAssertFalse(text.contains("processID")); XCTAssertFalse(text.contains("runToken"))
     }
 

@@ -255,7 +255,7 @@ final class HvfOwnedRunController {
 
     private func refresh() {
         guard let operation else { return }
-        if let complete = ledger.complete, complete.failureCode != nil { recordFailure(.cleanupFailed) }
+        if ledger.complete?.failed == true { recordFailure(.cleanupFailed) }
         let phase: HvfOwnedStopPhase
         if failure != nil { phase = .unconfirmed }
         else if teardownConfirmed { phase = .completed }

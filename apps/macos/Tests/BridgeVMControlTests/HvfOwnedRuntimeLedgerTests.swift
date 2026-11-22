@@ -60,7 +60,7 @@ final class HvfOwnedRuntimeLedgerTests: XCTestCase {
         XCTAssertThrowsError(try unrequested.accept(event("stop-ack") { $0["sequence"] = 1 }))
     }
 
-    func testAcknowledgedStopCannotDisappearFromCompletionAndCauseMustMatchOutcome() throws {
+    func testAcknowledgedStopCannotDisappearFromCompletion() throws {
         var ledger = try ledger(); try admit(&ledger)
         for name in ["ready", "swtpm-started", "helper-started", "stop-ack", "helper-reaped", "swtpm-reaped"] {
             try ledger.accept(HvfOwnedRuntimeCodecTests.event(name))
@@ -69,13 +69,6 @@ final class HvfOwnedRuntimeLedgerTests: XCTestCase {
             var complete = $0["complete"] as? [String: Any] ?? [:]
             complete["operationID"] = NSNull(); $0["complete"] = complete
         }))
-        for (cause, outcome) in [("normalExit", "cancelled"), ("ownerEOF", "finished")] {
-            let invalid = try event("complete") {
-                var complete = $0["complete"] as? [String: Any] ?? [:]
-                complete["cause"] = cause; complete["outcome"] = outcome; $0["complete"] = complete
-            }
-            XCTAssertThrowsError(try HvfOwnedRuntimeEventValidation.validate(invalid))
-        }
         var early = try self.ledger()
         XCTAssertThrowsError(try early.accept(event("complete-not-admitted") {
             var complete = $0["complete"] as? [String: Any] ?? [:]

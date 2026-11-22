@@ -1,7 +1,7 @@
-//! Strict v1 DTOs. Secret HELLO deliberately has no Debug implementation.
+//! v1 DTOs. Secret HELLO deliberately has no Debug implementation.
 use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct Hello {
     pub schema_version: u8,
     pub kind: String,
@@ -12,7 +12,7 @@ pub(super) struct Hello {
     pub key_hex: Option<String>,
 }
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct Stop {
     pub schema_version: u8,
     pub kind: String,

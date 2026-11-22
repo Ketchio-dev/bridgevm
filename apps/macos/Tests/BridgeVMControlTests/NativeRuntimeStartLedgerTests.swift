@@ -43,17 +43,32 @@ final class NativeRuntimeStartLedgerTests: XCTestCase {
         XCTAssertEqual(result.observation?.acceptedUptime, 10); XCTAssertEqual(result.observation?.deadlineUptime, 40)
     }
 
-    func testHistoryNeverEvictsAtCapacityIncludingRefusedOutcomes() throws {
-        let ledger = NativeRuntimeStartLedger(appInstanceID: F.app, library: F.library, capacity: 1)
-        let request = F.request()
-        XCTAssertEqual(try ledger.process(request) { _ in throw NativeRuntimeStartRefusal.configurationChanged }.refusal, .configurationChanged)
-        XCTAssertEqual(try ledger.process(F.request(id: request.operationID)) { _ in XCTFail(); return .refused(.busy) }.refusal, .configurationChanged)
-        XCTAssertEqual(try ledger.process(F.request()) { _ in XCTFail(); return .refused(.busy) }.refusal, .ledgerFull)
-        XCTAssertEqual(try ledger.process(F.request(.startStatus, id: request.operationID)) { _ in XCTFail(); return .refused(.busy) }.refusal, .configurationChanged)
+    /// Every CLI start has a fresh operation ID. A full ledger used to refuse every start after 256.
+    func testThreeHundredStartsInOneSessionAreAdmittedAndRecentStatusStillAnswers() throws {
+        let ledger = NativeRuntimeStartLedger(appInstanceID: F.app, library: F.library)
+        let pending = F.request(vmID: "other-vm"), pendingTicket = F.ticket(pending)
+        _ = try ledger.process(pending) { reserve in try reserve(pendingTicket); return .accepted(pendingTicket) }
+        var requests: [NativeRuntimeStartRequest] = []
+        for _ in 0..<300 {
+            let request = F.request(), ticket = F.ticket(request)
+            let response = try ledger.process(request) { reserve in try reserve(ticket); return .accepted(ticket) }
+            XCTAssertEqual(response.disposition, .accepted)
+            ticket.fail(.runnerExited); ticket.finishWorker(target: nil)
+            requests.append(request)
+        }
+        let status = { (request: NativeRuntimeStartRequest) in
+            try ledger.process(F.request(.startStatus, id: request.operationID, vmID: request.vmID)) { _ in
+                XCTFail(); return .refused(.busy)
+            }
+        }
+        XCTAssertEqual(try status(requests[299]).observation?.phase, .failed)
+        XCTAssertEqual(try status(requests[299]).observation?.failure, .runnerExited)
+        XCTAssertEqual(try status(pending).observation?.phase, .preparing, "an unfinished start is never dropped")
+        XCTAssertEqual(try status(requests[0]).refusal, .operationUnknown)
     }
 
     func testUnknownStatusAndOtherOwnerNeverEnterModel() throws {
-        let ledger = NativeRuntimeStartLedger(appInstanceID: F.app, library: F.library, capacity: 1)
+        let ledger = NativeRuntimeStartLedger(appInstanceID: F.app, library: F.library)
         XCTAssertEqual(try ledger.process(F.request(.startStatus)) { _ in XCTFail(); return .refused(.busy) }.refusal, .operationUnknown)
         XCTAssertEqual(try ledger.process(F.request(app: UUID().uuidString)) { _ in XCTFail(); return .refused(.busy) }.refusal, .ownerChanged)
         let request = F.request(), ticket = F.ticket(request)

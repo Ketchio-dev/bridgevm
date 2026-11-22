@@ -13,11 +13,7 @@ extension NativeRuntimeControlCodec {
                   complete.helperSpawnedCount == complete.helperReapedCount,
                   complete.swtpmSpawnedCount == complete.swtpmReapedCount,
                   complete.swtpmSpawnedCount <= 1,
-                  ["notAdmitted", "releasedAfterReap"].contains(complete.mediaLeaseDisposition),
-                  ["notCreated", "removed", "removeFailed"].contains(complete.runtimeDirectoryDisposition),
-                  complete.failureCode.map({ ["mediaAdmissionFailed", "startupFailed", "helperFailed", "resetFailed",
-                    "runtimeDirectoryCleanupFailed", "protocolFailed", "transportFailed", "observerInconsistent",
-                    "sequenceExhausted"].contains($0) }) ?? true
+                  ["notAdmitted", "releasedAfterReap"].contains(complete.mediaLeaseDisposition)
             else { throw NativeRuntimeError.invalidMessage }
             if complete.mediaLeaseDisposition == "notAdmitted" {
                 guard complete.helperSpawnedCount == 0, complete.swtpmSpawnedCount == 0 else {

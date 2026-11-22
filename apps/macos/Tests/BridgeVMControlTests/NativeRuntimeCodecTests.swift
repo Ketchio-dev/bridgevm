@@ -10,16 +10,15 @@ final class NativeRuntimeCodecTests: XCTestCase {
             vmID: "개발-vm", savedConfiguration: saved)
     }
 
-    func testCanonicalRoundTripRefusesUnknownDuplicateAndNullFields() throws {
+    func testRoundTripToleratesFormattingAndUnknownFieldsWithinTheSizeLimit() throws {
         let input = request()
         let bytes = try NativeRuntimeCodec.encode(input)
         XCTAssertEqual(try NativeRuntimeCodec.decode(NativeRuntimeRequest.self, from: bytes, limit: 8192), input)
         let text = String(decoding: bytes, as: UTF8.self)
         let variants = [" " + text, text.replacingOccurrences(of: "{", with: "{\"unknown\":0,", range: text.startIndex..<text.index(after: text.startIndex)),
-            text.replacingOccurrences(of: "\"operation\":\"status\"", with: "\"operation\":\"status\",\"operation\":\"status\""),
             text.replacingOccurrences(of: "\"state\":\"missing\"", with: "\"digest\":null,\"state\":\"missing\"")]
         for value in variants {
-            XCTAssertThrowsError(try NativeRuntimeCodec.decode(NativeRuntimeRequest.self, from: Data(value.utf8), limit: 8192))
+            XCTAssertEqual(try NativeRuntimeCodec.decode(NativeRuntimeRequest.self, from: Data(value.utf8), limit: 8192), input)
         }
         XCTAssertThrowsError(try NativeRuntimeCodec.decode(NativeRuntimeRequest.self, from: bytes, limit: bytes.count - 1))
     }

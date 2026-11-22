@@ -34,7 +34,7 @@ struct NativeRuntimeControlResponse: Codable, Equatable, Sendable {
 }
 
 enum NativeRuntimeStopRefusal: String, Codable, Error, Sendable {
-    case ownerChanged, operationUnknown, operationConflict, ledgerFull
+    case ownerChanged, operationUnknown, operationConflict
     case modelUnavailable, targetUnavailable, ambiguousTarget, configurationChanged
     case notOwned, unsupportedRuntime, operationUnavailable
 }

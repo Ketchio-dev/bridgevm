@@ -8,14 +8,21 @@ final class NativeRuntimeStartLedger {
         var ticket: HvfOwnedStartOperation?
         var refusal: NativeRuntimeStartRefusal?
         var admitting: Bool
+        let serial: Int
+        /// Refused, started, failed or unconfirmed: the CLI's wait has ended, so the record is history.
+        @MainActor var finished: Bool {
+            !admitting && (refusal != nil || ticket.map { ![.preparing, .awaitingStartup].contains($0.observation.phase) } ?? true)
+        }
     }
     private let appInstanceID: String
     private let library: NativeRuntimeLibraryIdentity
-    private let capacity: Int
+    /// Finished records kept for status queries; the oldest are dropped. A start is never refused for history.
+    private let history: Int
     private var records: [String: Record] = [:]
+    private var serial = 0
 
-    init(appInstanceID: String, library: NativeRuntimeLibraryIdentity, capacity: Int = 256) {
-        self.appInstanceID = appInstanceID; self.library = library; self.capacity = capacity
+    init(appInstanceID: String, library: NativeRuntimeLibraryIdentity, history: Int = 256) {
+        self.appInstanceID = appInstanceID; self.library = library; self.history = history
     }
 
     func process(_ request: NativeRuntimeStartRequest,
@@ -31,10 +38,12 @@ final class NativeRuntimeStartLedger {
             return try reply(request, record: known, disposition: request.operation == .startStatus ? .status : .existing)
         }
         if request.operation == .startStatus { return reply(request, refusal: .operationUnknown) }
-        guard records.count < capacity else { return reply(request, refusal: .ledgerFull) }
+        let finished = records.filter { $0.value.finished }.sorted { $0.value.serial < $1.value.serial }
+        for (id, _) in finished.prefix(max(0, finished.count - history + 1)) { records[id] = nil }
         let reentrant = records.values.contains { $0.vmID == request.vmID && $0.admitting }
+        serial += 1
         records[request.operationID] = .init(vmID: request.vmID, digest: request.expectedSavedConfigurationDigest,
-            ticket: nil, refusal: reentrant ? .busy : nil, admitting: !reentrant)
+            ticket: nil, refusal: reentrant ? .busy : nil, admitting: !reentrant, serial: serial)
         if reentrant { return reply(request, refusal: .busy) }
         do {
             let admission = try admit { ticket in try self.reserve(ticket, for: request) }

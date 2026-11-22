@@ -3,8 +3,6 @@ import Foundation
 struct HvfOwnedRuntimeReady: Codable, Equatable, Sendable {
     let manifestSHA256: String
     let generation: UInt64
-    let termMillis: UInt64
-    let killReapMillis: UInt64
 }
 
 struct HvfOwnedRuntimeStopAck: Codable, Equatable, Sendable {
@@ -43,4 +41,6 @@ struct HvfOwnedRuntimeComplete: Codable, Equatable, Sendable {
     let swtpm: HvfOwnedRuntimeRoleSummary
     let mediaLeaseDisposition: String
     let runtimeDirectoryDisposition: String
+    /// A failure code, a failed outcome or a kept runtime directory, whatever the runner names it.
+    var failed: Bool { failureCode != nil || outcome == "failed" || runtimeDirectoryDisposition == "removeFailed" }
 }
