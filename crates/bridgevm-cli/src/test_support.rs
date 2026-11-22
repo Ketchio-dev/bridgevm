@@ -2,18 +2,6 @@
 
 pub(crate) use crate::*;
 
-pub(crate) fn unique_store(prefix: &str) -> VmStore {
-    let mut root = std::env::temp_dir();
-    root.push(format!(
-        "{prefix}-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    VmStore::new(root)
-}
-
 pub(crate) fn unique_trace_path(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     path.push(format!(
@@ -25,19 +13,6 @@ pub(crate) fn unique_trace_path(prefix: &str) -> PathBuf {
             .as_nanos()
     ));
     path
-}
-
-pub(crate) fn test_manifest(name: &str) -> VmManifest {
-    VmManifest::new(
-        name,
-        VmMode::Fast,
-        Guest {
-            os: "ubuntu".to_string(),
-            version: None,
-            arch: "arm64".to_string(),
-        },
-        "80GiB",
-    )
 }
 
 pub(crate) fn complete_virtio_gpu_trace_sample() -> &'static str {
