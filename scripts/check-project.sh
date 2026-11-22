@@ -60,16 +60,9 @@ if [[ $FAST -eq 1 ]]; then
 else
   step "clippy (workspace)" cargo "$TOOLCHAIN" clippy --workspace --all-targets --locked -- -D warnings
   step "clippy (venus)" cargo "$TOOLCHAIN" clippy -p bridgevm-hvf --all-targets --features venus --locked -- -D warnings
-  step "tests (workspace and portable imports)" bash scripts/check-project-storage.sh "$TOOLCHAIN"
+  step "tests (workspace)" cargo "$TOOLCHAIN" test --workspace --locked
   step "tests (venus lib)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --lib --features venus --locked
   step "tests (probe example)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --features venus --example hvf_gic_boot_probe --locked
-  if rustup target list --installed --toolchain "${TOOLCHAIN#+}" 2>/dev/null \
-      | grep -q '^aarch64-unknown-linux-gnu$'; then
-    step "cross-compile (linux stubs)" cargo "$TOOLCHAIN" check --workspace \
-      --target aarch64-unknown-linux-gnu --locked
-  else
-    printf 'cross-compile (linux stubs): SKIP (target not installed)\n'
-  fi
 
   source "$ROOT/scripts/check-project-macos.sh"
 fi

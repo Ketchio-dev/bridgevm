@@ -23,11 +23,9 @@ running app still retains.
 `app` namespace. `bridgevm app --help` and each subcommand's `--help` work without
 finding or opening the installed app.
 
-The older root commands, such as `bridgevm --store PATH list`, use a separate
-`manifest.yaml` store. `--store` and `--socket` are rejected for `bridgevm app`
-before a store is opened or a daemon connection is attempted. `bridgevm hvf`
-continues to expose local queries and explicitly enabled probes; it does not
-replace native library inventory commands.
+`bridgevm app` and `bridgevm hvf` are the only top-level commands. `bridgevm hvf`
+exposes local queries, explicitly enabled probes and the virtio-gpu trace and
+title-gate reports; it does not replace native library inventory commands.
 See [native app diagnostics](app-cli-doctor.md) for read-only executable discovery checks.
 For guest commands, keyboard/mouse input and framebuffer captures from a source
 checkout, see the [development VM control CLI](vmctl.md).

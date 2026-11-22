@@ -731,11 +731,7 @@
       "evidence_paths": [
         "docs/windows-arm/evidence/b10-qmp-stress-hosted-20260902.md",
         "docs/windows-arm/evidence/b10-qmp-stress-receipt-20260902.json",
-        "docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md",
-        ".github/workflows/qmp-stress.yml",
-        "scripts/live-gates/run-qmp-stress-tier.sh",
-        "scripts/live-gates/qmp_stress_contract.py",
-        "scripts/live-gates/verify-qmp-stress.py"
+        "docs/windows-arm/evidence/post-1.0-hardening-audit-20260820.md"
       ]
     }
   ]

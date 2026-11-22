@@ -68,12 +68,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
-name = "bitflags"
-version = "2.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
-
-[[package]]
 name = "block-buffer"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -83,106 +77,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "bridgevm-agent-protocol"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "bridgevm-agentd"
-version = "0.1.0"
-dependencies = [
- "bridgevm-agent-protocol",
- "serde_json",
-]
-
-[[package]]
-name = "bridgevm-api"
-version = "0.1.0"
-dependencies = [
- "bridgevm-agent-protocol",
- "bridgevm-agentd",
- "bridgevm-apple-vz",
- "bridgevm-config",
- "bridgevm-core",
- "bridgevm-network",
- "bridgevm-qemu",
- "bridgevm-resource-manager",
- "bridgevm-storage",
- "hex",
- "libc",
- "serde",
- "serde_json",
- "sha2",
-]
-
-[[package]]
-name = "bridgevm-apple-vz"
-version = "0.1.0"
-dependencies = [
- "bridgevm-config",
- "bridgevm-network",
- "bridgevm-resource-manager",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
 name = "bridgevm-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bridgevm-agent-protocol",
- "bridgevm-api",
- "bridgevm-apple-vz",
- "bridgevm-config",
- "bridgevm-core",
  "bridgevm-hvf",
- "bridgevm-qemu",
- "bridgevm-storage",
  "clap",
  "hex",
  "libc",
  "serde_json",
  "sha2",
-]
-
-[[package]]
-name = "bridgevm-config"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_yaml",
- "thiserror",
-]
-
-[[package]]
-name = "bridgevm-core"
-version = "0.1.0"
-dependencies = [
- "bridgevm-config",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "bridgevm-daemon"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bridgevm-agent-protocol",
- "bridgevm-agentd",
- "bridgevm-api",
- "bridgevm-apple-vz",
- "bridgevm-config",
- "bridgevm-qemu",
- "bridgevm-storage",
- "clap",
- "libc",
- "serde_json",
 ]
 
 [[package]]
@@ -211,59 +115,6 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "sha2",
-]
-
-[[package]]
-name = "bridgevm-network"
-version = "0.1.0"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "bridgevm-qemu"
-version = "0.1.0"
-dependencies = [
- "bridgevm-config",
- "bridgevm-network",
- "bridgevm-resource-manager",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "bridgevm-resource-manager"
-version = "0.1.0"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "bridgevm-storage"
-version = "0.1.0"
-dependencies = [
- "bridgevm-config",
- "bridgevm-media",
- "bridgevm-qemu",
- "libc",
- "serde",
- "serde_json",
- "serde_yaml",
- "tar",
- "thiserror",
-]
-
-[[package]]
-name = "bridgevm-tools-linux"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bridgevm-agent-protocol",
- "bridgevm-agentd",
- "clap",
- "libc",
- "serde_json",
 ]
 
 [[package]]
@@ -364,55 +215,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "displayd"
-version = "0.1.0"
-dependencies = [
- "clap",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "equivalent"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
-
-[[package]]
-name = "errno"
-version = "0.3.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
-dependencies = [
- "libc",
- "windows-sys",
-]
-
-[[package]]
-name = "filetime"
-version = "0.2.29"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759"
-dependencies = [
- "cfg-if",
- "libc",
-]
-
-[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
-
-[[package]]
-name = "fullvm-runner"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bridgevm-qemu",
- "bridgevm-storage",
- "clap",
-]
 
 [[package]]
 name = "generator"
@@ -428,12 +234,6 @@ dependencies = [
  "windows-link",
  "windows-result",
 ]
-
-[[package]]
-name = "hashbrown"
-version = "0.17.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "heck"
@@ -471,16 +271,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "indexmap"
-version = "2.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
-dependencies = [
- "equivalent",
- "hashbrown",
-]
-
-[[package]]
 name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -503,24 +293,6 @@ name = "libc"
 version = "0.2.190"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce5d3ddc6d3fa000eb1536d85e147bfe31aacaba692ed6a876f95cb7c855be78"
-
-[[package]]
-name = "lightvm-runner"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bridgevm-apple-vz",
- "bridgevm-config",
- "bridgevm-storage",
- "clap",
- "serde_json",
-]
-
-[[package]]
-name = "linux-raw-sys"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "log"
@@ -555,16 +327,6 @@ name = "memchr"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
-
-[[package]]
-name = "networkd"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bridgevm-network",
- "clap",
- "serde_json",
-]
 
 [[package]]
 name = "nu-ansi-term"
@@ -629,29 +391,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
-name = "rustix"
-version = "1.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190"
-dependencies = [
- "bitflags",
- "errno",
- "libc",
- "linux-raw-sys",
- "windows-sys",
-]
-
-[[package]]
 name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
-
-[[package]]
-name = "ryu"
-version = "1.0.23"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "scoped-tls"
@@ -703,19 +446,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_yaml"
-version = "0.9.34+deprecated"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
-dependencies = [
- "indexmap",
- "itoa",
- "ryu",
- "serde",
- "unsafe-libyaml",
-]
-
-[[package]]
 name = "sha2"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -762,37 +492,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "tar"
-version = "0.4.46"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840"
-dependencies = [
- "filetime",
- "libc",
- "xattr",
-]
-
-[[package]]
-name = "thiserror"
-version = "2.0.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e"
-dependencies = [
- "thiserror-impl",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "2.0.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -866,12 +565,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
-name = "unsafe-libyaml"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
-
-[[package]]
 name = "utf8parse"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -905,16 +598,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
  "windows-link",
-]
-
-[[package]]
-name = "xattr"
-version = "1.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
-dependencies = [
- "libc",
- "rustix",
 ]
 
 [[package]]

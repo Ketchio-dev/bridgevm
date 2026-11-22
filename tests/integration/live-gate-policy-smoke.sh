@@ -124,8 +124,8 @@ check "the installer refuses to sit beside a runner" \
     'grep -q "actions-runner" "$INSTALL"'
 no_match "nothing in the queue path uses sudo" \
     '^[^#]*\bsudo\b' "$CLI" "$WORKER" "$FENCE" "$INSTALL" "$TIER" "$T17_TIER" "$PUBLISH"
-check "live receipt and hosted QMP stress policies pass" \
-    '"$REPO/tests/integration/qmp-stress-live-tier-smoke.sh" | grep "PASS" >/dev/null && "$REPO/tests/integration/audio-teardown-live-tier-smoke.sh" | grep "PASS" >/dev/null'
+check "live receipt policies pass" \
+    '"$REPO/tests/integration/audio-teardown-live-tier-smoke.sh" | grep "PASS" >/dev/null'
 check "the installed boot runner explicitly forwards the diagnostic request" 'grep -q '\''BRIDGEVM_HOST_DIAGNOSTIC_STOP_REQUEST='\'' "$BOOT_RUNNER"'
 check "disk-harvest suppression fails closed for fresh title logs" \
     'grep -q "cannot be combined with title gates" "$REPO/scripts/run-hvf-windows-installed-boot-args.sh"'
