@@ -72,5 +72,5 @@ UTM의 AI 기여 조항은 UTM에 기여할 때의 규칙이다. 이 조사 자�
 이는 위 관찰과 BridgeVM의 기존 규칙을 종합한 우리의 제안이며, QEMU/UTM이
 동일한 순서나 동일한 보존 정책을 사용한다는 진술은 아니다.
 
-실제 운영 절차는 [실험 보존 절차](experiment-retention.md), 이번 수행 결과는
+이번 수행 결과는
 [2026-09-06 기록](../history/windows-hvf/experiment-storage-cleanup-20260906.md)을 참조한다.

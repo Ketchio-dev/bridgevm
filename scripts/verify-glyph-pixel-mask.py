@@ -2,7 +2,7 @@
 """Compare exactly against reviewed reference RGB pixels; not a B6 campaign pass.
 Callers must prove reference correctness, effective DPI, independent live runs,
 presentation freshness and frame time; candidate/background agreement is not proof.
-Review strokes and guards. A mask covers one scene; verify-b6-cell.py requires all three.
+Review strokes and guards. A mask covers one scene.
 Mask JSON: {"reference_sha256": .., "regions": {"caption": {"box": [x,y,w,h],
 "pixels": [i, ..]}, ..}}.
 """

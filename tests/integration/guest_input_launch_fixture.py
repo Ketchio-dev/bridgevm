@@ -25,7 +25,7 @@ def module(name):
 
 
 def run_case(base, kind, failure, preflight=False, existing_work=False):
-    runner = module("run-guest-input-live.py" if kind == "d5" else "run-b9-real-workload-pilot.py")
+    runner = module("run-guest-input-live.py")
     source = base / "source"
     source.write_bytes(b"fixture")
     digest = hashlib.sha256(b"fixture").hexdigest()

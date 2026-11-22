@@ -21,13 +21,6 @@ PROBE = ROOT / "crates/bridgevm-hvf/examples/hvf_gic_boot_probe"
 SWIFT = ROOT / "apps/macos/Sources/BridgeVMProductE2E"
 LIVE_GATES = ROOT / "scripts/live-gates"
 sys.path.insert(0, str(LIVE_GATES))
-from b9_real_workload_receipt import validate_private  # noqa: E402
-
-SPEC = importlib.util.spec_from_file_location(
-    "b9_pilot_fixture", ROOT / "tests/integration/b9-real-workload-pilot-contract.py")
-assert SPEC is not None and SPEC.loader is not None
-PILOT = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(PILOT)
 RETIRED = ("stop: PSCI SYSTEM_OFF", "stop: PSCI SYSTEM_OFF (system off)")
 
 
@@ -77,27 +70,8 @@ class HvfStopLineContract(unittest.TestCase):
                      "T17InstallTimeoutDiagnostic.swift"):
             self.assertIn("HvfStopLine.systemOff", swift[name], name)
         self.assertIn("HvfStopLine.systemResetPrefix", swift["T17FirstBootDiagnostic.swift"])
-        for name in ("windows_product_e2e_guest_evidence.py", "b9_raw_focus_order.py",
-                     "hvf_guest_shutdown.py"):
+        for name in ("windows_product_e2e_guest_evidence.py", "hvf_guest_shutdown.py"):
             self.assertIn("hvf_stop_line", python[name], name)
-
-    def test_b9_raw_order_requires_the_exact_stop_record(self):
-        case = PILOT.B9PilotContract("test_raw_pid_capture_receipt_and_public_no_claim")
-        case.setUp()
-        self.addCleanup(case.doCleanups)
-        diagnostic, receipt = case.fixture()
-        log = diagnostic / "raw/guest/run.log"
-        original = log.read_bytes()
-        self.assertIn(f"===\n{self.off}\n".encode(), original)
-        validate_private(receipt, case.job, diagnostic)
-        for stop in (*RETIRED, self.off + " extra", "guest " + self.off):
-            raw = original.replace(self.off.encode(), stop.encode())
-            log.write_bytes(raw)
-            receipt["private_artifacts"]["run.log"] = {
-                "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
-            with self.assertRaisesRegex(ValueError, "order differs", msg=stop):
-                validate_private(receipt, case.job, diagnostic)
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

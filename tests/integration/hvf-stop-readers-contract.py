@@ -201,21 +201,6 @@ class StopReadersContract(unittest.TestCase):
                          f"printf '{observation}' > \"$(host_pause_resume_observation_path)\"; "
                          "write_host_pause_resume_gate", "host-pause-resume-gate.txt")
 
-    def test_nvme_performance_tiers(self):
-        for name in ("run-hvf-nvme-performance-v1-tier.sh", "run-hvf-nvme-performance-v2-tier.sh"):
-            lines = (LIVE_GATES / name).read_text(encoding="utf-8").splitlines()
-            checks = [line for line in lines
-                      if line.startswith('python3 "$REPO/scripts/live-gates/hvf_terminal_evidence.py" --require-system-off ')]
-            self.assertEqual(len(checks), 1, name)
-            check = checks[0]
-            self.assertIn('"$BOOT/run.log" || { INVALID_REASON=', check, name)
-
-            def reader(directory: Path, check: str = check) -> bool:
-                return subprocess.run(["bash", "-c", f'set -u; REPO="$1"; BOOT="$2"; INVALID_REASON=; {check}',
-                                       "tier", str(ROOT), str(directory)], timeout=30).returncode == 0
-            with self.subTest(name):
-                self.assert_binds(reader)
-
     def test_snapshot_lifecycle_shutdown(self):
         def reader(directory: Path) -> bool:
             script = ('source "$1/scripts/snapshot-restore-lifecycle.sh"\nSTEP_TIMEOUT=2\n'

@@ -234,7 +234,6 @@ describes was observed, not anticipated.
 | `scripts/check-swift-force-casts.py` | `try!` and `as!` crash the app instead of surfacing an error, and a hardcoded home path picks a file the user never chose. |
 | `scripts/check-python-scripts.py` | A syntax error in a Python gate surfaces only when something runs it, which for a gate can be days later. |
 | `scripts/check-workflow-yaml.py` | A workflow that does not parse does not run, and a deleted job leaves no trace in a green result. |
-| `scripts/check-capability-evidence.py` | A criterion's cited evidence did not contain the figures it was cited for. |
 | `scripts/check-supply-chain.sh` | A git or path dependency would put code outside the locked registry into a release. |
 | `scripts/check-fuzz-smoke.sh` | Without it the parser corpus only runs where `cargo fuzz` is installed, making the seeds decoration. |
 | `scripts/check-loom.sh` | A `--cfg loom` typo compiles every interleaving model to nothing and passes. |

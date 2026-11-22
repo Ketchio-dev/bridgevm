@@ -196,22 +196,6 @@ class HostMediaReadersContract(unittest.TestCase):
                 return False
         self.assert_binds(reader)
 
-    def test_nvme_performance_tiers(self):
-        for name in ("run-hvf-nvme-performance-v1-tier.sh", "run-hvf-nvme-performance-v2-tier.sh"):
-            lines = (LIVE_GATES / name).read_text(encoding="utf-8").splitlines()
-            stop = [index for index, line in enumerate(lines) if '--require-system-off "$BOOT/run.log"' in line]
-            self.assertEqual(len(stop), 1, name)
-            check = lines[stop[0] + 1]
-            self.assertIn('"$BOOT/run.log" || { INVALID_REASON=', check, name)
-
-            def reader(directory: Path, check: str = check) -> bool:
-                return subprocess.run(["bash", "-c", f'set -u; REPO="$1"; BOOT="$2"; INVALID_REASON=; {check}',
-                                       "tier", str(ROOT), str(directory)], capture_output=True,
-                                      timeout=30).returncode == 0
-            with self.subTest(name):
-                self.assert_binds(reader)
-                self.assertEqual(sum("written back" in line for line in lines), 0, name)
-
     def runner_gate(self, setup: str, output: str) -> None:
         def reader(directory: Path) -> bool:
             script = ('set -euo pipefail; source scripts/run-hvf-windows-installed-boot-runner.sh; EVIDENCE_DIR="$1"; '
