@@ -7,11 +7,7 @@ fn top_level_help_lists_app_and_own_hvf_routes() {
     let fixture = Fixture::new();
     for flag in ["--help", "-h"] {
         let help = fixture.help(&[flag]);
-        for expected in [
-            "bridgevm app list",
-            "bridgevm hvf host-capabilities",
-            "bridgevm hvf machine-plan",
-        ] {
+        for expected in ["bridgevm app list", "bridgevm hvf virtio-gpu-trace-report"] {
             assert!(help.contains(expected), "Missing {expected}: {help}");
         }
         assert!(
@@ -22,13 +18,11 @@ fn top_level_help_lists_app_and_own_hvf_routes() {
 }
 
 #[test]
-fn hvf_help_and_parser_preserve_explicit_opt_ins() {
+fn hvf_help_lists_the_reports_and_rejects_unknown_options() {
     let fixture = Fixture::new();
     let help = fixture.help(&["hvf", "--help"]);
-    assert!(help.contains("local-only queries and opt-in probes"));
-    assert!(help.contains("host-capabilities") && help.contains("vm-probe"));
-    let probe = fixture.help(&["hvf", "vm-probe", "--allow-create", "--help"]);
-    assert!(probe.contains("--allow-create"));
+    assert!(help.contains("local-only"));
+    assert!(help.contains("virtio-gpu-trace-report") && help.contains("title-gate-report"));
     for command in ["virtio-gpu-trace-report", "title-gate-report"] {
         assert!(fixture
             .help(&["hvf", command, "--help"])
@@ -37,8 +31,9 @@ fn hvf_help_and_parser_preserve_explicit_opt_ins() {
     for args in [
         &["start"][..],
         &["list"][..],
-        &["--store", "/nonexistent", "hvf", "host-capabilities"][..],
-        &["hvf", "vm-probe", "--not-a-real-option"][..],
+        &["--store", "/nonexistent", "hvf", "virtio-gpu-trace-report"][..],
+        &["hvf", "vm-probe"][..],
+        &["hvf", "virtio-gpu-trace-report", "--not-a-real-option"][..],
     ] {
         let output = fixture.invoke(args);
         assert_eq!(output.status.code(), Some(2), "Parser contract: {args:?}");

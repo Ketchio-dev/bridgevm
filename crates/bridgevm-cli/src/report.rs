@@ -1,6 +1,4 @@
-//! Small JSON and environment helpers shared by the hvf report commands.
-
-use crate::*;
+//! Small JSON helpers shared by the hvf report commands.
 
 pub(crate) fn json_bool(value: &serde_json::Value, key: &str) -> Option<bool> {
     match value.get(key)? {
@@ -35,14 +33,4 @@ pub(crate) fn hex_option(value: Option<u64>) -> String {
     value
         .map(|value| format!("{value:#x}"))
         .unwrap_or_else(|| "missing".to_string())
-}
-
-pub(crate) fn env_truthy(name: &str) -> bool {
-    match env::var(name) {
-        Ok(value) => matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        ),
-        Err(_) => false,
-    }
 }
