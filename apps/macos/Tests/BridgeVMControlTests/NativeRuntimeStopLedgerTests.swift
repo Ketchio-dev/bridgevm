@@ -23,7 +23,7 @@ final class NativeRuntimeStopLedgerTests: XCTestCase {
             XCTAssertEqual(result.observation?.operationID, request.operationID)
         }
         let changed = Fixture.request(id: request.operationID, vmID: "other-vm")
-        XCTAssertEqual(try ledger.process(changed) { XCTFail("conflict mutated"); return .accepted(operation) }.refusal, .operationConflict)
+        XCTAssertEqual(try ledger.process(changed) { XCTFail("conflict mutated"); return .accepted(operation) }.reason, NativeRuntimeStopRefused.operationConflict.reason)
         XCTAssertEqual(admissions, 1)
     }
 
@@ -34,7 +34,7 @@ final class NativeRuntimeStopLedgerTests: XCTestCase {
             let nested = try ledger.process(Fixture.request(id: request.operationID)) {
                 XCTFail("reentrant admission"); return .accepted(operation)
             }
-            XCTAssertEqual(nested.refusal, .operationUnavailable)
+            XCTAssertEqual(nested.reason, NativeRuntimeStopRefused.operationUnavailable.reason)
             return .accepted(operation)
         }
         operation.update(phase: .unconfirmed, complete: nil, exit: nil, failure: .cleanupUnconfirmed)
@@ -76,7 +76,7 @@ final class NativeRuntimeStopLedgerTests: XCTestCase {
         let changed = Fixture.request(target: .init(appInstanceID: UUID().uuidString, runToken: Fixture.token,
             processID: 123, acceptedConfigurationDigest: Fixture.target.acceptedConfigurationDigest))
         XCTAssertEqual(try ledger.process(changed) { XCTFail(); return .refused(.notOwned) }.refusal, .ownerChanged)
-        XCTAssertEqual(try ledger.process(request) { .refused(.supervisionUnavailable) }.refusal, .unsupportedRuntime)
+        XCTAssertEqual(try ledger.process(request) { .refused(.supervisionUnavailable) }.reason, NativeRuntimeStopRefused.unsupportedRuntime.reason)
         XCTAssertEqual(try ledger.process(request) { .accepted(self.ticket(request)) }.disposition, .accepted)
     }
 }

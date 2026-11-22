@@ -20,7 +20,7 @@ final class NativeCLIStopTargetTests: XCTestCase {
         XCTAssertEqual(try NativeCLIRuntimeStop.selectTarget(response([historic])), Fixture.target)
         for sessions in [[attached], [historic, attached], [attached, historic]] {
             XCTAssertThrowsError(try NativeCLIRuntimeStop.selectTarget(response(sessions))) {
-                XCTAssertEqual($0 as? NativeRuntimeStopRefusal, .unsupportedRuntime)
+                XCTAssertEqual($0 as? NativeRuntimeStopRefused, .unsupportedRuntime)
             }
         }
         XCTAssertThrowsError(try NativeCLIRuntimeStop.selectTarget(response([historic, historic])))

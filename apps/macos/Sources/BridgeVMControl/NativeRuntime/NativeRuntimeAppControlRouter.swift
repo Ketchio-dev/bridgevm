@@ -14,7 +14,7 @@ final class NativeRuntimeAppControlRouter {
     func handle(_ request: NativeRuntimeControlRequest) throws -> NativeRuntimeControlResponse {
         guard NativeLibraryReader.isCanonicalID(request.vmID) else { throw NativeRuntimeError.invalidMessage }
         return try ledger.process(request, retainsTarget: { retainedModel()?.retainsOwnedStopTarget(request) ?? true }) {
-            guard let model = retainedModel() else { throw NativeRuntimeStopRefusal.modelUnavailable }
+            guard let model = retainedModel() else { throw NativeRuntimeStopRefused.modelUnavailable }
             return try model.requestOwnedRuntimeStop(request)
         }
     }

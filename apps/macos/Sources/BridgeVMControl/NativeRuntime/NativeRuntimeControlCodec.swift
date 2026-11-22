@@ -1,8 +1,8 @@
 import Foundation
 
 enum NativeRuntimeControlCodec {
-    static let requestSchema = "bridgevm.app-runtime-control-request.v2"
-    static let responseSchema = "bridgevm.app-runtime-control.v2"
+    static let requestSchema = "bridgevm.app-runtime-control-request.v3"
+    static let responseSchema = "bridgevm.app-runtime-control.v3"
     static let scope = "app-owned-runtime-control"
 
     static func validate(_ request: NativeRuntimeControlRequest) throws {

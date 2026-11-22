@@ -7,7 +7,7 @@ import uuid
 
 class NativeRuntimeControlCases:
     def control_request(self, operation="stop", operation_id=None):
-        return dict(schema="bridgevm.app-runtime-control-request.v2", operation=operation,
+        return dict(schema="bridgevm.app-runtime-control-request.v3", operation=operation,
             requestID=str(uuid.uuid4()).upper(), library=self.identity, vmID="fixture",
             operationID=operation_id or str(uuid.uuid4()).upper(),
             target=dict(appInstanceID="A0000000-0000-0000-0000-000000000001",

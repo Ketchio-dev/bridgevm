@@ -45,7 +45,7 @@ final class HvfOwnedStopPendingStartTests: XCTestCase {
             let (pendingExit, pending) = try await fixture.command("stop", pairedRust: false)
             XCTAssertEqual(pendingExit, 1, "Stop must not report run 1 cleanup while a new start is pending: \(pending)")
             XCTAssertEqual(pending["complete"] as? Bool, false)
-            XCTAssertEqual(pending["unavailableReason"] as? String, NativeRuntimeStopRefusal.targetUnavailable.rawValue)
+            XCTAssertEqual(pending["unavailableReason"] as? String, NativeRuntimeStopRefused.targetUnavailable.reason)
             XCTAssertTrue(session.hasPendingGUIStart, "A refused stop must not disturb the pending start")
             for operation in [NativeRuntimeControlRequest.Operation.stop, .stopStatus] {
                 let replay = try await control(fixture, operation, operationID: firstOperation, target: target)
@@ -77,9 +77,9 @@ final class HvfOwnedStopPendingStartTests: XCTestCase {
         XCTAssertEqual(try ledger.process(request) { .accepted(ticket) }.disposition, .accepted)
         var admissions = 0
         let fresh = try ledger.process(Fixture.request(), retainsTarget: { false }) {
-            admissions += 1; throw NativeRuntimeStopRefusal.targetUnavailable
+            admissions += 1; throw NativeRuntimeStopRefused.targetUnavailable
         }
-        XCTAssertEqual(fresh.refusal, .targetUnavailable); XCTAssertEqual(admissions, 1)
+        XCTAssertEqual(fresh.reason, NativeRuntimeStopRefused.targetUnavailable.reason); XCTAssertEqual(admissions, 1)
         for operation in [NativeRuntimeControlRequest.Operation.stop, .stopStatus] {
             let replay = try ledger.process(Fixture.request(operation, id: request.operationID), retainsTarget: {
                 XCTFail("exact replay consulted current state"); return false

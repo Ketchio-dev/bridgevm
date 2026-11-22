@@ -35,7 +35,7 @@ final class LibraryStartupAdmissionTests: XCTestCase {
             requestID: UUID().uuidString, library: identity, vmID: "missing",
             savedConfiguration: .init(state: .missing, digest: nil))
         XCTAssertEqual(try starts.handle(startRequest).reason?.contains("라이브러리"), true)
-        XCTAssertEqual(try stops.handle(stopRequest).refusal, .modelUnavailable)
+        XCTAssertEqual(try stops.handle(stopRequest).reason, NativeRuntimeStopRefused.modelUnavailable.reason)
         XCTAssertEqual(try installs.handle(installRequest).refusal, .modelUnavailable)
         XCTAssertThrowsError(try NativeRuntimeAppObservation.response(statusRequest, library: identity,
             appInstanceID: app, retainedModel: retained())) { XCTAssertEqual($0 as? NativeRuntimeError, .snapshotUnavailable) }
@@ -45,7 +45,7 @@ final class LibraryStartupAdmissionTests: XCTestCase {
         // Existing protocol semantics: a refused start ID stays refused; stop/install are re-evaluated.
         XCTAssertEqual(try starts.handle(startRequest).reason?.contains("라이브러리"), true)
         XCTAssertEqual(try starts.handle(start()).reason?.contains("missing"), true)
-        XCTAssertEqual(try stops.handle(stopRequest).refusal, .targetUnavailable)
+        XCTAssertEqual(try stops.handle(stopRequest).reason, NativeRuntimeStopRefused.targetUnavailable.reason)
         XCTAssertEqual(try installs.handle(installRequest).refusal, .targetUnavailable)
         XCTAssertTrue(try NativeRuntimeAppObservation.response(statusRequest, library: identity,
             appInstanceID: app, retainedModel: retained()).sessions.isEmpty)

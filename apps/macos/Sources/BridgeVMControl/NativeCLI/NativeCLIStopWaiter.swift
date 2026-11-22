@@ -27,7 +27,9 @@ enum NativeCLIStopWaiter {
                 if let refusal = response.refusal {
                     if refusal == .operationUnknown, operation == .stopStatus, !admissionKnown {
                         operation = .stop
-                    } else { return Result(operationID: operationID, response: response, failure: refusal.rawValue) }
+                    } else {
+                        return Result(operationID: operationID, response: response, failure: response.reason ?? refusal.rawValue)
+                    }
                 } else if let observation = response.observation {
                     admissionKnown = true
                     operationID = observation.operationID

@@ -43,16 +43,18 @@ The CLI keeps one overall 210-second waiting deadline and retries a lost respons
 with the same target and operation ID. Individual exchanges have a two-second
 deadline. Repeating `stop` while the same run remains retained returns its
 existing operation, including a completed one. Disconnecting the CLI does not
-cancel an admitted stop. The app keeps at most 256 operation records during its
-lifetime and refuses new admissions at capacity; existing records remain
-queryable. Restarting the app does not restore old operation tickets.
+cancel an admitted stop. The app keeps the newest 256 finished operation records
+for status queries; operations still in progress are always kept. Restarting the
+app does not restore old operation tickets. A refused stop prints one plain
+sentence saying why and what to do (for example that the VM is not running in
+the app, or that the app only observes it).
 
 The JSON result includes `schema`, `scope`, `vmID`, `libraryPath`, `target`,
 `operationID`, `complete`, `observation`, and `unavailableReason`; absent optional
 values may be omitted. The observation carries the stop phase, deadlines,
 supervisor cleanup counts and lease disposition, retained runner exit, and any
 failure. The existing status protocol remains version 1; stop control uses a
-separate strict version 2 message on the same private endpoint.
+separate version 3 message on the same private endpoint.
 
 Exit codes are 0 for confirmed cleanup, 1 for unavailable/refused/unconfirmed
 results, and 2 for invalid usage. See [CLI start](app-cli-start.md) for startup.

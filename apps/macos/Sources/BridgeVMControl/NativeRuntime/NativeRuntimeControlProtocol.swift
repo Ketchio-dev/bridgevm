@@ -31,12 +31,30 @@ struct NativeRuntimeControlResponse: Codable, Equatable, Sendable {
     let disposition: Disposition
     let observation: NativeRuntimeStopObservation?
     let refusal: NativeRuntimeStopRefusal?
+    /// One plain sentence for the user when the stop was refused.
+    let reason: String?
 }
 
-enum NativeRuntimeStopRefusal: String, Codable, Error, Sendable {
-    case ownerChanged, operationUnknown, operationConflict
-    case modelUnavailable, targetUnavailable, ambiguousTarget, configurationChanged
-    case notOwned, unsupportedRuntime, operationUnavailable
+/// The CLI only tells these apart: a restarted app, a status query for an unknown operation, and
+/// every other refusal, whose `reason` sentence is printed as is.
+enum NativeRuntimeStopRefusal: String, Codable, Sendable {
+    case ownerChanged, operationUnknown, refused
+}
+
+/// A stop the app or the CLI will not do, with the sentence the CLI prints.
+struct NativeRuntimeStopRefused: Error, Equatable, Sendable {
+    let reason: String
+    static let ownerChanged = Self(reason: "The BridgeVM app restarted since this VM started; run the command again.")
+    static let operationUnknown = Self(reason: "The app has no record of this stop; run the command again.")
+    static let operationConflict = Self(reason: "This stop operation belongs to another run; run the command again.")
+    static let operationUnavailable = Self(reason: "The app is still accepting this stop; run the command again.")
+    static let modelUnavailable = Self(reason: "The app's VM library is not open yet; open the library window and try again.")
+    static let targetUnavailable = Self(reason: "This VM is not running in the app; check `bridgevm app status`.")
+    static let ambiguousTarget = Self(reason: "The app keeps more than one run of this VM; stop it from the app's VM window.")
+    static let configurationChanged = Self(reason: "The app did not report this run's identity; run the command again.")
+    static let unsupportedRuntime = Self(reason: "The app only observes this VM and cannot stop it; stop it from the app's VM window.")
+    static let stopInProgress = Self(reason: "Another stop of this VM is in progress; wait for it to finish.")
+    static let notOwned = Self(reason: "The app no longer owns this run; check `bridgevm app status`.")
 }
 
 /// The one stop-failure type, shared by the run controller and the wire.
