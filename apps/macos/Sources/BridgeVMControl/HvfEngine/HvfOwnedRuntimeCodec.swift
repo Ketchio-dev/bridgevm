@@ -14,16 +14,12 @@ enum HvfOwnedRuntimeCodec {
         return data
     }
 
-    static func decode<T: Codable>(_ type: T.Type, payload data: Data) throws -> T {
+    /// The runner is our own binary: unknown fields, key order and spacing are not errors.
+    static func decode<T: Decodable>(_ type: T.Type, payload data: Data) throws -> T {
         guard !data.isEmpty, data.count <= maximumPayload else {
             throw HvfOwnedRuntimeProtocolError.invalidFrame
         }
-        do {
-            let value = try JSONDecoder().decode(type, from: data)
-            // Enforces required explicit nulls, exact keys, canonical scalars, and no duplicate keys.
-            guard try payload(value) == data else { throw HvfOwnedRuntimeProtocolError.invalidMessage }
-            return value
-        } catch { throw HvfOwnedRuntimeProtocolError.invalidMessage }
+        do { return try JSONDecoder().decode(type, from: data) } catch { throw HvfOwnedRuntimeProtocolError.invalidMessage }
     }
 
     static func frame<T: Encodable>(_ value: T) throws -> Data {

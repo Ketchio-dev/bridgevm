@@ -28,7 +28,7 @@ struct NativeRuntimeStartResponse: Codable, Equatable, Sendable {
 }
 
 enum NativeRuntimeStartRefusal: String, Codable, Error, Sendable {
-    case ownerChanged, operationUnknown, operationConflict, operationUnavailable, ledgerFull
+    case ownerChanged, operationUnknown, operationConflict, operationUnavailable
     case modelUnavailable, targetUnavailable, ambiguousTarget, configurationChanged, unsupportedRuntime
     case busy, runtimeActive, mutationActive, configurationMismatch, admissionRefused
 }

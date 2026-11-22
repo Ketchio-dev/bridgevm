@@ -23,12 +23,14 @@ same endpoint. The command result `bridgevm.app-stop.v1` is a separate CLI envel
 The runner mode is `--owned-runtime-stdio`; protocol stdout carries framed events.
 
 Both transports prefix each JSON payload with its four-byte big-endian length.
-Decoders compare the payload with its canonical re-encoding: reordered keys,
-whitespace, duplicate or unknown fields, and noncanonical values are rejected.
-Runner payloads use ASCII, lowercase UUIDs and explicit nulls for optional fields;
-outer app messages use canonical uppercase UUIDs and their Swift encoder's shape.
-Neither protocol is newline-delimited JSON. Inner events permit exactly one
-payload matching `kind`, and unknown kinds fail validation.
+Both ends are BridgeVM binaries, so decoders ignore unknown fields, key order
+and spacing; the size limits still apply. The app routes a request by its
+`schema` field. Runner payloads use ASCII and lowercase UUIDs; outer app messages
+use canonical uppercase UUIDs. Neither protocol is newline-delimited JSON. Inner
+events permit exactly one payload matching `kind`, and unknown kinds fail
+validation. Run token, runner PID, sequence and the lifecycle are checked
+exactly; a failure code, cause or reason the app does not know is reported as a
+cleanup failure, not a protocol error.
 
 ## App admission and durable operations
 
@@ -57,8 +59,10 @@ target is refused. A fresh ID for the same retained target returns the canonical
 existing operation ID, which subsequent `stopStatus` requests must use.
 Tickets remain queryable after client disconnect, model removal or later session
 replacement. They live only in that app instance; no restart recovery is implied.
-An unknown `stopStatus` never creates an operation. Capacity refusal never evicts
-an existing ticket, and a reentrant request during reservation has no extra effect.
+An unknown `stopStatus` never creates an operation, and a reentrant request during
+reservation has no extra effect. The start and stop ledgers keep the newest 256
+finished operations for status queries and drop older finished ones; operations
+still in progress are always kept, and history never refuses a new request.
 
 ## Runner identity and cleanup evidence
 
@@ -68,7 +72,7 @@ For encrypted TPM state, the key is carried only in this initial pipe message;
 it is not an argument, environment value, outer response or diagnostic field.
 The committed golden key fixture is synthetic test data, not operational state.
 
-`ready` repeats the digest and declares the cancellation timing. Runner events
+`ready` repeats the digest; its cancellation timing is informational. Runner events
 carry the run token, runner PID and contiguous sequence numbers starting at one.
 The app rejects a wrong identity, sequence gap, duplicate terminal event or event
 after `complete`. Helper child identities include their reset generation;
@@ -135,7 +139,7 @@ for that cancellation only when its complete cleanup proof satisfies every condi
 | --- | --- |
 | App request / response payload | 8,192 / 65,536 bytes; v1 status at most 32 sessions |
 | App exchanges | 2 seconds each; four admitted connection slots, retained until handler and I/O finish |
-| App ledger | 256 operations per app instance; retained records are not evicted |
+| App ledger | Newest 256 finished operations per app instance; in-progress ones are always kept |
 | Guest grace / final observation | Up to 180 + 12 monotonic seconds; cancellation can shorten, never extend, the deadline |
 | CLI wait | One 210-second monotonic deadline including initial status; individual exchanges keep their 2-second bound |
 | Runner payload / event buffers | 8,192 bytes; Rust queue plus in-flight frame at most 32; Swift event buffer 32 |

@@ -1,4 +1,5 @@
-//! Canonical bytes reject duplicates, missing nulls, unknown fields and loose spellings.
+//! The app is our own binary: unknown fields, key order and spacing are not errors. The
+//! fields that bind a run (token, sequence, digest, key) are still checked exactly.
 use super::dto::{Hello, Stop};
 use serde::{de::DeserializeOwned, Serialize};
 use std::io;
@@ -14,15 +15,11 @@ pub(super) fn encode<T: Serialize>(value: &T) -> io::Result<Vec<u8>> {
     }
     Ok(bytes)
 }
-pub(super) fn decode<T: DeserializeOwned + Serialize>(bytes: &[u8]) -> io::Result<T> {
-    if bytes.is_empty() || bytes.len() > MAX_FRAME || !bytes.is_ascii() {
+pub(super) fn decode<T: DeserializeOwned>(bytes: &[u8]) -> io::Result<T> {
+    if bytes.is_empty() || bytes.len() > MAX_FRAME {
         return Err(invalid());
     }
-    let value: T = serde_json::from_slice(bytes).map_err(|_| invalid())?;
-    if encode(&value)? != bytes {
-        return Err(invalid());
-    }
-    Ok(value)
+    serde_json::from_slice(bytes).map_err(|_| invalid())
 }
 pub(super) fn hex(value: &str, length: usize) -> bool {
     value.len() == length

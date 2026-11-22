@@ -32,8 +32,7 @@ class NativeRuntimeStartCases:
         with self.owner(mode="start") as (_, control):
             request = self.start_request()
             payload = json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
-            for raw in [b" " + payload, payload[:-1] + b',"processID":123}',
-                        payload.replace(b'"operation":"start"', b'"operation":"start","operation":"start"'),
+            for raw in [payload[:-1], payload.replace(b'"operation":"start"', b'"operation":"stop"'),
                         payload.replace(b"app-runtime-start-request.v1", b"app-runtime-control-request.v2")]:
                 self.assertIsNone(self.control_exchange(request, raw=raw))
             changed_library = dict(request, library=dict(self.identity, inode=self.identity["inode"] + 1))
@@ -41,7 +40,9 @@ class NativeRuntimeStartCases:
             changed_owner = dict(request, appInstanceID=str(uuid.uuid4()).upper())
             self.assertEqual(self.control_exchange(changed_owner)["refusal"], "ownerChanged")
             self.assertEqual(list(control.glob("start-admitted-*")), [])
-            self.assertEqual(self.control_exchange(request)["disposition"], "accepted")
+            # Extra fields and formatting from our own CLI are tolerated; the schema still routes it.
+            tolerated = b" " + payload[:-1] + b',"processID":123}\n'
+            self.assertEqual(self.control_exchange(request, raw=tolerated)["disposition"], "accepted")
             request["expectedSavedConfigurationDigest"] = "b" * 64
             self.assertEqual(self.control_exchange(request)["refusal"], "operationConflict")
             self.assertEqual(len(list(control.glob("start-admitted-*"))), 1)

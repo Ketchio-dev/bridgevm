@@ -6,14 +6,19 @@ final class NativeRuntimeStopLedger {
         let vmID: String
         let target: NativeRuntimeStopTarget
         let ticket: HvfOwnedStopOperation?
+        let serial: Int
+        /// Completed or unconfirmed: the CLI's wait has ended, so the record is history.
+        @MainActor var finished: Bool { ticket.map { [.completed, .unconfirmed].contains($0.observation.phase) } ?? false }
     }
     private let appInstanceID: String
     private let library: NativeRuntimeLibraryIdentity
-    private let capacity: Int
+    /// Finished records kept for status queries; the oldest are dropped. A stop is never refused for history.
+    private let history: Int
     private var records: [String: Record] = [:]
+    private var serial = 0
 
-    init(appInstanceID: String, library: NativeRuntimeLibraryIdentity, capacity: Int = 256) {
-        self.appInstanceID = appInstanceID; self.library = library; self.capacity = capacity
+    init(appInstanceID: String, library: NativeRuntimeLibraryIdentity, history: Int = 256) {
+        self.appInstanceID = appInstanceID; self.library = library; self.history = history
     }
 
     func process(_ request: NativeRuntimeControlRequest, retainsTarget: () -> Bool = { true },
@@ -31,8 +36,10 @@ final class NativeRuntimeStopLedger {
         if let known = records.values.first(where: { $0.vmID == request.vmID && $0.target == request.target }), retainsTarget() {
             return try reply(request, record: known, disposition: .existing)
         }
-        guard records.count < capacity else { return reply(request, refusal: .ledgerFull) }
-        records[request.operationID] = Record(vmID: request.vmID, target: request.target, ticket: nil)
+        let finished = records.filter { $0.value.finished }.sorted { $0.value.serial < $1.value.serial }
+        for (id, _) in finished.prefix(max(0, finished.count - history + 1)) { records[id] = nil }
+        serial += 1
+        records[request.operationID] = Record(vmID: request.vmID, target: request.target, ticket: nil, serial: serial)
         do {
             let admission = try admit()
             let ticket: HvfOwnedStopOperation
@@ -56,7 +63,7 @@ final class NativeRuntimeStopLedger {
                     throw NativeRuntimeStopRefusal.operationConflict
                 }
             }
-            let record = Record(vmID: request.vmID, target: request.target, ticket: ticket)
+            let record = Record(vmID: request.vmID, target: request.target, ticket: ticket, serial: serial)
             records.removeValue(forKey: request.operationID)
             records[ticket.operationID.uuidString] = record
             return try reply(request, record: record, disposition: disposition)
