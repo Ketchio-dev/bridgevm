@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # The Windows Coherence protocol lives in two languages that cannot import
-# each other: the PowerShell agent answers WINLIST/WINBOUNDS/WINFOCUS/WINCLOSE
-# and the Swift host parses the same grammar; this check notices drift.
+# each other: the PowerShell agent answers WINLIST/WINBOUNDS/WINFOCUS/WINCLOSE,
+# and the Swift app sends WINLIST and parses the WIN rows it gets back; this
+# check notices drift.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
 AGENT=scripts/win-assets/bvagent.ps1; INVENTORY=scripts/win-assets/bvagent-window-inventory.ps1
-HOST=apps/macos/Sources/BridgeVMApp/Services/HvfGuestWindowProtocol.swift
+HOST=apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowInventoryRequest.swift
 CHANNEL=crates/bridgevm-hvf/examples/hvf_gic_boot_probe/agent_console
-TESTS=apps/macos/Tests/BridgeVMAppTests/HvfGuestWindowProtocolTests.swift
+TESTS=apps/macos/Tests/BridgeVMControlTests/HvfWindowInventoryRequestTests.swift
 status=0
 fail() { echo "FAIL: $1" >&2; status=1; }
 
@@ -21,9 +22,7 @@ grep -q '\$W = \[BridgeVM.BvWindow\]' "$AGENT" || fail "WINLIST window P/Invoke 
 ! grep -Eq '::EnumWindows|EnumWindows\(' "$AGENT" && grep -Fq 'Get-BvWindowInventoryLines' "$AGENT" && grep -Fq 'Get-BvWindowInventoryLines' "$INVENTORY" || fail "WINLIST must delegate to compiled-C# inventory, not a PowerShell native callback"
 python3 -c 'import pathlib,sys; p=pathlib.Path(sys.argv[1]).read_bytes(); sys.exit(0 if p.count(b"\n") == p.count(b"\r\n") and b"\n" in p else 1)' "$AGENT" || fail "agent asset must use CRLF line endings"
 core_end=$(grep -n '^\$K = Add-Type -MemberDefinition' "$AGENT" | cut -d: -f1 || true); window_decl=$(grep -n 'public static class BvWindow' "$AGENT" | cut -d: -f1 || true); [[ -n "$core_end" && -n "$window_decl" && "$window_decl" -gt "$core_end" ]] || fail "window declarations leaked back into the live-proven channel P/Invoke type"
-for verb in WINBOUNDS WINFOCUS WINCLOSE; do
-  grep -q "\"$verb " "$HOST" || fail "$verb missing from the host emitter ($HOST)"
-done
+grep -q '"WINLIST "' "$HOST" || fail "WINLIST missing from the host request ($HOST)"
 for verb in WINLIST WINBOUNDS WINFOCUS WINCLOSE; do
   grep -q "\"$verb\"" "$CHANNEL/protocol.rs" || fail "$verb is not raw on the agent channel"
 done
@@ -33,8 +32,8 @@ grep -q 'WIN ' "$INVENTORY" && grep -Fq 'test-bvagent-window-inventory-native-sc
 grep -Eq '\$w = ' "$AGENT" && fail "a bare \$w assignment clobbers the \$W window-API type"
 grep -q "Write-Line \$h 'WINEND' 'WINEND'" "$AGENT" || fail "agent no longer terminates with WINEND"
 grep -q '"WINEND"' "$HOST" || fail "host parser no longer stops at WINEND"
-grep -Fq 'GuestWindowRecord(protocolLine: line)' "$HOST" && grep -q 'maxSplits: 7' apps/macos/Sources/BridgeVMWindowProtocol/GuestWindowRecord.swift || fail "host parser delegation or shared 8-field WIN grammar is missing"
-grep -q 'testOutboundCommandsMatchTheAgentGrammar' "$TESTS" || fail "grammar pin test is gone"
+grep -Fq 'GuestWindowRecord(protocolLine: ' "$HOST" && grep -q 'maxSplits: 7' apps/macos/Sources/BridgeVMWindowProtocol/GuestWindowRecord.swift || fail "host parser delegation or shared 8-field WIN grammar is missing"
+grep -q 'testOnlyCompleteMatchingRequestPublishesAndOnlyOnce' "$TESTS" || fail "WIN/WINEND framing test is gone"
 grep -q 'line == "WINEND"' "$CHANNEL/window_protocol.rs" || fail "channel no longer frames WINLIST"
 
 # The agent must post WM_CLOSE, never send it: a hung window must not hang the

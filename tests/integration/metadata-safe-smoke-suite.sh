@@ -145,8 +145,6 @@ SMOKES=(
   "tests/integration/apple-vz-live-evidence-verifier-smoke.sh"
   "tests/integration/qemu-live-evidence-verifier-smoke.sh"
   "tests/integration/qemu-live-fixture-prep-smoke.sh"
-  "tests/integration/macos-settings-defaults-smoke.sh"
-  "tests/integration/macos-app-start-path-smoke.sh"
   "tests/integration/apple-vz-live-opt-in-skip-smoke.sh"
   "tests/integration/qemu-live-opt-in-skip-smoke.sh"
   "tests/integration/guest-tools-app-window-live-gui-opt-in-skip-smoke.sh"

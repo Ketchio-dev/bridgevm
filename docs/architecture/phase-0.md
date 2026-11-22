@@ -12,22 +12,9 @@ The important Phase 0 boundary is intentional: Fast Mode and Compatibility Mode 
 - `bridgevm-storage`: `.vmbridge` bundle creation, listing, metadata-only delete tombstones, primary disk preparation metadata, explicit disk image creation, disk inspection metadata, active-disk verification/compaction metadata, disk snapshot chain metadata/inspection, and suspend snapshot image metadata.
 - `bridgevm-storage`: VM runtime state and snapshot metadata.
 - `bridgevm-cli`: developer CLI for create/list/status/lifecycle/snapshot flows.
-- `BridgeVMApp`: SwiftUI macOS dashboard prototype with VM inventory, settings,
-  Store Doctor/source readiness, lifecycle controls backed by lifecycle-plan
-  readiness plus daemon suspend/resume/stop requests, a
-  template-backed creation sheet, boot media readiness, a daemon-backed clone
-  sheet with full/linked clone options and linked overlay metadata, and
-  daemon-backed guest tools status/readiness visibility, including latest
-  command-result status, plus VM bundle export/import metadata/file-copy status,
-  metadata/planning-only network/open-port/SSH plan visibility, manifest-level
-  port-forward list/add/remove controls, manifest-level approved shared folder
-  list/add/remove controls, a Console action that
-  reports daemon QMP socket readiness as a diagnostic instead of opening a
-  graphical console, a Logs panel for bounded QEMU/serial log tails, and
-  snapshot list/restore controls plus primary-disk prepare/create/inspect and
-  active-disk verify/compact maintenance controls plus a metadata-only repair
-  action that surfaces daemon metadata boundaries rather than live VM launch,
-  implicit disk creation, or memory restore.
+- `BridgeVMApp`: the SwiftUI dashboard prototype for this daemon. It was removed
+  in 2026-11; the shipped app is `BridgeVMControl`
+  ([macOS sources](../../apps/macos/Sources/README.md)).
 - `bridgevm-api`: typed request/response protocol for daemon operations.
 - `bridgevm-daemon`: Unix socket metadata service using the typed API protocol.
 - `bridgevm-qemu`: Compatibility Mode QEMU command builder, QMP client/control helpers, suspend/resume snapshot helpers, and supervisor metadata support.
