@@ -54,6 +54,10 @@ All notable changes to BridgeVM are documented in this file.
   keychain in the other Unicode form (composed or decomposed, for example
   after the library was copied). Before, the VM refused to start with a
   missing-key error (#689).
+- Ctrl-C or SIGTERM during `bridgevm app snapshot-create`, `snapshot-restore`
+  or `snapshot-export` left the snapshot helper running, so a restore could
+  still change the VM after the command had ended. The command now stops the
+  helper, waits for it, reports `cancelled` and exits 130 (143 for SIGTERM).
 
 ### Removed
 
