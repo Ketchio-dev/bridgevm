@@ -15,17 +15,23 @@ enum SecondEvent {
     Finished,
 }
 
+/// The first export pauses once its disk is staged; the second, to the same
+/// destination under `second_name`, must refuse on a member lease. With
+/// `previous`, an older snapshot occupies the destination first.
 fn assert_contention(
     tag: &str,
     second_name: &str,
     final_case_alias: bool,
     parent_case_alias: bool,
+    previous: bool,
 ) {
     let scratch = Scratch::new(tag);
     let destination = scratch.path("snapshot");
     let old_disk = scratch.write("old-disk", b"old-disk");
     let old_vars = scratch.write("old-vars", b"old-vars");
-    create_snapshot(&old_disk, &old_vars, &destination, "old").unwrap();
+    if previous {
+        create_snapshot(&old_disk, &old_vars, &destination, "old").unwrap();
+    }
     let second_destination = if parent_case_alias {
         let parent = destination.parent().unwrap();
         let alias_name = parent.file_name().unwrap().to_string_lossy().to_uppercase();
@@ -101,7 +107,7 @@ fn assert_contention(
     assert!(
         matches!(&second_result, Err(SnapshotError::Io(error))
             if error.kind() == std::io::ErrorKind::WouldBlock),
-        "contending export did not refuse on the parent lease: {second_result:?}"
+        "contending export did not refuse on a member lease: {second_result:?}"
     );
     let first_manifest = first_result.expect("first export must finish");
     assert_eq!(verify_snapshot(&destination).unwrap(), first_manifest);
@@ -114,32 +120,34 @@ fn assert_contention(
         fs::read(destination.join(VARS_NAME)).unwrap(),
         b"first-vars"
     );
-    if second_name == "other-snapshot" {
-        assert!(
-            !second_destination.exists(),
-            "refusal must leave no new output"
-        );
-    }
 }
 
 #[test]
 fn same_destination_refuses_a_contending_export() {
-    assert_contention("create-shared-destination", "snapshot", false, false);
+    assert_contention("create-shared-destination", "snapshot", false, false, true);
+}
+
+/// Nothing is at the destination yet, so only the first export's staging
+/// member keys can refuse the second before it reclaims that staging.
+#[test]
+fn same_new_destination_refuses_a_contending_export() {
+    assert_contention(
+        "create-shared-new-destination",
+        "snapshot",
+        false,
+        false,
+        false,
+    );
 }
 
 #[test]
 fn case_alias_refuses_a_contending_export_on_case_insensitive_volumes() {
-    assert_contention("create-case-alias", "SNAPSHOT", true, false);
+    assert_contention("create-case-alias", "SNAPSHOT", true, false, true);
 }
 
 #[test]
 fn parent_case_alias_refuses_a_contending_export_on_case_insensitive_volumes() {
-    assert_contention("create-parent-case-alias", "snapshot", false, true);
-}
-
-#[test]
-fn different_names_in_one_parent_refuse_a_contending_export() {
-    assert_contention("create-shared-parent", "other-snapshot", false, false);
+    assert_contention("create-parent-case-alias", "snapshot", false, true, true);
 }
 
 #[test]
@@ -151,8 +159,8 @@ fn replacing_a_snapshot_refuses_while_its_members_are_being_copied() {
     let new_vars = scratch.write("new-vars", b"new-vars");
     let source = scratch.path("S");
     let original = create_snapshot(&old_disk, &old_vars, &source, "old").unwrap();
-    // Separate parents prevent the existing parent lease from masking missing
-    // ownership of S's members when another create replaces S itself.
+    // T lives in another directory, so only the leases on S's members can
+    // refuse another create that replaces S itself.
     let target = scratch.path("export-parent/T");
     let mut replacement = None;
     let exported = create_snapshot_using(
