@@ -99,27 +99,32 @@ class ChangedAreas(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(self.areas(files)["rust_build"], "true")
 
-    def test_swift_compile_guard_uses_the_swift_area_on_prs_only(self):
+    def test_swift_compile_guard_uses_build_inputs_on_prs_only(self):
         import yaml
         jobs = yaml.safe_load(CI.read_text())["jobs"]
         guard = jobs["swift-compile-macos-26"]
         self.assertEqual(guard["needs"], "changes")
         self.assertEqual(guard["runs-on"], "macos-26")
         self.assertIn("github.event_name == 'pull_request'", guard["if"])
-        self.assertIn("needs.changes.outputs.swift == 'true'", guard["if"])
+        self.assertIn("needs.changes.outputs.swift_build == 'true'", guard["if"])
         self.assertIn("needs.changes.result != 'success'", guard["if"])
         for path in ("apps/macos/Tests/BridgeVMControlTests/HvfFramebufferDamageTests.swift",
                      "scripts/run-xctest-shim-suite.sh", ".github/workflows/ci.yml"):
             with self.subTest(path):
-                self.assertEqual(self.areas([path])["swift"], "true")
-        self.assertEqual(self.areas(SKIP_BUILD["docs-only"])["swift"], "false")
+                self.assertEqual(self.areas([path])["swift_build"], "true")
+        for files in (SKIP_BUILD["scripts-only"], RUN_BUILD[".rs"]):
+            with self.subTest(files=files):
+                areas = self.areas(files)
+                self.assertEqual(areas["swift_build"], "false")
+                self.assertEqual(areas["swift"], "true")
+        self.assertEqual(self.areas(SKIP_BUILD["docs-only"])["swift_build"], "false")
 
     def test_main_and_scheduled_runs_run_everything(self):
         for event in ("push", "schedule", "workflow_dispatch"):
             with self.subTest(event):
                 self.assertEqual(self.areas(SKIP_BUILD["docs-only"], event),
                                  {"rust": "true", "rust_build": "true", "host_contracts": "true", "swift": "true",
-                                  "venus": "true"})
+                                  "swift_build": "true", "venus": "true"})
 
     def test_every_include_target_is_a_rust_build_input(self):
         targets = set()

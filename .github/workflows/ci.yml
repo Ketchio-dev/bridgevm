@@ -30,6 +30,7 @@ jobs:
       rust_build: ${{ steps.diff.outputs.rust_build }}
       host_contracts: ${{ steps.diff.outputs.host_contracts }}
       swift: ${{ steps.diff.outputs.swift }}
+      swift_build: ${{ steps.diff.outputs.swift_build }}
       venus: ${{ steps.diff.outputs.venus }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,7 +42,7 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           if [ "$EVENT" != pull_request ]; then
-            printf 'rust=true\nrust_build=true\nhost_contracts=true\nswift=true\nvenus=true\n' >> "$GITHUB_OUTPUT"
+            printf 'rust=true\nrust_build=true\nhost_contracts=true\nswift=true\nswift_build=true\nvenus=true\n' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           files=$(git diff --name-only "$BASE" HEAD)
@@ -72,9 +73,13 @@ jobs:
           # transcript; every remaining crate is one of them or a dependency.
           app_rust=$(printf '%s\n' "$files" | grep -E '^(crates/|runners/hvf-runner/|Cargo\.(toml|lock)$)' || true)
           [ -n "$app_rust" ] && swift=true
+          # Compile-only uses SwiftPM and the shim compiler. The shim skips
+          # building and running native helpers in BV_XCTEST_BUILD_ONLY mode.
+          swift_build=false
+          printf '%s\n' "$files" | grep -qE '^(apps/macos/|\.github/workflows/ci\.yml$|scripts/(generate-xctest-manifest\.py|run-xctest-shim-suites?\.sh|swift-testing-toolchain\.sh|xctest-swiftc\.sh)$)' && swift_build=true
           venus=false
           printf '%s\n' "$files" | grep -qE '^(crates/bridgevm-hvf/(src/|build\.rs$|Cargo\.toml$)|tools/venus-host-probe/|Cargo\.(toml|lock)$|scripts/.*(venus|virgl)|scripts/patches/|\.github/workflows/ci\.yml$)' && venus=true
-          printf 'rust=%s\nrust_build=%s\nhost_contracts=%s\nswift=%s\nvenus=%s\n' "$rust" "$rust_build" "$host_contracts" "$swift" "$venus" | tee -a "$GITHUB_OUTPUT"
+          printf 'rust=%s\nrust_build=%s\nhost_contracts=%s\nswift=%s\nswift_build=%s\nvenus=%s\n' "$rust" "$rust_build" "$host_contracts" "$swift" "$swift_build" "$venus" | tee -a "$GITHUB_OUTPUT"
 
   fmt:
     name: rustfmt
@@ -265,7 +270,7 @@ jobs:
     # PR signal, not a required check. Keep main's full suites unchanged.
     name: macOS app compile (macos-26)
     needs: changes
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && (needs.changes.result != 'success' || needs.changes.outputs.swift == 'true') }}
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && (needs.changes.result != 'success' || needs.changes.outputs.swift_build == 'true') }}
     runs-on: macos-26
     timeout-minutes: 20
     steps:

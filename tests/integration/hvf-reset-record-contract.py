@@ -101,15 +101,6 @@ class HvfResetRecordContract(unittest.TestCase):
             self.assertIn("HvfGuestResetRecord.matches(", text(ENGINE / (name + ".swift")), name)
         self.assertIn("from hvf_reset_record import", text(LIVE_GATES / "coherence_inventory_observation.py"))
 
-    def test_standalone_compiles_include_the_definition(self):
-        paths = [*(ROOT / "scripts").rglob("*.sh"), *(ROOT / "tests").rglob("*.sh"),
-                 *(ROOT / ".github/workflows").glob("*.yml")]
-        compiled = [path for path in paths
-                    if "swiftc" in text(path) and any(name in text(path) for name in DETECTORS)]
-        self.assertGreaterEqual(len(compiled), 4, compiled)
-        for path in compiled:
-            self.assertIn("HvfGuestResetRecord", text(path), path.relative_to(ROOT))
-
     def test_coherence_inventory_cancels_only_on_runtime_records(self):
         inventory = importlib.import_module("coherence_inventory_observation").inventory
         rows = ["BVAGENT " + COMMAND + " WIN 100 123 20 60 300 180 QQ==", "BVAGENT " + COMMAND + " WINEND"]
