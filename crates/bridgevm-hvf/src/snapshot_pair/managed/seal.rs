@@ -202,10 +202,11 @@ impl Record {
 
 impl PreviousGeneration {
     fn capture(current: &Path) -> io::Result<Option<Self>> {
-        if !private_directory(current, false)? {
+        if !private_directory(current, false)? || !recognized_shape(current, true)? {
+            // A previous runtime write can leave its own staging file beside
+            // current media. Restore still works, with legacy retry authority.
             return Ok(None);
         }
-        shape(current, true)?;
         Ok(Some(Self {
             directory: Identity::from_metadata(&fs::symlink_metadata(current)?),
             disk: member(&current.join("disk.raw"))?,
@@ -282,6 +283,15 @@ fn optional_member(path: &Path) -> io::Result<Option<Member>> {
 }
 
 fn shape(stage: &Path, pinned: bool) -> io::Result<()> {
+    if recognized_shape(stage, pinned)? {
+        return Ok(());
+    }
+    Err(io::Error::other(
+        "restore ownership stage contains an unrecognized entry",
+    ))
+}
+
+fn recognized_shape(stage: &Path, pinned: bool) -> io::Result<bool> {
     for entry in fs::read_dir(stage)? {
         let entry = entry?;
         let name = entry.file_name();
@@ -290,12 +300,10 @@ fn shape(stage: &Path, pinned: bool) -> io::Result<()> {
             .any(|known| name == *known)
             || pinned && name == PIN_NAME;
         if !entry.file_type()?.is_file() || !known {
-            return Err(io::Error::other(
-                "restore ownership stage contains an unrecognized entry",
-            ));
+            return Ok(false);
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 fn private_record(metadata: &fs::Metadata, owner: u32) -> io::Result<()> {
@@ -600,8 +608,8 @@ fn present(path: &Path) -> io::Result<bool> {
 
 fn refusal(root: &Path, error: io::Error) -> io::Error {
     io::Error::other(format!(
-        "managed restore ownership at {} cannot be proven ({error}); it was left intact: \
-         preserve the staging and ownership record outside managed storage before retrying",
+        "managed restore recovery at {} failed ({error}); \
+         preserve any remaining staging and ownership record outside managed storage before retrying",
         root.display()
     ))
 }

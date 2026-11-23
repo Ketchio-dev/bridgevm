@@ -136,6 +136,64 @@ fn managed_vars_persistence_retains_the_new_inode() {
 }
 
 #[test]
+fn restore_after_runtime_vars_write_interruption() {
+    const CHILD: &str = "BRIDGEVM_TEST_INTERRUPTED_RUNTIME_VARS";
+    const EXIT: i32 = 81;
+    if let Some(root) = std::env::var_os(CHILD) {
+        let root = PathBuf::from(root);
+        let mut media = VirtBootMediaConfig::qemu_defaults();
+        media.nvme_disk = Some(WritableMedia::new(root.join("disk")).with_write_back(true));
+        media.flash_vars = WritableMedia::new(root.join("vars")).with_write_back(true);
+        let mut runtime = acquire(&mut media).unwrap();
+        runtime
+            .persist_using(
+                RuntimeMediaSlot::Vars,
+                b"interrupted vars write",
+                |staged, _| {
+                    assert_eq!(fs::read(staged).unwrap(), b"interrupted vars write");
+                    std::process::exit(EXIT);
+                },
+            )
+            .unwrap();
+        panic!("the child did not enter the real runtime write path");
+    }
+
+    let (_scratch, media, snapshot) = fixture("managed-runtime-vars-abrupt-exit");
+    let disk = &media.nvme_disk.as_ref().unwrap().path;
+    let vars = &media.flash_vars.path;
+    restore_snapshot(&snapshot, disk, vars).unwrap();
+    let current = LockedPair::open(disk, vars).unwrap().paths().unwrap().1;
+    let status = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "snapshot_pair::managed::runtime::tests::restore_after_runtime_vars_write_interruption",
+        ])
+        .env(CHILD, disk.parent().unwrap())
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(EXIT));
+    assert_eq!(fs::read(&current).unwrap(), b"new-vars");
+    let debris: Vec<_> = fs::read_dir(current.parent().unwrap())
+        .unwrap()
+        .map(|item| item.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".bridgevm-write-")
+        })
+        .collect();
+    assert_eq!(debris.len(), 1);
+    assert_eq!(fs::read(&debris[0]).unwrap(), b"interrupted vars write");
+    let restored = restore_snapshot(&snapshot, disk, vars);
+    assert!(
+        restored.is_ok(),
+        "restore should succeed after a runtime vars write interruption: {restored:?}"
+    );
+    assert_eq!(fs::read(current).unwrap(), b"new-vars");
+}
+
+#[test]
 fn two_disk_vars_persistence_retains_the_new_inode() {
     vars_case("runtime-persist-two-disks", false, true);
 }

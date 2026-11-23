@@ -738,6 +738,39 @@ mod recovery {
             }
         }
     }
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn retry_after_partial_previous_cleanup_reports_and_preserves_survivors() {
+        let fixture = Fixture::new("owned-xchg-unlink-error", true, true);
+        let current = fixture.root.join("current");
+        let parked = fixture.scratch.path("parked-current");
+        fs::rename(&current, &parked).unwrap();
+        fs::rename(&fixture.stage, &current).unwrap();
+        fs::rename(&parked, &fixture.stage).unwrap();
+        let vars = fixture.stage.join("vars.fd");
+        let old_vars = fs::read(&vars).unwrap();
+        let flags = |value| {
+            std::process::Command::new("/usr/bin/chflags")
+                .arg(value)
+                .arg(&vars)
+                .status()
+                .unwrap()
+                .success()
+        };
+        assert!(flags("uchg"));
+        let result = fixture.pair().restore(&fixture.snapshot);
+        assert!(flags("nouchg"));
+        assert!(!fixture.stage.join("disk.raw").exists());
+        assert_eq!(fs::read(&vars).unwrap(), old_vars);
+        assert_eq!(contents(&current), fixture.source);
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("preserve any remaining staging"));
+        fixture.pair().restore(&fixture.snapshot).unwrap();
+        assert!(!fixture.stage.exists());
+    }
+
     const MUTATIONS: &[&str] = &[
         "missing-record",
         "missing-pin",
@@ -963,7 +996,7 @@ mod recovery {
         assert!(published
             .unwrap_err()
             .to_string()
-            .contains("it was left intact"));
+            .contains("preserve any remaining staging"));
         drop(pair);
         let preserved = fixture.scratch.path("preserved-legacy-current");
         fs::rename(&fixture.stage, &preserved).unwrap();
