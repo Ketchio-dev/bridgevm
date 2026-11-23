@@ -44,7 +44,7 @@ fn hard_exit_before_and_after_empty_rename_preserves_pair_and_retry() {
         let dest = scratch.path("dest");
         let stage = staging_path(&dest);
         fs::create_dir(&dest).unwrap();
-        let new = create_snapshot(&disk, &vars, &stage, "new", false, 1024).unwrap();
+        let new = create_snapshot(&disk, &vars, &stage, "new").unwrap();
         let status = Command::new(std::env::current_exe().unwrap())
             .arg("snapshot_pair::snapshot_publish::tests::empty_destination_tests::interruption_tests::empty_rename_crash_child")
             .args(["--exact", "--nocapture"])

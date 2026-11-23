@@ -431,7 +431,7 @@ fn a_snapshot_restore_drops_the_synced_state_so_the_rolled_back_guest_copy_is_no
     let (disk, vars, snap) = (vm.join("disk.raw"), vm.join("vars.fd"), vm.join("snap"));
     std::fs::write(&disk, b"guest disk").unwrap();
     std::fs::write(&vars, b"uefi vars").unwrap();
-    create_snapshot(&disk, &vars, &snap, "vm", false, 1 << 20).unwrap();
+    create_snapshot(&disk, &vars, &snap, "vm").unwrap();
     // Since the snapshot, two Windows versions synced to the Mac.
     new_session(&mut rig, Some(&vars));
     for (content, age) in [(&b"version two"[..], 2 * HOUR_MS), (b"version three, current", HOUR_MS)] {
@@ -442,7 +442,7 @@ fn a_snapshot_restore_drops_the_synced_state_so_the_rolled_back_guest_copy_is_no
         settle(&mut rig);
     }
     rig.h.share = None;
-    restore_snapshot(&snap, &disk, &vars, false).unwrap();
+    restore_snapshot(&snap, &disk, &vars).unwrap();
     // The restored guest disk holds the copy from before: neither version the state lists.
     rig.guest.write("doc.bin", b"version one, in the snapshot");
     rig.guest.stamps.insert("DOC.BIN".into(), now_ms() - 3 * HOUR_MS);

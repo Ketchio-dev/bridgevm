@@ -22,13 +22,16 @@ enum HvfWindowsInstallFinalization {
         let lock = try HvfWindowsInstallDurability.TransactionLock(url: paths.lock, nonBlocking: true)
         try withExtendedLifetime(lock) {
             let journal: HvfWindowsInstallFinalizationJournal
-            if FileManager.default.fileExists(atPath: paths.journal.path) {
+            // A journal left by an earlier run is re-verified; one sealed just now is not re-hashed.
+            let recovering = FileManager.default.fileExists(atPath: paths.journal.path)
+            if recovering {
                 journal = try loadJournal(paths.journal)
             } else {
                 journal = try begin(plan: plan, paths: paths)
                 try faultInjector(.prepared)
             }
-            _ = try resume(journal, paths: paths, faultInjector: faultInjector, secureBootSeeder: secureBootSeeder)
+            _ = try resume(journal, paths: paths, recovering: recovering,
+                           faultInjector: faultInjector, secureBootSeeder: secureBootSeeder)
         }
     }
 
@@ -50,7 +53,7 @@ enum HvfWindowsInstallFinalization {
             let lock = try HvfWindowsInstallDurability.TransactionLock(
                 url: paths.lock, nonBlocking: true)
             config = try withExtendedLifetime(lock) {
-                try resume(loadJournal(paths.journal), paths: paths, faultInjector: { _ in },
+                try resume(loadJournal(paths.journal), paths: paths, recovering: true, faultInjector: { _ in },
                            secureBootSeeder: secureBootSeeder, removeTransaction: removeTransaction)
             }
             return ReconcileResult(config: config, issue: nil)

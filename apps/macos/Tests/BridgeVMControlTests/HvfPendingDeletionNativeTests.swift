@@ -46,7 +46,7 @@ final class HvfPendingDeletionNativeTests: XCTestCase {
             if restored {
                 let snapshot = f.root.appendingPathComponent("saved.snapshot")
                 _ = try HvfWindowsSnapshotCommand.invoke(helper,
-                    ["create", disk.path, vars.path, snapshot.path, installed.slug, "8"])
+                    ["create", disk.path, vars.path, snapshot.path, installed.slug])
                 _ = try HvfWindowsSnapshotCommand.invoke(helper, ["restore", snapshot.path, disk.path, vars.path])
             }
             let lease = try HvfMediaLeaseSession(executable: helper, disk: disk.path, vars: vars.path)

@@ -1,5 +1,5 @@
 use super::*;
-use crate::snapshot_pair::snapshot_pair_tests::{Scratch, QUOTA};
+use crate::snapshot_pair::snapshot_pair_tests::Scratch;
 use crate::snapshot_pair::{
     create_snapshot, managed::LockedPair, restore_snapshot, verify_snapshot, DISK_NAME, VARS_NAME,
 };
@@ -17,10 +17,10 @@ fn unsafe_disk_and_vars_members_refuse_without_blocking_or_changing_live_media()
             let disk = scratch.write("disk", b"snapshot disk");
             let vars = scratch.write("vars", b"snapshot vars");
             let snapshot = scratch.path("snapshot");
-            create_snapshot(&disk, &vars, &snapshot, "vm", false, QUOTA).unwrap();
+            create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
             fs::write(&disk, b"original live disk").unwrap();
             fs::write(&vars, b"original live vars").unwrap();
-            restore_snapshot(&snapshot, &disk, &vars, false).unwrap();
+            restore_snapshot(&snapshot, &disk, &vars).unwrap();
             let pair = LockedPair::open(&disk, &vars).unwrap();
             let selected = pair.paths().unwrap();
             fs::write(&selected.0, b"selected live disk").unwrap();
@@ -106,7 +106,7 @@ fn mismatched_sparse_member_size_is_refused_before_hashing_or_staging() {
         let disk = scratch.write("disk", b"disk");
         let vars = scratch.write("vars", b"vars");
         let snapshot = scratch.path("snapshot");
-        create_snapshot(&disk, &vars, &snapshot, "vm", false, QUOTA).unwrap();
+        create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
         // One TiB is sparse; reading it to discover a declared-size mismatch
         // would take far beyond the bounded refusal checkpoint.
         OpenOptions::new()

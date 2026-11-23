@@ -20,8 +20,6 @@ mod staging_reclaim;
 use destination_lease::claim_staging;
 #[path = "snapshot_create_fill.rs"]
 mod fill;
-#[path = "snapshot_create_manifest_admission.rs"]
-mod manifest_admission;
 #[path = "snapshot_create_stage.rs"]
 mod stage;
 use stage::CreateStage;
@@ -30,23 +28,18 @@ mod stopped;
 use super::copy::copy_and_sync as copy;
 use super::snapshot_publish::publish;
 use stopped::create_stopped;
-#[path = "snapshot_create_quota.rs"]
-mod quota;
 
 /// Capture `disk` and `vars` into `dest` as one atomic pair.
 ///
-/// `vm_running` is the caller's knowledge; an owned runtime's writer leases
-/// are checked too, because between guest generations nothing else shows that
-/// it owns the media. A snapshot of a running VM is what this module prevents.
+/// A running VM's writer leases refuse the capture: between guest generations
+/// nothing else shows that it owns the media.
 pub fn create_snapshot(
     disk: &Path,
     vars: &Path,
     dest: &Path,
     vm_id: &str,
-    vm_running: bool,
-    quota_bytes: u64,
 ) -> Result<SnapshotManifest, SnapshotError> {
-    create_snapshot_using(disk, vars, dest, vm_id, vm_running, quota_bytes, |_| {})
+    create_snapshot_using(disk, vars, dest, vm_id, |_| {})
 }
 
 fn create_snapshot_using(
@@ -54,14 +47,9 @@ fn create_snapshot_using(
     vars: &Path,
     dest: &Path,
     vm_id: &str,
-    vm_running: bool,
-    quota_bytes: u64,
     observe: impl FnMut(CreateStage),
 ) -> Result<SnapshotManifest, SnapshotError> {
-    if vm_running {
-        return Err(SnapshotError::VmRunning);
-    }
-    create_stopped(disk, vars, dest, vm_id, quota_bytes, copy, publish, observe)
+    create_stopped(disk, vars, dest, vm_id, copy, publish, observe)
 }
 
 #[cfg(test)]

@@ -38,12 +38,12 @@ fn selected(disk: &Path, vars: &Path) -> (Vec<u8>, Vec<u8>) {
 #[test]
 fn restore_is_refused_while_an_owned_runtime_holds_the_media() {
     let (dir, disk, vars, dest) = private_pair("restore");
-    create_snapshot(&disk, &vars, &dest, "vm", false, 1 << 20).unwrap();
+    create_snapshot(&disk, &vars, &dest, "vm").unwrap();
     fs::write(&disk, [1u8; 64]).unwrap();
     fs::write(&vars, [2u8; 4]).unwrap();
 
     let runtime = prepare(manifest(&disk, &vars), RUNTIME).unwrap();
-    let result = restore_snapshot(&dest, &disk, &vars, false);
+    let result = restore_snapshot(&dest, &disk, &vars);
     let message = result
         .map(|_| String::new())
         .unwrap_or_else(|e| e.to_string());
@@ -52,7 +52,7 @@ fn restore_is_refused_while_an_owned_runtime_holds_the_media() {
     assert_eq!(selected(&disk, &vars), (vec![1u8; 64], vec![2u8; 4]));
 
     drop(runtime);
-    restore_snapshot(&dest, &disk, &vars, false).unwrap();
+    restore_snapshot(&dest, &disk, &vars).unwrap();
     assert_eq!(selected(&disk, &vars), (vec![7u8; 64], vec![9u8; 4]));
     fs::remove_dir_all(dir).unwrap();
 }
@@ -61,7 +61,7 @@ fn restore_is_refused_while_an_owned_runtime_holds_the_media() {
 fn create_and_export_are_refused_while_an_owned_runtime_holds_the_media() {
     let (dir, disk, vars, dest) = private_pair("create");
     let runtime = prepare(manifest(&disk, &vars), RUNTIME).unwrap();
-    let result = create_snapshot(&disk, &vars, &dest, "vm", false, 1 << 20);
+    let result = create_snapshot(&disk, &vars, &dest, "vm");
     let message = result
         .map(|_| String::new())
         .unwrap_or_else(|e| e.to_string());
@@ -70,6 +70,6 @@ fn create_and_export_are_refused_while_an_owned_runtime_holds_the_media() {
     assert!(!dir.join(".latest.snapshot.staging").exists());
 
     drop(runtime);
-    create_snapshot(&disk, &vars, &dest, "vm", false, 1 << 20).unwrap();
+    create_snapshot(&disk, &vars, &dest, "vm").unwrap();
     fs::remove_dir_all(dir).unwrap();
 }

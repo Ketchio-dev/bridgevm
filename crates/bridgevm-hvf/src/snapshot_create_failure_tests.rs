@@ -8,7 +8,7 @@ fn fixture(tag: &str) -> (Scratch, PathBuf, PathBuf, PathBuf, SnapshotManifest) 
     let disk = s.write("disk", b"old-disk");
     let vars = s.write("vars", b"old-vars");
     let dest = s.path("snapshot");
-    let old = create_snapshot(&disk, &vars, &dest, "old", false, 1024).unwrap();
+    let old = create_snapshot(&disk, &vars, &dest, "old").unwrap();
     fs::write(&disk, b"new-disk").unwrap();
     (s, disk, vars, dest, old)
 }
@@ -18,7 +18,7 @@ fn fixture(tag: &str) -> (Scratch, PathBuf, PathBuf, PathBuf, SnapshotManifest) 
 #[test]
 fn a_copy_error_after_staging_is_claimed_removes_staging() {
     let (_s, disk, vars, dest, old) = fixture("create-copy-error");
-    let result = create_snapshot_using(&disk, &vars, &dest, "new", false, 1024, |stage| {
+    let result = create_snapshot_using(&disk, &vars, &dest, "new", |stage| {
         if stage == CreateStage::DiskSynced {
             fs::remove_file(&vars).unwrap();
         }
@@ -33,7 +33,7 @@ fn a_copy_error_after_staging_is_claimed_removes_staging() {
     );
     assert_eq!(verify_snapshot(&dest).unwrap(), old);
     fs::write(&vars, b"new-vars").unwrap();
-    let retried = create_snapshot(&disk, &vars, &dest, "retry", false, 1024).unwrap();
+    let retried = create_snapshot(&disk, &vars, &dest, "retry").unwrap();
     assert_eq!(verify_snapshot(&dest).unwrap(), retried);
 }
 
@@ -42,7 +42,7 @@ fn a_copy_error_after_staging_is_claimed_removes_staging() {
 fn a_copy_error_keeps_staging_that_gained_foreign_content() {
     let (_s, disk, vars, dest, old) = fixture("create-copy-error-foreign");
     let staging = staging_path(&dest);
-    let result = create_snapshot_using(&disk, &vars, &dest, "new", false, 1024, |stage| {
+    let result = create_snapshot_using(&disk, &vars, &dest, "new", |stage| {
         if stage == CreateStage::DiskSynced {
             fs::write(staging.join("keep.txt"), b"arrived during copy").unwrap();
             fs::remove_file(&vars).unwrap();
@@ -70,7 +70,7 @@ fn a_full_volume_during_a_streaming_copy_removes_the_partial_copy() {
         partial = fs::metadata(dst).ok().map(|metadata| metadata.len());
         copied
     };
-    let result = create_stopped(&disk, &vars, &dest, "new", u64::MAX, full, publish, |_| {});
+    let result = create_stopped(&disk, &vars, &dest, "new", full, publish, |_| {});
     assert_eq!(
         partial,
         Some(COPY_CHUNK as u64),
@@ -86,6 +86,6 @@ fn a_full_volume_during_a_streaming_copy_removes_the_partial_copy() {
     );
     assert_eq!(verify_snapshot(&dest).unwrap(), old);
     let copy = |src: &Path, dst: &Path| stream_and_sync(src, dst, |_| Ok(()));
-    let retried = create_stopped(&disk, &vars, &dest, "retry", u64::MAX, copy, publish, drop);
+    let retried = create_stopped(&disk, &vars, &dest, "retry", copy, publish, drop);
     assert_eq!(verify_snapshot(&dest).unwrap(), retried.unwrap());
 }

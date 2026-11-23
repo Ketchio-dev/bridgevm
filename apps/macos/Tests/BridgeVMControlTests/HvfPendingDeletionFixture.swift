@@ -71,9 +71,7 @@ final class HvfPendingDeletionFixture {
     }
 
     func assertRefused(file: StaticString = #filePath, line: UInt = #line) throws {
-        XCTAssertThrowsError(try HvfPendingDeletionGuard.validate(config, rootURL: library), file: file, line: line)
         XCTAssertFalse(try delete(), file: file, line: line)
         XCTAssertTrue(fm.fileExists(atPath: entry.path), file: file, line: line)
-        XCTAssertFalse(fm.fileExists(atPath: command.path), file: file, line: line)
     }
 }

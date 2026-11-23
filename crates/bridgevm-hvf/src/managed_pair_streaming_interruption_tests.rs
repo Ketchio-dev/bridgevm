@@ -68,19 +68,12 @@ fn fixture(tag: &str, selected: bool) -> (Scratch, PathBuf, PathBuf, PathBuf, Pa
     let source_disk = scratch.write("source-disk", &new_disk);
     let source_vars = scratch.write("source-vars", b"new-vars");
     let snapshot = scratch.path("snapshot");
-    create_snapshot(
-        &source_disk,
-        &source_vars,
-        &snapshot,
-        "stream",
-        false,
-        u64::MAX,
-    )
-    .expect("create source snapshot");
+    create_snapshot(&source_disk, &source_vars, &snapshot, "stream")
+        .expect("create source snapshot");
     let mut old = (b"old-disk".to_vec(), b"old-vars".to_vec());
     if selected {
         let first = scratch.path("first");
-        create_snapshot(&disk, &vars, &first, "first", false, 1024).expect("first snapshot");
+        create_snapshot(&disk, &vars, &first, "first").expect("first snapshot");
         let mut pair = LockedPair::open(&disk, &vars).expect("own pair");
         pair.restore(&first).expect("select a managed generation");
         let (selected_disk, selected_vars) = pair.paths().expect("selected pair");

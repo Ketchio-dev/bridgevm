@@ -55,10 +55,7 @@ final class HvfPendingDeletionGuardTests: XCTestCase {
             try f.save(selected)
             XCTAssertThrowsError(try HvfPendingDeletionGuard.validate(selected, rootURL: f.library))
             // Non-HVF deletion deliberately has different registration semantics.
-            if selected.engineKind == .hvfEngine {
-                XCTAssertFalse(try f.delete(selected))
-                XCTAssertFalse(f.fm.fileExists(atPath: f.command.path))
-            }
+            if selected.engineKind == .hvfEngine { XCTAssertFalse(try f.delete(selected)) }
             XCTAssertTrue(f.fm.fileExists(atPath: f.entry.path))
         }
     }

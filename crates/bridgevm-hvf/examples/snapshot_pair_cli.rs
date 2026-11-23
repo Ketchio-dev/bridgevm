@@ -37,26 +37,18 @@ fn main() -> ExitCode {
                 }
             };
         }
-        ("create", 6) => {
-            let Ok(quota) = args[5].parse::<u64>() else {
-                eprintln!("quota must be a number of bytes");
-                return ExitCode::from(2);
-            };
-            create_snapshot(
-                Path::new(&args[1]),
-                Path::new(&args[2]),
-                Path::new(&args[3]),
-                &args[4],
-                false,
-                quota,
-            )
-        }
+        // Older live-gate scripts still append a byte quota; it no longer limits anything.
+        ("create", 5 | 6) => create_snapshot(
+            Path::new(&args[1]),
+            Path::new(&args[2]),
+            Path::new(&args[3]),
+            &args[4],
+        ),
         ("verify", 2) => verify_snapshot(Path::new(&args[1])),
         ("restore", 4) => restore_snapshot(
             Path::new(&args[1]),
             Path::new(&args[2]),
             Path::new(&args[3]),
-            false,
         ),
         _ => return usage(),
     };

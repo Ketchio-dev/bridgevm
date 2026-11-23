@@ -58,8 +58,6 @@ fn fixture(tag: &str) -> (Scratch, PathBuf, PathBuf, PathBuf) {
         &source_vars,
         &snapshot,
         "partial-staging-restore",
-        false,
-        1024,
     )
     .expect("create source snapshot");
     (scratch, disk, vars, snapshot)

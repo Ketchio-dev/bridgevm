@@ -8,7 +8,7 @@ use std::{fs, path::Path};
 pub fn import_disk(disk: &Path, destination: &Path) -> Result<bool, SnapshotError> {
     let disk = fs::canonicalize(disk)?;
     if let Some(vars) = managed::vars_for_disk(&disk)? {
-        super::create_snapshot(&disk, &vars, destination, "import", false, u64::MAX)?;
+        super::create_snapshot(&disk, &vars, destination, "import")?;
         return Ok(true);
     }
     let _writer = runtime_exclusion::writer(&disk, "powered-off snapshot create")?;

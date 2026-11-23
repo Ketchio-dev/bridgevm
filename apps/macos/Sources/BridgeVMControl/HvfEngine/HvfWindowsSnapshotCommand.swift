@@ -33,10 +33,14 @@ enum HvfWindowsSnapshotCommand {
         var name: String? = nil
         var bundle: URL { disk.deletingLastPathComponent().deletingLastPathComponent() }
 
+        func createArguments(destination: URL) -> [String] {
+            ["create", disk.path, vars.path, destination.path, vmID]
+        }
+
         func arguments(for operation: Operation) throws -> [String] {
             switch operation {
             case .create:
-                return try createArguments(destination: snapshot)
+                return createArguments(destination: snapshot)
             case .restore:
                 return ["restore", snapshot.path, disk.path, vars.path]
             case .delete:
@@ -111,7 +115,7 @@ enum HvfWindowsSnapshotCommand {
             if operation == .create {
                 let created = try create(plan: plan, arguments: arguments)
                 try await checkAdmission()
-                return try verifyCreated(created)
+                return nameCreated(created)
             }
             _ = try invoke(plan.executable, arguments)
             return nil
@@ -142,8 +146,8 @@ enum HvfWindowsSnapshotCommand {
         return claimed
     }
 
-    static func verifyCreated(_ plan: Plan) throws -> String? {
-        _ = try invoke(plan.executable, ["verify", plan.snapshot.path])
+    /// Create already hashed both members into the manifest; restore verifies them before use.
+    static func nameCreated(_ plan: Plan) -> String? {
         if let name = plan.name, !name.isEmpty {
             do {
                 try name.write(to: HvfWindowsSnapshotStore.nameFile(plan.snapshot), atomically: true, encoding: .utf8)

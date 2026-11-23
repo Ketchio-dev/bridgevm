@@ -12,7 +12,7 @@ fn failed_media_ownership_transfer_removes_only_staging_and_allows_retry() {
         let source_disk = scratch.write("source-disk", b"snapshot disk");
         let source_vars = scratch.write("source-vars", b"snapshot vars");
         let snapshot = scratch.path("snapshot");
-        create_snapshot(&source_disk, &source_vars, &snapshot, "vm", false, 1024).unwrap();
+        create_snapshot(&source_disk, &source_vars, &snapshot, "vm").unwrap();
         let mut pair = LockedPair::open(&disk, &vars).unwrap();
         if already_selected {
             pair.restore(&snapshot).unwrap();

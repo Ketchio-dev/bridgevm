@@ -4,8 +4,8 @@ extension LibraryModel {
     /// A fresh stop ID may join a retained record only while its run is still the VM's current owned state.
     /// A pending start, live replacement or attachment means an older completed run must not answer for the VM.
     func retainsOwnedStopTarget(_ request: NativeRuntimeControlRequest) -> Bool {
-        guard let token = UUID(uuidString: request.target.runToken),
-              let records = try? runtimeRecords(slug: request.vmID) else { return false }
+        guard let token = UUID(uuidString: request.target.runToken) else { return false }
+        let records = runtimeRecords(slug: request.vmID)
         let identity = HvfOwnedRuntimeIdentity(token: token, processID: request.target.processID)
         let sessions = records.map { ($0.session.runtimeObservation(), $0.session.hasPendingRuntimeStart) }
         if sessions.contains(where: { $0.0.ownedProcessIdentity == identity }) { return true }

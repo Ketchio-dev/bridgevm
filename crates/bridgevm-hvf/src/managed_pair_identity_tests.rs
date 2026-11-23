@@ -9,10 +9,10 @@ fn fixture(tag: &str) -> (Scratch, PathBuf, PathBuf) {
     fs::create_dir_all(s.path("vm/metadata")).unwrap();
     let disk = s.write("vm/disks/disk.raw", b"restored-disk");
     let vars = s.write("vm/metadata/vars.fd", b"restored-vars");
-    create_snapshot(&disk, &vars, &s.path("snapshot"), "move", false, 1024).unwrap();
+    create_snapshot(&disk, &vars, &s.path("snapshot"), "move").unwrap();
     fs::write(&disk, b"stale-disk").unwrap();
     fs::write(&vars, b"stale-vars").unwrap();
-    restore_snapshot(&s.path("snapshot"), &disk, &vars, false).unwrap();
+    restore_snapshot(&s.path("snapshot"), &disk, &vars).unwrap();
     (
         s,
         fs::canonicalize(disk).unwrap(),
@@ -40,7 +40,7 @@ fn whole_bundle_move_preserves_snapshot_and_native_selection() {
     let (s, _, _) = fixture("identity-move");
     let (disk, vars) = moved(&s);
     assert_current(&disk, &vars);
-    create_snapshot(&disk, &vars, &s.path("after-move"), "move", false, 1024).unwrap();
+    create_snapshot(&disk, &vars, &s.path("after-move"), "move").unwrap();
     assert_eq!(
         fs::read(s.path("after-move/disk.raw")).unwrap(),
         b"restored-disk"
@@ -79,7 +79,7 @@ fn already_moved_legacy_identity_refuses_instead_of_guessing() {
     fs::rename(stable_root(&disk, &vars), legacy_root(&disk, &vars)).unwrap();
     let (disk, vars) = moved(&s);
     assert!(LockedPair::open(&disk, &vars).is_err());
-    assert!(create_snapshot(&disk, &vars, &s.path("wrong"), "move", false, 1024).is_err());
+    assert!(create_snapshot(&disk, &vars, &s.path("wrong"), "move").is_err());
 }
 
 #[test]

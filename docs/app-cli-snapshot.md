@@ -11,9 +11,8 @@ saved, installed own-HVF Windows VM. Installation-pending and unsupported VM
 entries are refused. The snapshot contains the VM's current NVMe disk and
 matching UEFI variable store as one managed pair. Create and export both resolve
 the selected managed generation, so an export after restore cannot silently copy
-stale logical originals. Their byte quota also comes from the leased selected
-pair; create rechecks that ceiling if selection changes before capture. Export
-atomically publishes and verifies `disk.raw`, `vars.fd`, and `manifest.json`.
+stale logical originals. Export atomically publishes `disk.raw`, `vars.fd`, and
+`manifest.json`, whose hashes are computed from the copied files.
 The destination must be absent, an
 empty directory or a prior snapshot of exactly those files; anything else, even
 Finder metadata, is refused and left intact. Restore verifies before selecting

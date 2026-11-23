@@ -16,7 +16,7 @@ impl Fixture {
         let disk = scratch.write("disk", b"verified snapshot disk");
         let vars = scratch.write("vars", b"verified snapshot vars");
         let snapshot = scratch.path("snapshot");
-        let manifest = create_snapshot(&disk, &vars, &snapshot, "seal-test", false, 1024).unwrap();
+        let manifest = create_snapshot(&disk, &vars, &snapshot, "seal-test").unwrap();
         let root = scratch.path("managed");
         let stage = root.join("staging");
         private_directory(&root, true).unwrap();

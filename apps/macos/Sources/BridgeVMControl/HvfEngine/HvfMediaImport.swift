@@ -59,8 +59,8 @@ enum HvfMediaImport {
             members = [(converted, toDisk), (copiedVars, toVars)]
         } else {
             let snapshot = workspace.appendingPathComponent("selected.snapshot", isDirectory: true)
-            try HvfMediaImportHelper.invoke(helper, arguments: ["create", disk, vars, snapshot.path, "import", String(UInt64.max)])
-            try HvfMediaImportHelper.invoke(helper, arguments: ["verify", snapshot.path])
+            // Create copies and hashes the selected pair; the manifest is not kept, so no verify.
+            try HvfMediaImportHelper.invoke(helper, arguments: ["create", disk, vars, snapshot.path, "import"])
             members = [(snapshot.appendingPathComponent("disk.raw"), toDisk),
                        (snapshot.appendingPathComponent("vars.fd"), toVars)]
         }

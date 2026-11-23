@@ -5,7 +5,7 @@ use crate::snapshot_pair::{restore_snapshot, verify_snapshot};
 fn repeated_restore_guest_writes_and_export_use_current_beside_retained_pin() {
     let fixture = Fixture::new("owned-current-runtime", false, false);
     for generation in 0..3 {
-        restore_snapshot(&fixture.snapshot, &fixture.disk, &fixture.vars, false).unwrap();
+        restore_snapshot(&fixture.snapshot, &fixture.disk, &fixture.vars).unwrap();
         let pair = fixture.pair();
         let (disk, vars) = pair.paths().unwrap();
         assert_eq!(fs::read(&disk).unwrap(), fixture.source[0]);
@@ -19,15 +19,7 @@ fn repeated_restore_guest_writes_and_export_use_current_beside_retained_pin() {
         fs::write(&vars, &written_vars).unwrap();
         drop(pair);
         let export = fixture.scratch.path(&format!("export-{generation}"));
-        let manifest = create_snapshot(
-            &fixture.disk,
-            &fixture.vars,
-            &export,
-            "current",
-            false,
-            1024,
-        )
-        .unwrap();
+        let manifest = create_snapshot(&fixture.disk, &fixture.vars, &export, "current").unwrap();
         assert_eq!(verify_snapshot(&export).unwrap(), manifest);
         assert_eq!(fs::read(export.join("disk.raw")).unwrap(), written_disk);
         assert_eq!(fs::read(export.join("vars.fd")).unwrap(), written_vars);
@@ -45,9 +37,9 @@ fn foreign_export_cannot_replace_the_sealed_restore_attempt() {
     let disk = inputs.write("foreign-disk", b"foreign disk");
     let vars = inputs.write("foreign-vars", b"foreign vars");
     let admitted = inputs.path("valid-export");
-    create_snapshot(&disk, &vars, &admitted, "foreign", false, 1024).unwrap();
+    create_snapshot(&disk, &vars, &admitted, "foreign").unwrap();
     let before = fixture::namespace::capture(&fixture.scratch.0);
-    assert!(create_snapshot(&disk, &vars, &fixture.stage, "foreign", false, 1024).is_err());
+    assert!(create_snapshot(&disk, &vars, &fixture.stage, "foreign").is_err());
     assert_eq!(fixture::namespace::capture(&fixture.scratch.0), before);
     assert_eq!(fs::read(&disk).unwrap(), b"foreign disk");
     assert_eq!(fs::read(&vars).unwrap(), b"foreign vars");

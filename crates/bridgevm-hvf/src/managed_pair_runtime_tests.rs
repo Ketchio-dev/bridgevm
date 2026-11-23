@@ -10,7 +10,7 @@ fn fixture(tag: &str) -> (Scratch, VirtBootMediaConfig, PathBuf) {
     let sd = s.write("source-disk", b"new-disk");
     let sv = s.write("source-vars", b"new-vars");
     let snapshot = s.path("snapshot");
-    create_snapshot(&sd, &sv, &snapshot, "runtime", false, 1024).unwrap();
+    create_snapshot(&sd, &sv, &snapshot, "runtime").unwrap();
     let mut media = VirtBootMediaConfig::qemu_defaults();
     media.nvme_disk = Some(WritableMedia::new(disk).with_write_back(true));
     media.flash_vars = WritableMedia::new(vars).with_write_back(true);

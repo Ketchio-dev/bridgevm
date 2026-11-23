@@ -1,7 +1,7 @@
 //! Staging holding a published manifest may be a completed snapshot, such as a
 //! user's export to `.NAME.staging`, so creation refuses rather than reclaim it.
 
-use super::{Scratch, QUOTA};
+use super::Scratch;
 use crate::snapshot_pair::*;
 use std::ffi::OsString;
 use std::fs;
@@ -45,7 +45,7 @@ fn assert_kept_and_named(result: Result<SnapshotManifest, SnapshotError>, stagin
 pub fn refused_then_removed(disk: &Path, vars: &Path, dest: &Path) {
     let staging = staging_path(dest);
     let before = (files(&staging), files(dest));
-    let result = create_snapshot(disk, vars, dest, "refused", false, QUOTA);
+    let result = create_snapshot(disk, vars, dest, "refused");
     let after = (files(&staging), files(dest));
     assert_eq!(after, before, "refusal changed an output");
     assert_kept_and_named(result, &staging);
@@ -60,7 +60,7 @@ pub fn retry_create(disk: &Path, vars: &Path, dest: &Path, finished: bool) -> Sn
         verify_snapshot(&staging_path(dest)).expect("finished staging verifies");
         refused_then_removed(disk, vars, dest);
     }
-    let retried = create_snapshot(disk, vars, dest, "retry", false, QUOTA).expect("retry");
+    let retried = create_snapshot(disk, vars, dest, "retry").expect("retry");
     assert!(!staging_path(dest).exists(), "retry left staging");
     retried
 }
@@ -72,10 +72,10 @@ fn an_export_at_a_sibling_staging_name_survives_the_sibling_export() {
     let vars = s.write("vars", b"VVVV");
     let first = s.path(".旅行.snapshot.staging");
     let second = s.path("旅行.snapshot");
-    let exported = create_snapshot(&disk, &vars, &first, "vm", false, QUOTA).unwrap();
+    let exported = create_snapshot(&disk, &vars, &first, "vm").unwrap();
     let before = files(&first);
     fs::write(&disk, b"BBBB").unwrap();
-    let result = create_snapshot(&disk, &vars, &second, "vm", false, QUOTA);
+    let result = create_snapshot(&disk, &vars, &second, "vm");
     assert_eq!(
         files(&first),
         before,
@@ -87,7 +87,7 @@ fn an_export_at_a_sibling_staging_name_survives_the_sibling_export() {
     // Once the user moves the earlier export aside, the export proceeds.
     let moved = s.path("旅行-earlier.snapshot");
     fs::rename(&first, &moved).unwrap();
-    let created = create_snapshot(&disk, &vars, &second, "vm", false, QUOTA).unwrap();
+    let created = create_snapshot(&disk, &vars, &second, "vm").unwrap();
     assert_eq!(verify_snapshot(&second).unwrap(), created);
     assert_eq!(fs::read(second.join(DISK_NAME)).unwrap(), b"BBBB");
     assert_eq!(
@@ -111,7 +111,7 @@ fn staging_with_a_published_manifest_is_kept_with_the_destination() {
         let disk = s.write("disk", b"disk");
         let vars = s.write("vars", b"vars");
         let dest = s.path("snapshot");
-        let old = create_snapshot(&disk, &vars, &dest, "old", false, QUOTA).unwrap();
+        let old = create_snapshot(&disk, &vars, &dest, "old").unwrap();
         let staging = staging_path(&dest);
         fs::create_dir(&staging).unwrap();
         for name in names {
@@ -119,7 +119,7 @@ fn staging_with_a_published_manifest_is_kept_with_the_destination() {
         }
         refused_then_removed(&disk, &vars, &dest);
         assert_eq!(verify_snapshot(&dest).unwrap(), old, "{names:?}");
-        let new = create_snapshot(&disk, &vars, &dest, "new", false, QUOTA).unwrap();
+        let new = create_snapshot(&disk, &vars, &dest, "new").unwrap();
         assert_eq!(verify_snapshot(&dest).unwrap(), new, "{names:?}");
         assert!(!staging.exists(), "{names:?}");
     }

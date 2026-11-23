@@ -8,7 +8,7 @@ fn fixture(tag: &str) -> (Scratch, PathBuf, PathBuf, PathBuf) {
     let sd = s.write("source-disk", b"new-disk");
     let sv = s.write("source-vars", b"new-vars");
     let snapshot = s.path("snapshot");
-    create_snapshot(&sd, &sv, &snapshot, "managed", false, 1024).unwrap();
+    create_snapshot(&sd, &sv, &snapshot, "managed").unwrap();
     (s, disk, vars, snapshot)
 }
 
@@ -115,7 +115,7 @@ fn logical_pair_lease_excludes_competing_readers_and_legacy_restore() {
     let (_s, disk, vars, snapshot) = fixture("managed-lock");
     let pair = LockedPair::open(&disk, &vars).unwrap();
     assert!(LockedPair::open(&disk, &vars).is_err());
-    assert!(crate::snapshot_pair::restore_snapshot(&snapshot, &disk, &vars, false).is_err());
+    assert!(crate::snapshot_pair::restore_snapshot(&snapshot, &disk, &vars).is_err());
     drop(pair);
     LockedPair::open(&disk, &vars).unwrap();
 }

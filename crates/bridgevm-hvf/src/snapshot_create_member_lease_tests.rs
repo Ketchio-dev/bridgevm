@@ -14,7 +14,7 @@ fn replacing_a_snapshot_refuses_while_its_members_are_being_copied() {
     let new_disk = scratch.write("new-disk", b"new-disk");
     let new_vars = scratch.write("new-vars", b"new-vars");
     let source = scratch.path("S");
-    let original = create_snapshot(&old_disk, &old_vars, &source, "old", false, 1024).unwrap();
+    let original = create_snapshot(&old_disk, &old_vars, &source, "old").unwrap();
     // Separate parents prevent the existing parent lease from masking missing
     // ownership of S's members when another create replaces S itself.
     let target = scratch.path("export-parent/T");
@@ -24,14 +24,10 @@ fn replacing_a_snapshot_refuses_while_its_members_are_being_copied() {
         &source.join(VARS_NAME),
         &target,
         "export",
-        false,
-        1024,
         |stage| {
             if stage == CreateStage::DiskSynced {
                 assert!(replacement.is_none(), "disk hook must run exactly once");
-                replacement = Some(create_snapshot(
-                    &new_disk, &new_vars, &source, "new", false, 1024,
-                ));
+                replacement = Some(create_snapshot(&new_disk, &new_vars, &source, "new"));
             }
         },
     )

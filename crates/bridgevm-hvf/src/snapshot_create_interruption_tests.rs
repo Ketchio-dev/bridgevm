@@ -33,7 +33,7 @@ fn create_crash_child() {
     let disk = required_path(DISK_ENV);
     let vars = required_path(VARS_ENV);
     let dest = required_path(DEST_ENV);
-    create_snapshot_using(&disk, &vars, &dest, "new", false, 1024, |stage| {
+    create_snapshot_using(&disk, &vars, &dest, "new", |stage| {
         let (name, exit, _) = selected_scenario(stage);
         if scenario == name {
             std::process::exit(exit);
@@ -71,7 +71,7 @@ fn hard_exit_during_create_selects_only_one_complete_snapshot_and_allows_retry()
         let disk = scratch.write("disk", b"old-disk");
         let vars = scratch.write("vars", b"old-vars");
         let dest = scratch.path("snapshot");
-        let old = create_snapshot(&disk, &vars, &dest, "old", false, 1024).unwrap();
+        let old = create_snapshot(&disk, &vars, &dest, "old").unwrap();
         fs::write(&disk, b"new-disk").unwrap();
         fs::write(&vars, b"new-vars").unwrap();
 

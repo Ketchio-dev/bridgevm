@@ -3,6 +3,7 @@ import Foundation
 
 /// A missing path is established by lstat/ENOENT, never by fileExists (which
 /// follows dangling links and hides lookup failures). No recovery is performed.
+/// References from other VMs are checked by LibraryDeletionReferences.delete, right after this.
 enum HvfPendingDeletionGuard {
     static func validate(_ config: VMConfig, rootURL: URL) throws {
         guard config.engineKind == .hvfEngine, config.bootMode == "windows-hvf",
@@ -20,7 +21,6 @@ enum HvfPendingDeletionGuard {
                   directory.path == directory.resolvingSymlinksInPath().standardizedFileURL.path,
                   ownedDirectory(directory) else { throw failure() }
         }
-        try HvfPendingDeletionReferences.validate(config, rootURL: rootURL)
         _ = try HvfWindowsInstallRequestSnapshot.load(
             bundle.appendingPathComponent(HvfWindowsInstallRequest.fileName))
         for absent in [disk, metadata.appendingPathComponent("hvf-vars.fd"),
@@ -40,10 +40,12 @@ enum HvfPendingDeletionGuard {
         }
     }
 
+    /// A real directory the user owns. Group- or world-writable modes are fine: exFAT reports 0777,
+    /// and a user who can write there could already remove these files without BridgeVM.
     private static func ownedDirectory(_ url: URL) -> Bool {
         var info = stat()
         return lstat(url.path, &info) == 0 && info.st_mode & S_IFMT == S_IFDIR
-            && info.st_uid == geteuid() && info.st_mode & 0o022 == 0
+            && info.st_uid == geteuid()
     }
 
     private static func kind(_ url: URL) throws -> mode_t? {

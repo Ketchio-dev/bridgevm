@@ -1,4 +1,4 @@
-use super::super::snapshot_pair_tests::{Scratch, QUOTA};
+use super::super::snapshot_pair_tests::Scratch;
 use super::super::{create_snapshot, restore_snapshot};
 use super::*;
 use std::fs;
@@ -9,10 +9,10 @@ fn after_a_restore_the_selected_pair_matches_the_snapshot_and_the_originals_do_n
     let disk = s.write("disk.raw", b"disk before");
     let vars = s.write("vars.fd", b"vars before");
     let snap = s.path("snap");
-    let m = create_snapshot(&disk, &vars, &snap, "vm-1", false, QUOTA).expect("create");
+    let m = create_snapshot(&disk, &vars, &snap, "vm-1").expect("create");
     fs::write(&disk, b"disk mutated!").expect("mutate disk");
     fs::write(&vars, b"vars mutated!").expect("mutate vars");
-    restore_snapshot(&snap, &disk, &vars, false).expect("restore");
+    restore_snapshot(&snap, &disk, &vars).expect("restore");
 
     let selected = selected_digest(&disk, &vars).expect("digest");
     assert_eq!(
