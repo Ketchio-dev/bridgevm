@@ -27,8 +27,10 @@ All notable changes to BridgeVM are documented in this file.
   sealed instead of six times (about 2–3 minutes less for a 64 GiB disk,
   estimated). Snapshot create, export and disk import no longer re-read the
   whole disk to verify right after writing it; a restore still verifies
-  before it touches the VM. An A19 restore-boot lane, which creates,
-  restores and exports a 64 GiB pair, took about 6 minutes instead of about 9
+  before it touches the VM. A restore reads the snapshot once instead of
+  twice: it hashes only the staged copy it publishes (median 157 s to 74 s
+  for a 64 GiB pair on one Mac). An A19 restore-boot lane, which creates,
+  restores and exports a 64 GiB pair, took about 5 minutes instead of about 9
   on the same Mac.
 - Two snapshot exports to different names in the same folder can run at the
   same time.
