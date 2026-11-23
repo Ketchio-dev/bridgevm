@@ -190,89 +190,39 @@ fn refused_locality_does_not_latch_the_backend() {
 }
 
 #[test]
-fn swtpm_backend_reset_power_cycles_via_control_socket_cmd_init() {
-    use std::io::{Read, Write};
+fn swtpm_backend_reset_reports_control_result() {
+    use std::os::unix::fs::DirBuilderExt;
     use std::os::unix::net::UnixListener;
-    use std::thread;
 
-    let dir = std::env::temp_dir().join(format!(
-        "bridgevm-swtpm-ctrl-{}-{}",
-        std::process::id(),
-        std::time::Instant::now().elapsed().as_nanos()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    let data_path = dir.join("data.sock");
-    let control_path = dir.join("control.sock");
+    // Leave most of sockaddr_un available to the caller's temporary path.
+    let dir = std::env::temp_dir().join(format!("bvt-{}", std::process::id()));
+    std::fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
+    let data_path = dir.join("d");
+    let control_path = dir.join("c");
     let data_listener = UnixListener::bind(&data_path).unwrap();
     let control_listener = UnixListener::bind(&control_path).unwrap();
 
-    // The data server just accepts and holds the connection; the backend
-    // does not send data-channel traffic during reset.
-    let data_thread = thread::spawn(move || {
-        let (_stream, _addr) = data_listener.accept().unwrap();
-        // Keep the connection open until the test drops the backend.
-        thread::sleep(Duration::from_millis(200));
-    });
+    for result in [0, 1] {
+        let mut backend =
+            SwtpmUnixBackend::connect_with_control(&data_path, Some(&control_path)).unwrap();
+        let (mut data, _) = data_listener.accept().unwrap();
+        let (control, _) = control_listener.accept().unwrap();
+        let server = serve_control(control, result);
 
-    // The control server captures the CMD_INIT request and replies success.
-    let control_thread = thread::spawn(move || {
-        let (mut stream, _addr) = control_listener.accept().unwrap();
-        let mut request = [0u8; 8];
-        stream.read_exact(&mut request).unwrap();
-        stream.write_all(&0u32.to_be_bytes()).unwrap();
-        request
-    });
+        let reset = backend.reset();
+        if result == 0 {
+            reset.expect("swtpm accepted CMD_INIT");
+        } else {
+            assert!(matches!(reset, Err(TpmBackendError::Protocol(_))));
+        }
+        drop(backend);
+        assert_eq!(server.join().unwrap(), 1);
+        assert_eq!(
+            data.read(&mut [0]).unwrap(),
+            0,
+            "reset only uses the control socket"
+        );
+    }
 
-    let mut backend =
-        SwtpmUnixBackend::connect_with_control(&data_path, Some(&control_path)).unwrap();
-    backend.reset().expect("power cycle should succeed");
-
-    let request = control_thread.join().unwrap();
-    data_thread.join().unwrap();
-
-    // CMD_INIT (0x00000002) big-endian, then init_flags = 0.
-    assert_eq!(request, [0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00]);
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn swtpm_backend_reset_fails_closed_when_control_reports_error() {
-    use std::io::{Read, Write};
-    use std::os::unix::net::UnixListener;
-    use std::thread;
-
-    let dir = std::env::temp_dir().join(format!(
-        "bridgevm-swtpm-ctrl-err-{}-{}",
-        std::process::id(),
-        std::time::Instant::now().elapsed().as_nanos()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    let data_path = dir.join("data.sock");
-    let control_path = dir.join("control.sock");
-    let data_listener = UnixListener::bind(&data_path).unwrap();
-    let control_listener = UnixListener::bind(&control_path).unwrap();
-
-    let data_thread = thread::spawn(move || {
-        let (_stream, _addr) = data_listener.accept().unwrap();
-        thread::sleep(Duration::from_millis(200));
-    });
-    let control_thread = thread::spawn(move || {
-        let (mut stream, _addr) = control_listener.accept().unwrap();
-        let mut request = [0u8; 8];
-        stream.read_exact(&mut request).unwrap();
-        // Non-zero control result → swtpm rejected the power cycle.
-        stream.write_all(&1u32.to_be_bytes()).unwrap();
-    });
-
-    let mut backend =
-        SwtpmUnixBackend::connect_with_control(&data_path, Some(&control_path)).unwrap();
-    let err = backend
-        .reset()
-        .expect_err("non-zero control result must fail closed");
-    assert!(matches!(err, TpmBackendError::Protocol(_)));
-
-    control_thread.join().unwrap();
-    data_thread.join().unwrap();
-    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::remove_dir_all(dir).unwrap();
 }
