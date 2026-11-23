@@ -70,3 +70,92 @@ enum NativeLibraryReader {
         NativeLibraryIssue(code: code, path: path, message: message)
     }
 }
+
+struct NativeLibraryIssue: Codable, Equatable {
+    let code: String
+    let path: String
+    let message: String
+}
+
+struct NativeLibraryRecord: Codable, Equatable {
+    let id: String
+    let displayName: String
+    let backendKind: String
+    let cpuCount: Int?
+    let memoryMiB: Int?
+    let installPending: Bool?
+    let configPath: String
+    let bundlePath: String
+    let runtimeState: String
+    let recoveryObservations: [String]
+
+    init(config: VMConfig, rootURL: URL) {
+        id = config.slug
+        displayName = config.displayName
+        backendKind = config.backendKind
+        cpuCount = config.cpuCount
+        memoryMiB = config.memMiB
+        installPending = config.installPending
+        configPath = rootURL.appendingPathComponent(id).appendingPathComponent("vm.json").path
+        bundlePath = config.bundlePath
+        runtimeState = "unobserved"
+        var observations: [String] = []
+        if VMRelocationJournal.isPending(config, rootURL: rootURL) {
+            observations.append("relocation-record-present-or-unreadable")
+        }
+        let journal = HvfWindowsInstallFinalizationPaths(
+            libraryRoot: rootURL, bundle: URL(fileURLWithPath: config.bundlePath), slug: id).journal
+        if NativeLibraryReader.entryMayExist(journal) {
+            observations.append("install-finalization-record-present-or-unreadable")
+        }
+        recoveryObservations = observations
+    }
+}
+
+struct NativeLibrarySnapshot: Encodable {
+    let schema = "bridgevm.app-library.v1"
+    let libraryPath: String
+    let records: [NativeLibraryRecord]
+    let issues: [NativeLibraryIssue]
+    var complete: Bool { issues.isEmpty }
+
+    enum CodingKeys: String, CodingKey { case schema, libraryPath, records, issues, complete }
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schema, forKey: .schema)
+        try container.encode(libraryPath, forKey: .libraryPath)
+        try container.encode(records, forKey: .records)
+        try container.encode(issues, forKey: .issues)
+        try container.encode(complete, forKey: .complete)
+    }
+}
+
+enum NativeLibraryConfigLoader {
+    static func readConfig(rootDescriptor: Int32, id: String) throws -> VMConfig {
+        guard NativeLibraryReader.isCanonicalID(id) else { throw NativeCLIError.invalid("Invalid VM ID.") }
+        let directory = openat(rootDescriptor, id, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard directory >= 0 else { throw NativeCLIError.unavailable("Cannot open the VM directory safely.") }
+        defer { close(directory) }
+        let descriptor = openat(directory, "vm.json", O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else { throw NativeCLIError.unavailable("Cannot open vm.json as a regular file.") }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer { try? handle.close() }
+        var metadata = stat()
+        let limit = VMLibrary.maximumConfigBytes
+        guard fstat(descriptor, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFREG,
+              metadata.st_size >= 0, metadata.st_size <= limit else {
+            throw NativeCLIError.unavailable("vm.json must be a regular file of at most \(limit) bytes.")
+        }
+        var data = Data()
+        while data.count <= limit {
+            guard let chunk = try handle.read(upToCount: min(65_536, limit + 1 - data.count)),
+                  !chunk.isEmpty else { break }
+            data.append(chunk)
+        }
+        guard data.count <= limit else { throw NativeCLIError.unavailable("vm.json exceeded the size limit while reading.") }
+        var config = try JSONDecoder().decode(VMConfig.self, from: data)
+        config.id = id
+        return config
+    }
+
+}

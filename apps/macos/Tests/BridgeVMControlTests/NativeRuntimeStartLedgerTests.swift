@@ -34,7 +34,7 @@ final class NativeRuntimeStartLedgerTests: XCTestCase {
         XCTAssertEqual(response.reason, "VM 작업이 진행 중입니다. 완료 후 다시 시도하세요.")
     }
 
-    /// Every CLI start has a fresh operation ID. A full ledger used to refuse every start after 256.
+    /// Every CLI start has a fresh operation ID, so a full ledger must not refuse starts after 256.
     func testThreeHundredStartsInOneSessionAreAdmittedAndRecentStatusStillAnswers() throws {
         let ledger = NativeRuntimeStartLedger(appInstanceID: F.app, library: F.library)
         let pending = F.request(vmID: "other-vm"), (pendingAdmission, _, pendingSession) = accepted()

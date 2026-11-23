@@ -37,8 +37,8 @@ enum T17DisplayClick {
     static func topOwner(at point: CGPoint, pid: pid_t, windows: [[String: Any]]) -> String? {
         for window in windows {   // front to back
             // The Dock (layer 20), Notification Center (21) and the menu bar (24) keep full-screen
-            // windows above every app on macOS 27 (T17 r99); they do not cover it. Floating panels
-            // below them do: r100's click landed on a Passwords helper panel at layer 3.
+            // windows above every app on macOS 27; they do not cover it. Floating panels below them
+            // do, such as a Passwords helper panel at layer 3.
             guard (window[kCGWindowLayer as String] as? Int ?? 0) < 20,
                   let bounds = (window[kCGWindowBounds as String] as? NSDictionary).flatMap({
                 CGRect(dictionaryRepresentation: $0)

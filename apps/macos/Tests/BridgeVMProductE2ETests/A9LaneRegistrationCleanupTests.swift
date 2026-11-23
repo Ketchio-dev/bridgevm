@@ -1,7 +1,7 @@
 import XCTest
 @testable import BridgeVMProductE2E
 
-/// T19 r1 registered `windows-11`; a cleanup that looked only under the requested slug leaked its key. A booted lane
+/// A lane can register `windows-11`; a cleanup that looked only under the requested slug would leak its key. A booted lane
 /// rewrites its vTPM state, so forget-import must open the package against the sealed source state it was made from.
 final class A9LaneRegistrationCleanupTests: XCTestCase {
     func testCleanupForgetsARegistrationUnderAnotherSlug() throws {

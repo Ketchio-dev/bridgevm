@@ -46,7 +46,7 @@ final class HvfCompositionCommitTests: XCTestCase {
     }
 
     /// The older resident agent's route: Hangul is a clipboard paste. A chord waits behind it, but a
-    /// press cancels a pending paste (#391), so a click still discards the syllable.
+    /// press cancels a pending paste, so a click still discards the syllable.
     func testClipboardRoutePastesTheSyllableBeforeTheChordAndAClickDiscardsIt() throws {
         let fixture = try HvfRuntimeKeyboardDraftFixture()
         defer { fixture.remove() }

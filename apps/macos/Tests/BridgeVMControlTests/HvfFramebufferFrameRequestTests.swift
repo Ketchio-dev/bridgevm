@@ -3,8 +3,7 @@ import AppKit
 import XCTest
 @testable import BridgeVMControl
 
-/// The display tick asks a writer that answers requests for a frame
-/// (display-export-20261023, F1 B2) and leaves any other writer's file alone.
+/// The display tick asks a writer that answers requests for a frame and leaves any other writer's file alone.
 @MainActor
 final class HvfFramebufferFrameRequestTests: XCTestCase {
     func testEachDisplayTickPostsAFrameRequestToAWriterThatAnswersThem() throws {

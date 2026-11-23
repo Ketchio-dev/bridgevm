@@ -30,8 +30,8 @@ final class A9ImportFormEntryTests: XCTestCase {
 
 /// The first-run import form as SwiftUI behaves: the name field has no focus when the form
 /// opens, a value set through accessibility reaches the binding only while the field has
-/// focus, and the next view update shows the binding again. T19 r1 imported under the
-/// default name (vTPM key account `windows-11`, 2026-10-22).
+/// focus, and the next view update shows the binding again; without focus the import uses the
+/// default name (vTPM key account `windows-11`).
 private final class FirstRunImportFormUI: T17UIControlling {
     var binding = "Windows 11", shown = "Windows 11", focused: String?, open = false, focusBinds = true
     var calls: [String] = [], committedNames: [String] = []

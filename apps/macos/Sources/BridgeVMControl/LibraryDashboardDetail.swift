@@ -140,7 +140,7 @@ struct LibraryDashboardDetail: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("빠른 작업").font(.headline)
             HStack(spacing: 12) {
-                // 고급 is in the action grid above; one route is enough (UI review 2026-11-19).
+                // 고급 is in the action grid above; one route is enough.
                 Button { revealBundle() } label: { Label("Finder에서 보기", systemImage: "folder") }
             }
             .buttonStyle(.bordered).controlSize(.large)

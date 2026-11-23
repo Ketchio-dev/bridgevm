@@ -1,9 +1,8 @@
 import XCTest
 
 /// Every SwiftUI `Menu` the app declares is the shared VM actions menu, which sets an
-/// accessibility identifier. The d6 live run of 2026-10-23 at seal 22678cd5 found an
-/// `AXMenuButton` of the seeded library refusing every `AXIdentifier` read with
-/// kAXErrorFailure (-25200) while no menu set one. The one other is the menu bar's 가상 머신 > Windows 앱
+/// accessibility identifier: an `AXMenuButton` without one refuses every `AXIdentifier` read
+/// with kAXErrorFailure (-25200). The one other is the menu bar's 가상 머신 > Windows 앱
 /// submenu (a menu bar item, no window's AXMenuButton), which sets its own identifier too.
 final class LibraryMenuIdentifierSourceTests: XCTestCase {
     func testEveryDeclaredMenuIsTheIdentifiedActionsMenu() throws {

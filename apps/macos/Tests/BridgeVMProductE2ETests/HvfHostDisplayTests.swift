@@ -5,7 +5,7 @@ import XCTest
 /// ramfb-display-timing-host-tail-contract.py's cases on the Swift twins: the bound
 /// final report (HvfTerminalReport.hostTail) and T17's bounded audio tail admit one
 /// `ramfb display timing:` record after every HDA record and refuse it anywhere else,
-/// twice or malformed; a tail without it reads as before.
+/// twice or malformed; a tail without it still reads.
 final class HvfHostDisplayTests: XCTestCase {
     typealias Fixture = T17FirstRunHostRecordsTests
     static let display = "ramfb display timing: ticks=4960 late_le_1ms=4100 late_le_4ms=700 late_le_8ms=120 "

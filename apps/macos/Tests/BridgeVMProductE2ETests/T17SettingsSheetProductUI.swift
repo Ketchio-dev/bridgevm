@@ -1,7 +1,7 @@
 import Foundation
 @testable import BridgeVMProductE2E
 
-/// The product since window #4 (T17 r98): clipboard, network, shared folder and snapshots are in
+/// The product's settings layout: clipboard, network, shared folder and snapshots are in
 /// the 설정 sheet, opened from the VM dashboard; Start is in the runtime view behind 고급. While
 /// the sheet is open only its controls answer (Start is refused), and after 완료 it stays on
 /// screen for one more poll while it animates away.

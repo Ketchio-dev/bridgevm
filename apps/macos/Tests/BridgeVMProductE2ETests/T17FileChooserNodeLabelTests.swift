@@ -12,7 +12,7 @@ final class T17FileChooserNodeLabelTests: XCTestCase {
     func testNamedReadFailureKeepsCodeDetailAndTransientClassification() throws {
         XCTAssertEqual(named(.failure), T17Blocker(code: "input-selection-failed",
             detail: "node=AXGroup/-/n7; file chooser AXChildren read failed; ax_error=-25200"))
-        for code in [AXError.failure, .invalidUIElement, .cannotComplete] {  // r62 lost retries when the label was a suffix
+        for code in [AXError.failure, .invalidUIElement, .cannotComplete] {  // retries survive a labelled failure
             XCTAssertTrue(T17FileChooserSnapshot.isTransientReadFailure(try XCTUnwrap(named(code))))
         }
     }

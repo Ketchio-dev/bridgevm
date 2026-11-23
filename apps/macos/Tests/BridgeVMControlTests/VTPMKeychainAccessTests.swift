@@ -13,7 +13,7 @@ final class VTPMKeychainAccessTests: XCTestCase {
     }
 
     func testAKeyStoredUnderTheOtherNormalizationFormIsFoundAndNotDuplicated() throws {
-        // #689: the keychain matches accounts byte for byte. A Korean VM ID can arrive composed
+        // The keychain matches accounts byte for byte. A Korean VM ID can arrive composed
         // (vm.json, a copied library) while its key was created decomposed (directory name), or the reverse.
         let composed = "ISO 드라이버 검증".precomposedStringWithCanonicalMapping
         let decomposed = composed.decomposedStringWithCanonicalMapping

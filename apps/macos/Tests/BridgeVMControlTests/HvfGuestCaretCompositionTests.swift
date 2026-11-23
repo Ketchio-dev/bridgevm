@@ -10,7 +10,7 @@ import XCTest
 final class HvfGuestCaretCompositionTests: XCTestCase {
     private let automatic = NSRange(location: NSNotFound, length: 0)
 
-    /// Before this change the candidate window always anchored 12 pt from the display's bottom-left.
+    /// The candidate window anchors at the guest caret, not 12 pt from the display's bottom-left.
     func testTheCandidateAnchorSitsJustBelowTheGuestCaret() throws {
         try withComposingDisplay(caret: true) { view, session, fixture in
             mark("ㅎ", in: view)

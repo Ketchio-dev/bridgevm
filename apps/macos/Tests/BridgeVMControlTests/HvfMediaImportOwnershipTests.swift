@@ -1,9 +1,9 @@
 import XCTest
 @testable import BridgeVMControl
 
-/// T19 r3 (2026-10-22) imported read-only sealed inputs. The native helper clones on APFS and
-/// a clone keeps the source's mode, so the VM's own disk and vars stayed read-only, launch
-/// readiness refused them, and Start stayed disabled.
+/// Sealed inputs can be read-only. The native helper clones on APFS and a clone keeps the
+/// source's mode, so without a mode fix the VM's own disk and vars stay read-only, launch
+/// readiness refuses them, and Start stays disabled.
 final class HvfMediaImportOwnershipTests: XCTestCase {
     func testReadOnlySelectionImportsAsWritableVMMedia() throws {
         let fm = FileManager.default

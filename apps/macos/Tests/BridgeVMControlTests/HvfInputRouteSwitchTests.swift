@@ -238,7 +238,7 @@ final class HvfInputRouteSwitchTests: XCTestCase {
         }
     }
 
-    /// The first boot after an app update that ships a new agent (live run 20261111-021640): the old agent answers
+    /// The first boot after an app update that ships a new agent: the old agent answers
     /// INPUTCAPS with `unknown token`, the probe updates it in the same boot, and the new agent instance is asked
     /// again; the switch then waits for the HID route like at boot.
     func testAnAgentUpdatedInTheSameBootIsAskedForInputCapsAgainAndActivatesOnceTheHIDRouteIsQuiet() throws {

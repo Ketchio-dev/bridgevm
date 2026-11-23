@@ -43,7 +43,7 @@ final class HvfFramebufferScrollOrderingTests: XCTestCase {
     }
 
     /// A gentle two-finger scroll is dozens of small point deltas plus a momentum tail. On the VMM's
-    /// HID wheel it used to become one or more whole Windows notches per event (70 notches here).
+    /// HID wheel it becomes proportional notches, not one or more whole Windows notches per event (70 here).
     func testATrackpadGestureReachesTheVMMWheelAsProportionalNotches() throws {
         try withView(guestPixels: 200) { view, root in
             // 100-point view, 200-pixel guest: 2 guest pixels per point, so 40 x 1.5 points is 192 units

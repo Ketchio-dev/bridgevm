@@ -149,3 +149,88 @@ final class AppUIHost {
     }
 }
 #endif
+
+#if DEBUG && BRIDGEVM_APP_UI_HOST
+
+@MainActor
+extension AppUIHost {
+    func seedOverviewMetadata() { Self.seedOverview(library, root: root, work: capture.work) }
+    /// Synthetic registration metadata only: each row holds one inert-backend model and is never activated.
+    static func seedOverview(_ library: LibraryModel, root: URL, work: AppUIHostDomainWork) {
+        library.vms = work.seed([("Amber", 4096), ("Indigo", 8192)].map { name, memory in
+            VMConfig(id: "ui-" + name.lowercased(), name: name, displayName: name, backendKind: "hvf-engine",
+                bootMode: "windows-hvf", bundlePath: root.appendingPathComponent(name + ".vmbridge").path,
+                runnerPath: "", launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "", leasesPath: "",
+                guestName: "owned-ui-fixture", displayWidth: 1280, displayHeight: 800, memMiB: memory, cpuCount: 4)
+        })
+    }
+}
+#endif
+
+#if DEBUG && BRIDGEVM_APP_UI_HOST
+
+@MainActor
+extension AppUIHost {
+    static func makeLibrary(root: URL, capture: AppUIHostCapture) -> LibraryModel {
+        LibraryModel(rootURL: root, migrateLegacy: false,
+            installSessionFactory: { _ in capture.tripwire("install_creations") },
+            runtimeSessionFactory: { _ in capture.tripwire("runtime_creations") },
+            actionScheduler: { _ in capture.tripwire("file_jobs") }, startsModelsAutomatically: false,
+            modelFactory: { capture.makeModel($0) })
+    }
+    static func checkCancellation(output: URL) throws {
+        let marker = output.deletingLastPathComponent().appendingPathComponent("cancel.requested").path
+        var status = stat()
+        if lstat(marker, &status) == 0 { throw AppUIHostError.refused("Host canceled by owning launcher") }
+        guard errno == ENOENT else { throw AppUIHostError.refused("Cancellation marker could not be inspected") }
+    }
+}
+#endif
+
+#if DEBUG && BRIDGEVM_APP_UI_HOST
+
+@MainActor
+extension AppUIHost {
+    static func outputDirectory(arguments: [String], fileManager: FileManager = .default) throws -> URL {
+        guard arguments.count == 3, arguments[0] == "--app-ui-host", arguments[1] == "--output" else {
+            throw AppUIHostError.refused("Expected exactly --app-ui-host --output ABSOLUTE_DIRECTORY")
+        }
+        let path = arguments[2]
+        let components = (path as NSString).pathComponents
+        let output = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
+        guard path.hasPrefix("/"), path.utf8.count <= 4096, !path.contains("\0"),
+              !components.contains(".."), !components.contains("."), output.path == path,
+              output.resolvingSymlinksInPath().path == path, output.lastPathComponent == "host-observations",
+              output.deletingLastPathComponent().lastPathComponent == "app-ui-private" else {
+            throw AppUIHostError.refused("Output must be a canonical app-ui-private/host-observations directory")
+        }
+        for directory in [output.deletingLastPathComponent(), output] {
+            let attributes = try fileManager.attributesOfItem(atPath: directory.path)
+            guard attributes[.type] as? FileAttributeType == .typeDirectory,
+                  (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == geteuid(),
+                  (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700 else {
+                throw AppUIHostError.refused("Output and parent require owned 0700 directories")
+            }
+        }
+        guard try fileManager.contentsOfDirectory(atPath: path).isEmpty else {
+            throw AppUIHostError.refused("Output directory must be empty")
+        }
+        return output
+    }
+    static func writeIdentity(_ capture: AppUIHostCapture) throws {
+        let bundle = Bundle.main.bundleURL.standardizedFileURL
+        guard Bundle.main.bundleIdentifier == "dev.bridgevm.app-ui-host",
+              bundle.lastPathComponent == "BridgeVMAppUIHost.app", bundle.resolvingSymlinksInPath() == bundle,
+              let executable = Bundle.main.executableURL?.standardizedFileURL,
+              executable == bundle.appendingPathComponent("Contents/MacOS/BridgeVMControl"),
+              executable.resolvingSymlinksInPath() == executable,
+              (try executable.resourceValues(forKeys: [.isRegularFileKey])).isRegularFile == true else {
+            throw AppUIHostError.refused("Host bundle/executable identity differs from the fixed diagnostic contract")
+        }
+        try capture.write(["schema_version": 1, "kind": "native-app-ui-host-identity", "pid": Int(getpid()),
+            "bundle_identifier": "dev.bridgevm.app-ui-host", "bundle_path": bundle.path,
+            "executable_path": executable.path, "executable_sha256": try AppUIHostCapture.digest(executable),
+            "started_uptime": ProcessInfo.processInfo.systemUptime], name: "host-identity.json", final: true)
+    }
+}
+#endif

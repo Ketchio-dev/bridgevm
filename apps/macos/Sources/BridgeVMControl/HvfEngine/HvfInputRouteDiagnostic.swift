@@ -1,9 +1,8 @@
 import Foundation
 
 /// Names why a display press did not take the ordered path, in the characters the T17 display
-/// diagnostic keeps (letters, digits, '-', '=', space). T17 r72 on the Studio pressed the display
-/// once and it went "legacy" with no INPUTCAPS exchange in the run log; this records whether the
-/// router was owned, how far negotiation got and whether the session was an attachment.
+/// diagnostic keeps (letters, digits, '-', '=', space): whether the router was owned, how far
+/// negotiation got and whether the session was an attachment.
 enum HvfInputRouteDiagnostic {
     /// `fallback`: an active route sending to input.ctl after Windows inserted nothing (HvfSessionInputRouter).
     static func label(owned: Bool, state: HvfNegotiatedInputStream.State, activated: Bool, failed: Bool, attached: Bool,

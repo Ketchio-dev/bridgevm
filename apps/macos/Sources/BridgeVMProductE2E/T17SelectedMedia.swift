@@ -2,7 +2,7 @@ import Foundation
 
 /// The restored pair is checked through the product's own selection. After a restore the
 /// original disk and vars paths keep their old bytes and the selected generation lives under
-/// the managed root, so hashing the originals failed a correct restore (Studio T17 r79).
+/// the managed root, so hashing the originals would fail a correct restore.
 enum T17SelectedMedia {
     struct Digest: Equatable { var diskBytes: Int; var diskSHA256: String; var varsBytes: Int; var varsSHA256: String }
 

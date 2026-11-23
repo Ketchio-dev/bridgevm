@@ -41,7 +41,7 @@ final class T17IdentifierSearchTests: XCTestCase {
                    detail: "ax_tree_read_failed;attribute=\(attribute);role=AXTextField;ax_error=\(status.rawValue)")
     }
 
-    /// r37 shape: setText's role-qualified lookup of ctl.input, AXIdentifier -25200 on the field.
+    /// setText's role-qualified lookup of ctl.input, AXIdentifier -25200 on the field.
     func testTransientTargetReadsRecoverWithinTheRoleQualifiedDeadline() {
         let harness = Harness()
         XCTAssertEqual(try harness.run(role: kAXTextFieldRole, timeout: 10) { node, name in

@@ -5,8 +5,8 @@ import SwiftUI
 /// the identifier and reports an accessibility value set to the query.
 ///
 /// SwiftUI's TextField exposes a separate accessibility node and updates its binding only from
-/// edits made through its field editor, so the d6 run of 2026-10-23 at seal 8d3eb052, whose
-/// accessibility client set the value, changed the text on screen but never the query.
+/// edits made through its field editor, so an accessibility client that set the value changed
+/// the text on screen but never the query.
 struct LibrarySearchTextField: NSViewRepresentable {
     static let identifier = "bridgevm.library.search"
     @Binding var query: String
