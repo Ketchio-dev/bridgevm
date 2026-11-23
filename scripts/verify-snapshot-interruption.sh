@@ -87,7 +87,10 @@ current_pair() {
   esac
 }
 pair_hash() { # disk vars
-  echo "$(openssl dgst -sha256 -r "$1" | cut -c1-16):$(openssl dgst -sha256 -r "$2" | cut -c1-16)"
+  local disk vars
+  disk=$(openssl dgst -sha256 -r "$1") || return
+  vars=$(openssl dgst -sha256 -r "$2") || return
+  printf '%s:%s\n' "${disk%% *}" "${vars%% *}"
 }
 current_hash() {
   local p; p=$(current_pair)
@@ -163,7 +166,7 @@ boot_mark() { # phase-name new-marker -> sets READ_MARKER
 
 descendants() { local p; for p in $(pgrep -P "$1"); do echo "$p"; descendants "$p"; done; }
 
-run_op() { # op kill-after-seconds(or "") name -> sets OP_RC OP_SECS OP_KILLED
+run_op() { # op kill-after-seconds(or "") name -> sets OP_RC OP_SECS OP_KILLED OP_HELPER_SIGNALED
   local op=$1 after=$2 name=$3 start=$SECONDS
   local d=$OUT/ops/$name; mkdir -p "$d"
   local args=(app "snapshot-$op" "$ID")
@@ -171,22 +174,29 @@ run_op() { # op kill-after-seconds(or "") name -> sets OP_RC OP_SECS OP_KILLED
   "$CLI" "${args[@]}" --library "$LIB" --json > "$d/out.json" 2> "$d/err.txt" &
   local pid=$!
   OP_KILLED=0
-  OP_HELPER_KILLED=0
+  OP_HELPER_SIGNALED=0
   if [[ -n "$after" ]]; then
     sleep "$after"
     if kill -0 "$pid" 2>/dev/null; then
       # The app CLI runs snapshot_pair_cli in its own process group (Foundation
       # Process), so kill the CLI and every descendant at once: a crash of both.
-      local victims; victims="$pid $(descendants "$pid" | tr '\n' ' ')"
+      local victims victim
+      victims="$pid $(descendants "$pid" | tr '\n' ' ')"
       # shellcheck disable=SC2086
       ps -o pid=,pgid=,command= -p "$(echo $victims | tr ' ' ',')" > "$d/killed.txt" 2>/dev/null || true
-      # shellcheck disable=SC2086
-      kill -KILL $victims 2>/dev/null || true
-      OP_KILLED=1
-      grep -q snapshot_pair_cli "$d/killed.txt" && OP_HELPER_KILLED=1
+      for victim in $victims; do
+        if kill -KILL "$victim" 2>/dev/null; then
+          if [[ "$victim" == "$pid" ]]; then
+            OP_KILLED=1
+          elif grep -Eq "^[[:space:]]*${victim}[[:space:]].*snapshot_pair_cli" "$d/killed.txt"; then
+            OP_HELPER_SIGNALED=1
+          fi
+        fi
+      done
     fi
   fi
   OP_RC=0; wait "$pid" || OP_RC=$?
+  (( OP_RC == 128 + 9 )) || OP_KILLED=0
   OP_SECS=$((SECONDS - start))
   sleep 0.5
   # A helper spawned in the instant of the kill would survive it; kill it too.
@@ -215,7 +225,7 @@ EXPORT_HASH=absent
 inventory setup
 echo "setup done: create ${T_CREATE}s current=$CUR snapshot=$SNAP_HASH $(date -u +%H:%M:%SZ)"
 
-interrupted=0; finished=0
+interrupted=0; finished=0; helper_signals=0
 for ((T = 1; T <= TRIALS; T++)); do
   case $((T % 3)) in
     1) op="create"; est=$T_CREATE ;;
@@ -226,8 +236,16 @@ for ((T = 1; T <= TRIALS; T++)); do
   after=$(python3 -c "import random; print(round(random.uniform(0.2, $est * 1.05), 1))")
   before=$CUR
   run_op "$op" "$after" "t$T-$op-killed"
+  if (( OP_KILLED )); then
+    interrupted=$((interrupted + 1))
+    helper_signals=$((helper_signals + OP_HELPER_SIGNALED))
+    state="killed helper-signaled=$OP_HELPER_SIGNALED"
+  else
+    (( OP_RC == 0 )) || fail "trial $T: $op exited before the planned interruption (rc=$OP_RC)"
+    finished=$((finished + 1))
+    state="finished-before-kill"
+  fi
   CUR=$(current_hash)
-  if (( OP_KILLED )); then interrupted=$((interrupted + 1)); state="killed helper=$OP_HELPER_KILLED"; else finished=$((finished + 1)); state="finished-before-kill rc=$OP_RC"; fi
   case $op in
     create|export) [[ "$CUR" == "$before" ]] || fail "trial $T: interrupted $op changed the current pair ($before -> $CUR)" ;;
     restore) [[ "$CUR" == "$before" || "$CUR" == "$SNAP_HASH" ]] || fail "trial $T: interrupted restore left a pair that is neither old nor snapshot ($CUR)" ;;
@@ -275,6 +293,6 @@ PY
   echo "trial $T: $op kill@${after}s/${est}s $state -> $outcome; retry ok (${OP_SECS}s); boot read $READ_MARKER $(date -u +%H:%M:%SZ)"
 done
 
-echo "PASS: $TRIALS trials ($interrupted interrupted, $finished finished before the kill): the current pair and the export were always exact, every retry succeeded and left no staging, every boot read its own marker"
+echo "PASS: $TRIALS trials ($interrupted CLI SIGKILL exits, $helper_signals helper signals sent, $finished finished before the kill): the current pair and the export were always exact, every retry succeeded and left no staging, every boot read its own marker"
 du -sk "$B" | awk '{print "final allocated_kib " $1}'
 find "$B/metadata/snapshots" -maxdepth 1 -name '*.snapshot' | wc -l | awk '{print "snapshots kept " $1}'
