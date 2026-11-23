@@ -12,6 +12,9 @@ library and retain its library model. Start supports saved, installed own-HVF
 entries. It does not open an app or window, install a guest, attach to an existing
 process, or repair a registration. See [CLI setup](app-cli.md).
 
+CLI start requires an existing key for vTPM-backed VMs. For a newly installed
+VM, use Start in the app once to create its key in Keychain.
+
 The CLI sends only the VM ID. The app starts that VM's current saved
 configuration through the same start path as the library's Start button: if
 `vm.json` changed since the app last read it, the app reads the library again

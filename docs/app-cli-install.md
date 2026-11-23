@@ -5,6 +5,7 @@ bridgevm app install 개발-vm
 bridgevm app install-status 개발-vm --json
 bridgevm app install 개발-vm # only after failed/cancelled becomes terminal
 bridgevm app readiness 개발-vm
+# After starting and shutting down the new VM once in the app:
 bridgevm app start 개발-vm
 bridgevm app status 개발-vm
 bridgevm app stop 개발-vm
@@ -17,7 +18,8 @@ A compatible app must already own the library. These commands open no window or 
 `install` starts or reuses the pending installation request saved when the VM was
 created. Required ISO and signed payload inputs must already be sealed in its bundle.
 It accepts no ISO, password, recovery key, unattended secret or driver path.
-[CLI-created entries lack the payload](app-cli-create.md) and cannot install by retrying.
+When creating from the CLI, pass `--fetch-drivers` to seal the drivers during
+creation. [Create a Windows VM from the CLI](app-cli-create.md)
 
 The app binds the operation to its current instance, canonical library and exact VM ID,
 and installs that VM's current saved configuration. If `vm.json` changed since the app
