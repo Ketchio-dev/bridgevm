@@ -4,8 +4,8 @@ Both remaining Windows bring-up frontiers stop at the same wall — a driver
 aborts inside its `StartDevice`/post-start path and leaves no host-visible
 reason:
 
-- **HDA codec** (`crates/bridgevm-hvf/src/hda/mod.rs`): the controller binds
-  (`Status=OK`), `hdaudio.sys` enumerates codec 0 and reads the AFG's
+- **HDA codec** (`crates/bridgevm-hvf/src/hda/codec_and_stream_format.rs`):
+  the controller binds (`Status=OK`), `hdaudio.sys` enumerates codec 0 and reads the AFG's
   vendor/revision/function-group-type/power/subsystem-id, then stops *before*
   querying `SUBORDINATE_NODE_COUNT` (GET_PARAMETER `0x04`), so it never finds
   the DAC/pin widgets. A clean device removal reproduces it, so it is not a

@@ -3,7 +3,7 @@ use super::*;
 // Source-wiring regression; real callback completion still needs a live run.
 #[test]
 fn async_fences_use_the_renderer_global_dispatcher() {
-    let source = include_str!("venus_start_trace_capset_cou.rs");
+    let source = include_str!("virtio_gpu_3d_backend.rs");
     let poll = source
         .split("fn poll_fences(&mut self) {")
         .nth(1)

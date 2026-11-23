@@ -1,4 +1,4 @@
-use super::icmp_reply_rejection_reason::would_block;
+use super::raw_socket::would_block;
 use std::{io, net::TcpStream};
 
 pub(crate) fn tcp_connect_error(stream: &TcpStream) -> io::Result<Option<i32>> {

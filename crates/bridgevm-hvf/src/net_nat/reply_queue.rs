@@ -32,3 +32,85 @@ impl<H> NatBackend<H> {
         }
     }
 }
+
+pub(crate) fn queue_udp_reply(
+    reply_queue: &mut VecDeque<Vec<u8>>,
+    guest_mac: MacAddr,
+    src_ip: Ipv4Addr,
+    dst_ip: Ipv4Addr,
+    src_port: u16,
+    dst_port: u16,
+    payload: &[u8],
+) {
+    let Some(frame) = build_udp_reply_frame(
+        guest_mac,
+        GATEWAY_MAC,
+        src_ip,
+        dst_ip,
+        src_port,
+        dst_port,
+        payload,
+    ) else {
+        return;
+    };
+    reply_queue.push_back(frame);
+}
+
+pub(crate) fn queue_tcp_reply(
+    reply_queue: &mut VecDeque<Vec<u8>>,
+    guest_mac: MacAddr,
+    key: &TcpFlowKey,
+    seq: u32,
+    ack: u32,
+    flags: u8,
+    payload: &[u8],
+) {
+    queue_tcp_segment(
+        reply_queue,
+        guest_mac,
+        key,
+        seq,
+        ack,
+        flags,
+        u16::MAX,
+        payload,
+    );
+}
+
+/// `queue_tcp_reply` with a flow's window field.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn queue_tcp_segment(
+    reply_queue: &mut VecDeque<Vec<u8>>,
+    guest_mac: MacAddr,
+    key: &TcpFlowKey,
+    seq: u32,
+    ack: u32,
+    flags: u8,
+    window: u16,
+    payload: &[u8],
+) {
+    let (source, destination) = tcp_reply_endpoints(guest_mac, key);
+    let Some(frame) =
+        build_tcp_reply_frame(source, destination, seq, ack, flags, window, &[], payload)
+    else {
+        return;
+    };
+    reply_queue.push_back(frame);
+}
+
+/// The NAT side of a flow (the remote host behind the gateway MAC), then the guest.
+pub(crate) fn tcp_reply_endpoints(
+    guest_mac: MacAddr,
+    key: &TcpFlowKey,
+) -> (EthernetIpv4Endpoint, EthernetIpv4Endpoint) {
+    (
+        EthernetIpv4Endpoint {
+            mac: GATEWAY_MAC,
+            network: Ipv4Endpoint::new(key.dst_ip, key.dst_port),
+        },
+        EthernetIpv4Endpoint {
+            mac: guest_mac,
+            network: Ipv4Endpoint::new(key.guest_ip, key.guest_port),
+        },
+    )
+}
