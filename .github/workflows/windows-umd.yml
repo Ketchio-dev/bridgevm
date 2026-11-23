@@ -160,9 +160,10 @@ jobs:
             "Microsoft.WindowsWDK.10.0.28000"
           )
           foreach ($package in $packages) {
+            # SDK installers append MSI-specific suffixes to the WinGet log path.
             winget install --id $package --exact --source winget --silent `
               --accept-source-agreements --accept-package-agreements `
-              --disable-interactivity
+              --disable-interactivity --log (Join-Path $env:RUNNER_TEMP "$package.log")
             if ($LASTEXITCODE -ne 0) {
               throw "winget installation failed for $package with $LASTEXITCODE"
             }
