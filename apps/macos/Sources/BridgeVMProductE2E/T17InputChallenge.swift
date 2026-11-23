@@ -6,7 +6,6 @@ struct T17InputChallenge {
     let sharePath: String
     let nonce: String
     let ui: T17UIControlling
-    let runLog: URL
     var readyTimeout: TimeInterval = 180
     var outputTimeout: TimeInterval = 60
 
@@ -16,11 +15,14 @@ struct T17InputChallenge {
         try ui.press("bridgevm.runtime.display.open", timeout: 10)
         // First logon can leave the Start menu over the form: click the form beside it, then its centre.
         for spot in [CGPoint(x: 0.04, y: 0.5), CGPoint(x: 0.5, y: 0.5)] {
-            try T17PointerReceipt.require(runLog, timeout: 15, diagnostic: ui.displayInputDiagnostic) { try ui.clickDisplaySurface(at: spot, timeout: 15) }
+            try ui.clickDisplaySurface(at: spot, timeout: 15)
         }
         try ui.fill("t17kbd\(prefix)", identifier: "bridgevm.runtime.keyboard.input", timeout: 10)
         try ui.press("bridgevm.runtime.keyboard.send", timeout: 10)
-        try T17InputChallengeShare.awaitOutput(share: share, nonce: nonce, timeout: outputTimeout)
+        do { try T17InputChallengeShare.awaitOutput(share: share, nonce: nonce, timeout: outputTimeout) }
+        catch let blocker as T17Blocker {
+            throw T17Blocker(code: blocker.code, detail: blocker.detail + ui.displayInputDiagnostic())
+        }
     }
     private var prefix: String { String(nonce.prefix(12)) }
 }

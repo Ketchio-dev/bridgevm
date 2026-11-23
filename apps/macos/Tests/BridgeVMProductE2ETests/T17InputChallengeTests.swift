@@ -76,7 +76,7 @@ final class T17InputChallengeTests: XCTestCase {
     }
 
     private func challenge(_ ui: GuestUI) -> T17InputChallenge {
-        T17InputChallenge(sharePath: share.path, nonce: nonce, ui: ui, runLog: ui.runLog, readyTimeout: 0.5)
+        T17InputChallenge(sharePath: share.path, nonce: nonce, ui: ui, readyTimeout: 0.5)
     }
 }
 
@@ -126,7 +126,7 @@ private final class GuestUI: T17UIControlling {
             DispatchQueue.global().asyncAfter(deadline: .now() + readyDelay) { try? body.write(to: ready) }
         }
     }
-    func clickDisplaySurface(at spot: CGPoint, timeout: TimeInterval) throws { events.append("click \(spot.x),\(spot.y) shown=\(shown)"); try T17PointerReceiptFixture.click(runLog) }
+    func clickDisplaySurface(at spot: CGPoint, timeout: TimeInterval) throws { events.append("click \(spot.x),\(spot.y) shown=\(shown)") }
     func expand(_ identifier: String, timeout: TimeInterval) throws {}
     func setText(_ value: String, identifier: String, timeout: TimeInterval) throws {}
     func setToggle(_ enabled: Bool, identifier: String, timeout: TimeInterval) throws {}

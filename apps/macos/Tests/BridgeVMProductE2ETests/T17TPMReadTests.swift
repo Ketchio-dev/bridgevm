@@ -196,7 +196,7 @@ private final class JourneyUI: T17UIControlling {
             try Data(T17TPMGuestResultTests.body(nonce: nonce).utf8).write(to: share.appendingPathComponent("t17-tpm-boot1-\(prefix).txt"))
         }
     }
-    func clickDisplaySurface(at spot: CGPoint, timeout: TimeInterval) throws { try T17PointerReceiptFixture.click(runLog) }
+    func clickDisplaySurface(at spot: CGPoint, timeout: TimeInterval) throws {}
     func waitFor(_ identifier: String, timeout: TimeInterval) throws {}
     func expand(_ identifier: String, timeout: TimeInterval) throws {}
     func setText(_ value: String, identifier: String, timeout: TimeInterval) throws {}

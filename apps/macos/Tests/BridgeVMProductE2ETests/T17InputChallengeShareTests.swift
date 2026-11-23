@@ -45,10 +45,15 @@ final class T17InputChallengeShareTests: XCTestCase {
         }
     }
 
-    func testEmptyOutputIsUnsafe() throws {
-        try Data().write(to: share.appendingPathComponent("t17-keyboard-pointer-7a7a7a7a7a7a.txt"))
+    func testOutputMustBeTheActualChallengeResult() throws {
+        let result = share.appendingPathComponent("t17-keyboard-pointer-7a7a7a7a7a7a.txt")
+        try Data().write(to: result)
         XCTAssertThrowsError(try T17InputChallengeShare.awaitOutput(share: share, nonce: nonce, timeout: 0.3)) {
             XCTAssertEqual(($0 as? T17Blocker)?.detail, "guest output is unsafe or oversized")
+        }
+        try Data("bridgevm-t17-keyboard-pointer-v1\n\(nonce)00\n".utf8).write(to: result)
+        XCTAssertThrowsError(try T17InputChallengeShare.awaitOutput(share: share, nonce: nonce, timeout: 0.3)) {
+            XCTAssertEqual(($0 as? T17Blocker)?.detail, "guest keyboard and pointer challenge output did not match")
         }
     }
 }
