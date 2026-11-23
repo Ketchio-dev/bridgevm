@@ -672,10 +672,15 @@ mod recovery {
     }
 
     #[test]
-    fn unpublished_copy_that_fails_its_hash_is_cleared_by_the_next_restore() {
+    fn sealed_unpublished_copy_is_cleared_even_if_its_contents_are_unusable() {
         for selected in [false, true] {
             // The sealed directory never left the staging name, so it was never published.
-            for scenario in ["corrupt-source", "changed-disk", "changed-manifest"] {
+            for scenario in [
+                "corrupt-source",
+                "changed-disk",
+                "changed-manifest",
+                "unreadable-disk",
+            ] {
                 let tag = format!("owned-unpublished-{selected}-{scenario}");
                 let fixture = Fixture::new(&tag, selected, scenario != "corrupt-source");
                 if scenario == "corrupt-source" {
@@ -688,6 +693,7 @@ mod recovery {
                 let current = pair.paths().unwrap();
                 assert_eq!(fs::read(&current.0).unwrap(), fixture.source[0]);
                 assert_eq!(fs::read(&current.1).unwrap(), fixture.source[1]);
+                assert_eq!(contents(&fixture.snapshot), fixture.source);
                 assert!(!fixture.stage.exists(), "{scenario}: staging kept");
                 assert!(!fixture.root.join(ROOT_NAME).exists());
             }
@@ -806,6 +812,11 @@ mod recovery {
                     .replace("\"source\"", "\"tamper\"");
                 fs::write(path, text).unwrap();
             }
+            "unreadable-disk" => fs::set_permissions(
+                fixture.stage.join("disk.raw"),
+                fs::Permissions::from_mode(0o000),
+            )
+            .unwrap(),
             "unknown-entry" => {
                 fs::write(fixture.stage.join("keep.txt"), b"unrelated bytes").unwrap()
             }
