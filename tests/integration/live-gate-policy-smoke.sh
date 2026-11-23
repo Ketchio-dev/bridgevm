@@ -10,12 +10,6 @@ INSTALL="$REPO/scripts/live-gates/install-studio-queue.sh"
 PLIST="$REPO/scripts/live-gates/com.ketchio.bridgevm-live.plist"
 REDACT="$REPO/scripts/live-gates/redact-receipt.py"; PUBLISH="$REPO/scripts/live-gates/publish-receipt.sh"; FENCE="$REPO/scripts/live-gates/t17-worker-cleanup-fence.sh"
 TIER="$REPO/scripts/live-gates/run-tier.sh"; T17_TIER="$REPO/scripts/live-gates/run-windows-product-e2e-tier.sh"
-A3_TIER="$REPO/scripts/live-gates/run-a3-title-tier.sh"
-A3_RECEIPT="$REPO/scripts/live-gates/write-a3-title-receipt.py"
-A3_VERIFY="$REPO/scripts/verify-d3d11-title-fps.sh"
-A3_PAYLOAD="$REPO/scripts/live-gates/a3-title-payload.sh"
-A3_PAYLOAD_VALIDATOR="$REPO/scripts/live-gates/a3-title-payload.py"
-A3_STAGE="$REPO/scripts/live-gates/a3-title-payload-stage.sh"
 BOOT_RUNNER="$REPO/scripts/run-hvf-windows-installed-boot-runner.sh"
 POSTMORTEM_HARVEST="$REPO/scripts/harvest-hvf-windows-postmortem.sh"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-check.XXXXXX")"
@@ -53,10 +47,6 @@ check "the stale-job reconciler is executable" '[ -x "$RECOVER" ]'
 check "the installer is executable" '[ -x "$INSTALL" ]'
 check "the redactor is executable" '[ -x "$REDACT" ]'
 check "the tier dispatcher is executable" '[ -x "$TIER" ]'
-check "the A3 tier helper is executable" '[ -x "$A3_TIER" ]'
-check "the A3 receipt writer is executable" '[ -x "$A3_RECEIPT" ]'
-check "the A3 payload validator is executable" '[ -x "$A3_PAYLOAD" ] && [ -x "$A3_PAYLOAD_VALIDATOR" ]'
-check "the A3 payload staging policy is executable" '[ -x "$A3_STAGE" ]'
 check "the plist is well formed" 'plutil -lint "$PLIST" >/dev/null'
 check "the queue stays background while each requested gate gets app scheduling policy" \
     'grep -A1 -q "<key>ProcessType</key>" "$PLIST" && grep -Fq '"'"'/usr/sbin/taskpolicy -a /usr/bin/caffeinate'"'"' "$WORKER"'
@@ -126,118 +116,56 @@ check "the plist declares no socket" '! grep -q "<key>Sockets</key>" "$PLIST"'
 check "the plist is not a root daemon" '! grep -qi "UserName.*root" "$PLIST"'
 check "the agent and worker clear inherited variables and use the sealed publisher" 'grep -A1 -F "<string>/usr/bin/env</string>" "$PLIST" | grep -Fq "<string>-i</string>" && grep -Fq '\''/usr/bin/env -i HOME="$HOME"'\'' "$WORKER" && grep -Fq '\''source "$REPO/scripts/live-gates/t17-worker-cleanup-fence.sh"'\'' "$WORKER" && grep -Fq '\''bridgevm_worker_publish_receipt "$tier"'\'' "$WORKER" && grep -Fq '\''"$worktree/scripts/live-gates/publish-receipt.sh" "$tier"'\'' "$FENCE" && grep -Fq '\''redact-receipt.py'\'' "$PUBLISH"'
 no_match "no component opens a listening socket" \
-    'nc +-l|socat|LISTEN|bind\(' "$CLI" "$WORKER" "$FENCE" "$TIER" "$T17_TIER" "$PUBLISH" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
+    'nc +-l|socat|LISTEN|bind\(' "$CLI" "$WORKER" "$FENCE" "$TIER" "$T17_TIER" "$PUBLISH"
 # Match registration rather than the installer guard's actions-runner name.
 no_match "nothing registers a GitHub runner" \
-    'config\.sh +--url|RUNNER_TOKEN|--runnergroup' "$CLI" "$WORKER" "$FENCE" "$INSTALL" "$TIER" "$T17_TIER" "$PUBLISH" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
+    'config\.sh +--url|RUNNER_TOKEN|--runnergroup' "$CLI" "$WORKER" "$FENCE" "$INSTALL" "$TIER" "$T17_TIER" "$PUBLISH"
 check "the installer refuses to sit beside a runner" \
     'grep -q "actions-runner" "$INSTALL"'
 no_match "nothing in the queue path uses sudo" \
-    '^[^#]*\bsudo\b' "$CLI" "$WORKER" "$FENCE" "$INSTALL" "$TIER" "$T17_TIER" "$PUBLISH" "$A3_TIER" "$A3_RECEIPT" "$A3_PAYLOAD" "$A3_PAYLOAD_VALIDATOR" "$A3_STAGE"
-check "live receipt, clone and hosted QMP stress policies pass" \
-    'python3 "$A3_RECEIPT" --self-test | grep "PASS" >/dev/null && "$REPO/tests/integration/windows-closure-live-tier-smoke.sh" | grep "PASS" >/dev/null && "$REPO/tests/integration/audio-teardown-live-tier-smoke.sh" | grep "PASS" >/dev/null'
-check "the A3 payload archive is fail-closed" \
-    '"$A3_PAYLOAD" --self-test | grep -q "PASS"'
-check "the A3 payload uses bounded share chunks" \
-    '"$A3_STAGE" --self-test | grep -q "PASS"'
-check "the A3 payload command survives cmd.exe without literal single quotes" \
-    '! grep -Fq -- "-ArchivePrefix '\''" "$A3_STAGE" && ! grep -Fq -- "-ExpectedPayloadSha256 '\''" "$A3_STAGE"'
-check "the A3 D3D11 prep survives cmd.exe without an assignable PowerShell path" \
-    '! grep -Fq '\''$d='\'' "$A3_VERIFY" && grep -Fq '\''Test-Path -LiteralPath C:\BridgeVM\a2-title\ppsspp\PPSSPPWindowsARM64.exe'\'' "$A3_VERIFY"'
-check "the A3 payload is reconstructed and hashed in the guest" \
-    'grep -q "ExpectedPayloadSha256" "$REPO/scripts/win-assets/bvgpu-stage-ppsspp.ps1" && grep -q "ExpectedExecutableSha256" "$REPO/scripts/win-assets/bvgpu-stage-ppsspp.ps1"'
-check "the A3 verifier installs the sealed payload every run" \
-    'grep -q '\''install_a3_payload_guest "$PAYLOAD_SHA" "$EXPECTED_PPSSPP_SHA"'\'' "$A3_VERIFY"'
-check "the A3 campaign stops once three of three is impossible" \
-    'grep -Fq '\''verify-d3d11-title-fps.sh" || break'\'' "$A3_TIER"'
-check "the A3 verifier kills a parked boot after diagnostics" \
-    'grep -q "BRIDGEVM_BOOT_PROGRESS_KILL=1" "$A3_VERIFY"'
-check "the A3 verifier measures the product shipping renderer path" \
-    'grep -q -- "--performance-risk aggressive --virtio-gpu-3d" "$A3_VERIFY"'
-check "the A3 share cap remains eight MiB with seven MiB payload parts" \
-    'grep -q '\''A3_PAYLOAD_CHUNK_BYTES=$((7 \* 1024 \* 1024))'\'' "$A3_STAGE" && grep -q -- '\''--agent-share-max-kb 8192'\'' "$A3_VERIFY"'
-check "the A3 outer wait starts after bounded host preflight" \
-    'grep -q "wait_for .*Boot watchdog:.*HOST_PREFLIGHT_TIMEOUT" "$A3_VERIFY"'
-check "the A3 outer wait leaves post-mortem diagnostic grace" \
-    'grep -q '\''BOOT_TIMEOUT + DIAGNOSTIC_GRACE'\'' "$A3_VERIFY"'
-check "the A3 verifier notices an exited launcher while waiting" 'grep -q '\''kill -0 "$LAUNCHER"'\'' "$A3_VERIFY"'
-check "the A3 verifier requests final diagnostics only from failure cleanup" 'grep -q '\''(( status == 0 )) || diagnostic_stop'\'' "$A3_VERIFY" && grep -q '\''mv "$tmp" "$DIAGNOSTIC_STOP_REQUEST"'\'' "$A3_VERIFY"'
-check "the A3 diagnostic stop remains bounded by its existing grace" 'grep -q '\''deadline=$((SECONDS + DIAGNOSTIC_GRACE))'\'' "$A3_VERIFY"'
+    '^[^#]*\bsudo\b' "$CLI" "$WORKER" "$FENCE" "$INSTALL" "$TIER" "$T17_TIER" "$PUBLISH"
+check "live receipt policies pass" \
+    '"$REPO/tests/integration/audio-teardown-live-tier-smoke.sh" | grep "PASS" >/dev/null'
 check "the installed boot runner explicitly forwards the diagnostic request" 'grep -q '\''BRIDGEVM_HOST_DIAGNOSTIC_STOP_REQUEST='\'' "$BOOT_RUNNER"'
-check "B4 pointer lanes avoid post-HVF raw-disk mounts" \
-    'grep -q -- "--no-guest-disk-harvest" "$REPO/scripts/pointer-reliability-vm.sh" && grep -q -- "--no-guest-disk-harvest" "$REPO/scripts/prepare-pointer-reliability-source.sh"'
 check "disk-harvest suppression fails closed for fresh title logs" \
     'grep -q "cannot be combined with title gates" "$REPO/scripts/run-hvf-windows-installed-boot-args.sh"'
     start=$(date +%s)
-job_id="$("$CLI" submit t1-vtimer)"
+job_id="$("$CLI" submit t1-snapshot)"
 elapsed=$(( $(date +%s) - start ))
 check "submit returns a job id" '[ -n "$job_id" ]'
 check "submit returns in under 10s" '[ "$elapsed" -lt 10 ]'
 check "the job is queued" '"$CLI" status | grep -q "queued .*$job_id"'
 check "the job records a commit" 'grep -q "^commit=[0-9a-f]\{40\}$" "$BRIDGEVM_LIVE_ROOT/queued/$job_id/job.env"'
-check "the job records its tier" 'grep -q "^tier=t1-vtimer$" "$BRIDGEVM_LIVE_ROOT/queued/$job_id/job.env"'
-bad_sha_id=Policy.bad_sha; check "submit rejects a malformed or unknown commit before burning an id" '! "$CLI" submit t1-vtimer --sha short --job-id "$bad_sha_id" >/dev/null 2>&1 && ! "$CLI" submit t1-vtimer --sha 0000000000000000000000000000000000000000 --job-id "$bad_sha_id" >/dev/null 2>&1 && [ ! -e "$BRIDGEVM_LIVE_ROOT/job-ledger/$bad_sha_id" ]'
-ledger="$BRIDGEVM_LIVE_ROOT/job-ledger/$job_id/entry.env"; check "default submission burns a complete durable ledger entry" '[ "$(wc -l < "$ledger" | tr -d " ")" -eq 5 ] && grep -Fxq "job_id=$job_id" "$ledger" && grep -Fxq "tier=t1-vtimer" "$ledger" && grep -Eq "^commit=[0-9a-f]{40}$" "$ledger" && grep -Fxq "input_manifest_sha256=" "$ledger" && grep -Fxq "sealed_binary_sha256=" "$ledger"'
-explicit_id=Policy.explicit_1-safe; explicit_result="$("$CLI" submit t1-vtimer --job-id "$explicit_id")"; check "a canonical explicit job id is preserved exactly" '[ "$explicit_result" = "$explicit_id" ] && [ -f "$BRIDGEVM_LIVE_ROOT/queued/$explicit_id/job.env" ]'
-too_long="$(printf 'a%.0s' {1..129})"; check "noncanonical explicit job ids are rejected before publication" '! "$CLI" submit t1-vtimer --job-id ../escape >/dev/null 2>&1 && ! "$CLI" submit t1-vtimer --job-id -leading >/dev/null 2>&1 && ! "$CLI" submit t1-vtimer --job-id "$too_long" >/dev/null 2>&1'
-rm -rf "$BRIDGEVM_LIVE_ROOT/queued/$explicit_id"; check "a burned id cannot be reused after its queue job disappears" '! "$CLI" submit t1-vtimer --job-id "$explicit_id" >/dev/null 2>&1'
-partial_id=Policy.partial_1; mkdir -m 700 "$BRIDGEVM_LIVE_ROOT/job-ledger/$partial_id"; printf 'job_id=%s\n' "$partial_id" > "$BRIDGEVM_LIVE_ROOT/job-ledger/$partial_id/entry.env"; check "a partial ledger entry fails closed and permanently prevents reuse" '! "$CLI" submit t1-vtimer --job-id "$partial_id" >/dev/null 2>&1'
-race_id=Policy.atomic_1; ("$CLI" submit t1-vtimer --job-id "$race_id" > "$WORK/race-a.out" 2>/dev/null) & race_a=$!; ("$CLI" submit t1-vtimer --job-id "$race_id" > "$WORK/race-b.out" 2>/dev/null) & race_b=$!
+check "the job records its tier" 'grep -q "^tier=t1-snapshot$" "$BRIDGEVM_LIVE_ROOT/queued/$job_id/job.env"'
+bad_sha_id=Policy.bad_sha; check "submit rejects a malformed or unknown commit before burning an id" '! "$CLI" submit t1-snapshot --sha short --job-id "$bad_sha_id" >/dev/null 2>&1 && ! "$CLI" submit t1-snapshot --sha 0000000000000000000000000000000000000000 --job-id "$bad_sha_id" >/dev/null 2>&1 && [ ! -e "$BRIDGEVM_LIVE_ROOT/job-ledger/$bad_sha_id" ]'
+ledger="$BRIDGEVM_LIVE_ROOT/job-ledger/$job_id/entry.env"; check "default submission burns a complete durable ledger entry" '[ "$(wc -l < "$ledger" | tr -d " ")" -eq 5 ] && grep -Fxq "job_id=$job_id" "$ledger" && grep -Fxq "tier=t1-snapshot" "$ledger" && grep -Eq "^commit=[0-9a-f]{40}$" "$ledger" && grep -Fxq "input_manifest_sha256=" "$ledger" && grep -Fxq "sealed_binary_sha256=" "$ledger"'
+explicit_id=Policy.explicit_1-safe; explicit_result="$("$CLI" submit t1-snapshot --job-id "$explicit_id")"; check "a canonical explicit job id is preserved exactly" '[ "$explicit_result" = "$explicit_id" ] && [ -f "$BRIDGEVM_LIVE_ROOT/queued/$explicit_id/job.env" ]'
+too_long="$(printf 'a%.0s' {1..129})"; check "noncanonical explicit job ids are rejected before publication" '! "$CLI" submit t1-snapshot --job-id ../escape >/dev/null 2>&1 && ! "$CLI" submit t1-snapshot --job-id -leading >/dev/null 2>&1 && ! "$CLI" submit t1-snapshot --job-id "$too_long" >/dev/null 2>&1'
+rm -rf "$BRIDGEVM_LIVE_ROOT/queued/$explicit_id"; check "a burned id cannot be reused after its queue job disappears" '! "$CLI" submit t1-snapshot --job-id "$explicit_id" >/dev/null 2>&1'
+partial_id=Policy.partial_1; mkdir -m 700 "$BRIDGEVM_LIVE_ROOT/job-ledger/$partial_id"; printf 'job_id=%s\n' "$partial_id" > "$BRIDGEVM_LIVE_ROOT/job-ledger/$partial_id/entry.env"; check "a partial ledger entry fails closed and permanently prevents reuse" '! "$CLI" submit t1-snapshot --job-id "$partial_id" >/dev/null 2>&1'
+race_id=Policy.atomic_1; ("$CLI" submit t1-snapshot --job-id "$race_id" > "$WORK/race-a.out" 2>/dev/null) & race_a=$!; ("$CLI" submit t1-snapshot --job-id "$race_id" > "$WORK/race-b.out" 2>/dev/null) & race_b=$!
 wait "$race_a" || true; wait "$race_b" || true
 check "the ledger burn is atomic across concurrent submissions" '[ "$(grep -l "^$race_id$" "$WORK"/race-*.out 2>/dev/null | wc -l | tr -d " ")" -eq 1 ] && [ -d "$BRIDGEVM_LIVE_ROOT/queued/$race_id" ] && [ "$(wc -l < "$BRIDGEVM_LIVE_ROOT/job-ledger/$race_id/entry.env" | tr -d " ")" -eq 5 ]'; rm -rf "$BRIDGEVM_LIVE_ROOT/queued/$race_id"
-# The A3 tier must seal a copied input manifest at submit time. It may not
-# retain a caller-owned path that can be edited after submission.
-manifest="$WORK/a3-inputs.tsv"
+# A sealed-input tier must seal a copied input manifest at submit time. It may
+# not retain a caller-owned path that can be edited after submission.
+manifest="$WORK/sealed-inputs.tsv"
 printf 'image\t/tmp/image\t%s\n' "$(printf image | shasum -a 256 | cut -d' ' -f1)" > "$manifest"
 printf '#!/bin/sh\nexit 0\n' > "$WORK/probe"; chmod +x "$WORK/probe"
 printf 'binary\t%s\t%s\n' "$WORK/probe" "$(shasum -a 256 "$WORK/probe" | cut -d' ' -f1)" >> "$manifest"
-a3_job="$("$CLI" submit t6-a3-title --input-manifest "$manifest")"
-check "A3 submit copies the input manifest" \
-    '[ -f "$BRIDGEVM_LIVE_ROOT/queued/$a3_job/input-manifest.tsv" ]'
-check "A3 submit seals the copied manifest hash" \
-    'grep -q "^input_manifest_sha256=[0-9a-f]\{64\}$" "$BRIDGEVM_LIVE_ROOT/queued/$a3_job/job.env"'
-check "A3 submit copies and seals the release binary and ledger hashes" \
-    'test -x "$BRIDGEVM_LIVE_ROOT/queued/$a3_job/hvf_gic_boot_probe" && grep -q "^sealed_binary_sha256=[0-9a-f]\{64\}$" "$BRIDGEVM_LIVE_ROOT/queued/$a3_job/job.env" && cmp -s <(grep -E "^(input_manifest_sha256|sealed_binary_sha256)=" "$BRIDGEVM_LIVE_ROOT/queued/$a3_job/job.env") <(grep -E "^(input_manifest_sha256|sealed_binary_sha256)=" "$BRIDGEVM_LIVE_ROOT/job-ledger/$a3_job/entry.env")'
-check "A3 submit rejects a missing manifest" \
-    '! "$CLI" submit t6-a3-title --input-manifest "$WORK/missing" >/dev/null 2>&1'
-check "unsealed tiers reject an input manifest; B4 seals exact inputs" \
-    '! "$CLI" submit t1-vtimer --input-manifest "$manifest" >/dev/null 2>&1 && "$REPO/tests/integration/b4-sealed-submit-smoke.sh" | grep -q "PASS"'
-malformed_out="$WORK/malformed-a3"
-check "the A3 tier refuses a malformed manifest before build" \
-    '! "$TIER" t6-a3-title --out "$malformed_out" --input-manifest "$manifest" --job-id policy-smoke >/dev/null 2>&1'
-check "the A3 refusal leaves a machine-readable receipt" \
-    'python3 - "$malformed_out/receipt.json" <<'"'"'PY'"'"'
-import json, sys
-r = json.load(open(sys.argv[1]))
-required = {"gate_id", "criterion", "tested_commit", "host_os", "host_hardware", "sample_count", "passes", "failures", "evidence_paths"}
-assert required <= r.keys()
-assert r["criterion"] == "A3" and r["pass"] is False
-PY'
-# A syntactically complete and correctly hashed manifest must still fail closed
-# when its PPSSPP ZIP is unsafe. This reaches the extracted manifest verifier
-# and payload validator without invoking codesign or a VM.
-sealed="$WORK/sealed-a3"; mkdir -p "$sealed/viogpu"
-for key in image vars title d3d11 dxgi virglrenderer moltenvk; do printf '%s' "$key" > "$sealed/$key"; done
-printf driver > "$sealed/viogpu/file"
-python3 - "$sealed/ppsspp" <<'PY'
-import sys, zipfile
-with zipfile.ZipFile(sys.argv[1], "w") as payload:
-    payload.writestr("../escape", b"bad")
-    payload.writestr("ppsspp/PPSSPPWindowsARM64.exe", b"arm64")
-PY
-complete_manifest="$sealed/manifest.tsv"
-for key in image vars title ppsspp d3d11 dxgi virglrenderer moltenvk; do
-    printf '%s\t%s\t%s\n' "$key" "$sealed/$key" "$(shasum -a 256 "$sealed/$key" | cut -d' ' -f1)" >> "$complete_manifest"
-done
-viogpu_hash="$(cd "$sealed/viogpu" && find . -type f -exec shasum -a 256 {} + | LC_ALL=C sort -k2 | shasum -a 256 | cut -d' ' -f1)"
-printf 'viogpu_dir\t%s\t%s\n' "$sealed/viogpu" "$viogpu_hash" >> "$complete_manifest"
-printf 'binary\t%s\t%s\n' "$WORK/probe" "$(shasum -a 256 "$WORK/probe" | cut -d' ' -f1)" >> "$complete_manifest"
-unsafe_out="$WORK/unsafe-a3"
-check "the A3 tier refuses an unsafe sealed payload after manifest verification" \
-    '! "$A3_TIER" --out "$unsafe_out" --input-manifest "$complete_manifest" --sealed-binary "$WORK/probe" --job-id unsafe-policy >/dev/null 2>&1 && grep -q "refused-ppsspp-payload" "$unsafe_out/receipt.json"'
+sealed_job="$("$CLI" submit t18-audio-teardown --input-manifest "$manifest")"
+check "sealed submit copies the input manifest" \
+    '[ -f "$BRIDGEVM_LIVE_ROOT/queued/$sealed_job/input-manifest.tsv" ]'
+check "sealed submit seals the copied manifest hash" \
+    'grep -q "^input_manifest_sha256=[0-9a-f]\{64\}$" "$BRIDGEVM_LIVE_ROOT/queued/$sealed_job/job.env"'
+check "sealed submit copies and seals the release binary and ledger hashes" \
+    'test -x "$BRIDGEVM_LIVE_ROOT/queued/$sealed_job/hvf_gic_boot_probe" && grep -q "^sealed_binary_sha256=[0-9a-f]\{64\}$" "$BRIDGEVM_LIVE_ROOT/queued/$sealed_job/job.env" && cmp -s <(grep -E "^(input_manifest_sha256|sealed_binary_sha256)=" "$BRIDGEVM_LIVE_ROOT/queued/$sealed_job/job.env") <(grep -E "^(input_manifest_sha256|sealed_binary_sha256)=" "$BRIDGEVM_LIVE_ROOT/job-ledger/$sealed_job/entry.env")'
+check "sealed submit rejects a missing manifest" \
+    '! "$CLI" submit t18-audio-teardown --input-manifest "$WORK/missing" >/dev/null 2>&1'
+check "unsealed tiers reject an input manifest" \
+    '! "$CLI" submit t1-snapshot --input-manifest "$manifest" >/dev/null 2>&1'
 check "the installed-boot runner honors a sealed prebuilt binary" \
     '[[ "$(head -n 1 "$BOOT_RUNNER")" == "source \"\$ROOT/scripts/run-hvf-windows-installed-boot-package-policy.sh\"" ]] && grep -Fq "BRIDGEVM_PREBUILT_PROBE requires an absolute regular release binary with --skip-build" "$REPO/scripts/run-hvf-windows-installed-boot-package-policy.sh"'
-rm -rf "$BRIDGEVM_LIVE_ROOT/queued/$a3_job"
+rm -rf "$BRIDGEVM_LIVE_ROOT/queued/$sealed_job"
 claimed="$("$CLI" next)"
 check "next claims the job" '[ -n "$claimed" ]'
 check "the claimed job moved to running" '"$CLI" status | grep -q "running .*$job_id"'
@@ -247,7 +175,7 @@ check "a second worker cannot claim it" '! "$CLI" next'
 # retain the abandoned job as a failure instead of leaving it running forever.
 recovery_queue="$WORK/recovery-queue"; stale="$recovery_queue/running/stale-job"
 mkdir -p "$stale" "$recovery_queue/done" "$WORK/recovery-work"
-printf 'job_id=stale-job\ntier=t8-pointer-reliability\ncommit=%040d\n' 0 > "$stale/job.env"
+printf 'job_id=stale-job\ntier=t1-snapshot\ncommit=%040d\n' 0 > "$stale/job.env"
 "$RECOVER" "$REPO" "$recovery_queue" "$WORK/recovery-work" 2>/dev/null
 check "an abandoned running job is retained as interrupted" \
     'grep -q "^result=interrupted-worker-exit$" "$recovery_queue/done/stale-job/result.env"'
@@ -259,30 +187,11 @@ check "cancelling a running job requests, not kills" \
     '"$CLI" cancel "$job_id" | grep -q "cancellation requested"'
 check "the cancel request is visible to the worker" '[ -f "$claimed/cancel.requested" ]'
 
-second="$("$CLI" submit t1-vtimer)"
+second="$("$CLI" submit t1-snapshot)"
 check "a queued job cancels immediately" '"$CLI" cancel "$second" | grep -q "canceled"'
 check "the canceled job is done" '"$CLI" status | grep -q "done .*$second"'
 
 check "an unknown tier is rejected" '! "$TIER" nonsense --out "$WORK/x" 2>/dev/null'
-t5_output="$(BASE_IMAGE="$WORK/absent.raw" BASE_VARS="$WORK/absent.fd" \
-    INJECTOR="$WORK/absent-inj.raw" \
-    "$TIER" t5-campaign --out "$WORK/t5" 2>&1 || true)"
-check "boot tiers refuse when the media cannot be read" \
-    'printf "%s" "$t5_output" | grep -q "cannot read required Windows media"'
-check "the refusal names which input is missing" \
-    'printf "%s" "$t5_output" | grep -q "absent-inj.raw"'
-check "the refusal is recorded in the receipt" \
-    'grep -q "refused-no-media" "$WORK/t5/receipt.json"'
-
-# An unreadable file, not just an absent one: this is the TCC failure mode,
-# where the path exists and stat() succeeds but the bytes cannot be read.
-: > "$WORK/unreadable.raw"; chmod 000 "$WORK/unreadable.raw"
-unreadable_output="$(BASE_IMAGE="$WORK/unreadable.raw" \
-    "$TIER" t5-campaign --out "$WORK/t5b" 2>&1 || true)"
-chmod 644 "$WORK/unreadable.raw"
-check "a present but unreadable input is refused too" \
-    'printf "%s" "$unreadable_output" | grep -q "unreadable.raw"'
-
 check "the installer supports a dry run" 'python3 "$REPO/tests/integration/live-installer-dry-run-contract.py" && python3 "$REPO/tests/integration/live-installer-launch-contract.py" && python3 "$REPO/tests/integration/live-installer-storage-contract.py" && python3 "$REPO/tests/integration/live-storage-capacity-contract.py" && python3 "$REPO/tests/integration/live-storage-queue-alias-contract.py" && python3 "$REPO/tests/integration/live-worker-lock-quoting-contract.py"'
 check "the installer guards LaunchAgent privacy-protected source paths" 'grep -q "LaunchAgent privacy policy" "$INSTALL"'
 no_match "the installer stores no credentials" \

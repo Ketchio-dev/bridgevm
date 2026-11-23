@@ -1,12 +1,10 @@
-"""Stdlib-only D10 admission routing; unrelated historical receipts retain their reader."""
+"""Stdlib-only receipt routing: check the queue seals, then hand off to the reader."""
 import json
 import os
 from pathlib import Path
 import re
 import stat
 import sys
-
-D10, D11 = "d10-t22-owned-pair-preparation", "d11-native-fixture-preparation"
 
 
 def identity(info):
@@ -62,11 +60,7 @@ def route(directory, job_id):
     for path, observed in records:
         if identity(os.stat(path, follow_symlinks=False)) != observed: raise ValueError("receipt routing input changed")
     here = Path(__file__).resolve().parent
-    if D10 in tiers or D11 in tiers:
-        argv = ["/bin/bash", "--noprofile", "--norc", "-p", str(here / ("d11-fixture-archive-dispatch.sh" if D11 in tiers else "t22-pair-archive-dispatch.sh")),
-                str(directory), job_id, job.get("commit", "")]
-    else:
-        argv = [sys.executable, "-B", "-s", "-E", str(here / "bridgevm_live_receipt_legacy.py"), str(directory), job_id]
+    argv = [sys.executable, "-B", "-s", "-E", str(here / "bridgevm_live_receipt_legacy.py"), str(directory), job_id]
     os.execv(argv[0], argv)
 
 

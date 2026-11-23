@@ -6,7 +6,6 @@ on:
         description: Exact repository commit to check (40 lowercase hex digits)
         required: true
         type: string
-      run_a19_exfat: {description: Run the owned synthetic exFAT fixture, required: false, type: boolean, default: false}
 permissions: {contents: read}
 jobs:
   check-project:
@@ -63,7 +62,3 @@ jobs:
         run: scripts/verify-venus-native-artifacts.sh
       - name: Run exact deterministic project check
         run: scripts/check-project.sh
-  a19-exfat-publication:
-    if: ${{ inputs.run_a19_exfat }}
-    uses: ./.github/workflows/a19-exfat-publication-reusable.yml
-    with: {source_sha: '${{ inputs.source_sha }}'}

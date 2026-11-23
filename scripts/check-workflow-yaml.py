@@ -27,7 +27,7 @@ WORKFLOWS = ROOT / ".github/workflows"
 # was added because something it checks had none. macos-contracts carries the
 # macOS halves of three contract suites.
 REQUIRED_JOBS = {
-    "ci.yml": {"fmt", "clippy", "test", "swift", "truth", "windows-nvme-workload", "macos-contracts"},
+    "ci.yml": {"fmt", "clippy", "test", "swift", "truth", "macos-contracts"},
     "release.yml": {"artifacts"}, "hvf-performance-binary.yml": {"build-attest"},
     "security-quality.yml": {"supply-chain", "fuzz-smoke", "loom"},
 }

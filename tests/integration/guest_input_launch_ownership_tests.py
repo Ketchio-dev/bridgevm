@@ -1,4 +1,4 @@
-"""Exercise actual D5/B9 finalizers after injected constructor uncertainty."""
+"""Exercise the actual D5 finalizer after injected constructor uncertainty."""
 from pathlib import Path
 import tempfile
 import unittest
@@ -21,14 +21,10 @@ class LaunchOwnershipCleanup(unittest.TestCase):
                 self.assertNotIn("clone_final_sha256", receipt)
                 self.assertEqual(value["clone_modes"], value["before_modes"])
                 self.assertEqual(value["hashes_after_spawn"], [])
-                if kind == "d5": self.assertFalse(receipt["complete"])
-                else: self.assertFalse(receipt["owned_process_group_stopped"])
+                self.assertFalse(receipt["complete"])
 
     def test_d5_constructor_uncertainty_preserves_pair(self):
         self.uncertain("d5")
-
-    def test_b9_constructor_uncertainty_preserves_pair(self):
-        self.uncertain("b9")
 
     def preflight(self, kind):
         with tempfile.TemporaryDirectory() as tmp:
@@ -38,15 +34,3 @@ class LaunchOwnershipCleanup(unittest.TestCase):
 
     def test_d5_preflight_without_launch_is_clean(self):
         self.preflight("d5")
-
-    def test_b9_preflight_without_launch_is_clean(self):
-        self.preflight("b9")
-
-    def test_b9_existing_work_is_not_acquired_or_cleaned(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            value = run_case(Path(tmp), "b9", OSError("unused"), existing_work=True)
-            self.assertEqual(value["spawned"], 0)
-            self.assertTrue(value["prior_lane_unchanged"])
-            self.assertFalse(value["receipt"]["cleanup_complete"])
-            self.assertEqual(value["copy_raw_calls"], 0)
-            self.assertEqual(value["verify_calls"], 0)

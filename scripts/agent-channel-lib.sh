@@ -1,7 +1,6 @@
 # Shared helpers for driving the guest agent's control channel.
 #
-# These four were byte-identical in b6-cell-capture.sh, b6-cell-set-scale.sh and
-# windows-1.0-closure-interact.sh. Six further copies of send()/wait_for() exist
+# These four were byte-identical in three old guest drivers. Six further copies of send()/wait_for() exist
 # across the verify-*.sh gates and have all drifted apart from each other; those
 # are deliberately left alone, because whether their differences are intentional
 # cannot be read off the files and re-proving each one means reopening a sealed

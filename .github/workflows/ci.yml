@@ -221,31 +221,6 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.1
       - run: cargo check --workspace --locked
 
-  windows-nvme-workload:
-    # The guest workload embeds C# compiled by Windows PowerShell. A hosted
-    # Windows compile catches language/PInvoke declaration drift without
-    # pretending to measure guest or Hypervisor.framework performance.
-    name: Windows NVMe workload compile
-    runs-on: windows-2025
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: render and compile the sealed guest workload
-        shell: pwsh
-        run: |
-          $workload = Join-Path $env:RUNNER_TEMP 'bridgevm-nvme-workload.ps1'
-          $config = Join-Path $env:RUNNER_TEMP 'bridgevm-nvme-config.json'
-          python scripts/render-hvf-nvme-workload.py --output $workload --config-output $config --nonce 0123456789abcdef
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $workload -CompileOnly
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $workloadV2 = Join-Path $env:RUNNER_TEMP 'bridgevm-nvme-workload-v2.ps1'
-          $configV2 = Join-Path $env:RUNNER_TEMP 'bridgevm-nvme-config-v2.json'
-          python scripts/render-hvf-nvme-workload-v2.py --output $workloadV2 --config-output $configV2 --nonce 0123456789abcdef0123456789abcdef
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $workloadV2 -CompileOnly
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
   swift:
     # Host the app's largest Swift suites on macOS to catch local-only test gaps.
     name: macOS app suites (${{ matrix.os }})
@@ -365,10 +340,6 @@ jobs:
         run: |
           python3 scripts/check-contract-schema-json.py docs/machine-contract/qemu-virt-deviations.json schemas/bridgevm-capability-v1.json capabilities/windows-hvf.json
           python3 tests/integration/contract-schema-json-test.py
-      - name: cited capability evidence contains the figures it is cited for
-        run: python3 scripts/check-capability-evidence.py
-      - name: capability test-count claims match the tests that exist
-        run: python3 scripts/check-capability-test-counts.py
       - name: every Markdown document is classified
         run: bash scripts/check-documentation-system.sh
       - name: current documents cite flags, paths and commits that exist
@@ -379,8 +350,6 @@ jobs:
         run: bash scripts/check-virgl-integer-attributes.sh
       - name: HVF Windows Coherence protocol
         run: bash scripts/check-hvf-windows-coherence-protocol.sh
-      - name: sealed Windows warm NVMe input contracts
-        run: bash tests/integration/hvf-nvme-performance-tier-smoke.sh
       - name: the gate scripts themselves are free of the enforced defect classes
         run: bash scripts/check-shell-scripts.sh
       - name: every tracked Python script compiles

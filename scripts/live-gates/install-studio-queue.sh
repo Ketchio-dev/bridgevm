@@ -67,7 +67,7 @@ launchctl bootstrap "gui/$(id -u)" "$PLIST"
 launchctl enable "gui/$(id -u)/$LABEL"
 
 echo "== installed =="
-printf 'submit a job:  BRIDGEVM_LIVE_ROOT=%q scripts/live-gates/bridgevm-live submit t1-vtimer\n' "$QUEUE_ROOT"
+printf 'submit a job:  BRIDGEVM_LIVE_ROOT=%q scripts/live-gates/bridgevm-live submit t1-snapshot\n' "$QUEUE_ROOT"
 printf 'watch it:      BRIDGEVM_LIVE_ROOT=%q scripts/live-gates/bridgevm-live status\n' "$QUEUE_ROOT"
 echo "worker logs:   $LOGDIR/worker.err.log"
 echo
