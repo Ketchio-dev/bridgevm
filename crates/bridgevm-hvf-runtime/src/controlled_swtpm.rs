@@ -4,6 +4,8 @@ use super::{unique_runtime_dir_name, vtpm_wait, SwtpmProcess, VtpmConfig};
 use crate::owned_child::OwnedChild;
 use crate::{ChildRole, DirectoryDisposition, RuntimeControl, RuntimeError, RuntimeLifecycleEvent};
 use std::os::unix::fs::DirBuilderExt;
+use std::os::unix::net::SocketAddr;
+use std::path::Path;
 #[path = "controlled_swtpm_command.rs"]
 mod command;
 use std::time::{Duration, Instant};
@@ -27,7 +29,15 @@ pub fn start_swtpm_controlled(
     io::check(deadline, control).map_err(|source| failure("swtpm startup cancelled", source))?;
     std::fs::create_dir_all(&config.state_dir)
         .map_err(|source| failure("create vTPM state dir", source))?;
-    let runtime_dir = std::env::temp_dir().join(unique_runtime_dir_name());
+    let name = unique_runtime_dir_name();
+    let preferred = std::env::temp_dir().join(&name);
+    // The longer socket name must fit sockaddr_un. Only the ephemeral
+    // endpoints move to a shorter directory; state stays at config.state_dir.
+    let runtime_dir = if SocketAddr::from_pathname(preferred.join("control.sock")).is_ok() {
+        preferred
+    } else {
+        Path::new("/tmp").join(name)
+    };
     std::fs::DirBuilder::new()
         .mode(0o700)
         .create(&runtime_dir)
