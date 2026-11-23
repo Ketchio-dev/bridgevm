@@ -9,7 +9,7 @@
 use super::private_directory;
 use crate::media_lease::MediaLease;
 use crate::snapshot_pair::files::open_regular;
-use crate::snapshot_pair::{verify_snapshot, SnapshotManifest};
+use crate::snapshot_pair::SnapshotManifest;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -554,14 +554,8 @@ fn recover(root: &Path, lease: &mut MediaLease) -> io::Result<bool> {
     if private_directory(&stage, false)? {
         if let Ok(record) = Record::read_pinned(root, &stage) {
             if record.stage.matches(&stage)? {
-                record.matches_stage(&stage)?;
-                let expected = record.expected_manifest()?;
-                let actual = verify_snapshot(&stage).map_err(io::Error::other)?;
-                if actual != expected {
-                    return Err(io::Error::other(
-                        "staged bytes differ from their sealed source",
-                    ));
-                }
+                // Publication moves this directory to `current`. A later exchange
+                // needs a fresh record, so this is still the attempt's unused copy.
                 clear_sealed(root, &stage, &record)?;
                 return Ok(false);
             }
@@ -619,7 +613,7 @@ fn clear_sealed(root: &Path, stage: &Path, record: &Record) -> io::Result<()> {
         return Err(io::Error::other("restore ownership record was replaced"));
     }
     record.matches_stage(stage)?;
-    // Recheck after any recovery hashing, before the first destructive action.
+    // Check the identities again immediately before unlinking each member.
     for (name, member) in [
         ("disk.raw", record.disk),
         ("vars.fd", record.vars),

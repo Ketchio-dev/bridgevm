@@ -31,7 +31,7 @@ class DriverIntegration(unittest.TestCase):
                         label = " ".join(parts[:2])
                         if parts[0] == "INPUTCAPS":
                             marker = "BVINPUT_CAPS " + parts[1] + " 3 TEXTINPUT KEYINPUT POINTERINPUT 65536"
-                            if mode in ("sync", "unsupported"):
+                            if mode in ("sync", "unsupported", "conflicting-unsupported"):
                                 marker += "\nBVINPUT_TEXT " + parts[1] + " QUEUED_DISPATCH"
                         else:
                             payloads.append((parts[0], base64.b64decode(parts[2]).decode()))
@@ -39,8 +39,10 @@ class DriverIntegration(unittest.TestCase):
                             if mode == "bad-count":
                                 count += 1
                             if len(parts) == 4 and parts[3] == "S":
-                                marker = ("BVTEXT_UNSUPPORTED " + parts[1] if mode == "unsupported" else
+                                marker = ("BVTEXT_UNSUPPORTED " + parts[1] if mode in ("unsupported", "conflicting-unsupported") else
                                           "BVTEXT_DISPATCHED " + parts[1] + " " + str(count // 2))
+                                if mode == "conflicting-unsupported":
+                                    marker += "\nBVINPUT_FAILED " + parts[1] + " unicode-packet-outcome-unknown"
                             else:
                                 marker = "BVINPUT_INSERTED " + parts[1] + " " + str(count)
                         response = "BVAGENT CMD " + label + " exit=0\n" + marker + "\r\nBVAGENT END " + label + "\n"
@@ -82,7 +84,7 @@ class DriverIntegration(unittest.TestCase):
                 self.assertEqual(payloads[-1], ("POINTERINPUT", "click:123x32767"))
 
     def test_rejected_receipt_never_advances(self):
-        for mode in ("bad-count", "restart"):
+        for mode in ("bad-count", "restart", "conflicting-unsupported"):
             with self.subTest(mode=mode):
                 status, report, payloads = self.exercise(mode)
                 self.assertNotEqual(status, 0)
