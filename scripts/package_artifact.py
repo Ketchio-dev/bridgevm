@@ -44,9 +44,9 @@ def build_verified(kind, app, archive, work):
     if kind == "dmg":
         run("cp", "-R", app, str(work) + "/")
         (work / "Applications").symlink_to("/Applications")
-        run("hdiutil", "create", "-quiet", "-volname", "BridgeVM", "-srcfolder", work,
+        run("hdiutil", "create", "-volname", "BridgeVM", "-srcfolder", work,
             "-format", "UDZO", archive)
-        run("hdiutil", "verify", "-quiet", archive)
+        run("hdiutil", "verify", archive)
     else:
         # Keep the native tar implementation and its macOS metadata handling.
         run("tar", "-czf", archive, "-C", app.parent, "--", app.name)

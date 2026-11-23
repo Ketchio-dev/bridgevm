@@ -32,7 +32,10 @@ elif tool == "hdiutil":
     archive = pathlib.Path(args[-1])
     if args[0] == "create":
         archive.write_bytes(b"synthetic disk image")
-        if mode == "create-fail": sys.exit(73)
+        if mode == "create-fail":
+            if "-quiet" not in args:
+                print("hdiutil: create failed - Resource busy", file=sys.stderr)
+            sys.exit(73)
     elif args[0] == "verify":
         if mode == "verify-fail": sys.exit(74)
         if mode == "race": race()

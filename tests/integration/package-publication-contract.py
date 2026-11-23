@@ -71,6 +71,8 @@ class PackagePublicationTests(unittest.TestCase):
                     before = snapshot(f.app)
                     result = f.run(mode)
                     self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    if kind == "dmg" and mode == "create-fail":
+                        self.assertIn("hdiutil: create failed - Resource busy", result.stderr)
                     self.assertFalse(os.path.lexists(f.output))
                     self.assertEqual(snapshot(f.app), before)
                     self.assert_clean(f)
