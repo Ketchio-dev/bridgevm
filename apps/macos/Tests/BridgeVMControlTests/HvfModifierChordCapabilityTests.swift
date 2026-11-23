@@ -69,20 +69,20 @@ final class HvfModifierChordCapabilityTests: XCTestCase {
         let id = UUID()
         for marker in ["BVINPUT_CHORDS \(id.uuidString) MODIFIER_CHORDS EXTRA", "BVINPUT_CHORDS \(id.uuidString) MODIFIER_CHORD",
                        "BVINPUT_KEYS \(id.uuidString) MODIFIER_CHORDS", "BVINPUT_CHORDS \(UUID().uuidString) MODIFIER_CHORDS"] {
-            var request = HvfInputCapabilitiesRequest(now: now, id: id)
+            var request = HvfInputCapabilitiesRequest(id: id)
             let lines = ["BVAGENT CMD INPUTCAPS \(id.uuidString) exit=0",
                          "BVINPUT_CAPS \(id.uuidString) 3 TEXTINPUT KEYINPUT POINTERINPUT 65536", marker,
                          "BVAGENT END INPUTCAPS \(id.uuidString)"]
-            XCTAssertEqual(request.consume(lines: lines, now: now), .supported, marker)
+            XCTAssertEqual(request.consume(lines: lines), .supported, marker)
             XCTAssertFalse(request.modifierChords, marker)
             XCTAssertFalse(request.supports(.key("win")), marker)
             XCTAssertTrue(request.supports(.key("ctrl+c")), marker)
         }
-        var early = HvfInputCapabilitiesRequest(now: now, id: id)
+        var early = HvfInputCapabilitiesRequest(id: id)
         let marker = "BVINPUT_CHORDS \(id.uuidString) MODIFIER_CHORDS"
         XCTAssertEqual(early.consume(lines: [marker, "BVAGENT CMD INPUTCAPS \(id.uuidString) exit=0",
                                              "BVINPUT_CAPS \(id.uuidString) 3 TEXTINPUT KEYINPUT POINTERINPUT 65536",
-                                             "BVAGENT END INPUTCAPS \(id.uuidString)"], now: now), .supported)
+                                             "BVAGENT END INPUTCAPS \(id.uuidString)"]), .supported)
         XCTAssertFalse(early.supports(.key("win")), "a marker before BVINPUT_CAPS is ignored")
     }
 

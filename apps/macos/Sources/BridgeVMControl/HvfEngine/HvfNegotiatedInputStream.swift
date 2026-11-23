@@ -3,8 +3,7 @@ import Foundation
 /// The owner must prove legacy input is drained before enabling this stream (`legacyQuiescent`); once ready, the
 /// owner keeps the two routes apart itself (HvfSessionInputRouter).
 struct HvfNegotiatedInputStream {
-    /// `unavailable` (no or no valid INPUTCAPS answer) lasts until the next agent instance (READY, re-READY,
-    /// SERVICE start, a reset record), which `poll` asks again.
+    /// A failed send or rejected INPUTCAPS response leaves the stream unavailable until the next agent instance.
     enum State: Equatable {
         case disconnected, negotiating, waitingForLegacy, ready, unavailable, failed
     }
@@ -45,7 +44,8 @@ struct HvfNegotiatedInputStream {
         }) { return reset(.sessionChanged) }
         switch state {
         case .disconnected:
-            let request = HvfInputCapabilitiesRequest(now: now)
+            // Early guest services can delay the read-only query. Keep serving legacy input while waiting.
+            let request = HvfInputCapabilitiesRequest()
             capability = request
             if send(request.command) {
                 state = .negotiating
@@ -54,7 +54,7 @@ struct HvfNegotiatedInputStream {
             }
         case .negotiating:
             guard var request = capability else { state = .failed; return nil }
-            guard let result = request.consume(lines: lines, now: now) else {
+            guard let result = request.consume(lines: lines) else {
                 capability = request
                 return nil
             }

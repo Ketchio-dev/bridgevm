@@ -14,13 +14,13 @@ final class HvfPointerCapabilityTests: XCTestCase {
     func testAllThreeEncodingsAreRequired() {
         for capabilities in ["1 TEXTINPUT KEYINPUT POINTERINPUT 65536", "1 TEXTINPUT KEYINPUT 65536", "1 TEXTINPUT POINTERINPUT 65536",
                              "1 KEYINPUT POINTERINPUT 65536", "1 TEXTINPUT KEYINPUT POINTERINPUT 65535"] {
-            var request = HvfInputCapabilitiesRequest(now: now)
+            var request = HvfInputCapabilitiesRequest()
             let lines = receipt(request.command, capabilities: capabilities)
-            XCTAssertEqual(request.consume(lines: lines, now: now), .failed(.invalidReceipt))
+            XCTAssertEqual(request.consume(lines: lines), .failed(.invalidReceipt))
         }
-        var complete = HvfInputCapabilitiesRequest(now: now)
+        var complete = HvfInputCapabilitiesRequest()
         let lines = receipt(complete.command, capabilities: "3 TEXTINPUT KEYINPUT POINTERINPUT 65536")
-        XCTAssertEqual(complete.consume(lines: lines, now: now), .supported)
+        XCTAssertEqual(complete.consume(lines: lines), .supported)
     }
 
     func testOldAgentCannotEnablePointerStreamEvenWhenLegacyIsQuiescent() {

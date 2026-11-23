@@ -3,7 +3,6 @@ import XCTest
 @testable import BridgeVMControl
 
 final class HvfControlChordCapabilityTests: XCTestCase {
-    private let now = Date(timeIntervalSince1970: 6_000)
     private let id = UUID(uuidString: "12345678-1234-1234-1234-123456789abc")!
     private var header: String { "BVAGENT CMD INPUTCAPS \(id.uuidString) exit=0" }
     private var base: String { "BVINPUT_CAPS \(id.uuidString) 3 TEXTINPUT KEYINPUT POINTERINPUT 65536" }
@@ -29,8 +28,8 @@ final class HvfControlChordCapabilityTests: XCTestCase {
 
     func testOlderAgentsKeepExistingChordsButNeverAdmitNewOnes() {
         for extra in [[], [keys]] {
-            var request = HvfInputCapabilitiesRequest(now: now, id: id)
-            XCTAssertEqual(request.consume(lines: [header, base] + extra + [end], now: now), .supported)
+            var request = HvfInputCapabilitiesRequest(id: id)
+            XCTAssertEqual(request.consume(lines: [header, base] + extra + [end]), .supported)
             for key in existing { XCTAssertTrue(request.supports(.key(key)), key) }
             for key in HvfControlChordKeys.extended { XCTAssertFalse(request.supports(.key(key)), key) }
             XCTAssertEqual(request.supports(.key("shift+enter")), !extra.isEmpty)
@@ -40,12 +39,12 @@ final class HvfControlChordCapabilityTests: XCTestCase {
 
     func testChordMarkerAdmitsNewChordsWithOrWithoutShiftMarker() {
         for lines in [[header, base, keys, chords, end], [header, base, chords + "\r", end]] {
-            var request = HvfInputCapabilitiesRequest(now: now, id: id)
+            var request = HvfInputCapabilitiesRequest(id: id)
             for line in lines.dropLast() {
-                XCTAssertNil(request.consume(lines: [line], now: now))
+                XCTAssertNil(request.consume(lines: [line]))
                 XCTAssertFalse(request.supports(.key("ctrl+s")), "only a completed envelope grants support")
             }
-            XCTAssertEqual(request.consume(lines: [end], now: now), .supported)
+            XCTAssertEqual(request.consume(lines: [end]), .supported)
             for key in HvfControlChordKeys.extended.union(existing) { XCTAssertTrue(request.supports(.key(key)), key) }
             XCTAssertEqual(request.supports(.key("shift+space")), lines.contains(keys))
         }
@@ -56,42 +55,38 @@ final class HvfControlChordCapabilityTests: XCTestCase {
                       [header, base, keys + " " + "CTRL_SHIFT_CHORDS", end],
                       [header, base, chords.replacingOccurrences(of: "CTRL_SHIFT_CHORDS", with: "CTRL_CHORDS"), end],
                       [header, base, chords.replacingOccurrences(of: id.uuidString, with: UUID().uuidString), end]] {
-            var request = HvfInputCapabilitiesRequest(now: now, id: id)
-            XCTAssertEqual(request.consume(lines: lines, now: now), .supported, "\(lines)")
+            var request = HvfInputCapabilitiesRequest(id: id)
+            XCTAssertEqual(request.consume(lines: lines), .supported, "\(lines)")
             XCTAssertFalse(request.supports(.key("ctrl+s")), "\(lines)")
             XCTAssertTrue(request.supports(.key("ctrl+c")), "base chords stay available")
         }
         for lines in [[header, base, chords, keys, end], [header, base, chords, chords, end], [header, base, keys, chords, keys, end]] {
-            var request = HvfInputCapabilitiesRequest(now: now, id: id)
-            XCTAssertEqual(request.consume(lines: lines, now: now), .supported, "\(lines)")
+            var request = HvfInputCapabilitiesRequest(id: id)
+            XCTAssertEqual(request.consume(lines: lines), .supported, "\(lines)")
             XCTAssertTrue(request.supports(.key("ctrl+s")), "\(lines)")
         }
-        var reheaded = HvfInputCapabilitiesRequest(now: now, id: id)
+        var reheaded = HvfInputCapabilitiesRequest(id: id)
         let again = "BVAGENT CMD INPUTCAPS \(id.uuidString) exit=1"
-        XCTAssertEqual(reheaded.consume(lines: [header, base, chords, again, end], now: now), .failed(.invalidReceipt))
+        XCTAssertEqual(reheaded.consume(lines: [header, base, chords, again, end]), .failed(.invalidReceipt))
     }
 
     func testUnknownMarkerKeywordsAreIgnoredWithoutGrantingChords() {
-        var request = HvfInputCapabilitiesRequest(now: now, id: id)
+        var request = HvfInputCapabilitiesRequest(id: id)
         let lines = [header, base, "BVINPUT_FUTURE \(id.uuidString) SOMETHING", chords.lowercased(), end]
-        XCTAssertEqual(request.consume(lines: lines, now: now), .supported)
+        XCTAssertEqual(request.consume(lines: lines), .supported)
         XCTAssertTrue(request.supports(.key("ctrl+c")))
         XCTAssertFalse(request.supports(.key("ctrl+s")))
     }
 
     func testChordMarkerAfterEnvelopeOrAcrossRestartCannotUpgrade() {
         for sameBatch in [false, true] {
-            var request = HvfInputCapabilitiesRequest(now: now, id: id)
-            XCTAssertEqual(request.consume(lines: [header, base, end] + (sameBatch ? [chords] : []), now: now), .supported)
-            XCTAssertNil(request.consume(lines: [chords], now: now))
+            var request = HvfInputCapabilitiesRequest(id: id)
+            XCTAssertEqual(request.consume(lines: [header, base, end] + (sameBatch ? [chords] : [])), .supported)
+            XCTAssertNil(request.consume(lines: [chords]))
             XCTAssertFalse(request.supports(.key("shift+f10")))
         }
-        var restarted = HvfInputCapabilitiesRequest(now: now, id: id)
-        XCTAssertEqual(restarted.consume(lines: [header, base, chords, end, "BVAGENT SERVICE start"], now: now), .failed(.restarted))
+        var restarted = HvfInputCapabilitiesRequest(id: id)
+        XCTAssertEqual(restarted.consume(lines: [header, base, chords, end, "BVAGENT SERVICE start"]), .failed(.restarted))
         XCTAssertFalse(restarted.supports(.key("ctrl+enter")))
-        var expired = HvfInputCapabilitiesRequest(now: now, id: id)
-        XCTAssertNil(expired.consume(lines: [header, base, chords], now: now))
-        XCTAssertEqual(expired.consume(lines: [end], now: now.addingTimeInterval(30)), .failed(.expired))
-        XCTAssertFalse(expired.supports(.key("ctrl+tab")))
     }
 }

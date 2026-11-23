@@ -11,19 +11,19 @@ final class HvfInputKeyCapabilitiesTests: XCTestCase {
     private var end: String { "BVAGENT END INPUTCAPS \(id.uuidString)" }
 
     func testExtensionRequiresCompleteSuccessfulEnvelope() {
-        var request = HvfInputCapabilitiesRequest(now: now, id: id)
+        var request = HvfInputCapabilitiesRequest(id: id)
         for line in [header, base, keys] {
-            XCTAssertNil(request.consume(lines: [line + "\r"], now: now))
+            XCTAssertNil(request.consume(lines: [line + "\r"]))
             XCTAssertFalse(request.supports(.key("shift+enter")))
         }
-        XCTAssertEqual(request.consume(lines: [end], now: now), .supported)
+        XCTAssertEqual(request.consume(lines: [end]), .supported)
         XCTAssertTrue(request.supports(.key("shift+enter")))
         XCTAssertTrue(request.supports(.key("shift+space")))
     }
 
     func testBaseV3RetainsOrdinaryInputButDoesNotImplyNewChords() {
-        var request = HvfInputCapabilitiesRequest(now: now, id: id)
-        XCTAssertEqual(request.consume(lines: [header, base, end], now: now), .supported)
+        var request = HvfInputCapabilitiesRequest(id: id)
+        XCTAssertEqual(request.consume(lines: [header, base, end]), .supported)
         XCTAssertTrue(request.supports(.text("한글")))
         XCTAssertTrue(request.supports(.key("shift+tab")))
         XCTAssertFalse(request.supports(.key("shift+enter")))
@@ -34,36 +34,32 @@ final class HvfInputKeyCapabilitiesTests: XCTestCase {
         for lines in [[keys, header, base, end], [header, keys, base, end], [header, base, keys + " UNKNOWN", end],
                       [header, base, keys.replacingOccurrences(of: id.uuidString, with: UUID().uuidString), end],
                       [header, base, keys.replacingOccurrences(of: "SHIFT_ENTER_SPACE", with: "SHIFT_ENTER"), end]] {
-            var request = HvfInputCapabilitiesRequest(now: now, id: id)
-            XCTAssertEqual(request.consume(lines: lines, now: now), .supported, "\(lines)")
+            var request = HvfInputCapabilitiesRequest(id: id)
+            XCTAssertEqual(request.consume(lines: lines), .supported, "\(lines)")
             XCTAssertFalse(request.supports(.key("shift+enter")), "\(lines)")
         }
-        var repeated = HvfInputCapabilitiesRequest(now: now, id: id)
-        XCTAssertEqual(repeated.consume(lines: [header, base, keys, keys, end], now: now), .supported)
+        var repeated = HvfInputCapabilitiesRequest(id: id)
+        XCTAssertEqual(repeated.consume(lines: [header, base, keys, keys, end]), .supported)
         XCTAssertTrue(repeated.supports(.key("shift+enter")) && repeated.supports(.key("shift+tab")))
-        var reheaded = HvfInputCapabilitiesRequest(now: now, id: id), again = "BVAGENT CMD INPUTCAPS \(id.uuidString) exit=1"
-        XCTAssertEqual(reheaded.consume(lines: [header, base, keys, again, end], now: now), .failed(.invalidReceipt))
+        var reheaded = HvfInputCapabilitiesRequest(id: id), again = "BVAGENT CMD INPUTCAPS \(id.uuidString) exit=1"
+        XCTAssertEqual(reheaded.consume(lines: [header, base, keys, again, end]), .failed(.invalidReceipt))
     }
 
     func testExtensionAfterEnvelopeCannotUpgradeCompletedBaseReceipt() {
         for sameBatch in [false, true] {
-            var request = HvfInputCapabilitiesRequest(now: now, id: id)
-            XCTAssertEqual(request.consume(lines: [header, base, end] + (sameBatch ? [keys] : []), now: now), .supported)
-            XCTAssertNil(request.consume(lines: [keys], now: now))
+            var request = HvfInputCapabilitiesRequest(id: id)
+            XCTAssertEqual(request.consume(lines: [header, base, end] + (sameBatch ? [keys] : [])), .supported)
+            XCTAssertNil(request.consume(lines: [keys]))
             XCTAssertFalse(request.supports(.key("shift+enter")))
         }
     }
 
-    func testResetOrExpiryCannotFinishExpandedReceipt() {
+    func testResetCannotFinishExpandedReceipt() {
         for reset in ["BVAGENT SERVICE start", "PSCI SYSTEM_RESET: reboot 1/8"] {
-            var request = HvfInputCapabilitiesRequest(now: now, id: id)
-            XCTAssertEqual(request.consume(lines: [header, base, keys, end, reset], now: now), .failed(.restarted))
+            var request = HvfInputCapabilitiesRequest(id: id)
+            XCTAssertEqual(request.consume(lines: [header, base, keys, end, reset]), .failed(.restarted))
             XCTAssertFalse(request.supports(.key("shift+space")))
         }
-        var request = HvfInputCapabilitiesRequest(now: now, id: id)
-        XCTAssertNil(request.consume(lines: [header, base, keys], now: now))
-        XCTAssertEqual(request.consume(lines: [end], now: now.addingTimeInterval(30)), .failed(.expired))
-        XCTAssertFalse(request.supports(.key("shift+space")))
     }
 
     func testServiceResetRenegotiatesInsteadOfRetainingExpandedSupport() {
