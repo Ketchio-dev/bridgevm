@@ -40,15 +40,23 @@ helper's ordering and recovery, not a host power loss (outside A19).
 |---|---|---|---|---|---|
 | pre-#719, scratch harness, 05:48–07:03Z | ad-hoc of main `d7e76a5e` (`bff425df…` / `6d67ccc0…`) | 10 (5 create, 5 restore) | 8, helper killed in all 8 | 2 restores | PASS |
 | post-#719, scratch harness, 06:08–08:12Z | ad-hoc of main `cd333427` (`2b841505…` / `b35b3b7b…`) | 20 (10 create, 10 restore) | 18, helper killed in all 18 | 2 restores | PASS |
-| committed script, candidate | CANDIDATE | CANDIDATE | | | |
+| `scripts/verify-snapshot-interruption.sh` as committed, 08:25–09:11Z | ad-hoc of the tree of main `1a3ba015` (after #722–#726; `67661cf1…` / `65c86095…`) | 9 (3 create, 3 restore, 3 export) | 8, helper killed in all 8 | 1 restore | PASS |
 
 - Kill moments: creates 0.9–51.6 s into runs of 45–96 s; restores 7.8–178.9 s
-  into runs of 91–195 s (the host ran other VM work at the same time, so
-  durations are noisy).
-- Every interrupted create left the current pair unchanged. Every interrupted
-  restore left the old pair; the four restores that finished before the kill
-  left the snapshot. Every retry succeeded and was exact. All 30 boots after a
-  retry read the marker of exactly the pair they booted.
+  into runs of 47–195 s; exports 12.8–43.9 s into runs of 45–46 s (the host
+  ran other VM work at the same time, so durations are noisy).
+- Every interrupted create and export left the current pair unchanged, and
+  every interrupted export left its destination as it was (absent, or the
+  previous export). Every interrupted restore left the old pair; the five
+  restores that finished before the kill left the snapshot. Every retry
+  succeeded and was exact. All 36 boots after a retry read the marker of
+  exactly the pair they booted.
+- On the candidate package no retry left any staging behind, and the library
+  ended at 4 snapshots and about 109 GB as counted by `du` (the post-#719 run
+  ended with 10 orphaned stagings and about 417 GB). A restore retried after
+  an interrupted restore took 137–144 s against 47 s otherwise: with an
+  earlier attempt's staging present it still hashes the source before
+  reclaiming that staging (#723).
 
 ## Findings, fixed after these runs
 
@@ -68,7 +76,8 @@ helper's ordering and recovery, not a host power loss (outside A19).
 ## Reading
 
 On these packages the snapshot helper is crash-safe at every moment the
-random kills reached: no interrupted create, restore or export left a mixed,
-partial or unbootable pair, and no retry needed repair. Rank: local
+random kills reached (34 helper kills in 39 trials): no interrupted create,
+restore or export left a mixed, partial or unbootable pair, and no retry
+needed repair. Exports were interrupted only in the candidate run (3 kills). Rank: local
 physical-Mac runs, no queue seal. Not covered: host power loss, a full or
 failing volume, non-APFS destinations, and kills of the app (GUI) process.
