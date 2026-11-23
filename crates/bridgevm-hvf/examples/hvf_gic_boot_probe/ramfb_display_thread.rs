@@ -17,8 +17,6 @@ use std::time::Duration;
 
 #[path = "ramfb_display_loop.rs"]
 mod pull;
-#[path = "ramfb_display_stop.rs"]
-mod stop;
 #[path = "ramfb_display_timing.rs"]
 mod timing;
 #[path = "ramfb_display_wake.rs"]

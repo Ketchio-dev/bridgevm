@@ -35,6 +35,13 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- An interrupted snapshot create or export (for example, its process was
+  killed) left a hidden, half-made copy of the VM's disk and vars in the
+  snapshot folder, plus an empty folder for an app snapshot. The snapshot list
+  never showed them and nothing removed them. On APFS each one held on to the
+  disk's old blocks as the VM changed; on other volumes each was a full copy.
+  The next create or export into the same folder now removes them, and keeps
+  anything it does not recognise.
 - After 256 starts or stops from the CLI in one app session, every further
   one was refused until the app was reopened.
 - A Stop could end as "not confirmed", needing Force Stop, when the app and
@@ -54,6 +61,10 @@ All notable changes to BridgeVM are documented in this file.
   keychain in the other Unicode form (composed or decomposed, for example
   after the library was copied). Before, the VM refused to start with a
   missing-key error (#689).
+- Ctrl-C or SIGTERM during `bridgevm app snapshot-create`, `snapshot-restore`
+  or `snapshot-export` left the snapshot helper running, so a restore could
+  still change the VM after the command had ended. The command now stops the
+  helper, waits for it, reports `cancelled` and exits 130 (143 for SIGTERM).
 - Long typed or pasted text in a Windows app built on a RichEdit 5 control
   (for example a WinForms RichTextBox) went in one character at a time,
   about 5 ms each, and from roughly 2,000 characters failed partway with an

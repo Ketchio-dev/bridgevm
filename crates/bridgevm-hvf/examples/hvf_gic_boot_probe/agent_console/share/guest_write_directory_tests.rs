@@ -1,8 +1,7 @@
-//! Directories a guest path causes to be created (follow-up of 2026-10-23,
-//! conservative choice): owner-only 0700 before the umask and marked like guest
-//! files, through the new directory's descriptor, before any guest file is
-//! published in it. A directory whose mark cannot be set is removed again and
-//! the write is refused. A directory that already exists is used as it is.
+//! Directories a guest path causes to be created: owner-only 0700 before the
+//! umask and marked like guest files, through the new directory's descriptor,
+//! before any guest file is published in it. A directory whose mark cannot be
+//! set is removed again and the write is refused. A directory that already exists is used as it is.
 
 use super::*;
 
@@ -69,7 +68,7 @@ fn a_directory_whose_mark_cannot_be_set_is_removed_and_nothing_is_written() {
 
 #[test]
 fn a_refused_directory_mark_holds_until_the_guest_file_changes() {
-    use crate::agent_console::share::guest_write_refusal::is_persistent;
+    use crate::agent_console::share::is_persistent;
     let f = Fixture::new();
     deny_directory_marks(&f.root());
     let refused = Destination::open(&f.root(), "sub/a.txt", true).err();

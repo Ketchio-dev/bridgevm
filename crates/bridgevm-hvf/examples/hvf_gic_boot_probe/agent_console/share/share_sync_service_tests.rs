@@ -19,8 +19,6 @@ mod guest_destination_identity;
 mod root_identity;
 #[path = "share_host_snapshot_tests.rs"]
 mod host_snapshot;
-#[path = "share_host_snapshot_limit_tests.rs"]
-mod snapshot_limit;
 #[path = "share_listing_report_tests.rs"]
 mod listing_report_tests;
 #[path = "share_put_unconfirmed_tests.rs"]

@@ -13,9 +13,8 @@ use std::io::ErrorKind;
 use std::mem::MaybeUninit;
 use std::os::fd::AsRawFd;
 use std::ptr::{null, null_mut};
+use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::Instant;
-
-use super::stop::StopSignal;
 
 pub(super) enum Wake {
     Stop,
@@ -130,4 +129,40 @@ pub(super) fn uptime_ns() -> u64 {
     };
     unsafe { libc::clock_gettime(libc::CLOCK_UPTIME_RAW, &mut now) };
     (now.tv_sec as u64).saturating_mul(1_000_000_000) + now.tv_nsec as u64
+}
+
+/// The stop request the ramfb display exporter's thread sleeps on between
+/// ticks.
+#[derive(Default)]
+struct StopSignal {
+    stopped: Mutex<bool>,
+    wake: Condvar,
+}
+
+impl StopSignal {
+    fn flag(&self) -> MutexGuard<'_, bool> {
+        self.stopped.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn stop(&self) {
+        *self.flag() = true;
+        self.wake.notify_all();
+    }
+
+    /// Sleep until `deadline`; true as soon as a stop is requested.
+    fn wait_until(&self, deadline: Instant) -> bool {
+        let mut stopped = self.flag();
+        while !*stopped {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return false;
+            }
+            stopped = self
+                .wake
+                .wait_timeout(stopped, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+        true
+    }
 }

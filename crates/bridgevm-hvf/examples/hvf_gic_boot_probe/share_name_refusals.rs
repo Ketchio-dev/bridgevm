@@ -1,13 +1,32 @@
-//! Guest listing names refused by the host name limits (`share_name_limits`).
+//! The longest share key that can sync. macOS path calls refuse a path of
+//! PATH_MAX (1024) bytes or more, so the host scan could never see a file
+//! under a longer key, and APFS, like NTFS in the guest, refuses a name over
+//! NAME_MAX (255) UTF-16 code units. A guest listing such a key is refused.
+//! That also bounds per-name work that grows with depth (the unseen-name check
+//! hashes every parent of a key): a key under PATH_MAX bytes has at most 512
+//! components.
 //!
-//! Such a name is dropped like a `..` name, so no GET is issued for it, but it
-//! is not dropped silently. A listing keeps only how many names were refused,
+//! Guest listing names refused by these limits are counted. Such a name is
+//! dropped like a `..` name, so no GET is issued for it, but it is not dropped
+//! silently. A listing keeps only how many names were refused,
 //! the fixed reason and byte length of the first few and a fingerprint of them
 //! all, so no refused name is stored or printed, and an unchanged set of
 //! refused names is reported once rather than on every listing poll.
 
-use super::share_name_limits::PATH_MAX_BYTES;
 use super::{fnv1a64, from_guest_rel, normalize_rel, ShareSync};
+
+/// macOS PATH_MAX (sys/syslimits.h), counting the terminating NUL.
+const PATH_MAX_BYTES: usize = 1024;
+/// macOS NAME_MAX, which APFS, like NTFS, counts in UTF-16 code units.
+const NAME_MAX_UTF16: usize = 255;
+
+/// Whether a normalized (`/`-separated) share key fits both limits.
+pub(super) fn fits_host_limits(key: &str) -> bool {
+    key.len() < PATH_MAX_BYTES
+        && key
+            .split('/')
+            .all(|part| part.encode_utf16().count() <= NAME_MAX_UTF16)
+}
 
 /// Refused names described one by one per listing; the rest are only counted.
 pub const REFUSED_SHOWN: usize = 3;

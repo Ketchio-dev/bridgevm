@@ -6,6 +6,7 @@
 //! leased; the manifest is written last, so only staging that holds one can be
 //! a completed snapshot. The destination is admitted again right before
 //! publication, which is the check that keeps what arrived during the copy.
+//! A create also clears sibling staging that a killed create left behind.
 
 use super::files::{copy_and_sync, sha256_file};
 use super::publish::publish;
@@ -15,7 +16,7 @@ use super::{
     SNAPSHOT_FORMAT_VERSION, VARS_NAME,
 };
 use crate::media_lease::MediaLease;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
 use std::os::unix::ffi::OsStrExt;
@@ -131,7 +132,58 @@ fn claim_staging(destination: &Path) -> io::Result<(MediaLease, OwnedStaging)> {
     // Reserve the fresh member path keys before copying either file; for
     // staging that existed above they are already held.
     own_members(&mut lease, &staged)?;
+    reclaim_abandoned(&staged);
     Ok((lease, staging))
+}
+
+/// Best effort: clear what earlier killed creates left beside this one.
+///
+/// A killed create leaves `.N.staging` and, from the app, its empty `N`
+/// reservation; later creates choose new names, so their own reclaim never
+/// meets it. A sibling is cleared only when `N` is absent or an empty
+/// directory, no create owns its member keys and `reclaim_staging` finds only
+/// creation's own unfinished files; then the empty `N` is removed. Empty
+/// staging is skipped: a live create's is empty until it owns those keys.
+/// Anything else is kept, and nothing here fails this create.
+fn reclaim_abandoned(own: &Path) {
+    let (Some(parent), Some(own)) = (own.parent(), own.file_name()) else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(parent) else {
+        return;
+    };
+    for name in entries.flatten().map(|entry| entry.file_name()) {
+        let Some(reserved) = name
+            .as_bytes()
+            .strip_prefix(b".")
+            .and_then(|rest| rest.strip_suffix(b".staging"))
+            .filter(|reserved| !matches!(*reserved, b"" | b"." | b".."))
+        else {
+            continue;
+        };
+        let reservation = parent.join(OsStr::from_bytes(reserved));
+        let staging = parent.join(&name);
+        if name.as_os_str() == own || !absent_or_empty(&reservation) || empty(&staging) {
+            continue;
+        }
+        let Ok(mut lease) = MediaLease::acquire([]) else {
+            return;
+        };
+        if own_members(&mut lease, &staging).is_ok() && reclaim_staging(&staging).is_ok() {
+            let _ = fs::remove_dir(&reservation);
+        }
+    }
+}
+
+fn absent_or_empty(path: &Path) -> bool {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata.is_dir() && empty(path),
+        Err(error) => error.kind() == io::ErrorKind::NotFound,
+    }
+}
+
+fn empty(directory: &Path) -> bool {
+    fs::read_dir(directory).is_ok_and(|mut entries| entries.next().is_none())
 }
 
 fn own_members(lease: &mut MediaLease, directory: &Path) -> io::Result<()> {

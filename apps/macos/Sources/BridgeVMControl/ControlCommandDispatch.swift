@@ -11,6 +11,7 @@ enum ControlCommandDispatch {
             exit(VTPMLifecycleCommand.run(arguments: Array(arguments.dropFirst())))
         }
         if arguments.first == "--cli" {
+            HvfHelperProcess.forwardsCancelSignals = true
             exit(NativeCLI.run(arguments: Array(arguments.dropFirst())))
         }
         BridgeVMControlLaunchOptions.validateOrExit(arguments: arguments)

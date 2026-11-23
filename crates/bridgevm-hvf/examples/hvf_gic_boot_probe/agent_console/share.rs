@@ -85,8 +85,6 @@ pub(super) fn parse_share_spec(spec: &str) -> Option<(String, String)> {
 #[path = "share/share_host_scan.rs"]
 mod share_host_scan;
 pub(super) use share_host_scan::*;
-#[path = "share/share_delete_wire.rs"]
-mod share_delete_wire;
 #[path = "share/share_big.rs"]
 mod share_big;
 pub(super) use share_big::{is_out_of_space, parse_range_beg, BigTransfer, SHARE_FREE_MARGIN, SHARE_RANGE_BYTES};
@@ -136,15 +134,44 @@ pub(super) fn file_mtime_ms_from_meta(meta: &std::fs::Metadata) -> Option<u128> 
         .map(|d| d.as_millis())
 }
 
-#[path = "share/share_skip.rs"]
-mod share_skip;
-pub(super) use share_skip::*;
+// Shared-folder skip diagnostics.
+
+pub(in crate::agent_console) fn print_host_skip_once(
+    share: &mut ShareState,
+    name: &str,
+    mtime_ms: u128,
+    kind: HostSkipKind,
+    size: u64,
+) {
+    print_host_skip_once_seen(&mut share.host_skip_seen, name, mtime_ms, kind, size);
+}
+
+pub(in crate::agent_console) fn print_host_skip_once_seen(
+    host_skip_seen: &mut HashSet<(String, u128, HostSkipKind)>,
+    name: &str,
+    mtime_ms: u128,
+    kind: HostSkipKind,
+    size: u64,
+) {
+    if !host_skip_seen.insert((name.to_string(), mtime_ms, kind)) {
+        return;
+    }
+    match kind {
+        HostSkipKind::TooLarge => println!("BVAGENT SHARE skip {name} too-large {size}"),
+    }
+}
+
+pub(in crate::agent_console) fn print_share_skip(name: &str, reason: SkipReason) {
+    match reason {
+        SkipReason::TooLarge { size } => println!("BVAGENT SHARE skip {name} too-large {size}"),
+        SkipReason::WindowsAlias(names) => println!("BVAGENT SHARE skip {name} alias {names:?}"),
+    }
+}
+
 #[path = "share/share_listing_reply.rs"]
 mod share_listing_reply;
 #[path = "share/share_listing_reply_tests.rs"]
 mod share_listing_reply_tests;
-#[path = "share/share_listing_report.rs"]
-mod share_listing_report;
 
 /// The guest path for a share key. Where the guest listed the key, or the
 /// folder it is in, under a spelling other than the key's own guest form (a
@@ -171,8 +198,72 @@ pub(super) fn write_share_guest_path_into(share: &ShareState, name: &str, out: &
     share_sync::append_guest_rel_into(name, out);
 }
 
-#[path = "share/guest_write_refusal.rs"]
-mod guest_write_refusal;
+impl AgentConsoleHarness {
+    /// Recheck the selected root before a host deletion becomes a guest DEL.
+    pub(in crate::agent_console) fn write_share_delete_wire(&mut self, name: &str) -> bool {
+        let Some(share) = self.share.as_mut() else {
+            println!("BVAGENT SHARE del-skipped {name} share-disabled");
+            return false;
+        };
+        if !share.root_matches() {
+            println!("BVAGENT SHARE del-skipped {name} root-unavailable");
+            return false;
+        }
+        if std::fs::symlink_metadata(share.host_dir.join(name)).is_ok() {
+            println!("BVAGENT SHARE del-skipped {name} mac-copy-returned");
+            return false;
+        }
+        write_share_guest_path_into(share, name, &mut self.share_guest_path_scratch);
+        self.service_line_scratch.push_str("DEL ");
+        base64_encode_into(
+            self.share_guest_path_scratch.as_bytes(),
+            &mut self.service_line_scratch,
+        );
+        if self.delete_if_unchanged {
+            if let Some((size, stamp)) = share.engine.delete_guest_stat(name) {
+                use std::fmt::Write as _;
+                let _ = write!(self.service_line_scratch, " {size} {stamp}");
+            } else {
+                println!("BVAGENT SHARE del-unchecked {name} guest-version-unknown");
+            }
+        }
+        self.service_line_scratch.push('\n');
+        true
+    }
+}
+
+// Guest-write refusals that hold until the guest file changes. The guest write
+// policy refuses a write whose temporary keeps execute bits, or whose
+// quarantine mark the share will not hold: ENOTSUP, EACCES or EPERM (a deny
+// ACL, a flag), or an msdos/exfat mark that does not read back. Fetching the
+// same unchanged guest file again cannot succeed, so the share remembers these
+// refusals (share_write_failures.rs). Any other failure is retried at the next
+// guest listing.
+
+/// The reason a write was refused for good.
+#[derive(Debug)]
+struct Persistent(String);
+
+impl std::fmt::Display for Persistent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Persistent {}
+
+/// A refusal that holds until the guest file changes, shown as `reason`.
+fn persistent(kind: std::io::ErrorKind, reason: impl Into<String>) -> std::io::Error {
+    std::io::Error::new(kind, Persistent(reason.into()))
+}
+
+/// Whether `error` is such a refusal; any other error is retried.
+fn is_persistent(error: &std::io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(|inner| inner.is::<Persistent>())
+}
+
 #[path = "share/harness_get_end.rs"]
 mod harness_get_end;
 #[path = "share/host_destination.rs"]
@@ -189,6 +280,70 @@ mod share_host_write;
 #[path = "share/share_put.rs"]
 mod share_put;
 pub(super) use share_put::*;
+
 #[cfg(test)]
-#[path = "share/share_failure_tests.rs"]
-mod failure_tests;
+mod failure_tests {
+    //! Failure-budget exhaustion stops share work, not unrelated console service.
+
+    use super::*;
+    use crate::agent_console::agent_console_tests::tests::harness;
+    use crate::agent_console::share::share_host_write::get_test_fixture::fetched;
+
+    /// An owned share root for the destination-failure budget boundary.
+    struct OwnedRoot(PathBuf);
+
+    impl OwnedRoot {
+        fn new() -> Self {
+            for nonce in 0..128 {
+                let path = std::env::temp_dir().join(format!(
+                    "bvagent-share-failure-{}-{nonce}",
+                    std::process::id()
+                ));
+                match std::fs::create_dir(&path) {
+                    Ok(()) => return Self(path),
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                    Err(error) => panic!("create owned share root: {error}"),
+                }
+            }
+            panic!("no fresh owned share root available");
+        }
+    }
+
+    impl Drop for OwnedRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn nearly_exhausted_share() -> (AgentConsoleHarness, OwnedRoot) {
+        let root = OwnedRoot::new();
+        let mut h = harness();
+        let mut engine = ShareSync::new(1024);
+        for i in 0..4095 {
+            let name = format!("blocked/{i}");
+            engine.on_guest_file(name.clone(), vec![1], Some("g1"));
+            assert!(!engine.on_host_write_failed(&name));
+        }
+        h.share = Some(ShareState::new(
+            engine,
+            root.0.clone(),
+            "C:\\share".into(),
+            Duration::from_secs(1),
+        ));
+        (h, root)
+    }
+
+    #[test]
+    fn failed_destination_limit_disables_share_and_drops_queued_puts_and_deletes() {
+        let (mut h, _root) = nearly_exhausted_share();
+        h.queue.push_back(ServiceReq::ShareLs);
+        h.queue.push_back(share_put_req("a".into(), vec![1], 1, None));
+        h.queue.push_back(ServiceReq::ShareDel { name: "a".into(), direction: ShareDelDirection::HostToGuest });
+        h.queue.push_back(ServiceReq::Ping);
+        // A real root verifies, then the invalid component exhausts the same budget.
+        fetched(&mut h, "../refused", &[1]);
+        assert!(h.share.is_none());
+        assert_eq!(h.queue.len(), 1);
+        assert!(matches!(h.queue.front(), Some(ServiceReq::Ping)));
+    }
+}

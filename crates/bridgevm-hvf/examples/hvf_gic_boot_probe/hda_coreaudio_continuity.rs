@@ -36,12 +36,13 @@
 //! producer only marks the stream fed or stopped. Every update is a relaxed
 //! atomic, so the real-time thread never allocates, locks or waits for them.
 
-pub(super) use super::hda_coreaudio_fill::fill_and_record;
 #[path = "hda_coreaudio_timing.rs"]
 pub mod timing;
+use super::hda_coreaudio_stats::Shared;
 use super::AUDIO_QUEUE_BUFFER_BYTES;
 use super::BYTES_PER_FRAME;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
+use timing::timed_drain;
 
 const PREFIX: &str = "hda CoreAudio continuity:";
 const FRAME_BYTES: usize = BYTES_PER_FRAME as usize;
@@ -262,6 +263,29 @@ impl ContinuitySnapshot {
             self.callback_frames
         )
     }
+}
+
+/// Fill one silent callback buffer from the ring without waiting, and record
+/// what it received. Runs on CoreAudio's real-time callback thread.
+pub(super) fn fill_and_record(destination: &mut [u8], shared: &Shared) {
+    let capacity_bytes = destination.len();
+    let mut ring = match shared.ring.try_consumer() {
+        Some(ring) => ring,
+        None => {
+            return shared
+                .continuity
+                .record_callback(CallbackFill::Contended { capacity_bytes });
+        }
+    };
+    let stream_idle = shared.continuity.stream_idle();
+    let pcm_bytes = timed_drain(shared, &mut ring, destination, stream_idle);
+    drop(ring);
+    let fill = CallbackFill::Drained {
+        pcm_bytes,
+        capacity_bytes,
+        stream_idle,
+    };
+    shared.continuity.record_callback(fill);
 }
 
 #[cfg(test)]

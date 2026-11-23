@@ -8,16 +8,33 @@ struct NativeCLISnapshotResult: Encodable {
     let snapshotPath: String?
     let complete: Bool
     let unavailableReason: String?
+    /// The SIGINT or SIGTERM that cancelled the helper; the exit status is 128 plus it.
+    var cancelSignal: Int32? = nil
+
+    var exitStatus: Int32 { cancelSignal.map { 128 + $0 } ?? (complete ? 0 : 1) }
 
     var text: String {
         var lines = [
             "Powered-off snapshot \(command): \(vmID)",
-            "Result: \(complete ? "complete" : "refused")",
+            "Result: \(complete ? "complete" : cancelSignal == nil ? "refused" : "cancelled")",
         ]
         if let snapshotPath { lines.append("Snapshot: \(snapshotPath)") }
         if let unavailableReason { lines.append("Reason: \(unavailableReason)") }
         lines.append("This host operation does not prove a Windows boot or guest-visible restore.")
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// What a cancelled helper leaves: its old state or its complete result, never a mix.
+    static func cancelled(_ cancel: HvfHelperProcess.Cancelled, command: String, vmID: String,
+                          libraryPath: String) -> Self {
+        let reason: String
+        switch command {
+        case "restore": reason = "Cancelled; the VM's disk and UEFI vars are either unchanged or fully restored from the snapshot."
+        case "export": reason = "Cancelled; the VM is unchanged, and the export destination holds either its previous contents or a complete export."
+        default: reason = "Cancelled; the VM's disk and UEFI vars are unchanged, and no partial snapshot was added."
+        }
+        return Self(command: command, vmID: vmID, libraryPath: libraryPath, snapshotPath: nil,
+                    complete: false, unavailableReason: reason, cancelSignal: cancel.signal)
     }
 }
 
@@ -67,6 +84,8 @@ enum NativeCLISnapshot {
                 complete: true,
                 unavailableReason: nil
             )
+        } catch let cancel as HvfHelperProcess.Cancelled {
+            return .cancelled(cancel, command: command, vmID: id, libraryPath: rootURL.path)
         } catch {
             return NativeCLISnapshotResult(
                 command: command,
@@ -95,7 +114,7 @@ extension NativeCLI {
             operation: operation
         )
         try output(result, json: options.json, text: result.text)
-        return result.complete ? 0 : 1
+        return result.exitStatus
     }
 }
 
@@ -136,6 +155,8 @@ enum NativeCLISnapshotExport {
             // Create hashes both members into the manifest; restore verifies them before use.
             _ = try HvfWindowsSnapshotCommand.invoke(plan.executable, plan.createArguments(destination: resolved.output))
             return result(rootURL, resolved, complete: true, reason: nil)
+        } catch let cancel as HvfHelperProcess.Cancelled {
+            return .cancelled(cancel, command: "export", vmID: options.id, libraryPath: rootURL.path)
         } catch {
             return result(rootURL, options, complete: false, reason: error.localizedDescription)
         }
@@ -166,7 +187,7 @@ extension NativeCLI {
         guard case .snapshotExport(let export) = options.command else { throw NativeCLIError.invalid("Expected snapshot-export ID OUTPUT.") }
         let result = NativeCLISnapshotExport.run(rootURL: options.libraryRoot, options: export)
         try output(result, json: options.json, text: result.text)
-        return result.complete ? 0 : 1
+        return result.exitStatus
     }
 }
 
