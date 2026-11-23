@@ -41,12 +41,6 @@ pub(super) enum Dci3RearmResult {
     Refused(&'static str),
 }
 
-impl Dci3RearmResult {
-    pub(super) const fn is_rearmed(&self) -> bool {
-        matches!(self, Self::Rearmed)
-    }
-}
-
 impl XhciController {
     pub(super) fn rearm_slot1_dci3_to_ring_base_if_queued(
         &mut self,
