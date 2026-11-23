@@ -23,7 +23,7 @@ VERBOSE=0
 usage() {
   cat >&2 <<'EOF'
 usage: install-bridgevm.sh [options]
-  --version <tag>   install an exact release tag (e.g. v1.1.0)
+  --version <tag>   install an exact release tag (e.g. v0.1.0)
   --latest          install the latest verified General Preview (default)
   --dest <dir>      install directory, defaults to /Applications
   --dry-run         verify everything, change nothing

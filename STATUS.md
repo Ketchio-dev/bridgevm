@@ -64,9 +64,8 @@ longer supported and its files are left untouched.
 
 ## Distribution
 
-The General Preview is published (latest `v1.1.1`); see the
-[installation guide](docs/install.md). The older `v1.0.0` predates the
-fail-closed driver boundary and is not recommended. The terminal installer
+The General Preview is published (latest `v0.1.0`); see the
+[installation guide](docs/install.md). The terminal installer
 requires a `BridgeVM-release.json` contract and refuses releases without it,
 even when an archive checksum is valid.
 

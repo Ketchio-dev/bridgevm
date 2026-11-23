@@ -10,9 +10,9 @@ BridgeVM runs Windows alongside macOS using its own
 [Hypervisor.framework VMM](crates/bridgevm-hvf/), without QEMU. It is the
 app's only engine.
 
-**Current access: [General Preview v1.1.1](https://github.com/Ketchio-dev/bridgevm/releases/tag/v1.1.1) · Engineering Preview · 3D-off.**
+**Current access: [General Preview v0.1.0](https://github.com/Ketchio-dev/bridgevm/releases/tag/v0.1.0) · Engineering Preview · 3D-off.**
 Install it with the terminal installer or the DMG. The app is ad-hoc signed,
-not notarized; the installer refuses the superseded `v1.0.0` preview.
+not notarized.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash
