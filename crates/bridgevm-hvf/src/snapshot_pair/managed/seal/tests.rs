@@ -399,7 +399,7 @@ mod recovery {
 
     use super::*;
     use crate::snapshot_pair::managed::{initialize, LockedPair};
-    use crate::snapshot_pair::restore_snapshot;
+    use crate::snapshot_pair::{restore_snapshot, verify_snapshot};
     use std::collections::BTreeMap;
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
@@ -644,6 +644,67 @@ mod recovery {
         }
     }
 
+    /// What `fill` leaves when killed during the staged hash of a same-size corrupt
+    /// source: admitted without hashing, copied, then sealed with the admitted manifest.
+    fn seal_corrupt_copy(fixture: &Fixture) {
+        let corrupt = fixture.scratch.path("corrupt");
+        fs::create_dir(&corrupt).unwrap();
+        for name in ["disk.raw", "vars.fd", "manifest.json"] {
+            fs::copy(fixture.snapshot.join(name), corrupt.join(name)).unwrap();
+        }
+        let mut bytes = fixture.source[0].clone();
+        bytes[0] ^= 1;
+        fs::write(corrupt.join("disk.raw"), bytes).unwrap();
+        let admitted = crate::snapshot_pair::inspect_snapshot(&corrupt, false).unwrap();
+        private_directory(&fixture.stage, true).unwrap();
+        for name in ["disk.raw", "vars.fd", "manifest.json"] {
+            copy_and_sync(&corrupt.join(name), &fixture.stage.join(name)).unwrap();
+        }
+        let stage = fs::symlink_metadata(&fixture.stage).unwrap();
+        create(
+            &fixture.root,
+            &fixture.stage,
+            (stage.dev(), stage.ino()),
+            &admitted,
+        )
+        .unwrap()
+        .unwrap();
+    }
+
+    #[test]
+    fn sealed_unpublished_copy_is_cleared_even_if_its_contents_are_unusable() {
+        for selected in [false, true] {
+            // The sealed directory never left the staging name, so it was never published.
+            for scenario in [
+                "corrupt-source",
+                "changed-disk",
+                "changed-manifest",
+                "unreadable-disk",
+            ] {
+                let tag = format!("owned-unpublished-{selected}-{scenario}");
+                let fixture = Fixture::new(&tag, selected, scenario != "corrupt-source");
+                if scenario == "corrupt-source" {
+                    seal_corrupt_copy(&fixture);
+                } else {
+                    mutate(&fixture, scenario);
+                }
+                let mut pair = fixture.pair();
+                assert_eq!(pair.restore(&fixture.snapshot).unwrap(), fixture.manifest);
+                let current = pair.paths().unwrap();
+                assert_eq!(fs::read(&current.0).unwrap(), fixture.source[0]);
+                assert_eq!(fs::read(&current.1).unwrap(), fixture.source[1]);
+                assert_eq!(contents(&fixture.snapshot), fixture.source);
+                assert!(!fixture.stage.exists(), "{scenario}: staging kept");
+                assert!(!fixture.root.join(ROOT_NAME).exists());
+            }
+            // A member that is not the sealed inode proves nothing: keep everything.
+            let fixture = Fixture::new(&format!("owned-unproven-{selected}"), selected, false);
+            seal_corrupt_copy(&fixture);
+            mutate(&fixture, "replaced-disk");
+            fixture.assert_refused();
+        }
+    }
+
     #[test]
     fn exchanged_old_generation_never_inherits_the_new_stage_record() {
         let fixture = Fixture::new("owned-refuse-exchanged-old", true, true);
@@ -686,8 +747,6 @@ mod recovery {
         "replaced-disk",
         "replaced-vars",
         "replaced-manifest",
-        "changed-disk",
-        "changed-manifest",
         "unknown-entry",
         "missing-member",
         "record-symlink",
@@ -753,6 +812,11 @@ mod recovery {
                     .replace("\"source\"", "\"tamper\"");
                 fs::write(path, text).unwrap();
             }
+            "unreadable-disk" => fs::set_permissions(
+                fixture.stage.join("disk.raw"),
+                fs::Permissions::from_mode(0o000),
+            )
+            .unwrap(),
             "unknown-entry" => {
                 fs::write(fixture.stage.join("keep.txt"), b"unrelated bytes").unwrap()
             }
