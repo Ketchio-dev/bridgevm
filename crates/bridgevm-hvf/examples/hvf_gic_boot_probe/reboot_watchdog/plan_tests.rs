@@ -34,7 +34,6 @@ fn in_process_reboot_preserves_the_fixed_reset_order() {
     let reboot = &run[run.find("SystemResetDecision::Reboot {").unwrap()..];
     let mut remaining = reboot;
     for step in [
-        "crate::usgic_bridge::reset()",
         "hv_gic_reset()",
         "system_reset_failure(gic_reset_status, &platform)",
         "reset_guest_ram_for_boot(&mut guest_ram, &boot_dtb)",

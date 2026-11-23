@@ -55,8 +55,6 @@ mod virtio_queue;
 pub mod vm_clock;
 pub mod xhci;
 
-pub mod userspace_gic;
-
 pub use virtio_gpu_3d_preflight::{
     probe_virtio_gpu_3d_host_preflight, probe_virtio_gpu_3d_host_preflight_for,
     VirtioGpu3dHostPreflight, VirtioGpu3dHostPreflightProtocol,

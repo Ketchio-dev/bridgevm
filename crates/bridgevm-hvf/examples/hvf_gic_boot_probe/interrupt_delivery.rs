@@ -222,8 +222,7 @@ pub(crate) fn deliver_pending_msix(
 ) -> Result<DeliveryCounts, MsixDeliveryFailure> {
     let trace = trace || trace_msix_enabled();
     deliver_msix_messages(messages, |message| {
-        let status = crate::usgic_bridge::deliver_msi(message.address, message.data)
-            .unwrap_or_else(|| unsafe { hv_gic_send_msi(message.address, message.data) });
+        let status = unsafe { hv_gic_send_msi(message.address, message.data) };
         if trace {
             println!(
                 "MSIX vector {} -> addr {:#x} intid {} status {status:#x}",
@@ -243,8 +242,7 @@ pub(crate) fn deliver_pending_spis(
     scratch.clear();
     platform.drain_pending_spi_levels_into(scratch);
     deliver_spi_levels(scratch, |intid, level| {
-        let status = crate::usgic_bridge::deliver_spi(intid, level)
-            .unwrap_or_else(|| unsafe { hv_gic_set_spi(intid, level) });
+        let status = unsafe { hv_gic_set_spi(intid, level) };
         if trace || (status != 0 && trace_msix) {
             println!("SPI intid {intid} level={level} status {status:#x}");
         }

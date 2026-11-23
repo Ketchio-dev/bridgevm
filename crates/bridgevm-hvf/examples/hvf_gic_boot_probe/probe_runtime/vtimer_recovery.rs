@@ -17,7 +17,7 @@
 //! with identical media, vars and firmware, 2026-09-07: with the recovery the
 //! boot failed 0/5, without it it completed 2/2, reaching the desktop in
 //! 21382 ms and 30300 ms. Its own header already recorded the same dynamic
-//! under the userspace GIC, where it was disabled for the same reason -- the
+//! under the since-removed userspace GIC, where it was disabled for the same reason -- the
 //! cure blocked the cure. No configuration is left in which it is measured to
 //! help.
 //!

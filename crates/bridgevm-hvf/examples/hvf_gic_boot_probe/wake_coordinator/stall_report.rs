@@ -21,7 +21,6 @@ pub(crate) unsafe fn report_stall_diagnostics(
     smp_trace: Option<&SmpTrace>,
 ) {
     report_wake_attribution(coordinator, claims);
-    crate::usgic_bridge::stall_report(vcpu);
     // One capture: vCPU0 is this thread's and out of hv_vcpu_run, and the
     // secondaries are joined, so a second one later cannot see it move (it
     // only made every stop, a guest shutdown too, 50 ms slower).
