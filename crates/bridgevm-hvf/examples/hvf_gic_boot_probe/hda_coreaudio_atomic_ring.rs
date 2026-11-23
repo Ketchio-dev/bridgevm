@@ -1,10 +1,30 @@
 //! Fixed-capacity PCM transport: one serialized producer and a non-waiting consumer.
 //! Atomic frame slots avoid both unsafe shared storage and producer/callback locks.
 
-use super::hda_coreaudio_publication::PcmQueue;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 const FRAME_BYTES: usize = 4;
+
+/// Complete-frame publication, shared by the atomic ring and the framing contracts.
+pub(super) trait PcmQueue {
+    fn len(&self) -> usize;
+    fn publish_parts(&mut self, first: &[u8], second: &[u8], capacity: usize) -> bool;
+}
+
+#[cfg(test)]
+impl PcmQueue for std::collections::VecDeque<u8> {
+    fn len(&self) -> usize {
+        self.len()
+    }
+    fn publish_parts(&mut self, first: &[u8], second: &[u8], capacity: usize) -> bool {
+        if first.len() + second.len() > capacity.saturating_sub(self.len()) {
+            return false;
+        }
+        self.extend(first.iter().copied());
+        self.extend(second.iter().copied());
+        true
+    }
+}
 
 pub(super) struct AtomicPcmRing {
     slots: Box<[AtomicU32]>,

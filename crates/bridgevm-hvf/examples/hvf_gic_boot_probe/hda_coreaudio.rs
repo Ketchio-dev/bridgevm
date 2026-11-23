@@ -18,8 +18,6 @@ use std::ffi::c_void;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-#[path = "hda_coreaudio_fill.rs"]
-mod hda_coreaudio_fill;
 #[path = "hda_coreaudio_frames.rs"]
 mod hda_coreaudio_frames;
 #[path = "hda_coreaudio_producer.rs"]
@@ -41,15 +39,8 @@ mod hda_coreaudio_output;
 use hda_coreaudio_output::{Output, OutputQueue};
 #[path = "hda_coreaudio_prefill.rs"]
 mod hda_coreaudio_prefill;
-#[path = "hda_coreaudio_publication.rs"]
-mod hda_coreaudio_publication;
 #[path = "hda_coreaudio_rebuild.rs"]
 mod hda_coreaudio_rebuild;
-#[path = "hda_coreaudio_ring.rs"]
-mod hda_coreaudio_ring;
-#[path = "hda_coreaudio_start.rs"]
-mod hda_coreaudio_start;
-pub(crate) use hda_coreaudio_start::{start_output, ENABLED};
 #[path = "hda_coreaudio_stats.rs"]
 mod hda_coreaudio_stats;
 #[path = "hda_coreaudio_teardown.rs"]
@@ -137,6 +128,29 @@ impl Drop for CoreAudioPcmSink {
     }
 }
 
+// Starting the CoreAudio sink. When the Mac's audio output cannot start, sound
+// is off for this run and one plain line says so; the VM keeps running, and
+// the guest's HDA device stays attached without a host sink.
+
+/// Printed once the sink is installed.
+pub(crate) const ENABLED: &str = "HDA CoreAudio output: s16le 48000 Hz stereo, enabled";
+
+/// Open the sink and install it. On failure nothing is installed and the
+/// error is the one line to print instead.
+pub(crate) fn start_output<S>(
+    open: impl FnOnce() -> Result<S, String>,
+    install: impl FnOnce(S),
+) -> Result<(), String> {
+    let sink = open().map_err(|error| {
+        format!(
+            "HDA CoreAudio output: off for this run, the Mac's audio output did not start \
+             ({error}); Windows runs without sound, restart the VM to try again"
+        )
+    })?;
+    install(sink);
+    Ok(())
+}
+
 fn status_error(operation: &str, status: i32) -> String {
     format!("{operation} failed with OSStatus {status} ({status:#010x})")
 }
@@ -172,4 +186,44 @@ extern "C" {
         data: *mut c_void,
         size: *mut u32,
     ) -> i32;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_output_that_cannot_start_turns_sound_off_in_one_line() {
+        let mut installed = false;
+        let result = start_output(
+            || {
+                Err::<(), _>(
+                    "AudioQueueNewOutput failed with OSStatus -50 (0xffffffce)".to_string(),
+                )
+            },
+            |()| installed = true,
+        );
+        assert!(
+            !installed,
+            "no sink is installed, so the HDA device plays to nothing"
+        );
+        let line = result.unwrap_err();
+        assert_eq!(
+            line,
+            "HDA CoreAudio output: off for this run, the Mac's audio output did not start \
+             (AudioQueueNewOutput failed with OSStatus -50 (0xffffffce)); Windows runs without \
+             sound, restart the VM to try again"
+        );
+        assert!(!line.contains('\n'));
+    }
+
+    #[test]
+    fn an_output_that_starts_is_installed() {
+        let mut installed = None;
+        assert_eq!(
+            start_output(|| Ok(7), |sink| installed = Some(sink)),
+            Ok(())
+        );
+        assert_eq!(installed, Some(7));
+    }
 }

@@ -80,7 +80,7 @@ fn a_volume_folder_at_the_share_root_is_not_walked_and_look_alikes_sync() {
     let mut child = std::process::Command::new("/usr/bin/true").spawn().unwrap();
     let dead = child.id();
     child.wait().unwrap();
-    // The walk removes a dead process's temporary wherever it walks (share_host_scan_walk.rs).
+    // The walk removes a dead process's temporary wherever it walks (share_host_scan.rs).
     let stale = format!(".fseventsd/.bridgevm-sync-{dead}-3");
     let excluded = [".fseventsd/0000000000a1b2c3", ".Spotlight-V100/Store-V2/store.db", ".Trashes/501/old.txt", stale.as_str()];
     let shared = [".DS_Store.txt", ".fseventsd2/x.txt", "a.DS_Store", "a.txt", "sub/.fseventsd/notes.txt"];

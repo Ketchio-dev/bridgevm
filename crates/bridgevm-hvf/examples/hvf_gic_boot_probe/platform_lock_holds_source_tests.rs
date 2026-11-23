@@ -1,12 +1,21 @@
-//! The split automation scopes retain instrumentation at every actual acquisition.
+//! Every actual platform-lock acquisition, including those in the automation
+//! scopes beside the run loop, is instrumented.
 
-#[path = "platform_lock_holds_sources.rs"]
-mod sources;
+/// The run loop's source and the automation scopes it includes.
+fn runtime() -> String {
+    [
+        include_str!("probe_runtime.rs"),
+        include_str!("probe_runtime/automation_tick.rs"),
+        include_str!("probe_runtime/input_prepare.rs"),
+        include_str!("probe_runtime/automation_stop.rs"),
+    ]
+    .concat()
+}
 
 #[test]
 fn every_lock_site_beside_the_tick_holds_through_the_record() {
     let count = |text: &str, needle: &str| text.matches(needle).count();
-    let run_source = sources::runtime();
+    let run_source = runtime();
     let run = run_source.as_str();
     for site in [
         "HoldSite::UartPreload",

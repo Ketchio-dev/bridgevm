@@ -1,10 +1,9 @@
-//! Which refusals of the guest write policy hold until the guest file changes
-//! (follow-up of 2026-10-23), so the share does not fetch that file again, and
-//! which failures are retried. The cases an APFS share cannot produce are
+//! Which refusals of the guest write policy hold until the guest file changes,
+//! so the share does not fetch that file again, and which failures are retried. The cases an APFS share cannot produce are
 //! injected, as in the parent module.
 
 use super::*;
-use crate::agent_console::share::guest_write_refusal::is_persistent;
+use crate::agent_console::share::is_persistent;
 
 #[test]
 fn mode_and_mark_refusals_hold_until_the_file_changes() {

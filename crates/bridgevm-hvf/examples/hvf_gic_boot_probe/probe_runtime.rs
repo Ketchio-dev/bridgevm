@@ -11,8 +11,6 @@ mod generation_tpm;
 mod hda_service_tick;
 #[path = "../hvf_gic_boot_probe/input_control_wake.rs"]
 mod input_control_wake;
-#[path = "../hvf_gic_boot_probe/pointer_deadline_trace.rs"]
-mod pointer_deadline_trace;
 #[path = "probe_runtime/service_wake_interval.rs"]
 mod service_wake_interval;
 #[path = "probe_runtime/system_reset_failure.rs"]
@@ -22,20 +20,45 @@ pub(crate) mod vtimer_recovery;
 use super::*;
 use crate::boot_media_setup::attach_boot_media;
 use crate::final_report::persist_and_report_stop;
-use crate::gpu_shm_bar2::refresh_on_ecam_write;
-use crate::gpu_shm_setup::install_gpu_shm_port;
 use crate::gpu_unlocked_copy::configure_gpu_unlocked_copy;
 use crate::guest_ram_backing::GuestRamBacking;
 use crate::hvf_setup::{create_gic, create_vm};
 use crate::probe_config::ProbeConfig;
 use crate::probe_setup::prepare_platform;
-use crate::watchpoint_setup::watchpoint_config;
 use generation_tpm::generation_tpm;
 use hda_service_tick::HdaServiceTick;
 use service_wake_interval::service_wake_interval;
 use system_reset_failure::system_reset_failure;
-#[path = "probe_media_lease.rs"]
-mod media_lease;
+
+mod media_lease {
+    use super::*;
+    use bridgevm_hvf::snapshot_pair::managed::runtime::{acquire, RuntimeLease};
+
+    type Prepared = (ProbeConfig, RuntimeLease, Option<Box<dyn Tpm2Backend>>);
+
+    /// The run's media and this generation's TPM, both owned before the VM exists.
+    pub(super) fn prepare() -> Option<Prepared> {
+        let mut config = ProbeConfig::from_env();
+        if let Err(error) = checkpoint_glue::CheckpointEnv::from_env().validate_cpu_count(config.smp_cpus) {
+            eprintln!("{error}");
+            return None;
+        }
+        let lease = match acquire(&mut config.media) {
+            Ok(lease) => lease,
+            Err(error) => {
+                eprintln!("media ownership/selection refused before VM creation: {error}");
+                return None;
+            }
+        };
+        let restoring = checkpoint_glue::CheckpointEnv::from_env().restore.is_some();
+        let data = config.swtpm_data_socket.as_deref();
+        let tpm = generation_tpm(data, config.swtpm_control_socket.as_deref(), restoring)
+            .map_err(|stop| println!("{stop}"))
+            .ok()?;
+        Some((config, lease, tpm))
+    }
+}
+
 pub(crate) fn run() -> ExitCode {
     // Before any media is leased: from here TERM ends the run through persistence.
     install_host_term_handler();

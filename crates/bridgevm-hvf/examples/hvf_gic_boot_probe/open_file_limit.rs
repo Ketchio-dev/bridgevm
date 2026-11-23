@@ -5,10 +5,6 @@
 //! held about 255 descriptors, 74 of one round's 570 guest connections failed,
 //! with nothing in the log.
 
-#[cfg(test)]
-#[path = "open_file_limit_tests.rs"]
-mod tests;
-
 /// The soft limit a run asks for: plenty for the NAT's flow tables, and the
 /// classic OPEN_MAX, which macOS always accepts.
 const WANT: u64 = 10_240;
@@ -40,5 +36,40 @@ pub(crate) fn raise() {
     } else {
         let error = std::io::Error::last_os_error();
         println!("host: open-file limit stays {} ({error})", limit.rlim_cur);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn launchds_soft_limit_rises_to_what_a_vm_needs() {
+        assert_eq!(target(256, libc::RLIM_INFINITY), Some(WANT));
+        assert_eq!(target(256, 4096), Some(4096), "never past the hard limit");
+        assert_eq!(target(WANT, libc::RLIM_INFINITY), None);
+        assert_eq!(
+            target(1 << 20, libc::RLIM_INFINITY),
+            None,
+            "a higher limit is kept"
+        );
+    }
+
+    #[test]
+    fn raising_leaves_this_process_at_least_at_the_target() {
+        raise();
+        let mut limit = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        assert_eq!(
+            unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) },
+            0
+        );
+        assert!(
+            limit.rlim_cur >= limit.rlim_max.min(WANT),
+            "{}",
+            limit.rlim_cur
+        );
     }
 }

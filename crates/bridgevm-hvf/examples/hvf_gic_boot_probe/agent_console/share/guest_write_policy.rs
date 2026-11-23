@@ -1,10 +1,9 @@
-//! What a guest-written share file carries onto the Mac (decisions of
-//! 2026-10-23, revised the same day). A new file is created owner-only 0600
-//! before the umask; an overwrite keeps only the replaced file's read/write
-//! bits, which clears every execute, setuid, setgid and sticky bit. Every file
-//! carries a com.apple.quarantine mark, set on the unpublished temporary. A
-//! mark that cannot be set refuses the write, including on a share filesystem
-//! without extended attributes (ENOTSUP).
+//! What a guest-written share file carries onto the Mac. A new file is created
+//! owner-only 0600 before the umask; an overwrite keeps only the replaced file's
+//! read/write bits, which clears every execute, setuid, setgid and sticky bit.
+//! Every file carries a com.apple.quarantine mark, set on the unpublished
+//! temporary. A mark that cannot be set refuses the write, including on a share
+//! filesystem without extended attributes (ENOTSUP).
 //!
 //! The mode is read back after chmod. A leftover execute, setuid, setgid or
 //! sticky bit refuses the write, with one exception: msdos and exfat report
@@ -15,11 +14,9 @@
 //! through LaunchServices.
 //!
 //! A refusal of the mode or the mark holds until the guest file changes, so it
-//! is persistent (follow-up of 2026-10-23, guest_write_refusal.rs); the mark is
-//! set in guest_write_mark.rs.
+//! is persistent (share.rs).
 
-use super::super::guest_write_refusal::persistent;
-use super::mark::set_mark;
+use super::super::persistent;
 use super::seal_host::{NativeSealHost, SealHost};
 use bridgevm_hvf::host_entropy::HostEntropy;
 use bridgevm_hvf::smccc_trng::EntropySource;
@@ -110,4 +107,30 @@ pub(super) fn quarantine_mark(
         &hex[16..20],
         &hex[20..]
     ))
+}
+
+/// Set a fresh mark on `target` through its live descriptor; return the mark
+/// that was set. That is the unpublished temporary of a guest file, or a
+/// directory created for a guest path before anything is published in it. A
+/// mark the share will not hold refuses the write. ENOTSUP (no extended
+/// attributes) and EACCES or EPERM (a deny ACL, a flag) refuse it for good;
+/// any other errno is retried at the next guest listing.
+pub(super) fn set_mark(
+    target: &File,
+    entropy: &mut impl EntropySource,
+    host: &mut impl SealHost,
+) -> io::Result<String> {
+    let mark = quarantine_mark(SystemTime::now(), entropy)?;
+    let refused = |error: io::Error| match error.raw_os_error() {
+        Some(libc::ENOTSUP) => persistent(
+            io::ErrorKind::Unsupported,
+            "quarantine refused: share filesystem has no extended attributes",
+        ),
+        Some(libc::EACCES | libc::EPERM) => {
+            persistent(error.kind(), format!("quarantine not set: {error}"))
+        }
+        _ => io::Error::new(error.kind(), format!("quarantine not set: {error}")),
+    };
+    host.set_mark(target, mark.as_bytes()).map_err(refused)?;
+    Ok(mark)
 }

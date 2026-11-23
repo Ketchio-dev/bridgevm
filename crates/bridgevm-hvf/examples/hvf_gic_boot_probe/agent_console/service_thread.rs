@@ -237,7 +237,7 @@ fn serve(
 }
 
 /// User-interactive QoS: each lockstep round trip with the guest waits for this
-/// thread to wake, as the HDA tick does (hda_service_tick_pacing.rs).
+/// thread to wake, as the HDA tick does (hda_service_tick.rs).
 fn raise_qos() {
     use libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE;
     // SAFETY: sets only the calling thread's own QoS class; no pointers.

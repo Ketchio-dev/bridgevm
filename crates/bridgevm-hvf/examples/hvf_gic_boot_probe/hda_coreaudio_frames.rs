@@ -2,7 +2,7 @@
 //! The ring always starts and ends on a complete four-byte frame. Loss rejects
 //! whole frames, never shifting the phase of the next accepted source bytes.
 
-use super::hda_coreaudio_publication::PcmQueue;
+use super::hda_coreaudio_atomic_ring::PcmQueue;
 use super::BYTES_PER_FRAME;
 
 const FRAME: usize = BYTES_PER_FRAME as usize;

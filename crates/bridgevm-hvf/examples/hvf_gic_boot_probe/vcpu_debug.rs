@@ -1,4 +1,4 @@
-//! vCPU register reset, context, and watchpoint helpers.
+//! vCPU register reset, context, MMIO register transfer and watchpoint helpers.
 
 use crate::*;
 
@@ -14,6 +14,22 @@ pub(crate) fn read_sys_reg(vcpu: HvVcpuT, reg: u16) -> u64 {
     let mut value = 0u64;
     unsafe {
         hv_vcpu_get_sys_reg(vcpu, reg, &mut value);
+    }
+    value
+}
+
+/// Write the value of a decoded MMIO read to its destination register.
+pub(crate) unsafe fn write_mmio_read(vcpu: HvVcpuT, access: DataAbort, value: u64) {
+    if let Some(value) = access.read_result(value) {
+        hv_vcpu_set_reg(vcpu, HV_REG_X0 + access.register, value);
+    }
+}
+
+/// The value a decoded MMIO write stores, read from its source register.
+pub(crate) unsafe fn mmio_store_value(vcpu: HvVcpuT, access: DataAbort) -> u64 {
+    let mut value = 0;
+    if access.register != 31 {
+        hv_vcpu_get_reg(vcpu, HV_REG_X0 + access.register, &mut value);
     }
     value
 }
@@ -75,6 +91,20 @@ pub(crate) fn reset_vcpu_for_boot(vcpu: HvVcpuT) {
         hv_vcpu_set_reg(vcpu, HV_REG_X0, machine::RAM_BASE);
         hv_vcpu_set_vtimer_mask(vcpu, false);
     }
+}
+
+pub(crate) fn watchpoint_config() -> (Option<u64>, u64) {
+    // Hardware watchpoint on a firmware address (default the poll target
+    // 0x5ffdf798). Opt-in via BRIDGEVM_WATCH=1, or provide another address.
+    let watch_addr = std::env::var("BRIDGEVM_WATCH").ok().map(|value| {
+        let value = value.trim();
+        if value == "1" {
+            WATCH_TARGET
+        } else {
+            parse_u64(value).unwrap_or(WATCH_TARGET)
+        }
+    });
+    (watch_addr, watch_addr.unwrap_or(WATCH_TARGET))
 }
 
 pub(crate) fn arm_watchpoint_for_boot(vcpu: HvVcpuT, watch_addr: Option<u64>) {
