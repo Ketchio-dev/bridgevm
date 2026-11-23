@@ -4,7 +4,7 @@ import Foundation
 /// Which `RESIZE WxH[@P]` the display window asks the guest display for (A8). The request is the view
 /// size in points (1x), clamped to a sane guest mode range. A VM whose Retina setting was ever set
 /// (`retina` not nil) names the Windows scale in every request, because Windows keeps a scale across
-/// mode switches (#493's live runs) and, by its persistence, restarts. With Retina resolution on and the
+/// mode switches and, by its persistence, restarts. With Retina resolution on and the
 /// window on a HiDPI screen the request is the view's backing pixels at the screen's scale, up to
 /// `retinaMaximumPixels`; otherwise it is the view's points at `@100`. A size goes out once the view has kept
 /// it for `settleDelay`, or at once when a live resize ends, and never twice in a row unless the display
@@ -26,8 +26,8 @@ struct HvfDisplayResizeRequest {
 
     static let minimum = Size(width: 640, height: 480)
     static let maximum = Size(width: 3840, height: 2160)
-    /// The most pixels a Retina mode may have. #493's second live run switched 3456x2234@200 and
-    /// 3024x1964@200 live once the EDID listed 3840x2160, for which viogpudo reserves 33,177,600 bytes
+    /// The most pixels a Retina mode may have. viogpudo switches to modes such as 3456x2234@200 and
+    /// 3024x1964@200 once the EDID lists 3840x2160, for which it reserves 33,177,600 bytes
     /// (3840x2160 at 4 bytes each). A larger backing size, or a side above `maximum.width`, asks for
     /// points at 100 %.
     static let retinaMaximumPixels = 3840 * 2160

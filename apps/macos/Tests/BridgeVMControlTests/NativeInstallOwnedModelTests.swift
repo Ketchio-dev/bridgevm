@@ -55,7 +55,7 @@ final class NativeInstallOwnedModelTests: XCTestCase {
         XCTAssertEqual(try accepted.operation.observation().phase, .cancelled)
     }
 
-    /// #684: the CLI publishes vm.json while the app is running; install must find it without a relaunch.
+    /// The CLI publishes vm.json while the app is running; install must find it without a relaunch.
     func testInstallAcceptsAVMPublishedAfterTheAppLaunched() async throws {
         let fixture = HvfWindowsInstallStoreFixture(), config = fixture.config()
         defer { fixture.clean() }

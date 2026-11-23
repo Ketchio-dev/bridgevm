@@ -64,7 +64,7 @@ enum HvfMediaImport {
             members = [(snapshot.appendingPathComponent("disk.raw"), toDisk),
                        (snapshot.appendingPathComponent("vars.fd"), toVars)]
         }
-        // A clone keeps the source's mode (read-only media blocked Start in T19 r3), so each member becomes
+        // A clone keeps the source's mode (read-only media would block Start), so each member becomes
         // 0600 in the private workspace, never via the library path. Existing targets fail; the caller rolls back.
         for (member, target) in members {
             try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: member.path)

@@ -4,7 +4,7 @@ import XCTest
 
 final class T17EvidenceDigestMemoryTests: XCTestCase {
     /// T17 hashes 64 GiB disks. Unpooled reads kept every chunk resident until the hash
-    /// returned; in r53 the helper vanished while hashing two such disks back to back.
+    /// returned, and the helper could die while hashing two such disks back to back.
     func testDigestOfALargeSparseFileUsesBoundedMemory() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("t17-digest-\(UUID().uuidString).raw")
         XCTAssertTrue(FileManager.default.createFile(atPath: url.path, contents: nil))

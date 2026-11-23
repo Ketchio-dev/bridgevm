@@ -1,8 +1,8 @@
 import Foundation
 
 /// The lane's private library holds only what this lane's app registered, under the
-/// requested slug or not. T19 r1 registered `windows-11`, and a cleanup that looked only
-/// under the requested slug leaked that key while reporting success. The product deletes
+/// requested slug or not: an import can register `windows-11`, and a cleanup that looked only
+/// under the requested slug would leak that key while reporting success. The product deletes
 /// an imported key only when it equals the key opened from the source package, so another
 /// VM's key under the same name is refused, and the refusal leaves cleanup unverified.
 enum A9LaneRegistrations {

@@ -49,3 +49,24 @@ final class NativeInstallOperationStore {
         records[vmID] = nil
     }
 }
+
+extension NativeInstallOperationStore {
+    func isActive(vmID: String, excluding operation: NativeInstallOperation?) -> Bool {
+        guard let current = records[vmID]?.operation, current !== operation else { return false }
+        return current.reservesWork
+    }
+}
+
+extension NativeInstallOperationStore {
+    func reconcile(with configs: [VMConfig]) {
+        var current: [String: String] = [:]
+        for config in configs where config.engineKind == .hvfEngine && config.installPending == true {
+            if let digest = try? NativeRuntimeConfigurationIdentity.digest(config: config) {
+                current[config.slug] = digest
+            }
+        }
+        records = records.filter { slug, record in
+            record.operation.reservesWork || current[slug] == record.digest
+        }
+    }
+}

@@ -2,8 +2,7 @@ import Foundation
 import XCTest
 @testable import BridgeVMControl
 
-/// Continuous motion on the ordered route, scripted after the 2026-10-22 display investigation's
-/// real-router bench: 10 s of one absolute move per display tick, as `HvfPointerMoveMailbox` delivers
+/// Continuous motion on the ordered route, scripted after a real-router bench: 10 s of one absolute move per display tick, as `HvfPointerMoveMailbox` delivers
 /// them. The guest agent's receipt is visible `rtt` after each send. Polls follow
 /// `HvfSessionInputDriver`: one after every queued route, a 10 ms pump while the router holds input,
 /// and a poll without lines after an inserted receipt. A move's lag is its send time plus `rtt`

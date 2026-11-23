@@ -45,7 +45,7 @@ final class NativeRuntimeStopLedgerTests: XCTestCase {
         XCTAssertEqual(retained.observation?.failure, .cleanupUnconfirmed)
     }
 
-    /// Every run has its own target. A full ledger used to refuse every stop after 256 runs.
+    /// Every run has its own target, so a full ledger must not refuse stops after 256 runs.
     @MainActor func testThreeHundredStopsInOneSessionAreAdmittedAndRecentStatusStillAnswers() throws {
         let ledger = NativeRuntimeStopLedger(appInstanceID: Fixture.app, library: Fixture.library)
         let pending = Fixture.request(vmID: "other-vm"), pendingTicket = ticket(pending)

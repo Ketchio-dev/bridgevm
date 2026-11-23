@@ -2,7 +2,7 @@ import ApplicationServices
 import Foundation
 
 /// Names the AX node whose relationship read failed, so a chooser timeout says where the
-/// panel's tree stopped answering (T17 r57–r61). Only roles, subroles and developer
+/// panel's tree stopped answering. Only roles, subroles and developer
 /// identifiers are kept: titles, values and descriptions can carry file or volume names.
 enum T17FileChooserNodeLabel {
     static func naming<Node, Result>(_ node: Node, describe: (Node) -> String, _ read: () throws -> Result) throws -> Result {

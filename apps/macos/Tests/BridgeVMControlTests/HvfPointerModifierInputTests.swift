@@ -43,7 +43,7 @@ final class HvfPointerModifierInputTests: XCTestCase {
         }
     }
 
-    /// Before this change the guest got a plain press and release: Shift+click could not extend a selection.
+    /// Shift+click extends a selection only when the press and release carry Shift.
     func testAShiftClickReachesTheGuestWithShiftHeldOnItsPressAndRelease() throws {
         try withOrderedDisplay(pointer: ["MODIFIERS"]) { view, session, fixture in
             view.mouseDown(with: PointerEvent(.shift))

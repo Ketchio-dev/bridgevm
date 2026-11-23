@@ -32,7 +32,7 @@ enum T17FileChooser {
             return sameFile(try driver.selectedPath(), path)
         } }
     }
-    /// The panel may report the resolved form of a symlinked request path (r96 on macOS 27),
+    /// The panel may report the resolved form of a symlinked request path (macOS 27),
     /// so the selection counts when it names the same file (device and inode), not only the same string.
     static func sameFile(_ selected: String?, _ path: String) -> Bool {
         guard let selected, !selected.isEmpty else { return false }
@@ -43,5 +43,21 @@ enum T17FileChooser {
     }
     static func failure(_ detail: String) -> T17Blocker {
         T17Blocker(code: "input-selection-failed", detail: detail)
+    }
+}
+
+extension T17FileChooser {
+    static func choose(
+        path: String, timeout: TimeInterval, driver: T17FileChooserDriving,
+        now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        pause: () -> Void = { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+    ) throws {
+        let clock = try T17ChooserClock(timeout: timeout, now: now), deadline = clock.deadline
+        let timing = T17ChooserTiming(start: clock.start, deadline: deadline, now: now)
+        do {
+            try choose(path: path, deadline: deadline, driver: driver, timing: timing, now: timing.checkedNow, pause: pause)
+        } catch let blocker as T17Blocker {
+            throw timing.attributed(blocker)
+        }
     }
 }

@@ -236,7 +236,7 @@ extension HvfEngineSession {
         printVerificationTask = nil
         // An open panel must keep the one-panel slot until its own completion.
         if !printPanelPresented { printShowing = nil }
-        printQueue = [] // Files stay for the next agent start, as before.
+        printQueue = [] // Files stay for the next agent start.
     }
 
     private func printJobFinished(_ url: URL, generation: UUID) {

@@ -5,8 +5,7 @@ import XCTest
 
 /// The library search field's AppKit accessibility element carries its identifier, and an
 /// accessibility value set on it, which is what the accessibility server calls for a client's
-/// AXUIElementSetAttributeValue, reaches the query the list filters by. d6 run 4 (2026-10-23,
-/// seal 8d3eb052) set "Indigo" and read it back, but the list never filtered. An AppKit text
+/// AXUIElementSetAttributeValue, reaches the query the list filters by. An AppKit text
 /// field is accessible through its cell, so the cell is the element checked here. The window
 /// is deferred and never shown.
 @MainActor

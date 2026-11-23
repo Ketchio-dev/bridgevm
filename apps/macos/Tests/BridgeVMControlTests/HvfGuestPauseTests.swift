@@ -134,7 +134,7 @@ final class HvfGuestPauseTests: XCTestCase {
     }
 
     /// A paused Windows cannot shut down: Stop (and quit, which stops the same way) resumes it before
-    /// asking Windows to shut down (the power button press since #513).
+    /// asking Windows to shut down (the power button press).
     func testStopWhilePausedResumesTheGuestFirst() throws {
         let f = try Owned(); defer { f.clean() }
         let session = bind(f)
@@ -147,7 +147,7 @@ final class HvfGuestPauseTests: XCTestCase {
         XCTAssertEqual(session.pause, .paused)
 
         XCTAssertEqual(session.stopOwned(expectedToken: f.controller.identity.token), .requested(deadline: nil))
-        // RESUME before the Stop's power button press (#513): Windows has to run to shut down.
+        // RESUME before the Stop's power button press: Windows has to run to shut down.
         XCTAssertEqual(try input(f), "PAUSE\nRESUME\nPOWERBUTTON\n")
         XCTAssertEqual(session.pause, .resuming(sentAt: f.clock.value))
     }

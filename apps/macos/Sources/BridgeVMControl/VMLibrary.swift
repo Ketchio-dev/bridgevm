@@ -162,3 +162,169 @@ enum VMLibrary {
         return createRegistration(legacy, rootURL: rootURL)
     }
 }
+
+extension VMLibrary {
+    /// A handle may rewrite only the unchanged, still-present registration it was
+    /// built from; a moved, replaced or removed VM is never reverted or resurrected.
+    static func isCurrentRegistration(_ config: VMConfig, rootURL: URL) -> Bool {
+        var registered = config
+        registered.id = config.slug
+        return (try? NativeLibraryReader.readConfig(rootURL: rootURL, id: config.slug)) == registered
+    }
+}
+
+extension VMLibrary {
+    static func recoverWindowsHVFMove(original: VMConfig, moved: VMConfig, pending: URL,
+                                     rootURL: URL, fileManager: FileManager) {
+        let source = URL(fileURLWithPath: original.bundlePath, isDirectory: true)
+        let destination = URL(fileURLWithPath: moved.bundlePath, isDirectory: true)
+        try? fileManager.moveItem(at: destination, to: source)
+        if let observed = VMRelocationRecovery.configuration(original: original, moved: moved,
+                                                             fileManager: fileManager) {
+            if save(observed, rootURL: rootURL) {
+                try? fileManager.removeItem(at: pending)
+            }
+        }
+    }
+}
+
+extension VMLibrary {
+    /// New VM publication must not replace a registration created while its
+    /// media was being prepared, even when the storage roots are different.
+    static func createOutcome(
+        _ config: VMConfig, rootURL: URL = root,
+        publish: (Data, URL) -> VMRegistrationCommitOutcome = {
+            VMRegistrationWriter.commit($0, to: $1, replaceExisting: false)
+        }
+    ) -> VMRegistrationCommitOutcome {
+        saveOutcome(config, rootURL: rootURL, publish: publish)
+    }
+
+    static func createRegistration(_ config: VMConfig, rootURL: URL = root,
+        preserving preserve: () -> Void = {}) -> Bool {
+        let outcome = createOutcome(config, rootURL: rootURL)
+        if outcome.preservesPreparedDestination { preserve() }
+        return outcome.isCommitted
+    }
+}
+
+extension VMLibrary {
+    /// Deletion recursively removes `<root>/<slug>/`. A stale saved path must not
+    /// hide an installer-created `bundle.vmbridge` or first-run imported `bundle`.
+    /// External targets of symlinks inside the entry survive recursive deletion.
+    static func deletionTarget(for config: VMConfig, rootURL: URL = root) -> URL? {
+        let rawEntry = rootURL.appendingPathComponent(config.slug, isDirectory: true)
+        if (try? rawEntry.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true { return nil }
+        let entry = rawEntry.resolvingSymlinksInPath().standardizedFileURL
+        let saved = URL(fileURLWithPath: config.bundlePath)
+        let bundle = saved.resolvingSymlinksInPath().standardizedFileURL
+        let entryPrefix = entry.path.hasSuffix("/") ? entry.path : entry.path + "/"
+        if bundle.path == entry.path || bundle.path.hasPrefix(entryPrefix) { return saved }
+        return ["bundle.vmbridge", "bundle"].lazy
+            .map { rawEntry.appendingPathComponent($0, isDirectory: true) }
+            .first {
+                let values = try? $0.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                return values?.isDirectory == true && values?.isSymbolicLink != true
+            }
+    }
+}
+
+extension VMLibrary {
+    @discardableResult
+    static func save(_ config: VMConfig, rootURL: URL = root) -> Bool {
+        saveOutcome(config, rootURL: rootURL).isCommitted
+    }
+
+    static func saveOutcome(
+        _ config: VMConfig, rootURL: URL = root,
+        publish: (Data, URL) -> VMRegistrationCommitOutcome = { VMRegistrationWriter.commit($0, to: $1) }
+    ) -> VMRegistrationCommitOutcome {
+        var cfg = config
+        cfg.id = cfg.slug
+        let dir = rootURL.appendingPathComponent(cfg.slug, isDirectory: true)
+        let configURL = dir.appendingPathComponent("vm.json")
+        do {
+            if (try? dir.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
+                || (try? configURL.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
+                return .notPublished(CocoaError(.fileWriteInvalidFileName))
+            }
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(cfg)
+            guard data.count <= maximumConfigBytes else {
+                return .notPublished(CocoaError(.fileWriteUnknown,
+                    userInfo: [NSLocalizedDescriptionKey: "VM 등록 정보가 최대 크기(\(maximumConfigBytes)바이트)를 초과했습니다."]))
+            }
+            return publish(data, configURL)
+        } catch {
+            return .notPublished(error)
+        }
+    }
+}
+
+// Failed rollback must not claim the absent original bundle is restored.
+extension VMLibrary {
+    static func moveWindowsHVFBundle(
+        _ config: VMConfig,
+        to destinationParent: URL,
+        rootURL: URL = root,
+        fileManager: FileManager = .default
+    ) -> VMConfig? {
+        guard VMRelocationReferences.permits(config, rootURL: rootURL) else { return nil }
+        let fm = fileManager
+        let source = URL(fileURLWithPath: config.bundlePath, isDirectory: true).standardizedFileURL
+        let destination = destinationParent.standardizedFileURL
+            .appendingPathComponent(source.lastPathComponent, isDirectory: true)
+        guard VMRelocationPaths.isSafe(source: source, destination: destination),
+              !HvfWindowsInstallTransactionResidue.isPresent(config, rootURL: rootURL),
+              (try? source.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]).isDirectory) == true,
+              (try? source.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true,
+              !fm.fileExists(atPath: destination.path) else { return nil }
+
+        func rebased(_ path: String) -> String {
+            guard !path.isEmpty else { return path }
+            if path == source.path { return destination.path }
+            let prefix = source.path + "/"
+            guard path.hasPrefix(prefix) else { return path }
+            return destination.path + "/" + path.dropFirst(prefix.count)
+        }
+
+        var moved = config
+        moved.bundlePath = destination.path
+        moved.runnerPath = rebased(config.runnerPath)
+        moved.launchSpecPath = rebased(config.launchSpecPath)
+        moved.handoffPath = rebased(config.handoffPath)
+        moved.sshKeyPath = rebased(config.sshKeyPath)
+        moved.leasesPath = rebased(config.leasesPath)
+        moved.isoPath = config.isoPath.map(rebased)
+        moved.diskPath = config.diskPath.map { VMRelocationDiskPath.rebased($0, source: source, destination: destination) ?? rebased($0) }
+
+        let stateDirectory = destination.appendingPathComponent("metadata/vtpm", isDirectory: true)
+        do {
+            try fm.createDirectory(at: destinationParent, withIntermediateDirectories: true)
+        } catch { return nil }
+        guard let pending = try? VMRelocationJournal.begin(original: config, moved: moved, rootURL: rootURL) else {
+            return nil
+        }
+        do {
+            try fm.moveItem(at: source, to: destination)
+        } catch { return nil }
+        do {
+            guard save(moved, rootURL: rootURL) else { throw CocoaError(.fileWriteUnknown) }
+            _ = try VTPMIdentityLifecycle(keyStore: KeychainVTPMStateKeyStore())
+                .recordSameIdentityMove(
+                    stableVMID: moved.slug,
+                    stateDirectory: stateDirectory,
+                    sourceBundle: source,
+                    destinationBundle: destination
+                )
+            try fm.removeItem(at: pending)
+            return moved
+        } catch {
+            recoverWindowsHVFMove(original: config, moved: moved, pending: pending,
+                                  rootURL: rootURL, fileManager: fm)
+            return nil
+        }
+    }
+}

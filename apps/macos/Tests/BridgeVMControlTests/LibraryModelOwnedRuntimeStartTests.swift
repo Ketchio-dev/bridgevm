@@ -19,8 +19,8 @@ final class LibraryModelOwnedRuntimeStartTests: XCTestCase {
         }
     }
 
-    /// The CLI used to send a digest of the vm.json it read, and the app refused with
-    /// `configurationChanged` when the file changed in between. Now the app starts what is saved.
+    /// The app starts what is saved, not a digest of the vm.json the CLI read, so a file
+    /// changed in between is not refused with `configurationChanged`.
     func testStartsTheCurrentSavedConfigurationAfterVMJsonChangedOnDisk() async throws {
         let f = try HvfRuntimeWorkAdmissionFixture(); defer { f.clean() }
         let config = f.config(); f.save(config)

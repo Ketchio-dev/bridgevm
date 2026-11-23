@@ -83,8 +83,8 @@ final class HvfOwnedRuntimeControllerTests: XCTestCase {
         XCTAssertEqual(ticket.observation.runnerExit?.status, 7, "Cleanup proof does not mean runner exit zero")
     }
 
-    /// A newer runner may add fields, order keys differently or change its timeouts; that used to close
-    /// the channel as a protocol error and leave the Stop unconfirmed until the user forced it.
+    /// A newer runner may add fields, order keys differently or change its timeouts; that must not close
+    /// the channel as a protocol error and leave the Stop unconfirmed until the user forces it.
     func testRunnerEventsWithUnknownFieldsKeyOrderAndOtherTimeoutsStillCompleteTheStop() async throws {
         let f = try Fixture(); defer { f.clean() }
         f.controller.receive(.message(try f.decoded("ready", sequence: 1, "\"ready\":{\"termMillis\":8000,"

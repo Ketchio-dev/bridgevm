@@ -78,3 +78,41 @@ final class AppUIHostLifecycle {
     }
 }
 #endif
+
+#if DEBUG && BRIDGEVM_APP_UI_HOST
+extension AppUIHostLifecycle {
+    enum Event: String, CaseIterable {
+        case appInitialization = "app_initialization"
+        case appBodyEvaluated = "app_body_evaluated"
+        case rootContentConstructed = "root_content_constructed"
+        case contentBodyEvaluated = "content_body_evaluated"
+        case rootContentAppeared = "root_content_appeared"
+        case libraryFactory = "library_factory"
+        case delegateDidFinishLaunching = "delegate_did_finish_launching"
+        case representableMake = "representable_make"
+        case representableUpdate = "representable_update"
+        case attachmentNil = "attachment_nil"
+        case attachmentNonnull = "attachment_nonnull"
+    }
+}
+#endif
+
+#if DEBUG && BRIDGEVM_APP_UI_HOST
+
+@MainActor
+extension AppUIHostLifecycle {
+    static func libraryState() -> StateObject<LibraryModel> {
+        AppUIHost.prepared?.lifecycle.record(.appInitialization)
+        return StateObject(wrappedValue: libraryModel())
+    }
+    private static func libraryModel() -> LibraryModel {
+        guard let host = AppUIHost.prepared else { fatalError("Diagnostic host was not prepared") }
+        host.lifecycle.record(.libraryFactory)
+        return host.libraryForApplication()
+    }
+    static func makeAttachmentView() -> NSView {
+        AppUIHost.prepared?.lifecycle.record(.representableMake)
+        return AppUIHostWindow.AttachmentView(frame: .zero)
+    }
+}
+#endif

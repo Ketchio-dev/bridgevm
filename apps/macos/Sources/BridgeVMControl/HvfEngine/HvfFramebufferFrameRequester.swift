@@ -1,8 +1,7 @@
 #if canImport(AppKit)
 import Darwin
 
-/// Asks the display file's writer for a frame on every display tick (F1 B2,
-/// display-export-20261023).
+/// Asks the display file's writer for a frame on every display tick.
 ///
 /// A writer that answers requests sets bytes 40..44 of the BVFB header to
 /// `marker` (`crates/bridgevm-hvf/src/display_fb_requests.rs`). The request is

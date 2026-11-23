@@ -233,3 +233,34 @@ struct CreateVMSheet: View {
     }
 
 }
+
+extension CreateVMSheet {
+    var creationFooter: some View {
+        CreateVMCreationFooter(working: working, error: error, failureCode: creationFailureCode,
+            canCreate: canCreate, cancel: { dismiss() }, create: create,
+            recoveryAvailable: !creationState.permitsCreation, recover: recoverCreatedVM,
+            workingLabel: conversion.map { $0.format.conversionLabel(percent: $0.percent) } ?? "")
+    }
+}
+
+extension CreateVMSheet {
+    func recoverCreatedVM() {
+        guard !working, !creationState.permitsCreation else { return }
+        working = true
+        let loaded = creationState.recover(adopt: library.add)
+        working = false
+        if loaded { dismiss() }
+        else { error = creationState.recoveryFailureMessage }
+    }
+}
+
+extension CreateVMSheet {
+    func completeCreation(_ outcome: HVFCreationOutcome?) {
+        working = false
+        conversion = nil
+        let result = creationState.complete(outcome, adopt: library.add)
+        creationFailureCode = result.code
+        error = result.message
+        if result.dismiss { dismiss() }
+    }
+}

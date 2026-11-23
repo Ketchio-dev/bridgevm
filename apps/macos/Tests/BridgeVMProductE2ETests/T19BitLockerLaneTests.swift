@@ -48,7 +48,7 @@ final class T19BitLockerLaneTests: XCTestCase {
         XCTAssertEqual(refusal(["--windows-import-product-e2e", "--request", "/a", "--result", path, "--result", path])?.detail, "duplicate result")
         XCTAssertEqual(refusal(["--windows-import-product-e2e", "--request", "/a", "--result", NSTemporaryDirectory()])?.detail,
                        "result output is not an absent file in a regular directory")
-        // A missing result directory throws the file system's own error, as before the extraction.
+        // A missing result directory throws the file system's own error.
         XCTAssertThrowsError(try ProductE2ECLI.parse(["--windows-import-product-e2e", "--request", "/a", "--result", "/nonexistent-\(UUID().uuidString)/r.json"]))
     }
 

@@ -3,8 +3,8 @@ import Foundation
 import XCTest
 @testable import BridgeVMControl
 
-/// A guest folder over the listing limit paused the share with only an ls-error line in run.log
-/// (share-bigloss-20261111); the runtime card now says so, with the limit the runtime names.
+/// A guest folder over the listing limit pauses the share; the runtime card says so, with the
+/// limit the runtime names, instead of leaving only an ls-error line in run.log.
 final class HvfSharePausedNoticeTests: XCTestCase {
     private let entries = "BVAGENT SHARE paused too-many-entries limit=4096"
 
