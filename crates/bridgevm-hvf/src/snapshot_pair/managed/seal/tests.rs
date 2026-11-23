@@ -618,7 +618,7 @@ mod recovery {
         .unwrap();
         fs::write(current.join("vars.fd"), b"new writable vars").unwrap();
         let before = contents(&current);
-        assert!(reclaim_sealed(&fixture.root).unwrap());
+        assert!(reclaim_sealed(&fixture.root, &mut fixture.pair()._lease).unwrap());
         assert_eq!(contents(&current), before);
         assert!(!fixture.root.join(ROOT_NAME).exists());
         assert!(current.join(PIN_NAME).is_file());
@@ -645,7 +645,7 @@ mod recovery {
     }
 
     #[test]
-    fn exchanged_old_generation_never_inherits_the_new_stage_record() {
+    fn replaced_member_in_exchanged_generation_is_preserved() {
         let fixture = Fixture::new("owned-refuse-exchanged-old", true, true);
         let current = fixture.root.join("current");
         let parked = fixture.scratch.path("parked-current");
@@ -655,6 +655,8 @@ mod recovery {
         fs::rename(&current, &parked).unwrap();
         fs::rename(&fixture.stage, &current).unwrap();
         fs::rename(&parked, &fixture.stage).unwrap();
+        // Even byte-identical substitution is outside the recorded generation.
+        replace_copy(&fixture.stage.join("vars.fd"), &parked);
         for partial in [false, true] {
             if partial {
                 fs::remove_file(fixture.stage.join("disk.raw")).unwrap();
@@ -826,8 +828,11 @@ mod recovery {
     #[test]
     fn partial_exchanged_legacy_generation_is_preserved_across_retries() {
         let fixture = Fixture::new("owned-legacy-exchange", true, true);
+        let mut record = Record::read_pinned(&fixture.root, &fixture.stage).unwrap();
+        record.version = 1;
+        record.previous = None;
+        fs::write(fixture.root.join(ROOT_NAME), record.encode().unwrap()).unwrap();
         let current = fixture.root.join("current");
-        // A generation created before ownership seals had no retained pin.
         fs::remove_file(current.join(PIN_NAME)).unwrap();
         let parked = fixture.scratch.path("legacy-current");
         let old = contents(&current);
@@ -857,7 +862,7 @@ mod recovery {
         assert!(!fixture.root.join(ROOT_NAME).exists());
     }
     #[test]
-    fn successful_publisher_with_old_debris_keeps_ownership_for_later_retry() {
+    fn successful_publisher_with_foreign_debris_keeps_ownership_for_later_retry() {
         let fixture = Fixture::new("owned-retirement-old-debris", true, false);
         let current = fixture.root.join("current");
         fs::remove_file(current.join(PIN_NAME)).unwrap();
@@ -870,8 +875,7 @@ mod recovery {
             fs::rename(&parked, stage)?;
             fs::remove_file(stage.join("disk.raw"))?;
             fs::remove_file(stage.join("manifest.json"))?;
-            // Publication may report success after best-effort old-generation
-            // removal fails. The ownership retirement must preserve that fact.
+            fs::write(stage.join("keep.txt"), b"unrelated entry")?;
             Ok(())
         });
         assert_eq!(contents(&current), fixture.source);
@@ -887,6 +891,10 @@ mod recovery {
         assert!(published.is_err());
         assert!(retried.is_err());
         assert_eq!(capture_namespace(&fixture.scratch.0), before);
+        assert_eq!(
+            fs::read(fixture.stage.join("keep.txt")).unwrap(),
+            b"unrelated entry"
+        );
         assert!(fixture.root.join(ROOT_NAME).is_file());
         assert!(published
             .unwrap_err()

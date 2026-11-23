@@ -7,6 +7,7 @@
 //! A second crash during cleanup leaves incomplete proof and refuses next time.
 
 use super::private_directory;
+use crate::media_lease::MediaLease;
 use crate::snapshot_pair::files::open_regular;
 use crate::snapshot_pair::{verify_snapshot, SnapshotManifest};
 use serde::{Deserialize, Serialize};
@@ -35,6 +36,16 @@ struct Member {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+struct PreviousGeneration {
+    directory: Identity,
+    disk: Member,
+    vars: Member,
+    manifest: Option<Member>,
+    pin: Option<Member>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct Record {
     version: u32,
     root: Identity,
@@ -44,6 +55,8 @@ pub(super) struct Record {
     vars: Member,
     manifest: Member,
     source_manifest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    previous: Option<PreviousGeneration>,
 }
 
 impl Identity {
@@ -101,8 +114,9 @@ impl Record {
                 "restore ownership pin does not identify the fresh record",
             ));
         }
+        let previous = PreviousGeneration::capture(&root.join("current"))?;
         Ok(Record {
-            version: 1,
+            version: if previous.is_some() { 2 } else { 1 },
             root: Identity::from_metadata(&fs::symlink_metadata(root)?),
             record,
             stage: identity,
@@ -110,6 +124,7 @@ impl Record {
             vars: member(&stage.join("vars.fd"))?,
             manifest: member(&stage.join("manifest.json"))?,
             source_manifest: manifest.to_json(),
+            previous,
         })
     }
 
@@ -174,12 +189,74 @@ impl Record {
     fn expected_manifest(&self) -> io::Result<SnapshotManifest> {
         let manifest =
             SnapshotManifest::from_json(&self.source_manifest).map_err(io::Error::other)?;
-        if self.version != 1 || manifest.to_json() != self.source_manifest {
+        if !matches!((self.version, &self.previous), (1, None) | (2, Some(_)))
+            || manifest.to_json() != self.source_manifest
+        {
             return Err(io::Error::other(
                 "invalid restore ownership manifest or version",
             ));
         }
         Ok(manifest)
+    }
+}
+
+impl PreviousGeneration {
+    fn capture(current: &Path) -> io::Result<Option<Self>> {
+        if !private_directory(current, false)? {
+            return Ok(None);
+        }
+        shape(current, true)?;
+        Ok(Some(Self {
+            directory: Identity::from_metadata(&fs::symlink_metadata(current)?),
+            disk: member(&current.join("disk.raw"))?,
+            vars: member(&current.join("vars.fd"))?,
+            manifest: optional_member(&current.join("manifest.json"))?,
+            pin: optional_member(&current.join(PIN_NAME))?,
+        }))
+    }
+
+    fn clear(&self, root: &Path, stage: &Path, lease: &mut MediaLease) -> io::Result<()> {
+        if !private_directory(stage, false)? || !self.directory.matches(stage)? {
+            return Err(io::Error::other("previous restore directory was replaced"));
+        }
+        let disk = stage.join("disk.raw");
+        let vars = stage.join("vars.fd");
+        lease.extend([disk.as_path(), vars.as_path()])?;
+        shape(stage, true)?;
+        let members = [
+            (disk, Some(self.disk)),
+            (vars, Some(self.vars)),
+            (stage.join("manifest.json"), self.manifest),
+            (stage.join(PIN_NAME), self.pin),
+        ];
+        // Cleanup may itself have stopped partway. All surviving members
+        // must agree with the record before any of them can be removed.
+        let mut remaining = Vec::new();
+        for (path, expected) in members {
+            if let Some(actual) = optional_member(&path)? {
+                if Some(actual) != expected {
+                    return Err(io::Error::other("previous restore member was replaced"));
+                }
+                remaining.push((path, actual));
+            }
+        }
+        // The former process may have exited immediately after the exchange.
+        sync(root)?;
+        for (path, expected) in remaining {
+            if !self.directory.matches(stage)? || member(&path)? != expected {
+                return Err(io::Error::other(
+                    "previous restore member changed before cleanup",
+                ));
+            }
+            fs::remove_file(path)?;
+        }
+        if !self.directory.matches(stage)? {
+            return Err(io::Error::other(
+                "previous restore directory changed before cleanup",
+            ));
+        }
+        fs::remove_dir(stage)?;
+        sync(root)
     }
 }
 
@@ -194,6 +271,14 @@ fn member(path: &Path) -> io::Result<Member> {
         identity: Identity::from_metadata(&metadata),
         len: metadata.len(),
     })
+}
+
+fn optional_member(path: &Path) -> io::Result<Option<Member>> {
+    match member(path) {
+        Ok(member) => Ok(Some(member)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 fn shape(stage: &Path, pinned: bool) -> io::Result<()> {
@@ -245,6 +330,28 @@ fn object_shapes(bytes: &[u8]) -> io::Result<()> {
             return Err(io::Error::other(
                 "restore member identity must be an object",
             ));
+        }
+    }
+    if let Some(previous) = object.get("previous") {
+        let previous = previous
+            .as_object()
+            .ok_or_else(|| io::Error::other("previous restore generation must be an object"))?;
+        if !previous
+            .get("directory")
+            .is_some_and(|value| value.is_object())
+        {
+            return Err(io::Error::other(
+                "previous restore directory identity must be an object",
+            ));
+        }
+        for name in ["disk", "vars", "manifest", "pin"] {
+            if let Some(value) = previous.get(name).filter(|value| !value.is_null()) {
+                if !value.get("identity").is_some_and(|value| value.is_object()) {
+                    return Err(io::Error::other(
+                        "previous restore member identity must be an object",
+                    ));
+                }
+            }
         }
     }
     Ok(())
@@ -432,17 +539,17 @@ pub(super) fn previous_attempt(root: &Path) -> io::Result<bool> {
 }
 
 /// True means the existing legacy admission must inspect unsealed staging.
-pub(super) fn reclaim_sealed(root: &Path) -> io::Result<bool> {
+pub(super) fn reclaim_sealed(root: &Path, lease: &mut MediaLease) -> io::Result<bool> {
     if !private_directory(root, false)? {
         return Ok(false);
     }
     if !present(&root.join(ROOT_NAME))? {
         return Ok(true);
     }
-    recover(root).map_err(|error| refusal(root, error))
+    recover(root, lease).map_err(|error| refusal(root, error))
 }
 
-fn recover(root: &Path) -> io::Result<bool> {
+fn recover(root: &Path, lease: &mut MediaLease) -> io::Result<bool> {
     let stage = root.join("staging");
     if private_directory(&stage, false)? {
         if let Ok(record) = Record::read_pinned(root, &stage) {
@@ -462,7 +569,7 @@ fn recover(root: &Path) -> io::Result<bool> {
     }
     // A completed rename can precede a crash before metadata retirement. The
     // current pair may have guest writes; only its exact directory/pin matters.
-    retire_current_record(root)?;
+    retire_current_record(root, lease)?;
     Ok(true)
 }
 
@@ -485,8 +592,8 @@ pub(super) fn clear_owned(
     }
 }
 
-pub(super) fn retire_current(root: &Path) -> io::Result<()> {
-    retire_current_record(root).map_err(|error| refusal(root, error))
+pub(super) fn retire_current(root: &Path, lease: &mut MediaLease) -> io::Result<()> {
+    retire_current_record(root, lease).map_err(|error| refusal(root, error))
 }
 
 fn present(path: &Path) -> io::Result<bool> {
@@ -533,7 +640,7 @@ fn clear_sealed(root: &Path, stage: &Path, record: &Record) -> io::Result<()> {
 }
 
 /// Retire metadata only; writable current media is never rehashed or removed.
-fn retire_current_record(root: &Path) -> io::Result<()> {
+fn retire_current_record(root: &Path, lease: &mut MediaLease) -> io::Result<()> {
     if !present(&root.join(ROOT_NAME))? {
         return Ok(());
     }
@@ -543,6 +650,17 @@ fn retire_current_record(root: &Path) -> io::Result<()> {
         return Err(io::Error::other(
             "ownership record does not identify current generation",
         ));
+    }
+    let stage = root.join("staging");
+    if present(&stage)? {
+        let previous = owned.previous.as_ref().ok_or_else(|| {
+            io::Error::other("unselected staging may be the previous published generation")
+        })?;
+        // The selected media can have guest writes or a replacement vars
+        // inode from a clean shutdown. Require a complete regular pair.
+        member(&current.join("disk.raw"))?;
+        member(&current.join("vars.fd"))?;
+        previous.clear(root, &stage, lease)?;
     }
     retire_record(root, &owned)
 }

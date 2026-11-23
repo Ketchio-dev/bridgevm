@@ -312,6 +312,7 @@ fn enotsup_names_the_operation_and_the_volume_type_and_other_errors_pass_through
 
 mod swap_crash {
     use super::*;
+    use crate::media_lease::MediaLease;
     use crate::snapshot_pair::managed::LockedPair;
 
     const SCENARIO_ENV: &str = "BRIDGEVM_TEST_PUBLISH_SWAP_CRASH";
@@ -441,7 +442,7 @@ mod swap_crash {
     #[test]
     fn hard_exit_around_generation_swap_selects_one_complete_generation() {
         for (scenario, exit) in SCENARIOS {
-            let (_scratch, disk, vars, g2) = fixture(&format!("swap-crash-{scenario}"));
+            let (scratch, disk, vars, g2) = fixture(&format!("swap-crash-{scenario}"));
             crash_restore(scenario, exit, &disk, &vars, &g2);
 
             let mut pair = LockedPair::open(&disk, &vars).expect("fresh owner after crash");
@@ -462,7 +463,17 @@ mod swap_crash {
                 "{scenario} must leave the unselected generation at the staging name"
             );
 
-            retry(&mut pair, &g2, &root, scenario == "before-swap");
+            if scenario == "after-swap" {
+                let alias = scratch.path("leased-previous-disk");
+                fs::hard_link(root.join("staging/disk.raw"), &alias).unwrap();
+                let lease = MediaLease::acquire([alias.as_path()]).unwrap();
+                assert!(pair.restore(&g2).is_err());
+                assert_eq!(staged(&root), [Some(G1.0.to_vec()), Some(G1.1.to_vec())]);
+                assert_eq!(contents(&pair), owned(G2));
+                drop(lease);
+            }
+            pair.restore(&g2)
+                .unwrap_or_else(|error| panic!("retry after {scenario}: {error}"));
             assert_eq!(contents(&pair), owned(G2), "retry after {scenario}");
             assert!(!root.join("staging").exists(), "debris after {scenario}");
             drop(pair);
@@ -471,26 +482,5 @@ mod swap_crash {
             let reopened = LockedPair::open(&disk, &vars).expect("reopen after retry");
             assert_eq!(contents(&reopened), owned(G2));
         }
-    }
-
-    /// Simulate explicit operator resolution after an ambiguous completed swap.
-    fn retry(pair: &mut LockedPair, snapshot: &Path, root: &Path, sealed: bool) {
-        let staged = root.join("staging");
-        if !sealed {
-            let read = || {
-                ["disk.raw", "vars.fd", "manifest.json"]
-                    .map(|name| fs::read(staged.join(name)).ok())
-            };
-            let before = read();
-            let selected = pair.paths().unwrap();
-            let refused = pair.restore(snapshot).unwrap_err();
-            assert!(refused.to_string().contains("it was left intact"));
-            assert_eq!(read(), before);
-            assert_eq!(pair.paths().unwrap(), selected);
-            let preserved = root.with_file_name("preserved-complete-staging");
-            fs::rename(&staged, preserved).unwrap();
-        }
-        pair.restore(snapshot)
-            .expect("retry after explicit staging resolution");
     }
 }

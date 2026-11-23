@@ -168,17 +168,10 @@ fn error_after_exchange_keeps_previous_generation_at_staging() {
     assert!(result.is_err());
     assert_eq!(contents(&staged), before);
     assert_eq!(contents(&current), contents(&snapshot));
-    assert!(
-        pair.restore(&snapshot).is_err(),
-        "later attempts must preserve the ambiguous old generation"
-    );
-    assert_eq!(contents(&staged), before);
-    // A crash during old-generation cleanup can leave the manifest even when
-    // one media member is already gone; that still does not prove ownership.
+    // A crash during old-generation cleanup can leave just a subset of
+    // the recorded files. Retry on the same lease that still owns them.
     fs::remove_file(staged.join("disk.raw")).unwrap();
-    assert!(pair.restore(&snapshot).is_err());
-    assert_eq!(fs::read(staged.join("vars.fd")).unwrap(), before[1]);
-    assert_eq!(fs::read(staged.join("manifest.json")).unwrap(), before[2]);
-    assert!(!staged.join("disk.raw").exists());
+    pair.restore(&snapshot).unwrap();
+    assert!(!staged.exists());
     assert_eq!(contents(&current), contents(&snapshot));
 }
