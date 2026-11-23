@@ -1,8 +1,6 @@
-mod get_reg;
-mod hvvcpu;
+mod vm_checkpoint;
 
-pub(crate) use get_reg::*;
-pub use hvvcpu::*;
+pub use vm_checkpoint::*;
 
 #[cfg(test)]
 mod tests;

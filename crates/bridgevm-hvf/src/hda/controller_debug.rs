@@ -1,4 +1,4 @@
-//! HdaController's Debug output, moved out of hdapcmsink.rs unchanged to make
+//! HdaController's Debug output, moved out of controller.rs unchanged to make
 //! room there for the stream-activity handle (stream_activity.rs).
 
 use super::*;

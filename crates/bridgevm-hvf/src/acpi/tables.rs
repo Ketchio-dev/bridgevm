@@ -1,3 +1,7 @@
+//! The ACPI blobs for fw_cfg: the table writer, the loader script, `build_acpi`,
+//! and every table except the DSDT (RSDP, XSDT, FADT, MADT, PPTT, GTDT, MCFG,
+//! SPCR, DBG2, TPM2).
+
 use super::*;
 
 use crate::machine;
@@ -565,309 +569,261 @@ pub(crate) fn fadt_len() -> u64 {
     build_fadt(0).len() as u64
 }
 
-// ---- AML helpers ------------------------------------------------------------
-
-pub(crate) const AML_ZERO_OP: u8 = 0x00;
-pub(crate) const AML_ONE_OP: u8 = 0x01;
-pub(crate) const AML_BYTE_PREFIX: u8 = 0x0A;
-pub(crate) const AML_DWORD_PREFIX: u8 = 0x0C;
-pub(crate) const AML_STRING_PREFIX: u8 = 0x0D;
-pub(crate) const AML_NAME_OP: u8 = 0x08;
-pub(crate) const AML_SCOPE_OP: u8 = 0x10;
-pub(crate) const AML_BUFFER_OP: u8 = 0x11;
-pub(crate) const AML_PACKAGE_OP: u8 = 0x12;
-pub(crate) const AML_METHOD_OP: u8 = 0x14;
-pub(crate) const AML_EXT_OP: u8 = 0x5B;
-pub(crate) const AML_DEVICE_OP: u8 = 0x82;
-pub(crate) const AML_OPERATION_REGION_OP: u8 = 0x80;
-pub(crate) const AML_FIELD_OP: u8 = 0x81;
-pub(crate) const AML_LOCAL0_OP: u8 = 0x60;
-pub(crate) const AML_ARG0_OP: u8 = 0x68;
-pub(crate) const AML_STORE_OP: u8 = 0x70;
-pub(crate) const AML_ADD_OP: u8 = 0x72;
-pub(crate) const AML_AND_OP: u8 = 0x7B;
-pub(crate) const AML_OR_OP: u8 = 0x7D;
-pub(crate) const AML_DEREF_OF_OP: u8 = 0x83;
-pub(crate) const AML_NOTIFY_OP: u8 = 0x86;
-pub(crate) const AML_INDEX_OP: u8 = 0x88;
-pub(crate) const AML_CREATE_DWORD_FIELD_OP: u8 = 0x8A;
-pub(crate) const AML_LNOT_OP: u8 = 0x92;
-pub(crate) const AML_LEQUAL_OP: u8 = 0x93;
-pub(crate) const AML_IF_OP: u8 = 0xA0;
-pub(crate) const AML_ELSE_OP: u8 = 0xA1;
-pub(crate) const AML_RETURN_OP: u8 = 0xA4;
-
-pub(crate) const EISA_PNP0A08: [u8; 4] = [0x41, 0xD0, 0x0A, 0x08];
-pub(crate) const EISA_PNP0A03: [u8; 4] = [0x41, 0xD0, 0x0A, 0x03];
-pub(crate) const EISA_PNP0C02: [u8; 4] = [0x41, 0xD0, 0x0C, 0x02];
-pub(crate) const EISA_PNP0C0C: [u8; 4] = [0x41, 0xD0, 0x0C, 0x0C];
-pub(crate) const PCI_HOST_BRIDGE_OSC_UUID: [u8; 16] = [
-    0x5B, 0x4D, 0xDB, 0x33, 0xF7, 0x1F, 0x1C, 0x40, 0x96, 0x57, 0x74, 0x41, 0xC0, 0x3D, 0xD7, 0x66,
-];
-pub(crate) const TPM_PPI_DSM_UUID: [u8; 16] = [
-    0xA6, 0xFA, 0xDD, 0x3D, 0x1B, 0x36, 0xB4, 0x4E, 0xA4, 0x24, 0x8D, 0x10, 0x08, 0x9D, 0x16, 0x53,
-];
-pub(crate) const TPM_RESET_ATTACK_DSM_UUID: [u8; 16] = [
-    0xED, 0x54, 0x60, 0x37, 0x13, 0xCC, 0x75, 0x46, 0x90, 0x1C, 0x47, 0x56, 0xD7, 0xF2, 0xD4, 0x5D,
-];
-
-pub(crate) fn aml_pkg_length(payload_len: usize) -> Vec<u8> {
-    for encoded_len in 1..=4 {
-        let total = payload_len + encoded_len;
-        if encoded_len == 1 {
-            if total <= 0x3F {
-                return vec![total as u8];
-            }
-            continue;
-        }
-        let max = match encoded_len {
-            2 => 0x0FFF,
-            3 => 0x0F_FFFF,
-            4 => 0x0FFF_FFFF,
-            _ => unreachable!(),
-        };
-        if total <= max {
-            let follow = encoded_len - 1;
-            let mut out = Vec::with_capacity(encoded_len);
-            out.push(((follow as u8) << 6) | ((total & 0x0F) as u8));
-            let mut rest = total >> 4;
-            for _ in 0..follow {
-                out.push((rest & 0xFF) as u8);
-                rest >>= 8;
-            }
-            return out;
-        }
-    }
-    panic!("AML package length too large: {payload_len}");
+/// TPM2 ACPI revision-4 client table for a FIFO/TIS device, following the TCG
+/// ACPI layout. The loader relocates LASA (offset 68) to the
+/// separately allocated `etc/tpm/log` buffer.
+pub(crate) fn build_tpm2() -> Vec<u8> {
+    let mut t = Table::new(b"TPM2", 4);
+    t.u16(0); // Platform Class = client
+    t.u16(0); // Reserved
+    t.u64(0); // Control Area address: unused for FIFO/TIS
+    t.u32(6); // Start Method = MMIO
+    t.pad(12); // Platform-specific start-method parameters
+    t.u32(TPM_LOG_AREA_MINIMUM_SIZE as u32); // LAML
+    t.u64(0); // LASA, relocated by the fw_cfg table loader
+    let table = t.finish();
+    assert_eq!(table.len(), 76);
+    table
 }
 
-pub(crate) fn aml_name_string(name: &[u8; 4], value: &str) -> Vec<u8> {
-    assert!(
-        !value.as_bytes().contains(&0),
-        "AML strings are NUL-terminated"
+/// MADT (Multiple APIC Description Table) for GICv3: one GICC per CPU, a single
+/// GICD, and a GICR covering the whole redistributor window.
+pub(crate) fn build_madt(cpu_count: u64) -> Vec<u8> {
+    let mut t = Table::new(b"APIC", 4); // MADT signature is "APIC"
+    t.u32(0); // Local Interrupt Controller Address (unused on GICv3)
+    t.u32(0); // Flags (no PC-AT 8259)
+
+    // GIC Distributor (type 0x0C) — exactly one, before per-CPU GICC entries.
+    t.u8(0x0C); // Type = GICD
+    t.u8(24); // Length
+    t.u16(0); // reserved
+    t.u32(0); // GIC ID
+    t.u64(machine::GIC_DIST.base); // Physical Base Address
+    t.u32(0); // System Vector Base (reserved, must be 0)
+    t.u8(3); // GIC version = 3
+    t.pad(3); // reserved
+
+    // One GIC CPU Interface (type 0x0B) structure per CPU.
+    for cpu in 0..cpu_count {
+        t.u8(0x0B); // Type = GICC
+        t.u8(80); // Length
+        t.u16(0); // reserved
+        t.u32(cpu as u32); // CPU Interface Number
+        t.u32(cpu as u32); // ACPI Processor UID
+        t.u32(1); // Flags = Enabled
+        t.u32(0); // Parking Protocol Version
+        t.u32(ppi_to_gsiv(machine::PPI_PMU)); // Performance Interrupt GSIV
+        t.u64(0); // Parked Address
+        t.u64(0); // Physical Base Address (0 on GICv3 — sysreg interface)
+        t.u64(0); // GICV (virtual CPU interface)
+        t.u64(0); // GICH (hypervisor interface)
+        t.u32(0); // VGIC Maintenance interrupt
+        t.u64(redistributor_base(cpu)); // GICR Base Address (per-CPU)
+                                        // MPIDR: affinity packed Aff3[39:32] | Aff2[23:16] | Aff1[15:8] | Aff0[7:0].
+        t.u64(mpidr_for(cpu));
+        t.u8(0); // Processor Power Efficiency Class
+        t.u8(0); // reserved
+        t.u16(0); // SPE overflow Interrupt
+    }
+
+    // GIC Redistributor (type 0x0E) — discovery range covering all GICRs.
+    t.u8(0x0E); // Type = GICR
+    t.u8(16); // Length
+    t.u16(0); // reserved
+    t.u64(machine::GIC_REDIST.base); // Discovery Range Base Address
+    t.u32(machine::GIC_REDIST.size as u32); // Discovery Range Length
+
+    // Generic MSI Frame (type 0x0D) — Apple `hv_gic` exposes message-signalled
+    // SPIs through a GICv2m-compatible frame, not an architectural ITS/LPI
+    // block. Linux's GICv3 driver only probes ITS when the distributor advertises
+    // LPIs; the Apple GIC does not, so the ACPI MSI contract must be this frame.
+    t.u8(0x0D); // Type = Generic MSI Frame
+    t.u8(24); // Length
+    t.u16(0); // reserved
+    t.u32(0); // MSI Frame ID
+    t.u64(machine::GIC_MSI_FRAME.base); // Physical Base Address
+    t.u32(1); // Flags: override SPI values below
+    t.u16(machine::GIC_MSI_INTID_COUNT as u16); // SPI Count
+    t.u16(machine::GIC_MSI_INTID_BASE as u16); // SPI Base (absolute INTID)
+
+    t.finish()
+}
+
+/// Per-CPU GICR base = window base + cpu * stride.
+pub(crate) fn redistributor_base(cpu: u64) -> u64 {
+    machine::GIC_REDIST.base + cpu * machine::GICV3_REDIST_STRIDE
+}
+
+/// Linear MPIDR affinity for `cpu` (Aff0 = 0..15, Aff1 = group of 16).
+pub(crate) fn mpidr_for(cpu: u64) -> u64 {
+    machine::cpu_mpidr(cpu)
+}
+
+pub(crate) const PPTT_NODE_PROCESSOR: u8 = 0;
+pub(crate) const PPTT_PROCESSOR_PHYSICAL_PACKAGE: u32 = 1 << 0;
+pub(crate) const PPTT_PROCESSOR_ACPI_ID_VALID: u32 = 1 << 1;
+pub(crate) const PPTT_PROCESSOR_LEAF: u32 = 1 << 3;
+pub(crate) const PPTT_PROCESSOR_IDENTICAL: u32 = 1 << 4;
+
+/// Append an ACPI PPTT processor hierarchy node (type 0). Offsets stored in
+/// `parent` and `private_resources` are relative to the start of the PPTT table.
+pub(crate) fn append_pptt_processor_node(
+    t: &mut Table,
+    flags: u32,
+    parent: u32,
+    acpi_processor_id: u32,
+    private_resources: &[u32],
+) {
+    let len = 20 + private_resources.len() * 4;
+    let len = u8::try_from(len).expect("PPTT processor node length exceeds u8");
+    t.u8(PPTT_NODE_PROCESSOR);
+    t.u8(len);
+    t.u16(0); // reserved
+    t.u32(flags);
+    t.u32(parent);
+    t.u32(acpi_processor_id);
+    t.u32(private_resources.len() as u32);
+    for &resource in private_resources {
+        t.u32(resource);
+    }
+}
+
+/// PPTT homogeneous topology: one root package node, one socket node, and one
+/// leaf processor node per ACPI Processor UID.
+pub(crate) fn build_pptt(cpu_count: u64) -> Vec<u8> {
+    let mut t = Table::new(b"PPTT", 2);
+
+    let root_offset = t.bytes.len() as u32;
+    append_pptt_processor_node(
+        &mut t,
+        PPTT_PROCESSOR_PHYSICAL_PACKAGE | PPTT_PROCESSOR_IDENTICAL,
+        0,
+        0,
+        &[],
     );
-    let mut out = vec![AML_NAME_OP];
-    out.extend_from_slice(name);
-    out.push(AML_STRING_PREFIX);
-    out.extend_from_slice(value.as_bytes());
-    out.push(0);
-    out
-}
 
-pub(crate) fn aml_string(value: &str) -> Vec<u8> {
-    assert!(
-        !value.as_bytes().contains(&0),
-        "AML strings are NUL-terminated"
+    let socket_offset = t.bytes.len() as u32;
+    append_pptt_processor_node(
+        &mut t,
+        PPTT_PROCESSOR_PHYSICAL_PACKAGE | PPTT_PROCESSOR_IDENTICAL,
+        root_offset,
+        0,
+        &[],
     );
-    let mut out = vec![AML_STRING_PREFIX];
-    out.extend_from_slice(value.as_bytes());
-    out.push(0);
-    out
-}
 
-pub(crate) fn aml_name_eisa(name: &[u8; 4], encoded: [u8; 4]) -> Vec<u8> {
-    let mut out = vec![AML_NAME_OP];
-    out.extend_from_slice(name);
-    out.push(AML_DWORD_PREFIX);
-    out.extend_from_slice(&encoded);
-    out
-}
-
-pub(crate) fn aml_name_simple(name: &[u8; 4], op: u8) -> Vec<u8> {
-    let mut out = vec![AML_NAME_OP];
-    out.extend_from_slice(name);
-    out.push(op);
-    out
-}
-
-pub(crate) fn aml_name_byte(name: &[u8; 4], value: u8) -> Vec<u8> {
-    let mut out = vec![AML_NAME_OP];
-    out.extend_from_slice(name);
-    out.extend(aml_byte(value));
-    out
-}
-
-pub(crate) fn aml_name_buffer(name: &[u8; 4], bytes: &[u8]) -> Vec<u8> {
-    assert!(bytes.len() <= u8::MAX as usize, "small AML buffer expected");
-    let mut out = vec![AML_NAME_OP];
-    out.extend_from_slice(name);
-    out.push(AML_BUFFER_OP);
-    out.extend(aml_pkg_length(2 + bytes.len()));
-    out.push(AML_BYTE_PREFIX);
-    out.push(bytes.len() as u8);
-    out.extend_from_slice(bytes);
-    out
-}
-
-pub(crate) fn aml_buffer(bytes: &[u8]) -> Vec<u8> {
-    assert!(bytes.len() <= u8::MAX as usize, "small AML buffer expected");
-    let mut out = vec![AML_BUFFER_OP];
-    out.extend(aml_pkg_length(2 + bytes.len()));
-    out.push(AML_BYTE_PREFIX);
-    out.push(bytes.len() as u8);
-    out.extend_from_slice(bytes);
-    out
-}
-
-pub(crate) fn aml_package(elements: &[Vec<u8>]) -> Vec<u8> {
-    assert!(
-        elements.len() <= u8::MAX as usize,
-        "small AML package expected"
-    );
-    let payload_len = 1 + elements.iter().map(Vec::len).sum::<usize>();
-    let mut out = vec![AML_PACKAGE_OP];
-    out.extend(aml_pkg_length(payload_len));
-    out.push(elements.len() as u8);
-    for element in elements {
-        out.extend_from_slice(element);
+    for cpu in 0..cpu_count {
+        append_pptt_processor_node(
+            &mut t,
+            PPTT_PROCESSOR_ACPI_ID_VALID | PPTT_PROCESSOR_LEAF,
+            socket_offset,
+            u32::try_from(cpu).expect("ACPI processor ID exceeds u32"),
+            &[],
+        );
     }
-    out
+
+    t.finish()
 }
 
-pub(crate) fn aml_name_package(name: &[u8; 4], elements: &[Vec<u8>]) -> Vec<u8> {
-    let mut out = vec![AML_NAME_OP];
-    out.extend_from_slice(name);
-    out.extend(aml_package(elements));
-    out
+/// GTDT (Generic Timer Description Table) describing the architected timer. The
+/// per-CPU timer interrupts are PPIs; the GSIV is `PPI + 16` (PPIs occupy
+/// INTIDs 16..31). Edge/level is encoded in the per-timer flags.
+pub(crate) fn build_gtdt() -> Vec<u8> {
+    /// GTDT timer flag: interrupt is level-triggered (bit 1 clear = level).
+    const TIMER_FLAG_LEVEL: u32 = 0;
+
+    let mut t = Table::new(b"GTDT", 2);
+    t.u64(0xFFFF_FFFF_FFFF_FFFF); // CntControlBase — not memory-mapped
+    t.u32(0); // reserved
+    t.u32(ppi_to_gsiv(machine::PPI_TIMER_SECURE)); // Secure EL1 timer GSIV
+    t.u32(TIMER_FLAG_LEVEL); // Secure EL1 timer flags
+    t.u32(ppi_to_gsiv(machine::PPI_TIMER_NONSEC)); // Non-Secure EL1 timer GSIV
+    t.u32(TIMER_FLAG_LEVEL); // Non-Secure EL1 timer flags
+    t.u32(ppi_to_gsiv(machine::PPI_TIMER_VIRT)); // Virtual EL1 timer GSIV
+    t.u32(TIMER_FLAG_LEVEL); // Virtual EL1 timer flags
+    t.u32(ppi_to_gsiv(machine::PPI_TIMER_HYP)); // EL2 (hypervisor) timer GSIV
+    t.u32(TIMER_FLAG_LEVEL); // EL2 timer flags
+    t.u64(0xFFFF_FFFF_FFFF_FFFF); // CntReadBase — not memory-mapped
+    t.u32(0); // Platform Timer Count
+    t.u32(0); // Platform Timer Offset (none present)
+    t.finish()
 }
 
-pub(crate) fn aml_name_ref(name: &[u8; 4]) -> Vec<u8> {
-    name.to_vec()
+/// PPI number to its absolute GIC interrupt ID (GSIV). PPIs occupy INTIDs 16..31.
+pub(crate) fn ppi_to_gsiv(ppi: u32) -> u32 {
+    ppi + 16
 }
 
-pub(crate) fn aml_arg(n: u8) -> Vec<u8> {
-    assert!(n <= 6, "AML has only Arg0..Arg6");
-    vec![AML_ARG0_OP + n]
+/// MCFG (PCI memory-mapped configuration space) describing the ECAM window for
+/// PCI segment 0, buses 0..=255.
+pub(crate) fn build_mcfg() -> Vec<u8> {
+    let mut t = Table::new(b"MCFG", 1);
+    t.u64(0); // reserved
+              // One configuration-space allocation entry (16 bytes).
+    t.u64(machine::PCIE_ECAM.base); // Base Address of enhanced config space
+    t.u16(0); // PCI Segment Group Number
+    t.u8(0); // Start PCI bus number
+    t.u8(0xFF); // End PCI bus number
+    t.u32(0); // reserved
+    t.finish()
 }
 
-pub(crate) fn aml_local0() -> Vec<u8> {
-    vec![AML_LOCAL0_OP]
+/// SPCR (Serial Port Console Redirection) pointing the OS console at the PL011.
+pub(crate) fn build_spcr() -> Vec<u8> {
+    let mut t = Table::new(b"SPCR", 2);
+    t.u8(0x03); // Interface Type = ARM PL011 UART
+    t.pad(3); // reserved
+    t.gas_memory_with_access_size(machine::UART.base, 32, 3); // Base Address (dword access)
+    t.u8(0x08); // Interrupt Type = ARM GIC
+    t.u8(0); // IRQ (8259, unused)
+    t.u32(machine::spi_to_intid(machine::SPI_UART)); // Global System Interrupt
+    t.u8(7); // Baud Rate = as-is (do not reconfigure)
+    t.u8(0); // Parity = none
+    t.u8(1); // Stop Bits = 1
+    t.u8(0); // Flow Control = none
+    t.u8(0); // Terminal Type = VT100
+    t.u8(0); // Language (reserved)
+    t.u16(0xFFFF); // PCI Device ID = not a PCI device
+    t.u16(0xFFFF); // PCI Vendor ID = not a PCI device
+    t.u8(0); // PCI Bus
+    t.u8(0); // PCI Device
+    t.u8(0); // PCI Function
+    t.u32(0); // PCI Flags
+    t.u8(0); // PCI Segment
+    t.u32(0); // reserved
+    t.finish()
 }
 
-pub(crate) fn aml_local(n: u8) -> Vec<u8> {
-    assert!(n <= 7, "AML has only Local0..Local7");
-    vec![AML_LOCAL0_OP + n]
-}
+/// DBG2 (Debug Port Table 2) describing the same PL011 as a serial debug port.
+pub(crate) fn build_dbg2() -> Vec<u8> {
+    const NAMESPACE: &[u8] = b"COM0\0";
+    const DEBUG_DEVICE_INFO_OFFSET: u32 = 44;
+    const BASE_ADDRESS_REGISTER_OFFSET: u16 = 22;
+    const ADDRESS_SIZE_OFFSET: u16 = 34;
+    const NAMESPACE_STRING_OFFSET: u16 = 38;
 
-pub(crate) fn aml_byte(value: u8) -> Vec<u8> {
-    match value {
-        0 => vec![AML_ZERO_OP],
-        1 => vec![AML_ONE_OP],
-        _ => vec![AML_BYTE_PREFIX, value],
-    }
-}
+    let device_len =
+        u16::try_from(BASE_ADDRESS_REGISTER_OFFSET as usize + 12 + 4 + NAMESPACE.len())
+            .expect("DBG2 device info length exceeds u16");
 
-pub(crate) fn aml_dword(value: u32) -> Vec<u8> {
-    let mut out = vec![AML_DWORD_PREFIX];
-    out.extend_from_slice(&value.to_le_bytes());
-    out
-}
+    let mut t = Table::new(b"DBG2", 0);
+    t.u32(DEBUG_DEVICE_INFO_OFFSET); // OffsetDbgDeviceInfo
+    t.u32(1); // NumberDbgDeviceInfo
 
-pub(crate) fn aml_uuid_buffer(bytes: &[u8; 16]) -> Vec<u8> {
-    let mut out = vec![AML_BUFFER_OP];
-    out.extend(aml_pkg_length(2 + bytes.len()));
-    out.push(AML_BYTE_PREFIX);
-    out.push(bytes.len() as u8);
-    out.extend_from_slice(bytes);
-    out
-}
+    t.u8(0); // Revision
+    t.u16(device_len); // Length
+    t.u8(1); // NumberOfGenericAddressRegisters
+    t.u16(NAMESPACE.len() as u16); // NameSpaceStringLength
+    t.u16(NAMESPACE_STRING_OFFSET); // NameSpaceStringOffset
+    t.u16(0); // OemDataLength
+    t.u16(0); // OemDataOffset
+    t.u16(0x8000); // Port Type = Serial
+    t.u16(0x0003); // Port Subtype = ARM PL011 UART
+    t.u16(0); // Reserved
+    t.u16(BASE_ADDRESS_REGISTER_OFFSET);
+    t.u16(ADDRESS_SIZE_OFFSET);
 
-pub(crate) fn aml_create_dword_field(source: &[u8], byte_index: u8, name: &[u8; 4]) -> Vec<u8> {
-    let mut out = vec![AML_CREATE_DWORD_FIELD_OP];
-    out.extend_from_slice(source);
-    out.extend(aml_byte(byte_index));
-    out.extend_from_slice(name);
-    out
-}
-
-pub(crate) fn aml_store(source: &[u8], target: &[u8]) -> Vec<u8> {
-    let mut out = vec![AML_STORE_OP];
-    out.extend_from_slice(source);
-    out.extend_from_slice(target);
-    out
-}
-
-pub(crate) fn aml_index(source: &[u8], index: &[u8], target: &[u8]) -> Vec<u8> {
-    let mut out = vec![AML_INDEX_OP];
-    out.extend_from_slice(source);
-    out.extend_from_slice(index);
-    out.extend_from_slice(target);
-    out
-}
-
-pub(crate) fn aml_deref_of(reference: &[u8]) -> Vec<u8> {
-    let mut out = vec![AML_DEREF_OF_OP];
-    out.extend_from_slice(reference);
-    out
-}
-
-pub(crate) fn aml_call1(name: &[u8; 4], arg: &[u8]) -> Vec<u8> {
-    let mut out = name.to_vec();
-    out.extend_from_slice(arg);
-    out
-}
-
-pub(crate) fn aml_binary_op(op: u8, left: &[u8], right: &[u8], target: &[u8]) -> Vec<u8> {
-    let mut out = vec![op];
-    out.extend_from_slice(left);
-    out.extend_from_slice(right);
-    out.extend_from_slice(target);
-    out
-}
-
-pub(crate) fn aml_equal(left: &[u8], right: &[u8]) -> Vec<u8> {
-    let mut out = vec![AML_LEQUAL_OP];
-    out.extend_from_slice(left);
-    out.extend_from_slice(right);
-    out
-}
-
-pub(crate) fn aml_not_equal(left: &[u8], right: &[u8]) -> Vec<u8> {
-    let mut out = vec![AML_LNOT_OP];
-    out.extend(aml_equal(left, right));
-    out
-}
-
-pub(crate) fn aml_if(predicate: &[u8], body: &[u8]) -> Vec<u8> {
-    let mut out = vec![AML_IF_OP];
-    out.extend(aml_pkg_length(predicate.len() + body.len()));
-    out.extend_from_slice(predicate);
-    out.extend_from_slice(body);
-    out
-}
-
-pub(crate) fn aml_else(body: &[u8]) -> Vec<u8> {
-    let mut out = vec![AML_ELSE_OP];
-    out.extend(aml_pkg_length(body.len()));
-    out.extend_from_slice(body);
-    out
-}
-
-pub(crate) fn aml_return(value: &[u8]) -> Vec<u8> {
-    let mut out = vec![AML_RETURN_OP];
-    out.extend_from_slice(value);
-    out
-}
-
-pub(crate) fn aml_operation_region(name: &[u8; 4], base: &[u8], length: &[u8]) -> Vec<u8> {
-    let mut out = vec![AML_EXT_OP, AML_OPERATION_REGION_OP];
-    out.extend_from_slice(name);
-    out.push(0x00); // SystemMemory
-    out.extend_from_slice(base);
-    out.extend_from_slice(length);
-    out
-}
-
-pub(crate) fn aml_field(name: &[u8; 4], flags: u8, fields: &[(&[u8; 4], usize)]) -> Vec<u8> {
-    let mut field_list = Vec::new();
-    for (field_name, bit_length) in fields {
-        field_list.extend_from_slice(*field_name);
-        field_list.extend(aml_field_length(*bit_length));
-    }
-    let mut out = vec![AML_EXT_OP, AML_FIELD_OP];
-    out.extend(aml_pkg_length(name.len() + 1 + field_list.len()));
-    out.extend_from_slice(name);
-    out.push(flags);
-    out.extend(field_list);
-    out
+    t.gas_memory_with_access_size(machine::UART.base, 32, 3);
+    t.u32(machine::UART.size as u32);
+    t.bytes.extend_from_slice(NAMESPACE);
+    t.finish()
 }
