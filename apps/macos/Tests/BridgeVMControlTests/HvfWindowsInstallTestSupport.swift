@@ -54,10 +54,8 @@ final class HvfWindowsInstallValidationProbe: @unchecked Sendable {
         return result
     }
 
-    func waitForEntry() async -> Bool {
-        await Task.detached { [entry] in
-            entry.wait(timeout: .now() + 5) == .success
-        }.value
+    @MainActor func waitForEntry() async -> Bool {
+        await waitOffCooperativePool(entry, seconds: 5)
     }
 
     func release() { gate.signal() }

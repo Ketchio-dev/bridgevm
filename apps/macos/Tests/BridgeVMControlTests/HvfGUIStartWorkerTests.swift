@@ -12,7 +12,12 @@ final class HvfGUIStartWorkerTests: XCTestCase {
             effectAdmission: HvfRuntimeEffectAdmission(), permit: { true })
     }
     func testTypedAndLegacyRoutesReadInteractiveKeyOnceWithExistingStatePolicy() async throws {
-        for typed in (_isDebugAssertConfiguration() ? [false, true] : [true]) {
+        #if DEBUG
+        let routes = [false, true] // the checkout wrapper route is debug-only (HvfPackagedWrapperPolicy)
+        #else
+        let routes = [true]
+        #endif
+        for typed in routes {
             for populated in [false, true] {
                 let f = try HvfGUIStartFixture(encrypted: true, typed: typed, rejectLaunch: true)
                 do {

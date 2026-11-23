@@ -186,7 +186,7 @@ final class HvfWindowsInstallSessionStoreTests: XCTestCase {
         var config = fixture.config()
         try fixture.save(config)
         var library: LibraryModel? = fixture.library()
-        weak var weakLibrary = library
+        let weakLibrary = WeakReference(library)
         let session = try XCTUnwrap(library).windowsInstallSession(for: config)
         config.installPending = false
         try fixture.save(config)
@@ -195,6 +195,6 @@ final class HvfWindowsInstallSessionStoreTests: XCTestCase {
         session.onCompleted?() // Exercise the real callback without an install or SwiftUI appearance.
         XCTAssertEqual(library?.vms.first?.installPending, false)
         library = nil
-        XCTAssertNil(weakLibrary)
+        XCTAssertNil(weakLibrary.object)
     }
 }

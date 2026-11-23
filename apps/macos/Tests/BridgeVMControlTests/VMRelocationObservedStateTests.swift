@@ -2,7 +2,7 @@ import XCTest
 @testable import BridgeVMControl
 
 final class VMRelocationObservedStateTests: XCTestCase {
-    private final class AfterEffect: FileManager, @unchecked Sendable {
+    private final class AfterEffect: FileManager {
         var calls = 0
         override func moveItem(at source: URL, to destination: URL) throws {
             calls += 1
@@ -10,7 +10,7 @@ final class VMRelocationObservedStateTests: XCTestCase {
             if calls == 2 { throw CocoaError(.fileWriteUnknown) }
         }
     }
-    private final class Unreadable: FileManager, @unchecked Sendable {
+    private final class Unreadable: FileManager {
         override func attributesOfItem(atPath path: String) throws -> [FileAttributeKey: Any] {
             throw CocoaError(.fileReadNoPermission)
         }

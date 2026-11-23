@@ -46,7 +46,8 @@ final class NativeInstallOperationStartTests: XCTestCase {
                 guard stage == .validating else { return }
                 publications += 1
                 do {
-                    XCTAssertEqual(try operation.observation().phase, .validating)
+                    let validating = try operation.observation()
+                    XCTAssertEqual(validating.phase, .validating)
                     XCTAssertTrue(operation.cancel())
                     XCTAssertEqual(try operation.observation().phase, .cancelling)
                 } catch { XCTFail("Retry observation is invalid: \(error)") }

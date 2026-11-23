@@ -46,11 +46,11 @@ final class HvfWindowsInstallPreparationResponsiveTests: XCTestCase {
         let processGate = HvfWindowsInstallCancellationGate()
         let process = HvfWindowsInstallCancellationProcess(gate: processGate, holdProcess: false)
         let execution = HvfWindowsInstallExecution(process: process, verifySource: { _ in true },
-            preparationWorker: gate.prepare, finalize: { _ in XCTFail("cancelled preparation must not finalize") })
+            preparationWorker: { try gate.prepare($0) }, finalize: { _ in XCTFail("cancelled preparation must not finalize") })
         let session = HvfWindowsInstallSession(plan: plan, execution: execution)
         session.attemptActive = true
         let work = Task { await session.run() }
-        let entered = await Task.detached { gate.entered.wait(timeout: .now() + 3) == .success }.value
+        let entered = await waitOffCooperativePool(gate.entered, seconds: 3)
         XCTAssertTrue(entered)
         XCTAssertEqual(gate.completed.wait(timeout: .now()), .timedOut, "preparation must yield the main actor")
         session.requestTerminationStop()

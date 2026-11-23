@@ -78,6 +78,8 @@ final class LibrarySearchFieldCell: NSTextFieldCell {
         report?(text)
     }
 
+    /// The deprecated entry point stays: NSTextFieldCell's own implementation sets the text without calling
+    /// setAccessibilityValue(_:) (checked in process against the macOS 27 SDK), so the query would not follow.
     override func accessibilitySetValue(_ value: Any?, forAttribute attribute: NSAccessibility.Attribute) {
         guard attribute == .value, let text = value as? String else {
             return super.accessibilitySetValue(value, forAttribute: attribute)

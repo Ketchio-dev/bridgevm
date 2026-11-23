@@ -12,19 +12,19 @@ final class HvfRuntimeRetainedControlLifecycleTests: XCTestCase {
             f.work.save(config)
             let library = f.work.library()
             var session: HvfEngineSession? = try f.work.runtime(config, in: library)
-            weak var observed = session
+            let observed = WeakReference(session)
             session?.connectionState = .booting
             session?.events = [.unknown("terminal history remains")]
             library.selectedID = config.slug
             try f.removeRegistration(config); library.reload()
             let token = try XCTUnwrap(f.runtimeRecord(try XCTUnwrap(session), in: library)?.id)
             session = nil
-            observed?.connectionState = .stopped
+            observed.object?.connectionState = .stopped
             library.reload()
-            XCTAssertNotNil(observed, "The retained index must own the terminal session after ordinary pruning")
+            XCTAssertNotNil(observed.object, "The retained index must own the terminal session after ordinary pruning")
             XCTAssertEqual(library.selectedID, token)
-            XCTAssertEqual(f.assertRuntimeRoute(try XCTUnwrap(observed), config: config, in: library), token)
-            XCTAssertEqual(observed?.events, [.unknown("terminal history remains")])
+            XCTAssertEqual(f.assertRuntimeRoute(try XCTUnwrap(observed.object), config: config, in: library), token)
+            XCTAssertEqual(observed.object?.events, [.unknown("terminal history remains")])
             XCTAssertEqual(library.retainedControlRecords.count, 1)
         }
         do {
@@ -40,15 +40,15 @@ final class HvfRuntimeRetainedControlLifecycleTests: XCTestCase {
                 token = f.installRecord(session, in: library)?.id
                 session.cancel()
             }
-            weak var observed = session
+            let observed = WeakReference(session)
             session = nil // The helper has also released its completed Task handle.
             library.reload()
-            XCTAssertNotNil(observed)
+            XCTAssertNotNil(observed.object)
             XCTAssertNotNil(token)
             XCTAssertEqual(library.selectedID, token)
-            XCTAssertEqual(f.assertInstallRoute(try XCTUnwrap(observed), config: config, in: library), token)
-            XCTAssertEqual(observed?.stage, .cancelled)
-            XCTAssertTrue(observed?.logLines.contains("사용자가 설치를 취소했습니다.") == true)
+            XCTAssertEqual(f.assertInstallRoute(try XCTUnwrap(observed.object), config: config, in: library), token)
+            XCTAssertEqual(observed.object?.stage, .cancelled)
+            XCTAssertTrue(observed.object?.logLines.contains("사용자가 설치를 취소했습니다.") == true)
         }
     }
 
@@ -167,9 +167,9 @@ final class HvfRuntimeRetainedControlLifecycleTests: XCTestCase {
             let config = f.work.config()
             f.work.save(config)
             var library: LibraryModel? = f.work.library()
-            weak var observedLibrary = library
+            let observedLibrary = WeakReference(library)
             var session: HvfEngineSession? = try f.work.runtime(config, in: XCTUnwrap(library))
-            weak var observedSession = session
+            let observedSession = WeakReference(session)
             session?.connectionState = .booting
             library?.selectedID = config.slug
             try f.removeRegistration(config); library?.reload()
@@ -177,27 +177,27 @@ final class HvfRuntimeRetainedControlLifecycleTests: XCTestCase {
             var view = f.selectedView(in: try XCTUnwrap(library))
             XCTAssertNotNil(view)
             view = nil
-            XCTAssertNotNil(observedSession)
+            XCTAssertNotNil(observedSession.object)
             var notifications = 0
             let subscription = try XCTUnwrap(library).objectWillChange.sink { notifications += 1 }
             defer { subscription.cancel() }
             if releaseLibraryFirst {
                 library = nil
-                XCTAssertNil(observedLibrary)
+                XCTAssertNil(observedLibrary.object)
                 let before = notifications
                 session?.connectionState = .timedOut
                 XCTAssertEqual(notifications, before)
                 session = nil
-                XCTAssertNil(observedSession)
+                XCTAssertNil(observedSession.object)
             } else {
                 session = nil
-                observedSession?.connectionState = .stopped
+                observedSession.object?.connectionState = .stopped
                 library?.reload()
-                XCTAssertNotNil(observedSession)
+                XCTAssertNotNil(observedSession.object)
                 XCTAssertTrue(library?.dismissRetainedControl(token) == true)
-                XCTAssertNil(observedSession)
+                XCTAssertNil(observedSession.object)
                 library = nil
-                XCTAssertNil(observedLibrary)
+                XCTAssertNil(observedLibrary.object)
             }
         }
     }

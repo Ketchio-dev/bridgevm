@@ -70,17 +70,17 @@ final class HvfGuestPrintTests: XCTestCase {
         defer { fixture.clean() }
         let (session, presenter, _, _) = try session(fixture)
         let gate = VerificationGate()
-        session.printVerifier = gate.verify
+        session.printVerifier = { gate.verify($0) }
         let (_, line) = try job(session, 1, pdf("pending"))
         session.handle(.unknown(line))
         // This operation must run while the verifier is still pending.
-        let entered = await Task.detached { gate.entered.wait(timeout: .now() + 3) == .success }.value
+        let entered = await waitOffCooperativePool(gate.entered, seconds: 3)
         XCTAssertTrue(entered)
         XCTAssertEqual(gate.completed.wait(timeout: .now()), .timedOut, "verification must not block the main actor")
         let pending = session.printVerificationTask
         session.markStopped()
         gate.release.signal()
-        _ = await Task.detached { gate.completed.wait(timeout: .now() + 3) }.value
+        _ = await waitOffCooperativePool(gate.completed, seconds: 3)
         await pending?.value
         XCTAssertTrue(presenter.shown.isEmpty, "a stopped session must not present its pending job")
     }
@@ -90,11 +90,11 @@ final class HvfGuestPrintTests: XCTestCase {
         defer { fixture.clean() }
         let (session, presenter, _, _) = try session(fixture)
         let gate = VerificationGate()
-        session.printVerifier = gate.verify
+        session.printVerifier = { gate.verify($0) }
         let (first, line) = try job(session, 1, pdf("first"))
         let (second, nextLine) = try job(session, 2, pdf("second"))
         session.handle(.unknown(line))
-        let entered = await Task.detached { gate.entered.wait(timeout: .now() + 3) == .success }.value
+        let entered = await waitOffCooperativePool(gate.entered, seconds: 3)
         XCTAssertTrue(entered)
         session.handle(.unknown(line))
         session.handle(.unknown(nextLine))

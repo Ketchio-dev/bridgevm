@@ -51,10 +51,10 @@ final class HvfWindowsInstallPlanPreparationProbe: @unchecked Sendable {
         return result
     }
 
-    func waitForEntry(_ call: Int) async -> Bool {
+    @MainActor func waitForEntry(_ call: Int) async -> Bool {
         guard (1...entries.count).contains(call) else { return false }
         let entry = entries[call - 1]
-        return await Task.detached { entry.wait(timeout: .now() + 5) == .success }.value
+        return await waitOffCooperativePool(entry, seconds: 5)
     }
 
     func release(_ call: Int) {

@@ -190,16 +190,16 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
         fixture.save(fixture.config())
         var library: LibraryModel? = fixture.library()
         var view: HvfEngineView? = try runtime(in: XCTUnwrap(library), fixture: fixture)
-        weak var observed = view?.session
-        observed?.connectionState = .booting
+        let observed = WeakReference(view?.session)
+        observed.object?.connectionState = .booting
         view = nil
-        XCTAssertNotNil(observed)
-        var surface: HvfLiveDisplaySurface? = HvfLiveDisplaySurface(session: try XCTUnwrap(observed))
-        XCTAssertTrue(surface?.session === observed)
+        XCTAssertNotNil(observed.object)
+        var surface: HvfLiveDisplaySurface? = HvfLiveDisplaySurface(session: try XCTUnwrap(observed.object))
+        XCTAssertTrue(surface?.session === observed.object)
         surface = nil
-        XCTAssertNotNil(observed)
+        XCTAssertNotNil(observed.object)
         library = nil
-        XCTAssertNil(observed)
+        XCTAssertNil(observed.object)
     }
 
     func testBusyGenericModelDefersMetadataThenNextDetailUsesLatestWithoutReload() throws {

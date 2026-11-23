@@ -4,8 +4,9 @@ import AppKit
 /// The local IME owns marked text; only its committed result enters the guest queue.
 /// The small preedit view also gives the candidate window a truthful host anchor: at the guest's text caret
 /// when the guest says where it is (HvfGuestCaret.swift), else at the display's bottom-left.
+/// `@preconcurrency`: AppKit calls NSTextInputClient on the main thread, but the SDK does not mark it @MainActor.
 @MainActor
-class HvfFramebufferTextInput: NSView, NSTextInputClient {
+class HvfFramebufferTextInput: NSView, @preconcurrency NSTextInputClient {
     private var composition = HvfTextCompositionState()
     private var interpretingEvent: NSEvent?
     private var interpretingTarget: HvfTextInputTargetIdentity?
