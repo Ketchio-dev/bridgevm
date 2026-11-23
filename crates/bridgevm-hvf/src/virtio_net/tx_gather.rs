@@ -13,7 +13,7 @@ impl<B: NetBackend> VirtioNet<B> {
         packet: &mut Vec<u8>,
     ) -> bool {
         packet.clear();
-        if !Self::descriptor_chain_into(mem, queue, head, descs) {
+        if !descriptor_chain_into(mem, queue.desc, queue.size, head, descs) {
             return false;
         }
         if descs.iter().any(|desc| desc.flags & DESC_F_WRITE != 0) {

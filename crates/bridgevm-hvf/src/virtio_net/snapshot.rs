@@ -8,20 +8,20 @@ impl<B: NetBackend> VirtioPciNet<B> {
         let mut out = crate::checkpoint::StateWriter::new();
         out.write_u32(1);
         out.write_blob(&net.mac);
-        out.write_u32(net.device_features_sel);
-        out.write_u32(net.driver_features_sel);
-        out.write_u32(net.driver_features[0]);
-        out.write_u32(net.driver_features[1]);
-        out.write_u16(net.config_msix_vector);
+        out.write_u32(net.pci.device_features_sel);
+        out.write_u32(net.pci.driver_features_sel);
+        out.write_u32(net.pci.driver_features[0]);
+        out.write_u32(net.pci.driver_features[1]);
+        out.write_u16(net.pci.config_msix_vector);
         out.write_u16(0);
-        out.write_u32(net.queue_sel);
-        out.write_u8(net.pending_msix_queue_bits);
+        out.write_u32(net.pci.queue_sel);
+        out.write_u8(net.pci.pending_msix_queue_bits);
         out.write_u8(0);
         out.write_u16(0);
-        out.write_u32(net.status);
-        out.write_u32(net.interrupt_status);
+        out.write_u32(net.pci.status);
+        out.write_u32(net.pci.interrupt_status);
 
-        for queue in &net.queues {
+        for queue in &net.pci.queues {
             out.write_u16(queue.size);
             out.write_bool(queue.ready);
             out.write_bool(queue.pending_msix);
@@ -54,19 +54,19 @@ impl<B: NetBackend> VirtioPciNet<B> {
         let mac = input.read_blob();
         assert_eq!(mac.len(), 6, "invalid restored virtio-net MAC");
         self.net.mac.copy_from_slice(&mac);
-        self.net.device_features_sel = input.read_u32();
-        self.net.driver_features_sel = input.read_u32();
-        self.net.driver_features = [input.read_u32(), input.read_u32()];
-        self.net.config_msix_vector = input.read_u16();
+        self.net.pci.device_features_sel = input.read_u32();
+        self.net.pci.driver_features_sel = input.read_u32();
+        self.net.pci.driver_features = [input.read_u32(), input.read_u32()];
+        self.net.pci.config_msix_vector = input.read_u16();
         assert_eq!(input.read_u16(), 0, "invalid virtio-net snapshot");
-        self.net.queue_sel = input.read_u32();
-        self.net.pending_msix_queue_bits = input.read_u8();
+        self.net.pci.queue_sel = input.read_u32();
+        self.net.pci.pending_msix_queue_bits = input.read_u8();
         assert_eq!(input.read_u8(), 0, "invalid virtio-net snapshot");
         assert_eq!(input.read_u16(), 0, "invalid virtio-net snapshot");
-        self.net.status = input.read_u32();
-        self.net.interrupt_status = input.read_u32();
+        self.net.pci.status = input.read_u32();
+        self.net.pci.interrupt_status = input.read_u32();
 
-        for queue in &mut self.net.queues {
+        for queue in &mut self.net.pci.queues {
             queue.size = input.read_u16();
             queue.ready = input.read_bool();
             queue.pending_msix = input.read_bool();

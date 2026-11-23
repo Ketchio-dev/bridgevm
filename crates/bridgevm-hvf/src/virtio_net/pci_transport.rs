@@ -1,31 +1,20 @@
-//! VirtioPciNet BAR region decode and forwarding to the core device.
+//! VirtioPciNet: BAR and MSI-X access on the shared transport, forwarding to the core device.
 
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
-use crate::msix::MsixTable;
+use crate::msix::{MsixMessage, MsixTable};
+use crate::pcie::VIRTIO_NET_MSIX_PBA_OFFSET;
+use crate::pcie::VIRTIO_NET_MSIX_TABLE_OFFSET;
 use crate::pcie::VIRTIO_NET_MSIX_VECTOR_COUNT;
+
+pub type VirtioNetResult = VirtioPciResult;
+
+pub type VirtioPciNetOp = VirtioPciOp;
 
 #[derive(Debug)]
 pub struct VirtioPciNet<B: NetBackend = LoopbackTestBackend> {
     pub(crate) net: VirtioNet<B>,
     pub(crate) msix: MsixTable,
-}
-
-pub(crate) fn common_cfg_offset(offset: u64) -> Option<u64> {
-    offset
-        .checked_sub(PCI_COMMON_CFG_OFFSET)
-        .filter(|rel| *rel < PCI_CFG_REGION_SIZE)
-}
-
-pub(crate) fn device_cfg_offset(offset: u64) -> Option<u64> {
-    offset
-        .checked_sub(PCI_DEVICE_CFG_OFFSET)
-        .filter(|rel| *rel < PCI_CFG_REGION_SIZE)
-}
-
-pub(crate) fn notify_queue_index(offset: u64) -> Option<u16> {
-    let rel = offset.checked_sub(PCI_NOTIFY_CFG_OFFSET)?;
-    (rel < PCI_CFG_REGION_SIZE).then_some((rel / 4) as u16)
 }
 
 impl VirtioPciNet<LoopbackTestBackend> {
@@ -81,55 +70,56 @@ impl<B: NetBackend> VirtioPciNet<B> {
         op: VirtioPciNetOp,
         mem: &mut dyn GuestMemoryMut,
     ) -> VirtioNetResult {
-        let is_write = matches!(op, VirtioPciNetOp::Write { .. });
-        if let Some(common_offset) = common_cfg_offset(offset) {
-            return match op {
-                VirtioPciNetOp::Read { size } => {
-                    self.net.access_common(common_offset, false, size, 0, mem)
-                }
-                VirtioPciNetOp::Write { size, value } => {
-                    self.net
-                        .access_common(common_offset, true, size, value, mem)
-                }
-            };
-        }
-        if let Some(device_offset) = device_cfg_offset(offset) {
-            return match op {
-                VirtioPciNetOp::Read { size } => {
-                    VirtioNetResult::ReadValue(self.net.config_read(device_offset, size))
-                }
-                VirtioPciNetOp::Write { .. } => VirtioNetResult::WriteAck,
-            };
-        }
-        if let Some(queue_index) = notify_queue_index(offset) {
-            return match op {
-                VirtioPciNetOp::Read { .. } => VirtioNetResult::ReadValue(0),
-                VirtioPciNetOp::Write { value, .. } => {
-                    let queue = if offset == PCI_NOTIFY_CFG_OFFSET {
-                        value as u16
-                    } else {
-                        queue_index
-                    };
-                    self.net.notify_queue(queue, mem);
-                    VirtioNetResult::WriteAck
-                }
-            };
-        }
-        if offset == PCI_ISR_CFG_OFFSET {
-            return match op {
-                VirtioPciNetOp::Read { size } => VirtioNetResult::ReadValue(mask_to_size(
-                    u64::from(std::mem::take(&mut self.net.interrupt_status)),
-                    size,
-                )),
-                VirtioPciNetOp::Write { value, .. } => {
-                    self.net.interrupt_status &= !(value as u32);
-                    VirtioNetResult::WriteAck
-                }
-            };
-        }
-        match (op, is_write) {
-            (VirtioPciNetOp::Read { .. }, _) => VirtioNetResult::ReadValue(0),
-            (VirtioPciNetOp::Write { .. }, _) => VirtioNetResult::WriteAck,
-        }
+        self.net.pci_access(offset, op, mem)
+    }
+
+    pub fn msix_bar_access(&mut self, offset: u64, op: VirtioPciNetOp) -> VirtioNetResult {
+        msix_bar_access(
+            &mut self.msix,
+            VIRTIO_NET_MSIX_TABLE_OFFSET,
+            VIRTIO_NET_MSIX_PBA_OFFSET,
+            offset,
+            op,
+        )
+    }
+
+    pub fn raise_pending_msix(
+        &mut self,
+        function_enabled: bool,
+        function_masked: bool,
+    ) -> Vec<MsixMessage> {
+        let mut messages = Vec::new();
+        self.raise_pending_msix_into(function_enabled, function_masked, &mut messages);
+        messages
+    }
+
+    pub fn raise_pending_msix_into(
+        &mut self,
+        function_enabled: bool,
+        function_masked: bool,
+        out: &mut Vec<MsixMessage>,
+    ) {
+        self.net
+            .raise_msix_into(&mut self.msix, function_enabled, function_masked, out);
+    }
+
+    pub fn drain_pending_msix(
+        &mut self,
+        function_enabled: bool,
+        function_masked: bool,
+    ) -> Vec<MsixMessage> {
+        let mut messages = Vec::new();
+        self.drain_pending_msix_into(function_enabled, function_masked, &mut messages);
+        messages
+    }
+
+    pub fn drain_pending_msix_into(
+        &mut self,
+        function_enabled: bool,
+        function_masked: bool,
+        out: &mut Vec<MsixMessage>,
+    ) {
+        self.net
+            .drain_msix_into(&mut self.msix, function_enabled, function_masked, out);
     }
 }

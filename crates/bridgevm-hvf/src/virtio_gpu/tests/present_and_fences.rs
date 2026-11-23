@@ -320,6 +320,28 @@ fn submit_3d_gathers_split_readable_descriptors() {
 }
 
 #[test]
+fn a_common_config_write_delivers_completed_fences_and_a_read_does_not() {
+    let (mut dev, backend) = dev_with_mock();
+    let mut mem = TestMem::new(0x4000_0000, 0x30000);
+    let _ = submit_control(&mut dev, &mut mem, &ctx_create_req(1, 4, b"ctx"), 24);
+    let mut req = ctrl_req_fenced(VIRTIO_GPU_CMD_SUBMIT_3D, 1, 3, 42);
+    req.extend_from_slice(&0u32.to_le_bytes());
+    req.extend_from_slice(&0u32.to_le_bytes());
+    let _ = submit_control_readable_descs(&mut dev, &mut mem, &[&req], 24);
+    assert_eq!(dev.stats().three_d.fences_pending, 1);
+    backend.lock().unwrap().completed.push(CompletedFence {
+        ctx_id: 1,
+        ring_idx: 3,
+        fence_id: 42,
+    });
+
+    pci_read(&mut dev, COMMON_QUEUE_SELECT, 2, &mut mem);
+    assert_eq!(dev.stats().three_d.fences_pending, 1);
+    pci_write(&mut dev, COMMON_QUEUE_SELECT, 2, 0, &mut mem);
+    assert_eq!(dev.stats().three_d.fences_pending, 0);
+}
+
+#[test]
 fn fence_defers_used_ring_until_mock_signals_with_ring_idx() {
     let (mut dev, backend) = dev_with_mock();
     let mut mem = TestMem::new(0x4000_0000, 0x30000);

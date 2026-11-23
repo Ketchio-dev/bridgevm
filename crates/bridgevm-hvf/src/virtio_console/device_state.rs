@@ -5,15 +5,7 @@ use std::collections::VecDeque;
 
 #[derive(Debug)]
 pub struct VirtioConsole {
-    pub(crate) device_features_sel: u32,
-    pub(crate) driver_features_sel: u32,
-    pub(crate) driver_features: [u32; 2],
-    pub(crate) config_msix_vector: u16,
-    pub(crate) queue_sel: u32,
-    pub(crate) queues: [VirtioConsoleQueue; QUEUE_COUNT],
-    pub(crate) pending_msix_queue_bits: u8,
-    pub(crate) status: u32,
-    pub(crate) interrupt_status: u32,
+    pub(crate) pci: VirtioPciState<QueueCounters, QUEUE_COUNT>,
     pub(crate) emerg_wr: u32,
     pub(crate) ports: [PortState; PORT_COUNT],
     pub(crate) pending_control: VecDeque<PendingControlMessage>,
@@ -39,17 +31,10 @@ pub(crate) struct PortState {
     pub(crate) host_open: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct VirtioConsoleQueue {
-    pub(crate) size: u16,
-    pub(crate) ready: bool,
-    pub(crate) desc: u64,
-    pub(crate) driver: u64,
-    pub(crate) device: u64,
-    pub(crate) msix_vector: u16,
-    pub(crate) notify_off: u16,
-    pub(crate) last_avail_idx: u16,
-    pub(crate) pending_msix: bool,
+pub(crate) type VirtioConsoleQueue = VirtioPciQueue<QueueCounters>;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct QueueCounters {
     // Diagnostics (never reset by the queue's own reset; cleared only on a full
     // device reset). notify_count = guest doorbells; last_avail_seen = the most
     // recent avail->idx we read; used_produced = used entries we published;
@@ -106,31 +91,6 @@ impl PortState {
     }
 }
 
-impl VirtioConsoleQueue {
-    pub(crate) const fn new(notify_off: u16) -> Self {
-        Self {
-            size: 0,
-            ready: false,
-            desc: 0,
-            driver: 0,
-            device: 0,
-            msix_vector: VIRTIO_MSI_NO_VECTOR,
-            notify_off,
-            last_avail_idx: 0,
-            pending_msix: false,
-            notify_count: 0,
-            last_avail_seen: 0,
-            used_produced: 0,
-            rx_no_buffers: 0,
-        }
-    }
-
-    pub(crate) fn reset(&mut self) {
-        let notify_off = self.notify_off;
-        *self = Self::new(notify_off);
-    }
-}
-
 impl Default for VirtioConsoleStats {
     fn default() -> Self {
         Self {
@@ -153,22 +113,7 @@ impl Default for VirtioConsoleStats {
 impl VirtioConsole {
     pub fn new() -> Self {
         Self {
-            device_features_sel: 0,
-            driver_features_sel: 0,
-            driver_features: [0; 2],
-            config_msix_vector: VIRTIO_MSI_NO_VECTOR,
-            queue_sel: 0,
-            queues: [
-                VirtioConsoleQueue::new(0),
-                VirtioConsoleQueue::new(1),
-                VirtioConsoleQueue::new(2),
-                VirtioConsoleQueue::new(3),
-                VirtioConsoleQueue::new(4),
-                VirtioConsoleQueue::new(5),
-            ],
-            pending_msix_queue_bits: 0,
-            status: 0,
-            interrupt_status: 0,
+            pci: VirtioPciState::new(),
             emerg_wr: 0,
             ports: [PortState::new(), PortState::new()],
             pending_control: VecDeque::new(),
@@ -183,10 +128,9 @@ impl VirtioConsole {
 
     pub fn stats(&self) -> VirtioConsoleStats {
         let mut stats = VirtioConsoleStats {
-            status: self.status,
-            interrupt_status: self.interrupt_status,
-            driver_features: u64::from(self.driver_features[0])
-                | (u64::from(self.driver_features[1]) << 32),
+            status: self.pci.status,
+            interrupt_status: self.pci.interrupt_status,
+            driver_features: self.pci.driver_features_u64(),
             port1_ready: self.ports[1].ready,
             port1_guest_open: self.ports[1].guest_open,
             port1_host_open: self.ports[1].host_open,
@@ -197,7 +141,7 @@ impl VirtioConsole {
             host_inbound_len: self.host_inbound.len(),
             ..VirtioConsoleStats::default()
         };
-        for (out, queue) in stats.queues.iter_mut().zip(self.queues) {
+        for (out, queue) in stats.queues.iter_mut().zip(self.pci.queues) {
             *out = VirtioConsoleQueueStats {
                 size: queue.size,
                 ready: queue.ready,
@@ -208,31 +152,21 @@ impl VirtioConsole {
                 notify_off: queue.notify_off,
                 last_avail_idx: queue.last_avail_idx,
                 pending_msix: queue.pending_msix,
-                notify_count: queue.notify_count,
-                last_avail_seen: queue.last_avail_seen,
-                used_produced: queue.used_produced,
-                rx_no_buffers: queue.rx_no_buffers,
+                notify_count: queue.counters.notify_count,
+                last_avail_seen: queue.counters.last_avail_seen,
+                used_produced: queue.counters.used_produced,
+                rx_no_buffers: queue.counters.rx_no_buffers,
             };
         }
         stats
     }
 
     pub fn interrupt_line_level(&self) -> bool {
-        self.interrupt_status != 0
+        self.pci.interrupt_status != 0
     }
 
     pub fn reset_runtime_state(&mut self) {
-        self.device_features_sel = 0;
-        self.driver_features_sel = 0;
-        self.driver_features = [0; 2];
-        self.config_msix_vector = VIRTIO_MSI_NO_VECTOR;
-        self.queue_sel = 0;
-        for queue in &mut self.queues {
-            queue.reset();
-        }
-        self.pending_msix_queue_bits = 0;
-        self.status = 0;
-        self.interrupt_status = 0;
+        self.pci.reset();
         self.emerg_wr = 0;
         self.ports = [PortState::new(), PortState::new()];
         self.pending_control.clear();

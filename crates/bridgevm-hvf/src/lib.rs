@@ -51,6 +51,7 @@ pub mod virtio_gpu_3d;
 pub mod virtio_gpu_3d_preflight;
 mod virtio_gpu_trace;
 pub mod virtio_net;
+mod virtio_pci;
 mod virtio_queue;
 pub mod vm_clock;
 pub mod xhci;

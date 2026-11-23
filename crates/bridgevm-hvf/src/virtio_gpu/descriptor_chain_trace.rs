@@ -21,7 +21,7 @@ impl VirtioGpu {
         out: &mut Vec<Descriptor>,
     ) -> Result<(), DescriptorChainError> {
         out.clear();
-        let queue_size = queue.effective_size();
+        let queue_size = queue.effective_size(QUEUE_MAX);
         if head >= queue_size {
             return Err(DescriptorChainError::HeadOutOfRange);
         }
@@ -59,8 +59,8 @@ impl VirtioGpu {
         if !trace_sample(self.trace_descriptor_chain_reject_count) {
             return;
         }
-        let queue_size = self.queues[queue_index].effective_size();
-        let last_avail_idx = self.queues[queue_index].last_avail_idx;
+        let queue_size = self.pci.queues[queue_index].effective_size(QUEUE_MAX);
+        let last_avail_idx = self.pci.queues[queue_index].last_avail_idx;
         let partial_count = partial.len();
         let (reason, index, next) = match error {
             DescriptorChainError::HeadOutOfRange => ("head_out_of_range", None, None),
@@ -82,20 +82,5 @@ impl VirtioGpu {
             if let Some(index) = index { let _ = write!(fields, ",\"index\":{index}"); }
             if let Some(next) = next { let _ = write!(fields, ",\"next\":{next}"); }
         });
-    }
-}
-
-impl Descriptor {
-    pub(crate) fn read(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<Self> {
-        let mut bytes = [0u8; DESC_SIZE as usize];
-        if !mem.read_into(gpa, &mut bytes) {
-            return None;
-        }
-        Some(Self {
-            addr: u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
-            len: u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
-            flags: u16::from_le_bytes(bytes[12..14].try_into().unwrap()),
-            next: u16::from_le_bytes(bytes[14..16].try_into().unwrap()),
-        })
     }
 }

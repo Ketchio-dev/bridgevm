@@ -15,19 +15,19 @@ pub(crate) struct Control {
 impl VirtioConsole {
     pub(crate) fn process_control_tx_queue(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
         let queue_index = QUEUE_CONTROL_TX;
-        let queue = self.queues[queue_index];
+        let queue = self.pci.queues[queue_index];
         if !queue.ready || queue.size == 0 || queue.desc == 0 {
             return false;
         }
         let Some(avail_idx) = read_avail_idx(mem, queue.driver) else {
             return false;
         };
-        self.queues[queue_index].last_avail_seen = avail_idx;
+        self.pci.queues[queue_index].counters.last_avail_seen = avail_idx;
         let mut progressed = false;
         let mut descs = std::mem::take(&mut self.descriptor_scratch);
         let mut bytes = std::mem::take(&mut self.read_scratch);
         for _ in 0..pending_entries(queue.last_avail_idx, avail_idx, queue.size) {
-            let last_avail_idx = self.queues[queue_index].last_avail_idx;
+            let last_avail_idx = self.pci.queues[queue_index].last_avail_idx;
             let ring_off = 4 + u64::from(last_avail_idx % queue.size) * 2;
             let Some(head) = read_u16(mem, queue.driver, ring_off) else {
                 break;
@@ -42,11 +42,13 @@ impl VirtioConsole {
             ) {
                 self.handle_control_tx(&bytes);
             }
-            Self::write_used(mem, &queue, head, 0);
-            self.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
-            self.queues[queue_index].used_produced =
-                self.queues[queue_index].used_produced.saturating_add(1);
-            self.mark_queue_interrupt(queue_index);
+            write_used(mem, queue.device, queue.size, head, 0);
+            self.pci.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
+            self.pci.queues[queue_index].counters.used_produced = self.pci.queues[queue_index]
+                .counters
+                .used_produced
+                .saturating_add(1);
+            self.pci.mark_queue_interrupt(queue_index);
             progressed = true;
         }
         descs.clear();

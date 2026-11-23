@@ -206,7 +206,7 @@ impl VirtioGpu {
             if let Some(chain) = copy.chain {
                 let used_len = Self::scatter_write(mem, &chain.descs, &chain.response);
                 Self::write_used(mem, &chain.queue, chain.head, used_len);
-                self.mark_queue_interrupt(QUEUE_CONTROL);
+                self.pci.mark_queue_interrupt(QUEUE_CONTROL);
                 self.recycle_parked_response_buffers(chain.descs, chain.response);
             }
         }

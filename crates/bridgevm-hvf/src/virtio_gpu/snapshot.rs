@@ -11,21 +11,21 @@ impl VirtioPciGpu {
         let mut out = crate::checkpoint::StateWriter::new();
         out.write_u32(2);
         write_geometry(&mut out, gpu);
-        out.write_u32(gpu.device_features_sel);
-        out.write_u32(gpu.driver_features_sel);
-        out.write_u32(gpu.driver_features[0]);
-        out.write_u32(gpu.driver_features[1]);
-        out.write_u16(gpu.config_msix_vector);
+        out.write_u32(gpu.pci.device_features_sel);
+        out.write_u32(gpu.pci.driver_features_sel);
+        out.write_u32(gpu.pci.driver_features[0]);
+        out.write_u32(gpu.pci.driver_features[1]);
+        out.write_u16(gpu.pci.config_msix_vector);
         out.write_u16(0);
-        out.write_u32(gpu.queue_sel);
-        out.write_u8(gpu.pending_msix_queue_bits);
+        out.write_u32(gpu.pci.queue_sel);
+        out.write_u8(gpu.pci.pending_msix_queue_bits);
         out.write_u8(0);
         out.write_u16(0);
-        out.write_u32(gpu.status);
-        out.write_u32(gpu.interrupt_status);
+        out.write_u32(gpu.pci.status);
+        out.write_u32(gpu.pci.interrupt_status);
         out.write_u32(gpu.events_clear);
 
-        for queue in &gpu.queues {
+        for queue in &gpu.pci.queues {
             out.write_u16(queue.size);
             out.write_bool(queue.ready);
             out.write_bool(queue.pending_msix);
@@ -72,20 +72,20 @@ impl VirtioPciGpu {
 
         restore_geometry(&mut input, &mut self.gpu, version);
 
-        self.gpu.device_features_sel = input.read_u32();
-        self.gpu.driver_features_sel = input.read_u32();
-        self.gpu.driver_features = [input.read_u32(), input.read_u32()];
-        self.gpu.config_msix_vector = input.read_u16();
+        self.gpu.pci.device_features_sel = input.read_u32();
+        self.gpu.pci.driver_features_sel = input.read_u32();
+        self.gpu.pci.driver_features = [input.read_u32(), input.read_u32()];
+        self.gpu.pci.config_msix_vector = input.read_u16();
         assert_eq!(input.read_u16(), 0, "invalid virtio-gpu snapshot");
-        self.gpu.queue_sel = input.read_u32();
-        self.gpu.pending_msix_queue_bits = input.read_u8();
+        self.gpu.pci.queue_sel = input.read_u32();
+        self.gpu.pci.pending_msix_queue_bits = input.read_u8();
         assert_eq!(input.read_u8(), 0, "invalid virtio-gpu snapshot");
         assert_eq!(input.read_u16(), 0, "invalid virtio-gpu snapshot");
-        self.gpu.status = input.read_u32();
-        self.gpu.interrupt_status = input.read_u32();
+        self.gpu.pci.status = input.read_u32();
+        self.gpu.pci.interrupt_status = input.read_u32();
         self.gpu.events_clear = input.read_u32();
 
-        for queue in &mut self.gpu.queues {
+        for queue in &mut self.gpu.pci.queues {
             queue.size = input.read_u16();
             queue.ready = input.read_bool();
             queue.pending_msix = input.read_bool();
