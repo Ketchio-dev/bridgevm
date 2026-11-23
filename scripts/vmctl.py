@@ -126,6 +126,16 @@ def input_command(verb, value):
     return verb + " " + str(uuid.uuid4()) + " " + base64.b64encode(value.encode()).decode()
 
 
+def text_receipts(output, request_id):
+    markers = {"BVTEXT_DISPATCHED", "BVTEXT_UNSUPPORTED", "BVINPUT_INSERTED", "BVINPUT_FAILED"}
+    receipts = []
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and fields[0] in markers and fields[1] == request_id:
+            receipts.append(fields)
+    return receipts
+
+
 def send_text(guest, text):
     if not text or len(text.encode("utf-16-le")) > 131072:
         raise ControlError("Text must contain 1..65536 UTF-16 code units.")
@@ -149,11 +159,11 @@ def send_text(guest, text):
             code, output = guest.run(command, timeout=remaining)
             if code:
                 return code, f"Text stopped after {offset} codepoints; dispatch may be partial.\n" + output
-            lines = [line for line in output.splitlines() if line.startswith((f"BVTEXT_DISPATCHED {request_id} ", f"BVTEXT_UNSUPPORTED {request_id}"))]
+            receipts = text_receipts(output, request_id)
             units = len(chunk.encode("utf-16-le")) // 2
-            if lines == [f"BVTEXT_DISPATCHED {request_id} {units}"]:
+            if receipts == [["BVTEXT_DISPATCHED", request_id, str(units)]]:
                 offset = end
-            elif lines == [f"BVTEXT_UNSUPPORTED {request_id}"]:
+            elif receipts == [["BVTEXT_UNSUPPORTED", request_id]]:
                 break  # Positively no text dispatched; retain the paced compatibility path.
             else:
                 raise ControlError("Invalid text dispatch receipt; input was not replayed.")
@@ -164,9 +174,14 @@ def send_text(guest, text):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise ControlError(f"Text deadline exceeded after {index} codepoints; no input was replayed.")
-        code, output = guest.run(input_command("TEXTINPUT", char), timeout=remaining)
+        command = input_command("TEXTINPUT", char)
+        request_id = command.split()[1]
+        code, output = guest.run(command, timeout=remaining)
         if code:
             return code, f"Text stopped after {index} codepoints.\n" + output
+        event_count = len(char.encode("utf-16-le"))  # a press and release for each UTF-16 unit
+        if text_receipts(output, request_id) != [["BVINPUT_INSERTED", request_id, str(event_count)]]:
+            raise ControlError(f"Invalid text insertion receipt after {index} confirmed codepoints.")
     return 0, f"BVCLI_TEXT accepted_codepoints={len(text)} (guest input/window dispatch receipts)"
 
 

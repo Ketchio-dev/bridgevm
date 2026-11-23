@@ -86,13 +86,36 @@ class GuestTests(unittest.TestCase):
             self.assertEqual(agent.read_text(), "unchanged\n")
 
     def test_text_paces_complete_codepoints_and_stops_on_a_failed_receipt(self):
-        guest = SimpleNamespace(options=SimpleNamespace(timeout=5), run=Mock(return_value=(0, "inserted")))
+        def reply(command, **_):
+            verb, request_id, *payload = command.split()
+            if verb == "INPUTCAPS":
+                return 0, ""
+            value = base64.b64decode(payload[0]).decode()
+            if value == "B":
+                return 1, "failed"
+            return 0, f"BVINPUT_INSERTED {request_id} {len(value.encode('utf-16-le'))}"
+
+        guest = SimpleNamespace(options=SimpleNamespace(timeout=5), run=Mock(side_effect=reply))
         self.assertEqual(vmctl.send_text(guest, "A한🙂")[0], 0)
         commands = [call.args[0] for call in guest.run.call_args_list if call.args[0].startswith("TEXTINPUT ")]
         self.assertEqual([base64.b64decode(c.split()[2]).decode() for c in commands], ["A", "한", "🙂"])
         self.assertEqual(len(set(c.split()[1] for c in commands)), 3)
-        guest.run = Mock(side_effect=[(0, "no queued support"), (0, "inserted"), (1, "failed")])
+        guest.run.reset_mock()
         self.assertEqual(vmctl.send_text(guest, "ABC"), (1, "Text stopped after 1 codepoints.\nfailed"))
+        self.assertEqual(guest.run.call_count, 3)
+
+    def test_fallback_stops_if_relay_has_no_insertion_receipt(self):
+        def reply(command, **_):
+            verb, request_id, *payload = command.split()
+            if verb == "INPUTCAPS":
+                return 0, ""
+            if base64.b64decode(payload[0]).decode() == "🙂":
+                return 0, "<base64 decode error: invalid output>"
+            return 0, f"BVINPUT_INSERTED {request_id} 2"
+
+        guest = SimpleNamespace(options=SimpleNamespace(timeout=5), run=Mock(side_effect=reply))
+        with self.assertRaisesRegex(vmctl.ControlError, "Invalid text insertion receipt after 1 confirmed codepoints"):
+            vmctl.send_text(guest, "A🙂B")
         self.assertEqual(guest.run.call_count, 3)
 
     def test_queued_text_chunks_without_splitting_unicode_or_replaying_unknown_results(self):
@@ -111,7 +134,6 @@ class GuestTests(unittest.TestCase):
         self.assertEqual("".join(pieces), value)
         self.assertTrue(all(len(p.encode()) <= 65536 for p in pieces))
         self.assertTrue(all(c.endswith(" S") for c in commands[1:]))
-        guest.run = Mock(side_effect=[(0, ""), (0, "inserted")])
         def bad(command, **_):
             fields = command.split()
             if fields[0] == "INPUTCAPS":
@@ -131,10 +153,23 @@ class GuestTests(unittest.TestCase):
                 return 0, f"BVINPUT_TEXT {fields[1]} QUEUED_DISPATCH"
             if command.endswith(" S"):
                 return 0, f"BVTEXT_UNSUPPORTED {fields[1]}"
-            return 0, "inserted"
+            value = base64.b64decode(fields[2]).decode()
+            return 0, f"BVINPUT_INSERTED {fields[1]} {len(value.encode('utf-16-le'))}"
         guest = SimpleNamespace(options=SimpleNamespace(timeout=5), run=reply)
         self.assertEqual(vmctl.send_text(guest, "한🙂")[0], 0)
         self.assertEqual([base64.b64decode(c.split()[2]).decode() for c in commands[2:]], ["한", "🙂"])
+
+    def test_conflicting_queued_receipts_never_trigger_fallback(self):
+        def reply(command, **_):
+            verb, request_id, *_ = command.split()
+            if verb == "INPUTCAPS":
+                return 0, f"BVINPUT_TEXT {request_id} QUEUED_DISPATCH"
+            return 0, f"BVTEXT_UNSUPPORTED {request_id}\nBVINPUT_INSERTED {request_id} 6"
+
+        guest = SimpleNamespace(options=SimpleNamespace(timeout=5), run=Mock(side_effect=reply))
+        with self.assertRaisesRegex(vmctl.ControlError, "Invalid text dispatch receipt"):
+            vmctl.send_text(guest, "한🙂")
+        self.assertEqual(guest.run.call_count, 2)
 
     def test_oversize_shell_source_is_rejected_before_sending(self):
         with self.assertRaisesRegex(vmctl.ControlError, "cmd.exe limit"):
