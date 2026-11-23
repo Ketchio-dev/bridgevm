@@ -691,6 +691,79 @@ fn hard_exit_during_create_selects_only_one_complete_snapshot_and_allows_retry()
     }
 }
 
+/// A killed create leaves `.N.staging` and the app's empty `N` reservation,
+/// and the next create chooses a new name. That create clears the debris, but
+/// keeps a paused concurrent create's staging, staging holding another file,
+/// staging beside a non-empty `N` and staging holding a published manifest.
+#[test]
+fn a_create_clears_staging_that_earlier_killed_creates_left() {
+    let scratch = Scratch::new("create-sibling-debris");
+    let parent = scratch.path("snapshots");
+    fs::create_dir(&parent).unwrap();
+    let disk = scratch.write("disk", b"disk");
+    let vars = scratch.write("vars", b"vars");
+    let killed = parent.join("20261123-100000.snapshot");
+    fs::create_dir(&killed).unwrap();
+    crash_create("vars-synced", 82, &disk, &vars, &killed);
+    let killed_staging = staging_path(&killed);
+    assert!(
+        killed_staging.join(VARS_NAME).is_file(),
+        "no debris to clear"
+    );
+    let debris = |name: &str, files: &[&str]| {
+        let staging = staging_path(&parent.join(name));
+        fs::create_dir(&staging).unwrap();
+        for file in files {
+            fs::write(staging.join(file), b"kept").unwrap();
+        }
+        staging
+    };
+    let killed_export = debris("export", &[DISK_NAME, MANIFEST_TEMPORARY]);
+    let foreign = debris("foreign", &[DISK_NAME, "notes.txt"]);
+    let beside_user = debris("user", &[DISK_NAME]);
+    fs::create_dir(parent.join("user")).unwrap();
+    fs::write(parent.join("user/notes.txt"), b"user").unwrap();
+    let completed = debris("completed", &[DISK_NAME, VARS_NAME, MANIFEST_NAME]);
+
+    let live = parent.join("20261123-100001.snapshot");
+    fs::create_dir(&live).unwrap();
+    let live_disk = scratch.write("live-disk", b"live-disk");
+    let live_vars = scratch.write("live-vars", b"live-vars");
+    let (staged_tx, staged_rx) = mpsc::channel();
+    let (resume_tx, resume_rx) = mpsc::channel::<()>();
+    let live_destination = live.clone();
+    let concurrent = thread::spawn(move || {
+        create_snapshot_using(&live_disk, &live_vars, &live_destination, "live", |stage| {
+            if stage == CreateStage::DiskSynced {
+                staged_tx.send(()).unwrap();
+                let _ = resume_rx.recv();
+            }
+        })
+    });
+    staged_rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the concurrent create stages its disk");
+
+    let created = parent.join("20261123-100002.snapshot");
+    let result = create_snapshot(&disk, &vars, &created, "new");
+    let live_staged = fs::read(staging_path(&live).join(DISK_NAME));
+    drop(resume_tx);
+    let live_manifest = concurrent.join().unwrap().expect("concurrent create");
+    assert_eq!(verify_snapshot(&created).unwrap(), result.unwrap());
+    assert_eq!(live_staged.unwrap(), b"live-disk");
+    assert_eq!(verify_snapshot(&live).unwrap(), live_manifest);
+
+    for gone in [&killed_staging, &killed, &killed_export] {
+        assert!(!gone.exists(), "{} was left behind", gone.display());
+    }
+    for kept in [&foreign, &beside_user, &completed] {
+        assert_eq!(fs::read(kept.join(DISK_NAME)).unwrap(), b"kept");
+    }
+    assert_eq!(fs::read(foreign.join("notes.txt")).unwrap(), b"kept");
+    assert_eq!(fs::read(parent.join("user/notes.txt")).unwrap(), b"user");
+    assert_eq!(fs::read(completed.join(MANIFEST_NAME)).unwrap(), b"kept");
+}
+
 #[test]
 fn disk_only_import_selects_restored_pair_and_refuses_owner() {
     let root = std::env::temp_dir().join(format!("import-disk-{}", std::process::id()));
