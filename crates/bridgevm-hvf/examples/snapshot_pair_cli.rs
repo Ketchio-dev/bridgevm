@@ -18,12 +18,12 @@ fn main() -> ExitCode {
     let result = match (command.as_str(), args.len()) {
         ("lease", 3) => return media_lease_session::command(&args[1..]),
         ("lease-pending-delete", 3) => return pending_delete::command(&args[1..]),
-        ("digest", 3) => return bridgevm_hvf::snapshot_pair::selected::command(&args[1..]),
-        ("size", 3) => return bridgevm_hvf::snapshot_pair::size::command(&args[1..]),
-        ("grow", 4) => return bridgevm_hvf::snapshot_pair::grow::command(&args[1..]),
+        ("digest", 3) => return bridgevm_hvf::snapshot_pair::selected::digest_command(&args[1..]),
+        ("size", 3) => return bridgevm_hvf::snapshot_pair::selected::size_command(&args[1..]),
+        ("grow", 4) => return bridgevm_hvf::snapshot_pair::selected::grow_command(&args[1..]),
         ("convert-to-raw", 3) => return bridgevm_hvf::disk_import::command(&args[1..]),
         ("import-disk", 3) => {
-            return match bridgevm_hvf::snapshot_pair::import_disk::import_disk(
+            return match bridgevm_hvf::snapshot_pair::import_disk(
                 Path::new(&args[1]),
                 Path::new(&args[2]),
             ) {

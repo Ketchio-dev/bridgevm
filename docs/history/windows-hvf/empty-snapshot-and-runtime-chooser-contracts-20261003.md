@@ -16,7 +16,7 @@ pair. Baseline log SHA-256:
 `33664a5e19b0409465626ef64f051c07d01d153855ed22055f3de00b15b13a94`.
 This is injected unsupported-exchange evidence, not an actual exFAT failure.
 
-`crates/bridgevm-hvf/src/snapshot_publish.rs` now uses one same-parent rename
+`crates/bridgevm-hvf/src/snapshot_pair/publish.rs` now uses one same-parent rename
 for admitted empty or absent destinations. A late nonempty entry makes the real
 rename refuse; it never falls back to exchange. Nonempty complete generations
 still use the extracted, behavior-preserved atomic exchange. Parent sync still
