@@ -51,6 +51,7 @@ for an unrelated documentation or Rust-only change.
 | Rust CLI | `crates/bridgevm-cli/` | `cargo test -p bridgevm-cli --locked` |
 | Windows HVF VMM | `crates/bridgevm-hvf/` | `cargo test -p bridgevm-hvf --locked` |
 | Runtime lifecycle | `crates/bridgevm-hvf-runtime/`, `runners/hvf-runner/` | focused crate tests |
+| Media leases | `crates/bridgevm-media/` | `cargo test -p bridgevm-media --locked` |
 | macOS UI | `apps/macos/` | `scripts/run-swift-tests.sh` |
 | Packaging | `apps/macos/scripts/package-hvf-control-app.sh`, release scripts | relevant integration smoke plus full check |
 | Documentation | `README.md`, `STATUS.md`, `docs/` | `bash scripts/check-documentation-system.sh` |

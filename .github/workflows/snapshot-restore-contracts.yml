@@ -1,0 +1,11 @@
+name: Snapshot restore contracts
+on: {push: {branches: [main]}, pull_request: {paths: ['scripts/snapshot-restore-*', 'scripts/verify-snapshot-restore-boots.sh', 'scripts/live-gates/bridgevm-live', 'scripts/live-gates/snapshot_restore_inputs.py', 'scripts/live-gates/live-process-cleanup.sh', 'tests/integration/snapshot-restore-*', '.github/workflows/snapshot-restore-contracts.yml']}, workflow_dispatch: {}}
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Snapshot restore channel, seal, cleanup and relocation contracts
+        run: python3 tests/integration/snapshot-restore-channel-contract.py && python3 tests/integration/snapshot-restore-seal-contract.py && python3 tests/integration/snapshot-restore-cleanup-contract.py && python3 tests/integration/snapshot-restore-clone-permissions-contract.py && bash tests/integration/snapshot-restore-relocation-contract.sh

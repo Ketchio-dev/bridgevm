@@ -41,7 +41,7 @@ class SelectedRetention(unittest.TestCase):
         with self.variables.open("wb") as output:
             output.write(b"authenticated snapshot vars"); output.truncate(64 * 1024 * 1024)
         self.snapshot = self.root / "snapshot"
-        self.call("create", self.disk, self.variables, self.snapshot, "fixture-vm", 70 * 1024 * 1024)
+        self.call("create", self.disk, self.variables, self.snapshot, "fixture-vm")
         self.disk.write_bytes(b"mutated original disk")
         with self.variables.open("r+b") as output:
             output.write(b"mutated original vars")

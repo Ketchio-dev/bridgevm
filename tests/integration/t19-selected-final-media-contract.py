@@ -32,7 +32,7 @@ class SelectedImportMedia(unittest.TestCase):
             output.truncate(64 * 1024 * 1024)
         self.snapshot = Path(self.request["snapshot_path"])
         self.snapshot.parent.mkdir(parents=True)
-        self.call("create", disk, variables, self.snapshot, self.request["vm_slug"], 70 * 1024 * 1024)
+        self.call("create", disk, variables, self.snapshot, self.request["vm_slug"])
         disk.write_bytes(b"mutated logical original")
         with variables.open("r+b") as output:
             output.write(b"mutated logical vars")

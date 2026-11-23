@@ -31,5 +31,3 @@ Exit codes are 0 for a completed host operation, 1 for refusal or failure, and
 2 for invalid usage. Success does not prove Windows boots after restore, a guest
 marker survived, or A19 is complete. Those claims require the live sample and
 interruption evidence in the [V1 snapshot scope](windows-arm/snapshot-scope-v1.md).
-These commands use the native app library; older `bridgevm snapshot` commands
-use the separate compatibility store in [CLI setup](app-cli.md).

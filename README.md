@@ -135,7 +135,9 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md) for toolchains and focused checks,
 | Area | Source |
 | --- | --- |
 | Hypervisor.framework VMM and devices | [`crates/bridgevm-hvf/`](crates/bridgevm-hvf/) |
-| Windows HVF runtime lifecycle | [`crates/bridgevm-hvf-runtime/`](crates/bridgevm-hvf-runtime/), [`runners/`](runners/) |
+| Windows HVF runtime lifecycle | [`crates/bridgevm-hvf-runtime/`](crates/bridgevm-hvf-runtime/), [`runners/hvf-runner/`](runners/hvf-runner/) |
+| Disk and vars media leases | [`crates/bridgevm-media/`](crates/bridgevm-media/) |
+| `bridgevm` CLI (`app …` commands, `hvf` reports) | [`crates/bridgevm-cli/`](crates/bridgevm-cli/) |
 | Mac app and helper boundaries | [`apps/macos/`](apps/macos/) |
 | Packaging and release verification | [`apps/macos/scripts/package-hvf-control-app.sh`](apps/macos/scripts/package-hvf-control-app.sh), [`release.yml`](.github/workflows/release.yml) |
 | Deterministic checks and live tests | [`scripts/`](scripts/), [`tests/integration/`](tests/integration/) |
