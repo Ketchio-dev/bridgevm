@@ -69,7 +69,8 @@ LAUNCHER=""
 cleanup() {
   local status=$?
   if [[ -n "$LAUNCHER" ]]; then bridgevm_terminate_process_group_bounded "$LAUNCHER" || true; fi
-  [[ "${KEEP_LIBRARY:-0}" == 1 ]] || rm -rf "$LIB"
+  # The library and the exports hold guest disk copies.
+  [[ "${KEEP_LIBRARY:-0}" == 1 ]] || rm -rf "$LIB" "$OUT/exports"
   return "$status"
 }
 trap cleanup EXIT
