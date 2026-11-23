@@ -1,18 +1,19 @@
 # Native app CLI
 
 `bridgevm app` reads native `vm.json`, [creates a pending Windows VM](app-cli-create.md), and requests [installation](app-cli-install.md), [start](app-cli-start.md), [stop](app-cli-stop.md) or a [powered-off snapshot](app-cli-snapshot.md).
-Start requires a saved installed HVF entry. CLI creation is registration-only: it lacks the required signed payload and cannot proceed to installation. Create installation-ready entries in the app with ISO, payload and manifest. No command opens a window or changes saved resources; inventory runtime is `unobserved`, not utilization.
+Open the app, then create a VM with `--fetch-drivers` to include the signed ARM64 driver payload. Use the returned ID to request installation. After installation succeeds, use Start in the app once to create the new VM's vTPM key. You can use the CLI for subsequent starts.
 
 ```sh
 bridgevm app list
-bridgevm app create-windows "등록 전용" --iso "/absolute/path/Windows 11 ARM.iso"
-bridgevm app inspect 등록-전용 # cannot install this CLI-created entry
-bridgevm app install 앱에서-생성한-vm # required inputs already sealed by app creation
-bridgevm app install-status 앱에서-생성한-vm --json
-bridgevm app readiness 앱에서-생성한-vm --json # after installation succeeds
-bridgevm app start 앱에서-생성한-vm --json
-bridgevm app status 앱에서-생성한-vm --json
-bridgevm app stop 앱에서-생성한-vm --json
+bridgevm app create-windows "개발 VM" --iso "/absolute/path/Windows 11 ARM.iso" --fetch-drivers
+bridgevm app inspect 개발-vm
+bridgevm app install 개발-vm
+bridgevm app install-status 개발-vm --json
+bridgevm app readiness 개발-vm --json
+# After starting and shutting down the new VM once in the app:
+bridgevm app start 개발-vm --json
+bridgevm app status 개발-vm --json
+bridgevm app stop 개발-vm --json
 ```
 
 Use the exact ID returned by `list`, including Korean IDs. `--library` accepts an
