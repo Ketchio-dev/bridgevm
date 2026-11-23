@@ -276,6 +276,28 @@ pub struct HdaController {
     pub(crate) stream_activity: Arc<HdaStreamActivity>,
 }
 
+/// Register bytes below the stream descriptors' end that MMIO writes reach.
+const REGISTER_WRITE_BYTES: usize = 0xc0;
+
+/// The byte one guest MMIO write stores at each internal register offset.
+struct RegisterWrite([Option<u8>; REGISTER_WRITE_BYTES]);
+
+impl RegisterWrite {
+    /// `old` with this write's bytes for the `width`-byte register at
+    /// `offset` merged in, or `None` if the write does not touch it.
+    fn merge(&self, offset: u64, width: usize, old: impl Into<u64>) -> Option<u64> {
+        let mut raw = old.into().to_le_bytes();
+        let mut touched = false;
+        for (byte, written) in raw.iter_mut().zip(&self.0[offset as usize..][..width]) {
+            if let Some(written) = written {
+                *byte = *written;
+                touched = true;
+            }
+        }
+        touched.then_some(u64::from_le_bytes(raw))
+    }
+}
+
 impl Default for HdaController {
     fn default() -> Self {
         Self::new()
@@ -434,69 +456,62 @@ impl HdaController {
         if hda_trace_enabled() {
             println!("hda: mmio write off={offset:#x} size={size} value={value:#x}");
         }
-        let size = size.min(8);
+        let write = self.register_write(offset, size.min(8), value);
+        self.write_global_registers(&write);
+        self.write_corb_registers(&write);
+        self.write_rirb_registers(&write);
+        self.write_immediate_command_registers(&write);
+        self.write_dma_position_registers(&write);
+        self.write_capture_stream_registers(&write);
+        self.write_playback_stream_registers(&write);
+        self.process_corb(mem);
+    }
+
+    /// The register bytes a guest write of `size` bytes at `offset` reaches.
+    fn register_write(&self, offset: u64, size: u8, value: u64) -> RegisterWrite {
         let incoming = value.to_le_bytes();
-        let mut written = [false; 0xc0];
-        let mut bytes = [0u8; 0xc0];
+        let mut write = RegisterWrite([None; REGISTER_WRITE_BYTES]);
         for byte in 0..size {
             let Some(absolute) = self.layout_offset(offset + u64::from(byte)) else {
                 continue;
             };
-            if let Ok(index) = usize::try_from(absolute) {
-                if index < bytes.len() {
-                    written[index] = true;
-                    bytes[index] = incoming[usize::from(byte)];
-                }
+            if let Some(slot) = usize::try_from(absolute)
+                .ok()
+                .and_then(|index| write.0.get_mut(index))
+            {
+                *slot = Some(incoming[usize::from(byte)]);
             }
         }
+        write
+    }
 
-        macro_rules! rw {
-            ($off:expr, $width:expr, $old:expr) => {{
-                let off = $off as usize;
-                let width = $width as usize;
-                let mut raw = ($old as u64).to_le_bytes();
-                let mut touched = false;
-                for i in 0..width {
-                    if written[off + i] {
-                        raw[i] = bytes[off + i];
-                        touched = true;
-                    }
-                }
-                (touched, u64::from_le_bytes(raw))
-            }};
-        }
-
-        let (touched, next) = rw!(REG_GCTL, 4, self.gctl);
-        if touched {
+    fn write_global_registers(&mut self, write: &RegisterWrite) {
+        if let Some(next) = write.merge(REG_GCTL, 4, self.gctl) {
             self.write_gctl(next as u32);
         }
-        let (touched, next) = rw!(REG_WAKEEN, 2, self.wakeen);
-        if touched {
+        if let Some(next) = write.merge(REG_WAKEEN, 2, self.wakeen) {
             self.wakeen = next as u16 & 0x7fff;
         }
-        let (touched, next) = rw!(REG_STATESTS, 2, 0u16);
-        if touched {
+        if let Some(next) = write.merge(REG_STATESTS, 2, 0u16) {
             self.statests &= !(next as u16);
         }
-        let (touched, next) = rw!(REG_INTCTL, 4, self.guest_stream_bits(self.intctl));
-        if touched {
+        if let Some(next) = write.merge(REG_INTCTL, 4, self.guest_stream_bits(self.intctl)) {
             self.intctl = self.internal_stream_bits(next as u32)
                 & (INTCTL_GIE | INTCTL_CIE | INTCTL_CAPTURE_STREAM | INTCTL_PLAYBACK_STREAM);
         }
-        let (touched, next) = rw!(REG_CORBLBASE, 4, self.corb_base as u32);
-        if touched {
+    }
+
+    fn write_corb_registers(&mut self, write: &RegisterWrite) {
+        if let Some(next) = write.merge(REG_CORBLBASE, 4, self.corb_base as u32) {
             self.corb_base = (self.corb_base & !0xffff_ffff) | (next as u32 as u64 & !0x7f);
         }
-        let (touched, next) = rw!(REG_CORBUBASE, 4, self.corb_base >> 32);
-        if touched {
+        if let Some(next) = write.merge(REG_CORBUBASE, 4, self.corb_base >> 32) {
             self.corb_base = (self.corb_base & 0xffff_ffff) | ((next as u32 as u64) << 32);
         }
-        let (touched, next) = rw!(REG_CORBWP, 2, self.corb_wp);
-        if touched {
+        if let Some(next) = write.merge(REG_CORBWP, 2, self.corb_wp) {
             self.corb_wp = next as u16 & self.corb_pointer_mask();
         }
-        let (touched, next) = rw!(REG_CORBRP, 2, self.corb_rp);
-        if touched {
+        if let Some(next) = write.merge(REG_CORBRP, 2, self.corb_rp) {
             if next & 0x8000 != 0 {
                 self.corb_rp = 0;
                 self.corb_rp_reset = true;
@@ -504,56 +519,56 @@ impl HdaController {
                 self.corb_rp_reset = false;
             }
         }
-        let (touched, next) = rw!(REG_CORBCTL, 1, self.corb_ctl);
-        if touched {
+        if let Some(next) = write.merge(REG_CORBCTL, 1, self.corb_ctl) {
             self.corb_ctl = next as u8 & 0x03;
         }
-        let (touched, next) = rw!(REG_CORBSTS, 1, 0u8);
-        if touched {
+        if let Some(next) = write.merge(REG_CORBSTS, 1, 0u8) {
             self.corb_sts &= !(next as u8);
         }
-        let (touched, next) = rw!(REG_CORBSIZE, 1, self.corb_size);
-        if touched && self.corb_ctl & CORBCTL_RUN == 0 {
-            self.corb_size = RING_SIZE_CAPABILITIES | (next as u8 & 0x03).min(2);
-            self.corb_wp &= self.corb_pointer_mask();
-            self.corb_rp &= self.corb_pointer_mask();
+        if let Some(next) = write.merge(REG_CORBSIZE, 1, self.corb_size) {
+            if self.corb_ctl & CORBCTL_RUN == 0 {
+                self.corb_size = RING_SIZE_CAPABILITIES | (next as u8 & 0x03).min(2);
+                self.corb_wp &= self.corb_pointer_mask();
+                self.corb_rp &= self.corb_pointer_mask();
+            }
         }
-        let (touched, next) = rw!(REG_RIRBLBASE, 4, self.rirb_base as u32);
-        if touched {
+    }
+
+    fn write_rirb_registers(&mut self, write: &RegisterWrite) {
+        if let Some(next) = write.merge(REG_RIRBLBASE, 4, self.rirb_base as u32) {
             self.rirb_base = (self.rirb_base & !0xffff_ffff) | (next as u32 as u64 & !0x7f);
         }
-        let (touched, next) = rw!(REG_RIRBUBASE, 4, self.rirb_base >> 32);
-        if touched {
+        if let Some(next) = write.merge(REG_RIRBUBASE, 4, self.rirb_base >> 32) {
             self.rirb_base = (self.rirb_base & 0xffff_ffff) | ((next as u32 as u64) << 32);
         }
-        let (touched, next) = rw!(REG_RIRBWP, 2, self.rirb_wp);
-        if touched && next & 0x8000 != 0 {
-            self.rirb_wp = 0;
-            self.responses_since_irq = 0;
+        if let Some(next) = write.merge(REG_RIRBWP, 2, self.rirb_wp) {
+            if next & 0x8000 != 0 {
+                self.rirb_wp = 0;
+                self.responses_since_irq = 0;
+            }
         }
-        let (touched, next) = rw!(REG_RINTCNT, 2, self.rintcnt);
-        if touched {
+        if let Some(next) = write.merge(REG_RINTCNT, 2, self.rintcnt) {
             self.rintcnt = next as u16;
         }
-        let (touched, next) = rw!(REG_RIRBCTL, 1, self.rirb_ctl);
-        if touched {
+        if let Some(next) = write.merge(REG_RIRBCTL, 1, self.rirb_ctl) {
             self.rirb_ctl = next as u8 & 0x07;
         }
-        let (touched, next) = rw!(REG_RIRBSTS, 1, 0u8);
-        if touched {
+        if let Some(next) = write.merge(REG_RIRBSTS, 1, 0u8) {
             self.rirb_sts &= !(next as u8);
         }
-        let (touched, next) = rw!(REG_RIRBSIZE, 1, self.rirb_size);
-        if touched && self.rirb_ctl & RIRBCTL_DMA == 0 {
-            self.rirb_size = RING_SIZE_CAPABILITIES | (next as u8 & 0x03).min(2);
-            self.rirb_wp &= self.rirb_pointer_mask();
+        if let Some(next) = write.merge(REG_RIRBSIZE, 1, self.rirb_size) {
+            if self.rirb_ctl & RIRBCTL_DMA == 0 {
+                self.rirb_size = RING_SIZE_CAPABILITIES | (next as u8 & 0x03).min(2);
+                self.rirb_wp &= self.rirb_pointer_mask();
+            }
         }
-        let (touched, next) = rw!(REG_ICOI, 4, self.icoi);
-        if touched {
+    }
+
+    fn write_immediate_command_registers(&mut self, write: &RegisterWrite) {
+        if let Some(next) = write.merge(REG_ICOI, 4, self.icoi) {
             self.icoi = next as u32;
         }
-        let (touched, next) = rw!(REG_ICIS, 2, self.icis);
-        if touched {
+        if let Some(next) = write.merge(REG_ICIS, 2, self.icis) {
             if next & u64::from(ICIS_IRV) != 0 {
                 self.icis &= !ICIS_IRV;
             }
@@ -563,72 +578,72 @@ impl HdaController {
                 self.icis = (self.icis & !ICIS_ICB) | ICIS_IRV;
             }
         }
-        let (touched, next) = rw!(REG_DPLBASE, 4, self.dp_base as u32);
-        if touched {
+    }
+
+    fn write_dma_position_registers(&mut self, write: &RegisterWrite) {
+        if let Some(next) = write.merge(REG_DPLBASE, 4, self.dp_base as u32) {
             self.dp_base = (self.dp_base & !0xffff_ffff) | (next as u32 as u64 & !0x7e);
         }
-        let (touched, next) = rw!(REG_DPUBASE, 4, self.dp_base >> 32);
-        if touched {
+        if let Some(next) = write.merge(REG_DPUBASE, 4, self.dp_base >> 32) {
             self.dp_base = (self.dp_base & 0xffff_ffff) | ((next as u32 as u64) << 32);
         }
-        let (touched, next) = rw!(REG_CAPTURE_SD_CTL, 3, self.capture.ctl);
-        if touched {
+    }
+
+    fn write_capture_stream_registers(&mut self, write: &RegisterWrite) {
+        if let Some(next) = write.merge(REG_CAPTURE_SD_CTL, 3, self.capture.ctl) {
             self.write_capture_ctl(next as u32 & 0x00f0_001f);
         }
-        let (touched, next) = rw!(REG_CAPTURE_SD_STS, 1, 0u8);
-        if touched {
+        if let Some(next) = write.merge(REG_CAPTURE_SD_STS, 1, 0u8) {
             self.capture.sts &= !(next as u8 & (SDSTS_BCIS | SDSTS_FIFOE | SDSTS_DESE));
         }
-        let (touched, next) = rw!(REG_CAPTURE_SD_CBL, 4, self.capture.cbl);
-        if touched && self.capture.ctl & SDCTL_RUN == 0 {
+        // The buffer registers are writable only while the stream is stopped.
+        if self.capture.ctl & SDCTL_RUN != 0 {
+            return;
+        }
+        if let Some(next) = write.merge(REG_CAPTURE_SD_CBL, 4, self.capture.cbl) {
             self.capture.cbl = next as u32;
         }
-        let (touched, next) = rw!(REG_CAPTURE_SD_LVI, 2, self.capture.lvi);
-        if touched && self.capture.ctl & SDCTL_RUN == 0 {
+        if let Some(next) = write.merge(REG_CAPTURE_SD_LVI, 2, self.capture.lvi) {
             self.capture.lvi = next as u16;
         }
-        let (touched, next) = rw!(REG_CAPTURE_SD_FMT, 2, self.capture.fmt);
-        if touched && self.capture.ctl & SDCTL_RUN == 0 {
+        if let Some(next) = write.merge(REG_CAPTURE_SD_FMT, 2, self.capture.fmt) {
             self.capture.fmt = next as u16 & 0x7fff;
         }
-        let (touched, next) = rw!(REG_CAPTURE_SD_BDPL, 4, self.capture.bdl as u32);
-        if touched && self.capture.ctl & SDCTL_RUN == 0 {
+        if let Some(next) = write.merge(REG_CAPTURE_SD_BDPL, 4, self.capture.bdl as u32) {
             self.capture.bdl = (self.capture.bdl & !0xffff_ffff) | (next as u32 as u64 & !0x7f);
         }
-        let (touched, next) = rw!(REG_CAPTURE_SD_BDPU, 4, self.capture.bdl >> 32);
-        if touched && self.capture.ctl & SDCTL_RUN == 0 {
+        if let Some(next) = write.merge(REG_CAPTURE_SD_BDPU, 4, self.capture.bdl >> 32) {
             self.capture.bdl = (self.capture.bdl & 0xffff_ffff) | ((next as u32 as u64) << 32);
         }
-        let (touched, next) = rw!(REG_SD_CTL, 3, self.stream.ctl);
-        if touched {
+    }
+
+    fn write_playback_stream_registers(&mut self, write: &RegisterWrite) {
+        if let Some(next) = write.merge(REG_SD_CTL, 3, self.stream.ctl) {
             self.write_stream_ctl(next as u32 & 0x00f0_001f);
         }
-        let (touched, next) = rw!(REG_SD_STS, 1, 0u8);
-        if touched {
+        if let Some(next) = write.merge(REG_SD_STS, 1, 0u8) {
             self.stream.sts &= !(next as u8 & (SDSTS_BCIS | SDSTS_FIFOE | SDSTS_DESE));
         }
-        let (touched, next) = rw!(REG_SD_CBL, 4, self.stream.cbl);
-        if touched && self.stream.ctl & SDCTL_RUN == 0 {
+        // The buffer registers are writable only while the stream is stopped
+        // (write_stream_format leaves the format alone while it runs, too).
+        if self.stream.ctl & SDCTL_RUN != 0 {
+            return;
+        }
+        if let Some(next) = write.merge(REG_SD_CBL, 4, self.stream.cbl) {
             self.stream.cbl = next as u32;
         }
-        let (touched, next) = rw!(REG_SD_LVI, 2, self.stream.lvi);
-        if touched && self.stream.ctl & SDCTL_RUN == 0 {
+        if let Some(next) = write.merge(REG_SD_LVI, 2, self.stream.lvi) {
             self.stream.lvi = next as u16;
         }
-        let (touched, next) = rw!(REG_SD_FMT, 2, self.stream.fmt);
-        if touched {
+        if let Some(next) = write.merge(REG_SD_FMT, 2, self.stream.fmt) {
             self.write_stream_format(next as u16);
         }
-        let (touched, next) = rw!(REG_SD_BDPL, 4, self.stream.bdl as u32);
-        if touched && self.stream.ctl & SDCTL_RUN == 0 {
+        if let Some(next) = write.merge(REG_SD_BDPL, 4, self.stream.bdl as u32) {
             self.stream.bdl = (self.stream.bdl & !0xffff_ffff) | (next as u32 as u64 & !0x7f);
         }
-        let (touched, next) = rw!(REG_SD_BDPU, 4, self.stream.bdl >> 32);
-        if touched && self.stream.ctl & SDCTL_RUN == 0 {
+        if let Some(next) = write.merge(REG_SD_BDPU, 4, self.stream.bdl >> 32) {
             self.stream.bdl = (self.stream.bdl & 0xffff_ffff) | ((next as u32 as u64) << 32);
         }
-
-        self.process_corb(mem);
     }
 
     /// Advance playback and capture DMA by elapsed host time. `None` is the
@@ -733,71 +748,76 @@ impl HdaController {
                 u32::from(self.codec.dac_amp_gain_mute[usize::from(payload16 & 0x2000 == 0)])
             }
             0xb => 0,
-            _ => match verb12 {
-                0xf00 => codec_parameter(nid, payload8, self.microphone),
-                0xf01 if nid == CODEC_SPEAKER => u32::from(self.codec.connection_select),
-                0x701 => {
-                    if nid == CODEC_SPEAKER {
-                        self.codec.connection_select = 0;
-                    }
-                    0
-                }
-                0xf02 if nid == CODEC_SPEAKER && payload8 == 0 => u32::from(CODEC_DAC),
-                0xf02 if nid == CODEC_ADC && payload8 == 0 => u32::from(CODEC_MIC),
-                0xf02 => 0,
-                0xf05 if nid != CODEC_ROOT => {
-                    power_state_response(self.codec.power_state[nid as usize])
-                }
-                0x705 => {
-                    if nid != CODEC_ROOT {
-                        self.codec.power_state[nid as usize] = payload8 & 0x03;
-                    }
-                    0
-                }
-                0xf06 if nid == CODEC_DAC => u32::from(self.codec.stream_channel),
-                0xf06 if nid == CODEC_ADC => u32::from(self.codec.adc_stream_channel),
-                0x706 => {
-                    if nid == CODEC_DAC {
-                        self.codec.stream_channel = payload8;
-                    } else if nid == CODEC_ADC {
-                        self.codec.adc_stream_channel = payload8;
-                    }
-                    0
-                }
-                0xf07 if nid == CODEC_SPEAKER => u32::from(self.codec.pin_ctl),
-                0xf07 if nid == CODEC_MIC => u32::from(self.codec.mic_pin_ctl),
-                0x707 => {
-                    if nid == CODEC_SPEAKER {
-                        self.codec.pin_ctl = payload8 & 0x40;
-                    } else if nid == CODEC_MIC {
-                        self.codec.mic_pin_ctl = payload8 & PINCTL_IN_EN;
-                    }
-                    0
-                }
-                0xf09 if nid == CODEC_SPEAKER || nid == CODEC_MIC => SPEAKER_PIN_SENSE,
-                0xf0c if nid == CODEC_SPEAKER => u32::from(self.codec.eapd),
-                0x70c => {
-                    if nid == CODEC_SPEAKER {
-                        self.codec.eapd = payload8 & 0x07;
-                    }
-                    0
-                }
-                0xf1c if nid == CODEC_SPEAKER => SPEAKER_CONFIG_DEFAULT,
-                0xf1c if nid == CODEC_MIC => MIC_CONFIG_DEFAULT,
-                // The Implementation Identification register belongs to function
-                // groups.  It is a verb (F20), not GET_PARAMETER parameter 01.
-                0xf20 if nid == CODEC_AFG => CODEC_IMPLEMENTATION_ID,
-                0x7ff if nid == CODEC_AFG => {
-                    self.codec = CodecState::new();
-                    0
-                }
-                _ => 0,
-            },
+            _ => self.codec_12bit_verb(nid, verb12, payload8),
         };
         if hda_trace_enabled() {
             println!("hda: verb={command:#010x} nid={nid} response={response:#010x}");
         }
         response
+    }
+
+    /// The verbs with a 12-bit identifier and an 8-bit payload.
+    fn codec_12bit_verb(&mut self, nid: u8, verb12: u16, payload8: u8) -> u32 {
+        match verb12 {
+            0xf00 => codec_parameter(nid, payload8, self.microphone),
+            0xf01 if nid == CODEC_SPEAKER => u32::from(self.codec.connection_select),
+            0x701 => {
+                if nid == CODEC_SPEAKER {
+                    self.codec.connection_select = 0;
+                }
+                0
+            }
+            0xf02 if nid == CODEC_SPEAKER && payload8 == 0 => u32::from(CODEC_DAC),
+            0xf02 if nid == CODEC_ADC && payload8 == 0 => u32::from(CODEC_MIC),
+            0xf02 => 0,
+            0xf05 if nid != CODEC_ROOT => {
+                power_state_response(self.codec.power_state[nid as usize])
+            }
+            0x705 => {
+                if nid != CODEC_ROOT {
+                    self.codec.power_state[nid as usize] = payload8 & 0x03;
+                }
+                0
+            }
+            0xf06 if nid == CODEC_DAC => u32::from(self.codec.stream_channel),
+            0xf06 if nid == CODEC_ADC => u32::from(self.codec.adc_stream_channel),
+            0x706 => {
+                if nid == CODEC_DAC {
+                    self.codec.stream_channel = payload8;
+                } else if nid == CODEC_ADC {
+                    self.codec.adc_stream_channel = payload8;
+                }
+                0
+            }
+            0xf07 if nid == CODEC_SPEAKER => u32::from(self.codec.pin_ctl),
+            0xf07 if nid == CODEC_MIC => u32::from(self.codec.mic_pin_ctl),
+            0x707 => {
+                if nid == CODEC_SPEAKER {
+                    self.codec.pin_ctl = payload8 & 0x40;
+                } else if nid == CODEC_MIC {
+                    self.codec.mic_pin_ctl = payload8 & PINCTL_IN_EN;
+                }
+                0
+            }
+            0xf09 if nid == CODEC_SPEAKER || nid == CODEC_MIC => SPEAKER_PIN_SENSE,
+            0xf0c if nid == CODEC_SPEAKER => u32::from(self.codec.eapd),
+            0x70c => {
+                if nid == CODEC_SPEAKER {
+                    self.codec.eapd = payload8 & 0x07;
+                }
+                0
+            }
+            0xf1c if nid == CODEC_SPEAKER => SPEAKER_CONFIG_DEFAULT,
+            0xf1c if nid == CODEC_MIC => MIC_CONFIG_DEFAULT,
+            // The Implementation Identification register belongs to function
+            // groups.  It is a verb (F20), not GET_PARAMETER parameter 01.
+            0xf20 if nid == CODEC_AFG => CODEC_IMPLEMENTATION_ID,
+            0x7ff if nid == CODEC_AFG => {
+                self.codec = CodecState::new();
+                0
+            }
+            _ => 0,
+        }
     }
 
     pub(crate) fn intsts(&self) -> u32 {

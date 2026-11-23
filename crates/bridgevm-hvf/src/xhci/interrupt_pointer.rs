@@ -1,8 +1,7 @@
 use super::{
     interrupt_trb::{
-        read_chained_event_data, read_transfer_trb, transfer_event_control, trb_interrupter_target,
-        trb_transfer_length, trb_type, InterruptTransferTrb, COMPLETION_CODE_SHIFT,
-        COMPLETION_CODE_SUCCESS, LINK_TRB_POINTER_MASK, TRB_CYCLE, TRB_LINK_TOGGLE_CYCLE,
+        read_chained_event_data, read_transfer_trb, trb_transfer_length, trb_type,
+        InterruptTransferTrb, LINK_TRB_POINTER_MASK, TRB_CYCLE, TRB_LINK_TOGGLE_CYCLE,
         TRB_SIZE_BYTES, TRB_TYPE_LINK, TRB_TYPE_NORMAL,
     },
     pointer_input_report::HID_ABSOLUTE_POINTER_REPORT_LEN,
@@ -10,11 +9,8 @@ use super::{
 };
 use crate::fwcfg::GuestMemoryMut;
 
-const SLOT_ID: u32 = 1;
 const ENDPOINT_ID_DCI5: u32 = 5;
 const MAX_LINK_TRBS_PER_DOORBELL: usize = 8;
-const TRANSFER_EVENT_ED: u32 = 1 << 2;
-const COMPLETION_CODE_SHORT_PACKET: u32 = 13;
 const DCI5_DRAIN_POLICY_AFTER_DOORBELL: &str = "after_doorbell";
 const DCI5_DRAIN_POLICY_QUEUED_POINTER: &str = "queued_pointer_drain";
 impl XhciController {
@@ -80,117 +76,7 @@ impl XhciController {
                     self.write_slot1_dci5_output_dequeue(mem);
                 }
                 TRB_TYPE_NORMAL => {
-                    self.hid_endpoints[1].pending =
-                        Some((interrupt_transfer.gpa, interrupt_transfer.status));
-                    let event_data =
-                        read_chained_event_data(mem, &interrupt_transfer, self.slot1_dci5_dcs);
-                    let last_td_trb_gpa = event_data
-                        .as_ref()
-                        .map(|event_data| event_data.trb.gpa)
-                        .unwrap_or(interrupt_transfer.gpa);
-                    let Some(next_dequeue) = last_td_trb_gpa.checked_add(TRB_SIZE_BYTES) else {
-                        self.trace_dci5_drain_blocked(
-                            "dequeue_overflow",
-                            policy,
-                            Some(&interrupt_transfer),
-                        );
-                        return false;
-                    };
-                    let Some(queued_report) = self.pointer_input_report_queue.peek() else {
-                        // NAK idle polls like the boot keyboard: completing one
-                        // synthesizes a report the guest immediately acks and
-                        // re-polls, livelocking the interrupter. Leave the TD
-                        // pending until real pointer input is queued.
-                        self.trace_dci5_drain_blocked(
-                            "no_queued_input_report",
-                            policy,
-                            Some(&interrupt_transfer),
-                        );
-                        return false;
-                    };
-                    let transfer_length = trb_transfer_length(interrupt_transfer.status);
-                    let can_emit_queued_report = transfer_length >= HID_ABSOLUTE_POINTER_REPORT_LEN;
-                    if !can_emit_queued_report {
-                        self.trace_dci5_drain_blocked(
-                            "short_interrupt_in_buffer",
-                            policy,
-                            Some(&interrupt_transfer),
-                        );
-                    }
-                    let report = if can_emit_queued_report {
-                        queued_report.bytes()
-                    } else {
-                        self.pointer_input_report_queue.idle_report()
-                    };
-                    let write_len = transfer_length.min(HID_ABSOLUTE_POINTER_REPORT_LEN);
-                    let Ok(write_len) = usize::try_from(write_len) else {
-                        self.trace_dci5_drain_blocked(
-                            "transfer_length_unrepresentable",
-                            policy,
-                            Some(&interrupt_transfer),
-                        );
-                        return false;
-                    };
-                    if write_len > 0
-                        && !mem.write_bytes(interrupt_transfer.parameter, &report[..write_len])
-                    {
-                        self.trace_dci5_drain_blocked(
-                            "write_failed",
-                            policy,
-                            Some(&interrupt_transfer),
-                        );
-                        return false;
-                    }
-                    let written_length = write_len as u32;
-                    let completion_code = if written_length < transfer_length {
-                        COMPLETION_CODE_SHORT_PACKET
-                    } else {
-                        COMPLETION_CODE_SUCCESS
-                    };
-                    let event_control = transfer_event_control(SLOT_ID, ENDPOINT_ID_DCI5);
-                    let posted = match event_data.as_ref() {
-                        Some(event_data) => self.post_event_to_interrupter(
-                            mem,
-                            trb_interrupter_target(event_data.trb.status),
-                            event_data.trb.parameter,
-                            (completion_code << COMPLETION_CODE_SHIFT) | written_length,
-                            event_control | TRANSFER_EVENT_ED,
-                        ),
-                        None => self.post_event_to_interrupter(
-                            mem,
-                            trb_interrupter_target(interrupt_transfer.status),
-                            interrupt_transfer.gpa,
-                            (completion_code << COMPLETION_CODE_SHIFT)
-                                | transfer_length.saturating_sub(HID_ABSOLUTE_POINTER_REPORT_LEN),
-                            event_control,
-                        ),
-                    };
-                    if posted {
-                        self.hid_endpoints[1].pending = None;
-                        self.slot1_dci5_last_drain_blocked = None;
-                        if can_emit_queued_report {
-                            #[rustfmt::skip]
-                            let trace = super::trace_dci5_emission::trace_context(queued_report, &interrupt_transfer, last_td_trb_gpa, transfer_length, written_length, completion_code);
-                            self.trace_dci5_report_emitted(trace);
-                            self.record_pointer_input_report_emitted(queued_report);
-                            self.pointer_input_report_queue.pop_front();
-                        }
-                        self.slot1_dci5_dequeue = next_dequeue;
-                        if event_data
-                            .as_ref()
-                            .is_some_and(|event_data| event_data.toggles_cycle)
-                        {
-                            self.slot1_dci5_dcs = !self.slot1_dci5_dcs;
-                        }
-                        self.write_slot1_dci5_output_dequeue(mem);
-                    } else {
-                        self.trace_dci5_drain_blocked(
-                            "event_post_failed",
-                            policy,
-                            Some(&interrupt_transfer),
-                        );
-                    }
-                    return posted;
+                    return self.complete_slot1_dci5_normal_td(mem, interrupt_transfer, policy);
                 }
                 _ => {
                     self.trace_dci5_drain_blocked(
@@ -205,6 +91,72 @@ impl XhciController {
         self.trace_dci5_drain_blocked("link_trb_limit", policy, None);
         false
     }
+    /// Completes the Normal TD at the DCI5 dequeue pointer with the next
+    /// queued pointer report. Returns whether its event was posted.
+    fn complete_slot1_dci5_normal_td(
+        &mut self,
+        mem: &mut dyn GuestMemoryMut,
+        normal: InterruptTransferTrb,
+        policy: &'static str,
+    ) -> bool {
+        self.hid_endpoints[1].pending = Some((normal.gpa, normal.status));
+        let event_data = read_chained_event_data(mem, &normal, self.slot1_dci5_dcs);
+        let last_td_trb_gpa = event_data
+            .as_ref()
+            .map_or(normal.gpa, |event_data| event_data.trb.gpa);
+        let Some(next_dequeue) = last_td_trb_gpa.checked_add(TRB_SIZE_BYTES) else {
+            self.trace_dci5_drain_blocked("dequeue_overflow", policy, Some(&normal));
+            return false;
+        };
+        let Some(queued_report) = self.pointer_input_report_queue.peek() else {
+            // NAK idle polls like the boot keyboard: completing one
+            // synthesizes a report the guest immediately acks and
+            // re-polls, livelocking the interrupter. Leave the TD
+            // pending until real pointer input is queued.
+            self.trace_dci5_drain_blocked("no_queued_input_report", policy, Some(&normal));
+            return false;
+        };
+        let transfer_length = trb_transfer_length(normal.status);
+        let can_emit_queued_report = transfer_length >= HID_ABSOLUTE_POINTER_REPORT_LEN;
+        let report = if can_emit_queued_report {
+            queued_report.bytes()
+        } else {
+            self.trace_dci5_drain_blocked("short_interrupt_in_buffer", policy, Some(&normal));
+            self.pointer_input_report_queue.idle_report()
+        };
+        // Without Event Data a short pointer TD completes Short Packet.
+        let Some(fill) = self.fill_interrupt_in_td(
+            mem,
+            ENDPOINT_ID_DCI5,
+            &normal,
+            event_data.as_ref(),
+            &report,
+            true,
+        ) else {
+            self.trace_dci5_drain_blocked("write_failed", policy, Some(&normal));
+            return false;
+        };
+        if !fill.posted {
+            self.trace_dci5_drain_blocked("event_post_failed", policy, Some(&normal));
+            return false;
+        }
+        self.hid_endpoints[1].pending = None;
+        self.slot1_dci5_last_drain_blocked = None;
+        if can_emit_queued_report {
+            #[rustfmt::skip]
+            let trace = super::trace_dci5_emission::trace_context(queued_report, &normal, last_td_trb_gpa, transfer_length, fill.written_length, fill.completion_code);
+            self.trace_dci5_report_emitted(trace);
+            self.record_pointer_input_report_emitted(queued_report);
+            self.pointer_input_report_queue.pop_front();
+        }
+        self.slot1_dci5_dequeue = next_dequeue;
+        if event_data.is_some_and(|event_data| event_data.toggles_cycle) {
+            self.slot1_dci5_dcs = !self.slot1_dci5_dcs;
+        }
+        self.write_slot1_dci5_output_dequeue(mem);
+        true
+    }
+
     fn trace_dci5_drain_blocked(
         &mut self,
         reason: &'static str,

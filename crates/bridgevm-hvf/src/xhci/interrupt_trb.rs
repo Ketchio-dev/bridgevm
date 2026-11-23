@@ -1,5 +1,7 @@
 use crate::fwcfg::GuestMemoryMut;
 
+use super::XhciController;
+
 pub(super) const TRB_SIZE_BYTES: u64 = 16;
 pub(super) const TRB_CYCLE: u32 = 1;
 pub(super) const TRB_LINK_TOGGLE_CYCLE: u32 = 1 << 1;
@@ -11,6 +13,10 @@ pub(super) const COMPLETION_CODE_SHIFT: u32 = 24;
 const TRB_CHAIN: u32 = 1 << 4;
 const TRB_IOC: u32 = 1 << 5;
 const TRB_TYPE_EVENT_DATA: u32 = 7;
+const SLOT_ID: u32 = 1;
+const TRANSFER_EVENT_ED: u32 = 1 << 2;
+/// xHCI completion code 13 for a TD shorter than the requested transfer.
+const COMPLETION_CODE_SHORT_PACKET: u32 = 13;
 
 const TRB_SIZE: usize = 16;
 const TRB_TYPE_SHIFT: u32 = 10;
@@ -96,6 +102,75 @@ pub(super) fn read_chained_event_data(
         return None;
     }
     Some(ChainedEventData { trb, toggles_cycle })
+}
+
+/// What [`XhciController::fill_interrupt_in_td`] did.
+pub(super) struct InterruptInTdFill {
+    pub(super) written_length: u32,
+    pub(super) completion_code: u32,
+    pub(super) posted: bool,
+}
+
+impl XhciController {
+    /// Writes `report`, cut to the Normal TRB's transfer length, into the
+    /// TRB's buffer and posts the TD's Transfer Event for slot 1's
+    /// `endpoint_id`. A TD that ends in an Event Data TRB completes with one
+    /// Event Data event (ED=1) carrying the bytes written, Short Packet when
+    /// the buffer was longer than the report. Otherwise the event points at
+    /// the Normal TRB and carries the residual length; its code is Short
+    /// Packet for a short TD only if `short_packet_without_event_data`, else
+    /// Success. `None` when the buffer write failed and nothing was posted.
+    pub(super) fn fill_interrupt_in_td(
+        &mut self,
+        mem: &mut dyn GuestMemoryMut,
+        endpoint_id: u32,
+        normal: &InterruptTransferTrb,
+        event_data: Option<&ChainedEventData>,
+        report: &[u8],
+        short_packet_without_event_data: bool,
+    ) -> Option<InterruptInTdFill> {
+        let transfer_length = trb_transfer_length(normal.status);
+        let written_length = transfer_length.min(report.len() as u32);
+        if written_length > 0
+            && !mem.write_bytes(normal.parameter, &report[..written_length as usize])
+        {
+            return None;
+        }
+        let completion_code = if written_length < transfer_length {
+            COMPLETION_CODE_SHORT_PACKET
+        } else {
+            COMPLETION_CODE_SUCCESS
+        };
+        let event_control = transfer_event_control(SLOT_ID, endpoint_id);
+        let posted = match event_data {
+            Some(event_data) => self.post_event_to_interrupter(
+                mem,
+                trb_interrupter_target(event_data.trb.status),
+                event_data.trb.parameter,
+                (completion_code << COMPLETION_CODE_SHIFT) | written_length,
+                event_control | TRANSFER_EVENT_ED,
+            ),
+            None => {
+                let code = if short_packet_without_event_data {
+                    completion_code
+                } else {
+                    COMPLETION_CODE_SUCCESS
+                };
+                self.post_event_to_interrupter(
+                    mem,
+                    trb_interrupter_target(normal.status),
+                    normal.gpa,
+                    (code << COMPLETION_CODE_SHIFT) | (transfer_length - written_length),
+                    event_control,
+                )
+            }
+        };
+        Some(InterruptInTdFill {
+            written_length,
+            completion_code,
+            posted,
+        })
+    }
 }
 
 fn has_cycle(trb: &InterruptTransferTrb, cycle: bool) -> bool {
