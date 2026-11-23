@@ -305,9 +305,6 @@ extension LibraryModel {
         }
         guard !matches.isEmpty else { throw NativeRuntimeStopRefused.targetUnavailable }
         guard matches.count == 1, let record = matches.first else { throw NativeRuntimeStopRefused.ambiguousTarget }
-        guard let config = record.sourceConfig,
-              try NativeRuntimeConfigurationIdentity.digest(config: config) == request.target.acceptedConfigurationDigest
-        else { throw NativeRuntimeStopRefused.configurationChanged }
         return record.session.requestOwnedStop(target: identity, operationID: operationID)
     }
 }
@@ -410,20 +407,15 @@ extension LibraryModel {
 }
 
 extension LibraryModel {
-    func validatedInstallConfiguration(_ request: NativeInstallControlRequest,
-                                       library: NativeRuntimeLibraryHandle) throws -> VMConfig {
+    /// The VM's saved configuration as read from disk now; it must be the loaded library entry.
+    func validatedInstallConfiguration(vmID: String, library: NativeRuntimeLibraryHandle) throws -> VMConfig {
         try library.validateCurrentIdentity()
-        let matches = vms.filter { $0.slug == request.vmID }
+        let matches = vms.filter { $0.slug == vmID }
         guard !matches.isEmpty else { throw NativeInstallControlRefusal.targetUnavailable }
         guard matches.count == 1, let current = matches.first else {
             throw NativeInstallControlRefusal.ambiguousTarget
         }
-        let saved: VMConfig
-        do { saved = try NativeCLIStatusConfigReader.read(library: library, id: request.vmID) }
-        catch { throw NativeInstallControlRefusal.configurationChanged }
-        guard current == saved,
-              try NativeRuntimeConfigurationIdentity.digest(config: saved)
-                == request.expectedSavedConfigurationDigest else {
+        guard let saved = try? NativeCLIStatusConfigReader.read(library: library, id: vmID), current == saved else {
             throw NativeInstallControlRefusal.configurationChanged
         }
         guard saved.engineKind == .hvfEngine, saved.installPending == true else {
@@ -652,7 +644,7 @@ extension LibraryModel {
 }
 
 extension LibraryModel {
-    func beginOwnedInstallPreparation(_ request: NativeInstallControlRequest, saved: VMConfig,
+    func beginOwnedInstallPreparation(saved: VMConfig,
         library: NativeRuntimeLibraryHandle, operation: NativeInstallOperation,
         validateOwner: @escaping () throws -> Void
     ) {
@@ -665,7 +657,7 @@ extension LibraryModel {
         let task = Task { [weak self, weak operation] in
             let plan = await HvfWindowsInstallPlanWorker.build(input, using: options.builder)
             guard !Task.isCancelled, let self, let operation else { return }
-            finishOwnedInstallPreparation(plan, input: input, expected: expected, request: request,
+            finishOwnedInstallPreparation(plan, input: input, expected: expected,
                 saved: saved, library: library, operation: operation, validateOwner: validateOwner)
         }
         operation.attach(task)
@@ -673,15 +665,15 @@ extension LibraryModel {
 
     private func finishOwnedInstallPreparation(_ plan: HvfWindowsInstallPlan,
         input: HvfWindowsInstallPlanInput, expected: HvfWindowsInstallSession?,
-        request: NativeInstallControlRequest, saved: VMConfig, library: NativeRuntimeLibraryHandle,
+        saved: VMConfig, library: NativeRuntimeLibraryHandle,
         operation: NativeInstallOperation, validateOwner: () throws -> Void
     ) {
-        guard case let .success(current) = windowsInstallSessions.cliOperations.operation(
-            vmID: saved.slug, digest: request.expectedSavedConfigurationDigest), current === operation,
-            operation.reservesWork else { return }
+        guard case let .success(current) = windowsInstallSessions.cliOperations.operation(vmID: saved.slug),
+              current === operation, operation.reservesWork else { return }
         do {
             try validateOwner()
-            guard try validatedInstallConfiguration(request, library: library) == saved else {
+            // The plan was built from `saved`: settings saved meanwhile must not run an install from stale inputs.
+            guard try validatedInstallConfiguration(vmID: saved.slug, library: library) == saved else {
                 throw NativeInstallControlRefusal.configurationChanged
             }
         } catch {
@@ -708,25 +700,25 @@ extension LibraryModel {
         try validateOwner()
         let library = try NativeRuntimeLibraryHandle.open(rootURL: rootURL, create: false)
         guard library.identity == request.library else { throw NativeInstallControlRefusal.configurationChanged }
-        // A VM the CLI published after this app launched is not in `vms` yet: read the library once,
-        // as the manual refresh does; every check below still applies.
-        if !vms.contains(where: { $0.slug == request.vmID }) { reload() }
-        let saved = try validatedInstallConfiguration(request, library: library)
+        // The CLI or another tool may have saved vm.json after this app last read it, or published a
+        // new VM: read the library once, as the manual refresh does, and use what is saved.
+        if vms.first(where: { $0.slug == request.vmID })
+            != (try? NativeCLIStatusConfigReader.read(library: library, id: request.vmID)) { reload() }
+        let saved = try validatedInstallConfiguration(vmID: request.vmID, library: library)
         let store = windowsInstallSessions.cliOperations
         switch request.operation {
         case .install:
             guard let id = request.operationID.flatMap(UUID.init(uuidString:)) else {
                 throw NativeRuntimeError.invalidMessage
             }
-            switch store.reserve(vmID: saved.slug, digest: request.expectedSavedConfigurationDigest,
-                                 operationID: id) {
+            switch store.reserve(vmID: saved.slug, operationID: id) {
             case let .accepted(operation):
                 guard libraryWorkRefusal(slug: saved.slug, excludingInstall: operation,
                     owns: { _, current in current == saved }) == nil else {
                     operation.fail("이 VM의 다른 작업이 진행 중입니다.")
                     throw NativeInstallControlRefusal.busy
                 }
-                beginOwnedInstallPreparation(request, saved: saved, library: library,
+                beginOwnedInstallPreparation(saved: saved, library: library,
                     operation: operation, validateOwner: validateOwner)
                 return .init(disposition: .accepted, operation: operation)
             case let .existing(operation): return .init(disposition: .existing, operation: operation)
@@ -744,7 +736,7 @@ extension LibraryModel {
     private func existingInstallResult(_ store: NativeInstallOperationStore,
         request: NativeInstallControlRequest, disposition: NativeInstallControlResponse.Disposition
     ) throws -> NativeInstallModelResult {
-        switch store.operation(vmID: request.vmID, digest: request.expectedSavedConfigurationDigest) {
+        switch store.operation(vmID: request.vmID) {
         case let .success(operation): return .init(disposition: disposition, operation: operation)
         case let .failure(refusal): throw refusal
         }

@@ -8,65 +8,47 @@ final class NativeInstallOperationStore {
         case refused(NativeInstallControlRefusal)
     }
 
-    struct Record {
-        let digest: String
-        let operation: NativeInstallOperation
-    }
     private let capacity: Int
-    var records: [String: Record] = [:]
+    /// One operation per VM ID: the app installs that VM's current saved configuration.
+    var records: [String: NativeInstallOperation] = [:]
 
     init(capacity: Int = 256) { self.capacity = capacity }
 
-    func reserve(vmID: String, digest: String, operationID: UUID,
+    func reserve(vmID: String, operationID: UUID,
                  now: Double = ProcessInfo.processInfo.systemUptime) -> Admission {
         if let known = records[vmID] {
-            guard known.digest == digest else { return .refused(.configurationChanged) }
-            if known.operation.operationID == operationID || known.operation.reservesWork {
-                return .existing(known.operation)
-            }
-            let replacement = NativeInstallOperation(operationID: operationID,
-                expectedSavedConfigurationDigest: digest, acceptedUptime: now)
-            records[vmID] = .init(digest: digest, operation: replacement)
-            return .accepted(replacement)
+            if known.operationID == operationID || known.reservesWork { return .existing(known) }
+        } else if records.count >= capacity {
+            return .refused(.ledgerFull)
         }
-        guard records.count < capacity else { return .refused(.ledgerFull) }
-        let operation = NativeInstallOperation(operationID: operationID,
-            expectedSavedConfigurationDigest: digest, acceptedUptime: now)
-        records[vmID] = .init(digest: digest, operation: operation)
+        let operation = NativeInstallOperation(operationID: operationID, acceptedUptime: now)
+        records[vmID] = operation
         return .accepted(operation)
     }
 
-    func operation(vmID: String, digest: String) -> Result<NativeInstallOperation, NativeInstallControlRefusal> {
-        guard let known = records[vmID] else { return .failure(.targetUnavailable) }
-        guard known.digest == digest else { return .failure(.configurationChanged) }
-        return .success(known.operation)
+    func operation(vmID: String) -> Result<NativeInstallOperation, NativeInstallControlRefusal> {
+        records[vmID].map { .success($0) } ?? .failure(.targetUnavailable)
     }
 
-    func isActive(vmID: String) -> Bool { records[vmID]?.operation.reservesWork == true }
+    func isActive(vmID: String) -> Bool { records[vmID]?.reservesWork == true }
 
     func removeTerminal(vmID: String) {
-        guard records[vmID]?.operation.reservesWork == false else { return }
+        guard records[vmID]?.reservesWork == false else { return }
         records[vmID] = nil
     }
 }
 
 extension NativeInstallOperationStore {
     func isActive(vmID: String, excluding operation: NativeInstallOperation?) -> Bool {
-        guard let current = records[vmID]?.operation, current !== operation else { return false }
+        guard let current = records[vmID], current !== operation else { return false }
         return current.reservesWork
     }
 }
 
 extension NativeInstallOperationStore {
+    /// A finished operation stays queryable while its VM is still a pending install.
     func reconcile(with configs: [VMConfig]) {
-        var current: [String: String] = [:]
-        for config in configs where config.engineKind == .hvfEngine && config.installPending == true {
-            if let digest = try? NativeRuntimeConfigurationIdentity.digest(config: config) {
-                current[config.slug] = digest
-            }
-        }
-        records = records.filter { slug, record in
-            record.operation.reservesWork || current[slug] == record.digest
-        }
+        let pending = Set(configs.filter { $0.engineKind == .hvfEngine && $0.installPending == true }.map(\.slug))
+        records = records.filter { slug, operation in operation.reservesWork || pending.contains(slug) }
     }
 }

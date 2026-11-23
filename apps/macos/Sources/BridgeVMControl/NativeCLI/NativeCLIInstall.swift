@@ -8,18 +8,14 @@ enum NativeCLIInstall {
         do {
             let library = try NativeRuntimeLibraryHandle.open(rootURL: rootURL, create: false)
             libraryPath = library.identity.canonicalPath
-            let saved = NativeCLIStatusConfiguration.read(library: library, id: id)
-            guard saved.state == .present, let digest = saved.digest else {
-                throw NativeInstallControlRefusal.configurationChanged
-            }
             let statusRequest = NativeRuntimeRequest(schema: NativeRuntimeCodec.requestSchema, operation: "status",
-                requestID: UUID().uuidString, library: library.identity, vmID: id, savedConfiguration: saved)
+                requestID: UUID().uuidString, library: library.identity, vmID: id,
+                savedConfiguration: NativeCLIStatusConfiguration.read(library: library, id: id))
             let status = try NativeRuntimeClient.query(rootURL: rootURL, request: statusRequest)
             appInstanceID = status.appInstanceID
             let request = NativeInstallControlRequest(schema: NativeInstallControlCodec.requestSchema,
                 operation: operation, requestID: UUID().uuidString, library: library.identity, vmID: id,
-                appInstanceID: status.appInstanceID, expectedSavedConfigurationDigest: digest,
-                operationID: operationID)
+                appInstanceID: status.appInstanceID, operationID: operationID)
             let response = try NativeInstallControlClient.query(rootURL: rootURL, request: request)
             try library.validateCurrentIdentity()
             let complete = response.refusal == nil && (operation != .install
@@ -38,7 +34,7 @@ enum NativeCLIInstall {
 }
 
 struct NativeCLIInstallResult: Encodable {
-    let schema = "bridgevm.app-install-command.v1"
+    let schema = "bridgevm.app-install-command.v2"
     let scope = NativeInstallControlCodec.scope
     let command: String
     let vmID: String

@@ -42,9 +42,7 @@ final class NativeInstallOwnedAdoptionFixture {
         let library = try NativeRuntimeLibraryHandle.open(rootURL: store.root, create: false)
         return .init(schema: NativeInstallControlCodec.requestSchema, operation: operation,
             requestID: UUID().uuidString, library: library.identity, vmID: config.slug,
-            appInstanceID: UUID().uuidString,
-            expectedSavedConfigurationDigest: try NativeRuntimeConfigurationIdentity.digest(config: config),
-            operationID: operationID?.uuidString)
+            appInstanceID: UUID().uuidString, operationID: operationID?.uuidString)
     }
 
     func waitForAcknowledgment() async {

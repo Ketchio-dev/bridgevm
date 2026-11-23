@@ -8,7 +8,7 @@ final class NativeInstallOperationTests: XCTestCase {
     private let digest = String(repeating: "a", count: 64)
 
     private func operation() -> NativeInstallOperation {
-        .init(operationID: operationID, expectedSavedConfigurationDigest: digest, acceptedUptime: 10)
+        .init(operationID: operationID, acceptedUptime: 10)
     }
 
     private func session() -> HvfWindowsInstallSession {

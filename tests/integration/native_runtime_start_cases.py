@@ -33,7 +33,7 @@ class NativeRuntimeStartCases:
             request = self.start_request()
             payload = json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
             for raw in [payload[:-1], payload.replace(b'"operation":"start"', b'"operation":"stop"'),
-                        payload.replace(b"app-runtime-start-request.v2", b"app-runtime-control-request.v3")]:
+                        payload.replace(b"app-runtime-start-request.v2", b"app-runtime-control-request.v4")]:
                 self.assertIsNone(self.control_exchange(request, raw=raw))
             changed_library = dict(request, library=dict(self.identity, inode=self.identity["inode"] + 1))
             self.assertIsNone(self.control_exchange(changed_library))

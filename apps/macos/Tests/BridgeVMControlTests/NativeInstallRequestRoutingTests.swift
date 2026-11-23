@@ -7,8 +7,7 @@ final class NativeInstallRequestRoutingTests: XCTestCase {
         let app = "11111111-1111-1111-1111-111111111111"
         let request = NativeInstallControlRequest(schema: NativeInstallControlCodec.requestSchema,
             operation: .installStatus, requestID: UUID().uuidString, library: library, vmID: "windows",
-            appInstanceID: app, expectedSavedConfigurationDigest: String(repeating: "a", count: 64),
-            operationID: nil)
+            appInstanceID: app, operationID: nil)
         let router = NativeRuntimeRequestRouter(library: library, status: { _ in
             throw NativeRuntimeError.invalidMessage
         }, install: { received, _ in
@@ -16,7 +15,6 @@ final class NativeInstallRequestRoutingTests: XCTestCase {
             return .init(schema: NativeInstallControlCodec.responseSchema,
                 scope: NativeInstallControlCodec.scope, requestID: received.requestID,
                 library: library, vmID: received.vmID, appInstanceID: app,
-                expectedSavedConfigurationDigest: received.expectedSavedConfigurationDigest,
                 requestedOperationID: nil, disposition: .refused, observation: nil,
                 refusal: .targetUnavailable)
         })
@@ -32,8 +30,7 @@ final class NativeInstallRequestRoutingTests: XCTestCase {
         let library = NativeRuntimeLibraryIdentity(canonicalPath: "/tmp/library", device: 1, inode: 2, uid: 3)
         let request = NativeInstallControlRequest(schema: NativeInstallControlCodec.requestSchema,
             operation: .installStatus, requestID: UUID().uuidString, library: library, vmID: "windows",
-            appInstanceID: UUID().uuidString,
-            expectedSavedConfigurationDigest: String(repeating: "a", count: 64), operationID: nil)
+            appInstanceID: UUID().uuidString, operationID: nil)
         let router = NativeRuntimeRequestRouter(library: library, status: { _ in
             throw NativeRuntimeError.invalidMessage
         })

@@ -19,10 +19,11 @@ created. Required ISO and signed payload inputs must already be sealed in its bu
 It accepts no ISO, password, recovery key, unattended secret or driver path.
 [CLI-created entries lack the payload](app-cli-create.md) and cannot install by retrying.
 
-The app binds the operation to its current instance, canonical library, exact VM ID, and normalized saved-configuration digest. It admits only a
-saved own-HVF Windows VM whose `installPending` value is true. A changed or
-ambiguous registration, running VM, UI-started installation, storage mutation,
-or other reserved work refuses admission.
+The app binds the operation to its current instance, canonical library and exact VM ID,
+and installs that VM's current saved configuration. If `vm.json` changed since the app
+last read it, the app reads the library once, as the manual refresh does. It admits only a
+saved own-HVF Windows VM whose `installPending` value is true. An ambiguous registration,
+running VM, UI-started installation, storage mutation, or other reserved work refuses admission.
 
 Plan construction runs outside the main actor because older requests may need ISO hashing. The app reserves the operation first and retains that
 reservation if the CLI disconnects. Before creating a session it checks the app
@@ -40,12 +41,12 @@ The initial `install` command returns after the running app accepts or finds the
 `Control exchange: complete` never means Windows installation finished. Repeating the same
 internal operation ID is idempotent, and concurrent clients observe the retained operation.
 A later explicit invocation creates a retry only after the previous operation is terminal
-and the exact pending configuration still matches.
+and the VM is still pending installation.
 
 Text and JSON report app-owned host installation state, not guest boot, display readiness, driver behavior or a release criterion. Automated
 protocol and model tests likewise do not replace live hardware evidence.
 
-JSON uses `schema: "bridgevm.app-install-command.v1"` and
+JSON uses `schema: "bridgevm.app-install-command.v2"` and
 `scope: "app-owned-install"`. It includes the command, VM and library identity,
 app instance, requested operation ID, disposition, observation and refusal when
 available. Observation phases are `preparingPlan`, `validating`,

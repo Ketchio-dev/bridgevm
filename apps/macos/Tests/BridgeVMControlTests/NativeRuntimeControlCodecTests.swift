@@ -18,10 +18,9 @@ final class NativeRuntimeControlCodecTests: XCTestCase {
 
     func testTargetAndOperationIdentityAreMandatory() {
         for target in [
-            NativeRuntimeStopTarget(appInstanceID: "bad", runToken: Fixture.token, processID: 123, acceptedConfigurationDigest: String(repeating: "a", count: 64)),
-            .init(appInstanceID: Fixture.app, runToken: Fixture.token.lowercased(), processID: 123, acceptedConfigurationDigest: String(repeating: "a", count: 64)),
-            .init(appInstanceID: Fixture.app, runToken: Fixture.token, processID: 0, acceptedConfigurationDigest: String(repeating: "a", count: 64)),
-            .init(appInstanceID: Fixture.app, runToken: Fixture.token, processID: 123, acceptedConfigurationDigest: "bad")
+            NativeRuntimeStopTarget(appInstanceID: "bad", runToken: Fixture.token, processID: 123),
+            .init(appInstanceID: Fixture.app, runToken: Fixture.token.lowercased(), processID: 123),
+            .init(appInstanceID: Fixture.app, runToken: Fixture.token, processID: 0)
         ] { XCTAssertThrowsError(try NativeRuntimeControlCodec.validate(Fixture.request(target: target))) }
         XCTAssertThrowsError(try NativeRuntimeControlCodec.validate(Fixture.request(id: "bad")))
     }
@@ -36,7 +35,7 @@ final class NativeRuntimeControlCodecTests: XCTestCase {
         try NativeRuntimeControlCodec.validate(complete, for: request)
         XCTAssertThrowsError(try NativeRuntimeControlCodec.validate(complete, for: Fixture.request()))
         let mismatched = Fixture.request(target: .init(appInstanceID: Fixture.app, runToken: UUID().uuidString,
-            processID: 123, acceptedConfigurationDigest: Fixture.target.acceptedConfigurationDigest))
+            processID: 123))
         XCTAssertThrowsError(try NativeRuntimeControlCodec.validate(complete.observation!, target: mismatched.target))
     }
 

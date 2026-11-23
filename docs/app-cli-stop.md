@@ -8,12 +8,13 @@ bridgevm app stop 개발-vm --json --library "/absolute/path/to/native-library"
 Use the exact VM ID from `bridgevm app list`. The app must already manage the
 selected library. See [native CLI setup and commands](app-cli.md).
 
-`stop` uses `bridgevm.app-stop.v1`. It selects one app-owned HVF run and binds the
-request to the app instance, library identity, VM ID, accepted registration
-digest, run token and retained runner PID. The app checks this identity again
-before admitting the stop. A changed or missing saved registration does not
-retarget the request. Attached observations and legacy wrapper launches cannot
-be stopped through this command; ambiguous targets are refused.
+`stop` uses `bridgevm.app-stop.v2`. It selects one app-owned HVF run and binds the
+request to the app instance, library identity, VM ID, run token and retained
+runner PID. The app stops only the run with exactly that token and PID for that
+VM ID. Saved settings play no part, so editing or removing the saved registration
+neither retargets nor refuses the request. Attached observations and legacy
+wrapper launches cannot be stopped through this command; ambiguous targets are
+refused.
 
 The command waits for the accepted operation. When the guest control service is
 ready, the app sends `shutdown.exe /s /t 0` using the file identity retained at
@@ -54,7 +55,7 @@ The JSON result includes `schema`, `scope`, `vmID`, `libraryPath`, `target`,
 values may be omitted. The observation carries the stop phase, deadlines,
 supervisor cleanup counts and lease disposition, retained runner exit, and any
 failure. The existing status protocol remains version 1; stop control uses a
-separate version 3 message on the same private endpoint.
+separate version 4 message on the same private endpoint.
 
 Exit codes are 0 for confirmed cleanup, 1 for unavailable/refused/unconfirmed
 results, and 2 for invalid usage. See [CLI start](app-cli-start.md) for startup.

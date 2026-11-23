@@ -2,8 +2,6 @@ import XCTest
 @testable import BridgeVMControl
 
 final class NativeCLIInstallGuidanceTests: XCTestCase {
-    private let digest = String(repeating: "a", count: 64)
-
     func testActiveTerminalAndDonePhasesGiveDistinctNextActions() {
         let active = result(.installing), failed = result(.failed, failure: "synthetic")
         let cancelled = result(.cancelled), done = result(.done)
@@ -18,7 +16,7 @@ final class NativeCLIInstallGuidanceTests: XCTestCase {
     func testTextGuidanceDoesNotChangeVersionedJSON() throws {
         let value = result(.done)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? [String: Any])
-        XCTAssertEqual(object["schema"] as? String, "bridgevm.app-install-command.v1")
+        XCTAssertEqual(object["schema"] as? String, "bridgevm.app-install-command.v2")
         XCTAssertEqual(object["scope"] as? String, "app-owned-install")
         XCTAssertEqual(object["complete"] as? Bool, true)
         XCTAssertEqual((object["observation"] as? [String: Any])?["phase"] as? String, "done")
@@ -28,7 +26,7 @@ final class NativeCLIInstallGuidanceTests: XCTestCase {
     private func result(_ phase: NativeInstallObservation.Phase,
                         failure: String? = nil) -> NativeCLIInstallResult {
         let observation = NativeInstallObservation(operationID: UUID().uuidString,
-            expectedSavedConfigurationDigest: digest, phase: phase, acceptedUptime: 1,
+            phase: phase, acceptedUptime: 1,
             workerPending: phase == .preparingPlan, sessionRunning: phase == .installing,
             canCancel: phase == .installing, logTail: [], failure: failure)
         return NativeCLIInstallResult(command: "installStatus", vmID: "개발-vm",

@@ -1,8 +1,8 @@
 import Foundation
 
 enum NativeRuntimeControlCodec {
-    static let requestSchema = "bridgevm.app-runtime-control-request.v3"
-    static let responseSchema = "bridgevm.app-runtime-control.v3"
+    static let requestSchema = "bridgevm.app-runtime-control-request.v4"
+    static let responseSchema = "bridgevm.app-runtime-control.v4"
     static let scope = "app-owned-runtime-control"
 
     static func validate(_ request: NativeRuntimeControlRequest) throws {
@@ -12,8 +12,7 @@ enum NativeRuntimeControlCodec {
         try NativeRuntimeCodec.validate(status)
         guard request.schema == requestSchema, NativeRuntimeCodec.validUUID(request.operationID),
               NativeRuntimeCodec.validUUID(request.target.appInstanceID),
-              NativeRuntimeCodec.validUUID(request.target.runToken), request.target.processID > 0,
-              NativeRuntimeCodec.validDigest(request.target.acceptedConfigurationDigest)
+              NativeRuntimeCodec.validUUID(request.target.runToken), request.target.processID > 0
         else { throw NativeRuntimeError.invalidMessage }
     }
 
