@@ -2,7 +2,7 @@
 """Hash the media pair the product selects now: `snapshot_pair_cli digest` under the pair lease.
 
 After a restore the original disk and vars paths keep their old bytes and the selected
-generation lives under the managed root (crates/bridgevm-hvf/src/managed_pair.rs). Studio
+generation lives under the managed root (crates/bridgevm-hvf/src/snapshot_pair/managed.rs). Studio
 T17 r80 completed every journey stage and was refused because its final media were hashed
 at the original paths. The helper is the sealed app bundle's own binary.
 """

@@ -207,7 +207,7 @@ pub fn convert_to_raw(src: &Path, dst: &Path, mut progress: impl FnMut(u8)) -> R
         Some(parent) if !parent.as_os_str().is_empty() => parent,
         _ => Path::new("."),
     };
-    if let Some(available) = crate::snapshot_pair::free_space::available_bytes(parent) {
+    if let Some(available) = crate::snapshot_pair::files::available_bytes(parent) {
         if available < data_bytes {
             return Err(Refusal::NoSpace {
                 needed: data_bytes,
