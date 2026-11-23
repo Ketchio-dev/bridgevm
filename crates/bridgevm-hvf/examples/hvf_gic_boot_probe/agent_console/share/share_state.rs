@@ -1,10 +1,6 @@
 //! Shared-folder session state and one-time root identity binding.
 
 use super::*;
-#[path = "share_state_destination.rs"]
-mod destination;
-#[path = "share_root_feedback.rs"]
-mod feedback;
 #[path = "share_root.rs"]
 mod root;
 #[path = "share_guest_listing_names.rs"]

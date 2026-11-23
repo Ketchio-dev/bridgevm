@@ -4,10 +4,7 @@
 //! while the next listings refuse the same names.
 
 use super::*;
-use crate::agent_console::share::share_listing_report::refused_name_lines;
-
-#[path = "share_listing_report_count_tests.rs"]
-mod count_tests;
+use crate::agent_console::share::share_listing_reply::refused_name_lines;
 
 /// A guest-form name of `bytes` bytes: ten 99-byte folders, then a file name.
 fn long_path(bytes: usize) -> String {
@@ -75,5 +72,30 @@ fn the_same_refused_names_are_reported_once_until_they_change() {
         (synced, lines.len()),
         (vec!["ok.txt".to_string()], 2),
         "a refused name that came back was not reported"
+    );
+}
+
+// Report bounds stay independent of the whole-listing admission bounds.
+
+#[test]
+fn ten_thousand_refused_names_get_a_few_lines_and_one_count_line() {
+    let mut engine = ShareSync::new(1024);
+    let mut refused = share_sync::RefusedNames::default();
+    for bytes in 1024..1027 {
+        assert!(refused.key(&long_path(bytes)).is_none());
+    }
+    // Model the count directly: over-limit listings never reach reporting.
+    refused.count = 10_000;
+    let lines = refused_name_lines(&mut engine, &refused);
+    assert_eq!(lines.len(), 4, "{lines:?}");
+    assert_eq!(
+        lines[3],
+        "BVAGENT SHARE skip <guest-names> over-host-limits 10000"
+    );
+    assert!(
+        lines
+            .iter()
+            .all(|line| line.len() < 64 && !line.contains("ddd")),
+        "{lines:?}"
     );
 }

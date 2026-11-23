@@ -398,7 +398,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                     platform_guard.set_host_now(std::time::Instant::now());
                     let (outcome, post_drain) =
                         platform_guard.on_mmio_with_post_drain(ipa, op, guest_ram);
-                    gpu_shm_bar2::refresh_on_ecam_write(&platform_guard, ipa, is_write);
+                    refresh_on_ecam_write(&platform_guard, ipa, is_write);
                     let pending = drain_stats.prepare_pending_delivery_after_mmio(
                         &mut platform_guard,
                         guest_ram,

@@ -2,10 +2,10 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use super::hda_coreaudio_atomic_ring::AtomicPcmRing;
 use super::hda_coreaudio_continuity::ContinuityCounters;
 use super::hda_coreaudio_idle::OutputControl;
 use super::hda_coreaudio_prefill::Prefill;
-use super::hda_coreaudio_ring::AtomicPcmRing;
 use super::hda_coreaudio_teardown::CallbackFailureCounters;
 
 pub(super) struct Shared {

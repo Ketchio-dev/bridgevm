@@ -1,11 +1,11 @@
-//! Producer-side PCM framing. The callback never observes partial frames.
+//! Producer-side PCM framing, fed by the CoreAudio sink's HdaPcmSink entry
+//! points. The callback never observes partial frames.
 
 use super::hda_coreaudio_frames::{PcmFrames, Publication};
 use super::hda_coreaudio_stats::Shared;
-use super::{BITS_PER_CHANNEL, CHANNELS, SAMPLE_RATE};
+use super::{CoreAudioPcmSink, BITS_PER_CHANNEL, CHANNELS, RING_CAPACITY_BYTES, SAMPLE_RATE};
+use bridgevm_hvf::hda::HdaPcmSink;
 use std::sync::atomic::Ordering;
-#[path = "hda_coreaudio_sink.rs"]
-mod sink;
 
 #[derive(Default)]
 pub(super) struct PcmProducer {
@@ -55,6 +55,34 @@ impl PcmProducer {
         shared
             .frames_rendered
             .fetch_add(result.guest_frames, Ordering::Relaxed);
+    }
+}
+
+impl HdaPcmSink for CoreAudioPcmSink {
+    fn write_pcm(&mut self, samples: &[u8], rate: u32, channels: u8, bits: u8) {
+        self.producer.write_format(
+            samples,
+            (rate, channels, bits),
+            &self.shared,
+            RING_CAPACITY_BYTES,
+        );
+        // A paused queue starts again for this PCM (hda_coreaudio_output.rs).
+        if !samples.is_empty() {
+            self.shared.output.note_pcm();
+        }
+        // The supervisor's lines, printed here so none follows the report footer.
+        for line in self.shared.output.take_notices() {
+            eprintln!("{line}");
+        }
+    }
+
+    fn stream_stopped(&mut self) {
+        // RUN pause resumes at the saved DMA cursor, including any partial frame.
+        self.shared.continuity.note_stream_stopped();
+    }
+
+    fn stream_reset(&mut self) {
+        self.producer.finish(&self.shared, RING_CAPACITY_BYTES);
     }
 }
 

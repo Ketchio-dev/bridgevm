@@ -8,8 +8,13 @@ use bridgevm_hvf::display_fb::DisplayFramebuffer;
 use bridgevm_hvf::dtb::VirtFdtConfig;
 use bridgevm_hvf::platform_virt::VirtPlatform;
 use bridgevm_hvf::ramfb::RamfbConfig;
-#[path = "ramfb_display_test_receipt.rs"]
-mod receipt;
+
+/// Test access to the completion instant recorded after publication.
+impl RamfbDisplayTiming {
+    pub(in super::super) fn publication_receipt(&self) -> (u64, u64, Option<Instant>) {
+        (self.ticks, self.published, self.last_published)
+    }
+}
 
 const TICK: Duration = Duration::from_millis(5);
 const FIELDS: [&str; 13] = [

@@ -422,6 +422,23 @@ impl ShareSync {
     }
 }
 
+// FNV-1a 64, the content hash share sync compares file versions by.
+
+pub const FNV1A64_START: u64 = 0xcbf29ce484222325;
+
+pub fn fnv1a64(bytes: &[u8]) -> u64 {
+    fnv1a64_continue(FNV1A64_START, bytes)
+}
+
+/// The hash of everything hashed into `hash` so far, then `bytes`.
+pub fn fnv1a64_continue(mut hash: u64, bytes: &[u8]) -> u64 {
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
 #[path = "share_rel_path.rs"]
 mod share_rel_path;
 #[cfg(test)]
@@ -431,8 +448,6 @@ pub use share_rel_path::{append_guest_rel_into, from_guest_rel, normalize_rel};
 mod share_guest_names;
 pub use share_guest_names::{composed, guest_char, is_stand_in, key_from_guest};
 
-#[path = "share_hash.rs"]
-mod share_hash;
 #[path = "share_mtime.rs"]
 pub mod share_mtime;
 #[path = "share_adopt.rs"]
@@ -442,13 +457,10 @@ mod share_excluded;
 pub use share_excluded::is_share_excluded;
 #[path = "share_synced.rs"]
 pub mod share_synced;
-pub use share_hash::{fnv1a64, fnv1a64_continue, FNV1A64_START};
 #[path = "share_host_unseen.rs"]
 mod share_host_unseen;
 #[path = "share_listing.rs"]
 mod share_listing;
-#[path = "share_name_limits.rs"]
-mod share_name_limits;
 #[path = "share_name_refusals.rs"]
 mod share_name_refusals;
 pub use share_name_refusals::RefusedNames;
@@ -480,9 +492,6 @@ mod tests;
 #[cfg(test)]
 #[path = "share_sync_failure_tests.rs"]
 mod failure_tests;
-#[cfg(test)]
-#[path = "share_sync_failure_budget_tests.rs"]
-mod failure_budget_tests;
 #[cfg(test)]
 #[path = "share_sync_windows_name_tests.rs"]
 mod windows_name_tests;

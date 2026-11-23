@@ -119,6 +119,54 @@ impl GpuShmMapPort for HvGpuShmMapPort {
     }
 }
 
+pub(crate) fn install_gpu_shm_port(platform: &mut VirtPlatform) {
+    let hv_gpu_shm_state = Arc::new(Mutex::new(HvGpuShmMapState::default()));
+    let installed_hv_gpu_shm_port =
+        platform.set_virtio_gpu_shm_map_port(Box::new(HvGpuShmMapPort {
+            state: Arc::clone(&hv_gpu_shm_state),
+        }));
+    register_gpu_shm_state(hv_gpu_shm_state);
+    if installed_hv_gpu_shm_port {
+        println!("virtio-gpu host-visible shm map port: hv_vm_map enabled");
+    }
+}
+
+/// The one shm-map state for this process, so any vCPU can refresh the cached
+/// BAR2 base without threading it through the secondary run-loop context.
+static GPU_SHM_STATE: OnceLock<Arc<Mutex<HvGpuShmMapState>>> = OnceLock::new();
+
+fn register_gpu_shm_state(state: Arc<Mutex<HvGpuShmMapState>>) {
+    let _ = GPU_SHM_STATE.set(state);
+}
+
+/// Refresh the cached BAR2 base after a PCI config-space write.
+///
+/// The base is cached because `HvGpuShmMapPort::map` runs with the GPU device's
+/// own lock held and cannot re-enter the platform to query it. Every vCPU that
+/// writes config space must call this: Windows reprograms virtio-gpu BAR2 from
+/// a secondary CPU, and with a stale base `hv_vm_map` installs the Venus ring
+/// at an address the guest stopped using. Every guest ring access then faults
+/// into the RAZ/WI shm handler and `vkCreateInstance` spins forever.
+pub(crate) fn refresh_on_ecam_write(platform: &VirtPlatform, ipa: u64, is_write: bool) {
+    if !is_write || machine::device_at(ipa) != Some("pcie-ecam") {
+        return;
+    }
+    let Some(state) = GPU_SHM_STATE.get() else {
+        return;
+    };
+    let base = platform.virtio_gpu_host_visible_bar_base();
+    let mut state = state.lock().unwrap();
+    state.ecam_writes = state.ecam_writes.saturating_add(1);
+    if state.bar2_base != base {
+        state.base_changes = state.base_changes.saturating_add(1);
+        eprintln!(
+            "virtio-gpu hv shm BAR2 update: ipa={ipa:#x} old={:?} new={base:?} ecam_writes={} base_changes={}",
+            state.bar2_base, state.ecam_writes, state.base_changes
+        );
+    }
+    state.bar2_base = base;
+}
+
 impl GuestMemoryMut for MappedRam {
     fn write_bytes(&mut self, gpa: u64, data: &[u8]) -> bool {
         let Some(off) = gpa
