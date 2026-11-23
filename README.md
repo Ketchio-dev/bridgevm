@@ -47,8 +47,13 @@ for each feature.
 
 Current source uses queued text dispatch for compatible Windows editors; long
 Korean and emoji input, selection replacement and undo were checked in Windows
-11 Notepad. Older builds and unsupported editors retain the input path tracked
-in [#665](https://github.com/Ketchio-dev/bridgevm/issues/665), where long commits
+11 Notepad and a RichEdit 5 control (a WinForms RichTextBox). The Run, Save-as
+and Explorer rename boxes, classic edit controls, RichEdit 2.0 and an Edge text
+area use the older per-character path; in one headless run (2026-11-23) each
+kept mixed Korean and emoji text exact up to the box's own length limit (3,000
+characters where the box allows that many). Older builds and other editors
+retain the input path tracked in
+[#665](https://github.com/Ketchio-dev/bridgevm/issues/665), where long commits
 can repeat or lose characters. Use clipboard sharing and paste if this occurs.
 
 ## Try BridgeVM
