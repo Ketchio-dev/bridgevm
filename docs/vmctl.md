@@ -43,9 +43,9 @@ python3 scripts/vmctl.py stop MY_VM --json
 Pointer coordinates cover the whole guest desktop from 0 to 32767 on each
 axis. `text` sends Unicode through the guest agent without using the clipboard.
 With a current agent and compatible ARM64 editor, it dispatches text on the
-focused editor thread after earlier queued keys. Windows 11 Notepad uses one
-undoable selection replacement; other compatible controls receive Unicode
-character messages. Requests split at 64 KiB of UTF-8 without splitting a
+focused editor thread after earlier queued keys. A writable RichEdit control
+(Windows 11 Notepad, RichEdit 5) takes one undoable selection replacement; other
+compatible controls receive Unicode character messages. Requests split at 64 KiB of UTF-8 without splitting a
 Unicode scalar. Older agents and unsupported editors retain receipt-paced
 codepoints. That path can still corrupt long commits in some Windows apps.
 The whole operation shares one reply deadline, and an unknown result is never
