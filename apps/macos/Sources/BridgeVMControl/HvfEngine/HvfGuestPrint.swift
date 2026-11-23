@@ -67,7 +67,7 @@ enum HvfGuestPrint {
 
     /// The file is there, a regular file (not a link) of the line's size and SHA-256 (when it had a line) that
     /// begins as a PDF does.
-    static func verified(_ job: Job) -> Bool {
+    @Sendable static func verified(_ job: Job) -> Bool {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: job.url.path),
               attributes[.type] as? FileAttributeType == .typeRegular,
               (attributes[.size] as? NSNumber)?.intValue == job.bytes,

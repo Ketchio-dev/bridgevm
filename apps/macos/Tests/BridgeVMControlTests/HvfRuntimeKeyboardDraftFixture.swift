@@ -53,11 +53,11 @@ final class HvfRuntimeKeyboardDraftFixture {
                 XCTFail("Keyboard draft tests must not inspect or attach a process")
                 return false
             }, vtpmKeyProvider: access)
-        weak var releasedSession = session
+        let releasedSession = WeakReference(session)
         defer {
             session?.beginOwnedInputBoot() // Invalidates the input pump without I/O.
             session = nil
-            XCTAssertNil(releasedSession, "Session must be released before fixture cleanup")
+            XCTAssertNil(releasedSession.object, "Session must be released before fixture cleanup")
             XCTAssertEqual(access.processLookups, 0)
             XCTAssertEqual(access.keyRequests, 0)
             for name in ["absent-disk.raw", "absent-vars.fd", "absent-vtpm", "absent-swtpm", "absent-repo"] {

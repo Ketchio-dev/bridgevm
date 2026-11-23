@@ -11,13 +11,13 @@ final class HvfRuntimeWorkAdmissionLifecycleTests: XCTestCase {
             f.save(config)
             if kind == "install" { f.saveRequest(config) }
             var library: LibraryModel? = f.library()
-            weak var owner = library
+            let owner = WeakReference(library)
             let runtime = kind == "runtime" ? try f.runtime(config, in: XCTUnwrap(library)) : nil
             let install = kind == "install" ? f.install(config, in: try XCTUnwrap(library)) : nil
             let model = kind.hasPrefix("control") ? f.model(config, in: try XCTUnwrap(library)) : nil
             let bytes = try f.snapshot()
             library = nil
-            XCTAssertNil(owner)
+            XCTAssertNil(owner.object)
 
             if let runtime {
                 XCTAssertEqual(runtime.workAdmission?(false), HvfRuntimeWorkAdmissionFixture.expiredReason)

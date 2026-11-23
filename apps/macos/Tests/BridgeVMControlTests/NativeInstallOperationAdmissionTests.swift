@@ -14,8 +14,9 @@ final class NativeInstallOperationAdmissionTests: XCTestCase {
             if retry { session.finish(.failed("previous attempt")) }
             session.workAdmission = { _ in
                 do {
-                    XCTAssertEqual(try operation.observation().phase, .preparingPlan)
-                    XCTAssertTrue(try operation.observation().canCancel)
+                    let admitted = try operation.observation()
+                    XCTAssertEqual(admitted.phase, .preparingPlan)
+                    XCTAssertTrue(admitted.canCancel)
                     XCTAssertTrue(operation.cancel())
                     XCTAssertEqual(try operation.observation().phase, .cancelled)
                 } catch { XCTFail("Admission cancellation failed: \(error)") }

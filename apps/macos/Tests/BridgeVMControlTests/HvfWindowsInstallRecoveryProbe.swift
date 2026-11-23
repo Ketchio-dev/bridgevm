@@ -41,8 +41,8 @@ final class HvfWindowsInstallRecoveryProbe: @unchecked Sendable {
         let timedOut = !Thread.isMainThread && released.wait(timeout: .now() + 5) == .timedOut
         lock.lock(); gateTimedOut = gateTimedOut || timedOut; lock.unlock()
     }
-    func waitForEntry() async -> Bool {
-        await Task.detached { [entered] in entered.wait(timeout: .now() + 5) == .success }.value
+    @MainActor func waitForEntry() async -> Bool {
+        await waitOffCooperativePool(entered, seconds: 5)
     }
     func release() { released.signal() }
     var snapshot: Snapshot {

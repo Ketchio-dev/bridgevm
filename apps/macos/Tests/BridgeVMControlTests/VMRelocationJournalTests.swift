@@ -3,7 +3,7 @@ import XCTest
 @testable import BridgeVMControl
 
 final class VMRelocationJournalTests: XCTestCase {
-    private final class Faults: FileManager, @unchecked Sendable {
+    private final class Faults: FileManager {
         let registration: URL
         let partial: Bool
         var moves = 0

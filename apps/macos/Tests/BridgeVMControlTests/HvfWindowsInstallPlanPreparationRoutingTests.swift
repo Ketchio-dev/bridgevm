@@ -47,7 +47,7 @@ final class HvfWindowsInstallPlanPreparationRoutingTests: XCTestCase {
             XCTAssertTrue(f.values(HvfWindowsInstallView.self, in: first.body).isEmpty)
             guard await f.entered(1) else { return }
             let firstTask = try XCTUnwrap(first.preparation.preparationTask)
-            let actorProgress = await Task { @MainActor in Thread.isMainThread }.value
+            let actorProgress = await Task { @MainActor in true }.value // the main actor runs a new job meanwhile
             XCTAssertTrue(actorProgress)
             XCTAssertEqual(f.probe.snapshot.finished, 0)
             library.selectedID = b.slug

@@ -27,11 +27,11 @@ final class HvfFramebufferBindingTests: XCTestCase {
 
     func testViewDoesNotKeepSessionAlive() throws {
         var session: HvfEngineSession? = makeSession()
-        weak var observed = session
+        let observed = WeakReference(session)
         let view = FBLayerView(session: try XCTUnwrap(session))
         defer { view.teardown() }
         session = nil
-        XCTAssertNil(observed)
+        XCTAssertNil(observed.object)
         XCTAssertNil(view.session)
     }
 
