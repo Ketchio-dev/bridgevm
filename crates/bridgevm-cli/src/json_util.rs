@@ -1,5 +1,3 @@
-//! Split out of main.rs by responsibility.
-
 mod trace_metrics;
 mod trace_report_print;
 

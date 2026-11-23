@@ -539,8 +539,8 @@ mod pasteboard_poll_tests {
 
     #[test]
     fn the_mac_pasteboard_is_checked_ten_times_per_guest_poll() {
-        // It used to share the guest's 1 s cadence, so a Mac copy pasted in
-        // Windows within a second was still the old clipboard.
+        // At the guest's 1 s cadence a Mac copy pasted in Windows within a
+        // second would still be the old clipboard.
         assert_eq!(host_pasteboard_poll_ms(DEFAULT_CLIPSYNC_MS), 100);
         assert_eq!(host_pasteboard_poll_ms(CLIPSYNC_MS_FLOOR), CLIPSYNC_MS_FLOOR);
     }

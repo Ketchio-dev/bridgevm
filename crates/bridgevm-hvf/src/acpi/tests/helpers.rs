@@ -1,5 +1,3 @@
-//! Split test module.
-
 use super::super::*;
 
 /// Sum of every byte must be zero (mod 256) for any valid ACPI structure.

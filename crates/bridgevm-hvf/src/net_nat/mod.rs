@@ -1,4 +1,3 @@
-//! net_nat, split for the 1000-line rule.
 mod dns_upstream;
 mod handle_outbound_ipv4;
 mod host_wake;

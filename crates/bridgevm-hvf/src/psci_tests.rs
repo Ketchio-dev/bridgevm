@@ -76,7 +76,7 @@ fn affinity_level_zero_addresses_a_single_cpu() {
 
 #[test]
 fn cpu0_is_searched_like_any_other_cpu() {
-    // CPU0 used to be answered unconditionally as ON without consulting state.
+    // CPU0 is not answered as ON without consulting its state.
     let all_off = topology(&[CpuState::Off, CpuState::Off]);
     assert_eq!(affinity_info(all_off, cpu_mpidr(0), 0), affinity::OFF);
 

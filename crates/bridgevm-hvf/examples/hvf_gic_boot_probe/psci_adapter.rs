@@ -24,7 +24,7 @@ pub(crate) fn psci_target_index(target_mpidr: u64, controls: &[Arc<VcpuControl>]
 
 /// `PSCI_FEATURES` answers for the PSCI namespace only.
 ///
-/// It previously also answered for the TRNG function IDs. Those belong to a
+/// The TRNG function IDs belong to a
 /// separate specification with its own status values, and a guest must query
 /// them through `TRNG_FEATURES`; conflating the two namespaces means a PSCI
 /// probe can report that a TRNG call exists.
@@ -134,8 +134,8 @@ mod tests {
         assert_eq!(controls[0].context.load(Ordering::SeqCst), 0x5678);
 
         // A CPU that has been asked to start but has not yet run reports
-        // ON_PENDING. It previously reported ALREADY_ON, which tells the caller
-        // the CPU is executing when it has not taken its first instruction.
+        // ON_PENDING, not ALREADY_ON, which would tell the caller the CPU is
+        // executing when it has not taken its first instruction.
         assert_eq!(
             psci_cpu_on(
                 &controls,

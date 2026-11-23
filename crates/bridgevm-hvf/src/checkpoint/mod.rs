@@ -1,4 +1,3 @@
-//! checkpoint, split for the 1000-line rule.
 mod get_reg;
 mod hvvcpu;
 

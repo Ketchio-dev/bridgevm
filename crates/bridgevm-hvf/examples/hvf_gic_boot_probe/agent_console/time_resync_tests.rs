@@ -175,8 +175,7 @@ fn a_resync_with_a_fixed_guest_epoch_targets_that_date_plus_the_time_since() {
 #[test]
 fn the_first_service_start_of_a_boot_queues_one_resync_and_a_restart_none() {
     // Windows reads the PL031 (UTC) as local time, so in any zone but UTC its clock is off by the
-    // zone offset after every boot (live: Korea -9 h, Eastern +4 h), and only a host sleep or a
-    // VM pause used to put it right.
+    // zone offset after every boot (e.g. Korea -9 h, Eastern +4 h) until a resync.
     let mut h = harness();
     h.service = true;
     let now = Instant::now();

@@ -1,5 +1,3 @@
-//! Split out of main.rs by responsibility.
-
 use crate::*;
 
 pub(crate) fn run_title_gate_report(args: HvfTitleGateReportArgs) -> Result<()> {

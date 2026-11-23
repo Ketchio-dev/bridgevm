@@ -15,7 +15,7 @@ const TRB_TYPE_STATUS_STAGE: u32 = 4;
 fn ep0_clear_endpoint_halt_completes_no_data_setup_status_transfer() {
     // Given: Windows sends CLEAR_FEATURE(ENDPOINT_HALT) on the interrupt-IN
     // endpoint 0x81 (standard, endpoint recipient, no data) observed in the
-    // live trace; previously STALLed.
+    // live trace; it must not STALL.
     let mut xhci = XhciController::new();
     let mut mem = TestRam::new(0x8000);
     prepare_addressed_clear_feature_endpoint_halt(&mut xhci, &mut mem, 0x0081);

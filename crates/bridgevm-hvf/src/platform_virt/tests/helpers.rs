@@ -1,5 +1,3 @@
-//! Split test module.
-
 use super::super::*;
 use super::pci_boot_media_queue::ready_pci_boot_media_queue;
 use crate::dtb::VirtFdtConfig;

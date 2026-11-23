@@ -1,5 +1,3 @@
-//! Split test module.
-
 use super::super::*;
 use super::ready_queue::setup_ready_queue;
 use crate::{fwcfg::GuestMemoryMut, pcie::VIRTIO_NET_MSIX_TABLE_OFFSET};

@@ -44,5 +44,4 @@ impl VirtioGpuTraceProtocolChoice {
 }
 
 #[cfg(test)]
-#[path = "../args_tests/mod.rs"]
 mod tests;

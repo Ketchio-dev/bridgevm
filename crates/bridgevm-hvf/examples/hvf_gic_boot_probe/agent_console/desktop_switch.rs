@@ -15,7 +15,7 @@
 //! unchanged configuration first fell back to another listed mode whenever
 //! the current one was the previous custom size. If Windows refuses it, the
 //! unchanged configuration is applied. Without a virtio display the primary
-//! display is switched directly, as before. The script prints one
+//! display is switched directly. The script prints one
 //! `BVDISPLAY` line. `virtio=found|none` reports whether EnumDisplayDevices
 //! exposed a 1AF4:1050 display adapter, not whether its driver was merely staged.
 //!

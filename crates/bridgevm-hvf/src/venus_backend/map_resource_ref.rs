@@ -1,5 +1,3 @@
-//! Split out of venus_backend.rs to keep files under 500 lines.
-
 #![allow(non_camel_case_types)]
 #![allow(dead_code)]
 use super::*;

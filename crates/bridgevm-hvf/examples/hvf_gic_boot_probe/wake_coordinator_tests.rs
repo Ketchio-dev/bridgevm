@@ -18,7 +18,6 @@ fn a_published_reason_is_claimed_by_the_next_cancel() {
 
 #[test]
 fn a_cancel_with_no_reason_pending_is_surplus() {
-    // This is the exit the A1 investigation could previously only guess at.
     let coordinator = WakeCoordinator::new();
     assert_eq!(coordinator.claim(), CancelClaim::Surplus);
     assert_eq!(coordinator.counters(), (0, 0, 1, 0));

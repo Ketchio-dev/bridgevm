@@ -3,7 +3,7 @@
 //! clipboard text, which is never printed: the line carries the decoded byte
 //! length and the first 16 hex digits of the SHA-256 of those bytes, so a
 //! verifier that knows the text it expects can still compare it. The automatic
-//! clipboard sync (clip_sync.rs) prints byte counts only, as before.
+//! clipboard sync (clip_sync.rs) prints byte counts only.
 
 use super::*;
 use sha2::{Digest, Sha256};

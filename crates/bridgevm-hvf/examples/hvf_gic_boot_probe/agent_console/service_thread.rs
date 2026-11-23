@@ -19,8 +19,8 @@
 //! The thread steps when there is news for it, never on every vCPU0 tick: a
 //! guest reply, an `exchange` that moved bytes or saw a DNS switch or desktop
 //! request, a VM pause, a ctl append (both hooks reach it through
-//! `ServiceSlot`), and otherwise every `SERVICE_TICK`. That tick replaces the
-//! vCPU0 wake the agent used to need (service_wake_interval.rs).
+//! `ServiceSlot`), and otherwise every `SERVICE_TICK`, so the agent needs no
+//! vCPU0 wake.
 
 use super::*;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;

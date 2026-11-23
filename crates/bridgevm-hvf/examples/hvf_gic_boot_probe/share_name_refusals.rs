@@ -22,7 +22,7 @@ pub struct RefusedNames {
 
 impl RefusedNames {
     /// The share key for a listed name, or None. A name refused only by the
-    /// host limits is noted; a `..` name is refused unnoted, as before.
+    /// host limits is noted; a `..` name is refused unnoted.
     pub fn key(&mut self, listed: &str) -> Option<String> {
         let key = from_guest_rel(listed);
         if key.is_none() && !listed.split(['/', '\\']).any(|part| part == "..") {

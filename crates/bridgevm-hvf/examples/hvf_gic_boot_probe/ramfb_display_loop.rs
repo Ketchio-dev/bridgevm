@@ -13,7 +13,7 @@
 //!   thread exports on its deadline grid as before.
 //! - The `ramfb display timing:` record keeps its grammar. A request tick is
 //!   late by the time since the app stamped the request, a deadline tick by
-//!   the time since its deadline, as before.
+//!   the time since its deadline.
 
 use std::fs::File;
 use std::sync::Mutex;

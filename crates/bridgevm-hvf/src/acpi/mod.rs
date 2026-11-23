@@ -1,4 +1,3 @@
-//! acpi, split for the 1000-line rule.
 mod acpi_header_len;
 mod aml_field_length;
 mod host_power_aml;

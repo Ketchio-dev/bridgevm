@@ -1,6 +1,5 @@
-//! The ramfb display exporter's host thread. vCPU0 used to copy and compare
-//! the whole frame inside its automation block, under the platform lock, at
-//! most every 100 ms; the display was choppy and the guest paid for the copy.
+//! The ramfb display exporter's host thread, so vCPU0 never copies or
+//! compares the frame under the platform lock.
 //! This thread paces itself, reads guest RAM through the existing host
 //! mapping without any lock (a frame torn by a guest mid-draw is replaced by
 //! the next one), and takes the platform lock only to copy the 28-byte ramfb

@@ -1,15 +1,14 @@
 //! One generation-tagged cancellation source for the probe.
 //!
-//! Seven independent places used to call `hv_vcpus_exit` directly: the ramfb
-//! sampler, the vblank pacer, the agent-console heartbeat, the setup-input
-//! injector, two reboot watchdogs and the secondary-vCPU forwarder. None of
-//! them knew about the others, so the run loop saw cancellations it could not
-//! attribute -- the "surplus canceled" exits that correlate with the A1 stall.
+//! Several independent wakers cancel the vCPU run: the ramfb sampler, the
+//! vblank pacer, the agent-console heartbeat, the setup-input injector, two
+//! reboot watchdogs and the secondary-vCPU forwarder. None of them knows about
+//! the others, so without bookkeeping the run loop sees cancellations it
+//! cannot attribute (the "surplus canceled" exits).
 //!
-//! This module is the bookkeeping half of the fix. A waker publishes *why* it
-//! wants the vCPU back before cancelling; the run loop claims those reasons on
-//! every `EXIT_CANCELED`. A cancel that claims nothing is genuinely surplus,
-//! and now says so with a number instead of a guess.
+//! A waker publishes *why* it wants the vCPU back before cancelling; the run
+//! loop claims those reasons on every `EXIT_CANCELED`. A cancel that claims
+//! nothing is genuinely surplus, and is counted as such.
 //!
 //! Generations exist because a reboot recreates the vCPU. A cancellation
 //! requested for the previous generation must never be counted as an answer
@@ -60,8 +59,7 @@ impl WakeReason {
 pub(crate) enum CancelClaim {
     /// At least one waker had published a reason; the bitset is returned.
     Claimed(u64),
-    /// Nobody had asked for this wake. This is the exit that used to be
-    /// attributed by guesswork.
+    /// Nobody had asked for this wake.
     Surplus,
     /// The request belonged to an earlier vCPU generation and was discarded.
     StaleGeneration,
@@ -158,7 +156,7 @@ impl WakeCoordinator {
     /// Publish whichever wake reasons fired, then claim the cancellation.
     ///
     /// The per-waker flags stay authoritative for control flow; this supplies
-    /// the attribution the final report previously had to infer.
+    /// the attribution the final report prints.
     pub(crate) fn attribute_cancel(&self, fired: &[(bool, WakeReason)]) -> CancelClaim {
         for (fired, reason) in fired {
             if *fired {
