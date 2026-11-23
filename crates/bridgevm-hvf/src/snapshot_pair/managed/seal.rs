@@ -8,7 +8,7 @@
 
 use super::private_directory;
 use crate::snapshot_pair::files::open_regular;
-use crate::snapshot_pair::{verify_snapshot, SnapshotManifest};
+use crate::snapshot_pair::{verify_member, SnapshotError, SnapshotManifest, DISK_NAME, VARS_NAME};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -448,13 +448,7 @@ fn recover(root: &Path) -> io::Result<bool> {
         if let Ok(record) = Record::read_pinned(root, &stage) {
             if record.stage.matches(&stage)? {
                 record.matches_stage(&stage)?;
-                let expected = record.expected_manifest()?;
-                let actual = verify_snapshot(&stage).map_err(io::Error::other)?;
-                if actual != expected {
-                    return Err(io::Error::other(
-                        "staged bytes differ from their sealed source",
-                    ));
-                }
+                read_unpublished(&stage, &record.expected_manifest()?)?;
                 clear_sealed(root, &stage, &record)?;
                 return Ok(false);
             }
@@ -464,6 +458,27 @@ fn recover(root: &Path) -> io::Result<bool> {
     // current pair may have guest writes; only its exact directory/pin matters.
     retire_current_record(root)?;
     Ok(true)
+}
+
+/// The sealed directory is still at the staging name, so it was never published: a rename or
+/// exchange moves it to `current`, and only a later restore's exchange could move it back, which
+/// needs a new record that cannot be created while this one exists. It holds this attempt's copy
+/// of a source outside managed storage, so member sizes or bytes that differ from the sealed
+/// manifest (a same-size corrupt source killed during its staged hash) are cleared, as that
+/// attempt itself would have done; the staged manifest's content cannot change that. Only a
+/// member that cannot be read refuses.
+fn read_unpublished(stage: &Path, sealed: &SnapshotManifest) -> io::Result<()> {
+    for (name, hash, bytes) in [
+        (DISK_NAME, &sealed.disk_sha256, sealed.disk_bytes),
+        (VARS_NAME, &sealed.vars_sha256, sealed.vars_bytes),
+    ] {
+        match verify_member(&stage.join(name), Some(hash.as_str()), bytes) {
+            // verify_member reports only a size mismatch as BadManifest.
+            Ok(()) | Err(SnapshotError::HashMismatch { .. } | SnapshotError::BadManifest(_)) => {}
+            Err(error) => return Err(io::Error::other(error)),
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn clear_owned(
