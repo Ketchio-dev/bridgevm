@@ -54,6 +54,12 @@ All notable changes to BridgeVM are documented in this file.
   keychain in the other Unicode form (composed or decomposed, for example
   after the library was copied). Before, the VM refused to start with a
   missing-key error (#689).
+- Long typed or pasted text in a Windows app built on a RichEdit 5 control
+  (for example a WinForms RichTextBox) went in one character at a time,
+  about 5 ms each, and from roughly 2,000 characters failed partway with an
+  input error. It now goes in as one undoable edit, as in Notepad: 5,000
+  mixed characters in under half a second (#665). Needs the updated guest
+  agent.
 
 ### Removed
 
