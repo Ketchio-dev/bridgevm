@@ -18,7 +18,8 @@ vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 ## Set up a development checkout
 
-BridgeVM development targets an Apple-silicon Mac with macOS 14 or newer. The
+BridgeVM development targets an Apple-silicon Mac with macOS 15 or newer (the
+engine needs the macOS 15 Hypervisor.framework GIC API). The
 workspace requires Xcode/Swift and Rust; the minimum Rust version is 1.85, while
 the deterministic project gate currently defaults to the pinned 1.97 toolchain.
 

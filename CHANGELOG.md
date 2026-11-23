@@ -4,6 +4,15 @@ All notable changes to BridgeVM are documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- The app now states and enforces macOS 15 as its minimum. The engine uses the
+  Hypervisor.framework GIC API that first shipped in macOS 15, so on macOS 14 a
+  VM could not start even though the app opened.
+- The Fast VZ (Linux) and QEMU compatibility engines were removed from the app.
+  A VM saved with one of them stays in the library, marked as no longer
+  supported, with its files untouched, and can be deleted from there.
+
 ### Fixed
 
 - After an unclean stop, the shared folder keeps the Windows version of a file
