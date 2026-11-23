@@ -27,7 +27,7 @@ Other known open defects:
 - Graphics future path: Vulkan is a Graphics Lab future path, excluded from General Preview and v1; D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-11-21 at commit `f66c2ed5f001d8cced6dba321b1eb1ef1661365d`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-11-23 at commit `711e074398d480ac49d9618def7a02e71aa244a4`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 ## How to read the generated status
@@ -64,9 +64,8 @@ longer supported and its files are left untouched.
 
 ## Distribution
 
-The General Preview is published (latest `v1.1.1`); see the
-[installation guide](docs/install.md). The older `v1.0.0` predates the
-fail-closed driver boundary and is not recommended. The terminal installer
+The General Preview is published (latest `v0.1.0`); see the
+[installation guide](docs/install.md). The terminal installer
 requires a `BridgeVM-release.json` contract and refuses releases without it,
 even when an archive checksum is valid.
 

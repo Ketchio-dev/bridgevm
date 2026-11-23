@@ -32,7 +32,7 @@ final class LibraryModelFirstRunImportTests: XCTestCase {
                     return FirstRunImportWorker.run(inputs, libraryRoot: root, snapshotHelper: helper)
                 })
         }
-        let began = await Task.detached { gate.started.wait(timeout: .now() + 5) == .success }.value
+        let began = await waitOffCooperativePool(gate.started, seconds: 5)
         XCTAssertTrue(began)
         XCTAssertTrue(model.firstRunImportBusy)
         let duplicate = await model.importExistingHvfVM(fixture.inputs(), worker: { _, _, _, _ in
@@ -86,11 +86,11 @@ final class LibraryModelFirstRunImportTests: XCTestCase {
         let model = LibraryModel(rootURL: fixture.library, migrateLegacy: false)
         let error = await model.importExistingHvfVM(fixture.inputs(),
             snapshotHelper: HvfMediaImportTestSupport.helper, worker: { inputs, root, helper, _ in
-                FirstRunImportWorker.run(inputs, libraryRoot: root, snapshotHelper: helper) { config, root in
+                FirstRunImportWorker.run(inputs, libraryRoot: root, snapshotHelper: helper, publish: { config, root in
                     VMLibrary.saveOutcome(config, rootURL: root) { data, url in
                         VMRegistrationWriter.commit(data, to: url, syncParent: { _ in throw CocoaError(.fileWriteUnknown) })
                     }
-                }
+                })
             }, adopt: { _ in XCTFail("uncertain save must remain visible in the import screen"); return true })
         XCTAssertNotNil(error)
         XCTAssertEqual(model.firstRunImportError, error)

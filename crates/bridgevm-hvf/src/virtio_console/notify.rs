@@ -6,18 +6,20 @@ use crate::fwcfg::GuestMemoryMut;
 
 impl VirtioConsole {
     pub(crate) fn notify_queue(&mut self, queue_index: u16, mem: &mut dyn GuestMemoryMut) {
-        if let Some(queue) = self.queues.get_mut(usize::from(queue_index)) {
-            queue.notify_count = queue.notify_count.saturating_add(1);
+        if let Some(queue) = self.pci.queues.get_mut(usize::from(queue_index)) {
+            queue.counters.notify_count = queue.counters.notify_count.saturating_add(1);
         }
-        if self.status & DRIVER_OK == 0 {
+        if self.pci.status & DRIVER_OK == 0 {
             return;
         }
         if console_trace_enabled() {
             let avail = self
+                .pci
                 .queues
                 .get(usize::from(queue_index))
                 .and_then(|queue| read_u16(mem, queue.driver, 2));
             let last = self
+                .pci
                 .queues
                 .get(usize::from(queue_index))
                 .map(|queue| queue.last_avail_idx);

@@ -11,22 +11,22 @@ impl GuestMemoryMut for Unmapped {
 #[test]
 fn console_overflowing_driver_base_refuses_without_panicking() {
     let mut dev = VirtioConsole::new();
-    dev.queues[3].ready = true;
-    dev.queues[3].size = 1;
-    dev.queues[3].desc = 16;
-    dev.queues[3].driver = u64::MAX;
+    dev.pci.queues[3].ready = true;
+    dev.pci.queues[3].size = 1;
+    dev.pci.queues[3].desc = 16;
+    dev.pci.queues[3].driver = u64::MAX;
     dev.poll(&mut Unmapped);
-    assert_eq!(dev.queues[3].last_avail_idx, 0);
+    assert_eq!(dev.pci.queues[3].last_avail_idx, 0);
 }
 #[test]
 fn gpu_overflowing_driver_base_refuses_without_panicking() {
     let mut dev = VirtioGpu::new(1, 1);
-    dev.queues[0].ready = true;
-    dev.queues[0].size = 1;
-    dev.queues[0].desc = 16;
-    dev.queues[0].driver = u64::MAX;
+    dev.pci.queues[0].ready = true;
+    dev.pci.queues[0].size = 1;
+    dev.pci.queues[0].desc = 16;
+    dev.pci.queues[0].driver = u64::MAX;
     dev.process_control_queue(&mut Unmapped);
-    assert_eq!(dev.queues[0].last_avail_idx, 0);
+    assert_eq!(dev.pci.queues[0].last_avail_idx, 0);
 }
 #[derive(Default)]
 struct Recording {

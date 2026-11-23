@@ -6,21 +6,19 @@ final class NativeInstallControlCodecTests: XCTestCase {
     private let library = NativeRuntimeLibraryIdentity(canonicalPath: "/tmp/library", device: 1, inode: 2, uid: 501)
     private let appID = "11111111-1111-1111-1111-111111111111"
     private let installID = "33333333-3333-3333-3333-333333333333"
-    private let digest = String(repeating: "a", count: 64)
 
     private func request(_ operation: NativeInstallControlRequest.Operation = .install,
                          operationID: String? = "33333333-3333-3333-3333-333333333333") -> NativeInstallControlRequest {
         .init(schema: NativeInstallControlCodec.requestSchema, operation: operation,
               requestID: "44444444-4444-4444-4444-444444444444", library: library,
               vmID: "windows", appInstanceID: appID,
-              expectedSavedConfigurationDigest: digest,
               operationID: operation == .install ? operationID : nil)
     }
 
     private func observation(_ phase: NativeInstallObservation.Phase = .preparingPlan,
                              worker: Bool = true, running: Bool = false, canCancel: Bool = true,
                              failure: String? = nil, logs: [String] = []) -> NativeInstallObservation {
-        .init(operationID: installID, expectedSavedConfigurationDigest: digest, phase: phase,
+        .init(operationID: installID, phase: phase,
               acceptedUptime: 10, workerPending: worker, sessionRunning: running,
               canCancel: canCancel, logTail: logs, failure: failure)
     }
@@ -31,7 +29,7 @@ final class NativeInstallControlCodecTests: XCTestCase {
                           refusal: NativeInstallControlRefusal? = nil) -> NativeInstallControlResponse {
         .init(schema: NativeInstallControlCodec.responseSchema, scope: NativeInstallControlCodec.scope,
               requestID: request.requestID, library: request.library, vmID: request.vmID,
-              appInstanceID: appID, expectedSavedConfigurationDigest: request.expectedSavedConfigurationDigest,
+              appInstanceID: appID,
               requestedOperationID: request.operationID, disposition: disposition,
               observation: observation, refusal: refusal)
     }
@@ -53,7 +51,6 @@ final class NativeInstallControlCodecTests: XCTestCase {
             try NativeInstallControlCodec.validate(value)
             value = .init(schema: value.schema, operation: operation, requestID: value.requestID,
                           library: value.library, vmID: value.vmID, appInstanceID: value.appInstanceID,
-                          expectedSavedConfigurationDigest: value.expectedSavedConfigurationDigest,
                           operationID: installID)
             XCTAssertThrowsError(try NativeInstallControlCodec.validate(value))
         }

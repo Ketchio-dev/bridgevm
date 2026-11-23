@@ -1,13 +1,13 @@
-//! Directories a guest path causes to be created on the Mac (follow-up of
-//! 2026-10-23, conservative choice). They are created owner-only 0700 before
-//! the umask, and they get a fresh com.apple.quarantine mark like guest files,
-//! set through the new directory's descriptor before anything is published in
-//! it: an app bundle is a directory, and LaunchServices reads a bundle's own
-//! mark. A directory whose mark cannot be set is removed again and the write
-//! is refused, for good when the cause stays (guest_write_mark.rs). A directory
-//! that already exists, someone else's included, is used as it is.
+//! Directories a guest path causes to be created on the Mac. They are created
+//! owner-only 0700 before the umask, and they get a fresh com.apple.quarantine
+//! mark like guest files, set through the new directory's descriptor before
+//! anything is published in it: an app bundle is a directory, and
+//! LaunchServices reads a bundle's own mark. A directory whose mark cannot be
+//! set is removed again and the write is refused, for good when the cause
+//! stays (guest_write_policy.rs). A directory that already exists, someone
+//! else's included, is used as it is.
 
-use super::mark::set_mark;
+use super::policy::set_mark;
 use super::open_at;
 use super::seal_host::NativeSealHost;
 use bridgevm_hvf::host_entropy::HostEntropy;

@@ -24,9 +24,7 @@ not disclose details publicly until a fix and release plan are agreed.
 ## Supported versions
 
 BridgeVM is currently an Engineering Preview. Security fixes target current
-`main` and the newest General Preview. Historical releases remain available as
-records but may not receive backports. In particular, `v1.0.0` predates the
-current fail-closed Windows driver policy and is not recommended.
+`main` and the newest General Preview; older releases do not receive backports.
 
 ## Important trust boundaries
 

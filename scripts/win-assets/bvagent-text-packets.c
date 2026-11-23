@@ -25,24 +25,29 @@ static void object_name(WCHAR *out, uint32_t nonce, BOOL event) {
     out[at] = 0;
 }
 
-static BOOL ascii_equal(const WCHAR *left, const WCHAR *right) {
-    while (*left && *right) {
-        WCHAR a = *left++, b = *right++;
-        if (a >= L'A' && a <= L'Z') { a += L'a' - L'A'; }
-        if (b >= L'A' && b <= L'Z') { b += L'a' - L'A'; }
-        if (a != b) { return FALSE; }
+static BOOL ascii_contains(const WCHAR *text, const WCHAR *part) {
+    for (; *text; ++text) {
+        const WCHAR *a = text, *b = part;
+        while (*a && *b) {
+            WCHAR x = *a, y = *b;
+            if (x >= L'A' && x <= L'Z') { x += L'a' - L'A'; }
+            if (y >= L'A' && y <= L'Z') { y += L'a' - L'A'; }
+            if (x != y) { break; }
+            ++a; ++b;
+        }
+        if (!*b) { return TRUE; }
     }
-    return *left == *right;
+    return FALSE;
 }
 
-static BOOL notepad_editor(HWND window) {
-    WCHAR kind[64], path[512];
-    if (!GetClassNameW(window, kind, 64) || !ascii_equal(kind, L"RichEditD2DPT")) { return FALSE; }
-    DWORD path_length = GetModuleFileNameW(NULL, path, 512);
-    if (!path_length || path_length >= 512) { return FALSE; }
-    WCHAR *name = path;
-    for (WCHAR *cursor = path; *cursor; ++cursor) { if (*cursor == L'\\' || *cursor == L'/') { name = cursor + 1; } }
-    return ascii_equal(name, L"Notepad.exe") && !(GetWindowLongPtrW(window, GWL_STYLE) & ES_READONLY);
+// A writable RichEdit control: Notepad's RichEditD2DPT, RICHEDIT50W (also
+// WinForms' WindowsForms10.RICHEDIT50W.*), RichEdit20W. All of them take an
+// undoable EM_REPLACESEL, which costs one edit instead of one per character
+// (RICHEDIT50W took about 5 ms per character, so long text outran the wait).
+static BOOL richedit_editor(HWND window) {
+    WCHAR kind[256];
+    if (!GetClassNameW(window, kind, 256) || !ascii_contains(kind, L"RichEdit")) { return FALSE; }
+    return !(GetWindowLongPtrW(window, GWL_STYLE) & ES_READONLY);
 }
 
 static void reject(BvTextHeader *header, uint32_t error) {
@@ -95,9 +100,7 @@ __declspec(dllexport) LRESULT CALLBACK BridgeVMTextPacketHook(int code, WPARAM r
                 DWORD owner = 0;
                 GetWindowThreadProcessId(GetForegroundWindow(), &owner);
                 if (GetFocus() != target || owner != GetCurrentProcessId()) { reject(header, 4); }
-                else if (!has_null && notepad_editor(target) && header->state == 1) {
-                    // Notepad's known plain-text RichEdit supports undoable selection
-                    // replacement. One edit avoids per-character layout work.
+                else if (!has_null && richedit_editor(target) && header->state == 1) {
                     SendMessageW(target, EM_REPLACESEL, TRUE, (LPARAM)copy);
                     InterlockedExchange(&header->units, (LONG)length);
                 } else

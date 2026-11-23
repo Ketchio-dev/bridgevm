@@ -4,7 +4,7 @@
 //! Windows to Mac: `GETRANGE <b64(path)> <offset> <length>` answers GETBEG with the file's size
 //! and time as they were after the read, then GETCHUNKs and GETEND. Each range is its own
 //! lockstep request, so clipboard and control traffic still go first between ranges. A file
-//! whose first range holds all of it takes the in-memory path (share_get_publish.rs); a larger
+//! whose first range holds all of it takes the in-memory path (share_host_write.rs); a larger
 //! one goes to a writer thread (share_stage_writer.rs) chunk by chunk, so memory stays near two
 //! ranges and vCPU 0's thread only frames lines. Every range must report the size and time
 //! the guest listing gave the file: otherwise the file changed while it was copied, the copy
@@ -164,7 +164,7 @@ impl AgentConsoleHarness {
         write_share_guest_path_into(share, name, &mut self.share_guest_path_scratch);
         let path_ok = path == self.share_guest_path_scratch;
         if !range_req {
-            // A file the first range holds whole is fetched as before.
+            // A file the first range holds whole is fetched in one piece.
             if !path_ok || range.offset != 0 || range.size <= len || self.big_share_active() {
                 return false;
             }
@@ -382,7 +382,7 @@ impl AgentConsoleHarness {
         }
     }
 
-    /// A Mac-side failure is handled as a failed whole-file write (share_get_publish.rs).
+    /// A Mac-side failure is handled as a failed whole-file write (share_host_write.rs).
     fn big_get_write_failed(&mut self, name: &str, size: u64, error: &std::io::Error) {
         let Some(share) = self.share.as_mut() else {
             return;
@@ -391,7 +391,7 @@ impl AgentConsoleHarness {
         let _ = share.engine.on_guest_version(name.to_string(), size, 0, None);
         let exhausted = share
             .engine
-            .on_host_write_error(name, super::guest_write_refusal::is_persistent(error));
+            .on_host_write_error(name, super::is_persistent(error));
         // A full Mac disk fails these writes; run.log may be on it (host_log).
         bridgevm_hvf::host_log::out(format_args!("BVAGENT SHARE write-refused {name} {error}"));
         if is_out_of_space(error) {

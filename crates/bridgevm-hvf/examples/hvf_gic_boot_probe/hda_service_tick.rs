@@ -50,9 +50,6 @@ use crate::{deliver_pending_msix, HvReturn, MappedRam, VirtPlatform};
 #[path = "hda_service_tick_counts.rs"]
 mod counts;
 pub(crate) use counts::TickCounts;
-#[path = "hda_service_tick_pacing.rs"]
-mod pacing;
-use pacing::{raise_qos, sleep_until};
 
 /// Half the 10 ms period Windows programs, so each IOC gets its own MSI.
 pub(crate) const TICK_INTERVAL: Duration = Duration::from_millis(5);
@@ -294,6 +291,30 @@ fn run(
             }
             next = (next + interval).max(Instant::now());
         }
+    }
+}
+
+/// Park until `deadline`; false as soon as a stop is requested.
+fn sleep_until(deadline: Instant, stop: &AtomicBool) -> bool {
+    loop {
+        if stop.load(SeqCst) {
+            return false;
+        }
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return true;
+        }
+        thread::park_timeout(left);
+    }
+}
+
+/// User-interactive QoS for the calling thread, so its 5 ms wakes are prompt.
+fn raise_qos() {
+    use libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE;
+    // SAFETY: sets only the calling thread's own QoS class; no pointers.
+    let status = unsafe { libc::pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0) };
+    if status != 0 {
+        eprintln!("hda service tick: QoS not raised: {status}");
     }
 }
 

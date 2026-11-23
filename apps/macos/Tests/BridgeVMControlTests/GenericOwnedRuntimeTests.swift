@@ -75,9 +75,9 @@ final class GenericOwnedRuntimeTests: XCTestCase {
         var group: GenericOwnedRuntime? = GenericOwnedRuntime(plan: .init(primary: sleepSpec), spawn: recorder.spawn,
                                                              isDependencyRunning: { _ in false })
         await wait { group?.snapshot.primaryRunning == true }
-        weak var observation = group
+        let observation = WeakReference(group)
         group = nil
-        await wait { observation == nil }
+        await wait { observation.object == nil }
         XCTAssertTrue(recorder.processes[0].isRunning)
     }
 

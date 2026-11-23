@@ -22,9 +22,9 @@
 //! new one on the new default. The ring keeps its audio and the guest's stream
 //! carries on. A burst of changes makes one reopen.
 
+use super::hda_coreaudio_atomic_ring::PcmQueue;
 use super::hda_coreaudio_atomic_ring::{AtomicPcmRing, Consumer};
 use super::hda_coreaudio_output::{DefaultDeviceListener, DEFAULT_INPUT};
-use super::hda_coreaudio_publication::PcmQueue;
 use bridgevm_hvf::hda::HdaPcmSource;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};

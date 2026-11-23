@@ -31,6 +31,8 @@ struct VTPMKeychainAPI {
             guard let result = values as? [String: Any] else { throw VTPMExistingKeyError.backendInspectionFailed }
             return result
         },
+        // Deprecated without a replacement: nothing else keeps a file-based keychain read from prompting.
+        // These two calls are BridgeVM's only SecKeychain use (existingRead below).
         getInteraction: { var allowed = DarwinBoolean(false); let status = SecKeychainGetUserInteractionAllowed(&allowed); return (allowed.boolValue, status) },
         setInteraction: { SecKeychainSetUserInteractionAllowed($0) })
 }

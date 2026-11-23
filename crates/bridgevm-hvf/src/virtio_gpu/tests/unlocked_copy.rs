@@ -399,7 +399,7 @@ fn an_unref_kicked_during_a_transfer_waits_and_each_completes_once() {
         !guest.dev.gpu.resources.contains_key(&1),
         "unreffed after the copy"
     );
-    assert!(guest.dev.gpu.interrupt_status & 1 != 0);
+    assert!(guest.dev.gpu.pci.interrupt_status & 1 != 0);
 }
 
 #[test]

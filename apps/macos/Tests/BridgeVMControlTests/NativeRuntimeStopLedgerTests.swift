@@ -53,7 +53,7 @@ final class NativeRuntimeStopLedgerTests: XCTestCase {
         var requests: [NativeRuntimeControlRequest] = []
         for _ in 0..<300 {
             let request = Fixture.request(target: .init(appInstanceID: Fixture.app, runToken: UUID().uuidString,
-                processID: 123, acceptedConfigurationDigest: Fixture.target.acceptedConfigurationDigest))
+                processID: 123))
             let operation = ticket(request)
             XCTAssertEqual(try ledger.process(request) { .accepted(operation) }.disposition, .accepted)
             operation.update(phase: .completed, complete: nil, exit: nil, failure: nil)
@@ -74,7 +74,7 @@ final class NativeRuntimeStopLedgerTests: XCTestCase {
         let request = Fixture.request()
         XCTAssertEqual(try ledger.process(Fixture.request(.stopStatus)) { XCTFail(); return .refused(.notOwned) }.refusal, .operationUnknown)
         let changed = Fixture.request(target: .init(appInstanceID: UUID().uuidString, runToken: Fixture.token,
-            processID: 123, acceptedConfigurationDigest: Fixture.target.acceptedConfigurationDigest))
+            processID: 123))
         XCTAssertEqual(try ledger.process(changed) { XCTFail(); return .refused(.notOwned) }.refusal, .ownerChanged)
         XCTAssertEqual(try ledger.process(request) { .refused(.supervisionUnavailable) }.reason, NativeRuntimeStopRefused.unsupportedRuntime.reason)
         XCTAssertEqual(try ledger.process(request) { .accepted(self.ticket(request)) }.disposition, .accepted)

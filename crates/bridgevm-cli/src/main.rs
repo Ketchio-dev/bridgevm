@@ -24,15 +24,15 @@ mod app_cli_resolver;
 mod args;
 mod entry;
 mod hvf_cmd;
-mod json_util;
 mod report;
 mod title_gate;
+mod virtio_gpu_trace;
 
 use args::*;
 use hvf_cmd::*;
-use json_util::*;
 use report::*;
 use title_gate::*;
+use virtio_gpu_trace::*;
 
 fn main() -> anyhow::Result<()> {
     entry::run()

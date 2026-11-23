@@ -1,3 +1,6 @@
+//! `bridgevm hvf title-gate-report`: the title manifest, its log evidence and
+//! the pass/fail verdict.
+
 use crate::*;
 
 pub(crate) fn run_title_gate_report(args: HvfTitleGateReportArgs) -> Result<()> {
@@ -256,6 +259,189 @@ pub(crate) fn manifest_string(
         .ok_or_else(|| anyhow::anyhow!("title manifest field '{field}' must be a string"))
 }
 
+#[derive(Debug)]
+pub(crate) struct TitleGateManifest {
+    pub(crate) path: PathBuf,
+    pub(crate) id: String,
+    pub(crate) api: String,
+    pub(crate) architecture: String,
+    pub(crate) executable: Option<String>,
+    pub(crate) working_directory: Option<String>,
+    pub(crate) arguments: Vec<String>,
+    pub(crate) executable_sha256: Option<String>,
+    pub(crate) log: PathBuf,
+    pub(crate) pass_marker: String,
+    pub(crate) minimum_runtime_seconds: u64,
+    pub(crate) required_modules: Vec<String>,
+    pub(crate) require_main_window: bool,
+    pub(crate) minimum_resource_flushes: u64,
+}
+
+#[derive(Debug)]
+pub(crate) struct TitleGateResult {
+    pub(crate) manifest: TitleGateManifest,
+    pub(crate) log_path: PathBuf,
+    pub(crate) log_sha256: Option<String>,
+    pub(crate) fresh_log: bool,
+    pub(crate) elapsed_ms: Option<u64>,
+    pub(crate) resource_flushes: u64,
+    pub(crate) blockers: Vec<String>,
+}
+
+impl TitleGateResult {
+    pub(crate) fn passed(&self) -> bool {
+        self.blockers.is_empty()
+    }
+
+    pub(crate) fn as_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.manifest.id,
+            "api": self.manifest.api,
+            "architecture": self.manifest.architecture,
+            "executable": self.manifest.executable,
+            "working_directory": self.manifest.working_directory,
+            "arguments": self.manifest.arguments,
+            "manifest": self.manifest.path,
+            "log": self.log_path,
+            "log_sha256": self.log_sha256,
+            "fresh_log": self.fresh_log,
+            "elapsed_ms": self.elapsed_ms,
+            "resource_flushes": self.resource_flushes,
+            "minimum_resource_flushes": self.manifest.minimum_resource_flushes,
+            "passed": self.passed(),
+            "blockers": self.blockers,
+        })
+    }
+}
+
+pub(crate) fn manifest_u64(
+    object: &serde_json::Map<String, serde_json::Value>,
+    field: &str,
+) -> Result<u64> {
+    object
+        .get(field)
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| {
+            anyhow::anyhow!("title manifest field '{field}' must be an unsigned integer")
+        })
+}
+
+pub(crate) fn evaluate_title_gate(
+    manifest: TitleGateManifest,
+    guest_logs: &Path,
+    pre_run_state: &std::collections::BTreeMap<String, String>,
+    resource_flushes: u64,
+    driver_state_pass: bool,
+) -> Result<TitleGateResult> {
+    let log_path = guest_logs.join(&manifest.log);
+    let mut blockers = Vec::new();
+    let contents = match fs::read_to_string(&log_path) {
+        Ok(contents) => Some(contents),
+        Err(error) => {
+            blockers.push(format!("guest log is missing or unreadable: {error}"));
+            None
+        }
+    };
+    let log_sha256 = if log_path.is_file() {
+        Some(sha256_path(&log_path)?)
+    } else {
+        None
+    };
+    let fresh_log = match (pre_run_state.get(&manifest.id), log_sha256.as_deref()) {
+        (Some(previous), Some(current)) => previous == "missing" || previous != current,
+        _ => false,
+    };
+    if !fresh_log {
+        blockers.push("guest log was not proven fresh for this run".to_string());
+    }
+    if !driver_state_pass {
+        blockers.push("clean single-generation driver state was not proven".to_string());
+    }
+
+    let elapsed_ms = contents
+        .as_deref()
+        .and_then(|contents| log_u64_field(contents, "elapsed_ms"));
+    if let Some(contents) = &contents {
+        if !contents.contains(&manifest.pass_marker) {
+            blockers.push(format!("pass marker '{}' is missing", manifest.pass_marker));
+        }
+        if manifest.require_main_window && !contents.contains("main_window_observed=true") {
+            blockers.push("main window was not observed".to_string());
+        }
+        let contents_lower = contents.to_ascii_lowercase();
+        for module in &manifest.required_modules {
+            if !contents_lower.contains(&module.to_ascii_lowercase()) {
+                blockers.push(format!("required module '{module}' was not observed"));
+            }
+        }
+        if let Some(expected) = &manifest.executable_sha256 {
+            let observed =
+                log_string_field(contents, "executable_sha256").map(str::to_ascii_lowercase);
+            if observed.as_deref() != Some(expected.as_str()) {
+                blockers.push(format!(
+                    "executable SHA-256 mismatch: expected {expected}, observed {}",
+                    observed.as_deref().unwrap_or("missing")
+                ));
+            }
+        }
+    }
+    let minimum_runtime_ms = manifest.minimum_runtime_seconds.saturating_mul(1_000);
+    if elapsed_ms.is_none_or(|elapsed| elapsed < minimum_runtime_ms) {
+        blockers.push(format!(
+            "runtime did not reach required {minimum_runtime_ms} ms"
+        ));
+    }
+    if resource_flushes < manifest.minimum_resource_flushes {
+        blockers.push(format!(
+            "RESOURCE_FLUSH count {resource_flushes} is below required {}",
+            manifest.minimum_resource_flushes
+        ));
+    }
+
+    Ok(TitleGateResult {
+        manifest,
+        log_path,
+        log_sha256,
+        fresh_log,
+        elapsed_ms,
+        resource_flushes,
+        blockers,
+    })
+}
+
+pub(crate) fn valid_sha256(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+pub(crate) fn sha256_path(path: &Path) -> Result<String> {
+    let mut file = fs::File::open(path)
+        .with_context(|| format!("failed to open {} for SHA-256", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .with_context(|| format!("failed to hash {}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+pub(crate) fn log_u64_field(contents: &str, field: &str) -> Option<u64> {
+    log_string_field(contents, field)?.parse().ok()
+}
+
+pub(crate) fn log_string_field<'a>(contents: &'a str, field: &str) -> Option<&'a str> {
+    let prefix = format!("{field}=");
+    contents
+        .split_whitespace()
+        .rev()
+        .find_map(|token| token.strip_prefix(&prefix))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -294,5 +480,64 @@ mod tests {
         let error = read_title_gate_manifest(&path).unwrap_err().to_string();
         fs::remove_file(path).unwrap();
         assert!(error.contains("without directories or traversal"));
+    }
+
+    #[test]
+    fn title_gate_requires_fresh_log_runtime_module_window_driver_and_flushes() {
+        let mut root = unique_trace_path("bridgevm-title-gate");
+        root.set_extension("dir");
+        let guest_logs = root.join("guest-logs");
+        fs::create_dir_all(&guest_logs).unwrap();
+        let manifest_path = root.join("ppsspp.json");
+        fs::write(
+            &manifest_path,
+            r#"{
+  "version": 1,
+  "id": "ppsspp-vulkan-arm64",
+  "api": "vulkan",
+  "architecture": "arm64",
+  "log": "ppsspp.log",
+  "pass_marker": "BVGPU-REAL-TITLE-PASS",
+  "minimum_runtime_seconds": 30,
+  "required_modules": ["vulkan_virtio.dll"],
+  "require_main_window": true,
+  "minimum_resource_flushes": 300
+}"#,
+        )
+        .unwrap();
+        fs::write(
+            guest_logs.join("ppsspp.log"),
+            "status=PASS elapsed_ms=30001 venus_icd=C:\\BridgeVM\\vulkan_virtio.dll main_window_observed=true\nBVGPU-REAL-TITLE-PASS\n",
+        )
+        .unwrap();
+        fs::write(
+            guest_logs.join("viogpu3d-cleanup.log"),
+            "BVGPU-DRIVER-STATE-PASS\n",
+        )
+        .unwrap();
+
+        let manifest = read_title_gate_manifest(&manifest_path).unwrap();
+        let mut pre_run = std::collections::BTreeMap::new();
+        pre_run.insert(manifest.id.clone(), "missing".to_string());
+        let result = evaluate_title_gate(manifest, &guest_logs, &pre_run, 300, true).unwrap();
+        assert!(result.passed(), "{:?}", result.blockers);
+
+        let manifest = read_title_gate_manifest(&manifest_path).unwrap();
+        pre_run.insert(
+            manifest.id.clone(),
+            sha256_path(&guest_logs.join("ppsspp.log")).unwrap(),
+        );
+        let stale = evaluate_title_gate(manifest, &guest_logs, &pre_run, 299, true).unwrap();
+        assert!(!stale.passed());
+        assert!(stale
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("not proven fresh")));
+        assert!(stale
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("below required 300")));
+
+        fs::remove_dir_all(root).unwrap();
     }
 }

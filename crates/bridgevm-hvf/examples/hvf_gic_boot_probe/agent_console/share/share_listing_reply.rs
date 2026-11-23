@@ -2,13 +2,9 @@
 //! applied one ends a new session's wait (share_adopt.rs). One refused for its size pauses the
 //! share (share_listing_pause.rs). An unchanged one comes as LSSAME (share_listing_same.rs).
 
-use super::share_listing_report::refused_name_lines;
 use super::*;
 use crate::agent_console::harness_protocol::MAX_AGENT_LINE_BYTES;
 use crate::agent_console::listing_same::{usable_gen, MAX_LISTING_GEN_BYTES};
-#[path = "share_listing_refusal.rs"]
-mod refusal;
-use refusal::report_listing_limit;
 
 // A listing at its byte bound, in base64 after `LSOK ` and with its gen, fits one agent line:
 // one past the bound is refused for its length below, not discarded unread.
@@ -239,5 +235,45 @@ impl AgentConsoleHarness {
                 SyncAction::Skip { name, reason } => print_share_skip(&name, reason),
             }
         }
+    }
+}
+
+/// The skip report for guest listing names the host name limits refused: at
+/// most `REFUSED_SHOWN` lines, each a fixed reason and a byte length but
+/// never the name, then one count line, so a hostile listing cannot flood
+/// run.log. No lines when nothing was refused or the same names were refused
+/// by the previous listing, so a listing polled again is reported once.
+pub(in crate::agent_console) fn refused_name_lines(
+    engine: &mut ShareSync,
+    refused: &share_sync::RefusedNames,
+) -> Vec<String> {
+    if !engine.refused_names_changed(refused) || refused.count == 0 {
+        return Vec::new();
+    }
+    let mut lines: Vec<String> = refused
+        .shown
+        .iter()
+        .map(|(reason, bytes)| format!("BVAGENT SHARE skip <guest-name> {reason} {bytes}"))
+        .collect();
+    lines.push(format!(
+        "BVAGENT SHARE skip <guest-names> over-host-limits {}",
+        refused.count
+    ));
+    lines
+}
+
+/// Listing refusal diagnostics contain fixed reasons and numeric bounds only.
+fn report_listing_limit(error: share_sync::ListingLimitError) {
+    let limit = match error {
+        share_sync::ListingLimitError::TooManyBytes { .. } => Some(share_sync::MAX_LISTING_BYTES),
+        share_sync::ListingLimitError::TooManyEntries { .. } => {
+            Some(share_sync::MAX_LISTING_ENTRIES)
+        }
+        share_sync::ListingLimitError::InvalidRow { .. } => None,
+    };
+    if let Some(limit) = limit {
+        println!("BVAGENT SHARE ls-error <listing-limit {error:?} limit={limit}>");
+    } else {
+        println!("BVAGENT SHARE ls-error <listing-invalid {error:?}>");
     }
 }

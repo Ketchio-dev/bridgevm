@@ -2,10 +2,16 @@
 //! named, and it writes the file to BRIDGEVM_VIRTIO_CONSOLE_GET_DIR through the
 //! share's pinned, no-follow writer, as guest-to-host share files are written,
 //! creating missing levels of that directory as guest directories are.
+//!
+//! The directory is the operator's BRIDGEVM_VIRTIO_CONSOLE_GET_DIR; its deepest
+//! existing ancestor is opened as configured, symlinks included. Each missing
+//! level below it is created like a directory for a guest path (owner-only 0700
+//! and marked, guest_write_directory.rs), not with create_dir_all's 0755, and
+//! the file gets the share's file policy through Destination.
 
+use super::host_destination::Destination;
 use super::*;
-#[path = "harness_get_dir.rs"]
-mod get_dir;
+use std::io;
 
 impl AgentConsoleHarness {
     /// GETEND <seq> for the command labelled `label`. A GETEND for no GET that
@@ -56,7 +62,7 @@ impl AgentConsoleHarness {
                 .filter(|s| !s.is_empty())
                 .unwrap_or("bvagent-get.bin");
             let dir = Path::new(&dir);
-            match get_dir::destination(dir, name).and_then(|d| d.write(&accum.bytes)) {
+            match get_dir_destination(dir, name).and_then(|d| d.write(&accum.bytes)) {
                 Ok(_) => written_note = format!(" wrote={}", dir.join(name).display()),
                 Err(e) => written_note = format!(" write-error={e}"),
             }
@@ -66,4 +72,22 @@ impl AgentConsoleHarness {
             accum.path, accum.bytes.len(), accum.total, accum.chunks_seen, accum.nchunks
         );
     }
+}
+
+/// The destination of the file `name` in the GET directory `dir`.
+fn get_dir_destination(dir: &Path, name: &str) -> io::Result<Destination> {
+    let mut existing = dir;
+    let mut key = vec![name];
+    while !existing.as_os_str().is_empty() && !existing.try_exists()? {
+        let level = existing.file_name().and_then(|level| level.to_str());
+        key.push(level.ok_or(io::ErrorKind::InvalidInput)?);
+        existing = existing.parent().unwrap_or(Path::new(""));
+    }
+    key.reverse();
+    let existing = if existing.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        existing
+    };
+    Destination::open(existing, &key.join("/"), true)
 }

@@ -11,42 +11,47 @@ final class NativeInstallOperationReconcileTests: XCTestCase {
             displayHeight: 720, installPending: true)
     }
 
-    func testTerminalOperationSurvivesOnlyForExactPendingConfiguration() throws {
+    func testTerminalOperationSurvivesOnlyWhileTheVMIsAPendingInstall() throws {
         let store = NativeInstallOperationStore(), saved = config()
-        let digest = try NativeRuntimeConfigurationIdentity.digest(config: saved)
-        guard case let .accepted(operation) = store.reserve(vmID: saved.slug,
-            digest: digest, operationID: UUID()) else { return XCTFail("expected admission") }
+        guard case let .accepted(operation) = store.reserve(vmID: saved.slug, operationID: UUID())
+        else { return XCTFail("expected admission") }
         operation.fail("retryable")
 
         store.reconcile(with: [saved])
-        guard case let .success(retained) = store.operation(vmID: saved.slug, digest: digest) else {
+        guard case let .success(retained) = store.operation(vmID: saved.slug) else {
             return XCTFail("expected retained terminal result")
         }
         XCTAssertTrue(retained === operation)
 
-        var changed = saved
-        changed.displayWidth = 1440
-        store.reconcile(with: [changed])
-        guard case .failure(.targetUnavailable) = store.operation(vmID: saved.slug, digest: digest) else {
-            return XCTFail("expected stale terminal result removal")
+        var edited = saved
+        edited.displayWidth = 1440
+        store.reconcile(with: [edited])
+        guard case .success = store.operation(vmID: saved.slug) else {
+            return XCTFail("a settings edit keeps the result of the same pending install")
+        }
+
+        var installed = saved
+        installed.installPending = false
+        store.reconcile(with: [installed])
+        guard case .failure(.targetUnavailable) = store.operation(vmID: saved.slug) else {
+            return XCTFail("expected terminal result removal once the VM is installed")
         }
     }
 
     func testActiveReservationSurvivesTemporaryLibraryAbsence() throws {
         let store = NativeInstallOperationStore(), saved = config()
-        let digest = try NativeRuntimeConfigurationIdentity.digest(config: saved)
-        guard case let .accepted(operation) = store.reserve(vmID: saved.slug,
-            digest: digest, operationID: UUID()) else { return XCTFail("expected admission") }
+        guard case let .accepted(operation) = store.reserve(vmID: saved.slug, operationID: UUID())
+        else { return XCTFail("expected admission") }
 
         store.reconcile(with: [])
-        guard case let .success(retained) = store.operation(vmID: saved.slug, digest: digest) else {
+        guard case let .success(retained) = store.operation(vmID: saved.slug) else {
             return XCTFail("expected active reservation")
         }
         XCTAssertTrue(retained === operation)
 
         operation.cancel()
         store.reconcile(with: [])
-        guard case .failure(.targetUnavailable) = store.operation(vmID: saved.slug, digest: digest) else {
+        guard case .failure(.targetUnavailable) = store.operation(vmID: saved.slug) else {
             return XCTFail("expected terminal removal after target loss")
         }
     }

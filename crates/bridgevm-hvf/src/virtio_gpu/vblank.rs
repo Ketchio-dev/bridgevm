@@ -69,11 +69,9 @@ impl VirtioGpu {
             return;
         }
 
-        // Retire exactly one response. Even if the vCPU did not exit for several
-        // intervals, do not catch up in a burst.
-        let mut used_len = 0;
-        if let Some(pending_response) = self.pending_vblank.pop_front() {
-            used_len =
+        // Retire at most one response per retrace, even after a long gap.
+        let used_len = if let Some(pending_response) = self.pending_vblank.pop_front() {
+            let used_len =
                 Self::scatter_write(mem, &pending_response.descs, &pending_response.response);
             Self::write_used(
                 mem,
@@ -81,14 +79,17 @@ impl VirtioGpu {
                 pending_response.head,
                 used_len,
             );
-            self.mark_queue_interrupt(pending_response.queue_index);
+            self.pci.mark_queue_interrupt(pending_response.queue_index);
             self.recycle_parked_response_buffers(pending_response.descs, pending_response.response);
-        }
+            used_len
+        } else {
+            0
+        };
         if self.refresh_interrupt_enabled {
             // A dedicated config event identifies an actual virtual retrace.
             // Ordinary control/cursor completions must never count as vsync.
             self.events_read |= 1 << 31;
-            self.interrupt_status |= 2;
+            self.pci.interrupt_status |= 2;
             self.pending_config_change = true;
         }
         // Anchor the next deadline on the absolute schedule, not the (late)

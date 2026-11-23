@@ -1,4 +1,5 @@
-//! Bytes read before a replacement must not inherit its newer path timestamp.
+//! Bytes read before a replacement must not inherit its newer path timestamp,
+//! and the snapshot path refuses an oversized sparse file before allocating it.
 
 use super::*;
 use std::fs::File;
@@ -61,4 +62,18 @@ fn a_replacement_after_read_cannot_be_mistaken_for_the_synced_host_snapshot() {
     assert_eq!(rig.host("a.txt").as_deref(), Some(&b"new-B"[..]));
     assert_eq!(rig.guest.content("a.txt"), Some(&b"new-B"[..]));
     rig.assert_settled();
+}
+
+#[test]
+fn share_file_read_rejects_oversized_file_before_allocation() {
+    let mut rig = Rig::new("host-snapshot-sparse-cap");
+    rig.h.share.as_mut().unwrap().engine = ShareSync::new(4).into();
+    let file = std::fs::File::create(rig.dir.join("big.bin")).unwrap();
+    file.set_len(512 * 1024 * 1024).unwrap();
+    let share = rig.h.share.as_mut().unwrap();
+    let max_bytes = share.engine.max_bytes();
+    let error = read_share_host_snapshot(share, "big.bin", max_bytes)
+        .err()
+        .unwrap();
+    assert_eq!(error, ShareFileReadError::TooLarge(512 * 1024 * 1024));
 }

@@ -31,8 +31,8 @@ final class HvfRuntimeLibraryActionBackend: VMBackend {
     var gateTimedOut: Bool { lock.lock(); defer { lock.unlock() }; return startTimedOut }
     func holdFakeStart() { lock.lock(); holdStart = true; lock.unlock() }
     func releaseFakeStart() { startRelease.signal() }
-    func waitForStartEntry() async -> Bool {
-        await Task.detached { [startEntered] in startEntered.wait(timeout: .now() + 5) == .success }.value
+    @MainActor func waitForStartEntry() async -> Bool {
+        await waitOffCooperativePool(startEntered, seconds: 5)
     }
     private func record(_ field: WritableKeyPath<Calls, Int>) {
         lock.lock(); recorded[keyPath: field] += 1; lock.unlock()
@@ -224,9 +224,7 @@ final class HvfRuntimeLibraryActionFixture {
         XCTAssertTrue(entered, "The counting fake must enter its finite gate")
         if entered { duringAdmission() }
         backend.releaseFakeStart()
-        let acknowledged = await Task.detached {
-            completed.wait(timeout: .now() + 5) == .success
-        }.value
+        let acknowledged = await waitOffCooperativePool(completed, seconds: 5)
         XCTAssertTrue(acknowledged, "The fake Start must acknowledge its MainActor completion")
         XCTAssertFalse(backend.gateTimedOut)
         XCTAssertFalse(model.lifecycleBusy)

@@ -106,16 +106,16 @@ final class HvfWindowsInstallPlanPreparationLifetimeTests: XCTestCase {
                     let config = f.work.config(pending: true)
                     f.save(config)
                     var library: LibraryModel? = f.library()
-                    weak var observedLibrary = library
+                    let observedLibrary = WeakReference(library)
                     var preparation: HvfWindowsInstallPreparation? = try f.host(in: XCTUnwrap(library)).preparation
-                    weak var observedPreparation = preparation
+                    let observedPreparation = WeakReference(preparation)
                     let task = try XCTUnwrap(preparation?.preparationTask)
                     guard await f.entered(1) else { return }
                     let bytes = try f.work.snapshot()
                     if !keepHandle { preparation = nil }
                     library = nil
-                    XCTAssertNil(observedLibrary, "The owner must release before the read-only worker is unblocked")
-                    if !keepHandle { XCTAssertNil(observedPreparation) }
+                    XCTAssertNil(observedLibrary.object, "The owner must release before the read-only worker is unblocked")
+                    if !keepHandle { XCTAssertNil(observedPreparation.object) }
                     if cancelAcknowledgment { task.cancel() }
                     XCTAssertEqual(f.probe.snapshot.finished, 0)
                     f.probe.release(1)
@@ -124,7 +124,7 @@ final class HvfWindowsInstallPlanPreparationLifetimeTests: XCTestCase {
                     XCTAssertEqual(f.made, 0, "An expired owner must not publish a session")
                     if let preparation { f.assertFailed(preparation) }
                     preparation = nil
-                    XCTAssertNil(observedPreparation)
+                    XCTAssertNil(observedPreparation.object)
                     XCTAssertEqual(try f.work.snapshot(), bytes)
                 }
             }

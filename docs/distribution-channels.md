@@ -33,9 +33,9 @@ driver is included, test signing is not required, product injection is
 unavailable, and install mode is `3d-off`. A checksum-valid archive with the
 wrong channel is still refused.
 
-The historical `v1.0.0` predates the current A9 fail-closed product boundary.
-It remains evidence of what was released, but it is not the recommended General
-Preview and has no channel manifest. The installer therefore refuses it.
+Version numbers restarted at `v0.1.0` on 2026-11-23: `v0.1.0` is built from the
+source of the withdrawn `v1.1.1` tag, and the earlier preview tags `v1.0.0`,
+`v1.1.0` and `v1.1.1` were withdrawn.
 
 ## Graphics Lab
 

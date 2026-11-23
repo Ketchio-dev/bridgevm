@@ -7,21 +7,21 @@ impl VirtioPciConsole {
         let console = &self.console;
         let mut out = crate::checkpoint::StateWriter::new();
         out.write_u32(1);
-        out.write_u32(console.device_features_sel);
-        out.write_u32(console.driver_features_sel);
-        out.write_u32(console.driver_features[0]);
-        out.write_u32(console.driver_features[1]);
-        out.write_u16(console.config_msix_vector);
+        out.write_u32(console.pci.device_features_sel);
+        out.write_u32(console.pci.driver_features_sel);
+        out.write_u32(console.pci.driver_features[0]);
+        out.write_u32(console.pci.driver_features[1]);
+        out.write_u16(console.pci.config_msix_vector);
         out.write_u16(0);
-        out.write_u32(console.queue_sel);
-        out.write_u8(console.pending_msix_queue_bits);
+        out.write_u32(console.pci.queue_sel);
+        out.write_u8(console.pci.pending_msix_queue_bits);
         out.write_u8(0);
         out.write_u16(0);
-        out.write_u32(console.status);
-        out.write_u32(console.interrupt_status);
+        out.write_u32(console.pci.status);
+        out.write_u32(console.pci.interrupt_status);
         out.write_u32(console.emerg_wr);
 
-        for queue in &console.queues {
+        for queue in &console.pci.queues {
             out.write_u16(queue.size);
             out.write_bool(queue.ready);
             out.write_bool(queue.pending_msix);
@@ -31,10 +31,10 @@ impl VirtioPciConsole {
             out.write_u16(queue.msix_vector);
             out.write_u16(queue.notify_off);
             out.write_u16(queue.last_avail_idx);
-            out.write_u16(queue.last_avail_seen);
-            out.write_u64(queue.notify_count);
-            out.write_u64(queue.used_produced);
-            out.write_u64(queue.rx_no_buffers);
+            out.write_u16(queue.counters.last_avail_seen);
+            out.write_u64(queue.counters.notify_count);
+            out.write_u64(queue.counters.used_produced);
+            out.write_u64(queue.counters.rx_no_buffers);
         }
 
         for port in &console.ports {
@@ -65,20 +65,20 @@ impl VirtioPciConsole {
         );
 
         let console = &mut self.console;
-        console.device_features_sel = input.read_u32();
-        console.driver_features_sel = input.read_u32();
-        console.driver_features = [input.read_u32(), input.read_u32()];
-        console.config_msix_vector = input.read_u16();
+        console.pci.device_features_sel = input.read_u32();
+        console.pci.driver_features_sel = input.read_u32();
+        console.pci.driver_features = [input.read_u32(), input.read_u32()];
+        console.pci.config_msix_vector = input.read_u16();
         assert_eq!(input.read_u16(), 0, "invalid virtio-console snapshot");
-        console.queue_sel = input.read_u32();
-        console.pending_msix_queue_bits = input.read_u8();
+        console.pci.queue_sel = input.read_u32();
+        console.pci.pending_msix_queue_bits = input.read_u8();
         assert_eq!(input.read_u8(), 0, "invalid virtio-console snapshot");
         assert_eq!(input.read_u16(), 0, "invalid virtio-console snapshot");
-        console.status = input.read_u32();
-        console.interrupt_status = input.read_u32();
+        console.pci.status = input.read_u32();
+        console.pci.interrupt_status = input.read_u32();
         console.emerg_wr = input.read_u32();
 
-        for queue in &mut console.queues {
+        for queue in &mut console.pci.queues {
             queue.size = input.read_u16();
             queue.ready = input.read_bool();
             queue.pending_msix = input.read_bool();
@@ -88,10 +88,10 @@ impl VirtioPciConsole {
             queue.msix_vector = input.read_u16();
             queue.notify_off = input.read_u16();
             queue.last_avail_idx = input.read_u16();
-            queue.last_avail_seen = input.read_u16();
-            queue.notify_count = input.read_u64();
-            queue.used_produced = input.read_u64();
-            queue.rx_no_buffers = input.read_u64();
+            queue.counters.last_avail_seen = input.read_u16();
+            queue.counters.notify_count = input.read_u64();
+            queue.counters.used_produced = input.read_u64();
+            queue.counters.rx_no_buffers = input.read_u64();
         }
 
         for port in &mut console.ports {

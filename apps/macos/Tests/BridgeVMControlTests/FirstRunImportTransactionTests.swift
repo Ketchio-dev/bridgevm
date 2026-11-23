@@ -74,14 +74,14 @@ final class FirstRunImportTransactionTests: XCTestCase {
         try Data([9]).write(to: marker)
         var attemptedCommit = false
         let result = FirstRunImportWorker.run(fixture.inputs(), libraryRoot: fixture.library,
-            snapshotHelper: HvfMediaImportTestSupport.helper) { config, root in
+            snapshotHelper: HvfMediaImportTestSupport.helper, publish: { config, root in
             do {
                 try FileManager.default.createDirectory(at: fixture.entry.appendingPathComponent("vm.json"),
                     withIntermediateDirectories: false)
             } catch { return .notPublished(error) }
             attemptedCommit = true
             return VMLibrary.createOutcome(config, rootURL: root)
-        }
+        })
         guard case .failed = result else { return XCTFail("rename onto directory must refuse") }
         XCTAssertTrue(attemptedCommit)
         try fixture.assertAmbiguousPreparationPreserved()
@@ -93,11 +93,11 @@ final class FirstRunImportTransactionTests: XCTestCase {
         let fixture = try FirstRunImportTransactionFixture()
         defer { fixture.remove() }
         let result = FirstRunImportWorker.run(fixture.inputs(), libraryRoot: fixture.library,
-            snapshotHelper: HvfMediaImportTestSupport.helper) { config, root in
+            snapshotHelper: HvfMediaImportTestSupport.helper, publish: { config, root in
             VMLibrary.createOutcome(config, rootURL: root) { data, url in
                 VMRegistrationWriter.commit(data, to: url, replaceExisting: false, syncParent: { _ in throw CocoaError(.fileWriteUnknown) })
             }
-        }
+        })
         guard case .publishedButUnsynced = result else { return XCTFail("publication must be retained") }
         try fixture.assertPersisted()
     }
@@ -108,14 +108,14 @@ final class FirstRunImportTransactionTests: XCTestCase {
         let moved = fixture.root.appendingPathComponent("moved-preparation")
         let marker = fixture.entry.appendingPathComponent("replacement")
         let result = FirstRunImportWorker.run(fixture.inputs(), libraryRoot: fixture.library,
-            snapshotHelper: HvfMediaImportTestSupport.helper) { _, _ in
+            snapshotHelper: HvfMediaImportTestSupport.helper, publish: { _, _ in
             do {
                 try FileManager.default.moveItem(at: fixture.entry, to: moved)
                 try FileManager.default.createDirectory(at: fixture.entry, withIntermediateDirectories: false)
                 try Data([9]).write(to: marker)
             } catch { return .notPublished(error) }
             return .notPublished(CocoaError(.fileWriteUnknown))
-        }
+        })
         guard case .failed = result else { return XCTFail("injected refusal must fail") }
         XCTAssertEqual(try Data(contentsOf: marker), Data([9]))
         XCTAssertEqual(try Data(contentsOf: moved.appendingPathComponent("bundle/disks/hvf-target.raw")),

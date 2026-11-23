@@ -9,8 +9,7 @@ final class NativeRuntimeInstallAdmissionTests: XCTestCase {
     private func request(app: String? = nil) -> NativeInstallControlRequest {
         .init(schema: NativeInstallControlCodec.requestSchema, operation: .installStatus,
             requestID: UUID().uuidString, library: library, vmID: "windows",
-            appInstanceID: app ?? self.app,
-            expectedSavedConfigurationDigest: String(repeating: "a", count: 64), operationID: nil)
+            appInstanceID: app ?? self.app, operationID: nil)
     }
 
     func testOwnerMismatchAndMissingModelReturnBoundedRefusals() throws {

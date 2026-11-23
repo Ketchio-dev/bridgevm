@@ -2,7 +2,7 @@ import XCTest
 @testable import BridgeVMControl
 
 final class VMRelocationRecoveryTests: XCTestCase {
-    private final class FailingRollback: FileManager, @unchecked Sendable {
+    private final class FailingRollback: FileManager {
         var moves = 0
         override func moveItem(at source: URL, to destination: URL) throws {
             moves += 1

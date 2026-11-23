@@ -1,9 +1,8 @@
-// allow: SIZE_OK - Task 5q boot probe harness is a legacy monolithic surface carried to preserve validated HVF/PCIe evidence; full modular split is separate work.
 //! Bounded probe: load the stock ArmVirtQemu firmware on the Path A platform with
 //! Apple's in-kernel GICv3 (`hv_gic_create`) wired in, and see how far past the
 //! previous GIC system-register trap it boots. Captures PL011 serial and records
 //! unmodelled MMIO. The GIC distributor/redistributor MMIO and ICC_* system
-//! registers are handled in-kernel by Apple, so they no longer trap to us.
+//! registers are handled in-kernel by Apple, so they do not trap to us.
 //!
 //! Build, ad-hoc sign, run (needs `com.apple.security.hypervisor`):
 //!   cargo build -p bridgevm-hvf --example hvf_gic_boot_probe
@@ -54,13 +53,11 @@ use std::{process::ExitCode, ptr::null_mut};
 use bridgevm_hvf::dtb::VirtFdtConfig;
 use bridgevm_hvf::fwcfg::GuestMemoryMut;
 use bridgevm_hvf::machine;
-use bridgevm_hvf::mmio_data_abort::DataAbort;
-#[path = "hvf_gic_boot_probe/mmio_registers.rs"]
-mod mmio_registers;
 use bridgevm_hvf::media::{
     read_bounded_file, InstallerIsoTransport, MediaWrite, MediaWriteKind, VirtBootMediaConfig,
     WritableMedia,
 };
+use bridgevm_hvf::mmio_data_abort::DataAbort;
 use bridgevm_hvf::msix::MsixMessage;
 use bridgevm_hvf::net_nat::NatStats;
 use bridgevm_hvf::platform_virt::{
@@ -71,8 +68,6 @@ use bridgevm_hvf::stage1::{self, Stage1Context, Stage1WalkStep};
 use bridgevm_hvf::tpm_tis::{SwtpmUnixBackend, Tpm2Backend};
 use bridgevm_hvf::virtio_blk::{VirtioBlockRequestTrace, VirtioMmioBlockStats, INSTALLER_ISO_SLOT};
 use bridgevm_hvf::virtio_gpu_3d::GpuShmMapPort;
-use mmio_registers::mmio_store_value;
-use mmio_registers::write_mmio_read;
 
 // Every module lives in the hvf_gic_boot_probe/ directory beside this
 // file. Cargo resolves example submodules relative to the examples/
@@ -106,14 +101,11 @@ probe_modules!(
     "hvf_gic_boot_probe/kd_serial_bridge.rs" => kd_serial_bridge,
     "hvf_gic_boot_probe/serial_input.rs" => serial_input,
     "hvf_gic_boot_probe/xhci_hid_input.rs" => xhci_hid_input,
-    "hvf_gic_boot_probe/watchpoint_setup.rs" => watchpoint_setup,
     "hvf_gic_boot_probe/xhci_trace.rs" => xhci_trace,
     "hvf_gic_boot_probe/boot_telemetry.rs" => boot_telemetry,
     "hvf_gic_boot_probe/exception_trace.rs" => exception_trace,
     "hvf_gic_boot_probe/gic_snapshot.rs" => gic_snapshot,
     "hvf_gic_boot_probe/gic_irq_state.rs" => gic_irq_state,
-    "hvf_gic_boot_probe/gpu_shm_bar2.rs" => gpu_shm_bar2,
-    "hvf_gic_boot_probe/gpu_shm_setup.rs" => gpu_shm_setup,
     "hvf_gic_boot_probe/guest_diagnostics.rs" => guest_diagnostics,
     "hvf_gic_boot_probe/guest_memory.rs" => guest_memory,
     "hvf_gic_boot_probe/guest_ram_backing.rs" => guest_ram_backing,

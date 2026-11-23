@@ -1,7 +1,7 @@
 import Foundation
 
 struct NativeCLIRuntimeStop: Encodable {
-    let schema = "bridgevm.app-stop.v1"
+    let schema = "bridgevm.app-stop.v2"
     let scope = NativeRuntimeControlCodec.scope
     let vmID: String
     let libraryPath: String
@@ -49,10 +49,10 @@ struct NativeCLIRuntimeStop: Encodable {
         let candidates = active.isEmpty ? status.sessions.filter { $0.ownership == .ownedExitObserved } : active
         guard !candidates.isEmpty else { throw NativeRuntimeStopRefused.targetUnavailable }
         guard candidates.count == 1, let session = candidates.first else { throw NativeRuntimeStopRefused.ambiguousTarget }
-        guard let process = session.ownedProcess ?? session.lastOwnedExit?.process,
-              let digest = session.acceptedConfigurationDigest else { throw NativeRuntimeStopRefused.configurationChanged }
-        return .init(appInstanceID: status.appInstanceID, runToken: process.token,
-                     processID: process.processID, acceptedConfigurationDigest: digest)
+        guard let process = session.ownedProcess ?? session.lastOwnedExit?.process else {
+            throw NativeRuntimeStopRefused.targetUnavailable
+        }
+        return .init(appInstanceID: status.appInstanceID, runToken: process.token, processID: process.processID)
     }
 }
 

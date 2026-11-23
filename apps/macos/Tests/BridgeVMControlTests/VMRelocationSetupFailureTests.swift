@@ -3,7 +3,7 @@ import XCTest
 @testable import BridgeVMControl
 
 final class VMRelocationSetupFailureTests: XCTestCase {
-    private final class Refusal: FileManager, @unchecked Sendable {
+    private final class Refusal: FileManager {
         var moves = 0
         override func createDirectory(at url: URL, withIntermediateDirectories createIntermediates: Bool,
                                       attributes: [FileAttributeKey: Any]? = nil) throws {

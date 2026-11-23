@@ -39,7 +39,7 @@ final class NativeCLISnapshotRelocationAdmissionTests: XCTestCase {
     }
 
     /// The copy starts, then fails before the source is removed.
-    private final class PartialMove: FileManager, @unchecked Sendable {
+    private final class PartialMove: FileManager {
         override func moveItem(at source: URL, to destination: URL) throws {
             try createDirectory(at: destination, withIntermediateDirectories: true)
             throw CocoaError(.fileWriteUnknown)

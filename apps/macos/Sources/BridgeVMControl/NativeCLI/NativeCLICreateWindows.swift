@@ -24,8 +24,7 @@ enum NativeCLICreateWindows {
             backendKind: saved.backendKind, bootMode: saved.bootMode ?? "", installPending: true,
             cpuCount: request.cpuCount, memoryMiB: request.memoryMiB, diskGiB: request.diskGiB,
             resolution: request.resolution.text, networkEnabled: request.networkEnabled,
-            guestDriversSealed: pending.guestPayloadIdentity != nil,
-            configurationDigest: try NativeRuntimeConfigurationIdentity.digest(config: saved))
+            guestDriversSealed: pending.guestPayloadIdentity != nil)
     }
 
 
@@ -97,7 +96,7 @@ enum NativeCLICreateWindowsGuidance {
 }
 
 struct NativeCLICreateWindowsOutput: Encodable, Equatable {
-    let schema = "bridgevm.app-create-windows.v1"
+    let schema = "bridgevm.app-create-windows.v2"
     let id: String
     let displayName: String
     let backendKind: String
@@ -110,7 +109,6 @@ struct NativeCLICreateWindowsOutput: Encodable, Equatable {
     let networkEnabled: Bool
     /// The pinned virtio-win payload from `--fetch-drivers` is sealed in the bundle.
     let guestDriversSealed: Bool
-    let configurationDigest: String
 
     var text: String {
         "Created pending Windows VM \(id) (\(displayName)).\n" +

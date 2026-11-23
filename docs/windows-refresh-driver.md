@@ -2,8 +2,8 @@
 
 The installed Red Hat display-only driver does not implement selectable refresh
 timings. The experimental patch in `scripts/patches/virtio-win-viogpudo-refresh.patch`
-adds 30, 60, 75, 90, 120, 144, 165, 180, 240, 360, 480, 540, 600 and 720Hz
-virtual modes for each resolution. This remains experimental source, **without
+adds virtual modes from 30 Hz to 720 Hz. The rates Windows offers depend on
+the resolution and monitor timings. This remains experimental source, **without
 a Microsoft production signature**. A development-signed ARM64 candidate has
 booted in a disposable Windows clone. General Preview still uses the upstream driver.
 
@@ -84,7 +84,11 @@ A development-signed ARM64 candidate has enumerated and switched all fourteen
 rates in a disposable Windows 11 guest. At 1280x800, eight virtual VBlank waits
 per rate gave median intervals of 8.40ms at 120Hz, 7.07ms at 144Hz and 1.40ms
 at 720Hz. These samples do not measure unique rendered frames or physical output.
-The guest resize helper now retains the selected rate across geometry changes.
+On resize, the guest asks to retain the selected rate. Windows offers further
+rates according to the monitor timings advertised at startup. On the r7
+development clone, 2560×1656 switched at up to 120 Hz and 3600×2260 at up to
+60 Hz. A display configuration saved with the stock driver can still start
+r7 at 30 Hz.
 
 The experimental DOD reserves 64MiB of framebuffer headroom, but attaches only
 the pages used by each resource. Attaching the entire reserve needs 66 direct

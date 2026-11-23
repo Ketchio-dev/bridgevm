@@ -30,7 +30,6 @@ final class NativeCLIInstallTests: XCTestCase {
 
     func testTextStatesHostScopeAndDoesNotClaimGuestCompletion() {
         let observation = NativeInstallObservation(operationID: UUID().uuidString,
-            expectedSavedConfigurationDigest: String(repeating: "a", count: 64),
             phase: .installing, acceptedUptime: 1, workerPending: false,
             sessionRunning: true, canCancel: true, logTail: ["bounded line"], failure: nil)
         let result = NativeCLIInstallResult(command: "installStatus", vmID: "vm",

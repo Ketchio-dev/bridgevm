@@ -38,7 +38,7 @@ impl VirtioGpu {
         self.requested_height = height;
         self.events_read |= VIRTIO_GPU_EVENT_DISPLAY;
         self.pending_config_change = true;
-        self.interrupt_status |= 2;
+        self.pci.interrupt_status |= 2;
         true
     }
 

@@ -12,7 +12,6 @@ final class LibraryStartupAdmissionTests: XCTestCase {
         let entered = await probe.waitForEntry()
         XCTAssertTrue(entered)
         let app = UUID().uuidString, identity = fixture.library.identity
-        let digest = String(repeating: "a", count: 64)
         let retained = { fixture.cache.retainedValue }
         let validate = { try fixture.owner.validateCurrentOwnership() }
         let starts = NativeRuntimeAppStartRouter(appInstanceID: app, library: identity, retainedModel: retained)
@@ -26,11 +25,10 @@ final class LibraryStartupAdmissionTests: XCTestCase {
         let startRequest = start()
         let stopRequest = NativeRuntimeControlRequest(schema: NativeRuntimeControlCodec.requestSchema, operation: .stop,
             requestID: UUID().uuidString, library: identity, vmID: "missing", operationID: UUID().uuidString,
-            target: .init(appInstanceID: app, runToken: UUID().uuidString, processID: 123,
-                acceptedConfigurationDigest: digest))
+            target: .init(appInstanceID: app, runToken: UUID().uuidString, processID: 123))
         let installRequest = NativeInstallControlRequest(schema: NativeInstallControlCodec.requestSchema,
             operation: .installStatus, requestID: UUID().uuidString, library: identity, vmID: "missing",
-            appInstanceID: app, expectedSavedConfigurationDigest: digest, operationID: nil)
+            appInstanceID: app, operationID: nil)
         let statusRequest = NativeRuntimeRequest(schema: NativeRuntimeCodec.requestSchema, operation: "status",
             requestID: UUID().uuidString, library: identity, vmID: "missing",
             savedConfiguration: .init(state: .missing, digest: nil))

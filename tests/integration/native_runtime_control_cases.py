@@ -7,12 +7,11 @@ import uuid
 
 class NativeRuntimeControlCases:
     def control_request(self, operation="stop", operation_id=None):
-        return dict(schema="bridgevm.app-runtime-control-request.v3", operation=operation,
+        return dict(schema="bridgevm.app-runtime-control-request.v4", operation=operation,
             requestID=str(uuid.uuid4()).upper(), library=self.identity, vmID="fixture",
             operationID=operation_id or str(uuid.uuid4()).upper(),
             target=dict(appInstanceID="A0000000-0000-0000-0000-000000000001",
-                runToken="B0000000-0000-0000-0000-000000000001", processID=123,
-                acceptedConfigurationDigest="a" * 64))
+                runToken="B0000000-0000-0000-0000-000000000001", processID=123))
 
     def control_exchange(self, request, raw=None):
         payload = raw if raw is not None else json.dumps(request, sort_keys=True, separators=(",", ":")).encode()

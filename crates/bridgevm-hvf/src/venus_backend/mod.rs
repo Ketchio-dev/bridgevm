@@ -1,14 +1,14 @@
-mod map_resource_ref;
+mod backend;
 mod poll_stall;
 mod poll_watchdog;
+mod renderer_init;
 mod threaded_scanout;
-mod venus_start_trace_capset_cou;
-mod virgl_renderer_gl_context_mod;
+mod virtio_gpu_3d_backend;
 
-pub(crate) use map_resource_ref::*;
+pub use backend::*;
 pub(crate) use poll_stall::*;
 pub(crate) use poll_watchdog::*;
-pub use virgl_renderer_gl_context_mod::*;
+pub(crate) use renderer_init::*;
 
 #[cfg(test)]
 mod tests;

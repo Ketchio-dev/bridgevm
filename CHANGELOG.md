@@ -12,9 +12,48 @@ All notable changes to BridgeVM are documented in this file.
 - The Fast VZ (Linux) and QEMU compatibility engines were removed from the app.
   A VM saved with one of them stays in the library, marked as no longer
   supported, with its files untouched, and can be deleted from there.
+- `bridgevm app start` runs the same start as the Start button: a failure now
+  prints the app's own sentence with the underlying error, and a VM whose
+  settings were saved after the app loaded them starts with the saved
+  settings instead of being refused. Stop and install no longer refuse after
+  a settings change either; install uses what is saved. The JSON schemas
+  changed accordingly (`bridgevm.app-start.v2`, `bridgevm.app-stop.v2`,
+  `bridgevm.app-install-command.v2`, `bridgevm.app-create-windows.v2`, which no
+  longer carries `configurationDigest`).
+- A VM started from the CLI keeps booting if Windows takes longer than 30 s to
+  report ready, as after a Start click; the CLI still reports that readiness
+  was not confirmed.
+- A Windows install finishes sooner: the new disk is hashed once when it is
+  sealed instead of six times (about 2–3 minutes less for a 64 GiB disk,
+  estimated). Snapshot create, export and disk import no longer re-read the
+  whole disk to verify right after writing it; a restore still verifies
+  before it touches the VM. A restore reads the snapshot once instead of
+  twice: it hashes only the staged copy it publishes (median 157 s to 74 s
+  for a 64 GiB pair on one Mac). An A19 restore-boot lane, which creates,
+  restores and exports a 64 GiB pair, took about 5 minutes instead of about 9
+  on the same Mac.
+- Two snapshot exports to different names in the same folder can run at the
+  same time.
 
 ### Fixed
 
+- An interrupted snapshot create or export (for example, its process was
+  killed) left a hidden, half-made copy of the VM's disk and vars in the
+  snapshot folder, plus an empty folder for an app snapshot. The snapshot list
+  never showed them and nothing removed them. On APFS each one held on to the
+  disk's old blocks as the VM changed; on other volumes each was a full copy.
+  The next create or export into the same folder now removes them, and keeps
+  anything it does not recognise.
+- After 256 starts or stops from the CLI in one app session, every further
+  one was refused until the app was reopened.
+- A Stop could end as "not confirmed", needing Force Stop, when the app and
+  the runner disagreed on a harmless detail of a status message. Both sides
+  now ignore fields they do not know.
+- A never-started VM in a folder that reports itself group- or
+  world-writable, as exFAT and some shared folders do, can be deleted. The
+  check refused it without protecting anything.
+- The guest agent's input capability line is accepted when it carries extra
+  keywords from a newer agent.
 - After an unclean stop, the shared folder keeps the Windows version of a file
   beside the Mac one as "(Windows copy)". If the VM stopped again before the
   Mac version was sent back, the next start made a second, identical
@@ -24,8 +63,33 @@ All notable changes to BridgeVM are documented in this file.
   keychain in the other Unicode form (composed or decomposed, for example
   after the library was copied). Before, the VM refused to start with a
   missing-key error (#689).
+- Ctrl-C or SIGTERM during `bridgevm app snapshot-create`, `snapshot-restore`
+  or `snapshot-export` left the snapshot helper running, so a restore could
+  still change the VM after the command had ended. The command now stops the
+  helper, waits for it, reports `cancelled` and exits 130 (143 for SIGTERM).
+- Long typed or pasted text in a Windows app built on a RichEdit 5 control
+  (for example a WinForms RichTextBox) went in one character at a time,
+  about 5 ms each, and from roughly 2,000 characters failed partway with an
+  input error. It now goes in as one undoable edit, as in Notepad: 5,000
+  mixed characters in under half a second (#665). Needs the updated guest
+  agent.
 
-## [1.1.1] - 2026-11-21
+### Removed
+
+- The legacy Rust CLI commands (`bridgevm --store …`, `--socket`, the daemon,
+  disk, snapshot-store and QEMU/VZ commands) and their crates. `bridgevm app …`
+  is the CLI for the app's library; `bridgevm hvf` keeps three Graphics Lab
+  report tools.
+
+## [0.1.0] - 2026-11-23
+
+Version numbers restart at 0.1.0. This release is built from the same source as
+the withdrawn `v1.1.1` tag (`3b01ef93`); its changes are the ones listed under
+1.1.1, 1.1.0 and 1.0.0 below. The preview tags `v1.0.0`, `v1.1.0` and `v1.1.1`
+and their GitHub releases were withdrawn. An installed 1.1.1 app is replaced by
+running the installer again; VMs and settings are unaffected.
+
+## 1.1.1 (withdrawn tag, now 0.1.0) - 2026-11-21
 
 Fixes and interface polish for the 1.1.0 General Preview; the product state
 and the release contract are unchanged.
@@ -49,7 +113,7 @@ and the release contract are unchanged.
 - The snapshot name field looks like a field, and 고급 has one entry point (the
   action grid) instead of three.
 
-## [1.1.0] - 2026-11-20
+## 1.1.0 (withdrawn tag) - 2026-11-20
 
 First General Preview release, replacing the superseded 1.0.0. The product is
 still an **Engineering Preview**: Windows 11 Arm on BridgeVM's own
@@ -183,7 +247,7 @@ a clean Mac) and A19 (disk safety) are open. See `STATUS.md`.
 - Files added to the share while an older guest agent updates come back once,
   unchanged but with a new date and quarantine flag (#651); wait a minute first.
 
-## [1.0.0] - 2026-08-20
+## 1.0.0 (withdrawn tag) - 2026-08-20
 
 Every release-blocking criterion in `capabilities/windows-hvf.json` is proven
 by live evidence, including the final Windows closure gate

@@ -7,7 +7,7 @@ pub(super) const DRIVER_OK: u32 = 4;
 
 impl VirtioConsole {
     pub fn poll(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
-        if self.status & DRIVER_OK == 0 {
+        if self.pci.status & DRIVER_OK == 0 {
             return false;
         }
         let mut progressed = false;

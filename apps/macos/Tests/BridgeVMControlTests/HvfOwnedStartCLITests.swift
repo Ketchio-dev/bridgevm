@@ -49,6 +49,7 @@ final class HvfOwnedStartCLITests: XCTestCase {
             XCTAssertEqual(stopExit, 0, "\(stopped)"); XCTAssertEqual(stopped["complete"] as? Bool, true)
             let stopTarget = try XCTUnwrap(stopped["target"] as? [String: Any])
             XCTAssertEqual(stopTarget["runToken"] as? String, token)
+            XCTAssertNil(stopTarget["acceptedConfigurationDigest"], "CLI stop addresses the run, not a config digest")
             let stopObservation = try XCTUnwrap(stopped["observation"] as? [String: Any])
             XCTAssertEqual(stopObservation["phase"] as? String, "completed"); XCTAssertNotNil(stopObservation["runnerExit"])
             let cleanup = try XCTUnwrap(stopObservation["supervisorComplete"] as? [String: Any])

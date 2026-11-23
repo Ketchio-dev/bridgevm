@@ -92,7 +92,7 @@ fn rx_read_only_interior_descriptor_rejects_before_first_buffer_write() {
             data: 0x50,
         }]
     );
-    dev.net.interrupt_status = 0;
+    dev.net.pci.interrupt_status = 0;
 
     let first_before = [0xa5; 8];
     mem.write(first, &first_before);

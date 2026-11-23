@@ -9,17 +9,9 @@ use crate::virtio_gpu_3d::VirtioGpu3dBackend;
 use std::sync::Arc;
 use std::time::Duration;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VirtioGpuResult {
-    ReadValue(u64),
-    WriteAck,
-}
+pub type VirtioGpuResult = VirtioPciResult;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VirtioPciGpuOp {
-    Read { size: u8 },
-    Write { size: u8, value: u64 },
-}
+pub type VirtioPciGpuOp = VirtioPciOp;
 
 #[derive(Debug)]
 pub struct VirtioPciGpu {
@@ -137,61 +129,6 @@ impl VirtioPciGpu {
         op: VirtioPciGpuOp,
         mem: &mut dyn GuestMemoryMut,
     ) -> VirtioGpuResult {
-        let is_write = matches!(op, VirtioPciGpuOp::Write { .. });
-        if let Some(common_offset) = common_cfg_offset(offset) {
-            return match op {
-                VirtioPciGpuOp::Read { size } => {
-                    self.gpu.access_common(common_offset, false, size, 0, mem)
-                }
-                VirtioPciGpuOp::Write { size, value } => {
-                    let result = self
-                        .gpu
-                        .access_common(common_offset, true, size, value, mem);
-                    self.gpu.drain_completed_fences(mem);
-                    result
-                }
-            };
-        }
-        if let Some(device_offset) = device_cfg_offset(offset) {
-            return match op {
-                VirtioPciGpuOp::Read { size } => {
-                    VirtioGpuResult::ReadValue(self.gpu.config_read(device_offset, size))
-                }
-                VirtioPciGpuOp::Write { size, value } => {
-                    self.gpu.config_write(device_offset, size, value);
-                    VirtioGpuResult::WriteAck
-                }
-            };
-        }
-        if let Some(queue_index) = notify_queue_index(offset) {
-            return match op {
-                VirtioPciGpuOp::Read { .. } => VirtioGpuResult::ReadValue(0),
-                VirtioPciGpuOp::Write { value, .. } => {
-                    let queue = if offset == PCI_NOTIFY_CFG_OFFSET {
-                        value as u16
-                    } else {
-                        queue_index
-                    };
-                    self.gpu.notify_queue(queue, mem);
-                    VirtioGpuResult::WriteAck
-                }
-            };
-        }
-        if offset == PCI_ISR_CFG_OFFSET {
-            return match op {
-                VirtioPciGpuOp::Read { size } => VirtioGpuResult::ReadValue(mask_to_size(
-                    u64::from(std::mem::take(&mut self.gpu.interrupt_status)),
-                    size,
-                )),
-                VirtioPciGpuOp::Write { value, .. } => {
-                    self.gpu.interrupt_status &= !(value as u32);
-                    VirtioGpuResult::WriteAck
-                }
-            };
-        }
-        match (op, is_write) {
-            (VirtioPciGpuOp::Read { .. }, _) => VirtioGpuResult::ReadValue(0),
-            (VirtioPciGpuOp::Write { .. }, _) => VirtioGpuResult::WriteAck,
-        }
+        self.gpu.pci_access(offset, op, mem)
     }
 }

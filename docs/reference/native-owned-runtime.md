@@ -12,14 +12,14 @@ or a release gate result. Product claims remain in
 
 | Boundary | Transport | Schema and operations |
 | --- | --- | --- |
-| CLI → running app | Private Unix socket, one request per connection | Read-only status v1; separate control v3 `stop` / `stopStatus`; start v2 `start` / `startStatus` |
+| CLI → running app | Private Unix socket, one request per connection | Read-only status v1; separate control v4 `stop` / `stopStatus`; start v2 `start` / `startStatus` |
 | App → retained runner | Dedicated stdin/stdout pipes | `schemaVersion: 1`; `hello`, `stop`, and sequenced runner events |
 
 The existing status request `bridgevm.app-runtime-request.v1` and response
 `bridgevm.app-runtime.v1` retain their `app-observation` scope and APIs.
-Control uses `bridgevm.app-runtime-control-request.v3` and
-`bridgevm.app-runtime-control.v3`, with scope `app-owned-runtime-control`, on the
-same endpoint. The command result `bridgevm.app-stop.v1` is a separate CLI envelope.
+Control uses `bridgevm.app-runtime-control-request.v4` and
+`bridgevm.app-runtime-control.v4`, with scope `app-owned-runtime-control`, on the
+same endpoint. The command result `bridgevm.app-stop.v2` is a separate CLI envelope.
 The runner mode is `--owned-runtime-stdio`; protocol stdout carries framed events.
 
 Both transports prefix each JSON payload with its four-byte big-endian length.
@@ -52,10 +52,12 @@ error text. Start failures carry that path's sentence in the observation's
 sentence in `reason`, which the CLI prints.
 
 A stop request binds the library identity, canonical VM ID, app instance UUID,
-run token, retained runner PID and accepted registration digest. That digest
-identifies the source VM registration captured for the session; it is distinct
-from the launch-manifest digest used by the runner. Later registration edits do
-not retarget an accepted run. Missing registrations can still have retained runs.
+run token and retained runner PID; the app stops only the retained run with that
+token and PID. Saved settings play no part, so later registration edits neither
+retarget nor refuse it. Missing registrations can still have retained runs. Install
+requests (`bridgevm.app-install-control-request.v2`) likewise name only the library,
+VM ID, app instance and operation ID; the app installs the VM's current saved
+configuration.
 
 The MainActor router uses an existing model
 and exact retained session, without creating a model, attaching, scanning for a

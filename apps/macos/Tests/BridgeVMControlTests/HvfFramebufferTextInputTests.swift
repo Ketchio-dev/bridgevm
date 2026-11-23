@@ -14,7 +14,8 @@ final class HvfFramebufferTextInputTests: XCTestCase {
             ctlFilePath: "unused/agent.ctl")
         let session = HvfEngineSession(config: config, repoRoot: URL(fileURLWithPath: "/")) { _ in false }
         let view = FBLayerView(session: session)
-        XCTAssertTrue(view is NSTextInputClient, "The live display must let macOS compose text before guest delivery")
+        // AppKit's text input system checks the Objective-C conformance at run time.
+        XCTAssertTrue(view.conforms(to: NSTextInputClient.self), "The live display must let macOS compose text before guest delivery")
         view.teardown()
     }
 

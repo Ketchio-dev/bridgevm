@@ -3,16 +3,13 @@ import Foundation
 @MainActor
 final class NativeInstallOperation {
     let operationID: UUID
-    let expectedSavedConfigurationDigest: String
     let acceptedUptime: Double
     private var preparationTask: Task<Void, Never>?
     private(set) var session: HvfWindowsInstallSession?
     private var terminal: (NativeInstallObservation.Phase, String?, [String])?
 
-    init(operationID: UUID, expectedSavedConfigurationDigest: String,
-         acceptedUptime: Double = ProcessInfo.processInfo.systemUptime) {
+    init(operationID: UUID, acceptedUptime: Double = ProcessInfo.processInfo.systemUptime) {
         self.operationID = operationID
-        self.expectedSavedConfigurationDigest = expectedSavedConfigurationDigest
         self.acceptedUptime = acceptedUptime
     }
 
@@ -111,10 +108,8 @@ final class NativeInstallOperation {
 
     private func make(phase: NativeInstallObservation.Phase, worker: Bool, running: Bool,
                       canCancel: Bool, logs: [String], failure: String?) -> NativeInstallObservation {
-        .init(operationID: operationID.uuidString,
-              expectedSavedConfigurationDigest: expectedSavedConfigurationDigest,
-              phase: phase, acceptedUptime: acceptedUptime, workerPending: worker,
-              sessionRunning: running, canCancel: canCancel, logTail: logs, failure: failure)
+        .init(operationID: operationID.uuidString, phase: phase, acceptedUptime: acceptedUptime,
+              workerPending: worker, sessionRunning: running, canCancel: canCancel, logTail: logs, failure: failure)
     }
 }
 

@@ -26,8 +26,8 @@ final class HvfRuntimeWorkAdmissionBackend: VMBackend {
     var supportsResourceChanges: Bool { record(\.capability); return true }
     func hold(_ operation: Operation) { lock.lock(); held = operation; lock.unlock() }
     func releaseGate() { release.signal() }
-    func waitForEntry() async -> Bool {
-        await Task.detached { [entry] in entry.wait(timeout: .now() + 5) == .success }.value
+    @MainActor func waitForEntry() async -> Bool {
+        await waitOffCooperativePool(entry, seconds: 5)
     }
     private func record(_ key: WritableKeyPath<Calls, Int>) {
         lock.lock(); recorded[keyPath: key] += 1; lock.unlock()
@@ -87,9 +87,7 @@ final class HvfRuntimeWorkAdmissionOperation {
 
     func acknowledge(if accepted: Bool) async -> Bool {
         guard accepted else { subscription?.cancel(); return true }
-        let acknowledged = await Task.detached { [completed] in
-            completed.wait(timeout: .now() + 5) == .success
-        }.value
+        let acknowledged = await waitOffCooperativePool(completed, seconds: 5)
         subscription?.cancel()
         XCTAssertTrue(acknowledged, "The accepted fake operation must publish its MainActor completion")
         XCTAssertFalse(model.lifecycleBusy)

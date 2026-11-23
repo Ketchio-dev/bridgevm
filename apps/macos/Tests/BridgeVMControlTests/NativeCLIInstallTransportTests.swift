@@ -19,13 +19,11 @@ final class NativeCLIInstallTransportTests: XCTestCase {
         let app = UUID().uuidString
         try owner.start(installHandler: { request, _ in
             let observation = NativeInstallObservation(operationID: UUID().uuidString,
-                expectedSavedConfigurationDigest: request.expectedSavedConfigurationDigest,
                 phase: .preparingPlan, acceptedUptime: 1, workerPending: true,
                 sessionRunning: false, canCancel: true, logTail: [], failure: nil)
             return .init(schema: NativeInstallControlCodec.responseSchema,
                 scope: NativeInstallControlCodec.scope, requestID: request.requestID,
                 library: library.identity, vmID: request.vmID, appInstanceID: app,
-                expectedSavedConfigurationDigest: request.expectedSavedConfigurationDigest,
                 requestedOperationID: nil, disposition: .status,
                 observation: observation, refusal: nil)
         }, handler: { request in

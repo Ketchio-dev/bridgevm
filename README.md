@@ -10,9 +10,9 @@ BridgeVM runs Windows alongside macOS using its own
 [Hypervisor.framework VMM](crates/bridgevm-hvf/), without QEMU. It is the
 app's only engine.
 
-**Current access: [General Preview v1.1.1](https://github.com/Ketchio-dev/bridgevm/releases/tag/v1.1.1) · Engineering Preview · 3D-off.**
+**Current access: [General Preview v0.1.0](https://github.com/Ketchio-dev/bridgevm/releases/tag/v0.1.0) · Engineering Preview · 3D-off.**
 Install it with the terminal installer or the DMG. The app is ad-hoc signed,
-not notarized; the installer refuses the superseded `v1.0.0` preview.
+not notarized.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash
@@ -47,8 +47,13 @@ for each feature.
 
 Current source uses queued text dispatch for compatible Windows editors; long
 Korean and emoji input, selection replacement and undo were checked in Windows
-11 Notepad. Older builds and unsupported editors retain the input path tracked
-in [#665](https://github.com/Ketchio-dev/bridgevm/issues/665), where long commits
+11 Notepad and a RichEdit 5 control (a WinForms RichTextBox). The Run, Save-as
+and Explorer rename boxes, classic edit controls, RichEdit 2.0 and an Edge text
+area use the older per-character path; in one headless run (2026-11-23) each
+kept mixed Korean and emoji text exact up to the box's own length limit (3,000
+characters where the box allows that many). Older builds and other editors
+retain the input path tracked in
+[#665](https://github.com/Ketchio-dev/bridgevm/issues/665), where long commits
 can repeat or lose characters. Use clipboard sharing and paste if this occurs.
 
 ## Try BridgeVM
@@ -117,7 +122,7 @@ Other known open defects:
 - Graphics future path: Vulkan is a Graphics Lab future path, excluded from General Preview and v1; D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-11-21 at commit `f66c2ed5f001d8cced6dba321b1eb1ef1661365d`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-11-23 at commit `711e074398d480ac49d9618def7a02e71aa244a4`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 </details>

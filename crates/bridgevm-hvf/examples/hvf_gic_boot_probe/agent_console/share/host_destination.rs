@@ -16,8 +16,6 @@ mod open;
 pub(super) mod snapshot;
 #[path = "guest_write_directory.rs"]
 mod directory;
-#[path = "guest_write_mark.rs"]
-mod mark;
 #[path = "guest_write_policy.rs"]
 mod policy;
 #[path = "guest_write_host.rs"]

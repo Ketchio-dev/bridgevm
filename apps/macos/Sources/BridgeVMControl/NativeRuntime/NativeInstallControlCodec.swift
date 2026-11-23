@@ -1,14 +1,14 @@
 import Foundation
 
 enum NativeInstallControlCodec {
-    static let requestSchema = "bridgevm.app-install-control-request.v1"
-    static let responseSchema = "bridgevm.app-install-control.v1"
+    static let requestSchema = "bridgevm.app-install-control-request.v2"
+    static let responseSchema = "bridgevm.app-install-control.v2"
     static let scope = "app-owned-install"
 
     static func validate(_ request: NativeInstallControlRequest) throws {
         try NativeRuntimeCodec.validate(NativeRuntimeRequest(schema: NativeRuntimeCodec.requestSchema,
             operation: "status", requestID: request.requestID, library: request.library, vmID: request.vmID,
-            savedConfiguration: .init(state: .present, digest: request.expectedSavedConfigurationDigest)))
+            savedConfiguration: .init(state: .missing, digest: nil)))
         guard request.schema == requestSchema, NativeRuntimeCodec.validUUID(request.appInstanceID) else {
             throw NativeRuntimeError.invalidMessage
         }
@@ -28,7 +28,6 @@ enum NativeInstallControlCodec {
         guard response.schema == responseSchema, response.scope == scope,
               response.requestID == request.requestID, response.library == request.library,
               response.vmID == request.vmID,
-              response.expectedSavedConfigurationDigest == request.expectedSavedConfigurationDigest,
               response.requestedOperationID == request.operationID,
               NativeRuntimeCodec.validUUID(response.appInstanceID) else {
             throw NativeRuntimeError.invalidMessage
@@ -52,9 +51,6 @@ enum NativeInstallControlCodec {
             guard response.disposition == .status else { throw NativeRuntimeError.invalidMessage }
         case .installCancel:
             guard response.disposition == .cancelAccepted else { throw NativeRuntimeError.invalidMessage }
-        }
-        guard observation.expectedSavedConfigurationDigest == request.expectedSavedConfigurationDigest else {
-            throw NativeRuntimeError.invalidMessage
         }
         try validate(observation)
     }

@@ -49,7 +49,7 @@ extension NativeCLI {
 
       Defaults: 64 GiB, 6144 MiB, 4 CPUs, 1440x900, shared NAT network.
       \(NativeCLICreateWindowsGuidance.help)
-      JSON schema: bridgevm.app-create-windows.v1.
+      JSON schema: bridgevm.app-create-windows.v2.
       Exit codes: 0 registration confirmed, 1 driver preparation, creation or
       confirmation failed, 2 invalid name, option, path, media, resource value
       or host CPU request.
@@ -86,7 +86,7 @@ extension NativeCLI {
     request means the app accepted or found the operation; it does not mean Windows
     finished installing or booted. Use install-status to observe later progress.
     Exit codes: 0 request/observation available, 1 refused/unavailable, 2 usage.
-    JSON schema: bridgevm.app-install-command.v1.
+    JSON schema: bridgevm.app-install-command.v2.
     """
 }
 
@@ -100,7 +100,9 @@ extension NativeCLI {
     or running. OUTPUT is an absolute directory outside the VM bundle. Media and
     helper paths come from the saved app library; disk, vars and secrets stay off argv.
     JSON schema: bridgevm.app-snapshot.v1.
-    Exit codes: 0 complete, 1 refused/failed, 2 invalid usage.
+    Ctrl-C or SIGTERM stops the helper and waits for it: disk, vars and OUTPUT
+    are left as before or complete, never mixed.
+    Exit codes: 0 complete, 1 refused/failed, 130/143 cancelled, 2 invalid usage.
     """
 }
 
@@ -116,7 +118,7 @@ extension NativeCLI {
     The app must already be running. No app or VM is launched by this command.
     A timeout ends this CLI observation; admitted cleanup remains app-owned.
     Confirmed runtime cleanup does not prove normal guest shutdown.
-    Stop JSON schema: bridgevm.app-stop.v1; scope: app-owned-runtime-control.
+    Stop JSON schema: bridgevm.app-stop.v2; scope: app-owned-runtime-control.
     Stop exit codes: 0 cleanup and runner exit confirmed, 1 refused/unconfirmed,
     2 invalid usage. Pending admission alone never returns a successful exit.
     """

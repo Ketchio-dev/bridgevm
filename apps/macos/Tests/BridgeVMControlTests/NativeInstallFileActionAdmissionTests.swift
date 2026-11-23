@@ -11,9 +11,8 @@ final class NativeInstallFileActionAdmissionTests: XCTestCase {
             fixture.save(config)
             let library = fixture.library()
             fixture.cacheFake(in: library, config: config)
-            let digest = try NativeRuntimeConfigurationIdentity.digest(config: config)
             guard case let .accepted(operation) = library.windowsInstallSessions.cliOperations.reserve(
-                vmID: config.slug, digest: digest, operationID: UUID()) else {
+                vmID: config.slug, operationID: UUID()) else {
                 return XCTFail("Expected CLI preparation reservation")
             }
             XCTAssertEqual(try operation.observation().phase, .preparingPlan)
@@ -32,9 +31,8 @@ final class NativeInstallFileActionAdmissionTests: XCTestCase {
         fixture.save(config)
         let library = fixture.library()
         fixture.cacheFake(in: library, config: config)
-        let digest = try NativeRuntimeConfigurationIdentity.digest(config: config)
         guard case let .accepted(operation) = library.windowsInstallSessions.cliOperations.reserve(
-            vmID: config.slug, digest: digest, operationID: UUID()) else {
+            vmID: config.slug, operationID: UUID()) else {
             return XCTFail("Expected CLI preparation reservation")
         }
         XCTAssertNotNil(library.libraryActionRefusal(for: config))
