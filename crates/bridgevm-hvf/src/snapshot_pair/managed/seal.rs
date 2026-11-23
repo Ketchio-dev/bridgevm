@@ -426,6 +426,11 @@ fn before_link(
     Ok(())
 }
 
+/// A previous attempt's staging or ownership record: all that reclaim can touch.
+pub(super) fn previous_attempt(root: &Path) -> io::Result<bool> {
+    Ok(present(&root.join("staging"))? || present(&root.join(ROOT_NAME))?)
+}
+
 /// True means the existing legacy admission must inspect unsealed staging.
 pub(super) fn reclaim_sealed(root: &Path) -> io::Result<bool> {
     if !private_directory(root, false)? {

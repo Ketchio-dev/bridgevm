@@ -326,18 +326,32 @@ fn read_manifest_text(path: &Path) -> io::Result<String> {
 
 /// Read and verify a snapshot without restoring it.
 pub fn verify_snapshot(dir: &Path) -> Result<SnapshotManifest, SnapshotError> {
+    inspect_snapshot(dir, true)
+}
+
+/// Without `hash`, only the manifest and each member's type and size are
+/// checked: a restore hashes its staged copy, the bytes it publishes, instead.
+fn inspect_snapshot(dir: &Path, hash: bool) -> Result<SnapshotManifest, SnapshotError> {
     let manifest = read_manifest(&dir.join(MANIFEST_NAME))?;
     for (name, want_hash, want_bytes) in [
         (DISK_NAME, &manifest.disk_sha256, manifest.disk_bytes),
         (VARS_NAME, &manifest.vars_sha256, manifest.vars_bytes),
     ] {
-        verify_member(&dir.join(name), want_hash, want_bytes)?;
+        verify_member(
+            &dir.join(name),
+            hash.then_some(want_hash.as_str()),
+            want_bytes,
+        )?;
     }
     Ok(manifest)
 }
 
 /// Refuse an unexpected member type or size before hashing its contents.
-fn verify_member(path: &Path, want_hash: &str, want_bytes: u64) -> Result<(), SnapshotError> {
+fn verify_member(
+    path: &Path,
+    want_hash: Option<&str>,
+    want_bytes: u64,
+) -> Result<(), SnapshotError> {
     let file = files::open_regular(path)?;
     let name = path.file_name().unwrap_or_default().to_string_lossy();
     let mismatch = |bytes| {
@@ -349,6 +363,9 @@ fn verify_member(path: &Path, want_hash: &str, want_bytes: u64) -> Result<(), Sn
     if measured != want_bytes {
         return Err(mismatch(measured));
     }
+    let Some(want_hash) = want_hash else {
+        return Ok(());
+    };
     // A growing member gets at most one byte beyond its declared size read;
     // a shrinking one is rejected by the byte count from the same descriptor.
     let (hash, bytes) = files::sha256_reader(file.take(want_bytes.saturating_add(1)))?;

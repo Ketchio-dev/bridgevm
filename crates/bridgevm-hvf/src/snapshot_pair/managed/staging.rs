@@ -123,7 +123,7 @@ impl StageOwner {
     }
 }
 
-/// Copy the three verified source members without precreating clone targets.
+/// Copy the three admitted source members without precreating clone targets.
 fn copy_files(
     snapshot: &Path,
     staged: &Path,
