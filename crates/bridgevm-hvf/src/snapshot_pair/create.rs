@@ -2,8 +2,10 @@
 //!
 //! Creation fills `.NAME.staging` beside the destination and publishes it
 //! with a rename or an exchange. Before staging is touched, the destination is
-//! admitted and the parent and member leases are taken; the manifest is
-//! written last, so only staging that holds one can be a completed snapshot.
+//! admitted and the media members of the destination and of staging are
+//! leased; the manifest is written last, so only staging that holds one can be
+//! a completed snapshot. The destination is admitted again right before
+//! publication, which is the check that keeps what arrived during the copy.
 
 use super::files::{copy_and_sync, sha256_file};
 use super::publish::publish;
@@ -74,7 +76,7 @@ fn create_stopped(
     let (disk, vars) = (selected_disk.as_path(), selected_vars.as_path());
 
     let dest = prepare_destination(dest, [&logical_disk, &logical_vars, disk, vars])?;
-    let (_destination_lease, staging) = claim_staging(&dest)?;
+    let (_members, staging) = claim_staging(&dest)?;
     let manifest = staging.fill([disk, vars], vm_id, copy, &mut observe)?;
     // Never remove the previous snapshot before its replacement is published.
     staging.publish(&dest, publish)?;
@@ -108,42 +110,28 @@ fn prepare_destination(dest: &Path, sources: [&Path; 4]) -> io::Result<PathBuf> 
     Ok(destination)
 }
 
-/// Own one snapshot parent before admitting its output and clearing staging.
+/// Admit the destination, own its and staging's media members, then claim
+/// fresh staging.
+///
+/// The admission here only refuses before anything is copied; publication
+/// admits again. Replacing or reclaiming a directory must own its members:
+/// a reader (another export's source, a runtime) holds their disk/vars keys,
+/// and another create of this destination holds those of its staging. The
+/// keys of an existing directory's members are canonical, so a case or
+/// Unicode alias of the same name meets the same keys.
 fn claim_staging(destination: &Path) -> io::Result<(MediaLease, OwnedStaging)> {
-    let parent = destination
-        .parent()
-        .ok_or_else(|| io::Error::other("snapshot destination needs a parent"))?;
-    // A parent-wide key covers case-equivalent names on case-insensitive APFS.
-    // MediaLease refuses directories; this sibling is only a cooperative key.
-    let key = parent.join(".bridgevm-snapshot-parent-lease");
-    match fs::symlink_metadata(&key) {
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Ok(_) => return Err(io::Error::other("snapshot lease key path is occupied")),
-        Err(error) => return Err(error),
-    }
-    let mut lease = MediaLease::acquire([key.as_path()])?;
+    admit_destination(destination)?;
     let staged = staging_path(destination);
-    let staging = prepare_owned(&mut lease, destination, &staged)?;
+    let mut lease = MediaLease::acquire([])?;
+    own_members(&mut lease, destination)?;
+    // Refusal to own a leased member must precede all staging reclamation.
+    own_members(&mut lease, &staged)?;
+    reclaim_staging(&staged)?;
+    let staging = OwnedStaging::create(&staged)?;
+    // Reserve the fresh member path keys before copying either file; for
+    // staging that existed above they are already held.
+    own_members(&mut lease, &staged)?;
     Ok((lease, staging))
-}
-
-/// Replacing or reclaiming a directory must also own its media members.
-/// A parent key serializes exporters, but readers own the disk/vars keys.
-fn prepare_owned(
-    lease: &mut MediaLease,
-    destination: &Path,
-    staged: &Path,
-) -> io::Result<OwnedStaging> {
-    admit_destination(destination)?;
-    own_members(lease, destination)?;
-    own_members(lease, staged)?;
-    // Re-admit while the parent and member keys remain held. In particular,
-    // refusal to own a leased member must precede all staging reclamation.
-    admit_destination(destination)?;
-    reclaim_staging(staged)?;
-    let staging = OwnedStaging::create(staged)?;
-    // Reserve the fresh member path keys before copying either file.
-    own_members(lease, staged).map(|()| staging)
 }
 
 fn own_members(lease: &mut MediaLease, directory: &Path) -> io::Result<()> {
@@ -283,7 +271,7 @@ fn clear_staging_then(staging: &Path, after_listing: impl FnOnce()) -> io::Resul
 /// is kept for the user to move or remove; this attempt's own staging is still
 /// cleared by `clear_staging` after a failure.
 ///
-/// Runs under the parent and member leases, before staging is claimed.
+/// Runs under the member leases, before staging is claimed.
 fn reclaim_staging(staging: &Path) -> io::Result<()> {
     let refuse = |why: String| refusal("staging directory", staging, why);
     if !present_directory(staging).map_err(refuse)? {
@@ -321,7 +309,7 @@ impl OwnedStaging {
         Ok(Self { path, identity })
     }
 
-    /// Staging was created empty under the destination lease, so a failure leaves
+    /// Staging was created empty under the member leases, so a failure leaves
     /// only this attempt's partial copy there. Clearing keeps anything else.
     fn fill(
         &self,
