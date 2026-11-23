@@ -11,6 +11,7 @@ struct HvfUnicodeInputRequest {
     let queuedTextDispatch: Bool
     let command: String
     let insertedEventCount: Int
+    private let dispatchPrefix: String?
     private let dispatchMarker: String?
     private let unsupportedMarker: String?
     private let deadline: Date
@@ -24,7 +25,9 @@ struct HvfUnicodeInputRequest {
         guard let encoding = HvfGuestInputEncoding(event) else { return nil }
         if case .text = event { self.queuedTextDispatch = queuedTextDispatch } else { self.queuedTextDispatch = false }
         command = "\(encoding.verb) \(id.uuidString) \(encoding.base64)" + (self.queuedTextDispatch ? " S" : "")
-        dispatchMarker = self.queuedTextDispatch ? "BVTEXT_DISPATCHED \(id.uuidString) \(encoding.insertedEventCount / 2)" : nil
+        let prefix = self.queuedTextDispatch ? "BVTEXT_DISPATCHED \(id.uuidString) " : nil
+        dispatchPrefix = prefix
+        dispatchMarker = prefix.map { $0 + String(encoding.insertedEventCount / 2) }
         unsupportedMarker = self.queuedTextDispatch ? "BVTEXT_UNSUPPORTED \(id.uuidString)" : nil
         envelope = HvfInputReceiptEnvelope(command: command)
         insertedEventCount = encoding.insertedEventCount
@@ -54,11 +57,13 @@ struct HvfUnicodeInputRequest {
                     return finish(.failed(Self.insertedNothing(line) ? .notInserted : .guestRejected))
                 }
                 if envelope.isEnd(line) { return finish(.failed(.guestRejected)) }
+            } else if phase != .header, line.hasPrefix(failurePrefix) {
+                return finish(.failed(.invalidReceipt))
             } else if line == unsupportedMarker {
                 guard phase == .marker else { return finish(.failed(.invalidReceipt)) }
                 phase = .unsupported
-            } else if line == dispatchMarker {
-                guard phase == .marker else { return finish(.failed(.invalidReceipt)) }
+            } else if let dispatchPrefix, line.hasPrefix(dispatchPrefix) {
+                guard phase == .marker, line == dispatchMarker else { return finish(.failed(.invalidReceipt)) }
                 phase = .end
             } else if line.hasPrefix(markerPrefix) {
                 guard !queuedTextDispatch, phase == .marker, line == marker else { return finish(.failed(.invalidReceipt)) }
