@@ -7,10 +7,10 @@ The General Preview is distributed without an Apple Developer ID and is not
 notarized. That changes how macOS establishes trust on first open; it does not
 authorize Windows test drivers. General Preview installs and imports Windows in 3D-off mode.
 
-> [!WARNING]
-> The older `v1.0.0` predates the current fail-closed driver policy and has no
-> General Preview channel manifest, so the installer below refuses it. Use
-> `v1.1.0` or later.
+> [!NOTE]
+> Version numbers restarted at `v0.1.0` on 2026-11-23. `v0.1.0` is built from
+> the same source as the withdrawn `v1.1.1`; to replace an installed 1.1.1 app,
+> run the installer again. VMs and settings are unaffected.
 
 ## Build the current source
 
@@ -86,7 +86,7 @@ checks.
 curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash -s -- --launch
 ```
 
-This command installs the newest General Preview (currently `v1.1.1`).
+This command installs the newest General Preview (currently `v0.1.0`).
 
 The bootstrap fetches the full installer at a pinned SHA-256 and refuses to run
 anything else. The installer then fails closed at every step:
@@ -148,7 +148,7 @@ quarantine.
 ## DMG from the Releases page
 
 Download the `.dmg`, `BridgeVM-release.json`, and `SHA256SUMS` from a release
-identified as **General Preview**. Do not use the historical `v1.0.0`. Verify
+identified as **General Preview**. Verify
 the DMG, open it, and drag BridgeVM into Applications:
 
 ```sh
@@ -215,8 +215,7 @@ than falling back to unsigned drivers.
   The previous app is preserved until the new one verifies in place.
 - **Roll back**: run the installer with `--version <older-tag>`, or if you
   updated with `--keep-backup`, remove the new app and rename the
-  `BridgeVM.app.backup-*` bundle back. `v1.1.0` is the oldest release you can
-  roll back to: the installer refuses `v1.0.0`.
+  `BridgeVM.app.backup-*` bundle back.
 - **Uninstall**: delete `/Applications/BridgeVM.app`. That removes the app
   only. Your VMs live under `~/Library/Application Support/BridgeVM/vms` (or
   the storage folder you chose); delete them only if you also want to destroy

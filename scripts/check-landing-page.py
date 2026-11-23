@@ -55,7 +55,7 @@ def check():
     assert "".join(page.summary) == registry["wording"]["engine_summary"]
     assert registry["wording"]["product_state_label"] in html
     assert registry["product_state"] == "ENGINEERING_PREVIEW"
-    for required in ("The older v1.0.0 is refused by the installer", "not notarized", "3D acceleration is excluded", "does not redistribute these drivers", "not a current release or app UI screenshot"):
+    for required in ("not notarized", "3D acceleration is excluded", "does not redistribute these drivers", "not a current release or app UI screenshot"):
         assert required in html, f"landing boundary absent: {required}"
     check_image(page, html, SITE, ROOT)
     assert "@import" not in css and "url(http" not in css

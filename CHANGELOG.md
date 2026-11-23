@@ -81,7 +81,15 @@ All notable changes to BridgeVM are documented in this file.
   is the CLI for the app's library; `bridgevm hvf` keeps three Graphics Lab
   report tools.
 
-## [1.1.1] - 2026-11-21
+## [0.1.0] - 2026-11-23
+
+Version numbers restart at 0.1.0. This release is built from the same source as
+the withdrawn `v1.1.1` tag (`3b01ef93`); its changes are the ones listed under
+1.1.1, 1.1.0 and 1.0.0 below. The preview tags `v1.0.0`, `v1.1.0` and `v1.1.1`
+and their GitHub releases were withdrawn. An installed 1.1.1 app is replaced by
+running the installer again; VMs and settings are unaffected.
+
+## 1.1.1 (withdrawn tag, now 0.1.0) - 2026-11-21
 
 Fixes and interface polish for the 1.1.0 General Preview; the product state
 and the release contract are unchanged.
@@ -105,7 +113,7 @@ and the release contract are unchanged.
 - The snapshot name field looks like a field, and 고급 has one entry point (the
   action grid) instead of three.
 
-## [1.1.0] - 2026-11-20
+## 1.1.0 (withdrawn tag) - 2026-11-20
 
 First General Preview release, replacing the superseded 1.0.0. The product is
 still an **Engineering Preview**: Windows 11 Arm on BridgeVM's own
@@ -239,7 +247,7 @@ a clean Mac) and A19 (disk safety) are open. See `STATUS.md`.
 - Files added to the share while an older guest agent updates come back once,
   unchanged but with a new date and quarantine flag (#651); wait a minute first.
 
-## [1.0.0] - 2026-08-20
+## 1.0.0 (withdrawn tag) - 2026-08-20
 
 Every release-blocking criterion in `capabilities/windows-hvf.json` is proven
 by live evidence, including the final Windows closure gate
