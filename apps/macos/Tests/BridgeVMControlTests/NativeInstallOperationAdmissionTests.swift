@@ -5,8 +5,7 @@ import XCTest
 final class NativeInstallOperationAdmissionTests: XCTestCase {
     func testAdmissionCancellationStopsBeforeSessionEffects() throws {
         for retry in [false, true] {
-            let operation = NativeInstallOperation(operationID: UUID(),
-                expectedSavedConfigurationDigest: String(repeating: "a", count: 64))
+            let operation = NativeInstallOperation(operationID: UUID())
             let process = NativeInstallOwnedAdoptionProcess()
             let session = HvfWindowsInstallSession(plan: HvfWindowsInstallTestSupport.plan(),
                 validate: { _ in XCTFail("Cancelled admission must not validate"); return nil },
@@ -34,9 +33,8 @@ final class NativeInstallOperationAdmissionTests: XCTestCase {
 
     func testAdmissionCallbackRetainsReservationAndRefusalAllowsTerminalFailure() throws {
         for retry in [false, true] {
-            let store = NativeInstallOperationStore(), digest = String(repeating: "a", count: 64)
-            guard case let .accepted(operation) = store.reserve(vmID: "windows", digest: digest,
-                operationID: UUID()) else { return XCTFail("Expected reservation") }
+            let store = NativeInstallOperationStore()
+            guard case let .accepted(operation) = store.reserve(vmID: "windows", operationID: UUID()) else { return XCTFail("Expected reservation") }
             let process = NativeInstallOwnedAdoptionProcess()
             let session = HvfWindowsInstallSession(plan: HvfWindowsInstallTestSupport.plan(),
                 validate: { _ in XCTFail("Refused attempt must not validate"); return nil },
@@ -53,8 +51,7 @@ final class NativeInstallOperationAdmissionTests: XCTestCase {
                     XCTAssertEqual(observation.phase, .preparingPlan)
                     XCTAssertTrue(observation.canCancel)
                 } catch { XCTFail("Admission observation must remain valid: \(error)") }
-                guard case let .existing(repeated) = store.reserve(vmID: "windows", digest: digest,
-                    operationID: UUID()) else { XCTFail("Admission must retain the reservation"); return "refused" }
+                guard case let .existing(repeated) = store.reserve(vmID: "windows", operationID: UUID()) else { XCTFail("Admission must retain the reservation"); return "refused" }
                 XCTAssertTrue(repeated === operation)
                 XCTAssertFalse(operation.start(session), "Reentrant operation start must be refused")
                 return "synthetic admission refusal"
@@ -66,8 +63,7 @@ final class NativeInstallOperationAdmissionTests: XCTestCase {
             XCTAssertEqual(try operation.observation().phase, .failed)
             XCTAssertFalse(operation.reservesWork)
             XCTAssertEqual(process.resets, 0)
-            guard case .accepted = store.reserve(vmID: "windows", digest: digest,
-                operationID: UUID()) else { return XCTFail("A refused start must permit a new reservation") }
+            guard case .accepted = store.reserve(vmID: "windows", operationID: UUID()) else { return XCTFail("A refused start must permit a new reservation") }
         }
     }
 }

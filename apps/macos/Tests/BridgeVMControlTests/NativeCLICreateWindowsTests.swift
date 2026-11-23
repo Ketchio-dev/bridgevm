@@ -11,14 +11,12 @@ final class NativeCLICreateWindowsTests: XCTestCase {
         let saved = try NativeLibraryReader.readConfig(rootURL: fixture.library, id: result.id)
         let pending = try XCTUnwrap(HvfWindowsInstallRequest.load(bundlePath: saved.bundlePath))
 
-        XCTAssertEqual(result.schema, "bridgevm.app-create-windows.v1")
+        XCTAssertEqual(result.schema, "bridgevm.app-create-windows.v2")
         XCTAssertEqual(result.id, "개발-vm")
         XCTAssertEqual(result.displayName, "개발 VM")
         XCTAssertEqual(result.backendKind, "hvf-engine")
         XCTAssertEqual(result.bootMode, "windows-hvf")
         XCTAssertTrue(result.installPending)
-        XCTAssertEqual(result.configurationDigest,
-                       try NativeRuntimeConfigurationIdentity.digest(config: saved))
         XCTAssertTrue(saved.installPending == true)
         XCTAssertEqual(pending.diskGiB, 64)
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: pending.isoPath)), fixture.isoBytes)

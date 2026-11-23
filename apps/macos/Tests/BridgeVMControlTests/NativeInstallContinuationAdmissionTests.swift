@@ -37,8 +37,8 @@ final class NativeInstallContinuationAdmissionTests: XCTestCase {
                                    "media preparation must not mutate the admitted registration")
                     if conflict == "view" || conflict == "view-config" { await gate.hold() }
                     if conflict == "cli" {
-                        let other = NativeInstallOperation(operationID: UUID(), expectedSavedConfigurationDigest: "other")
-                        library.windowsInstallSessions.cliOperations.records[saved.slug] = .init(digest: "other", operation: other)
+                        let other = NativeInstallOperation(operationID: UUID())
+                        library.windowsInstallSessions.cliOperations.records[saved.slug] = other
                     } else if conflict == "config" {
                         var changed = saved; changed.memMiB = 8192
                         try f.save(changed); library.reload()
@@ -48,10 +48,9 @@ final class NativeInstallContinuationAdmissionTests: XCTestCase {
             return value
         })
         let handle = try NativeRuntimeLibraryHandle.open(rootURL: f.root, create: false)
-        let digest = try NativeRuntimeConfigurationIdentity.digest(config: saved)
         let request = NativeInstallControlRequest(schema: NativeInstallControlCodec.requestSchema, operation: .install,
             requestID: UUID().uuidString, library: handle.identity, vmID: saved.slug,
-            appInstanceID: UUID().uuidString, expectedSavedConfigurationDigest: digest, operationID: UUID().uuidString)
+            appInstanceID: UUID().uuidString, operationID: UUID().uuidString)
         let accepted = try library.requestOwnedInstall(request, validateOwner: {})
         for _ in 0..<500 where queue.jobs.isEmpty { try await Task.sleep(nanoseconds: 1_000_000) }
         let active = try XCTUnwrap(session)
@@ -59,8 +58,8 @@ final class NativeInstallContinuationAdmissionTests: XCTestCase {
         XCTAssertEqual(queue.jobs.count, 1)
         if conflict == "gui" {
             // A view may exclude only the operation that actually owns its session.
-            let other = NativeInstallOperation(operationID: UUID(), expectedSavedConfigurationDigest: digest)
-            library.windowsInstallSessions.cliOperations.records[saved.slug] = .init(digest: digest, operation: other)
+            let other = NativeInstallOperation(operationID: UUID())
+            library.windowsInstallSessions.cliOperations.records[saved.slug] = other
             _ = library.bindWindowsInstallSession(active, slug: saved.slug)
         }
         let pipeline = Task { await queue.runNext() }

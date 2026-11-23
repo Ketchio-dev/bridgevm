@@ -51,9 +51,9 @@ Duplicate/unknown flags, relative paths, `..`, invalid values/names, directories
 missing media and final-component symlinks fail before library creation.
 
 No password, recovery key, unattended answer file, payload path, driver override or
-experimental graphics option is accepted. JSON `bridgevm.app-create-windows.v1`
-contains ID/name, saved resources, pending state, backend/boot mode, network,
-`guestDriversSealed` and configuration digest—not ISO paths or media identity;
+experimental graphics option is accepted. JSON `bridgevm.app-create-windows.v2`
+contains ID/name, saved resources, pending state, backend/boot mode, network and
+`guestDriversSealed`—not ISO paths or media identity;
 `installPending: true` is not installation readiness.
 
 Exit 0 confirms saved registration read-back, not installability. Exit 1 means

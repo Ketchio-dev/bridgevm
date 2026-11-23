@@ -4,13 +4,11 @@ import XCTest
 @MainActor
 final class NativeInstallOwnedModelTests: XCTestCase {
     private func request(_ operation: NativeInstallControlRequest.Operation, config: VMConfig,
-        library: NativeRuntimeLibraryIdentity, digest: String, app: String,
-        operationID: UUID? = nil
+        library: NativeRuntimeLibraryIdentity, app: String, operationID: UUID? = nil
     ) -> NativeInstallControlRequest {
         .init(schema: NativeInstallControlCodec.requestSchema, operation: operation,
             requestID: UUID().uuidString, library: library, vmID: config.slug,
-            appInstanceID: app, expectedSavedConfigurationDigest: digest,
-            operationID: operationID?.uuidString)
+            appInstanceID: app, operationID: operationID?.uuidString)
     }
 
     private func waitForSession(_ fixture: HvfWindowsInstallStoreFixture,
@@ -29,10 +27,9 @@ final class NativeInstallOwnedModelTests: XCTestCase {
         try fixture.save(config)
         let library = fixture.library()
         let handle = try NativeRuntimeLibraryHandle.open(rootURL: fixture.root, create: false)
-        let digest = try NativeRuntimeConfigurationIdentity.digest(config: config)
         let app = UUID().uuidString, operationID = UUID()
         let install = request(.install, config: config, library: handle.identity,
-            digest: digest, app: app, operationID: operationID)
+            app: app, operationID: operationID)
 
         let accepted = try library.requestOwnedInstall(install, validateOwner: {})
         XCTAssertEqual(accepted.disposition, .accepted)
@@ -44,11 +41,9 @@ final class NativeInstallOwnedModelTests: XCTestCase {
         XCTAssertEqual(try accepted.operation.observation().phase, .preparingSource)
         XCTAssertEqual(fixture.made, 1)
 
-        let status = request(.installStatus, config: config, library: handle.identity,
-            digest: digest, app: app)
+        let status = request(.installStatus, config: config, library: handle.identity, app: app)
         XCTAssertEqual(try library.requestOwnedInstall(status, validateOwner: {}).disposition, .status)
-        let cancel = request(.installCancel, config: config, library: handle.identity,
-            digest: digest, app: app)
+        let cancel = request(.installCancel, config: config, library: handle.identity, app: app)
         XCTAssertEqual(try library.requestOwnedInstall(cancel, validateOwner: {}).disposition, .cancelAccepted)
         XCTAssertEqual(try accepted.operation.observation().phase, .cancelling)
         await fixture.finishCancelled(session)
@@ -63,45 +58,60 @@ final class NativeInstallOwnedModelTests: XCTestCase {
         XCTAssertFalse(library.vms.contains { $0.slug == config.slug })
         try fixture.save(config)
         let handle = try NativeRuntimeLibraryHandle.open(rootURL: fixture.root, create: false)
-        let digest = try NativeRuntimeConfigurationIdentity.digest(config: config)
         let app = UUID().uuidString
         let install = request(.install, config: config, library: handle.identity,
-            digest: digest, app: app, operationID: UUID())
+            app: app, operationID: UUID())
 
         let accepted = try library.requestOwnedInstall(install, validateOwner: {})
         XCTAssertEqual(accepted.disposition, .accepted)
         let observedSession = await waitForSession(fixture, library: library, slug: config.slug)
         let session = try XCTUnwrap(observedSession)
-        let cancel = request(.installCancel, config: config, library: handle.identity, digest: digest, app: app)
+        let cancel = request(.installCancel, config: config, library: handle.identity, app: app)
         XCTAssertEqual(try library.requestOwnedInstall(cancel, validateOwner: {}).disposition, .cancelAccepted)
         await fixture.finishCancelled(session)
     }
 
-    func testExistingUIInstallAndChangedConfigurationFailClosed() async throws {
+    /// vm.json changed on disk after the app loaded it (another tool saved it): the app reads the library
+    /// once and installs what is saved. Before, the loaded entry no longer matched the file and the CLI's
+    /// digest, and the install was refused with `configurationChanged`.
+    func testInstallUsesTheCurrentSavedConfigurationAfterVMJsonChangedOnDisk() async throws {
+        let fixture = HvfWindowsInstallStoreFixture(), config = fixture.config()
+        defer { fixture.clean() }
+        try fixture.save(config)
+        let library = fixture.library()
+        var saved = config
+        saved.displayWidth = 1440
+        try fixture.save(saved)
+        XCTAssertEqual(library.vms.first { $0.slug == config.slug }, config, "the app still holds the old entry")
+        let handle = try NativeRuntimeLibraryHandle.open(rootURL: fixture.root, create: false)
+        let app = UUID().uuidString
+
+        let accepted = try library.requestOwnedInstall(request(.install, config: config,
+            library: handle.identity, app: app, operationID: UUID()), validateOwner: {})
+        XCTAssertEqual(accepted.disposition, .accepted)
+        let observedSession = await waitForSession(fixture, library: library, slug: config.slug)
+        let session = try XCTUnwrap(observedSession)
+        XCTAssertEqual(library.windowsInstallSessions.record(for: config.slug)?.sourceConfig, saved)
+        let cancel = request(.installCancel, config: config, library: handle.identity, app: app)
+        XCTAssertEqual(try library.requestOwnedInstall(cancel, validateOwner: {}).disposition, .cancelAccepted)
+        await fixture.finishCancelled(session)
+    }
+
+    func testExistingUIInstallRefusesAsBusy() async throws {
         let fixture = HvfWindowsInstallStoreFixture(), config = fixture.config()
         defer { fixture.clean() }
         try fixture.save(config)
         let library = fixture.library()
         let handle = try NativeRuntimeLibraryHandle.open(rootURL: fixture.root, create: false)
-        let digest = try NativeRuntimeConfigurationIdentity.digest(config: config)
         let session = library.windowsInstallSession(for: config)
         let started = try XCTUnwrap(session.start())
         await started.value
         let install = request(.install, config: config, library: handle.identity,
-            digest: digest, app: UUID().uuidString, operationID: UUID())
+            app: UUID().uuidString, operationID: UUID())
         XCTAssertThrowsError(try library.requestOwnedInstall(install, validateOwner: {})) {
             XCTAssertEqual($0 as? NativeInstallControlRefusal, .busy)
         }
         session.cancel(); await fixture.finishCancelled(session)
-
-        var changed = config
-        changed.displayWidth += 1
-        let wrong = request(.install, config: config, library: handle.identity,
-            digest: try NativeRuntimeConfigurationIdentity.digest(config: changed),
-            app: UUID().uuidString, operationID: UUID())
-        XCTAssertThrowsError(try library.requestOwnedInstall(wrong, validateOwner: {})) {
-            XCTAssertEqual($0 as? NativeInstallControlRefusal, .configurationChanged)
-        }
     }
 
     func testConfigurationChangeDuringDetachedPreparationPreventsSessionCreation() async throws {
@@ -110,9 +120,8 @@ final class NativeInstallOwnedModelTests: XCTestCase {
         fixture.save(config)
         let library = fixture.library()
         let handle = try NativeRuntimeLibraryHandle.open(rootURL: fixture.work.root, create: false)
-        let digest = try NativeRuntimeConfigurationIdentity.digest(config: config)
         let install = request(.install, config: config, library: handle.identity,
-            digest: digest, app: UUID().uuidString, operationID: UUID())
+            app: UUID().uuidString, operationID: UUID())
         let accepted = try library.requestOwnedInstall(install, validateOwner: {})
         XCTAssertEqual(accepted.disposition, .accepted)
         let entered = await fixture.entered(1)

@@ -33,7 +33,7 @@ extension LibraryModel {
             guard let self, let session else {
                 return "VM 라이브러리를 사용할 수 없습니다. 라이브러리 화면에서 다시 시도하세요."
             }
-            let candidate = self.windowsInstallSessions.cliOperations.records[slug]?.operation
+            let candidate = self.windowsInstallSessions.cliOperations.records[slug]
             let operation = candidate?.session === session ? candidate : nil
             let refusal = self.libraryWorkRefusal(slug: slug, excludingInstall: operation,
                 excludingWindowsInstall: continuing ? session : nil,

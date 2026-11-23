@@ -38,8 +38,7 @@ final class NativeRuntimeAppInstallRouter {
     ) -> NativeInstallControlResponse {
         .init(schema: NativeInstallControlCodec.responseSchema, scope: NativeInstallControlCodec.scope,
             requestID: request.requestID, library: library, vmID: request.vmID,
-            appInstanceID: appInstanceID, expectedSavedConfigurationDigest: request.expectedSavedConfigurationDigest,
-            requestedOperationID: request.operationID, disposition: disposition,
+            appInstanceID: appInstanceID, requestedOperationID: request.operationID, disposition: disposition,
             observation: observation, refusal: refusal)
     }
 }

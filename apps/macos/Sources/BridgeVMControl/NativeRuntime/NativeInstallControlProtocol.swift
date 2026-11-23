@@ -8,7 +8,6 @@ struct NativeInstallControlRequest: Codable, Equatable, Sendable {
     let library: NativeRuntimeLibraryIdentity
     let vmID: String
     let appInstanceID: String
-    let expectedSavedConfigurationDigest: String
     let operationID: String?
 }
 
@@ -20,7 +19,6 @@ struct NativeInstallControlResponse: Codable, Equatable, Sendable {
     let library: NativeRuntimeLibraryIdentity
     let vmID: String
     let appInstanceID: String
-    let expectedSavedConfigurationDigest: String
     let requestedOperationID: String?
     let disposition: Disposition
     let observation: NativeInstallObservation?
@@ -39,7 +37,6 @@ struct NativeInstallObservation: Codable, Equatable, Sendable {
         case recovering, cancelling, done, failed, cancelled
     }
     let operationID: String
-    let expectedSavedConfigurationDigest: String
     let phase: Phase
     let acceptedUptime: Double
     let workerPending: Bool

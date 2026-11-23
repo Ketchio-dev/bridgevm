@@ -9,7 +9,6 @@ extension NativeInstallControlCodec {
     static func validate(_ value: NativeInstallObservation) throws {
         let logSizes = value.logTail.map { $0.utf8.count }
         guard NativeRuntimeCodec.validUUID(value.operationID),
-              NativeRuntimeCodec.validDigest(value.expectedSavedConfigurationDigest),
               value.acceptedUptime.isFinite, value.acceptedUptime >= 0,
               value.logTail.count <= maximumLogLines,
               logSizes.allSatisfy({ $0 <= maximumLogLineBytes }),

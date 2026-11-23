@@ -7,8 +7,7 @@ final class NativeInstallOperationStartTests: XCTestCase {
     func testStartOwnsSessionBeforeValidatingPublication() async throws {
         let fixture = NativeInstallOwnedAdoptionFixture()
         defer { fixture.clean() }
-        let operation = NativeInstallOperation(operationID: UUID(),
-            expectedSavedConfigurationDigest: String(repeating: "a", count: 64))
+        let operation = NativeInstallOperation(operationID: UUID())
         let session = HvfWindowsInstallSession(plan: HvfWindowsInstallTestSupport.plan(),
             validate: { [probe = fixture.validator] in probe.validate($0) }, schedule: fixture.queue.enqueue,
             execution: .init(process: fixture.process), recovery: .init(inspect: { _ in .fresh }))
@@ -36,8 +35,7 @@ final class NativeInstallOperationStartTests: XCTestCase {
         for retry in [false, true] {
             let fixture = NativeInstallOwnedAdoptionFixture()
             defer { fixture.clean() }
-            let operation = NativeInstallOperation(operationID: UUID(),
-                expectedSavedConfigurationDigest: String(repeating: "a", count: 64))
+            let operation = NativeInstallOperation(operationID: UUID())
             let session = HvfWindowsInstallSession(plan: HvfWindowsInstallTestSupport.plan(),
                 validate: { [probe = fixture.validator] in probe.validate($0) }, schedule: fixture.queue.enqueue,
                 execution: .init(process: fixture.process), recovery: .init(inspect: { _ in .fresh }))
@@ -65,8 +63,7 @@ final class NativeInstallOperationStartTests: XCTestCase {
     }
 
     func testAdoptedCommitRemainsNonCancellable() throws {
-        let operation = NativeInstallOperation(operationID: UUID(),
-            expectedSavedConfigurationDigest: String(repeating: "a", count: 64))
+        let operation = NativeInstallOperation(operationID: UUID())
         let process = NativeInstallOwnedAdoptionProcess()
         let session = HvfWindowsInstallSession(plan: HvfWindowsInstallTestSupport.plan(),
             execution: .init(process: process))
@@ -86,8 +83,7 @@ final class NativeInstallOperationStartTests: XCTestCase {
 
     func testTerminalOperationCannotStartLateSession() throws {
         for cancelled in [false, true] {
-            let operation = NativeInstallOperation(operationID: UUID(),
-                expectedSavedConfigurationDigest: String(repeating: "a", count: 64))
+            let operation = NativeInstallOperation(operationID: UUID())
             if cancelled { XCTAssertTrue(operation.cancel()) } else { operation.fail("synthetic refusal") }
             let process = NativeInstallOwnedAdoptionProcess()
             let session = HvfWindowsInstallSession(plan: HvfWindowsInstallTestSupport.plan(),

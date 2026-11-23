@@ -16,7 +16,7 @@ final class HvfOwnedRuntimeRunnerCLITests: XCTestCase {
             try await runner.awaitChildren()
             let (status, result) = try await fixture.stop(throughPairedRustCLI: true)
             XCTAssertEqual(status, 0)
-            XCTAssertEqual(result["schema"] as? String, "bridgevm.app-stop.v1")
+            XCTAssertEqual(result["schema"] as? String, "bridgevm.app-stop.v2")
             XCTAssertEqual(result["complete"] as? Bool, true)
             let target = try XCTUnwrap(result["target"] as? [String: Any])
             XCTAssertEqual(target["appInstanceID"] as? String, fixture.appInstanceID)

@@ -5,8 +5,7 @@ enum NativeRuntimeControlTestSupport {
     static let app = "A0000000-0000-0000-0000-000000000001"
     static let token = "B0000000-0000-0000-0000-000000000001"
     static let library = NativeRuntimeLibraryIdentity(canonicalPath: "/private/tmp/control-fixture", device: 1, inode: 2, uid: 501)
-    static let target = NativeRuntimeStopTarget(appInstanceID: app, runToken: token, processID: 123,
-                                               acceptedConfigurationDigest: String(repeating: "a", count: 64))
+    static let target = NativeRuntimeStopTarget(appInstanceID: app, runToken: token, processID: 123)
     static func request(_ operation: NativeRuntimeControlRequest.Operation = .stop,
                         id: String = UUID().uuidString, target: NativeRuntimeStopTarget = target,
                         vmID: String = "개발-vm") -> NativeRuntimeControlRequest {

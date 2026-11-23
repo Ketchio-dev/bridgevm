@@ -26,8 +26,7 @@ final class HvfOwnedStopPendingStartTests: XCTestCase {
             let firstOperation = try XCTUnwrap(stopped["operationID"] as? String)
             let rawTarget = try XCTUnwrap(stopped["target"] as? [String: Any])
             let target = NativeRuntimeStopTarget(appInstanceID: try XCTUnwrap(rawTarget["appInstanceID"] as? String),
-                runToken: try XCTUnwrap(rawTarget["runToken"] as? String), processID: try XCTUnwrap(rawTarget["processID"] as? Int32),
-                acceptedConfigurationDigest: try XCTUnwrap(rawTarget["acceptedConfigurationDigest"] as? String))
+                runToken: try XCTUnwrap(rawTarget["runToken"] as? String), processID: try XCTUnwrap(rawTarget["processID"] as? Int32))
             let (repeatExit, repeated) = try await fixture.command("stop", pairedRust: false)
             XCTAssertEqual(repeatExit, 0, "Retained completed run still answers a fresh stop: \(repeated)")
             XCTAssertEqual(repeated["operationID"] as? String, firstOperation)
