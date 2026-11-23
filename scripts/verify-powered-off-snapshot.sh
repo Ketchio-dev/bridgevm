@@ -17,9 +17,6 @@ cd "$REPO" || exit 1
 DISK=${DISK:-$HOME/BridgeVM/work/canonical-fresh-12041-agent-20260730.raw}
 VARS=${VARS:-$HOME/BridgeVM/work/canonical-fresh-12041-agent-20260730-vars.fd}
 OUT=${OUT:-$HOME/BridgeVM/runs/snapshot-pair-$(date +%Y%m%d-%H%M%S)}
-# Default quota is the pair's own size plus room; a real product path would
-# set this from free space.
-QUOTA=${QUOTA:-$((80 * 1024 * 1024 * 1024))}
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
@@ -37,7 +34,6 @@ say() { echo "$*" | tee -a "$RECEIPT"; }
 
 say "disk:  $DISK ($(stat -f %z "$DISK") bytes)"
 say "vars:  $VARS ($(stat -f %z "$VARS") bytes)"
-say "quota: $QUOTA bytes"
 
 # Work on clones so the canonical inputs are never the thing under test.
 WORK="$OUT/work"
@@ -61,7 +57,7 @@ cargo build --release -p bridgevm-hvf --locked --example snapshot_pair_cli 2>>"$
 CLI=target/release/examples/snapshot_pair_cli
 
 say "--- create ---"
-"$CLI" create "$WORK/disk.raw" "$WORK/vars.fd" "$WORK/snap" a19-gate "$QUOTA" \
+"$CLI" create "$WORK/disk.raw" "$WORK/vars.fd" "$WORK/snap" a19-gate \
   | tee -a "$RECEIPT" || fail "create failed"
 
 say "--- verify ---"

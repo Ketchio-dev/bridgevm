@@ -69,15 +69,8 @@ fn fixture(tag: &str) -> (Scratch, PathBuf, PathBuf, PathBuf) {
     let source_disk = scratch.write("source-disk", b"new-disk");
     let source_vars = scratch.write("source-vars", b"new-vars");
     let snapshot = scratch.path("snapshot");
-    create_snapshot(
-        &source_disk,
-        &source_vars,
-        &snapshot,
-        "interrupted-init",
-        false,
-        1024,
-    )
-    .expect("create source snapshot");
+    create_snapshot(&source_disk, &source_vars, &snapshot, "interrupted-init")
+        .expect("create source snapshot");
     (scratch, disk, vars, snapshot)
 }
 

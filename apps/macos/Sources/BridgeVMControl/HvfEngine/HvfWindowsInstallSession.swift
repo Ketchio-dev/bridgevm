@@ -105,3 +105,151 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
         if logLines.count > 400 { logLines.removeFirst(logLines.count - 400) }
     }
 }
+
+extension HvfWindowsInstallSession {
+    func run() async {
+        guard await continueFreshInstallation() else { return }
+        let sourceLock: HvfWindowsInstallSourceLock
+        do {
+            sourceLock = try HvfWindowsInstallSourceLock(sourceImagePath: plan.sourceImagePath)
+        } catch {
+            appendLog(WindowsFileFailureFeedback.diagnostic("source-lock", error))
+            finish(.failed(WindowsFileFailureFeedback.source))
+            return
+        }
+        defer { withExtendedLifetime(sourceLock) {} }
+        let sourceVerified = await execution.verifySource(plan)
+        guard !acknowledgeCancellation() else { return }
+        guard await continueFreshInstallation() else { return }
+        if !sourceVerified {
+            transition(to: .preparingSource)
+            guard !acknowledgeCancellation() else { return }
+            let build = plan.sourceBuildCommand()
+            guard await runProcess(arguments: build.arguments, extraEnvironment: build.environment,
+                                   progressLog: nil) else {
+                try? FileManager.default.removeItem(atPath: plan.sourceImagePath)
+                failUnlessCancelled("설치 소스 생성이 실패했습니다.")
+                return
+            }
+            guard !acknowledgeCancellation(cleanup: true) else { return }
+        } else {
+            appendLog("설치 소스 캐시 재사용: \(plan.sourceImagePath)")
+        }
+
+        transition(to: .installing)
+        guard !acknowledgeCancellation(cleanup: true) else { return }
+        guard await continueFreshInstallation() else { return }
+        do {
+            try await execution.prepareMedia(plan)
+        } catch {
+            appendLog(WindowsFileFailureFeedback.diagnostic("preparation", error))
+            failUnlessCancelled(WindowsFileFailureFeedback.preparation)
+            return
+        }
+        guard !acknowledgeCancellation(cleanup: true) else { return }
+        guard await continueFreshInstallation(cleanupOnCancellation: true) else { return }
+        guard !acknowledgeCancellation(cleanup: true) else { return }
+        if let refusal = continuationAdmission?() {
+            failUnlessCancelled(refusal)
+            return
+        }
+        let installLog = URL(fileURLWithPath: plan.stagingEvidenceDir).appendingPathComponent("run.log")
+        guard await runProcess(arguments: plan.installCommand(), extraEnvironment: [:],
+                               progressLog: installLog) else {
+            failUnlessCancelled("Windows 무인 설치가 실패했습니다. 로그: \(plan.stagingEvidenceDir)/run.log")
+            return
+        }
+        guard !acknowledgeCancellation(cleanup: true) else { return }
+        guard await continueFreshInstallation() else { return }
+
+        // Durable publication has no rollback-on-cancel promise, including reentrant observers.
+        commitStarted = true
+        transition(to: .finalizing)
+        do {
+            try await execution.finalize(plan)
+            appendLog("UEFI 부팅 항목과 Microsoft-only Secure Boot 키를 검증·시드했습니다.")
+        } catch {
+            appendLog(WindowsFileFailureFeedback.diagnostic("finalization", error))
+            finish(.failed(WindowsFileFailureFeedback.finalization))
+            return
+        }
+        completeInstallation()
+    }
+}
+
+extension HvfWindowsInstallSession {
+    /// Acknowledges inspection, validation and pipeline scheduling, not completion.
+    /// Use cancel(); cancelling this task handle does not cancel the installation.
+    @discardableResult
+    func start(admit: () -> Bool = { true }) -> Task<Void, Never>? {
+        guard !admissionPending, !isRunning, stage != .done else { return nil }
+        // Existing library admission must not see its own attempt as a conflict.
+        admissionPending = true
+        defer { admissionPending = false }
+        guard workAdmission?(true) == nil, admit() else { return nil }
+        attemptActive = true
+        cancelled = false
+        commitStarted = false
+        execution.process.reset()
+        prepareAttemptPresentation()
+        return Task { await inspectAndSchedule() }
+    }
+
+    private func inspectAndSchedule() async {
+        guard !acknowledgeCancellation() else { return }
+        do {
+            let decision = try await recovery.decision(for: plan)
+            guard !acknowledgeCancellation() else { return }
+            if case let .pending(ticket) = decision {
+                transition(to: .recovering)
+                schedule { await self.recoverExisting(ticket) }
+                return
+            }
+            let error = await HvfWindowsInstallValidationWorker.validate(plan, using: validate)
+            guard !acknowledgeCancellation() else { return }
+            if let error { finish(.failed(error)); return }
+            transition(to: .preparingSource)
+            schedule { await self.run() }
+        } catch {
+            if !acknowledgeCancellation() {
+                appendLog(WindowsFileFailureFeedback.diagnostic("recovery-inspection", error))
+                finish(.failed(WindowsFileFailureFeedback.recovery))
+            }
+        }
+    }
+
+    /// Recheck inside the scheduled pipeline and after awaits, before fresh effects.
+    func continueFreshInstallation(cleanupOnCancellation: Bool = false) async -> Bool {
+        guard !acknowledgeCancellation(cleanup: cleanupOnCancellation) else { return false }
+        do {
+            let decision = try await recovery.decision(for: plan)
+            guard !acknowledgeCancellation(cleanup: cleanupOnCancellation) else { return false }
+            switch decision {
+            case .fresh: return true
+            case let .pending(ticket):
+                await recoverExisting(ticket)
+                return false
+            }
+        } catch {
+            if !acknowledgeCancellation(cleanup: cleanupOnCancellation) {
+                appendLog(WindowsFileFailureFeedback.diagnostic("recovery-inspection", error))
+                finish(.failed(WindowsFileFailureFeedback.recovery))
+            }
+            return false
+        }
+    }
+
+    func recoverExisting(_ ticket: HvfWindowsInstallRecovery.Ticket) async {
+        guard !acknowledgeCancellation() else { return }
+        commitStarted = true
+        transition(to: .recovering)
+        appendLog("기존 Windows 설치 결과를 복구하고 있습니다.")
+        do {
+            _ = try await recovery.resume(plan: plan, ticket: ticket)
+            completeInstallation()
+        } catch {
+            appendLog(WindowsFileFailureFeedback.diagnostic("recovery", error))
+            finish(.failed(WindowsFileFailureFeedback.recovery))
+        }
+    }
+}

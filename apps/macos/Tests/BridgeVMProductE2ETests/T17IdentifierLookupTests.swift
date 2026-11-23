@@ -2,8 +2,8 @@ import ApplicationServices
 import XCTest
 @testable import BridgeVMProductE2E
 
-/// Physical pilot r37 reached first READY, then setText lost its 10 s lookup of
-/// bridgevm.runtime.ctl.input to one exhausted three-read snapshot of AXIdentifier -25200.
+/// setText's 10 s lookup of bridgevm.runtime.ctl.input survives a three-read snapshot
+/// exhausted by AXIdentifier -25200.
 final class T17IdentifierLookupTests: XCTestCase {
     private static let input = "bridgevm.runtime.ctl.input"
     private static let missingDetail = "required accessibility identifier was not found: \(input)"

@@ -31,15 +31,12 @@ final class HvfEngineSession: ObservableObject {
     var workAdmission: LibraryWorkAdmission?
     var reservedWorkAdmission: (@MainActor (UUID, Bool) -> String?)?
     var onConfigurationPersisted: (@MainActor (_ previous: VMConfig, _ saved: VMConfig) -> Void)? // library rebind + reload
-    var ownedStartOperation: HvfOwnedStartOperation?
-    var ownedStartExecution: HvfOwnedStartExecution?
     var guiStartOperation: HvfGUIStartOperation?
     var guiStartExecution: HvfGUIStartExecution?
     var guiStartCleanupOnly = false
     var guiStartWorker: HvfGUIStartExecution.Worker = HvfGUIStartWorker.run
     var mutationReservation: HvfRuntimeMutationReservation?
     var ownedStartNow: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
-    var ownedStartWorker: HvfOwnedStartExecution.Worker = HvfOwnedStartExecution.run
     let workAdmissionGate = HvfRuntimeWorkAdmissionGate()
     let sleepPreventionID = UUID()
     var sleepPrevention = ControlAppPower.shared
@@ -154,7 +151,6 @@ final class HvfEngineSession: ObservableObject {
     func ownedRuntimeChanged(token: UUID) { // runs on every controller tick: assign only a changed state
         defer { updateSleepPrevention() }
         guard let controller = ownedController, controller.identity.token == token else { return }
-        refreshOwnedStart()
         lastOwnedExit = controller.runnerExit
         if controller.teardownConfirmed { markStopped() }
         else if controller.failure != nil, !(controller.supervisionLost && controller.operation == nil && controller.process.isRunning) {
@@ -287,7 +283,7 @@ final class HvfEngineSession: ObservableObject {
     }
 
     /// `modifiers` are the guest modifiers held for the action (HvfHostKeyMapping.pointerModifiers); they reach
-    /// only an agent that takes them, and are dropped otherwise, as before.
+    /// only an agent that takes them, and are dropped otherwise.
     @discardableResult func sendPointerPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize, modifiers: String = "") -> String {
         sendPointerAction(.press, location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
     }
@@ -606,4 +602,167 @@ final class HvfEngineSession: ObservableObject {
     func cancelPendingPaste(_ reason: String) {
         if let message = legacyPaste.cancel(reason) { append(.unknown(message)) }
     }
+}
+
+@MainActor
+extension HvfEngineSession {
+    @discardableResult
+    func sendToolbarKey(_ action: String) -> Bool {
+        sendDisplayInput(.key(action))
+    }
+}
+
+extension HvfEngineSession {
+    func append(_ event: BvAgentEvent) {
+        shareRootNotice.consume(event)
+        diskSyncNotice.consume(event)
+        agentUpdateNotice.consume(event)
+        fileDrops.consume(event)
+        clipboardImageNotice.consume(event)
+        agentSilenceNotice.consume(event)
+        events.append(HvfGuestLinks.feedEvent(event))
+        if events.count > 500 { events.removeFirst(events.count - 500) }
+    }
+}
+
+extension HvfEngineSession {
+    func finishLegacyPaste(lines: [String]) {
+        guard let ready = legacyPaste.pending?.consume(lines: lines, now: Date()) else { return }
+        let backlog = legacyPaste.finish()
+        if ready, case .connected = connectionState {
+            if appendLiveInput("KEY ctrl+v") { replayDisplayInput(backlog) }
+            else { append(.unknown("display input replay stopped" + HvfLegacyPasteState.discarded(backlog))) }
+        } else { append(.unknown("clipboard paste failed, expired or canceled" + HvfLegacyPasteState.discarded(backlog))) }
+    }
+}
+
+extension HvfEngineSession {
+    // The injected launcher must run the supplied Process or throw before spawning it.
+    convenience init(config: HvfEngineConfig, repoRoot: URL,
+                     processLaunch: @escaping (Process) throws -> Void,
+                     processIsRunning: @escaping (String) -> Bool,
+                     vtpmKeyProvider: VTPMStateKeyProviding) {
+        self.init(config: config, repoRoot: repoRoot,
+                  processIsRunning: processIsRunning, vtpmKeyProvider: vtpmKeyProvider)
+        self.processLaunch = processLaunch
+    }
+}
+
+extension HvfEngineSession {
+    @discardableResult
+    func acceptStartConfiguration(_ config: HvfEngineConfig) -> Bool {
+        guard !hasActiveRuntimeWork, !workAdmissionGate.isChecking else { return false }
+        guard workAdmissionGate.check(workAdmission, reportRefusal: true) == nil else { return false }
+        self.config = config
+        return true
+    }
+
+    @discardableResult
+    func attachIfStopped() -> Bool {
+        guard !hasActiveRuntimeWork, !workAdmissionGate.isChecking else { return false }
+        return attachToRunningVM(reportRefusal: false)
+    }
+
+}
+
+extension HvfEngineSession {
+    /// Caller has already checked the external runtime and holds a transition or start reservation.
+    func adoptObservedAttachment(reportDuplicateLaunch: Bool) {
+        timer?.invalidate(); timer = nil
+        process = nil; ownedController = nil
+        closeLiveInput()
+        attachedToExistingProcess = true
+        nextAttachedLivenessCheck = HvfAttachedLivenessSchedule.next(after: Date())
+        resetObservedRuntimeState(clearEvents: true)
+        connectionState = .booting
+        startPolling() // reads run.log from the start
+        resumeAfterReattach()
+        if reportDuplicateLaunch {
+            append(.unknown("attached to the already running HVF engine; duplicate launch prevented"))
+        }
+    }
+}
+
+/// Clipboard sync is two-way, so a library VM's choice is saved in vm.json (see
+/// HvfLibraryPreferenceSave) and every start path launches with it.
+extension HvfEngineSession {
+    /// What the toggle shows afterwards: vm.json's value for a library VM, plus any message.
+    func applyClipboardSyncToggle(_ enabled: Bool,
+        publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (isOn: Bool, message: String?) {
+        guard persistsLibraryPreferences else { return (enabled, nil) }
+        let message = saveClipboardSyncPreference(enabled, publish: publish)
+        return (config.libraryContext?.config.clipboardSyncEnabled ?? true, message)
+    }
+
+    /// Returns nil once vm.json holds `enabled`, otherwise the refusal or warning.
+    /// `true` is saved as an absent key so re-enabled VMs match never-touched ones.
+    func saveClipboardSyncPreference(_ enabled: Bool,
+        publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> String? {
+        saveLibraryPreference("클립보드 동기화 설정", publish: publish) { $0.clipboardSyncEnabled = enabled ? nil : false }
+    }
+}
+
+extension HvfEngineSession {
+    /// Asks a connected guest to shut down once a stop is pending, or ends the wrapper when it cannot.
+    /// A legacy wrapper launch has no Force Stop control, so its 180 s deadline still ends the wrapper.
+    func sendGracefulStopIfReady() {
+        guard case .stopping = connectionState, serviceStarted, !stopCommandSent else { return }
+        stopCommandSent = true
+        if sendCtl(HvfGuestStopCommand.shutdown.line) {
+            append(.unknown("graceful guest shutdown requested"))
+            return
+        }
+        append(.unknown("graceful guest shutdown unavailable; terminating the HVF wrapper"))
+        if let process {
+            process.terminate()
+        } else if attachedToExistingProcess {
+            Shell.killProcesses(matching: config.targetDiskPath)
+        }
+        stopDeadline = nil
+    }
+}
+
+/// A guest the user took offline stays offline on every start path: a library VM's
+/// "Virtio net" choice is saved in vm.json (`networkEnabled`; absent means on).
+extension HvfEngineSession {
+    /// What the toggle shows afterwards: vm.json's value for a library VM, plus any message.
+    func applyNetworkToggle(_ enabled: Bool,
+        publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (isOn: Bool, message: String?) {
+        guard persistsLibraryPreferences else { return (enabled, nil) }
+        let message = saveNetworkPreference(enabled, publish: publish)
+        return (config.libraryContext?.config.networkEnabled ?? true, message)
+    }
+
+    /// Writes only when the effective value changes. VM creation saves an explicit `true`,
+    /// so turning a created VM's network back on restores its original bytes.
+    func saveNetworkPreference(_ enabled: Bool,
+        publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> String? {
+        saveLibraryPreference("네트워크 설정", publish: publish) {
+            if ($0.networkEnabled ?? true) != enabled { $0.networkEnabled = enabled }
+        }
+    }
+}
+
+extension HvfEngineSession: ControlAppTerminationSession {
+    /// The app's exit closes an owned runner's input, which cancels it; a pending start may still spawn one.
+    var blocksAppTermination: Bool { mayHaveOwnedWork || hasPendingRuntimeStart }
+
+    /// This app's own run, with no stop under way yet: the Stop below, and the 가상 머신 menu's, can begin.
+    var terminationStopAvailable: Bool {
+        guard let controller = ownedController, controller.operation == nil,
+              let identity = ownedProcessIdentity else { return false }
+        return identity == controller.identity
+    }
+
+    func requestTerminationStop() {
+        guard terminationStopAvailable, let identity = ownedProcessIdentity else { return }
+        stopOwned(expectedToken: identity.token)
+    }
+
+    func requestTerminationForceStop() {
+        guard let target = forceStopTarget else { return }
+        _ = requestForceStop(target)
+    }
+
+    func pollTerminationWait() { poll() }
 }

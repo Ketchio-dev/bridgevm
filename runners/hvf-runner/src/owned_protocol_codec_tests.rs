@@ -45,18 +45,34 @@ fn shared_golden_frames_have_exact_canonical_bytes() {
     .is_ok());
 }
 #[test]
-fn invalid_secret_or_noncanonical_owner_frame_is_rejected() {
+fn owner_frame_formatting_is_tolerated_but_binding_fields_are_exact() {
     let text = String::from_utf8(fixture("hello-no-key.json")).unwrap();
+    for tolerated in [
+        text.replace("\"keyHex\":null,", ""),
+        format!(" {text}\n"),
+        text.replace("\"sequence\":0", "\"sequence\":0,\"unknown\":{\"x\":1}"),
+        format!(
+            "{{\"sequence\":0,{}",
+            text[1..].replace(",\"sequence\":0", "")
+        ),
+    ] {
+        assert!(hello(tolerated.as_bytes(), &"a".repeat(64), false).is_ok());
+    }
+    let stop_text = String::from_utf8(fixture("stop.json")).unwrap();
+    let stop_extended = stop_text.replace("\"sequence\":1", "\"sequence\":1,\"unknown\":true");
+    assert!(stop(
+        stop_extended.as_bytes(),
+        "12345678-1234-4234-8234-123456789abc"
+    )
+    .is_ok());
     for malformed in [
         text.replace(
             "\"schemaVersion\":1",
             "\"schemaVersion\":1,\"schemaVersion\":1",
         ),
-        text.replace("\"keyHex\":null,", ""),
         text.replace("\"keyHex\":null", "\"keyHex\":\"00\""),
         text.replace("\"sequence\":0", "\"sequence\":0.0"),
-        format!("{text}\n"),
-        text.replace("\"sequence\":0", "\"sequence\":0,\"unknown\":null"),
+        text.replace("\"sequence\":0", "\"sequence\":1"),
     ] {
         assert!(hello(malformed.as_bytes(), &"a".repeat(64), false).is_err());
     }

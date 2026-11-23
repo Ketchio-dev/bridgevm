@@ -1,6 +1,6 @@
 //! Tests that need a real swtpm binary on the host.
 //!
-//! Split out of vtpm_tests.rs, which keeps the ones that do not.
+//! The ones that do not live in vtpm_tests.rs.
 
 use super::super::*;
 use super::{scratch_state, wait_for_state_file};

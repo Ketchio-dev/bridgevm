@@ -60,7 +60,7 @@ fi
 # Every modified third-party source has an exact scope and digest.
 scripts/check-third-party-patch-registry.sh || fail "third-party patch registry failed"
 legacy_firmware="crates/bridgevm-hvf/firmware/edk2-aarch64-code.fd"
-legacy_product_hit="$(grep -rlF "$legacy_firmware" apps/macos/scripts packaging/macos 2>/dev/null || true)"
+legacy_product_hit="$(grep -rlF "$legacy_firmware" apps/macos/scripts 2>/dev/null || true)"
 [[ -z "$legacy_product_hit" ]] || fail "unsealed legacy firmware entered a product packaging path: $legacy_product_hit"
 
 # Every licence text the notices promise to ship must exist in the tree.

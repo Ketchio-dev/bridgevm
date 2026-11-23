@@ -32,11 +32,10 @@ impl Fixture {
         let source_disk = scratch.write("source-disk", b"snapshot disk");
         let source_vars = scratch.write("source-vars", b"snapshot vars");
         let snapshot = scratch.path("snapshot");
-        let manifest =
-            create_snapshot(&source_disk, &source_vars, &snapshot, "source", false, 1024).unwrap();
+        let manifest = create_snapshot(&source_disk, &source_vars, &snapshot, "source").unwrap();
         let initial = scratch.path("initial");
         if selected {
-            create_snapshot(&disk, &vars, &initial, "initial", false, 1024).unwrap();
+            create_snapshot(&disk, &vars, &initial, "initial").unwrap();
         }
         let mut pair = LockedPair::open(&disk, &vars).unwrap();
         if selected {

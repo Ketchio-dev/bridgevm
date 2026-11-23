@@ -25,7 +25,7 @@ fn apple_double_companions_in_staging_are_cleared_for_retry() {
         for name in names {
             fs::write(staging.join(name), b"partial").unwrap();
         }
-        let created = create_snapshot(&disk, &vars, &dest, "vm", false, QUOTA)
+        let created = create_snapshot(&disk, &vars, &dest, "vm")
             .unwrap_or_else(|error| panic!("{names:?}: {error}"));
         assert_eq!(verify_snapshot(&dest).unwrap(), created, "{names:?}");
         assert!(!staging.exists(), "{names:?}: staging was not cleared");

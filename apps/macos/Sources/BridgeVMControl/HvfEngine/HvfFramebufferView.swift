@@ -272,7 +272,7 @@ final class FBLayerView: HvfFramebufferTextInput {
     }
 
     /// Accessibility help counts the presses the view received and where the last one went,
-    /// so an automated click that never reaches the guest says why (T17 r54/r55).
+    /// so an automated click that never reaches the guest says why.
     private func notePress(_ outcome: String) {
         pointerPresses += 1
         setAccessibilityHelp("presses=\(pointerPresses) last=\(outcome)")
@@ -316,7 +316,7 @@ final class FBLayerView: HvfFramebufferTextInput {
     }
 
     /// The middle button (2) reaches an agent that takes it; other buttons, and every button without it, stay
-    /// with the Mac as before.
+    /// with the Mac.
     override func otherMouseDown(with event: NSEvent) {
         cancelModifierTap()
         guard event.buttonNumber == 2, let session, hasGuestSize, session.guestMiddleButton else {
@@ -403,7 +403,7 @@ final class FBLayerView: HvfFramebufferTextInput {
         if let session { HvfFramebufferKeyInput.sendTap(action, to: session) }
     }
     /// A click commits the syllable being composed when that text reaches the guest before the click.
-    /// A clipboard paste would not: the press cancels it (#391), so the syllable is discarded as before.
+    /// A clipboard paste would not: the press cancels it, so the syllable is discarded.
     private func settleCompositionForClick() {
         _ = synchronizeTextInputTarget()
         commitTextComposition { [weak session] text in session?.displayTextPrecedesPointer(text) == true }
@@ -498,6 +498,52 @@ final class FBLayerView: HvfFramebufferTextInput {
         guestCursor.reset()
         guestSize = .zero
         layer?.contents = nil
+    }
+}
+#endif
+
+#if canImport(AppKit)
+
+extension FBLayerView {
+    func startDisplayLink() {
+        guard frameDisplayLink == nil else { return }
+        if #available(macOS 14.0, *) {
+            let link = displayLink(target: self, selector: #selector(step(_:)))
+            frameDisplayLink = link
+            link.add(to: .main, forMode: .common)
+        }
+    }
+
+    func stopDisplayLink() {
+        if #available(macOS 14.0, *) {
+            frameDisplayLink?.invalidate()
+            frameDisplayLink = nil
+        }
+    }
+}
+#endif
+
+#if canImport(AppKit)
+/// The display view's mapping of the BVFB file, split out of HvfFramebufferView.swift.
+extension FBLayerView {
+    func ensureMapping() -> Bool {
+        if let mapping = framebufferMapping {
+            guard let currentLength = mapping.currentLength(matching: framebufferPath) else {
+                resetMapping()
+                return false
+            }
+            if currentLength == mapping.length { return true }
+            resetMapping()
+        }
+        guard let framebufferPath else { return false }
+        framebufferMapping = HvfFramebufferMapping(path: framebufferPath)
+        return framebufferMapping != nil
+    }
+
+    func resetMapping() {
+        framebufferMapping = nil
+        frameRequester.reset()
+        lastProcessedSeq = .max
     }
 }
 #endif

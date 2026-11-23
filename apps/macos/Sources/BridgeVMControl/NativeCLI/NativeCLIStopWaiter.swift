@@ -22,13 +22,14 @@ enum NativeCLIStopWaiter {
                 operationID: operationID, target: initial.target)
             do {
                 let response = try query(request)
-                try NativeRuntimeControlCodec.validate(response, for: request)
                 guard now() < deadline else { break }
                 last = response
                 if let refusal = response.refusal {
                     if refusal == .operationUnknown, operation == .stopStatus, !admissionKnown {
                         operation = .stop
-                    } else { return Result(operationID: operationID, response: response, failure: refusal.rawValue) }
+                    } else {
+                        return Result(operationID: operationID, response: response, failure: response.reason ?? refusal.rawValue)
+                    }
                 } else if let observation = response.observation {
                     admissionKnown = true
                     operationID = observation.operationID

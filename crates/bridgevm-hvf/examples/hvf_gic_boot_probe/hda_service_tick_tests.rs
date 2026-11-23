@@ -86,7 +86,7 @@ fn watched_tick(platform: &Arc<Mutex<VirtPlatform>>) -> (HdaServiceTick, Arc<See
     let seen = Arc::new(Seen::default());
     let activity = platform.lock().unwrap().hda_stream_activity().unwrap();
     let (owner, watched) = (Arc::clone(platform), Arc::clone(&seen));
-    let tick = HdaServiceTick::start_with(platform, false, TICK_INTERVAL, move || Watched {
+    let tick = HdaServiceTick::start_with(platform, TICK_INTERVAL, move || Watched {
         platform: owner,
         mem: guest_ram(),
         activity,
@@ -164,20 +164,15 @@ fn hda_tick_is_parked_without_running_stream() {
 
 #[test]
 fn hda_tick_never_requests_vcpu_exit() {
-    // Under the userspace GIC an MSI send is a vCPU kick: no tick at all.
-    let (platform, _) = hda_platform();
     let never = || -> Guest { unreachable!("no port without a tick") };
-    let tick = HdaServiceTick::start_with(&platform, true, TICK_INTERVAL, never);
-    assert!(tick.handle.is_none());
     let plain = Mutex::new(VirtPlatform::new(VirtFdtConfig::default()));
-    let tick = HdaServiceTick::start_with(&plain, false, TICK_INTERVAL, never);
+    let tick = HdaServiceTick::start_with(&plain, TICK_INTERVAL, never);
     assert!(tick.handle.is_none(), "no HDA, nothing to service");
     // No exit call and no vCPU handle; the GIC is reached by one MSI send.
     let source = include_str!("hda_service_tick.rs");
     for absent in [
         "hv_vcpus_exit(",
         "HvVcpuT",
-        "usgic_bridge::deliver",
         "hv_gic_set_spi",
     ] {
         assert!(!source.contains(absent), "{absent}");

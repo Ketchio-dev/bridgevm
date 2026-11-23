@@ -6,7 +6,7 @@ import Foundation
 /// callback-enqueue, lifecycle and stats records, at most one continuity record after
 /// a stats record, at most one display timing record after every HDA record
 /// (HvfHostDisplay.swift), and for HvfTerminalReport the render server's line. All
-/// count against the bounds, so a guest cannot extend a forged footer; older logs read as before.
+/// count against the bounds, so a guest cannot extend a forged footer; older logs still read.
 enum HvfHostTail {
     static let maxBytes = 4 * 1024
     static let maxLines = 16

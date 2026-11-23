@@ -23,7 +23,7 @@ final class NativeRuntimeStopLedgerTests: XCTestCase {
             XCTAssertEqual(result.observation?.operationID, request.operationID)
         }
         let changed = Fixture.request(id: request.operationID, vmID: "other-vm")
-        XCTAssertEqual(try ledger.process(changed) { XCTFail("conflict mutated"); return .accepted(operation) }.refusal, .operationConflict)
+        XCTAssertEqual(try ledger.process(changed) { XCTFail("conflict mutated"); return .accepted(operation) }.reason, NativeRuntimeStopRefused.operationConflict.reason)
         XCTAssertEqual(admissions, 1)
     }
 
@@ -34,7 +34,7 @@ final class NativeRuntimeStopLedgerTests: XCTestCase {
             let nested = try ledger.process(Fixture.request(id: request.operationID)) {
                 XCTFail("reentrant admission"); return .accepted(operation)
             }
-            XCTAssertEqual(nested.refusal, .operationUnavailable)
+            XCTAssertEqual(nested.reason, NativeRuntimeStopRefused.operationUnavailable.reason)
             return .accepted(operation)
         }
         operation.update(phase: .unconfirmed, complete: nil, exit: nil, failure: .cleanupUnconfirmed)
@@ -45,28 +45,38 @@ final class NativeRuntimeStopLedgerTests: XCTestCase {
         XCTAssertEqual(retained.observation?.failure, .cleanupUnconfirmed)
     }
 
-    @MainActor func testBoundedLedgerRetainsAdmittedIDsAndKnownOperationsAtCapacity() throws {
-        let ledger = NativeRuntimeStopLedger(appInstanceID: Fixture.app, library: Fixture.library, capacity: 1)
-        let request = Fixture.request(), operation = ticket(request)
-        _ = try ledger.process(request) { .accepted(operation) }
-        let other = Fixture.request(vmID: "other-vm")
-        XCTAssertEqual(try ledger.process(other) { XCTFail("capacity admitted"); return .accepted(self.ticket(other)) }.refusal, .ledgerFull)
-        XCTAssertEqual(try ledger.process(Fixture.request(.stopStatus, id: request.operationID)) {
-            XCTFail("status admitted"); return .accepted(operation)
-        }.observation?.operationID, request.operationID)
-        XCTAssertEqual(try ledger.process(Fixture.request()) {
-            XCTFail("existing target admitted"); return .accepted(operation)
-        }.disposition, .existing)
+    /// Every run has its own target, so a full ledger must not refuse stops after 256 runs.
+    @MainActor func testThreeHundredStopsInOneSessionAreAdmittedAndRecentStatusStillAnswers() throws {
+        let ledger = NativeRuntimeStopLedger(appInstanceID: Fixture.app, library: Fixture.library)
+        let pending = Fixture.request(vmID: "other-vm"), pendingTicket = ticket(pending)
+        _ = try ledger.process(pending) { .accepted(pendingTicket) }
+        var requests: [NativeRuntimeControlRequest] = []
+        for _ in 0..<300 {
+            let request = Fixture.request(target: .init(appInstanceID: Fixture.app, runToken: UUID().uuidString,
+                processID: 123, acceptedConfigurationDigest: Fixture.target.acceptedConfigurationDigest))
+            let operation = ticket(request)
+            XCTAssertEqual(try ledger.process(request) { .accepted(operation) }.disposition, .accepted)
+            operation.update(phase: .completed, complete: nil, exit: nil, failure: nil)
+            requests.append(request)
+        }
+        let status = { (request: NativeRuntimeControlRequest) in
+            try ledger.process(Fixture.request(.stopStatus, id: request.operationID, target: request.target, vmID: request.vmID)) {
+                XCTFail("status admitted"); return .refused(.notOwned)
+            }
+        }
+        XCTAssertEqual(try status(requests[299]).observation?.phase, .completed)
+        XCTAssertEqual(try status(pending).observation?.phase, .guestGrace, "an unfinished stop is never dropped")
+        XCTAssertEqual(try status(requests[0]).refusal, .operationUnknown)
     }
 
     @MainActor func testUnknownStatusOwnerChangeAndRefusalDoNotReserveOperations() throws {
-        let ledger = NativeRuntimeStopLedger(appInstanceID: Fixture.app, library: Fixture.library, capacity: 1)
+        let ledger = NativeRuntimeStopLedger(appInstanceID: Fixture.app, library: Fixture.library)
         let request = Fixture.request()
         XCTAssertEqual(try ledger.process(Fixture.request(.stopStatus)) { XCTFail(); return .refused(.notOwned) }.refusal, .operationUnknown)
         let changed = Fixture.request(target: .init(appInstanceID: UUID().uuidString, runToken: Fixture.token,
             processID: 123, acceptedConfigurationDigest: Fixture.target.acceptedConfigurationDigest))
         XCTAssertEqual(try ledger.process(changed) { XCTFail(); return .refused(.notOwned) }.refusal, .ownerChanged)
-        XCTAssertEqual(try ledger.process(request) { .refused(.supervisionUnavailable) }.refusal, .unsupportedRuntime)
+        XCTAssertEqual(try ledger.process(request) { .refused(.supervisionUnavailable) }.reason, NativeRuntimeStopRefused.unsupportedRuntime.reason)
         XCTAssertEqual(try ledger.process(request) { .accepted(self.ticket(request)) }.disposition, .accepted)
     }
 }

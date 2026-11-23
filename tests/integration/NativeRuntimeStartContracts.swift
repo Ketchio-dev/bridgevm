@@ -33,22 +33,19 @@ enum NativeRuntimeStartContracts {
             let known = requests[request.operationID]
             var refusal: NativeRuntimeStartRefusal?
             if request.appInstanceID != app { refusal = .ownerChanged }
-            else if let known, known.vmID != request.vmID || known.expectedSavedConfigurationDigest != request.expectedSavedConfigurationDigest {
-                refusal = .operationConflict
-            } else if known == nil, request.operation == .startStatus { refusal = .operationUnknown }
+            else if let known, known.vmID != request.vmID { refusal = .refused } else if known == nil, request.operation == .startStatus { refusal = .operationUnknown }
             if refusal == nil, known == nil, request.operation == .start {
                 requests[request.operationID] = request
                 try Data().write(to: control.appendingPathComponent("start-admitted-" + request.operationID), options: .withoutOverwriting)
             }
             let observation = NativeRuntimeStartObservation(operationID: request.operationID,
-                expectedSavedConfigurationDigest: request.expectedSavedConfigurationDigest,
-                phase: .preparing, acceptedUptime: 10, deadlineUptime: 40, target: nil, proof: nil,
-                failure: nil, workerPending: true, mayHaveOwnedWork: false)
+                phase: .preparing, target: nil, proof: nil, failure: nil)
             return .init(schema: NativeRuntimeStartCodec.responseSchema, scope: NativeRuntimeStartCodec.scope,
                 requestID: request.requestID, library: request.library, vmID: request.vmID, appInstanceID: app,
-                expectedSavedConfigurationDigest: request.expectedSavedConfigurationDigest, requestedOperationID: request.operationID,
+                requestedOperationID: request.operationID,
                 disposition: refusal != nil ? .refused : request.operation == .startStatus ? .status : known == nil ? .accepted : .existing,
-                observation: refusal == nil ? observation : nil, refusal: refusal)
+                observation: refusal == nil ? observation : nil, refusal: refusal,
+                reason: refusal.map { "fixture refusal: \($0.rawValue)" })
         }
     }
 }

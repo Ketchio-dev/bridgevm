@@ -1,13 +1,103 @@
 //! Device-side JSONL trace emission and its sampling policy.
 
 use super::*;
-include!("trace_fence.rs");
-include!("trace_submit.rs");
 use crate::pcie::VIRTIO_GPU_MSIX_VECTOR_COUNT;
+use crate::virtio_gpu_3d::CompletedFence;
+use crate::virtio_gpu_3d::Submit3dDiagnostic;
 use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_SUBMIT_3D;
 use crate::virtio_gpu_3d::VIRTIO_GPU_FLAG_FENCE;
 use crate::virtio_gpu_trace::write_json_string;
 use std::fmt::Write as _;
+
+// Sampled renderer-fence JSONL events.
+
+impl VirtioGpu {
+    pub(crate) fn trace_fence_create(
+        &mut self,
+        fence: CompletedFence,
+        backend_accepted: bool,
+        outcome: &str,
+    ) {
+        self.trace_fence_create_count = self.trace_fence_create_count.saturating_add(1);
+        if !trace_sample(self.trace_fence_create_count) {
+            return;
+        }
+        self.record_trace_fields("fence_create", |fields| {
+            let _ = write!(
+                fields,
+                ",\"ctx_id\":{},\"ring_idx\":{},\"fence_id\":{},\"backend_accepted\":{}",
+                fence.ctx_id, fence.ring_idx, fence.fence_id, backend_accepted
+            );
+            fields.push_str(",\"outcome\":");
+            write_json_string(fields, outcome);
+        });
+    }
+
+    pub(crate) fn trace_fence_complete(&mut self, fence: CompletedFence) {
+        self.trace_fence_complete_count = self.trace_fence_complete_count.saturating_add(1);
+        if !trace_sample(self.trace_fence_complete_count) {
+            return;
+        }
+        self.record_trace_fields("fence_complete", |fields| {
+            let _ = write!(
+                fields,
+                ",\"ctx_id\":{},\"ring_idx\":{},\"fence_id\":{}",
+                fence.ctx_id, fence.ring_idx, fence.fence_id
+            );
+        });
+    }
+
+    pub(crate) fn trace_fence_delivery(&mut self, fence: CompletedFence, used_len: u32) {
+        self.trace_fence_deliver_count = self.trace_fence_deliver_count.saturating_add(1);
+        if !trace_sample(self.trace_fence_deliver_count) {
+            return;
+        }
+        self.record_trace_fields("fence_deliver", |fields| {
+            let _ = write!(
+                fields,
+                ",\"ctx_id\":{},\"ring_idx\":{},\"fence_id\":{},\"used_len\":{}",
+                fence.ctx_id, fence.ring_idx, fence.fence_id, used_len
+            );
+        });
+    }
+}
+// SUBMIT_3D request and bounded renderer diagnostic JSONL fields.
+
+pub(crate) fn write_submit_request_details(out: &mut String, request: &[u8]) {
+    let size = read_le_u32(request, 24).unwrap_or(0) as usize;
+    let payload_start = 32usize.min(request.len());
+    let payload_end = payload_start.saturating_add(size).min(request.len());
+    let payload = request.get(payload_start..payload_end).unwrap_or(&[]);
+    let first_dword = read_le_u32(payload, 0).unwrap_or(0);
+    let _ = write!(
+        out,
+        ",\"submit_size\":{},\"submit_dwords\":{},\"submit_first_dword\":{},\"submit_first_command_id\":{},\"submit_prefix_hex\":",
+        size, size.div_ceil(4), first_dword, first_dword & 0xff
+    );
+    write_hex_prefix_json(out, payload, submit_trace_prefix_len());
+}
+
+pub(crate) fn write_submit_diagnostic(out: &mut String, diagnostic: Submit3dDiagnostic) {
+    let _ = write!(out, ",\"renderer_status\":{}", diagnostic.renderer_status);
+    if let Some(offset) = diagnostic.command_offset_dwords {
+        let _ = write!(out, ",\"renderer_command_offset_dwords\":{offset}");
+    }
+    if let Some(command_id) = diagnostic.command_id {
+        let _ = write!(out, ",\"renderer_command_id\":{command_id}");
+    }
+    if let Some(header) = diagnostic.command_header {
+        let _ = write!(out, ",\"renderer_command_header\":{header}");
+    }
+    if let Some(resource_id) = diagnostic.resource_id {
+        let _ = write!(out, ",\"renderer_resource_id\":{resource_id}");
+    }
+    if let Some(found) = diagnostic.resource_found {
+        let _ = write!(out, ",\"renderer_resource_found\":{found}");
+    }
+    if let Some(backed) = diagnostic.resource_backed {
+        let _ = write!(out, ",\"renderer_resource_backed\":{backed}");
+    }
+}
 
 pub(crate) fn trace_sample(count: u64) -> bool {
     count <= 64 || count % 1024 == 0

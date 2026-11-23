@@ -90,7 +90,6 @@ final class HvfPendingUnavailableBundleDeletionTests: XCTestCase {
         for (f, config) in [(removed, removed.config), (stale, staleConfig), (aliased, aliasedConfig)] {
             XCTAssertFalse(try f.delete(config))
             XCTAssertTrue(f.fm.fileExists(atPath: f.entry.appendingPathComponent("vm.json").path))
-            XCTAssertFalse(exists(f.command))
         }
         let iso = stale.entry.appendingPathComponent("bundle.vmbridge/disks/installer.iso")
         XCTAssertEqual(try Data(contentsOf: iso), try Data(contentsOf: stale.iso))
@@ -107,7 +106,6 @@ final class HvfPendingUnavailableBundleDeletionTests: XCTestCase {
             XCTAssertFalse(try f.delete(), name)
             XCTAssertEqual(try Data(contentsOf: extra), Data("residue".utf8), name)
             XCTAssertTrue(f.fm.fileExists(atPath: f.entry.appendingPathComponent("vm.json").path), name)
-            XCTAssertFalse(exists(f.command), name)
         }
     }
 

@@ -1,10 +1,55 @@
 //! The VirtioGpu3d device state: struct, construction and wiring, stats, full reset.
 
 use super::*;
-include!("device_debug.rs");
-include!("device_reset.rs");
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+
+// Debug rendering for VirtioGpu3d state.
+
+impl std::fmt::Debug for VirtioGpu3d {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VirtioGpu3d")
+            .field("has_backend", &self.backend.is_some())
+            .field("has_shm_port", &self.shm_port.is_some())
+            .field("shm_window_size", &self.shm_window_size)
+            .field("live_contexts", &self.live_contexts)
+            .field("ctx_resources", &self.ctx_resources)
+            .field("resource_2d_ids", &self.resource_2d_ids)
+            .field("resource_3d_ids", &self.resource_3d_ids)
+            .field("resource_3d_info", &self.resource_3d_info)
+            .field("local_3d_backing", &self.local_3d_backing.keys())
+            .field("blob_resources", &self.blob_resources)
+            .field("local_copy_submits", &self.local_copy_submits)
+            .field("submits", &self.submits)
+            .field("fences_completed", &self.fences_completed)
+            .finish()
+    }
+}
+// Full device reset: renderer reset plus every registry this device owns.
+
+impl VirtioGpu3d {
+    pub fn reset(&mut self) {
+        if let Some(backend) = self.backend.as_mut() {
+            backend.reset();
+        }
+        self.live_contexts.clear();
+        self.ctx_resources.clear();
+        self.resource_2d_ids.clear();
+        self.resource_3d_ids.clear();
+        self.resource_3d_info.clear();
+        self.local_3d_backing.clear();
+        self.unmap_all_blobs();
+        self.blob_resources.clear();
+        self.mapped_intervals.clear();
+        self.destroyed_blob_mapped_ids.clear();
+        self.destroyed_blob_unmapped_ids.clear();
+        self.unmap_blob_reject_counts = UnmapBlobRejectCounts::default();
+        self.local_copy_scratch.clear();
+        self.last_submit_diagnostic = None;
+        self.local_copy_submits = 0;
+        self.submits = 0;
+    }
+}
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct VirtioGpu3dStats {

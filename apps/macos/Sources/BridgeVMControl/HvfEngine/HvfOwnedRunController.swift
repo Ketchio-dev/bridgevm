@@ -15,7 +15,7 @@ final class HvfOwnedRunController {
     let process: Process
     private(set) var ledger: HvfOwnedRuntimeLedger
     private(set) var runnerExit: HvfOwnedRuntimeExit?
-    private(set) var failure: HvfOwnedStopFailure?
+    private(set) var failure: NativeRuntimeStopFailure?
     private(set) var operation: HvfOwnedStopOperation?
     private let channel: HvfOwnedRuntimeChannel
     private let guestShutdown: HvfOwnedGuestShutdown
@@ -62,7 +62,7 @@ final class HvfOwnedRunController {
         if let operation { return .existing(operation) }
         let time = now()
         let useGrace = allowGuestGrace && ledger.ready && ledger.complete == nil && failure == nil && runnerExit == nil
-        let phase: HvfOwnedStopPhase = useGrace ? .guestGrace : .cancelling
+        let phase: NativeRuntimeStopObservation.Phase = useGrace ? .guestGrace : .cancelling
         let ticket = HvfOwnedStopOperation(operationID: operationID, target: identity, now: time,
             deadline: time + (useGrace ? Self.guestGrace : 0) + Self.completionObservation, phase: phase)
         operation = ticket // Publish admission before invoking any effect or callback.
@@ -248,15 +248,15 @@ final class HvfOwnedRunController {
         if process.isRunning, process.processIdentifier == identity.processID { process.terminate() }
     }
 
-    private func recordFailure(_ value: HvfOwnedStopFailure) {
+    private func recordFailure(_ value: NativeRuntimeStopFailure) {
         // A later cleanup receipt cannot rewrite an earlier missed deadline or invalid transport.
         if failure == nil { failure = value }
     }
 
     private func refresh() {
         guard let operation else { return }
-        if let complete = ledger.complete, complete.failureCode != nil { recordFailure(.cleanupFailed) }
-        let phase: HvfOwnedStopPhase
+        if ledger.complete?.failed == true { recordFailure(.cleanupFailed) }
+        let phase: NativeRuntimeStopObservation.Phase
         if failure != nil { phase = .unconfirmed }
         else if teardownConfirmed { phase = .completed }
         else if ledger.complete != nil { phase = .awaitingRunnerExit }

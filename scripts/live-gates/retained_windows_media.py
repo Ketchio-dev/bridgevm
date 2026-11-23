@@ -11,11 +11,8 @@ def export_selected(request: dict, authenticated: dict, staging: Path) -> tuple[
         raise ValueError("selected disk differs from authenticated T17 output")
     if pair["vars_sha256"] != authenticated["final_vars_sha256"] or pair["vars_bytes"] != 64 * 1024 * 1024:
         raise ValueError("selected UEFI variables differ from authenticated T17 output")
-    quota = pair["disk_bytes"] + pair["vars_bytes"]
-    if quota > 2**64 - 1:
-        raise ValueError("selected media pair exceeds the snapshot quota range")
     export = staging / "selected-media"
-    run(request, "create", request["disk_path"], request["vars_path"], str(export), request["vm_slug"], str(quota))
+    run(request, "create", request["disk_path"], request["vars_path"], str(export), request["vm_slug"])
     disk, variables = export / "disk.raw", export / "vars.fd"
     for path, field in ((disk, "disk_bytes"), (variables, "vars_bytes")):
         if not path.is_file() or path.is_symlink() or path.stat().st_size != pair[field]:

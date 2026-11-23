@@ -104,8 +104,7 @@ fn snapshot(scratch: &Scratch, name: &str, (disk, vars): Generation) -> PathBuf 
     let source_disk = scratch.write(&format!("{name}-source-disk"), disk);
     let source_vars = scratch.write(&format!("{name}-source-vars"), vars);
     let snapshot = scratch.path(name);
-    create_snapshot(&source_disk, &source_vars, &snapshot, name, false, 1024)
-        .expect("create source snapshot");
+    create_snapshot(&source_disk, &source_vars, &snapshot, name).expect("create source snapshot");
     snapshot
 }
 

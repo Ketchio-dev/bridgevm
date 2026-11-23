@@ -3,7 +3,7 @@ import Foundation
 
 /// The display surface's own account of the presses it received. The app's
 /// HvfFramebufferView writes it to the surface's accessibility help, and a failed
-/// click carries it, so the lane retains where the click went (T17 r54/r55 lost it).
+/// click carries it, so the lane retains where the click went.
 extension T17UIControlling {
     func displayInputDiagnostic() -> String {
         guard let accessibility = self as? T17Accessibility else { return "" }

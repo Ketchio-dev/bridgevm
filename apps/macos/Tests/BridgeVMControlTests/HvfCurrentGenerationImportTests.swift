@@ -57,15 +57,14 @@ final class HvfCurrentGenerationImportTests: XCTestCase {
     private func restoredFixture() throws -> Fixture {
         let fixture = try Fixture()
         do {
-            let quota = String(FirstRunImport.requiredVarsBytes + 8)
-            try invoke(["create", fixture.disk.path, fixture.vars.path, fixture.snapshot.path, "audit", quota])
+            try invoke(["create", fixture.disk.path, fixture.vars.path, fixture.snapshot.path, "audit"])
             try overwrite(fixture.disk, prefix: "disk-new")
             try overwrite(fixture.vars, prefix: "vars-new")
             try invoke(["restore", fixture.snapshot.path, fixture.disk.path, fixture.vars.path])
             // Query the selected pair through the real native operation, without
             // reproducing managed directory identity or selection in Swift.
             let selected = fixture.root.appendingPathComponent("selected-check")
-            try invoke(["create", fixture.disk.path, fixture.vars.path, selected.path, "audit", quota])
+            try invoke(["create", fixture.disk.path, fixture.vars.path, selected.path, "audit"])
             XCTAssertEqual(try prefix(selected.appendingPathComponent("disk.raw")), "disk-old")
             XCTAssertEqual(try prefix(selected.appendingPathComponent("vars.fd")), "vars-old")
             try assertOriginals(fixture)

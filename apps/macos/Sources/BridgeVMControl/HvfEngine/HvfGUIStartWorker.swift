@@ -25,7 +25,7 @@ enum HvfGUIStartWorker {
             try await checkAdmission(input)
             if existing {
                 return .init(result: input.policy == .attachOrStart ? .observedAttachment
-                    : .refused("An existing runtime cannot be adopted by a require-new launch"))
+                    : .refused("이 VM의 디스크를 이미 실행 중인 Windows가 쓰고 있어 새로 시작하지 않았습니다."))
             }
             let config = input.config.preparingSharedFolder { diagnostics.append($0) }
             if let failure = HvfRuntimeLaunchReadiness.failure(config: config,

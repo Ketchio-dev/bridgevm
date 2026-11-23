@@ -3,7 +3,7 @@
 ## Run
 
     BRIDGEVM_USERSPACE_GIC=1 CYCLES=100 scripts/verify-reset-recreate.sh
-    OUT=/Users/insighton/BridgeVM/runs/reset-recreate-usgic3-151732
+    OUT=~/BridgeVM/runs/reset-recreate-usgic3-151732
 
 Canonical installed image (`canonical-attach-resident-20260731`), cp -c
 clone, 6144 MiB / 4 vCPUs, probe in `--exit-on-reset` product shape: every

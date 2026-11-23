@@ -1,4 +1,4 @@
-// sources: apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputClipboardEncoding.swift
+// sources: apps/macos/Sources/BridgeVMControl/HvfEngine/HvfTextInputPlan.swift
 import Foundation
 import Testing
 

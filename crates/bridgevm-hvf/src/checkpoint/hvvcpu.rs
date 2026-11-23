@@ -1,5 +1,3 @@
-//! Split out of checkpoint.rs to keep files under 850 lines.
-
 use super::*;
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]

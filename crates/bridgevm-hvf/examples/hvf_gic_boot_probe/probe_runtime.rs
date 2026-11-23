@@ -69,7 +69,7 @@ pub(crate) fn run() -> ExitCode {
     unsafe {
         create_vm();
         let _vm_guard = HvVmGuard;
-        create_gic(smp_cpus as usize);
+        create_gic();
         let (mut platform, vars_data, boot_dtb) =
             prepare_platform(&media, platform_cfg, tpm_backend);
 
@@ -85,7 +85,6 @@ pub(crate) fn run() -> ExitCode {
             "hv_vcpu_create"
         );
         let _vcpu_guard = HvVcpuGuard { vcpu };
-        crate::usgic_bridge::register_vcpu(0, vcpu);
         // vCPU0 runs on this thread.
         raise_vcpu_qos();
 
@@ -447,7 +446,6 @@ pub(crate) fn run() -> ExitCode {
                 crate::pause_gate::GATE.take_offset(&mut cpu0_offset_version, |offset| {
                     crate::pause_gate::set_vtimer_offset(vcpu, offset)
                 });
-                crate::usgic_bridge::pre_run(0, vcpu);
                 // CPU0 always drains here. A renderer worker can finish an
                 // asynchronous present after the post-MMIO drain but before
                 // this pre-run site; treating the two drains as duplicates can
@@ -537,7 +535,7 @@ pub(crate) fn run() -> ExitCode {
                 if !automation_tick_canceled && reason == EXIT_VTIMER {
                     hv_vcpu_get_reg(vcpu, HV_REG_PC, &mut last_pc);
                     vtimer_exits += 1;
-                    crate::usgic_bridge::vtimer_exit_mask(0, vcpu);
+                    hv_vcpu_set_vtimer_mask(vcpu, true);
                     if exits >= max_exits {
                         stop_reason = format!("exit cap {max_exits}");
                         break;
@@ -581,11 +579,6 @@ pub(crate) fn run() -> ExitCode {
                             } else {
                                 MmioOp::Read { size }
                             };
-                            if crate::usgic_bridge::try_data_abort(
-                                0, vcpu, ipa, &op, access, last_pc,
-                            ) {
-                                continue;
-                            }
                             let trace_this_fwcfg = trace_fwcfg
                                 && machine::FW_CFG.contains(ipa)
                                 && fwcfg_trace_count < 512;
@@ -872,9 +865,7 @@ pub(crate) fn run() -> ExitCode {
                         }
                         EC_SYS_REG_TRAP => {
                             let trap = SysRegTrap::decode(esr);
-                            if crate::usgic_bridge::try_sysreg(0, vcpu, esr, last_pc) {
-                                // Trapped ICC_* consumed by the userspace GIC.
-                            } else if emulate_debug_os_lock_sysreg(vcpu, trap) {
+                            if emulate_debug_os_lock_sysreg(vcpu, trap) {
                                 hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
                             } else {
                                 stop_reason = format!(
@@ -883,9 +874,6 @@ pub(crate) fn run() -> ExitCode {
                         );
                                 break;
                             }
-                        }
-                        EC_WFX if crate::usgic_bridge::usgic().is_some() => {
-                            crate::usgic_bridge::wfx_trap(0, vcpu, esr, last_pc);
                         }
                         EC_WATCHPOINT_LOWER | EC_WATCHPOINT_SAME => {
                             watch_hits += 1;
@@ -1039,18 +1027,12 @@ pub(crate) fn run() -> ExitCode {
                             "PSCI SYSTEM_RESET: reboot {reboot_count}/{}",
                             reboot_plan.max_reboots
                         );
-                        let gic_reset_status = if crate::usgic_bridge::reset() {
-                            println!("userspace GIC reset");
-                            0
-                        } else {
-                            // All secondary vCPUs have stopped and joined above, and CPU0
-                            // is outside hv_vcpu_run. Apple documents hv_gic_reset as the
-                            // VM-reset operation for the distributor, redistributors, and
-                            // the GIC device's internal state.
-                            let status = hv_gic_reset();
-                            println!("hv_gic_reset = {status:#x}");
-                            status
-                        };
+                        // All secondary vCPUs have stopped and joined above, and CPU0
+                        // is outside hv_vcpu_run. Apple documents hv_gic_reset as the
+                        // VM-reset operation for the distributor, redistributors, and
+                        // the GIC device's internal state.
+                        let gic_reset_status = hv_gic_reset();
+                        println!("hv_gic_reset = {gic_reset_status:#x}");
                         if let Some(reason) = system_reset_failure(gic_reset_status, &platform) {
                             fatal_reset_error = true;
                             stop_reason = reason;

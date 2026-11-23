@@ -64,7 +64,7 @@ printf '%s\\n' "$target"
                 self.assertFalse(git_called)
 
     def test_hardware_tier_still_reaches_revision_resolution(self):
-        outcome, git_called = self.exercise("t1-vtimer", "3" * 40)
+        outcome, git_called = self.exercise("t1-snapshot", "3" * 40)
         self.assertEqual(outcome, "result=refused-unknown-commit\n")
         self.assertTrue(git_called)
 

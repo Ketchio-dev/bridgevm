@@ -13,11 +13,10 @@ impl OwnedStaging {
         &self,
         sources: [&Path; 2],
         vm_id: &str,
-        quota_bytes: u64,
         copy: impl FnMut(&Path, &Path) -> io::Result<u64>,
         observe: &mut impl FnMut(CreateStage),
     ) -> Result<SnapshotManifest, SnapshotError> {
-        contents::fill(sources, &self.path, vm_id, quota_bytes, copy, observe)
+        contents::fill(sources, &self.path, vm_id, copy, observe)
             .inspect_err(|_| drop(self.discard()))
     }
 }

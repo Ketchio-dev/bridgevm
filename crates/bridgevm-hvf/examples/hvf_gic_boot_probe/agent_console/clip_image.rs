@@ -5,7 +5,7 @@
 //! - Mac to Windows: PUTBEG/PUTCHUNK/PUTEND `<dir>\host.png`, then
 //!   `CLIPSETIMG <b64(path)> <b64(text)|->`, which sets the text (when the
 //!   copy has one) and the image in one clipboard write. The text alone went
-//!   first as a CLIPSET, as before.
+//!   first as a CLIPSET.
 //! - Windows to Mac: CLIPX replaces CLIPGET and adds the image's size and
 //!   SHA-256. A new image is fetched with `GET <dir>\guest.png` (no other path)
 //!   and reaches the Mac only as a PNG whose signature and IHDR are within the
@@ -14,7 +14,7 @@
 //! `ClipBaseline::image` is the image the guest is known to hold, so an image
 //! never bounces back. Over a limit, an image stays where it was copied with
 //! one log line, which the app shows as a notice. An agent without the marker
-//! keeps text only, exactly as before.
+//! keeps text only.
 
 use super::*;
 use super::clip_html::GuestHtml;

@@ -55,13 +55,6 @@ pub const SNAPSHOT_FORMAT_VERSION: u32 = 1;
 /// What a snapshot refused to do, and why.
 #[derive(Debug)]
 pub enum SnapshotError {
-    /// The VM still owns the media. Copying it now would capture a torn disk.
-    VmRunning,
-    /// The pair is larger than the caller allowed.
-    QuotaExceeded {
-        bytes: u64,
-        quota: u64,
-    },
     /// A file's content does not match the manifest.
     HashMismatch {
         file: String,
@@ -80,15 +73,6 @@ impl From<io::Error> for SnapshotError {
 impl std::fmt::Display for SnapshotError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SnapshotError::VmRunning => {
-                write!(f, "refusing to snapshot a running VM: power it off first")
-            }
-            SnapshotError::QuotaExceeded { bytes, quota } => {
-                write!(
-                    f,
-                    "snapshot would write {bytes} bytes, over the {quota} byte quota"
-                )
-            }
             SnapshotError::HashMismatch { file } => {
                 write!(f, "{file} does not match the hash recorded in the manifest")
             }
@@ -212,11 +196,7 @@ pub fn restore_snapshot(
     dir: &Path,
     disk: &Path,
     vars: &Path,
-    vm_running: bool,
 ) -> Result<SnapshotManifest, SnapshotError> {
-    if vm_running {
-        return Err(SnapshotError::VmRunning);
-    }
     runtime_exclusion::restore(dir, disk, vars)
 }
 

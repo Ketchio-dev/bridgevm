@@ -35,24 +35,48 @@ final class VMConfigSlugifyTests: XCTestCase {
 
 final class BackendKindTests: XCTestCase {
     func testLabels() {
-        XCTAssertEqual(BackendKind.fastVZ.shortLabel, "Fast VZ")
-        XCTAssertEqual(BackendKind.qemuCompat.shortLabel, "QEMU")
-        XCTAssertEqual(BackendKind.fastVZ.detailLabel, "Fast (Apple VZ)")
+        XCTAssertEqual(BackendKind.hvfEngine.shortLabel, "HVF")
         XCTAssertEqual(BackendKind.hvfEngine.detailLabel, "Native (HVF)")
-        XCTAssertTrue(BackendKind.fastVZ.available)
-        XCTAssertTrue(BackendKind.hvfEngine.available)
+        XCTAssertEqual(BackendKind(savedKind: "hvf-engine"), .hvfEngine)
+        XCTAssertEqual(BackendKind(savedKind: "bogus"), .unsupported)
     }
 
-    func testConfigEngineKindFallsBackToFastVZForUnknown() {
-        var cfg = VMConfig(id: "x", name: "x", displayName: "x", backendKind: "bogus",
-                           bootMode: nil, bundlePath: "", runnerPath: "", launchSpecPath: "",
-                           handoffPath: "", sshKeyPath: "", sshUser: "", leasesPath: "",
-                           guestName: "", displayWidth: 0, displayHeight: 0)
-        XCTAssertEqual(cfg.engineKind, .fastVZ)
-        XCTAssertEqual(cfg.engineShortLabel, "Fast VZ")
-        cfg.backendKind = "qemu-compat"
-        XCTAssertEqual(cfg.engineKind, .qemuCompat)
-        XCTAssertEqual(cfg.engineDetailLabel, "Compatibility (QEMU)")
+    /// A library saved before the Fast VZ and QEMU engines were removed must still
+    /// load: those VMs are listed as unsupported, cannot start, and their files are
+    /// never rewritten.
+    func testSavedVMWithRemovedEngineIsReadAndMarkedUnsupported() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var written: [String: Data] = [:]
+        for (id, kind) in [("old-ubuntu", "fast-vz"), ("old-windows", "qemu-compat"), ("win", "hvf-engine")] {
+            let object: [String: Any] = [
+                "id": id, "name": id, "displayName": id, "backendKind": kind, "bootMode": "direct-kernel",
+                "bundlePath": root.appendingPathComponent("\(id)/bundle.vmbridge").path,
+                "runnerPath": "/missing/AppleVzRunner", "launchSpecPath": "", "handoffPath": "",
+                "sshKeyPath": "", "sshUser": "user", "leasesPath": "", "guestName": id,
+                "displayWidth": 1440, "displayHeight": 900, "memMiB": 4096, "cpuCount": 4,
+            ]
+            let directory = root.appendingPathComponent(id)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let data = try JSONSerialization.data(withJSONObject: object)
+            try data.write(to: directory.appendingPathComponent("vm.json"))
+            written[id] = data
+        }
+
+        let scan = VMLibrary.scan(rootURL: root)
+        XCTAssertTrue(scan.issues.isEmpty)
+        XCTAssertEqual(Set(scan.configs.map(\.slug)), ["old-ubuntu", "old-windows", "win"])
+        for id in ["old-ubuntu", "old-windows"] {
+            let config = try NativeLibraryReader.readConfig(rootURL: root, id: id)
+            XCTAssertEqual(config.engineKind, .unsupported)
+            let backend = config.makeBackend(libraryRoot: root)
+            XCTAssertTrue(backend is UnsupportedEngineBackend)
+            XCTAssertFalse(backend.start())
+            XCTAssertFalse(backend.setResources(memMiB: 8192, cpu: 6))
+            backend.stop()
+            XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("\(id)/vm.json")), written[id])
+        }
+        XCTAssertEqual(try NativeLibraryReader.readConfig(rootURL: root, id: "win").engineKind, .hvfEngine)
     }
 
     func testMakeBackendReturnsHvfWindowsBackend() {
@@ -337,22 +361,6 @@ final class ShellCommandSafetyTests: XCTestCase {
         XCTAssertTrue(Shell.isProcessRunning(matching: literalMarker))
     }
 
-    func testQemuTPMProbeEscapesMetacharactersInSocketPath() {
-        let bundle = "/tmp/vm.[prod]+(one)"
-        let config = VMConfig(id: "qemu", name: "QEMU", displayName: "QEMU",
-                              backendKind: "qemu-compat", bootMode: "windows-iso",
-                              bundlePath: bundle, runnerPath: "", launchSpecPath: "",
-                              handoffPath: "", sshKeyPath: "", sshUser: "", leasesPath: "",
-                              guestName: "qemu", displayWidth: 1280, displayHeight: 800,
-                              diskPath: bundle + "/disks/win.qcow2")
-
-        let command = QemuCompatBackend(config).launchCommand()
-        let socket = bundle + "/metadata/swtpm.sock"
-
-        XCTAssertTrue(command.contains(Shell.shQuote(Shell.eregEscape(socket))))
-        XCTAssertFalse(command.contains(Shell.shQuote(socket) + " >/dev/null"))
-    }
-
     func testShellCommandPreservesHostileArgumentsAsData() {
         let hostile = "quote' $(printf INJECTED) ; touch /tmp/never"
         let command = Shell.shellCommand("/usr/bin/printf", ["%s", hostile])
@@ -360,48 +368,6 @@ final class ShellCommandSafetyTests: XCTestCase {
 
         XCTAssertEqual(result.code, 0)
         XCTAssertEqual(result.output, hostile)
-    }
-
-    func testBackendLaunchCommandsQuoteImportedConfigValues() {
-        let hostilePath = "/tmp/a'$(touch injected),disk"
-        let config = VMConfig(id: "unsafe", name: "VM'; touch injected; '98", displayName: "Unsafe",
-                              backendKind: "qemu-compat", bootMode: nil, bundlePath: hostilePath,
-                              runnerPath: hostilePath + "/runner", launchSpecPath: "",
-                              handoffPath: hostilePath + "/handoff.json", sshKeyPath: "", sshUser: "",
-                              leasesPath: "", guestName: "", displayWidth: 1280, displayHeight: 800,
-                              isoPath: hostilePath + "/installer.iso", diskPath: hostilePath + "/disk.qcow2",
-                              memMiB: 4096, cpuCount: 4)
-
-        let fast = FastVZBackend(config).launchCommand()
-        let qemu = QemuCompatBackend(config).launchCommand()
-        XCTAssertTrue(fast.contains(Shell.shQuote(config.runnerPath)))
-        XCTAssertTrue(fast.contains(Shell.shQuote(config.handoffPath)))
-        XCTAssertTrue(qemu.contains(Shell.shQuote(config.name)))
-        XCTAssertTrue(qemu.contains("a'\\''$(touch injected),,disk"))
-        XCTAssertFalse(qemu.contains("-name \(config.name)"))
-    }
-
-    func testFastBackendRejectsLeaseContentThatIsNotIPv4() throws {
-        let leases = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: leases) }
-        try Data("name=guest\nip_address=127.0.0.1;touch /tmp/injected\n".utf8).write(to: leases)
-        let config = VMConfig(id: "safe", name: "Safe", displayName: "Safe", backendKind: "fast-vz",
-                              bootMode: nil, bundlePath: "", runnerPath: "", launchSpecPath: "",
-                              handoffPath: "", sshKeyPath: "", sshUser: "user", leasesPath: leases.path,
-                              guestName: "guest", displayWidth: 1, displayHeight: 1)
-
-        XCTAssertNil(FastVZBackend(config).currentIP())
-    }
-
-    func testFastBackendRejectsSSHOptionLikeUserBeforeConnecting() {
-        let config = VMConfig(id: "safe", name: "Safe", displayName: "Safe", backendKind: "fast-vz",
-                              bootMode: nil, bundlePath: "", runnerPath: "", launchSpecPath: "",
-                              handoffPath: "", sshKeyPath: "", sshUser: "-oProxyCommand=bad", leasesPath: "",
-                              guestName: "guest", displayWidth: 1, displayHeight: 1)
-        let result = FastVZBackend(config).runInGuest("true")
-
-        XCTAssertEqual(result.code, -1)
-        XCTAssertTrue(result.output.contains("SSH 사용자 이름"))
     }
 
     func testShellRunDrainsButRetainsOnlyBoundedOutputTail() {

@@ -93,7 +93,7 @@ final class T17DisplayClickDeadlineTests: XCTestCase {
             windows: [window(7, "Overlay", CGRect(x: 0, y: 0, width: 4000, height: 3000), alpha: 0), behind]))
         XCTAssertNil(T17DisplayClick.topOwner(at: point, pid: app,
             windows: [window(7, "Elsewhere", CGRect(x: 0, y: 0, width: 50, height: 50)), behind]))
-        // The window list seen on the Studio during T17 r99 (macOS 27.0.1): system full-screen
+        // A macOS 27 window list: system full-screen
         // windows above the app's window must not count as covering it.
         let screen = CGRect(x: 0, y: 0, width: 1920, height: 1080)
         XCTAssertNil(T17DisplayClick.topOwner(at: point, pid: app, windows: [
@@ -101,7 +101,7 @@ final class T17DisplayClickDeadlineTests: XCTestCase {
             window(2, "알림 센터", screen, layer: 21), window(3, "Dock", screen, layer: 20), behind]))
         XCTAssertEqual(T17DisplayClick.topOwner(at: point, pid: app, windows: [
             window(3, "Dock", screen, layer: 20), window(7, "Tart", screen), behind]), "Tart")
-        // r100: a floating panel (layer 3) over the display took the click.
+        // A floating panel (layer 3) over the display takes the click.
         XCTAssertEqual(T17DisplayClick.topOwner(at: point, pid: app, windows: [
             window(2, "알림 센터", screen, layer: 21),
             window(9, "Passwords", CGRect(x: 524, y: 382, width: 480, height: 228), layer: 3), behind]), "Passwords")

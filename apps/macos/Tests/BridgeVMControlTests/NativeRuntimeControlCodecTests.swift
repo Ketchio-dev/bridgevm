@@ -5,17 +5,15 @@ import XCTest
 final class NativeRuntimeControlCodecTests: XCTestCase {
     private typealias Fixture = NativeRuntimeControlTestSupport
 
-    func testCanonicalControlRejectsUnknownDuplicateAndMixedStatusKeys() throws {
-        let request = Fixture.request(), bytes = try NativeRuntimeCodec.encode(Fixture.request())
+    func testControlDecodeIgnoresUnknownKeysButNotAnUnknownOperation() throws {
+        let request = Fixture.request(), bytes = try NativeRuntimeCodec.encode(request)
         try NativeRuntimeControlCodec.validate(request)
-        XCTAssertNoThrow(try NativeRuntimeCodec.decode(NativeRuntimeControlRequest.self, from: bytes, limit: 8192))
         let text = String(decoding: bytes, as: UTF8.self)
-        for value in [" " + text, String(text.dropLast()) + ",\"unknown\":true}",
-                      text.replacingOccurrences(of: "\"operation\":\"stop\"", with: "\"operation\":\"stop\",\"operation\":\"stop\""),
-                      text.replacingOccurrences(of: "\"operation\":\"stop\"", with: "\"operation\":\"status\"")] {
-            XCTAssertThrowsError(try NativeRuntimeCodec.decode(NativeRuntimeControlRequest.self, from: Data(value.utf8), limit: 8192))
+        for value in [text, " " + text, String(text.dropLast()) + ",\"unknown\":true}"] {
+            XCTAssertEqual(try NativeRuntimeCodec.decode(NativeRuntimeControlRequest.self, from: Data(value.utf8), limit: 8192), request)
         }
-        XCTAssertThrowsError(try NativeRuntimeCodec.decode(NativeRuntimeRequest.self, from: bytes, limit: 8192))
+        let status = text.replacingOccurrences(of: "\"operation\":\"stop\"", with: "\"operation\":\"status\"")
+        XCTAssertThrowsError(try NativeRuntimeCodec.decode(NativeRuntimeControlRequest.self, from: Data(status.utf8), limit: 8192))
     }
 
     func testTargetAndOperationIdentityAreMandatory() {

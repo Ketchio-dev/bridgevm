@@ -32,17 +32,17 @@ observations.
 
 ## 1a. Working rules and the deterministic check
 
-[`AGENTS.md`](../AGENTS.md) holds the binding working rules: the evidence
-hierarchy, the ban on relaxing a criterion to pass it, claim discipline,
-fail-closed security, canonical-image safety, structural budgets, commit and CI
-discipline, and the execution-venue rules for deterministic checks and live work
-in [§9](../AGENTS.md#9-long-tests-use-the-correct-execution-venue).
+[`AGENTS.md`](../AGENTS.md) holds the binding working rules: autonomy, keeping
+it simple, measuring performance, honest product claims, data and secret
+handling, and pull-request and CI discipline, including where deterministic
+checks and live VM runs execute
+([§6](../AGENTS.md#6-pull-requests-and-ci)).
 
 One command is the gate for all of it:
 
 ```sh
 scripts/check-project.sh          # full deterministic check
-scripts/check-project.sh --fast   # truth/format subset, also used by the harness
+scripts/check-project.sh --fast   # truth/format subset (24 steps), also the .harness.json check
 ```
 
 Live gate scheduling, tiers and retention are described in
@@ -108,8 +108,6 @@ does not clear E5 distribution.
 | --- | --- | --- |
 | `SEC-` | vTPM, Secure Boot, VM identity, recovery | Windows completion plan and security model |
 | `GPU-` | Windows driver, renderer, scanout, title evidence | Windows 3D and performance plans |
-| `ENG-QEMU-` | Compatibility Engine | Compatibility guide |
-| `ENG-VZ-` | Apple VZ Engine | Fast Mode guide |
 | `ENG-HVF-` | custom Windows VMM/device/lifecycle | Windows completion plan |
 | `APP-` | macOS UI, packaging, readiness | root status and app tests |
 | `DIST-` | signing, notarization, clean-machine release | root status |
@@ -201,8 +199,8 @@ in ten.
 ```sh
 bash scripts/check-documentation-system.sh
 cargo test --workspace
-swift test --package-path apps/macos
-tests/integration/product-gates-report.sh
+scripts/run-swift-tests.sh
+scripts/run-xctest-shim-suites.sh
 ```
 
 Run the narrow test first during iteration. The full commands are handoff gates,
@@ -219,9 +217,8 @@ Microsoft ESL payloads, and proves PK-last/idempotent/conflict-safe
 provisioning. It is E2 evidence only; the Windows guest and recovery gates stay
 open until their dated live receipts exist.
 
-The per-file line-count ratchet was removed on 2026-11-02;
-`scripts/check-refactor-budgets.sh` now only lists the largest source files.
-Split a file when that makes it easier to work with, not to satisfy a gate.
+There is no per-file size budget. Split a file when that makes it easier to
+work with, not to satisfy a gate.
 
 ### Gates that defend the gates
 
@@ -233,11 +230,9 @@ describes was observed, not anticipated.
 |---|---|
 | `scripts/check-shell-scripts.sh` | Five gate scripts ran `cd "$ROOT"` unchecked with no `set -e`, so a failed `cd` left them checking the wrong tree and still exiting 0. |
 | `scripts/check-tests-are-reachable.py` | A test file that no `mod`, `#[path]` or `include!` reaches never compiles, and nothing reports it: a test that does not exist cannot fail. |
-| `scripts/check-daemon-dto-decoders.py` | A `CodingKeys` case that no `forKey:` decodes makes the field silently absent; decoding still succeeds and the UI shows a default. |
 | `scripts/check-swift-force-casts.py` | `try!` and `as!` crash the app instead of surfacing an error, and a hardcoded home path picks a file the user never chose. |
 | `scripts/check-python-scripts.py` | A syntax error in a Python gate surfaces only when something runs it, which for a gate can be days later. |
 | `scripts/check-workflow-yaml.py` | A workflow that does not parse does not run, and a deleted job leaves no trace in a green result. |
-| `scripts/check-capability-evidence.py` | A criterion's cited evidence did not contain the figures it was cited for. |
 | `scripts/check-supply-chain.sh` | A git or path dependency would put code outside the locked registry into a release. |
 | `scripts/check-fuzz-smoke.sh` | Without it the parser corpus only runs where `cargo fuzz` is installed, making the seeds decoration. |
 | `scripts/check-loom.sh` | A `--cfg loom` typo compiles every interleaving model to nothing and passes. |

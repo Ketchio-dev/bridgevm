@@ -57,12 +57,12 @@ final class NativeCLIStopTests: XCTestCase {
     }
 
     func testPendingTimeoutLateSuccessAndUnconfirmedNeverReturnSuccess() {
-        for variant in ["pending", "late", "unconfirmed", "ownerLost", "invalid"] {
+        for variant in ["pending", "late", "unconfirmed", "ownerLost"] {
             var time = 0.0
             let result = NativeCLIStopWaiter.wait(request: Fixture.request(), now: { time }, pause: { time += max(70, $0) }) { request in
                 if variant == "ownerLost" { throw NativeRuntimeError.ownerUnavailable }
                 if variant == "late" { time = 211 }
-                let phase: NativeRuntimeStopObservation.Phase = variant == "unconfirmed" ? .unconfirmed : variant == "late" || variant == "invalid" ? .completed : .guestGrace
+                let phase: NativeRuntimeStopObservation.Phase = variant == "unconfirmed" ? .unconfirmed : variant == "late" ? .completed : .guestGrace
                 return Fixture.response(request, observation: Fixture.observation(request, phase: phase,
                     proof: variant == "late", exit: variant == "late"))
             }

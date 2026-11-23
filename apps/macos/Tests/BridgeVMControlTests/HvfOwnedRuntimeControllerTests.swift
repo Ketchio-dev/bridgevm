@@ -40,6 +40,12 @@ final class HvfOwnedRuntimeControllerTests: XCTestCase {
             return try JSONDecoder().decode(HvfOwnedRuntimeEvent.self,
                 from: JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes]))
         }
+        /// Runner bytes as a newer runner might write them: other key order, omitted nulls and an extra field.
+        func decoded(_ kind: String, sequence: Int, _ body: String) throws -> HvfOwnedRuntimeEvent {
+            try HvfOwnedRuntimeCodec.decode(HvfOwnedRuntimeEvent.self, payload: Data(("{\"sequence\":\(sequence),"
+                + "\"kind\":\"\(kind)\",\"runnerPID\":\(process.processIdentifier),\"addedLater\":{\"x\":[1,2]},"
+                + "\"runToken\":\"\(controller.identity.token.uuidString.lowercased())\",\"schemaVersion\":1,\(body)}").utf8))
+        }
         func exit() async throws {
             try gate.fileHandleForWriting.close()
             let deadline = ProcessInfo.processInfo.systemUptime + 2
@@ -75,6 +81,45 @@ final class HvfOwnedRuntimeControllerTests: XCTestCase {
         XCTAssertTrue(ticket.observation.isComplete)
         XCTAssertFalse(f.controller.mayHaveOwnedWork)
         XCTAssertEqual(ticket.observation.runnerExit?.status, 7, "Cleanup proof does not mean runner exit zero")
+    }
+
+    /// A newer runner may add fields, order keys differently or change its timeouts; that must not close
+    /// the channel as a protocol error and leave the Stop unconfirmed until the user forces it.
+    func testRunnerEventsWithUnknownFieldsKeyOrderAndOtherTimeoutsStillCompleteTheStop() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        f.controller.receive(.message(try f.decoded("ready", sequence: 1, "\"ready\":{\"termMillis\":8000,"
+            + "\"killReapMillis\":5000,\"generation\":0,\"manifestSHA256\":\"\(String(repeating: "a", count: 64))\",\"note\":1}")))
+        let id = UUID(), op = id.uuidString.lowercased()
+        guard case let .accepted(ticket) = f.controller.requestStop(target: f.controller.identity, operationID: id,
+                                                                     allowGuestGrace: false) else { return XCTFail("stop refused") }
+        f.controller.receive(.message(try f.decoded("stopAck", sequence: 2,
+            "\"stopAck\":{\"disposition\":\"accepted\",\"operationID\":\"\(op)\"}")))
+        let none = "{\"reapedCount\":0,\"spawnedCount\":0}"
+        f.controller.receive(.message(try f.decoded("complete", sequence: 3, "\"complete\":{\"outcome\":\"cancelled\","
+            + "\"cause\":\"stopRequested\",\"operationID\":\"\(op)\",\"helper\":\(none),\"swtpm\":\(none),"
+            + "\"mediaLeaseDisposition\":\"releasedAfterReap\",\"runtimeDirectoryDisposition\":\"removed\"}")))
+        try await f.exit()
+        f.controller.receive(.eof)
+        XCTAssertTrue(ticket.observation.isComplete)
+        XCTAssertNil(ticket.observation.failure)
+        XCTAssertFalse(f.controller.mayHaveOwnedWork)
+    }
+
+    /// A cause or failure code this app does not know is still a runner failure, reported as such.
+    func testUnknownCompleteStringsAreACleanupFailureNotAProtocolError() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        f.controller.receive(.message(try f.event("ready", sequence: 1)))
+        let ticket = try f.stop()
+        let none = "{\"last\":null,\"reapedCount\":0,\"spawnedCount\":0}"
+        f.controller.receive(.message(try f.decoded("complete", sequence: 2, "\"complete\":{\"outcome\":\"failed\","
+            + "\"cause\":\"hostSleep\",\"failureCode\":\"diskFull\",\"helper\":\(none),\"swtpm\":\(none),"
+            + "\"mediaLeaseDisposition\":\"releasedAfterReap\",\"runtimeDirectoryDisposition\":\"keptForDebugging\"}")))
+        try await f.exit()
+        f.controller.receive(.eof)
+        XCTAssertEqual(ticket.observation.phase, .unconfirmed)
+        XCTAssertEqual(ticket.observation.failure, .cleanupFailed)
+        XCTAssertFalse(f.controller.supervisionLost)
+        XCTAssertFalse(f.controller.mayHaveOwnedWork, "a valid complete and exit still release ownership")
     }
 
     func testDuplicateCompleteAfterRunnerExitInvalidatesProofAndKeepsOwnership() async throws {

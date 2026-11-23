@@ -27,7 +27,6 @@ LIVE_GATES = ROOT / "scripts/live-gates"
 sys.path.insert(0, str(LIVE_GATES))
 import t17_terminal_report_tail as report_tail  # noqa: E402
 import windows_product_e2e_guest_evidence as guest_evidence  # noqa: E402
-from b9_raw_focus_order import verify_raw_focus_order  # noqa: E402
 from hvf_guest_shutdown import guest_shutdown_observed  # noqa: E402
 from hvf_stop_line import SYSTEM_OFF  # noqa: E402
 
@@ -124,7 +123,7 @@ class TerminalStopContract(unittest.TestCase):
         for name in ("T17ProductRunner.swift", "A9ImportProductRunner.swift"):
             self.assertIn("HvfStopLine.systemOffObserved(in:", swift[name], name)
             self.assertNotIn("contains(HvfStopLine.systemOff)", swift[name], name)
-        for name in ("windows_product_e2e_guest_evidence.py", "b9_raw_focus_order.py", "hvf_guest_shutdown.py"):
+        for name in ("windows_product_e2e_guest_evidence.py", "hvf_guest_shutdown.py"):
             self.assertIn("system_off_offset(", (LIVE_GATES / name).read_text(encoding="utf-8"), name)
 
     def test_terminal_stop_is_the_final_host_record(self):
@@ -146,22 +145,6 @@ class TerminalStopContract(unittest.TestCase):
                 self.assertEqual(guest_shutdown_observed(0, log), name in GENUINE, name)
                 self.assertFalse(guest_shutdown_observed(1, log), name)
             self.assertFalse(guest_shutdown_observed(0, Path(temp) / "missing.log"))
-
-    def test_b9_raw_order_needs_the_final_report_stop(self):
-        nonce, hwnd, control, script, umd = "f" * 32, 777, "a" * 64, "b" * 64, "d" * 64
-        base = (r"powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\BridgeVMB9\bv-b9-control.ps1"
-                + f" -Action {{}} -ExpectedControlSha256 {control}")
-        launch = base.format("Launch") + f" -Nonce {nonce} -ExpectedGuestScriptSha256 {script} -ExpectedD3D11UmdSha {umd}"
-        query = base.format("Foreground") + f" -Hwnd {hwnd}"
-        focus = f"BVAGENT WINFOCUS {hwnd} -> OK WINFOCUS\n" + agent(query, f"B9-FOREGROUND-{hwnd}")
-        events = agent(launch, f"B9-WORKLOAD-LAUNCHED-{nonce}") + focus * 2 + "live input accepted: command=Key(<redacted>)\n"
-        verify_raw_focus_order((events + report(SYSTEM_OFF, tail=TEARDOWN + VIRGL)).encode(),
-                               nonce, hwnd, control, script, umd)
-        for name, tail in (("record without a host report", agent("shutdown.exe /s /t 0 /f", SYSTEM_OFF) + TEARDOWN),
-                           ("record after the teardown", report(SYSTEM_OFF, tail=TEARDOWN + "BVAGENT SERVICE alive t=1\n")),
-                           ("truncated footer", TEARDOWN + report(SYSTEM_OFF)[:-len("--- end ---\n")])):
-            with self.assertRaisesRegex(ValueError, "order differs", msg=name):
-                verify_raw_focus_order((events + tail).encode(), nonce, hwnd, control, script, umd)
 
     def test_t17_guest_evidence_binds_shutdown_to_the_final_report(self):
         self.verify_t17(GENUINE["teardown after the footer"])

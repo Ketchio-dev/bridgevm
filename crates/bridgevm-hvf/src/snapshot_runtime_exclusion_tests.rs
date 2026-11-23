@@ -41,22 +41,19 @@ fn either_runtime_writer_lease_refuses_create_and_restore_before_any_change() {
     let disk = scratch.write("disk", b"before-disk");
     let vars = scratch.write("vars", b"before-vars");
     let snapshot = scratch.path("snapshot");
-    create_snapshot(&disk, &vars, &snapshot, "vm", false, 1024).unwrap();
+    create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
     fs::write(&disk, b"later-disk").unwrap();
     for image in [&disk, &vars] {
         let runtime = MediaLease::acquire(image, "hvf-runner held").unwrap();
         let output = scratch.path("output");
         refused(
-            create_snapshot(&disk, &vars, &output, "vm", false, 1024),
+            create_snapshot(&disk, &vars, &output, "vm"),
             "hvf-runner held",
         );
         assert!(!output.exists() && !scratch.path(".output.staging").exists());
         let size = selected_size(&disk, &vars).expect_err("create sizing admitted");
         assert!(size.to_string().contains(IN_USE), "{size}");
-        refused(
-            restore_snapshot(&snapshot, &disk, &vars, false),
-            "hvf-runner held",
-        );
+        refused(restore_snapshot(&snapshot, &disk, &vars), "hvf-runner held");
         let (selected, _) = managed::LockedPair::open(&disk, &vars)
             .unwrap()
             .paths()
@@ -64,7 +61,7 @@ fn either_runtime_writer_lease_refuses_create_and_restore_before_any_change() {
         assert_eq!(fs::read(selected).unwrap(), b"later-disk");
         drop(runtime);
     }
-    restore_snapshot(&snapshot, &disk, &vars, false).unwrap();
+    restore_snapshot(&snapshot, &disk, &vars).unwrap();
 }
 
 #[test]
@@ -75,19 +72,11 @@ fn a_runtime_cannot_be_prepared_while_a_powered_off_create_runs() {
     ran_before(&disk);
     ran_before(&vars);
     let mut during = Vec::new();
-    create_snapshot_using(
-        &disk,
-        &vars,
-        &scratch.path("snap"),
-        "vm",
-        false,
-        1024,
-        |stage| {
-            if stage == CreateStage::DiskSynced {
-                during = vec![runtime_refusal(&disk), runtime_refusal(&vars)];
-            }
-        },
-    )
+    create_snapshot_using(&disk, &vars, &scratch.path("snap"), "vm", |stage| {
+        if stage == CreateStage::DiskSynced {
+            during = vec![runtime_refusal(&disk), runtime_refusal(&vars)];
+        }
+    })
     .unwrap();
     assert_eq!(during.len(), 2);
     for holder in during {
@@ -109,7 +98,7 @@ fn a_runtime_cannot_be_prepared_while_a_powered_off_restore_owns_the_pair() {
     let disk = scratch.write("disk", b"disk");
     let vars = scratch.write("vars", b"vars");
     let snapshot = scratch.path("snap");
-    create_snapshot(&disk, &vars, &snapshot, "vm", false, 1024).unwrap();
+    create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
     ran_before(&disk);
     ran_before(&vars);
     let mut owner = runtime_exclusion::open(&disk, &vars, "restore").unwrap();
@@ -134,26 +123,18 @@ fn never_run_media_gets_no_lease_file_and_a_generation_still_cannot_start() {
     let disk = scratch.write("disk", b"disk");
     let vars = scratch.write("vars", b"vars");
     let mut generation = None;
-    create_snapshot_using(
-        &disk,
-        &vars,
-        &scratch.path("snap"),
-        "vm",
-        false,
-        1024,
-        |stage| {
-            if stage == CreateStage::DiskSynced {
-                generation = Some(managed::LockedPair::open(&disk, &vars).map(|_| ()));
-            }
-        },
-    )
+    create_snapshot_using(&disk, &vars, &scratch.path("snap"), "vm", |stage| {
+        if stage == CreateStage::DiskSynced {
+            generation = Some(managed::LockedPair::open(&disk, &vars).map(|_| ()));
+        }
+    })
     .unwrap();
     let refusal = generation
         .unwrap()
         .expect_err("a generation opened a pair being copied");
     assert_eq!(refusal.kind(), io::ErrorKind::WouldBlock);
     let snapshot = scratch.path("snap");
-    restore_snapshot(&snapshot, &disk, &vars, false).unwrap();
+    restore_snapshot(&snapshot, &disk, &vars).unwrap();
     for entry in fs::read_dir(&scratch.0).unwrap() {
         let name = entry.unwrap().file_name();
         assert!(

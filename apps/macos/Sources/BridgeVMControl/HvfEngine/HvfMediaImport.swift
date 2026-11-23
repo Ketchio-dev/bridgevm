@@ -59,12 +59,12 @@ enum HvfMediaImport {
             members = [(converted, toDisk), (copiedVars, toVars)]
         } else {
             let snapshot = workspace.appendingPathComponent("selected.snapshot", isDirectory: true)
-            try HvfMediaImportHelper.invoke(helper, arguments: ["create", disk, vars, snapshot.path, "import", String(UInt64.max)])
-            try HvfMediaImportHelper.invoke(helper, arguments: ["verify", snapshot.path])
+            // Create copies and hashes the selected pair; the manifest is not kept, so no verify.
+            try HvfMediaImportHelper.invoke(helper, arguments: ["create", disk, vars, snapshot.path, "import"])
             members = [(snapshot.appendingPathComponent("disk.raw"), toDisk),
                        (snapshot.appendingPathComponent("vars.fd"), toVars)]
         }
-        // A clone keeps the source's mode (read-only media blocked Start in T19 r3), so each member becomes
+        // A clone keeps the source's mode (read-only media would block Start), so each member becomes
         // 0600 in the private workspace, never via the library path. Existing targets fail; the caller rolls back.
         for (member, target) in members {
             try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: member.path)

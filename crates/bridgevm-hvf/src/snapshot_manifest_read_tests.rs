@@ -1,5 +1,5 @@
 use super::MANIFEST_LIMIT;
-use crate::snapshot_pair::snapshot_pair_tests::{Scratch, QUOTA};
+use crate::snapshot_pair::snapshot_pair_tests::Scratch;
 use crate::snapshot_pair::{
     create_snapshot, managed, restore_snapshot, verify_snapshot, SnapshotError, MANIFEST_NAME,
 };
@@ -15,7 +15,7 @@ fn a_regular_manifest_at_the_limit_verifies_but_larger_files_do_not() {
     let disk = scratch.write("disk", b"disk");
     let vars = scratch.write("vars", b"vars");
     let snapshot = scratch.path("snapshot");
-    let manifest = create_snapshot(&disk, &vars, &snapshot, "vm", false, QUOTA).unwrap();
+    let manifest = create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
     let path = snapshot.join(MANIFEST_NAME);
     let mut text = manifest.to_json();
     text.extend(std::iter::repeat_n(
@@ -49,10 +49,10 @@ fn unsafe_manifest_files_cannot_change_the_selected_generation_or_original_media
         let disk = scratch.write("disk", b"snapshot disk");
         let vars = scratch.write("vars", b"snapshot vars");
         let snapshot = scratch.path("snapshot");
-        let manifest = create_snapshot(&disk, &vars, &snapshot, "vm", false, QUOTA).unwrap();
+        let manifest = create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
         fs::write(&disk, b"original disk remains").unwrap();
         fs::write(&vars, b"original vars remain").unwrap();
-        restore_snapshot(&snapshot, &disk, &vars, false).unwrap();
+        restore_snapshot(&snapshot, &disk, &vars).unwrap();
         let pair = managed::LockedPair::open(&disk, &vars).unwrap();
         let selected = pair.paths().unwrap();
         fs::write(&selected.0, b"selected live disk").unwrap();
@@ -97,15 +97,8 @@ fn unsafe_manifest_files_cannot_change_the_selected_generation_or_original_media
         let worker = std::thread::spawn(move || {
             send.send((
                 verify_snapshot(&thread_snapshot),
-                restore_snapshot(&thread_snapshot, &thread_disk, &thread_vars, false),
-                create_snapshot(
-                    &thread_disk,
-                    &thread_vars,
-                    &thread_snapshot,
-                    "new",
-                    false,
-                    QUOTA,
-                ),
+                restore_snapshot(&thread_snapshot, &thread_disk, &thread_vars),
+                create_snapshot(&thread_disk, &thread_vars, &thread_snapshot, "new"),
             ))
             .unwrap();
         });

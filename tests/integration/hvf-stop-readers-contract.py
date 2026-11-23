@@ -162,9 +162,8 @@ class StopReadersContract(unittest.TestCase):
             self.assertNotIn("python3", re.search(rf"^{gate}\(\) {{\n.*?^}}\n", runner, re.M | re.S)[0], gate)
         installer = ROOT / "apps/macos/scripts/install-installed-boot-modules.sh"
         self.assertIn("hvf-terminal-report.sh; do", installer.read_text())
-        for package in ("apps/macos/scripts/package-hvf-control-app.sh",
-                        "packaging/macos/build-debug-app-bundle.sh"):
-            self.assertIn("install_installed_boot_modules", (ROOT / package).read_text())
+        package = ROOT / "apps/macos/scripts/package-hvf-control-app.sh"
+        self.assertIn("install_installed_boot_modules", package.read_text())
         self.assertEqual(SHELL.read_text(encoding="utf-8").splitlines()[0], "#!/bin/bash")
         self.assertTrue(os.access(SHELL, os.X_OK))
 
@@ -201,21 +200,6 @@ class StopReadersContract(unittest.TestCase):
         self.runner_gate(f"HOST_PAUSE_RESUME_PROOF_MS=200; HOST_PAUSE_RESUME_CONTROL_STATUS=0; "
                          f"printf '{observation}' > \"$(host_pause_resume_observation_path)\"; "
                          "write_host_pause_resume_gate", "host-pause-resume-gate.txt")
-
-    def test_nvme_performance_tiers(self):
-        for name in ("run-hvf-nvme-performance-v1-tier.sh", "run-hvf-nvme-performance-v2-tier.sh"):
-            lines = (LIVE_GATES / name).read_text(encoding="utf-8").splitlines()
-            checks = [line for line in lines
-                      if line.startswith('python3 "$REPO/scripts/live-gates/hvf_terminal_evidence.py" --require-system-off ')]
-            self.assertEqual(len(checks), 1, name)
-            check = checks[0]
-            self.assertIn('"$BOOT/run.log" || { INVALID_REASON=', check, name)
-
-            def reader(directory: Path, check: str = check) -> bool:
-                return subprocess.run(["bash", "-c", f'set -u; REPO="$1"; BOOT="$2"; INVALID_REASON=; {check}',
-                                       "tier", str(ROOT), str(directory)], timeout=30).returncode == 0
-            with self.subTest(name):
-                self.assert_binds(reader)
 
     def test_snapshot_lifecycle_shutdown(self):
         def reader(directory: Path) -> bool:

@@ -8,12 +8,12 @@ fn a_failed_restore_leaves_no_staging_file_behind() {
     let s = Scratch::new("no-debris");
     let disk = s.write("disk", b"live disk");
     let vars = s.write("vars", b"live vars");
-    create_snapshot(&disk, &vars, &s.path("snap"), "vm", false, QUOTA).unwrap();
+    create_snapshot(&disk, &vars, &s.path("snap"), "vm").unwrap();
     // Remove the snapshot's disk so the staging copy fails after verification
     // would have passed.
     fs::remove_file(s.path("snap").join(DISK_NAME)).unwrap();
 
-    assert!(restore_snapshot(&s.path("snap"), &disk, &vars, false).is_err());
+    assert!(restore_snapshot(&s.path("snap"), &disk, &vars).is_err());
     let debris: Vec<_> = fs::read_dir(&s.0)
         .unwrap()
         .filter_map(|e| e.ok())

@@ -9,7 +9,7 @@ fn unrelated_staging_contents_are_refused_and_left_intact() {
     fs::create_dir(&staging).unwrap();
     fs::write(staging.join("keep.txt"), b"unclaimed staging data").unwrap();
     let before = tree(&staging);
-    let result = create_snapshot(&disk, &vars, &dest, "vm", false, QUOTA);
+    let result = create_snapshot(&disk, &vars, &dest, "vm");
     assert_eq!(tree(&staging), before, "export deleted unclaimed staging");
     assert_refused(result, "unrelated staging");
     assert!(!dest.exists(), "refusal published a snapshot");
@@ -39,7 +39,7 @@ fn staging_that_is_not_bridgevm_debris_is_refused_and_left_intact() {
             _ => unreachable!(),
         }
         let before = (tree(&staging), tree(&outside));
-        let result = create_snapshot(&disk, &vars, &dest, "vm", false, QUOTA);
+        let result = create_snapshot(&disk, &vars, &dest, "vm");
         assert_eq!((tree(&staging), tree(&outside)), before, "{case}: changed");
         assert_refused(result, case);
         assert!(!dest.exists(), "{case}: refusal published a snapshot");
@@ -63,7 +63,7 @@ fn staging_holding_only_bridgevm_debris_is_cleared_for_retry() {
         for name in names {
             fs::write(staging.join(name), b"partial").unwrap();
         }
-        let created = create_snapshot(&disk, &vars, &dest, "vm", false, QUOTA).unwrap();
+        let created = create_snapshot(&disk, &vars, &dest, "vm").unwrap();
         assert_eq!(verify_snapshot(&dest).unwrap(), created, "{names:?}");
         assert!(!staging.exists(), "{names:?}: staging was not cleared");
     }

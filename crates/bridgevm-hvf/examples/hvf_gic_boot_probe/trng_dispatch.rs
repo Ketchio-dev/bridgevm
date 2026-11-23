@@ -1,8 +1,6 @@
 //! One SMCCC TRNG dispatch shared by the primary and secondary run loops.
 //!
-//! Both loops previously carried their own copy of the handler, and both
-//! copies derived guest randomness from the vCPU exit counter. Having a single
-//! entry point is what makes that class of divergence impossible: the protocol
+//! A single entry point keeps the two loops from diverging: the protocol
 //! lives in `bridgevm_hvf::smccc_trng` and the entropy comes from the host
 //! CSPRNG in `bridgevm_hvf::host_entropy`.
 

@@ -1,7 +1,7 @@
 import XCTest
 @testable import BridgeVMProductE2E
 
-/// The probe never prints guest clipboard text (follow-up of 2026-10-23): its
+/// The probe never prints guest clipboard text: its
 /// CLIPGET reply is one line with the text's byte length and the first 16 hex
 /// digits of its SHA-256. The journey proves its clipboard read by matching
 /// both against the text it set.

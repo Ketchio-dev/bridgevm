@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class HvfEngineSessionGuestResetGateTests: XCTestCase {
     static let boot = "BVAGENT READY host=t t=1\nBVAGENT SERVICE start t=2\n"
-    static let resets = ["PSCI SYSTEM_RESET: reboot 1/8\nuserspace GIC reset\n",
+    static let resets = ["PSCI SYSTEM_RESET: reboot 1/8\nhv_gic_reset = 0x0\n",
                          HvfGuestResetRecord.processRecreation + "\n"]
     static let shutdown = "shutdown.exe /s /t 0\n"
 

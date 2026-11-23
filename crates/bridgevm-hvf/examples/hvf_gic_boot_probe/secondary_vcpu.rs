@@ -74,7 +74,6 @@ pub(crate) fn secondary_vcpu_thread(
                     exit = created_exit;
                     _vcpu_guard = Some(guard);
                     control.publish_vcpu(vcpu);
-                    crate::usgic_bridge::register_secondary(Arc::clone(&control));
                     if let Some(trace) = smp_trace.as_deref() {
                         trace.secondary_vcpu_created(control.index, vcpu, exit);
                     }
@@ -183,7 +182,6 @@ pub(crate) fn create_secondary_hvf_vcpu(
             "set secondary MPIDR_EL1"
         );
     }
-    crate::usgic_bridge::register_vcpu(control.index as usize, vcpu);
     (vcpu, exit, guard)
 }
 
@@ -320,7 +318,6 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
             drain_stats.record_pre_run_skip();
         }
         let run_index = *exits + 1;
-        crate::usgic_bridge::pre_run(control.index as usize, vcpu);
         let run_status = unsafe { hv_vcpu_run(vcpu) };
         if let Some(trace) = smp_trace {
             trace.secondary_run_result(control.index, run_index, run_status, exit);
@@ -347,7 +344,9 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
             continue;
         }
         if reason == EXIT_VTIMER {
-            crate::usgic_bridge::vtimer_exit_mask(control.index as usize, vcpu);
+            unsafe {
+                hv_vcpu_set_vtimer_mask(vcpu, true);
+            }
             continue;
         }
         if reason != EXIT_EXCEPTION {
@@ -393,16 +392,6 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                 } else {
                     MmioOp::Read { size }
                 };
-                if crate::usgic_bridge::try_data_abort(
-                    control.index as usize,
-                    vcpu,
-                    ipa,
-                    &op,
-                    access,
-                    pc,
-                ) {
-                    continue;
-                }
                 let (outcome, pending, nvme_io, gpu_copy) = {
                     let mut platform_guard =
                         lock_platform(platform, smp_trace, control.index, HoldSite::Mmio(ipa));
@@ -566,9 +555,7 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
             }
             EC_SYS_REG_TRAP => {
                 let trap = SysRegTrap::decode(esr);
-                if crate::usgic_bridge::try_sysreg(control.index as usize, vcpu, esr, pc) {
-                    // Trapped ICC_* consumed by the userspace GIC.
-                } else if unsafe { emulate_debug_os_lock_sysreg(vcpu, trap) } {
+                if unsafe { emulate_debug_os_lock_sysreg(vcpu, trap) } {
                     unsafe {
                         hv_vcpu_set_reg(vcpu, HV_REG_PC, pc + 4);
                     }
@@ -578,9 +565,6 @@ pub(crate) fn run_secondary_until_parked(context: SecondaryRunLoopContext<'_>) -
                         SecondaryUnexpectedStop::SysReg(trap, esr, pc),
                     );
                 }
-            }
-            EC_WFX if crate::usgic_bridge::usgic().is_some() => {
-                crate::usgic_bridge::wfx_trap(control.index as usize, vcpu, esr, pc);
             }
             _ => {
                 return control.stop_unexpected_secondary(

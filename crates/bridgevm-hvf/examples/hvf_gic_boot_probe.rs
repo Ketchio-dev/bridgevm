@@ -141,7 +141,6 @@ probe_modules!(
     "hvf_gic_boot_probe/ramfb_dirty_watch.rs" => ramfb_dirty_watch,
     "hvf_gic_boot_probe/final_report.rs" => final_report,
     "hvf_gic_boot_probe/hvf_setup.rs" => hvf_setup,
-    "hvf_gic_boot_probe/usgic_bridge.rs" => usgic_bridge,
     "hvf_gic_boot_probe/pause_gate.rs" => pause_gate,
     "hvf_gic_boot_probe/boot_clocks.rs" => boot_clocks,
     "hvf_gic_boot_probe/probe_config.rs" => probe_config,

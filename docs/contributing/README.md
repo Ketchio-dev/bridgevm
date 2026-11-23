@@ -33,8 +33,8 @@ lane is a rendering/package regression, not a pointer result.
 - Give every parallel lane its own disk and UEFI vars.
 - Keep private inputs out of git, CI artifacts, screenshots, and public
   receipts.
-- Run long hardware work through the Studio queue; do not attach a self-hosted
-  runner to this public repository.
+- Run long hardware work through the [physical-Mac live queue](../testing/apple-silicon-live-gates.md);
+  do not attach a self-hosted runner to this public repository.
 
 ## Change capability wording safely
 
@@ -52,7 +52,7 @@ After updating the registry, run:
 ```sh
 python3 scripts/render-capability-status.py
 python3 scripts/render-capability-status.py --check
-python3 scripts/check-capability-evidence.py
+bash scripts/check-capability-registry.sh
 ```
 
 ## Documentation changes

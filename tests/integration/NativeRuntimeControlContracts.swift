@@ -26,7 +26,7 @@ enum NativeRuntimeControlContracts {
             lock.lock(); defer { lock.unlock() }
             let known = requests[request.operationID]
             var refusal: NativeRuntimeStopRefusal?
-            if let known, known.target != request.target || known.vmID != request.vmID { refusal = .operationConflict }
+            if let known, known.target != request.target || known.vmID != request.vmID { refusal = .refused }
             if known == nil, request.operation == .stopStatus { refusal = .operationUnknown }
             if known == nil, request.operation == .stop {
                 requests[request.operationID] = request
@@ -39,7 +39,8 @@ enum NativeRuntimeControlContracts {
                 appInstanceID: request.target.appInstanceID, requestedOperationID: request.operationID,
                 target: request.target, disposition: refusal != nil ? .refused
                     : request.operation == .stopStatus ? .status : known == nil ? .accepted : .existing,
-                observation: refusal == nil ? observation : nil, refusal: refusal)
+                observation: refusal == nil ? observation : nil, refusal: refusal,
+                reason: refusal.map { "fixture refusal: \($0.rawValue)" })
         }
     }
 }

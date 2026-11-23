@@ -75,7 +75,7 @@ No BridgeVM device-model change was needed: the existing
 
 ## Verification (evidence)
 
-Final run: `/Users/insighton/BridgeVM/runs/venus-activate-120.36-shm-import-*`
+Final run: `~/BridgeVM/runs/venus-activate-120.36-shm-import-*`
 (240 s watchdog; stage 3 rerun via the persistent ONSTART task, then the task
 deleted itself after success).
 

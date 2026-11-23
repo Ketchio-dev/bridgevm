@@ -18,17 +18,19 @@ extension HvfWindowsInstallFinalization {
 
     static func finishCommitted(
         _ journal: HvfWindowsInstallFinalizationJournal,
-        paths: HvfWindowsInstallFinalizationPaths,
+        paths: HvfWindowsInstallFinalizationPaths, verifying: Bool,
         removeTransaction: (URL) throws -> Void
     ) throws -> VMConfig {
         guard journal.phase == .committed, let diskHash = journal.diskSHA256,
               let varsHash = journal.provisionedVarsSHA256 else {
             throw HvfWindowsInstallFinalizationError.unsupportedJournal
         }
-        // Cleanup may have removed staged copies already. Authenticate final
-        // artifacts instead; incomplete/corrupt publication still fails closed.
-        try verify(paths.finalDisk, bytes: journal.diskBytes, sha256: diskHash)
-        try verify(paths.finalVars, bytes: journal.varsBytes, sha256: varsHash)
+        // After a crash, cleanup may have removed staged copies already. Authenticate
+        // final artifacts instead; incomplete/corrupt publication still fails closed.
+        if verifying {
+            try verify(paths.finalDisk, bytes: journal.diskBytes, sha256: diskHash)
+            try verify(paths.finalVars, bytes: journal.varsBytes, sha256: varsHash)
+        }
         try validateReceipt(paths.finalReceipt)
         try validateRequest(paths.doneRequest, expectedSHA256: journal.requestSHA256)
         let config = try loadConfig(paths.config)

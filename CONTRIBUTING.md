@@ -18,7 +18,8 @@ vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 ## Set up a development checkout
 
-BridgeVM development targets an Apple-silicon Mac with macOS 14 or newer. The
+BridgeVM development targets an Apple-silicon Mac with macOS 15 or newer (the
+engine needs the macOS 15 Hypervisor.framework GIC API). The
 workspace requires Xcode/Swift and Rust; the minimum Rust version is 1.85, while
 the deterministic project gate currently defaults to the pinned 1.97 toolchain.
 
@@ -37,9 +38,9 @@ swift build --package-path apps/macos
 scripts/check-project.sh --fast
 ```
 
-QEMU is needed for the Compatibility Engine, including `qemu-img` for its qcow2
-disk operations. Windows HVF import does not need QEMU: it converts QCOW2 and
-VHDX disks to RAW with BridgeVM's own converter. Native Venus, packaging, and live Windows work have
+Windows HVF import does not need QEMU: it converts QCOW2 and VHDX disks to RAW
+with BridgeVM's own converter. When `qemu-img` is installed, the converter tests
+also compare against it. Native Venus, packaging, and live Windows work have
 additional dependencies documented beside their scripts; do not install them
 for an unrelated documentation or Rust-only change.
 
@@ -47,11 +48,12 @@ for an unrelated documentation or Rust-only change.
 
 | Area | Main paths | Useful first check |
 | --- | --- | --- |
-| Rust product/API | `crates/bridgevm-{api,cli,core,config}/` | `cargo test --workspace --locked` |
+| Rust CLI | `crates/bridgevm-cli/` | `cargo test -p bridgevm-cli --locked` |
 | Windows HVF VMM | `crates/bridgevm-hvf/` | `cargo test -p bridgevm-hvf --locked` |
-| Runtime lifecycle | `crates/bridgevm-hvf-runtime/`, `runners/` | focused crate tests |
+| Runtime lifecycle | `crates/bridgevm-hvf-runtime/`, `runners/hvf-runner/` | focused crate tests |
+| Media leases | `crates/bridgevm-media/` | `cargo test -p bridgevm-media --locked` |
 | macOS UI | `apps/macos/` | `scripts/run-swift-tests.sh` |
-| Packaging | `packaging/macos/`, release scripts | relevant integration smoke plus full check |
+| Packaging | `apps/macos/scripts/package-hvf-control-app.sh`, release scripts | relevant integration smoke plus full check |
 | Documentation | `README.md`, `STATUS.md`, `docs/` | `bash scripts/check-documentation-system.sh` |
 | Live evidence | `scripts/live-gates/` | policy smoke first; real runs use the physical-Mac live queue |
 

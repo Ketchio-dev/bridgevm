@@ -58,8 +58,9 @@ Development centers on BridgeVM's own Hypervisor.framework VMM:
 
 The [contribution guide](CONTRIBUTING.md#choose-the-right-area) maps these areas
 to source and focused checks. [Dated engineering records](docs/history/windows-hvf/)
-preserve individual findings; they do not promote product capability. Apple VZ
-and the QEMU Compatibility Engine remain separate backends.
+preserve individual findings; they do not promote product capability. The app's
+Apple VZ and QEMU engines were removed; a VM saved with one is listed as no
+longer supported and its files are left untouched.
 
 ## Distribution
 
@@ -98,12 +99,7 @@ compatibility:
 - running-state suspend is intentionally outside the current v1 persistence
   scope;
 - some historical tools and evidence paths are still more lab-oriented than
-  product-oriented;
-- the legacy `.qemuCompat` engine runs qemu-system-aarch64 and its edk2
-  firmware from Homebrew (`/opt/homebrew`, then `/usr/local`), outside the
-  signed bundle, so on that path whatever is installed there decides what the
-  app runs and what the guest boots; it refuses to start when they are absent.
-  Its swtpm is the bundled helper the HVF path uses.
+  product-oriented.
 
 ## Evidence discipline
 
@@ -132,7 +128,6 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 cargo +1.85.0 check --workspace --locked
-scripts/check-refactor-budgets.sh
 bash scripts/check-documentation-system.sh
 ```
 

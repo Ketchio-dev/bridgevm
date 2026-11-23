@@ -25,10 +25,10 @@ panel never had a text and its button was unreachable [rank 4].
 - **Same limit as the probe route.** Text over 8 MiB (8,388,608 bytes) of
   UTF-8 is refused whole, never truncated, and the Mac pasteboard keeps what
   it holds. The button is disabled for it and the preview shows only its
-  size (`apps/macos/Sources/BridgeVMApp/Models/GuestClipboardCopyLimit.swift`).
+  size (apps/macos/Sources/BridgeVMApp/Models/GuestClipboardCopyLimit.swift).
   The JSON text arrives decoded, so there is no base64 length to check
   first; the guest-tools frame limit (1 MiB) already bounds it [rank 4].
-- **Tests** [rank 3]: `apps/macos/Tests/BridgeVMAppTests/GuestClipboardCopyRouteTests.swift`.
+- **Tests** [rank 3]: apps/macos/Tests/BridgeVMAppTests/GuestClipboardCopyRouteTests.swift.
   On the unchanged source 4 of 5 failed: the daemon's field was not decoded,
   a `last_clipboard` key was read, and 8 MiB + 1 byte and 8,388,609 bytes of
   Hangul were written; exactly 8 MiB is copied whole before and after

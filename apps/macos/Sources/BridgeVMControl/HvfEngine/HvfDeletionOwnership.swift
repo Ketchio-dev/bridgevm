@@ -7,12 +7,11 @@ enum HvfDeletionOwnership {
     static func withOwnership<T>(config: VMConfig, rootURL: URL,
                                  operation: () throws -> T) throws -> T {
         let pending = config.installPending == true
-        if pending { try HvfPendingDeletionGuard.validate(config, rootURL: rootURL) }
         return try HvfMediaLeaseSession.withOwnership(
             config: config, mode: pending ? .pendingDelete : .ordinary
         ) {
-            // READY owns the absent logical media paths. Recheck the saved
-            // registration and residue before applying normal deletion semantics.
+            // READY owns the absent logical media paths. Check the saved registration
+            // and residue once, right before removal; the operation checks references.
             if pending { try HvfPendingDeletionGuard.validate(config, rootURL: rootURL) }
             return try operation()
         }

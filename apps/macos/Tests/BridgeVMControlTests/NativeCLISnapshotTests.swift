@@ -26,7 +26,7 @@ final class NativeCLISnapshotTests: XCTestCase {
         XCTAssertTrue(NativeCLI.help.contains("bridgevm.app-snapshot.v1"))
     }
 
-    func testCreateVerifiesAndRestoreUseOnlySavedManagedPaths() throws {
+    func testCreateAndRestoreUseOnlySavedManagedPaths() throws {
         let fixture = try Fixture()
         addTeardownBlock { fixture.remove() }
 
@@ -43,9 +43,7 @@ final class NativeCLISnapshotTests: XCTestCase {
         XCTAssertEqual(
             try fixture.invocations(),
             [
-                ["size", fixture.disk.path, fixture.vars.path],
-                ["create", fixture.disk.path, fixture.vars.path, fixture.snapshot.path, fixture.id, "68"],
-                ["verify", fixture.snapshot.path],
+                ["create", fixture.disk.path, fixture.vars.path, fixture.snapshot.path, fixture.id],
             ]
         )
 
@@ -55,7 +53,7 @@ final class NativeCLISnapshotTests: XCTestCase {
             operation: .restore,
             repoRoot: fixture.repo
         )
-        XCTAssertTrue(restored.complete, restored.unavailableReason ?? ""); XCTAssertEqual(try fixture.invocations().count, 4)
+        XCTAssertTrue(restored.complete, restored.unavailableReason ?? ""); XCTAssertEqual(try fixture.invocations().count, 2)
         XCTAssertEqual(
             try fixture.invocations().last,
             ["restore", fixture.snapshot.path, fixture.disk.path, fixture.vars.path]

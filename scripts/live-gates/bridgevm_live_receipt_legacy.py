@@ -1,4 +1,4 @@
-"""Serve A19 receipts only after checking their current queue and content seals."""
+"""Serve a published receipt only after checking its queue and ledger identity."""
 from __future__ import annotations
 
 import json
@@ -8,9 +8,8 @@ import re
 import shutil
 import sys
 
-from a19_archived_receipt_read import strict_reader
-from a19_archive_public_hint import public_tier
 from native_snapshot_restore_seal import JOB_ID, _env
+from receipt_public_tier import public_tier
 
 LEGACY_COMMIT = re.compile(r"[0-9a-f]{7,40}\Z")
 
@@ -31,18 +30,9 @@ def serve(directory: Path, job_id: str) -> None:
         ledger = _env(ledger_path, readonly=True)
         if any(ledger.get(field) != job[field] for field in ("job_id", "tier", "commit")):
             raise ValueError("receipt job identity differs from its ledger")
-    tiers = (job["tier"], ledger["tier"] if ledger else None, public_tier(public))
-    if any(t in tiers for t in ("d10-t22-owned-pair-preparation", "d11-native-fixture-preparation")): raise ValueError("D10 receipt requires admitted routing")
-    if 't1-vtimer' in tiers:
-        from t1_probe_read import serve_t1
-        serve_t1(directory, tiers, job['commit'], job_id);return
-    reader = strict_reader(tiers)
-    if reader is not None:
-        if directory.parent.name != "done" or directory.parent.is_symlink():
-            raise ValueError("strict A19 receipt is not in the done queue")
-        value = reader(public, directory)
-        json.dump(value, sys.stdout, indent=2, sort_keys=True)
-        sys.stdout.write("\n"); return
+    declared = public_tier(public)
+    if declared is not None and declared != job["tier"]:
+        raise ValueError("receipt tier differs from its job")
     with public.open("rb") as source:
         shutil.copyfileobj(source, sys.stdout.buffer)
 

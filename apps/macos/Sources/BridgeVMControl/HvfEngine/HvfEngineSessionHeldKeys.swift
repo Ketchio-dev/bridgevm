@@ -23,7 +23,7 @@ extension HvfEngineSession {
     /// VMM keeps it in its HID report and Windows repeats it, so a Mac repeat sends nothing; on the ordered route
     /// SendInput has no typematic, so a Mac repeat is one more key-down, as Windows' own would be, never an extra
     /// key-up. Where it cannot (an agent without the HOLD marker, a pending paste, a Ctrl+Alt+Delete still going in,
-    /// six keys already down) every press and repeat is a whole tap, as before.
+    /// six keys already down) every press and repeat is a whole tap.
     func sendKeyDown(_ action: String, keyCode: UInt16, repeat isRepeat: Bool) -> Bool {
         if let current = heldKeys.action(keyCode) {
             guard current != action else { return repeatHeldKey(action) }

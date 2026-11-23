@@ -12,7 +12,7 @@
 //! complete and F_FULLFSYNCed. An agent restart, a stall or a guest error abandons the copy and
 //! its temporary; a probe killed mid-copy leaves a temporary the next host scan removes.
 //!
-//! While a large copy runs no other shared-folder request goes out, as before.
+//! While a large copy runs no other shared-folder request goes out.
 
 use super::host_destination::Destination;
 use super::share_stage_writer::{decoded_len, FromWriter, StageWriter};

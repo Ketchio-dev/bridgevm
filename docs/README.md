@@ -25,8 +25,6 @@ win.
 - [Evidence workflow](contributing/README.md) — verification and claim discipline.
 - [Development system](development-system.md) — evidence levels, work packets,
   live gates, and definition of done.
-- [Experiment retention](reference/experiment-retention.md) — evidence, input
-  and output lifetimes, safe cleanup, and reproduction limits.
 - [Upstream development process comparison](reference/upstream-development-practices.md)
   — official workflow observations and scoped BridgeVM recommendations.
 
@@ -61,20 +59,6 @@ app, runner, packaging and test code.
 - [SMCCC TRNG / PSCI contract](windows-arm/smccc-trng-psci-contract.md)
 - [v1 suspend decision](decisions/hvf-windows-v1-suspend-decision.md)
 
-## Other engines and guest integration
-
-### Apple VZ
-
-- [Apple VZ engine guide](fast-mode/README.md)
-
-### Compatibility Engine
-
-- [QEMU compatibility guide](compatibility-mode/README.md)
-
-### Guest integration
-
-- [Guest tools protocol](guest-tools/protocol.md)
-
 ## Engineering plans and research
 
 Plans preserve scoped design work, not current product promises or a replacement
@@ -98,9 +82,6 @@ capability registry and dated receipts to decide what is proven.
 - [Apple-silicon live gates](testing/apple-silicon-live-gates.md) — trusted-host
   queue, sealed inputs, receipts, and the boundary between hosted CI and real
   virtualization evidence.
-- [A19 ten-lane lifecycle campaign](testing/a19-lifecycle-campaign.md) — how
-  to build inputs for, submit and read the fixed T23 campaign, and what a pass
-  means.
 
 Hosted CI proves deterministic properties. It does not prove a real Windows
 boot, Hypervisor.framework behavior on a physical Apple-silicon host, or a
@@ -130,7 +111,7 @@ material and they do not override current product state.
 
 Examples include:
 
-- [July Windows engine guide](windows-arm/README.md), including its old gate table;
+- [July Windows engine guide](history/windows-hvf/windows-guide-20260722.md), including its old gate table;
 - [July in-app install through 3D desktop](windows-arm/evidence/app-install-to-3d-desktop-20260730.md)
   — historical graphics-enabled flow, not the current 3D-off product journey;
 - [Vulkan/D3D title measurement](windows-arm/evidence/a2-a3-title-fps-measurement-20260801.md)
@@ -151,7 +132,6 @@ defined by the present source tree, the current docs above, `LICENSE`, and
 
 ## Reference material
 
-- [Phase 0 architecture](architecture/phase-0.md) — early architecture history.
 - [BridgeVM virt platform register map](reference/bridgevm-virt-platform.md) —
   independently maintained guest-visible layout and public interface sources.
 - [Windows platform contract gap](reference/hvf-windows-platform-contract-gap.md) — earlier

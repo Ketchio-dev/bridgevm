@@ -18,13 +18,6 @@ FORBIDDEN_IN_RELEASE=(
   "BRIDGEVM_SWTPM_BIN"
   "/usr/local/bin/swtpm"
 )
-
-# QemuCompatBackend used to hardcode all three of these, which made the legacy
-# engine unusable on Intel Macs, where Homebrew installs under /usr/local. It
-# now searches both prefixes, so none of them survives as a literal. Anything
-# listed here is a violation this gate has agreed to tolerate; the loop below
-# fails when one gets fixed, so the list cannot quietly outlive its reason.
-KNOWN_UNFIXED=()
 status=0
 debug_objects="$(objects_in debug)" || exit 1
 release_objects="$(objects_in release)" || exit 1
@@ -44,11 +37,6 @@ if [[ -z "$debug_objects" || -z "$release_objects" ]]; then
   exit 0
 fi
 
-for needle in ${KNOWN_UNFIXED[@]+"${KNOWN_UNFIXED[@]}"}; do
-  release_hits=$(count_in "$release_objects" "$needle") || exit 1
-  [[ "$release_hits" != 0 ]] ||
-    { echo "FAIL: $needle is fixed; remove it from KNOWN_UNFIXED" >&2; status=1; }
-done
 for needle in "${FORBIDDEN_IN_RELEASE[@]}"; do
   release_hits=$(count_in "$release_objects" "$needle") || exit 1
   debug_hits=$(count_in "$debug_objects" "$needle") || exit 1

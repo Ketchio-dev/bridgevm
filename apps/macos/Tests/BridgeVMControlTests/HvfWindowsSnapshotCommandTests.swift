@@ -10,8 +10,8 @@ final class HvfWindowsSnapshotCommandTests: XCTestCase {
         XCTAssertEqual(plan.snapshot.deletingLastPathComponent(), HvfWindowsSnapshotStore.directory(bundle: fixture.bundle))
         XCTAssertNotEqual(plan.snapshot.lastPathComponent, "latest.snapshot")
         XCTAssertEqual(plan.vmID, "test-vm")
-        XCTAssertEqual(try plan.arguments(for: .create).last, "144")
-        XCTAssertEqual(try plan.arguments(for: .create).first, "create")
+        XCTAssertEqual(try plan.arguments(for: .create),
+                       ["create", plan.disk.path, plan.vars.path, plan.snapshot.path, plan.vmID])
         XCTAssertEqual(try plan.arguments(for: .restore).first, "restore")
     }
 

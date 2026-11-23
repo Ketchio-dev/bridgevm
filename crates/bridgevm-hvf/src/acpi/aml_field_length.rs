@@ -1,5 +1,3 @@
-//! Split out of acpi.rs to keep files under 850 lines.
-
 use super::*;
 
 use crate::machine;

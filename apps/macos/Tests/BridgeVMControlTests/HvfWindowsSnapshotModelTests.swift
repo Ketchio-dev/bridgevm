@@ -101,8 +101,6 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
              "스냅샷을 만들지 못했으니 다시 시도하고, 계속 실패하면 아래 이벤트 피드에서 자세한 내용을 확인하세요."),
             (try helper(nil), .restore,
              "스냅샷으로 되돌리지 못했으니 다시 시도하고, 계속 실패하면 아래 이벤트 피드에서 자세한 내용을 확인하세요."),
-            (Result { try HvfWindowsSnapshotQuota.parse("unexpected\n") }.failure!, .create,
-             "스냅샷을 만들지 못했으니 다시 시도하고, 계속 실패하면 아래 이벤트 피드에서 자세한 내용을 확인하세요."),
         ]
         for (error, operation, expected) in cases {
             let message = HvfWindowsSnapshotModel.message(for: error, operation: operation)

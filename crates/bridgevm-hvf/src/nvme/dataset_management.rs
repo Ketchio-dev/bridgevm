@@ -31,7 +31,7 @@
 //!   without the platform lock, under a WRITE's conditions (unlocked_io.rs):
 //!   its completion slot is held, it counts in flight, and a drain posts its
 //!   completion once its punches returned. Every other case, an invalid list
-//!   among them, runs inline under the lock, as before.
+//!   among them, runs inline under the lock.
 //! - Ordering: NVMe orders no commands in flight together; inline, the punch
 //!   ran at fetch. Only whole host blocks inside the ranges are punched, so a
 //!   punch changes no byte outside them, and per host block a punch and a

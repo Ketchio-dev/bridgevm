@@ -7,7 +7,7 @@ import uuid
 
 class NativeRuntimeControlCases:
     def control_request(self, operation="stop", operation_id=None):
-        return dict(schema="bridgevm.app-runtime-control-request.v2", operation=operation,
+        return dict(schema="bridgevm.app-runtime-control-request.v3", operation=operation,
             requestID=str(uuid.uuid4()).upper(), library=self.identity, vmID="fixture",
             operationID=operation_id or str(uuid.uuid4()).upper(),
             target=dict(appInstanceID="A0000000-0000-0000-0000-000000000001",
@@ -60,12 +60,15 @@ class NativeRuntimeControlCases:
         with self.owner(mode="control") as (_, control):
             request = self.control_request()
             payload = json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
-            for raw in [b" " + payload, payload[:-1] + b',"unknown":true}',
-                        payload.replace(b'"operation":"stop"', b'"operation":"stop","operation":"stop"')]:
+            for raw in [payload[:-1], payload.replace(b'"operation":"stop"', b'"operation":"status"')]:
                 self.assertIsNone(self.control_exchange(request, raw=raw))
-            request["library"] = dict(self.identity, inode=self.identity["inode"] + 1)
-            self.assertIsNone(self.control_exchange(request))
+            changed = dict(request, library=dict(self.identity, inode=self.identity["inode"] + 1))
+            self.assertIsNone(self.control_exchange(changed))
             self.assertEqual(list(control.glob("admitted-*")), [])
+            # Our own CLI may add fields or format differently; that is not a malformed request.
+            tolerated = b" " + payload[:-1] + b',"unknown":true}\n'
+            self.assertEqual(self.control_exchange(request, raw=tolerated)["disposition"], "accepted")
+            self.assertEqual(len(list(control.glob("admitted-*"))), 1)
 
     def test_reply_timeout_preserves_admitted_ticket_for_status(self):
         with self.owner(mode="control-slow") as (_, control):

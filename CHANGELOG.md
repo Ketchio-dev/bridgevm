@@ -4,6 +4,15 @@ All notable changes to BridgeVM are documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- The app now states and enforces macOS 15 as its minimum. The engine uses the
+  Hypervisor.framework GIC API that first shipped in macOS 15, so on macOS 14 a
+  VM could not start even though the app opened.
+- The Fast VZ (Linux) and QEMU compatibility engines were removed from the app.
+  A VM saved with one of them stays in the library, marked as no longer
+  supported, with its files untouched, and can be deleted from there.
+
 ### Fixed
 
 - After an unclean stop, the shared folder keeps the Windows version of a file
@@ -11,6 +20,10 @@ All notable changes to BridgeVM are documented in this file.
   Mac version was sent back, the next start made a second, identical
   "(Windows copy 2)"; now it keeps one copy and sends the Mac version again
   (#675).
+- A VM with a Korean name finds its vTPM key even when its ID reaches the
+  keychain in the other Unicode form (composed or decomposed, for example
+  after the library was copied). Before, the VM refused to start with a
+  missing-key error (#689).
 
 ## [1.1.1] - 2026-11-21
 

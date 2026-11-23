@@ -17,10 +17,6 @@ final class HvfGUIStartTests: XCTestCase {
                 XCTAssertFalse(f.session.acceptStartConfiguration(f.base.config))
                 if case .refused = f.session.start() {} else { XCTFail("Synchronous start reentered") }
                 if case .refused = f.session.requestGUIStart(configuration: f.base.config) {} else { XCTFail("GUI start reentered") }
-                let cli = f.session.requestOwnedStart(configuration: f.base.config, operationID: UUID(),
-                    expectedSavedConfigurationDigest: HvfOwnedStartTestSupport.digest,
-                    onReserved: { _ in XCTFail("CLI must refuse before registration") }, revalidate: { true })
-                if case .refused = cli {} else { XCTFail("CLI start overlaps GUI reservation") }
             }
             defer { observer.cancel() }
             var edited = f.base.config; edited.ramMiB = 2048; edited.smpCpus = 2

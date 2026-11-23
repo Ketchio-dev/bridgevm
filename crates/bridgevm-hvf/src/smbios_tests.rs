@@ -93,25 +93,3 @@ fn processor_record_scales_with_cpu_count() {
     assert_eq!(le16(type4, 44), 4, "core enabled 2");
     assert_eq!(le16(type4, 46), 4, "thread count 2");
 }
-
-#[test]
-fn bridgevm_pc_identity_and_ram_map_are_independent() {
-    let blobs = build_bridgevm_pc_smbios(4, 512 * MB);
-    let text = String::from_utf8_lossy(&blobs.tables);
-    assert!(text.contains(bridgevm_pc::SMBIOS_MANUFACTURER));
-    assert!(text.contains(bridgevm_pc::SMBIOS_PRODUCT));
-    assert!(!text.contains("QEMU"));
-    assert!(!text.contains("qemu"));
-    assert!(!text.contains("EDK II"));
-    assert!(!text.split('\0').any(|value| value == "virt"));
-
-    let records = split_records(&blobs.tables);
-    let type19 = records.iter().find(|record| record[0] == 19).unwrap();
-    assert_eq!(le32(type19, 4), (bridgevm_pc::RAM_BASE / KB) as u32);
-    assert_eq!(
-        le32(type19, 8),
-        ((bridgevm_pc::RAM_BASE + 512 * MB - 1) / KB) as u32
-    );
-    assert_eq!(le64(type19, 15), 0);
-    assert_eq!(le64(type19, 23), 0);
-}

@@ -49,7 +49,7 @@ final class T17FileChooserTests: XCTestCase {
         }
     }
 
-    /// r96: the manifest named a symlinked path and the panel reported the resolved one.
+    /// The manifest names a symlinked path and the panel reports the resolved one.
     func testSymlinkedRequestPathAcceptsTheSameFileButNotAnother() throws {
         let files = FileManager.default
         let root = files.temporaryDirectory.appendingPathComponent("t17-chooser-\(UUID().uuidString)")

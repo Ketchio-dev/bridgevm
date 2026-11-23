@@ -1,8 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// What the probe prints for a CLIPGET reply instead of the guest's text
-/// (follow-up of 2026-10-23): the text's UTF-8 byte length and the first 16
+/// What the probe prints for a CLIPGET reply instead of the guest's text: the text's UTF-8 byte length and the first 16
 /// hex digits of its SHA-256.
 enum T17ClipboardFingerprint {
     static func fields(of text: String) -> String {

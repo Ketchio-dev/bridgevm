@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Dispatch one physical-Mac live-gate tier and leave a receipt in --out.
 #
-# Tiers are declared in PLAN.md. Only T5 produces A1 shipping evidence; no
-# lower tier may weaken A1. T6 requires every independent title run to pass.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 TIER="${1:?run-tier.sh needs a tier}"
@@ -54,9 +52,6 @@ EOF
 }
 
 case "$TIER" in
-    t1-vtimer)
-        exec "$REPO/scripts/run-hvf-vtimer-cancel-gate.sh" --out "$OUT" --job-id "$JOB_ID"
-        ;;
     t1-snapshot)
         # Needs only the internal-volume canonical pair, so it runs even where
         # TCC blocks the external volume.
@@ -70,65 +65,13 @@ case "$TIER" in
             exit 1
         fi
         ;;
-    t1-restore-boot|t20-a19-native-snapshot-restore|t21-a19-quota-refusal|t22-a19-interrupted-restore|t23-a19-lifecycle-campaign)
-        "$REPO/scripts/live-gates/run-a19-snapshot-tiers.sh" \
-            "$TIER" "$OUT" "$JOB_ID" "$INPUT_MANIFEST" "$SEALED_BINARY"
+    t1-restore-boot)
+        exec python3 "$REPO/scripts/live-gates/run-snapshot-restore-tier.py" \
+            "$OUT" "$JOB_ID" "$INPUT_MANIFEST" "$SEALED_BINARY"
         ;;
-    d2-b6-cell-observation|d3-b6-renderer-trace)
-        python3 "$REPO/scripts/live-gates/run-b6-${TIER#d?-b6-}.py" --out "$OUT" --job-id "$JOB_ID" \
-          --input-manifest "$INPUT_MANIFEST" --sealed-binary "$SEALED_BINARY" ;;
-    t6-a3-title|t7-windows-closure)
-        helper=run-a3-title-tier.sh; [[ "$TIER" == t6-a3-title ]] || helper=run-windows-closure-tier.sh
-        "$REPO/scripts/live-gates/$helper" --out "$OUT" --input-manifest "$INPUT_MANIFEST" \
-            --sealed-binary "$SEALED_BINARY" --job-id "$JOB_ID"
-        ;;
-    t8-pointer-reliability|t9-bridgevm-pc-pci|t11-bridgevm-pc-nvme-bar|t12-bridgevm-pc-nvme-block|t13-bridgevm-pc-bds-exit|t14-bridgevm-pc-windows-start|t15-hvf-boot-performance|t16-hvf-nvme-performance|t17-windows-hvf-product-e2e|t18-audio-teardown|t19-windows-hvf-import-product-e2e|d1-windows-media-comparison|d4-winpe-companions|d5-guest-input|d6-app-ui|d6-app-ui-host-v1|d6-app-ui-host-v2|d6-app-ui-install-cancel-v1|d7-hvf-smp-scaling|d8-hvf-smp-confirmation|d9-b9-real-workload|d10-t22-owned-pair-preparation|d11-native-fixture-preparation)
+    t17-windows-hvf-product-e2e|t18-audio-teardown|t19-windows-hvf-import-product-e2e|d5-guest-input|d6-app-ui|d6-app-ui-host-v1|d6-app-ui-host-v2|d6-app-ui-install-cancel-v1)
         "$REPO/scripts/live-gates/run-special-tier.sh" \
           "$TIER" "$OUT" "$JOB_ID" "$INPUT_MANIFEST" "$SEALED_BINARY" ;;
-    t2-pilot|t3-candidate|t4-soak|t5-campaign)
-        # These need private Windows media and 20+ minutes per boot. They are
-        # declared so the queue and its policy tests are exercised, but they
-        # refuse to invent evidence when the media is absent.
-        # Check the four inputs the gate actually reads, not a directory that
-        # happens to exist. A mounted volume is not evidence that the files
-        # under it are readable -- TCC denies a LaunchAgent reads under
-        # /Volumes/* while stat() still succeeds, so the old check passed and
-        # the gate then failed minutes later blaming the injector.
-        SEALED_IMAGE=${BASE_IMAGE:-$HOME/BridgeVM/work/wall-c8-clean-12041.raw}
-        SEALED_VARS=${BASE_VARS:-$HOME/BridgeVM/work/wall-c8-clean-inject-vars.fd}
-        missing=""
-        for input in \
-            "${BASE_IMAGE:-$HOME/BridgeVM/work/wall-c8-clean-12041.raw}" \
-            "${BASE_VARS:-$HOME/BridgeVM/work/wall-c8-clean-inject-vars.fd}" \
-            "${INJECTOR:-$HOME/BridgeVM/injectors/inj-a1-20260802.raw}"
-        do
-            # head -c1 rather than -r: readable-by-policy is what matters here.
-            head -c1 "$input" >/dev/null 2>&1 || missing="$missing $input"
-        done
-        if [ -n "$missing" ]; then
-            echo "cannot read required Windows media:$missing" >&2
-            echo "if these are on an external volume, macOS TCC is the likely" >&2
-            echo "cause; keep them on the internal volume instead" >&2
-            receipt refused-no-media false
-            exit 1
-        fi
-        # Boots per tier. T2 proves the prepared cache and the harness; only
-        # T5 produces shipping A1 evidence, and its count is the 10 the
-        # criterion names. A cheaper tier must never be read as a campaign.
-        case "$TIER" in
-            t2-pilot)     boots=2  ;;
-            t3-candidate) boots=3  ;;
-            t4-soak)      boots=5  ;;
-            t5-campaign)  boots=10 ;;
-        esac
-        echo "$TIER requires the boot gate; invoking p1-boot-gate.sh --boots $boots" >&2
-        if "$REPO/scripts/p1-boot-gate.sh" --out "$OUT" --boots "$boots"; then
-            receipt completed true
-        else
-            receipt failed false
-            exit 1
-        fi
-        ;;
     *)
         echo "unknown tier $TIER" >&2
         exit 2

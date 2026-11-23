@@ -1,7 +1,11 @@
-use super::*;
 use crate::snapshot_pair::creation::{create_snapshot_using, stage::CreateStage};
-use crate::snapshot_pair::snapshot_pair_tests::{Scratch, QUOTA};
-use crate::snapshot_pair::{create_snapshot, staging_path, verify_snapshot, MANIFEST_NAME};
+use crate::snapshot_pair::manifest_read::MANIFEST_LIMIT;
+use crate::snapshot_pair::snapshot_pair_tests::Scratch;
+use crate::snapshot_pair::{
+    create_snapshot, staging_path, verify_snapshot, SnapshotError, SnapshotManifest, MANIFEST_NAME,
+    SNAPSHOT_FORMAT_VERSION,
+};
+use std::{fs, io};
 
 fn available_vm_id_bytes() -> usize {
     MANIFEST_LIMIT as usize
@@ -18,7 +22,7 @@ fn available_vm_id_bytes() -> usize {
 }
 
 #[test]
-fn oversized_plain_and_escaped_vm_ids_refuse_before_any_staging_or_replacement() {
+fn oversized_plain_and_escaped_vm_ids_refuse_and_keep_the_previous_snapshot() {
     for (name, vm_id) in [
         ("ascii", "x".repeat(MANIFEST_LIMIT as usize)),
         ("controls", "\n".repeat(MANIFEST_LIMIT as usize / 6 + 1)),
@@ -27,28 +31,18 @@ fn oversized_plain_and_escaped_vm_ids_refuse_before_any_staging_or_replacement()
         let disk = scratch.write("disk", b"disk");
         let vars = scratch.write("vars", b"vars");
         let snapshot = scratch.path("snapshot");
-        let old = create_snapshot(&disk, &vars, &snapshot, "old", false, QUOTA).unwrap();
+        let old = create_snapshot(&disk, &vars, &snapshot, "old").unwrap();
         let old_text = fs::read(snapshot.join(MANIFEST_NAME)).unwrap();
-        for destination in [snapshot.clone(), scratch.path("new-parent/absent")] {
-            let result =
-                create_snapshot_using(&disk, &vars, &destination, &vm_id, false, QUOTA, |stage| {
-                    panic!("metadata refusal came after {stage:?}")
-                });
-            let Err(SnapshotError::Io(error)) = result else {
-                panic!("accepted unreadable {name} manifest: {result:?}");
-            };
-            assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
-            assert!(!staging_path(&destination).exists());
-        }
-        assert!(!scratch.path("new-parent").exists());
+        let result = create_snapshot(&disk, &vars, &snapshot, &vm_id);
+        let Err(SnapshotError::Io(error)) = result else {
+            panic!("accepted unreadable {name} manifest: {result:?}");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(!staging_path(&snapshot).exists());
         assert_eq!(verify_snapshot(&snapshot).unwrap(), old);
         assert_eq!(fs::read(snapshot.join(MANIFEST_NAME)).unwrap(), old_text);
         assert_eq!(fs::read(&disk).unwrap(), b"disk");
         assert_eq!(fs::read(&vars).unwrap(), b"vars");
-        assert!(matches!(
-            create_snapshot(&disk, &vars, &snapshot, &vm_id, false, 7),
-            Err(SnapshotError::QuotaExceeded { bytes: 8, quota: 7 })
-        ));
     }
 }
 
@@ -61,7 +55,7 @@ fn exactly_bounded_plain_and_escaped_manifests_round_trip_after_creation() {
         let disk = scratch.write("disk", b"disk");
         let vars = scratch.write("vars", b"vars");
         let snapshot = scratch.path("snapshot");
-        let manifest = create_snapshot(&disk, &vars, &snapshot, &vm_id, false, QUOTA).unwrap();
+        let manifest = create_snapshot(&disk, &vars, &snapshot, &vm_id).unwrap();
         assert_eq!(
             fs::metadata(snapshot.join(MANIFEST_NAME)).unwrap().len(),
             MANIFEST_LIMIT
@@ -77,9 +71,9 @@ fn final_serialized_size_is_rechecked_and_failed_fill_is_removed() {
     let disk = scratch.write("disk", b"disk");
     let vars = scratch.write("vars", b"vars");
     let snapshot = scratch.path("snapshot");
-    let old = create_snapshot(&disk, &vars, &snapshot, "old", false, QUOTA).unwrap();
+    let old = create_snapshot(&disk, &vars, &snapshot, "old").unwrap();
     let vm_id = "x".repeat(available_vm_id_bytes());
-    let result = create_snapshot_using(&disk, &vars, &snapshot, &vm_id, false, QUOTA, |stage| {
+    let result = create_snapshot_using(&disk, &vars, &snapshot, &vm_id, |stage| {
         if stage == CreateStage::DiskSynced {
             // A changed digit count grows the final serialized metadata by one
             // byte without changing the preflighted vm_id.

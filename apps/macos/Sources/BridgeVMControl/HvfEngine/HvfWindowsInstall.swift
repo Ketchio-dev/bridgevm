@@ -202,3 +202,50 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
         return nil
     }
 }
+
+extension HvfWindowsInstallPlan {
+    static let unrepresentableDiskSizeMessage = "설치 디스크 크기를 파일 크기로 표현할 수 없습니다."
+
+    /// FileHandle truncation ultimately uses signed off_t, not the full UInt64 range.
+    /// This is a representation boundary, not a capacity or workload-fit guarantee.
+    static func targetSizeBytes(diskGiB: Int) -> UInt64? {
+        let bytesPerGiB: UInt64 = 1 << 30
+        guard diskGiB > 0, let size = UInt64(exactly: diskGiB),
+              size <= UInt64(Int64.max) / bytesPerGiB else { return nil }
+        return size * bytesPerGiB
+    }
+
+    var freshTargetSizeBytes: UInt64? { Self.targetSizeBytes(diskGiB: request.diskGiB) }
+
+    static func diskSizeError(_ diskGiB: Int) -> String? {
+        guard diskGiB >= minimumDiskGiB else {
+            return "디스크 크기는 최소 \(minimumDiskGiB) GiB여야 합니다."
+        }
+        return targetSizeBytes(diskGiB: diskGiB) == nil ? unrepresentableDiskSizeMessage : nil
+    }
+}
+
+extension HvfWindowsInstallPlan {
+    var sourceImageSHA256Path: String { sourceImagePath + ".sha256" }
+
+    var sourceImageCacheCandidateExists: Bool {
+        let manager = FileManager.default
+        return manager.isReadableFile(atPath: sourceImagePath)
+            && manager.isReadableFile(atPath: sourceImageSHA256Path)
+    }
+
+    func sourceImageCacheIsVerified() async -> Bool {
+        guard sourceImageCacheCandidateExists else { return false }
+        let imagePath = sourceImagePath
+        let receiptPath = sourceImageSHA256Path
+        return await Task.detached {
+            guard let receipt = try? String(contentsOfFile: receiptPath, encoding: .utf8) else {
+                return false
+            }
+            let expected = receipt.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard expected.count == 64,
+                  expected.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else { return false }
+            return HvfWindowsInstallCacheIdentity.sha256File(imagePath) == expected
+        }.value
+    }
+}

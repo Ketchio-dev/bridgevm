@@ -2,12 +2,11 @@ import Foundation
 import XCTest
 @testable import BridgeVMControl
 
-/// Restart state belongs to one guest boot (Codex P2s on #514 at d82c43f9). Only the session API that
-/// d82c43f9 already had is used, so both tests run, and fail, against it.
+/// Restart state belongs to one guest boot.
 @MainActor
 final class HvfRestartBootGenerationTests: XCTestCase {
-    /// Codex P2 on d82c43f9: Windows finished restarting while the "has not restarted" confirmation
-    /// was open, and confirming reset the new boot. The confirmation belongs to the boot it was asked for.
+    /// Windows can finish restarting while the "has not restarted" confirmation is open; confirming
+    /// must not reset the new boot. The confirmation belongs to the boot it was asked for.
     func testWindowsRestartingWhileTheConfirmationIsOpenDoesNotResetTheNewBoot() throws {
         let fixture = try HvfRuntimeKeyboardDraftFixture()
         defer { fixture.remove() }
@@ -28,9 +27,9 @@ final class HvfRestartBootGenerationTests: XCTestCase {
         }
     }
 
-    /// Codex P2 on d82c43f9: a Reset confirmed after a reset record but before the next helper opens
-    /// input.ctl is never read (the helper starts at the end), and Restart and Reset then did nothing
-    /// for the rest of the run. An unacknowledged Reset is dropped, so the user can press again.
+    /// A Reset confirmed after a reset record but before the next helper opens input.ctl is never read
+    /// (the helper starts at the end), which would leave Restart and Reset doing nothing for the rest of
+    /// the run. An unacknowledged Reset is dropped, so the user can press again.
     func testAResetNoHelperTookDoesNotBlockRestartForTheRestOfTheRun() throws {
         let fixture = try HvfRuntimeKeyboardDraftFixture()
         defer { fixture.remove() }

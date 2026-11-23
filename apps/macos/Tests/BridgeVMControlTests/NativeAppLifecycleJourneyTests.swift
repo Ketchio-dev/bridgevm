@@ -27,8 +27,7 @@ final class NativeAppLifecycleJourneyTests: XCTestCase {
             id: pending.slug, repoRoot: fixture.runtimeRepo)
         XCTAssertFalse(pendingReadiness.engineChecksPerformed)
         XCTAssertEqual(pendingReadiness.launchBlockers.map(\.code), ["installation-pending"])
-        assertStartRefused(.unsupportedRuntime, model: model,
-            request: try startRequest(config: pending, root: fixture.root))
+        guard case .refused = model.requestCLIStart(vmID: pending.slug) else { return XCTFail("pending install started") }
 
         XCTAssertTrue(retry.cancel())
         var installed = pending; installed.installPending = false
@@ -39,31 +38,10 @@ final class NativeAppLifecycleJourneyTests: XCTestCase {
         guard case .failure(.targetUnavailable) = store.operation(vmID: pending.slug,
             digest: digest) else { return XCTFail("completed registration retained stale install lookup") }
 
-        let result = try model.requestOwnedRuntimeStart(
-            try startRequest(config: installed, root: fixture.root), validateOwner: {},
-            onReserved: { _ in throw NativeRuntimeError.timedOut })
-        // The shared safety fixture rewrites the synthetic swtpm path, so the
-        // retained session refuses that launch at the later exact-config gate.
-        guard case .refused(.configurationMismatch) = result else {
-            return XCTFail("installed registration result: \(result)")
+        guard case let .accepted(ticket, _) = model.requestCLIStart(vmID: installed.slug) else {
+            return XCTFail("installed registration was not admitted")
         }
+        ticket.invalidate("test ends before any start effect")
         XCTAssertEqual(fixture.runtimeCreations, 1)
-    }
-
-    private func startRequest(config: VMConfig, root: URL) throws -> NativeRuntimeStartRequest {
-        let library = try NativeRuntimeLibraryHandle.open(rootURL: root, create: false).identity
-        return NativeRuntimeStartRequest(schema: NativeRuntimeStartCodec.requestSchema,
-            operation: .start, requestID: UUID().uuidString, library: library,
-            vmID: config.slug, appInstanceID: UUID().uuidString,
-            expectedSavedConfigurationDigest: try NativeRuntimeConfigurationIdentity.digest(config: config),
-            operationID: UUID().uuidString)
-    }
-
-    private func assertStartRefused(_ expected: NativeRuntimeStartRefusal,
-                                    model: LibraryModel, request: NativeRuntimeStartRequest) {
-        XCTAssertThrowsError(try model.requestOwnedRuntimeStart(request,
-            validateOwner: {}, onReserved: { _ in XCTFail("refused start reserved work") })) {
-            XCTAssertEqual($0 as? NativeRuntimeStartRefusal, expected)
-        }
     }
 }

@@ -180,32 +180,5 @@ class Publication(unittest.TestCase):
                 self.assertFalse(os.path.lexists(directory / "receipt.public.json"))
                 self.assert_no_staging(directory)
 
-    def test_allowlist_dependency_bytes_are_sealed_by_both_nvme_reporters(self):
-        dependency = "scripts/live-gates/receipt_public_fields.py"
-        for name in ("hvf_nvme_performance_report.py", "hvf_nvme_performance_v2_report.py"):
-            with self.subTest(reporter=name):
-                spec = importlib.util.spec_from_file_location(name.removesuffix(".py"), ROOT / "scripts" / name)
-                reporter = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(reporter)
-                fixture = self.root / name
-                fixture.mkdir()
-                for relative in set(reporter.ANALYZER_FILES) | {dependency}:
-                    path = fixture / relative
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_text("synthetic analyzer bytes\n")
-                for command in (("init", "-q"), ("add", "-A"),
-                                ("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-                                 "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "commit", "-qm", "fixture")):
-                    subprocess.run(["git", "-C", str(fixture), *command], capture_output=True, check=True, timeout=10)
-                commit = subprocess.check_output(["git", "-C", str(fixture), "rev-parse", "HEAD"], text=True).strip()
-                reporter.ROOT = fixture
-                seal = reporter._seal_analyzer(commit)
-                path = fixture / dependency
-                self.assertEqual(seal["source_sha256"].get(dependency), hashlib.sha256(path.read_bytes()).hexdigest())
-                path.write_text("changed analyzer bytes\n")
-                with self.assertRaisesRegex(ValueError, "uncommitted bytes"):
-                    reporter._seal_analyzer(commit)
-
-
 if __name__ == "__main__":
     unittest.main()

@@ -2,21 +2,16 @@
 import PackageDescription
 
 let package = Package(
+    // The package name prefixes the resource bundle the app packager copies
+    // (BridgeVMApp_BridgeVMControl.bundle); renaming it changes that path.
     name: "BridgeVMApp",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "BridgeVMApp", targets: ["BridgeVMApp"]),
-        .executable(name: "AppleVzRunner", targets: ["AppleVzRunner"]),
         .executable(name: "BridgeVMControl", targets: ["BridgeVMControl"]),
         .executable(name: "BridgeVMProductE2E", targets: ["BridgeVMProductE2E"]),
     ],
     targets: [
         .target(name: "BridgeVMWindowProtocol"),
-        .executableTarget(
-            name: "BridgeVMApp",
-            dependencies: ["BridgeVMWindowProtocol"],
-            path: "Sources/BridgeVMApp"
-        ),
         .executableTarget(
             name: "BridgeVMControl",
             dependencies: ["BridgeVMWindowProtocol"],
@@ -27,21 +22,6 @@ let package = Package(
             ]
         ),
         .executableTarget(name: "BridgeVMProductE2E", dependencies: ["BridgeVMWindowProtocol"], path: "Sources/BridgeVMProductE2E"),
-        .target(name: "AppleVzRunnerCore", path: "Sources/AppleVzRunnerCore"),
-        .executableTarget(
-            name: "AppleVzRunner",
-            dependencies: ["AppleVzRunnerCore"],
-            path: "Sources/AppleVzRunner"
-        ),
-        .testTarget(
-            name: "BridgeVMAppTests",
-            dependencies: ["BridgeVMApp"]
-        ),
-        .testTarget(
-            name: "AppleVzRunnerTests",
-            dependencies: ["AppleVzRunnerCore"],
-            path: "Tests/AppleVzRunnerTests"
-        ),
         .testTarget(
             name: "BridgeVMControlTests",
             dependencies: ["BridgeVMControl", "BridgeVMWindowProtocol"],

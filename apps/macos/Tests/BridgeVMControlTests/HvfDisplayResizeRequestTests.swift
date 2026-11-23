@@ -64,7 +64,7 @@ final class HvfDisplayResizeRequestTests: XCTestCase {
         XCTAssertEqual(Request.scale(.nan), 100)
     }
 
-    /// #493's second live run: viogpudo takes modes up to 3840x2160's pixel count once the EDID lists it.
+    /// viogpudo takes modes up to 3840x2160's pixel count once the EDID lists it.
     func testRetinaUpTo3840x2160PixelsIsFullSize() {
         XCTAssertEqual(Request.retinaMaximumPixels, 8_294_400)
         XCTAssertEqual(retina(1728, 1117, scale: 2), .init(width: 3456, height: 2234, scale: 200), "16-inch full screen")

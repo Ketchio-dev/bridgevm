@@ -52,13 +52,9 @@ enum NativeRuntimeTransportPureContracts {
         let decoded = try NativeRuntimeCodec.decode(NativeRuntimeResponse.self, from: encoded,
                                                      limit: NativeRuntimeCodec.maximumResponseBytes)
         try NativeRuntimeCodec.validate(decoded, for: request)
-        for suffix in [",\"unknown\":true}", ",\"vmID\":\"개발-vm\"}"] {
-            let invalid = encoded.dropLast() + Data(suffix.utf8)
-            try refuses("unknown/duplicate response key accepted") {
-                _ = try NativeRuntimeCodec.decode(NativeRuntimeResponse.self, from: invalid,
-                                                   limit: NativeRuntimeCodec.maximumResponseBytes)
-            }
-        }
+        let extended = encoded.dropLast() + Data(",\"addedLater\":true}".utf8)
+        try require(NativeRuntimeCodec.decode(NativeRuntimeResponse.self, from: extended,
+            limit: NativeRuntimeCodec.maximumResponseBytes) == decoded, "unknown response key refused")
         try require(!FileManager.default.fileExists(atPath: missing.path), "read-only query changed library")
     }
 }

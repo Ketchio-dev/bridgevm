@@ -16,7 +16,12 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging, VTPMExistingStateKe
         let account = try VTPMExistingKeyLookup.account(stableVMID)
         return try access.exclusively {
             let backend = try resolvedBackend ?? VTPMKeychainBackend.candidate(from: access.api.entitlements())
-            return try VTPMExistingKeyLookup.read(account: account, backend: backend, access: access)
+            let forms = VTPMExistingKeyLookup.forms(account)
+            for (index, form) in forms.enumerated() {
+                do { return try VTPMExistingKeyLookup.read(account: form, backend: backend, access: access) }
+                catch VTPMExistingKeyError.missingKey where index + 1 < forms.count { continue }
+            }
+            throw VTPMExistingKeyError.missingKey(backend)
         }
     }
 
@@ -26,12 +31,14 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging, VTPMExistingStateKe
     }
 
     private func interactiveKey(account: String, allowCreation: Bool) throws -> Data {
-        let existing = read(account: account)
-        if existing.status == errSecSuccess, let key = existing.data {
-            guard key.count == Self.keyLength else { throw VTPMStateSecurityError.invalidKeyLength(key.count) }
-            return key
+        for form in VTPMExistingKeyLookup.forms(account) {
+            let existing = read(account: form)
+            if existing.status == errSecSuccess, let key = existing.data {
+                guard key.count == Self.keyLength else { throw VTPMStateSecurityError.invalidKeyLength(key.count) }
+                return key
+            }
+            guard existing.status == errSecItemNotFound else { throw VTPMStateSecurityError.keychainRead(existing.status) }
         }
-        guard existing.status == errSecItemNotFound else { throw VTPMStateSecurityError.keychainRead(existing.status) }
         guard allowCreation else { throw VTPMStateSecurityError.missingKeyForExistingState }
         var generated = Data(count: Self.keyLength)
         let randomStatus = access.api.random(&generated)
@@ -57,9 +64,11 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging, VTPMExistingStateKe
         guard key.count == Self.keyLength else { throw VTPMStateSecurityError.invalidKeyLength(key.count) }
         let account = try VTPMExistingKeyLookup.account(stableVMID)
         try access.exclusively {
-            let updateStatus = access.api.update(queryAttributes(account: account) as CFDictionary, [kSecValueData: key] as CFDictionary)
-            if updateStatus == errSecSuccess { return }
-            guard updateStatus == errSecItemNotFound else { throw VTPMStateSecurityError.keychainWrite(updateStatus) }
+            for form in VTPMExistingKeyLookup.forms(account) {
+                let updateStatus = access.api.update(queryAttributes(account: form) as CFDictionary, [kSecValueData: key] as CFDictionary)
+                if updateStatus == errSecSuccess { return }
+                guard updateStatus == errSecItemNotFound else { throw VTPMStateSecurityError.keychainWrite(updateStatus) }
+            }
             let addStatus = access.api.add(addAttributes(account: account, key: key))
             guard addStatus == errSecSuccess else { throw VTPMStateSecurityError.keychainWrite(addStatus) }
         }
@@ -68,8 +77,10 @@ final class KeychainVTPMStateKeyStore: VTPMStateKeyManaging, VTPMExistingStateKe
     func deleteStateKey(for stableVMID: String) throws {
         let account = try VTPMExistingKeyLookup.account(stableVMID)
         try access.exclusively {
-            let status = access.api.delete(queryAttributes(account: account) as CFDictionary)
-            guard status == errSecSuccess || status == errSecItemNotFound else { throw VTPMStateSecurityError.keychainWrite(status) }
+            for form in VTPMExistingKeyLookup.forms(account) {
+                let status = access.api.delete(queryAttributes(account: form) as CFDictionary)
+                guard status == errSecSuccess || status == errSecItemNotFound else { throw VTPMStateSecurityError.keychainWrite(status) }
+            }
         }
     }
 

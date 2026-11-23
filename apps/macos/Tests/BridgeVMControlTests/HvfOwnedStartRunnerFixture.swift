@@ -17,9 +17,10 @@ final class HvfOwnedStartFixtureEffects: VTPMStateKeyProviding, VTPMExistingStat
         process.environment?["TMPDIR"] = "/tmp"
         try process.run()
     }
+    /// The start path the Start button uses; a key is created only when no TPM state exists yet.
     func stateKey(for stableVMID: String, allowCreation: Bool) throws -> Data {
-        lock.lock(); creationCount += 1; lock.unlock()
-        throw CocoaError(.fileWriteNoPermission)
+        lock.lock(); keyIDs.append(stableVMID); if allowCreation { creationCount += 1 }; lock.unlock()
+        return Data(repeating: 0x42, count: 32) // Synthetic child protocol bytes only; never a host key.
     }
     func existingStateKey(for stableVMID: String) throws -> Data {
         lock.lock(); keyIDs.append(stableVMID); lock.unlock()
@@ -129,7 +130,7 @@ final class HvfOwnedStartRunnerFixture {
         repeat {
             try? adoptChildren(); session?.poll()
             let child = effects.snapshot.child
-            let noWorker = session?.hasPendingOwnedStart != true
+            let noWorker = session?.hasPendingRuntimeStart != true
             let noRuntime = session?.mayHaveOwnedWork != true
             let exited = child == nil || (child?.isRunning != true && witnesses.count == 2 && witnesses.values.allSatisfy { $0.observe() })
             safe = noWorker && noRuntime && exited

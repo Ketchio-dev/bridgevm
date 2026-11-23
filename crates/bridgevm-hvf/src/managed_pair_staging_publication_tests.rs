@@ -14,7 +14,7 @@ fn error_after_exchange_keeps_previous_generation_at_staging() {
     let disk = scratch.write("disk", b"old disk");
     let vars = scratch.write("vars", b"old vars");
     let snapshot = scratch.path("snapshot");
-    create_snapshot(&disk, &vars, &snapshot, "vm", false, 1024).unwrap();
+    create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
     let mut pair = LockedPair::open(&disk, &vars).unwrap();
     pair.restore(&snapshot).unwrap();
     let current = pair.paths().unwrap().0.parent().unwrap().to_path_buf();

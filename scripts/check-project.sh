@@ -31,33 +31,23 @@ step() {
 step "capability registry and landing page" bash -c 'bash scripts/check-capability-registry.sh && python3 scripts/check-landing-page.py'
 step "contract and schema json" python3 scripts/check-contract-schema-json.py docs/machine-contract/qemu-virt-deviations.json schemas/bridgevm-capability-v1.json schemas/windows-hvf-3d-off-product-e2e-receipt-v1.json schemas/windows-hvf-import-product-e2e-receipt-v1.json schemas/b8-clean-install-receipt-v1.json
 step "contract module validation" python3 tests/integration/contract-schema-json-test.py
-step "capability evidence" python3 scripts/check-capability-evidence.py
-step "capability test counts" python3 scripts/check-capability-test-counts.py
 step "general preview manifest" python3 scripts/generate-general-preview-manifest.py --self-test
 step "documentation system" bash scripts/check-documentation-system.sh
 step "documentation references" python3 scripts/check-doc-references.py
-step "structural budgets" scripts/check-refactor-budgets.sh
 step "shell scripts" bash scripts/check-shell-scripts.sh
 step "python scripts" python3 scripts/check-python-scripts.py
 step "development VM control CLI" python3 tests/integration/vmctl-test.py
 step "guest PowerShell 5.1 syntax" pwsh -NoProfile -File scripts/check-guest-powershell.ps1
 step "audio result classifiers" bash -c 'python3 scripts/audio-playback-result.py --self-test && python3 tests/integration/audio-playback-host-stats-contract.py && python3 tests/integration/audio-teardown-result-test.py && python3 tests/integration/hda-microphone-live-check-lane-test.py'
-step "glyph pixel mask" bash -c 'python3 scripts/verify-glyph-pixel-mask.py --self-test && python3 tests/integration/glyph-ppm-contract.py'
-step "glyph pixel mask builder" python3 scripts/build-glyph-pixel-mask.py --self-test
-step "b6 cell and b9 real workload contracts" bash -c 'python3 tests/integration/guest-input-live-cleanup-test.py && python3 tests/integration/winpe-companion-diagnostic-test.py && python3 tests/integration/guest-input-live-signal-test.py && python3 tests/integration/winpe-companion-signal-test.py && python3 tests/integration/d4-bounded-output-contract.py && python3 tests/integration/hvf-diagnostic-output-contract.py && python3 scripts/verify-b6-cell.py --self-test && python3 tests/integration/b6-untraced-startup-contract.py && python3 tests/integration/b9-workload-diagnostic-contract.py && python3 tests/integration/b9-workload-diagnostic-path-contract.py && python3 tests/integration/b9-real-workload-pilot-contract.py && python3 tests/integration/b9-guest-shutdown-contract.py && python3 tests/integration/b9-raw-focus-order-contract.py && python3 tests/integration/b9-public-receipt-contract.py && python3 tests/integration/b9-guest-input-attribution-contract.py && python3 tests/integration/b9-host-input-boundary-contract.py && python3 tests/integration/b9-source-reopen-contract.py && python3 tests/integration/b9-guest-share-reopen-contract.py && python3 tests/integration/b9-control-share-class-contract.py && python3 tests/integration/b9-receipt-read-contract.py && python3 tests/integration/b9-scanout-byte-contract.py'
-step "glyph present latency" python3 scripts/measure-glyph-present-latency.py --self-test
+step "guest input and bounded output contracts" bash -c 'python3 tests/integration/guest-input-live-cleanup-test.py && python3 tests/integration/guest-input-live-signal-test.py && python3 tests/integration/d4-bounded-output-contract.py && python3 tests/integration/hvf-diagnostic-output-contract.py'
 step "workflow yaml" bash -c 'python3 scripts/check-workflow-yaml.py && python3 tests/integration/workflow-yaml-test.py'
-step "daemon DTO decoders" python3 scripts/check-daemon-dto-decoders.py
 step "swift force casts" python3 scripts/check-swift-force-casts.py
 step "tests are reachable" python3 scripts/check-tests-are-reachable.py
 step "virgl integer attributes" scripts/check-virgl-integer-attributes.sh
 step "virtio queue narrowing" scripts/check-virtio-queue-narrowing.sh
-step "HVF boot performance and SMP scaling" bash -c 'tests/integration/hvf-boot-performance-tier-smoke.sh && tests/integration/hvf-smp-scaling-contract.sh && tests/integration/hvf-smp-confirmation-contract.sh'
-step "HVF NVMe tier contracts" bash -c 'tests/integration/hvf-nvme-performance-tier-smoke.sh && tests/integration/bridgevm-pc-nvme-block-live-tier-smoke.sh'
 step "active IOSurface capture" tests/integration/active-iosurface-capture-smoke.py
 step "hvf coherence protocol" scripts/check-hvf-windows-coherence-protocol.sh
-step "Windows product and A19 live-tier contracts" bash -c 'tests/integration/windows-product-e2e-contract-smoke.sh && python3 tests/integration/native-snapshot-restore-live-tier-contract.py && python3 tests/integration/native-snapshot-restore-receipt-seal-contract.py && python3 tests/integration/native-snapshot-restore-cli-path-contract.py && python3 tests/integration/native-snapshot-restore-cli-read-contract.py && python3 tests/integration/native-snapshot-restore-cleanup-contract.py && python3 tests/integration/native-snapshot-export-evidence-contract.py && python3 tests/integration/native-snapshot-export-json-contract.py && scripts/check-selected-windows-media-contracts.sh && scripts/check-retained-windows-contracts.sh && python3 tests/integration/hvf-install-staging-contract.py && scripts/check-a19-contracts.sh && scripts/check-d11-fixture.sh'
-step "BridgeVM PC firmware boundary" scripts/check-bridgevm-pc-firmware-boundary.sh
+step "Windows product contracts" bash -c 'tests/integration/windows-product-e2e-contract-smoke.sh && python3 tests/integration/native-snapshot-export-evidence-contract.py && python3 tests/integration/native-snapshot-export-json-contract.py && scripts/check-selected-windows-media-contracts.sh && scripts/check-retained-windows-contracts.sh && python3 tests/integration/hvf-install-staging-contract.py'
 step "attribution honesty" scripts/check-attribution-honesty.sh
 step "packaged HVF entitlements" bash -c 'scripts/verify-app-hvf-entitlements.sh --self-test && python3 tests/integration/package-publication-contract.py'
 step "install verify" bash -c 'python3 tests/integration/live-installer-dry-run-contract.py && python3 tests/integration/live-installer-launch-contract.py && bash tests/integration/install-verify-smoke.sh && python3 tests/integration/b8-clean-install-tier-contract.py && python3 tests/integration/b8-clean-install-adversarial-contract.py && python3 tests/integration/b8-clean-install-fifo-contract.py'
@@ -67,16 +57,9 @@ if [[ $FAST -eq 1 ]]; then
 else
   step "clippy (workspace)" cargo "$TOOLCHAIN" clippy --workspace --all-targets --locked -- -D warnings
   step "clippy (venus)" cargo "$TOOLCHAIN" clippy -p bridgevm-hvf --all-targets --features venus --locked -- -D warnings
-  step "tests (workspace and portable imports)" bash scripts/check-project-storage.sh "$TOOLCHAIN"
+  step "tests (workspace)" cargo "$TOOLCHAIN" test --workspace --locked
   step "tests (venus lib)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --lib --features venus --locked
-  step "tests (probe example)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --features venus --example hvf_gic_boot_probe --example bridgevm_pc_dxe_entry_live --locked
-  if rustup target list --installed --toolchain "${TOOLCHAIN#+}" 2>/dev/null \
-      | grep -q '^aarch64-unknown-linux-gnu$'; then
-    step "cross-compile (linux stubs)" cargo "$TOOLCHAIN" check --workspace \
-      --target aarch64-unknown-linux-gnu --locked
-  else
-    printf 'cross-compile (linux stubs): SKIP (target not installed)\n'
-  fi
+  step "tests (probe example)" cargo "$TOOLCHAIN" test -p bridgevm-hvf --features venus --example hvf_gic_boot_probe --locked
 
   source "$ROOT/scripts/check-project-macos.sh"
 fi

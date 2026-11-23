@@ -1,8 +1,7 @@
 import Foundation
 
 /// Failure-only summary of the first-run import screen and the lane library, appended when
-/// the imported dashboard never appears (T19 r1 and r2 could not tell a stuck import from a
-/// failed one). Product text never leaves the helper: stage labels and errors map to fixed
+/// the imported dashboard never appears, so a stuck import can be told from a failed one. Product text never leaves the helper: stage labels and errors map to fixed
 /// tokens, an error no rule knows is reported by its UTF-8 length only, and an OSStatus is
 /// kept as a number.
 enum A9ImportEndState {

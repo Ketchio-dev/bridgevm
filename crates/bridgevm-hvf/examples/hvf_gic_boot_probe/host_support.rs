@@ -36,6 +36,15 @@ pub(crate) fn map_file(path: &Path, ipa: u64, region_bytes: usize, flags: u64) {
     }
 }
 
+extern "C" {
+    fn mach_absolute_time() -> u64;
+}
+
+/// Host timebase ticks (mach_absolute_time).
+pub(crate) fn host_time_ticks() -> u64 {
+    unsafe { mach_absolute_time() }
+}
+
 /// Read the host's virtual counter (Apple Silicon system counter, ~24 MHz).
 pub(crate) fn host_cntvct() -> u64 {
     let v: u64;

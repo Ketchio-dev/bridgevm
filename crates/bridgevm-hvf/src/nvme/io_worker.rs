@@ -1,13 +1,12 @@
 //! One vCPU's NVMe transfer thread. Under host disk load a raw-file `pread`
 //! or `pwrite` takes up to about 1 s, and while the doorbell vCPU ran it
-//! itself (unlocked_io.rs) that vCPU was out of the guest, so an interrupt
-//! routed to it waited for the transfer. In PR #489's rerun R2 the HDA MSI was
-//! posted on time but the guest cleared its status 20-350 ms later, in 19-208
-//! episodes per run that held 97-99% of the stale audio repeats.
+//! itself (unlocked_io.rs) that vCPU would be out of the guest, so an interrupt
+//! routed to it (such as the HDA MSI) would wait for the transfer and the
+//! guest would clear its status late, repeating stale audio.
 //!
-//! The vCPU now hands its transfers to its own worker and waits at most
+//! The vCPU hands its transfers to its own worker and waits at most
 //! [`NVME_IO_WAIT`], spinning briefly first. Transfers that finish in time
-//! complete as before: the vCPU's second hold posts them. Others stay with
+//! complete on the vCPU: its second hold posts them. Others stay with
 //! the worker and the vCPU returns to the guest; the worker publishes their
 //! results to the flush worker's `finished` list and calls `FLUSH_DONE_HOOK`,
 //! whose vCPU drain posts them under the lock, as for an async FLUSH. Either
@@ -128,7 +127,7 @@ impl NvmeIoWorker {
     /// True: they finished, and the caller's drain under the lock posts them
     /// now. False: the caller goes back to the guest; the worker publishes
     /// them later and calls `FLUSH_DONE_HOOK`. Without a worker thread (it
-    /// could not start) they run here, in `mem`, as before.
+    /// could not start) they run here, in `mem`.
     pub fn run(&mut self, io: NvmeIo, mem: &dyn GuestMemoryMut, wait: Duration) -> bool {
         let start = Instant::now();
         if self.inbox.is_none() {

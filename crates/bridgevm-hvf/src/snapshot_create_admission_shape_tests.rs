@@ -28,7 +28,7 @@ fn inadmissible_snapshot_shapes_are_refused_before_staging() {
         let s = Scratch::new(&format!("admission-shape-{case}"));
         let (disk, vars) = sources(&s);
         let dest = s.path("snapshot");
-        let old = create_snapshot(&disk, &vars, &dest, "old", false, QUOTA).unwrap();
+        let old = create_snapshot(&disk, &vars, &dest, "old").unwrap();
         let elsewhere = s.write("elsewhere", b"new disk");
         match case {
             "missing-member" => fs::remove_file(dest.join(VARS_NAME)).unwrap(),
@@ -87,7 +87,7 @@ fn a_snapshot_with_apple_double_companions_is_refused_as_not_a_snapshot() {
     let s = Scratch::new("admission-apple-double");
     let (disk, vars) = sources(&s);
     let dest = s.path("snapshot");
-    create_snapshot(&disk, &vars, &dest, "old", false, QUOTA).unwrap();
+    create_snapshot(&disk, &vars, &dest, "old").unwrap();
     s.write("snapshot/._disk.raw", b"\0\x05\x16\x07 AppleDouble");
     let before = tree(&dest);
     let result = create_uncopied(&disk, &vars, &dest, "new");

@@ -57,9 +57,7 @@ final class NativeCLISnapshotExportTests: XCTestCase {
         XCTAssertEqual(
             try fixture.invocations(),
             [
-                ["size", fixture.disk.path, fixture.vars.path],
-                ["create", fixture.disk.path, fixture.vars.path, fixture.output.path, fixture.id, "68"],
-                ["verify", fixture.output.path],
+                ["create", fixture.disk.path, fixture.vars.path, fixture.output.path, fixture.id],
             ]
         )
         XCTAssertTrue(result.text.contains("does not prove a Windows boot"))

@@ -1,9 +1,8 @@
 import SwiftUI
 
 /// The actions menu beside a VM's workspace row and its overview card, with the only
-/// accessibility identifier either menu has. The d6 live run of 2026-10-23 at seal
-/// 22678cd5 found an `AXMenuButton` of the seeded library refusing every
-/// `AXIdentifier` read with kAXErrorFailure while neither menu set one.
+/// accessibility identifier either menu has: an `AXMenuButton` without one refuses
+/// every `AXIdentifier` read with kAXErrorFailure.
 struct LibraryVMActionsMenu: View {
     static let identifier = "bridgevm.library.vm-actions"
     @ObservedObject var library: LibraryModel

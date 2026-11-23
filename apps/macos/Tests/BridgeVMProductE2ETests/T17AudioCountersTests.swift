@@ -11,7 +11,7 @@ final class T17AudioCountersTests: XCTestCase {
     }
 
     func testR50CountersPassUnderB7Semantics() {
-        // The final host report of physical job t17-fddde07f-audio-directory-pilot-r50.
+        // A real final host report.
         XCTAssertTrue(T17AudioCounters.passed("hda CoreAudio stats: frames_rendered=206374 drops=0 dropped_bytes=0 format_drops=0 ring_full_drops=0 queue_stop_errors=0 queue_dispose_errors=0 callback_errors=3 callback_active_errors=0 callback_stopping_errors=3 callback_expected_stopping_errors=3 callback_unexpected_errors=0 callback_stopping_invalid_run_state=0 callback_stopping_queue_invalidated=0 callback_stopping_enqueue_during_reset=3 callback_stopping_disposal_pending=0 callback_stopping_unclassified=0"))
         XCTAssertTrue(T17AudioCounters.passed(Self.line()))
         XCTAssertTrue(T17AudioCounters.passed(Self.line(expected: 0)))

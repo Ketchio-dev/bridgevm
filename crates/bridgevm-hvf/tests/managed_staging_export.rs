@@ -75,8 +75,8 @@ fn completed_export_survives_managed_restore() {
     let (a_disk, a_vars) = scratch.pair("a");
     let (b_disk, b_vars) = scratch.pair("b");
     let snapshot = scratch.0.join("a.snapshot");
-    create_snapshot(&a_disk, &a_vars, &snapshot, "a", false, 1024).unwrap();
-    restore_snapshot(&snapshot, &a_disk, &a_vars, false).unwrap();
+    create_snapshot(&a_disk, &a_vars, &snapshot, "a").unwrap();
+    restore_snapshot(&snapshot, &a_disk, &a_vars).unwrap();
     let managed = fs::read_dir(a_disk.parent().unwrap())
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -89,7 +89,7 @@ fn completed_export_survives_managed_restore() {
         .unwrap();
     let selected = contents(&managed.join("current"));
     let exported = managed.join("staging");
-    create_snapshot(&b_disk, &b_vars, &exported, "b", false, 1024).unwrap();
+    create_snapshot(&b_disk, &b_vars, &exported, "b").unwrap();
     let exported_manifest = verify_snapshot(&exported).unwrap();
     let exported_contents = contents(&exported);
     assert_eq!(
@@ -97,7 +97,7 @@ fn completed_export_survives_managed_restore() {
         0o700
     );
 
-    let result = restore_snapshot(&snapshot, &a_disk, &a_vars, false);
+    let result = restore_snapshot(&snapshot, &a_disk, &a_vars);
 
     assert!(
         exported.exists(),

@@ -5,7 +5,7 @@ import Foundation
 /// exporter's `ramfb display timing:` record once as it drops, after the HDA
 /// controller's records and the CoreAudio teardown records, so it appears at most
 /// once and after every HDA diagnostic, stats or continuity record. Fields are
-/// unsigned decimals without leading zeros. A tail without it reads as before.
+/// unsigned decimals without leading zeros. A tail without it still reads.
 extension HvfHostTail {
     static let displayRecord: (prefix: String, fields: [String]) = ("ramfb display timing:", [
         "ticks", "late_le_1ms", "late_le_4ms", "late_le_8ms", "late_le_16ms", "late_gt_16ms", "max_late_us", "published",

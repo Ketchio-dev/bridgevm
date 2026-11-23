@@ -36,7 +36,7 @@ struct NativeCLIRuntimeStop: Encodable {
         } catch {
             return Self(vmID: id, libraryPath: rootURL.path, target: target, operationID: operationID,
                 complete: false, observation: nil,
-                unavailableReason: (error as? NativeRuntimeStopRefusal)?.rawValue
+                unavailableReason: (error as? NativeRuntimeStopRefused)?.reason
                     ?? (error as? NativeRuntimeError)?.rawValue ?? "transportFailure")
         }
     }
@@ -44,14 +44,27 @@ struct NativeCLIRuntimeStop: Encodable {
     static func selectTarget(_ status: NativeRuntimeResponse) throws -> NativeRuntimeStopTarget {
         let active = status.sessions.filter { $0.ownership == .owned }
         if active.isEmpty, status.sessions.contains(where: { $0.ownership == .attachedObservation }) {
-            throw NativeRuntimeStopRefusal.unsupportedRuntime
+            throw NativeRuntimeStopRefused.unsupportedRuntime
         }
         let candidates = active.isEmpty ? status.sessions.filter { $0.ownership == .ownedExitObserved } : active
-        guard !candidates.isEmpty else { throw NativeRuntimeStopRefusal.targetUnavailable }
-        guard candidates.count == 1, let session = candidates.first else { throw NativeRuntimeStopRefusal.ambiguousTarget }
+        guard !candidates.isEmpty else { throw NativeRuntimeStopRefused.targetUnavailable }
+        guard candidates.count == 1, let session = candidates.first else { throw NativeRuntimeStopRefused.ambiguousTarget }
         guard let process = session.ownedProcess ?? session.lastOwnedExit?.process,
-              let digest = session.acceptedConfigurationDigest else { throw NativeRuntimeStopRefusal.configurationChanged }
+              let digest = session.acceptedConfigurationDigest else { throw NativeRuntimeStopRefused.configurationChanged }
         return .init(appInstanceID: status.appInstanceID, runToken: process.token,
                      processID: process.processID, acceptedConfigurationDigest: digest)
+    }
+}
+
+extension NativeCLIRuntimeStop {
+    var text: String {
+        var lines = ["Native VM stop: \(vmID)", "Observation scope: \(scope)",
+                     "Owned runtime cleanup: \(complete ? "confirmed" : "not confirmed")"]
+        if let operationID { lines.append("Operation: \(operationID)") }
+        if let target { lines.append("Owned run: \(target.runToken), PID \(target.processID)") }
+        if let observation { lines.append("Stop phase: \(observation.phase.rawValue)") }
+        if let unavailableReason { lines.append("Stop result unavailable: \(unavailableReason)") }
+        lines.append("Completion requires supervisor cleanup and retained runner exit; normal guest shutdown is unproven.")
+        return lines.joined(separator: "\n") + "\n"
     }
 }

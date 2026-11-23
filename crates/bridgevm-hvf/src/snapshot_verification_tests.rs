@@ -1,4 +1,4 @@
-use super::{Scratch, QUOTA};
+use super::Scratch;
 use crate::snapshot_pair::*;
 use std::fs;
 
@@ -14,7 +14,7 @@ fn incorrect_declared_sizes_do_not_verify_or_replace_the_live_pair() {
         let disk = s.write("disk", b"disk");
         let vars = s.write("vars", b"vars");
         let snapshot = s.path("snapshot");
-        let manifest = create_snapshot(&disk, &vars, &snapshot, "vm", false, QUOTA).unwrap();
+        let manifest = create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
         let changed = manifest
             .to_json()
             .replace(&format!("\"{field}\": 4"), &format!("\"{field}\": {bytes}"));
@@ -31,7 +31,7 @@ fn incorrect_declared_sizes_do_not_verify_or_replace_the_live_pair() {
             "{field}={bytes} was accepted"
         );
         assert!(matches!(
-            restore_snapshot(&snapshot, &disk, &vars, false),
+            restore_snapshot(&snapshot, &disk, &vars),
             Err(SnapshotError::BadManifest(_))
         ));
         let pair = managed::LockedPair::open(&disk, &vars).unwrap();
@@ -76,7 +76,7 @@ fn nearly_full_volume_can_restore_by_cloning() {
     let disk = s.write("disk", b"disk");
     let vars = s.write("vars", b"vars");
     let snapshot = s.path("snap");
-    create_snapshot(&disk, &vars, &snapshot, "vm", false, QUOTA).unwrap();
+    create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
     let mut pair = managed::LockedPair::open(&disk, &vars).unwrap();
     let mut sampled = false;
     pair.restore_copying(
@@ -103,7 +103,7 @@ fn failed_clone_with_short_space_refuses_before_copy_and_preserves_pair() {
         let disk = s.write("disk", b"disk");
         let vars = s.write("vars", b"vars");
         let snapshot = s.path("snap");
-        create_snapshot(&disk, &vars, &snapshot, "vm", false, QUOTA).unwrap();
+        create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
         let mut pair = managed::LockedPair::open(&disk, &vars).unwrap();
         if selected {
             pair.restore(&snapshot).unwrap();

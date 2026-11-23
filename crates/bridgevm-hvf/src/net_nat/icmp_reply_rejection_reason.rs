@@ -1,5 +1,3 @@
-//! Split out of net_nat.rs to keep files under 850 lines.
-
 use super::*;
 
 use std::{

@@ -10,9 +10,9 @@ fn disk_only_import_selects_restored_pair_and_refuses_owner() {
     fs::write(&disk, b"old").unwrap();
     fs::write(&vars, b"vars-old").unwrap();
     let snapshot = root.join("snapshot");
-    create_snapshot(&disk, &vars, &snapshot, "test", false, u64::MAX).unwrap();
+    create_snapshot(&disk, &vars, &snapshot, "test").unwrap();
     fs::write(&disk, b"new").unwrap();
-    restore_snapshot(&snapshot, &disk, &vars, false).unwrap();
+    restore_snapshot(&snapshot, &disk, &vars).unwrap();
     let dest = root.join("import");
     assert!(import_disk(&disk, &dest).unwrap());
     assert_eq!(fs::read(dest.join("disk.raw")).unwrap(), b"old");
@@ -53,9 +53,9 @@ fn managed_pair_kept_in_a_directory_named_metadata_is_one_binding() {
     fs::write(&disk, b"old").unwrap();
     fs::write(&vars, b"vars-old").unwrap();
     let snapshot = root.join("snapshot");
-    create_snapshot(&disk, &vars, &snapshot, "test", false, u64::MAX).unwrap();
+    create_snapshot(&disk, &vars, &snapshot, "test").unwrap();
     fs::write(&disk, b"new").unwrap();
-    restore_snapshot(&snapshot, &disk, &vars, false).unwrap();
+    restore_snapshot(&snapshot, &disk, &vars).unwrap();
     let dest = root.join("import");
     let imported = import_disk(&disk, &dest).map_err(|e| e.to_string());
     assert_eq!(

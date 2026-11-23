@@ -212,8 +212,8 @@ fn guest_resolution(
 /// NVMe reads, writes and TRIM run without the platform lock, on per-vCPU
 /// workers that a vCPU waits at most 1 ms for, unless
 /// `BRIDGEVM_NVME_UNLOCKED_IO=0`.
-/// Under host disk pressure this took away the VM-freeze tail without the late
-/// audio service that vCPU-run transfers caused (PR #489, reruns R2 and R3).
+/// Under host disk pressure this avoids the VM-freeze tail without delaying
+/// the audio service the way vCPU-run transfers do.
 /// Checkpoints keep the I/O inline: they capture none in flight.
 fn nvme_unlocked_io(setting: Option<&str>, checkpoint: bool) -> bool {
     setting != Some("0") && !checkpoint

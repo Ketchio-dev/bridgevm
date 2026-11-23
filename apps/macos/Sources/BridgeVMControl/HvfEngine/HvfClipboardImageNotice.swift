@@ -71,7 +71,7 @@ final class HvfClipboardImageNotice: ObservableObject {
     }
 
     /// A line about the notice's copy (or an earlier one) keeps it; a later copy's clears it.
-    /// Without copy numbers every sync counts as later, as before.
+    /// Without copy numbers every sync counts as later.
     private func clear(unlessAbout lineCopy: Int?) {
         if let lineCopy, let copy, lineCopy <= copy { return }
         reset()

@@ -2,8 +2,8 @@ import Foundation
 
 /// The first-run import form is not a sheet, so its name field has no focus when the form
 /// opens, and SwiftUI binds a value set through accessibility only while the field has focus.
-/// T19 r1 and r2 set the name without focus and imported under the default "Windows 11"
-/// (vTPM key account `windows-11`, 2026-10-22). Choosing the inputs updates the view, which
+/// A name set without focus imports under the default "Windows 11" (vTPM key account
+/// `windows-11`). Choosing the inputs updates the view, which
 /// then shows the bound name; a name that did not persist stops the run before the commit.
 enum A9ImportFormEntry {
     static let name = "bridgevm.first-run.name"

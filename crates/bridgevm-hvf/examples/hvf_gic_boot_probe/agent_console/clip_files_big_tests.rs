@@ -335,7 +335,7 @@ fn an_agent_without_bigfile_keeps_whole_file_gets_and_puts_and_their_limits() {
     let mut rig = rig();
     rig.h.share_big = false;
     rig.h.put_data = false;
-    // Within the old limits: one GET, as before.
+    // Within the old limits: one GET.
     let small = r"C:\s\a.txt";
     rig.guest.files.insert(small.into(), b"abc".to_vec());
     rig.guest.listing = Some(listing(&[(0, 1, 3, small)]));

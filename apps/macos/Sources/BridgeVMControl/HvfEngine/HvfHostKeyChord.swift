@@ -12,7 +12,7 @@ enum HvfCommandKeyMode: String, CaseIterable, Equatable {
 }
 
 /// How the live display maps Command, Control and Option chords. Without the guest's generic chord
-/// support (`modifierChords`), keys resolve exactly as before it existed and Command stays with the Mac.
+/// support (`modifierChords`), keys resolve without chords and Command stays with the Mac.
 struct HvfHostKeyMapping: Equatable {
     var commandKey = HvfCommandKeyMode.mac
     var modifierChords = false

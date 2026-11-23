@@ -8,7 +8,6 @@ import UniformTypeIdentifiers
 struct CreateVMSheet: View {
     @ObservedObject var library: LibraryModel
     @Environment(\.dismiss) var dismiss
-    @State var osFamily: OSFamily = .windows
     @State var mode: Mode = .windowsHVFInstall
     @State var name = ""
     @State var isoPath: String = ""
@@ -32,20 +31,7 @@ struct CreateVMSheet: View {
     /// The QCOW2 or VHDX import being converted, and its percent.
     @State var conversion: (format: HvfImportedDiskFormat, percent: Int)?
     let resolutions = [(1280, 800), (1440, 900), (1920, 1080), (2560, 1440)]
-    enum OSFamily: Equatable { case windows, linux }
-    enum Mode: Equatable {
-        case ubuntu, iso, windows, windowsHVF, windowsHVFInstall
-        var family: OSFamily {
-            switch self {
-            case .ubuntu, .iso: return .linux
-            case .windows, .windowsHVF, .windowsHVFInstall: return .windows
-            }
-        }
-    }
-    var template: VMConfig? {
-        library.vms.first { $0.backendKind == "fast-vz" && ($0.bootMode ?? "direct-kernel") == "direct-kernel" }
-            ?? (mode == .ubuntu ? nil : library.vms.first)
-    }
+    enum Mode: Equatable { case windowsHVF, windowsHVFInstall }
     /// Memory choices in MiB, capped just under host physical RAM.
     private var ramOptions: [Int] {
         let hostMiB = Int(library.hostMemGiB * 1024)
@@ -54,19 +40,9 @@ struct CreateVMSheet: View {
     }
     private var maxCPU: Int { max(1, library.hostCPU - 1) }
     /// Modes that allocate a brand-new blank disk the user can size.
-    private var createsFreshDisk: Bool {
-        mode == .iso || mode == .windows || mode == .windowsHVFInstall
-    }
+    private var createsFreshDisk: Bool { mode == .windowsHVFInstall }
 
-    /// HVF-engine Windows modes where the guest NIC can be toggled (Fast VZ
-    /// requires NAT, so Linux never shows the toggle).
-    private var isHVFWindows: Bool {
-        mode == .windowsHVFInstall || mode == .windowsHVF
-    }
-
-    private var diskOptions: [Int] {
-        osFamily == .windows ? [64, 96, 128, 256, 512] : [20, 40, 64, 96, 128, 256]
-    }
+    private let diskOptions = [64, 96, 128, 256, 512]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -85,36 +61,24 @@ struct CreateVMSheet: View {
 
     private var fields: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // 1단계: 운영체제 선택 (Windows / Linux)
+            // 운영체제: Windows만 지원합니다.
             HStack(spacing: 12) {
-                CreateVMChoiceTile(title: "Windows", icon: "pc", selected: osFamily == .windows) { selectFamily(.windows) }
+                CreateVMChoiceTile(title: "Windows", icon: "pc", selected: true) {}
                     .accessibilityIdentifier("bridgevm.create.os.windows")
-                CreateVMChoiceTile(title: "Linux", icon: "terminal", selected: osFamily == .linux) { selectFamily(.linux) }
             }
 
-            // 2단계: 세부 설치 방식
+            // 설치 방식
             HStack(spacing: 8) {
-                if osFamily == .windows {
-                    CreateVMMethodChoiceTile(title: "ISO에서 설치", selected: mode == .windowsHVFInstall) {
-                        mode = .windowsHVFInstall; autofillWin11()
-                    }
-                    .accessibilityIdentifier("bridgevm.create.windows.install")
-                    CreateVMMethodChoiceTile(title: "설치된 디스크 가져오기", selected: mode == .windowsHVF) {
-                        mode = .windowsHVF; isoPath = ""
-                    }
-                    CreateVMMethodChoiceTile(title: "QEMU 호환", selected: mode == .windows) {
-                        mode = .windows; autofillWin11()
-                    }
-                } else {
-                    CreateVMMethodChoiceTile(title: "Ubuntu 즉시 복제", selected: mode == .ubuntu) { mode = .ubuntu }
-                    CreateVMMethodChoiceTile(title: "Linux ISO 설치", selected: mode == .iso) { mode = .iso }
+                CreateVMMethodChoiceTile(title: "ISO에서 설치", selected: mode == .windowsHVFInstall) {
+                    mode = .windowsHVFInstall; autofillWin11()
+                }
+                .accessibilityIdentifier("bridgevm.create.windows.install")
+                CreateVMMethodChoiceTile(title: "설치된 디스크 가져오기", selected: mode == .windowsHVF) {
+                    mode = .windowsHVF; isoPath = ""
                 }
             }
 
-            if mode == .ubuntu {
-                Text("기본 Ubuntu 데스크톱을 즉시 복제합니다 (APFS 클론, 추가 용량 없음).")
-                    .font(.callout).foregroundColor(.secondary)
-            } else if mode == .windowsHVF {
+            if mode == .windowsHVF {
                 Text("이미 설치되어 정상 부팅한 Windows ARM 디스크(RAW, QCOW2, Hyper-V의 VHDX)를 가져옵니다. UEFI vars가 없으면 기본 부팅 설정을 만듭니다. QCOW2와 VHDX는 RAW로 변환하고, 원본은 변경하지 않고 라이브러리에 복제합니다.")
                     .font(.callout).foregroundColor(.secondary)
                 HStack {
@@ -133,27 +97,17 @@ struct CreateVMSheet: View {
                     .font(.caption).foregroundColor(.secondary)
                 Text("이번 버전은 3D 가속을 지원하지 않습니다. 기본 디스플레이 구성으로 가져옵니다.")
                     .font(.caption).foregroundColor(.secondary)
-            } else if mode == .windowsHVFInstall {
+            } else {
                 CreateWindowsInstallFields(isoPath: isoPath, guestPayloadPath: guestPayloadPath,
                     guestPayloadManifestPath: guestPayloadManifestPath, pickISO: pickISO,
                     pickGuestPayload: pickGuestPayload, pickGuestPayloadManifest: pickGuestPayloadManifest,
                     fetchingDrivers: fetchingDrivers, driverFetchError: driverFetchError,
                     fetchDrivers: fetchGuestDrivers)
-            } else {
-                Text(mode == .windows
-                     ? "Windows 11 ARM ISO를 선택하면 QEMU + TPM 2.0으로 설치 마법사를 부팅합니다."
-                     : "원하는 리눅스 배포판 ISO를 선택하면 EFI로 부팅해 설치하는 새 VM을 만듭니다.")
-                    .font(.callout).foregroundColor(.secondary)
-                HStack {
-                    Button("ISO 선택…") { pickISO() }
-                    Text(isoPath.isEmpty ? "선택된 ISO 없음" : (isoPath as NSString).lastPathComponent)
-                        .font(.caption).foregroundColor(.secondary).lineLimit(1)
-                }
             }
 
             HStack {
                 Text("이름").frame(width: 64, alignment: .leading)
-                TextField(osFamily == .windows ? "Windows 11" : "Ubuntu 2", text: $name)
+                TextField("Windows 11", text: $name)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("bridgevm.create.name")
             }
@@ -175,7 +129,7 @@ struct CreateVMSheet: View {
                 }
             }
 
-            CreateVMResolutionRow(usesGuestScreen: isHVFWindows,
+            CreateVMResolutionRow(usesGuestScreen: true,
                                   selection: $resIndex, resolutions: resolutions)
 
             DisclosureGroup("고급 설정", isExpanded: $showAdvanced) {
@@ -202,15 +156,7 @@ struct CreateVMSheet: View {
                             Spacer()
                         }
                     }
-                    if isHVFWindows {
-                        Toggle("공유 네트워크 (NAT)", isOn: $hvfNetwork).font(.callout)
-                    } else {
-                        HStack {
-                            Text("네트워크").frame(width: 64, alignment: .leading)
-                            Text("공유 (NAT) — 고정").font(.caption).foregroundColor(.secondary)
-                            Spacer()
-                        }
-                    }
+                    Toggle("공유 네트워크 (NAT)", isOn: $hvfNetwork).font(.callout)
                     Text("호스트: \(String(format: "%.0f", library.hostMemGiB)) GiB · \(library.hostCPU) 코어")
                         .font(.caption).foregroundColor(.secondary)
                 }
@@ -220,30 +166,6 @@ struct CreateVMSheet: View {
 
 
         }
-    }
-
-    /// Switch OS family and reset to that family's default install method.
-    private func selectFamily(_ family: OSFamily) {
-        guard osFamily != family else { return }
-        osFamily = family
-        switch family {
-        case .windows:
-            mode = .windowsHVFInstall
-            ramMiB = clampRam(6144)
-            diskGiB = 64
-            autofillWin11()
-        case .linux:
-            mode = .ubuntu
-            ramMiB = clampRam(4096)
-            diskGiB = 40
-        }
-    }
-
-    /// Snap a desired RAM value to the nearest available host-capped option.
-    private func clampRam(_ desired: Int) -> Int {
-        let options = ramOptions
-        if options.contains(desired) { return desired }
-        return options.last ?? desired
     }
 
     private func pickISO() {
@@ -298,10 +220,6 @@ struct CreateVMSheet: View {
             return !hvfTargetPath.isEmpty
         case .windowsHVFInstall:
             return !isoPath.isEmpty && !guestPayloadPath.isEmpty && !guestPayloadManifestPath.isEmpty
-        case .iso, .windows:
-            return !isoPath.isEmpty && template != nil
-        case .ubuntu:
-            return template != nil
         }
     }
 
@@ -314,4 +232,35 @@ struct CreateVMSheet: View {
         if FileManager.default.fileExists(atPath: candidate) { isoPath = candidate }
     }
 
+}
+
+extension CreateVMSheet {
+    var creationFooter: some View {
+        CreateVMCreationFooter(working: working, error: error, failureCode: creationFailureCode,
+            canCreate: canCreate, cancel: { dismiss() }, create: create,
+            recoveryAvailable: !creationState.permitsCreation, recover: recoverCreatedVM,
+            workingLabel: conversion.map { $0.format.conversionLabel(percent: $0.percent) } ?? "")
+    }
+}
+
+extension CreateVMSheet {
+    func recoverCreatedVM() {
+        guard !working, !creationState.permitsCreation else { return }
+        working = true
+        let loaded = creationState.recover(adopt: library.add)
+        working = false
+        if loaded { dismiss() }
+        else { error = creationState.recoveryFailureMessage }
+    }
+}
+
+extension CreateVMSheet {
+    func completeCreation(_ outcome: HVFCreationOutcome?) {
+        working = false
+        conversion = nil
+        let result = creationState.complete(outcome, adopt: library.add)
+        creationFailureCode = result.code
+        error = result.message
+        if result.dismiss { dismiss() }
+    }
 }

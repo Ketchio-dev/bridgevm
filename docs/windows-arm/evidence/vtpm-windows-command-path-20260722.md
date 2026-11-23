@@ -20,7 +20,7 @@ operation was requested or completed.
 - Repository base before the telemetry packet: `f5f9ebd`.
 - Original Windows disk and UEFI vars were left untouched; the run used new
   APFS clones under
-  `/Users/insighton/BridgeVM/work/vtpm-command-proof-20260722*`.
+  `~/BridgeVM/work/vtpm-command-proof-20260722*`.
 - Firmware: `crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd`, SHA-256
   `f41c7eb7c1a9dabf8ed10c4e52642378e05df171eecd65ca15ed414d9fabdff9`.
 - VM: 6,144 MiB RAM, four vCPUs, 120-second watchdog, virtio-net, Venus 3D,
@@ -56,7 +56,7 @@ The reusable verifier passes the retained directory:
 
 ```sh
 tests/integration/verify-hvf-windows-vtpm-live-evidence.sh \
-  /Users/insighton/BridgeVM/work/vtpm-command-proof-20260722/evidence
+  ~/BridgeVM/work/vtpm-command-proof-20260722/evidence
 ```
 
 Key retained hashes:

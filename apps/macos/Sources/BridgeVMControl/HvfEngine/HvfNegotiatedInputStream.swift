@@ -77,7 +77,7 @@ struct HvfNegotiatedInputStream {
     }
 
     /// Cancels host-side ownership; cannot undo input already inserted in Windows. A host
-    /// target change keeps the negotiated encodings, which describe the guest agent (T17 r54).
+    /// target change keeps the negotiated encodings, which describe the guest agent.
     @discardableResult
     mutating func reset(_ reason: HvfOrderedInputQueue.Failure) -> HvfAcknowledgedInputStream.Update {
         if reason == .targetChanged, state == .ready || state == .waitingForLegacy { return stream.cancel(reason) }

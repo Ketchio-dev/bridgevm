@@ -14,13 +14,10 @@ enum NativeRuntimeCodec {
         return try encoder.encode(value)
     }
 
-    static func decode<T: Codable>(_ type: T.Type, from data: Data, limit: Int) throws -> T {
+    /// Both ends are our own binary: unknown fields, key order and spacing are not errors.
+    static func decode<T: Decodable>(_ type: T.Type, from data: Data, limit: Int) throws -> T {
         guard !data.isEmpty, data.count <= limit else { throw NativeRuntimeError.invalidMessage }
-        do {
-            let value = try JSONDecoder().decode(type, from: data)
-            guard try encode(value) == data else { throw NativeRuntimeError.invalidMessage }
-            return value
-        } catch { throw NativeRuntimeError.invalidMessage }
+        do { return try JSONDecoder().decode(type, from: data) } catch { throw NativeRuntimeError.invalidMessage }
     }
 
     static func validate(_ request: NativeRuntimeRequest) throws {
