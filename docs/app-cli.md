@@ -1,6 +1,6 @@
 # Native app CLI
 
-`bridgevm app` reads native `vm.json`, [creates a pending Windows VM](app-cli-create.md), and requests [installation](app-cli-install.md), [start](app-cli-start.md) or [stop](app-cli-stop.md).
+`bridgevm app` reads native `vm.json`, [creates a pending Windows VM](app-cli-create.md), and requests [installation](app-cli-install.md), [start](app-cli-start.md), [stop](app-cli-stop.md) or a [powered-off snapshot](app-cli-snapshot.md).
 Start requires a saved installed HVF entry. CLI creation is registration-only: it lacks the required signed payload and cannot proceed to installation. Create installation-ready entries in the app with ISO, payload and manifest. No command opens a window or changes saved resources; inventory runtime is `unobserved`, not utilization.
 
 ```sh
@@ -24,8 +24,9 @@ running app still retains.
 finding or opening the installed app.
 
 `bridgevm app` and `bridgevm hvf` are the only top-level commands. `bridgevm hvf`
-exposes local queries, explicitly enabled probes and the virtio-gpu trace and
-title-gate reports; it does not replace native library inventory commands.
+has three Graphics Lab development tools: `virtio-gpu-3d-host-preflight` (a
+synthetic host-side check), `virtio-gpu-trace-report` and `title-gate-report`.
+It has no VM lifecycle or library commands.
 See [native app diagnostics](app-cli-doctor.md) for read-only executable discovery checks.
 For guest commands, keyboard/mouse input and framebuffer captures from a source
 checkout, see the [development VM control CLI](vmctl.md).

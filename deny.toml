@@ -23,17 +23,13 @@ unmaintained = "workspace"
 # rather than being assumed compatible. Every entry is permissive: BridgeVM
 # links its Rust dependencies statically, so admitting a copyleft licence here
 # would create a source-distribution obligation that the shipped closure does
-# not otherwise carry. Nothing in the current closure is copyleft.
+# not otherwise carry. Nothing in the current closure is copyleft. The list
+# names only licences the closure actually uses; add one with the dependency
+# that needs it.
 allow = [
     "MIT",
     "Apache-2.0",
-    "Apache-2.0 WITH LLVM-exception",
-    "BSD-2-Clause",
-    "BSD-3-Clause",
-    "ISC",
     "Unicode-3.0",
-    "Zlib",
-    "CC0-1.0",
 ]
 confidence-threshold = 0.9
 

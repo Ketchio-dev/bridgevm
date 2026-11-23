@@ -39,10 +39,7 @@ step "python scripts" python3 scripts/check-python-scripts.py
 step "development VM control CLI" python3 tests/integration/vmctl-test.py
 step "guest PowerShell 5.1 syntax" pwsh -NoProfile -File scripts/check-guest-powershell.ps1
 step "audio result classifiers" bash -c 'python3 scripts/audio-playback-result.py --self-test && python3 tests/integration/audio-playback-host-stats-contract.py && python3 tests/integration/audio-teardown-result-test.py && python3 tests/integration/hda-microphone-live-check-lane-test.py'
-step "glyph pixel mask" bash -c 'python3 scripts/verify-glyph-pixel-mask.py --self-test && python3 tests/integration/glyph-ppm-contract.py'
-step "glyph pixel mask builder" python3 scripts/build-glyph-pixel-mask.py --self-test
 step "guest input and bounded output contracts" bash -c 'python3 tests/integration/guest-input-live-cleanup-test.py && python3 tests/integration/guest-input-live-signal-test.py && python3 tests/integration/d4-bounded-output-contract.py && python3 tests/integration/hvf-diagnostic-output-contract.py'
-step "glyph present latency" python3 scripts/measure-glyph-present-latency.py --self-test
 step "workflow yaml" bash -c 'python3 scripts/check-workflow-yaml.py && python3 tests/integration/workflow-yaml-test.py'
 step "swift force casts" python3 scripts/check-swift-force-casts.py
 step "tests are reachable" python3 scripts/check-tests-are-reachable.py

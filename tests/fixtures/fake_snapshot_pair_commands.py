@@ -12,11 +12,9 @@ def command(arguments):
             data = Path(raw).read_bytes()
             print(f"{name}_bytes {len(data)}\n{name}_sha256 {hashlib.sha256(data).hexdigest()}")
         return 0
-    if operation == "create" and len(values) == 5:
-        disk, variables, raw_destination, vm_id, quota = values
+    if operation == "create" and len(values) == 4:
+        disk, variables, raw_destination, vm_id = values
         sources = {"disk": Path(disk), "vars": Path(variables)}
-        if sum(path.stat().st_size for path in sources.values()) > int(quota):
-            return 1
         destination = Path(raw_destination)
         destination.mkdir()
         manifest = {"format_version": 1, "vm_id": vm_id}

@@ -27,7 +27,6 @@ cd "$REPO" || exit 1
 DISK=${DISK:-$HOME/BridgeVM/work/rethink-fresh-12041-agent-vioserial.raw}
 VARS=${VARS:-$HOME/BridgeVM/work/rethink-fresh-12041-agent-vioserial-vars.fd}
 OUT=${OUT:-$HOME/BridgeVM/runs/snapshot-restore-boot-$(date +%Y%m%d-%H%M%S)}
-QUOTA=${QUOTA:-$((80 * 1024 * 1024 * 1024))}
 BOOT_TIMEOUT=${BOOT_TIMEOUT:-1500}
 STEP_TIMEOUT=${STEP_TIMEOUT:-240}
 GUEST_MARKER='C:\bv-snapshot-marker.txt'
@@ -110,7 +109,7 @@ echo "original marker: $ORIGINAL"
 
 echo "=== phase 2: snapshot the powered-off pair ==="
 SNAP=$OUT/snapshot
-"$CLI" create "$WORK/disk.raw" "$WORK/vars.fd" "$SNAP" a19-restore-boot "$QUOTA" \
+"$CLI" create "$WORK/disk.raw" "$WORK/vars.fd" "$SNAP" a19-restore-boot \
   > "$OUT/create.txt" 2>&1 || fail "snapshot create failed; see $OUT/create.txt"
 "$CLI" verify "$SNAP" > "$OUT/verify.txt" 2>&1 \
   || fail "snapshot verify failed; see $OUT/verify.txt"

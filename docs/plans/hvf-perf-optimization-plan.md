@@ -44,51 +44,17 @@ bridgevm-hvf` must stay green at every stage boundary.
   remove the optimization instead of changing the metric after the fact.
 - **Never measure with `BRIDGEVM_SMP_TRACE=1`** — its try_lock + 1ms-sleep loop
   (`examples/hvf_gic_boot_probe.rs` ~L460-497) fabricates lock latency.
-- Use `scripts/report-hvf-boot-timer-metrics.sh <evidence-dir>...` after the
-  three-run matrix; it reads each `run.log` plus `preflight.txt` and emits
-  per-run BOOT_TIMER rows and config-group medians.
-- For a source change comparison, first create an eight-row base manifest:
-  `image`, `vars`, `binary`, `renderer`, `binary_source_commit`, `binary_profile`,
-  `binary_features`, and `rust_toolchain`. Submit a predeclared alternating
-  counterbalanced AB/BA campaign with `scripts/submit-hvf-boot-performance-campaign.sh --mode AA
-  --pairs 4 --baseline-manifest BASE.tsv`, then use `--mode AB` with both
-  baseline and candidate manifests. The submitter seals one campaign ID,
-  ordinal, role and expected count into every attempt; omission, duplication,
-  grouping, overlap, failure, or an unknown identity invalidates the campaign.
-  Pin `--harness-sha` to the A/A harness for later A/B campaigns so a candidate
-  source commit changes the measured binary, not the measurement machinery.
-  Each job APFS-clones its own disk and vars, hashes the actual clones before
-  boot, verifies the linked VirGL renderer, and boots one 4-vCPU release sample
-  with the app's VirGL device `1050`, aggressive IOSurface lane, 100 ms display
-  export, xHCI, network and CoreAudio configuration. It requires agent READY
-  plus clean shutdown; the receipt states that vTPM, clipboard/share, and the
-  long-lived app session are omitted. Report with `scripts/report-hvf-boot-performance-ab.py
-  --queue-root ~/BridgeVM/live-queue --aa-campaign ID [--ab-campaign ID]`.
-  The A/B interval must be wholly beneficial and exceed the conservative A/A
-  noise bound. T15 remains exploratory and `claim_eligible=false`: three pairs
-  or a favorable point estimate never changes a product criterion.
-- Use `scripts/run-hvf-boot-timer-matrix.sh --target <raw> --vars <fd>
-  --evidence-dir <fresh-dir> --release -- --daily --watchdog-ms 120000
-  --virtio-net --enable-xhci --shutdown-after-agent-ready` to run the default
-  smp=1/2/4, 3-run BOOT_TIMER matrix with per-run cloned media and an automatic
-  median report. Runs are interleaved by repetition (1→2→4, three times) rather
-  than grouped by vCPU count, reducing order/thermal bias. The default desktop
-  oracle is the injected Windows logon agent's READY/PONG handshake; unlike an
-  exact whole-frame checksum it is not changed by clock or notification pixels.
-  `--shutdown-after-agent-ready` sends the fixed `shutdown.exe /p /f` command
-  from the periodic host-wake path, so it does not reintroduce an every-exit
-  automation lock, and requires both the agent handshake and PSCI SYSTEM_OFF.
-  A failed shutdown gate makes the wrapper/report row invalid; report labels
-  include `shutdown` and `console_periodic` so incompatible evidence is not
-  silently combined. The legacy
-  `--boot-timer-desktop-checksum64 <checksum>` oracle remains available for
-  agent-free images. Stale run/report paths are rejected, and
-  failed/incomplete/non-desktop runs are marked invalid instead of entering the
-  medians. It uses APFS clonefile by default and fails rather than full-copying
-  large raw disks unless `--copy-media` is explicit.
-- The installed-boot wrapper exposes this as `--boot-timer`,
+- Measure before and after with [`scripts/perf/vm_bench.py`](../../scripts/perf/vm_bench.py):
+  `vm_bench.py run --engine bridgevm|qemu --disk RAW --vars FD --out DIR` boots
+  one APFS clone (boot 1 is a warm-up) and records boot time to the resident
+  agent's handshake, idle host CPU and memory, then the shared in-guest suite;
+  `vm_bench.py compare A/results.json B/results.json` compares two runs. These
+  are live single runs on a shared host, never a criterion pass. The earlier
+  boot-timer matrix and T15 A/A–A/B campaign scripts were removed; their
+  results stay in the dated records.
+- The installed-boot wrapper exposes the probe's boot timer as `--boot-timer`,
   `--boot-timer-ramfb-ms`, `--boot-timer-desktop-agent`, and the legacy
-  `--boot-timer-desktop-checksum64`, so smp=1/2/4 comparisons can be run without
+  `--boot-timer-desktop-checksum64`, so a single boot can be timed without
   manually exporting probe env vars.
 - **Re-sign after every probe rebuild** (`codesign --sign - --entitlements
   apps/macos/HvfRunner.entitlements --force <bin>`) or `hv_vm_create` returns

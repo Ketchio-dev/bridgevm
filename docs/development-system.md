@@ -32,17 +32,17 @@ observations.
 
 ## 1a. Working rules and the deterministic check
 
-[`AGENTS.md`](../AGENTS.md) holds the binding working rules: the evidence
-hierarchy, the ban on relaxing a criterion to pass it, claim discipline,
-fail-closed security, canonical-image safety, commit and CI
-discipline, and the execution-venue rules for deterministic checks and live work
-in [§9](../AGENTS.md#9-long-tests-use-the-correct-execution-venue).
+[`AGENTS.md`](../AGENTS.md) holds the binding working rules: autonomy, keeping
+it simple, measuring performance, honest product claims, data and secret
+handling, and pull-request and CI discipline, including where deterministic
+checks and live VM runs execute
+([§6](../AGENTS.md#6-pull-requests-and-ci)).
 
 One command is the gate for all of it:
 
 ```sh
 scripts/check-project.sh          # full deterministic check
-scripts/check-project.sh --fast   # truth/format subset, also used by the harness
+scripts/check-project.sh --fast   # truth/format subset (24 steps), also the .harness.json check
 ```
 
 Live gate scheduling, tiers and retention are described in
@@ -108,8 +108,6 @@ does not clear E5 distribution.
 | --- | --- | --- |
 | `SEC-` | vTPM, Secure Boot, VM identity, recovery | Windows completion plan and security model |
 | `GPU-` | Windows driver, renderer, scanout, title evidence | Windows 3D and performance plans |
-| `ENG-QEMU-` | Compatibility Engine | Compatibility guide |
-| `ENG-VZ-` | Apple VZ Engine | Fast Mode guide |
 | `ENG-HVF-` | custom Windows VMM/device/lifecycle | Windows completion plan |
 | `APP-` | macOS UI, packaging, readiness | root status and app tests |
 | `DIST-` | signing, notarization, clean-machine release | root status |
@@ -201,7 +199,8 @@ in ten.
 ```sh
 bash scripts/check-documentation-system.sh
 cargo test --workspace
-swift test --package-path apps/macos
+scripts/run-swift-tests.sh
+scripts/run-xctest-shim-suites.sh
 ```
 
 Run the narrow test first during iteration. The full commands are handoff gates,
