@@ -3,8 +3,8 @@ struct HvfInputReceiptEnvelope {
     private let labels: [String]
     private var selected: String?
 
-    init(command: String) {
-        labels = [command, command.split(separator: " ", maxSplits: 2).prefix(2).joined(separator: " ")]
+    init(command: String, redactedLabel: String? = nil) {
+        labels = [command, redactedLabel ?? command.split(separator: " ", maxSplits: 2).prefix(2).joined(separator: " ")]
     }
 
     mutating func header(_ line: String) -> Bool? {

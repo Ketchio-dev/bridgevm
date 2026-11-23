@@ -1,5 +1,6 @@
 //! Agent console scripted protocol and command response handling.
 
+use super::clip_paste::LEGACY_PASTE_MARKER;
 use super::*;
 #[cfg(test)]
 #[path = "get_bound_tests.rs"]
@@ -23,14 +24,21 @@ pub(super) const MAX_AGENT_LINE_BYTES: usize = 32 * 1024 * 1024;
 /// CMD and END lines, so a line it printed (BVDISPLAY, BVDPI) starts a log line.
 pub(super) fn command_result_text(command: &str, exit_code: i32, output: &str) -> String {
     match base64_decode(output) {
-        Ok(bytes) => format!(
-            "BVAGENT CMD {command} exit={exit_code}\n{}\nBVAGENT END {command}",
-            String::from_utf8_lossy(&bytes)
-        ),
+        Ok(bytes) => command_output_text(command, exit_code, &String::from_utf8_lossy(&bytes)),
         Err(error) => format!(
             "BVAGENT CMD {command} exit={exit_code}\n<base64 decode error: {error:?}>\nBVAGENT END {command}"
         ),
     }
+}
+
+fn command_output_text(command: &str, exit_code: i32, output: &str) -> String {
+    let output = if command.starts_with(LEGACY_PASTE_MARKER) {
+        // PowerShell errors can echo the source line containing the paste text.
+        output.lines().find(|line| *line == command).unwrap_or("")
+    } else {
+        output
+    };
+    format!("BVAGENT CMD {command} exit={exit_code}\n{output}\nBVAGENT END {command}")
 }
 
 impl AgentConsoleHarness {

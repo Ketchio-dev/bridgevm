@@ -5,6 +5,7 @@ struct HvfClipboardPaste {
     let command: String
     let marker: String
     private let deadline: Date
+    private var envelope: HvfInputReceiptEnvelope
     private var began = false
     private var acknowledged = false
     private var finished = false
@@ -15,6 +16,7 @@ struct HvfClipboardPaste {
             + "Set-Clipboard -Value ([Text.Encoding]::UTF8.GetString("
             + "[Convert]::FromBase64String('\(base64)'))) -ErrorAction Stop;"
             + "Write-Output '\(marker)'\""
+        envelope = HvfInputReceiptEnvelope(command: command, redactedLabel: marker)
         deadline = now.addingTimeInterval(30)
     }
 
@@ -28,14 +30,13 @@ struct HvfClipboardPaste {
         }
         for raw in lines {
             let line = raw.hasSuffix("\r") ? String(raw.dropLast()) : raw
-            let header = "BVAGENT CMD \(command) exit="
-            if line.hasPrefix(header) {
-                guard !began, line == header + "0" else { return finish(false) }
+            if let success = envelope.header(line) {
+                guard !began, success else { return finish(false) }
                 began = true
             } else if began && line == marker {
                 acknowledged = true
-            } else if line == "BVAGENT END \(command)" {
-                return finish(began && acknowledged)
+            } else if envelope.isEnd(line) {
+                return finish(acknowledged && envelope.matchesEnd(line))
             }
         }
         return nil

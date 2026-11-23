@@ -1,6 +1,5 @@
 use super::*;
 
-// Framing and byte validation are unchanged; only input command labels redact payloads.
 impl AgentConsoleHarness {
     pub(super) fn finish_out(&mut self, command: &str, rest: &str) {
         let command = input_receipt_label::label(command);
@@ -17,10 +16,7 @@ impl AgentConsoleHarness {
             && accum.bytes.len() == accum.total;
         if valid {
             let text = String::from_utf8_lossy(&accum.bytes);
-            println!(
-                "BVAGENT CMD {command} exit={}\n{text}\nBVAGENT END {command}",
-                accum.exit_code
-            );
+            println!("{}", command_output_text(command, accum.exit_code, &text));
         } else {
             println!(
                 "BVAGENT CMD {command} exit=-1\n<chunked output protocol error: declared-exit={} bytes={}/{} chunks={}/{} end={}>\nBVAGENT END {command}",
