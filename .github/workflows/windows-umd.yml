@@ -185,9 +185,12 @@ jobs:
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vsroot = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath | Select-Object -Last 1).Trim()
-          if ([string]::IsNullOrWhiteSpace($vsroot)) { throw "Visual Studio ARM64 tools are missing" }
+          $vsroot = & $vswhere -latest -products * -requires `
+            Microsoft.VisualStudio.Component.VC.Tools.ARM64 Microsoft.VisualStudio.Component.VC.Llvm.Clang `
+            -property installationPath | Select-Object -Last 1
+          if ([string]::IsNullOrWhiteSpace($vsroot)) { throw "Visual Studio ARM64 and LLVM tools are missing" }
           $devcmd = Join-Path $vsroot "Common7\Tools\VsDevCmd.bat"
+          $llvmBin = Join-Path $vsroot "VC\Tools\Llvm\x64\bin"
           $wdkRoot = "${env:ProgramFiles(x86)}\Windows Kits\10\Include"
           $wdk = Get-ChildItem -LiteralPath $wdkRoot -Directory |
             Sort-Object Name -Descending |
@@ -209,7 +212,9 @@ jobs:
           @echo off
           call "$devcmd" -arch=arm64 -host_arch=x64
           if errorlevel 1 exit /b 11
-          set "PATH=C:\Program Files\LLVM\bin;C:\ProgramData\chocolatey\bin;%PATH%"
+          set "PATH=$llvmBin;C:\ProgramData\chocolatey\bin;%PATH%"
+          "$llvmBin\clang-cl.exe" --version
+          if errorlevel 1 exit /b 12
           set "INCLUDE=$($wdk.FullName)\um;$($wdk.FullName)\shared;%INCLUDE%"
           powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$env:GITHUB_WORKSPACE\scripts\win-assets\build-mesa-arm64.ps1" -MesaSrc "$env:GITHUB_WORKSPACE\mesa" -Prefix "$env:GITHUB_WORKSPACE\mesa-prefix-arm64" -CrossFileBase "$env:GITHUB_WORKSPACE\scripts\win-assets\mesa-cross-arm64.ini"
           exit /b %ERRORLEVEL%
