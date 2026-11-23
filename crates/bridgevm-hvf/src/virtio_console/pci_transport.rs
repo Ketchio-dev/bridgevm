@@ -1,43 +1,20 @@
-//! VirtioPciConsole BAR region decode and forwarding to the core device.
+//! VirtioPciConsole: BAR and MSI-X access on the shared transport, forwarding to the core device.
 
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
-use crate::msix::MsixTable;
+use crate::msix::{MsixMessage, MsixTable};
+use crate::pcie::VIRTIO_CONSOLE_MSIX_PBA_OFFSET;
+use crate::pcie::VIRTIO_CONSOLE_MSIX_TABLE_OFFSET;
 use crate::pcie::VIRTIO_CONSOLE_MSIX_VECTOR_COUNT;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VirtioConsoleResult {
-    ReadValue(u64),
-    WriteAck,
-}
+pub type VirtioConsoleResult = VirtioPciResult;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VirtioPciConsoleOp {
-    Read { size: u8 },
-    Write { size: u8, value: u64 },
-}
+pub type VirtioPciConsoleOp = VirtioPciOp;
 
 #[derive(Debug)]
 pub struct VirtioPciConsole {
     pub(crate) console: VirtioConsole,
     pub(crate) msix: MsixTable,
-}
-
-pub(crate) fn common_cfg_offset(offset: u64) -> Option<u64> {
-    offset
-        .checked_sub(PCI_COMMON_CFG_OFFSET)
-        .filter(|rel| *rel < PCI_CFG_REGION_SIZE)
-}
-
-pub(crate) fn device_cfg_offset(offset: u64) -> Option<u64> {
-    offset
-        .checked_sub(PCI_DEVICE_CFG_OFFSET)
-        .filter(|rel| *rel < PCI_CFG_REGION_SIZE)
-}
-
-pub(crate) fn notify_queue_index(offset: u64) -> Option<u16> {
-    let rel = offset.checked_sub(PCI_NOTIFY_CFG_OFFSET)?;
-    (rel < PCI_CFG_REGION_SIZE).then_some((rel / 4) as u16)
 }
 
 impl VirtioPciConsole {
@@ -83,59 +60,37 @@ impl VirtioPciConsole {
         op: VirtioPciConsoleOp,
         mem: &mut dyn GuestMemoryMut,
     ) -> VirtioConsoleResult {
-        if let Some(common_offset) = common_cfg_offset(offset) {
-            return match op {
-                VirtioPciConsoleOp::Read { size } => {
-                    self.console
-                        .access_common(common_offset, false, size, 0, mem)
-                }
-                VirtioPciConsoleOp::Write { size, value } => {
-                    self.console
-                        .access_common(common_offset, true, size, value, mem)
-                }
-            };
-        }
-        if let Some(device_offset) = device_cfg_offset(offset) {
-            return match op {
-                VirtioPciConsoleOp::Read { size } => {
-                    VirtioConsoleResult::ReadValue(self.console.config_read(device_offset, size))
-                }
-                VirtioPciConsoleOp::Write { size, value } => {
-                    self.console.config_write(device_offset, size, value);
-                    VirtioConsoleResult::WriteAck
-                }
-            };
-        }
-        if let Some(queue_index) = notify_queue_index(offset) {
-            return match op {
-                VirtioPciConsoleOp::Read { .. } => VirtioConsoleResult::ReadValue(0),
-                VirtioPciConsoleOp::Write { value, .. } => {
-                    let queue = if offset == PCI_NOTIFY_CFG_OFFSET {
-                        value as u16
-                    } else {
-                        queue_index
-                    };
-                    self.console.notify_queue(queue, mem);
-                    VirtioConsoleResult::WriteAck
-                }
-            };
-        }
-        if offset == PCI_ISR_CFG_OFFSET {
-            return match op {
-                VirtioPciConsoleOp::Read { size } => VirtioConsoleResult::ReadValue(mask_to_size(
-                    u64::from(std::mem::take(&mut self.console.interrupt_status)),
-                    size,
-                )),
-                VirtioPciConsoleOp::Write { value, .. } => {
-                    self.console.interrupt_status &= !(value as u32);
-                    VirtioConsoleResult::WriteAck
-                }
-            };
-        }
-        match op {
-            VirtioPciConsoleOp::Read { .. } => VirtioConsoleResult::ReadValue(0),
-            VirtioPciConsoleOp::Write { .. } => VirtioConsoleResult::WriteAck,
-        }
+        self.console.pci_access(offset, op, mem)
+    }
+
+    pub fn msix_bar_access(&mut self, offset: u64, op: VirtioPciConsoleOp) -> VirtioConsoleResult {
+        msix_bar_access(
+            &mut self.msix,
+            VIRTIO_CONSOLE_MSIX_TABLE_OFFSET,
+            VIRTIO_CONSOLE_MSIX_PBA_OFFSET,
+            offset,
+            op,
+        )
+    }
+
+    pub fn drain_pending_msix(
+        &mut self,
+        function_enabled: bool,
+        function_masked: bool,
+    ) -> Vec<MsixMessage> {
+        let mut messages = Vec::new();
+        self.drain_pending_msix_into(function_enabled, function_masked, &mut messages);
+        messages
+    }
+
+    pub fn drain_pending_msix_into(
+        &mut self,
+        function_enabled: bool,
+        function_masked: bool,
+        out: &mut Vec<MsixMessage>,
+    ) {
+        self.console
+            .drain_msix_into(&mut self.msix, function_enabled, function_masked, out);
     }
 }
 

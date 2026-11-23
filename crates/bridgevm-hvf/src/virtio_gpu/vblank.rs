@@ -77,7 +77,7 @@ impl VirtioGpu {
             pending_response.head,
             used_len,
         );
-        self.mark_queue_interrupt(pending_response.queue_index);
+        self.pci.mark_queue_interrupt(pending_response.queue_index);
         // Anchor the next deadline on the absolute schedule, not the (late)
         // retire time, so wake/drain latency does not accumulate into a lower
         // long-run rate. Re-anchor at `now` only after a gap of more than one

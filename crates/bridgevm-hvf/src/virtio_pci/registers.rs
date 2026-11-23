@@ -1,12 +1,8 @@
-//! virtio MMIO and PCI-capability register map, and byte-lane register read/write math.
-
-use crate::pcie::VIRTIO_GPU_MSIX_VECTOR_COUNT;
+//! virtio MMIO-alias and PCI-capability register map, and byte-lane register read/write math.
 
 pub(crate) const MAGIC_VALUE: u32 = 0x7472_6976;
 
 pub(crate) const VERSION_MODERN: u32 = 2;
-
-pub(crate) const DEVICE_ID_GPU: u32 = 16;
 
 pub(crate) const VENDOR_ID_COMPAT: u32 = 0x554d_4551;
 
@@ -98,6 +94,8 @@ pub(crate) const COMMON_QUEUE_DRIVER: u64 = 0x28;
 
 pub(crate) const COMMON_QUEUE_DEVICE: u64 = 0x30;
 
+pub(crate) const VIRTIO_F_VERSION_1: u32 = 1 << 0;
+
 pub(crate) const VIRTIO_MSI_NO_VECTOR: u16 = 0xffff;
 
 pub(crate) fn common_cfg_offset(offset: u64) -> Option<u64> {
@@ -115,6 +113,10 @@ pub(crate) fn device_cfg_offset(offset: u64) -> Option<u64> {
 pub(crate) fn notify_queue_index(offset: u64) -> Option<u16> {
     let rel = offset.checked_sub(PCI_NOTIFY_CFG_OFFSET)?;
     (rel < PCI_CFG_REGION_SIZE).then_some((rel / 4) as u16)
+}
+
+pub(crate) fn queue_bit(index: usize) -> Option<u8> {
+    (index < u8::BITS as usize).then(|| 1u8 << index)
 }
 
 pub(crate) fn set_low(current: u64, value: u64) -> u64 {
@@ -207,10 +209,13 @@ pub(crate) fn mask_to_size(value: u64, size: u8) -> u64 {
     }
 }
 
-pub(crate) fn valid_msix_vector(vector: u16) -> u16 {
-    if vector < VIRTIO_GPU_MSIX_VECTOR_COUNT || vector == VIRTIO_MSI_NO_VECTOR {
-        vector
-    } else {
-        VIRTIO_MSI_NO_VECTOR
+pub(crate) fn read_le_from_bytes(bytes: &[u8], offset: u64, size: u8) -> Option<u64> {
+    let offset = usize::try_from(offset).ok()?;
+    let size = usize::from(size);
+    if offset.checked_add(size)? > bytes.len() || size > 8 {
+        return None;
     }
+    let mut buf = [0u8; 8];
+    buf[..size].copy_from_slice(&bytes[offset..offset + size]);
+    Some(u64::from_le_bytes(buf))
 }

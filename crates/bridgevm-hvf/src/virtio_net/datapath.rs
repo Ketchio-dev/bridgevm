@@ -15,7 +15,7 @@ impl<B: NetBackend> VirtioNet<B> {
     }
 
     pub fn pump_receive(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
-        if self.status & DRIVER_OK == 0 {
+        if self.pci.status & DRIVER_OK == 0 {
             return false;
         }
         let mut frame = if let Some(frame) = self.pending_rx_frame.take() {
@@ -38,11 +38,11 @@ impl<B: NetBackend> VirtioNet<B> {
     }
 
     pub(crate) fn process_tx_queue(&mut self, mem: &mut dyn GuestMemoryMut) {
-        if self.status & DRIVER_OK == 0 {
+        if self.pci.status & DRIVER_OK == 0 {
             return;
         }
         let queue_index = QUEUE_TX;
-        let queue = self.queues[queue_index];
+        let queue = self.pci.queues[queue_index];
         if !queue.ready || queue.size == 0 || queue.desc == 0 {
             return;
         }
@@ -52,7 +52,7 @@ impl<B: NetBackend> VirtioNet<B> {
         let mut descs = std::mem::take(&mut self.descriptor_scratch);
         let mut packet = std::mem::take(&mut self.tx_packet_scratch);
         for _ in 0..pending_entries(queue.last_avail_idx, avail_idx, queue.size) {
-            let last_avail_idx = self.queues[queue_index].last_avail_idx;
+            let last_avail_idx = self.pci.queues[queue_index].last_avail_idx;
             let ring_off = 4 + u64::from(last_avail_idx % queue.size) * 2;
             let Some(head) = read_u16(mem, queue.driver, ring_off) else {
                 break;
@@ -63,9 +63,9 @@ impl<B: NetBackend> VirtioNet<B> {
                 self.stats.tx_bytes = self.stats.tx_bytes.saturating_add(frame.len() as u64);
                 self.backend.transmit(frame);
             }
-            Self::write_used(mem, &queue, head, 0);
-            self.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
-            self.mark_queue_interrupt(queue_index);
+            write_used(mem, queue.device, queue.size, head, 0);
+            self.pci.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
+            self.pci.mark_queue_interrupt(queue_index);
         }
         descs.clear();
         packet.clear();

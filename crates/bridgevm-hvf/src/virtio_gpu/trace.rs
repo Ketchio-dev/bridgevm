@@ -138,9 +138,9 @@ impl VirtioGpu {
             COMMON_QUEUE_ENABLE | REG_QUEUE_READY => "queue_enable",
             _ => return,
         };
-        let device_features_sel = self.device_features_sel;
-        let driver_features_sel = self.driver_features_sel;
-        let queue_sel = self.queue_sel;
+        let device_features_sel = self.pci.device_features_sel;
+        let driver_features_sel = self.pci.driver_features_sel;
+        let queue_sel = self.pci.queue_sel;
         self.record_trace_fields("common_read", |fields| {
             fields.push_str(",\"field\":");
             write_json_string(fields, field);
@@ -166,7 +166,7 @@ impl VirtioGpu {
         if !trace_sample(self.trace_queue_notify_count) {
             return;
         }
-        let Some(queue) = self.queues.get(queue_index as usize).copied() else {
+        let Some(queue) = self.pci.queues.get(queue_index as usize).copied() else {
             self.record_trace_fields("queue_notify", |fields| {
                 let _ = write!(fields, ",\"queue\":{},\"valid\":false", queue_index);
             });

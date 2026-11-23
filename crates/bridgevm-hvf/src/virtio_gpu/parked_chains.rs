@@ -21,7 +21,7 @@ impl VirtioGpu {
         if queue.device == 0 {
             return;
         }
-        let queue_size = queue.effective_size();
+        let queue_size = queue.effective_size(QUEUE_MAX);
         write_used(mem, queue.device, queue_size, id, len);
     }
 }

@@ -14,23 +14,9 @@ pub(crate) const QUEUE_CURSOR: usize = 1;
 pub(crate) const QUEUE_COUNT: usize = 2;
 pub(crate) const PARKED_RESPONSE_BUFFER_POOL_LIMIT: usize = 4;
 pub(crate) const QUEUE_MAX: u16 = 64;
-pub(crate) const DESC_SIZE: u64 = 16;
-pub(crate) const DESC_F_NEXT: u16 = 1;
-pub(crate) const DESC_F_WRITE: u16 = 2;
 pub(crate) const MAX_GPU_REQUEST_LEN: usize = 64 * 1024 * 1024;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct VirtioGpuQueue {
-    pub(crate) size: u16,
-    pub(crate) ready: bool,
-    pub(crate) desc: u64,
-    pub(crate) driver: u64,
-    pub(crate) device: u64,
-    pub(crate) msix_vector: u16,
-    pub(crate) notify_off: u16,
-    pub(crate) last_avail_idx: u16,
-    pub(crate) pending_msix: bool,
-}
+pub(crate) type VirtioGpuQueue = VirtioPciQueue;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ChainCompletion {
@@ -38,59 +24,7 @@ pub(crate) enum ChainCompletion {
     Parked,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Descriptor {
-    pub(crate) addr: u64,
-    pub(crate) len: u32,
-    pub(crate) flags: u16,
-    pub(crate) next: u16,
-}
-
-impl VirtioGpuQueue {
-    pub(crate) const fn new(notify_off: u16) -> Self {
-        Self {
-            size: 0,
-            ready: false,
-            desc: 0,
-            driver: 0,
-            device: 0,
-            msix_vector: VIRTIO_MSI_NO_VECTOR,
-            notify_off,
-            last_avail_idx: 0,
-            pending_msix: false,
-        }
-    }
-
-    pub(crate) fn reset(&mut self) {
-        let notify_off = self.notify_off;
-        *self = Self::new(notify_off);
-    }
-
-    /// Queue size the device must actually run at. The virtio driver may enable
-    /// a queue without ever writing COMMON_QUEUE_SIZE, in which case the queue
-    /// operates at the advertised maximum (`QUEUE_MAX`) rather than the reset
-    /// value of 0. Reads of COMMON_QUEUE_SIZE already report this effective
-    /// value, so descriptor processing must agree with it.
-    pub(crate) fn effective_size(&self) -> u16 {
-        if self.size == 0 {
-            QUEUE_MAX
-        } else {
-            self.size
-        }
-    }
-}
-
 impl VirtioGpu {
-    pub(crate) fn selected_queue(&self) -> Option<VirtioGpuQueue> {
-        self.queues.get(self.queue_sel as usize).copied()
-    }
-
-    pub(crate) fn write_selected_queue(&mut self, write: impl FnOnce(&mut VirtioGpuQueue)) {
-        if let Some(queue) = self.queues.get_mut(self.queue_sel as usize) {
-            write(queue);
-        }
-    }
-
     pub(crate) fn notify_queue(&mut self, queue_index: u16, mem: &mut dyn GuestMemoryMut) {
         self.trace_queue_notify(queue_index);
         match usize::from(queue_index) {
@@ -114,7 +48,7 @@ impl VirtioGpu {
         mem: &mut dyn GuestMemoryMut,
         control: bool,
     ) {
-        let queue = self.queues[queue_index];
+        let queue = self.pci.queues[queue_index];
         // While a 2D copy runs without the lock, both queues wait for its
         // finish, which runs them (unlocked_copy.rs).
         if !queue.ready || queue.desc == 0 || queue.driver == 0 || self.copy_pending() {
@@ -125,7 +59,7 @@ impl VirtioGpu {
         // on the raw stored size left `queue.size == 0`, so the control queue was
         // never drained: firmware submitted GET_DISPLAY_INFO, polled the used ring
         // forever, and the guest hung before reaching the boot manager.
-        let queue_size = queue.effective_size();
+        let queue_size = queue.effective_size(QUEUE_MAX);
         let Some(avail_idx) = read_avail_idx(mem, queue.driver) else {
             return;
         };
@@ -133,16 +67,16 @@ impl VirtioGpu {
             if self.copy_pending() || (control && self.parked_chains_fill_queue(queue_size)) {
                 break;
             }
-            let last_avail_idx = self.queues[queue_index].last_avail_idx;
+            let last_avail_idx = self.pci.queues[queue_index].last_avail_idx;
             let ring_off = 4 + u64::from(last_avail_idx % queue_size) * 2;
             let Some(head) = read_u16(mem, queue.driver, ring_off) else {
                 return;
             };
             let completion = self.process_chain(mem, &queue, queue_index, head, control);
-            self.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
+            self.pci.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
             if let ChainCompletion::Immediate(used_len) = completion {
                 Self::write_used(mem, &queue, head, used_len);
-                self.mark_queue_interrupt(queue_index);
+                self.pci.mark_queue_interrupt(queue_index);
             }
         }
         self.drain_completed_fences_after_queue(mem);

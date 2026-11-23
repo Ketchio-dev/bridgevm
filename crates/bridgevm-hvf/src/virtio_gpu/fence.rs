@@ -76,7 +76,7 @@ impl VirtioGpu {
                 pending_response.head,
                 used_len,
             );
-            self.mark_queue_interrupt(pending_response.queue_index);
+            self.pci.mark_queue_interrupt(pending_response.queue_index);
             self.recycle_parked_response_buffers(pending_response.descs, pending_response.response);
         }
         completed.clear();

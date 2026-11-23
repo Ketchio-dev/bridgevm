@@ -10,14 +10,6 @@ pub(crate) struct RxQueueDeliveryState<'a> {
     pub(crate) descriptor_scratch: &'a mut Vec<Descriptor>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Descriptor {
-    pub(crate) addr: u64,
-    pub(crate) len: u32,
-    pub(crate) flags: u16,
-    pub(crate) next: u16,
-}
-
 impl VirtioConsole {
     pub(crate) fn deliver_to_rx_queue(
         &mut self,
@@ -37,9 +29,9 @@ impl VirtioConsole {
     ) -> Option<usize> {
         Self::deliver_partial_slices_to_rx_queue(
             RxQueueDeliveryState {
-                queues: &mut self.queues,
-                pending_msix_queue_bits: &mut self.pending_msix_queue_bits,
-                interrupt_status: &mut self.interrupt_status,
+                queues: &mut self.pci.queues,
+                pending_msix_queue_bits: &mut self.pci.pending_msix_queue_bits,
+                interrupt_status: &mut self.pci.interrupt_status,
                 descriptor_scratch: &mut self.descriptor_scratch,
             },
             queue_index,
@@ -62,14 +54,16 @@ impl VirtioConsole {
             return None;
         }
         let avail_idx = read_avail_idx(mem, queue.driver)?;
-        state.queues[queue_index].last_avail_seen = avail_idx;
+        state.queues[queue_index].counters.last_avail_seen = avail_idx;
         let last_avail_idx = state.queues[queue_index].last_avail_idx;
         if last_avail_idx == avail_idx {
             // The guest has not published a fresh avail buffer since we last
             // consumed. If this keeps firing while notify_count / last_avail_seen
             // stay flat, the guest stopped replenishing (not our consume path).
-            state.queues[queue_index].rx_no_buffers =
-                state.queues[queue_index].rx_no_buffers.saturating_add(1);
+            state.queues[queue_index].counters.rx_no_buffers = state.queues[queue_index]
+                .counters
+                .rx_no_buffers
+                .saturating_add(1);
             console_trace!(
                 "rx q{queue_index} NO-BUFFERS last_consumed={last_avail_idx} avail_idx={avail_idx} bytes={}",
                 bytes_len
@@ -79,7 +73,7 @@ impl VirtioConsole {
         let ring_off = 4 + u64::from(last_avail_idx % queue.size) * 2;
         let head = read_u16(mem, queue.driver, ring_off)?;
         let mut descs = std::mem::take(state.descriptor_scratch);
-        if !Self::descriptor_chain_into(mem, &queue, head, &mut descs) {
+        if !descriptor_chain_into(mem, queue.desc, queue.size, head, &mut descs) {
             descs.clear();
             *state.descriptor_scratch = descs;
             // avail advanced but we could not walk the chain (head >= size, or a
@@ -102,15 +96,18 @@ impl VirtioConsole {
         };
         descs.clear();
         *state.descriptor_scratch = descs;
-        Self::write_used(
+        write_used(
             mem,
-            &queue,
+            queue.device,
+            queue.size,
             head,
             u32::try_from(written).unwrap_or(u32::MAX),
         );
         state.queues[queue_index].last_avail_idx = last_avail_idx.wrapping_add(1);
-        state.queues[queue_index].used_produced =
-            state.queues[queue_index].used_produced.saturating_add(1);
+        state.queues[queue_index].counters.used_produced = state.queues[queue_index]
+            .counters
+            .used_produced
+            .saturating_add(1);
         state.queues[queue_index].pending_msix = true;
         if let Some(bit) = queue_bit(queue_index) {
             *state.pending_msix_queue_bits |= bit;
@@ -167,73 +164,5 @@ impl VirtioConsole {
         }
         let second_offset = offset.checked_sub(first.len())?;
         (second_offset < second.len()).then_some(&second[second_offset..])
-    }
-
-    pub(crate) fn mark_queue_interrupt(&mut self, queue_index: usize) {
-        if let Some(queue) = self.queues.get_mut(queue_index) {
-            queue.pending_msix = true;
-            if let Some(bit) = queue_bit(queue_index) {
-                self.pending_msix_queue_bits |= bit;
-            }
-        }
-        self.interrupt_status |= 1;
-    }
-
-    pub(crate) fn descriptor_chain_into(
-        mem: &dyn GuestMemoryMut,
-        queue: &VirtioConsoleQueue,
-        head: u16,
-        out: &mut Vec<Descriptor>,
-    ) -> bool {
-        out.clear();
-        if head >= queue.size {
-            return false;
-        }
-        let mut index = head;
-        for _ in 0..queue.size {
-            let Some(desc) = read_descriptor(mem, queue.desc, index, Descriptor::read) else {
-                out.clear();
-                return false;
-            };
-            let has_next = desc.flags & DESC_F_NEXT != 0;
-            out.push(desc);
-            if !has_next {
-                return true;
-            }
-            index = desc.next;
-            if index >= queue.size {
-                out.clear();
-                return false;
-            }
-        }
-        out.clear();
-        false
-    }
-
-    pub(crate) fn write_used(
-        mem: &mut dyn GuestMemoryMut,
-        queue: &VirtioConsoleQueue,
-        id: u16,
-        len: u32,
-    ) {
-        if queue.size == 0 || queue.device == 0 {
-            return;
-        }
-        write_used(mem, queue.device, queue.size, id, len);
-    }
-}
-
-impl Descriptor {
-    pub(crate) fn read(mem: &dyn GuestMemoryMut, gpa: u64) -> Option<Self> {
-        let mut bytes = [0u8; DESC_SIZE as usize];
-        if !mem.read_into(gpa, &mut bytes) {
-            return None;
-        }
-        Some(Self {
-            addr: u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
-            len: u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
-            flags: u16::from_le_bytes(bytes[12..14].try_into().unwrap()),
-            next: u16::from_le_bytes(bytes[14..16].try_into().unwrap()),
-        })
     }
 }

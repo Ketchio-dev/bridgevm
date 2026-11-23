@@ -17,9 +17,9 @@ use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_TRANSFER_FROM_HOST_3D;
 use crate::virtio_gpu_3d::VIRTIO_GPU_CMD_TRANSFER_TO_HOST_3D;
 use crate::virtio_gpu_3d::VIRTIO_GPU_FLAG_FENCE;
 
-pub(crate) const VIRTIO_GPU_F_EDID: u32 = 1 << 1;
+pub(crate) const DEVICE_ID_GPU: u32 = 16;
 
-pub(crate) const VIRTIO_F_VERSION_1: u32 = 1 << 0;
+pub(crate) const VIRTIO_GPU_F_EDID: u32 = 1 << 1;
 
 pub(crate) const VIRTIO_GPU_CMD_GET_DISPLAY_INFO: u32 = 0x0100;
 

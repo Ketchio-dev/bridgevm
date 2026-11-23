@@ -63,10 +63,10 @@ impl VirtioGpu {
 
     pub fn stats(&self) -> VirtioGpuStats {
         let mut stats = VirtioGpuStats {
-            status: self.status,
-            interrupt_status: self.interrupt_status,
-            driver_features: u64::from(self.driver_features[0])
-                | (u64::from(self.driver_features[1]) << 32),
+            status: self.pci.status,
+            interrupt_status: self.pci.interrupt_status,
+            driver_features: u64::from(self.pci.driver_features[0])
+                | (u64::from(self.pci.driver_features[1]) << 32),
             resources: self.resources.len(),
             scanout_active: self.scanout_resource.is_some() || self.blob_scanout.is_some(),
             scanout_3d_flushes: self.scanout_3d_flush_count,
@@ -86,7 +86,7 @@ impl VirtioGpu {
             three_d: self.three_d.stats(self.pending_fenced.len()),
             queues: [VirtioGpuQueueStats::default(); QUEUE_COUNT],
         };
-        for (out, queue) in stats.queues.iter_mut().zip(self.queues) {
+        for (out, queue) in stats.queues.iter_mut().zip(self.pci.queues) {
             *out = VirtioGpuQueueStats {
                 size: queue.size,
                 ready: queue.ready,
@@ -112,15 +112,7 @@ pub struct VirtioGpu {
     /// This may lead the active geometry while the guest changes modes.
     pub(crate) requested_width: u32,
     pub(crate) requested_height: u32,
-    pub(crate) device_features_sel: u32,
-    pub(crate) driver_features_sel: u32,
-    pub(crate) driver_features: [u32; 2],
-    pub(crate) config_msix_vector: u16,
-    pub(crate) queue_sel: u32,
-    pub(crate) queues: [VirtioGpuQueue; QUEUE_COUNT],
-    pub(crate) pending_msix_queue_bits: u8,
-    pub(crate) status: u32,
-    pub(crate) interrupt_status: u32,
+    pub(crate) pci: VirtioPciState<(), QUEUE_COUNT>,
     pub(crate) events_read: u32,
     pub(crate) events_clear: u32,
     pub(crate) pending_config_change: bool,
@@ -215,15 +207,7 @@ impl VirtioGpu {
             height,
             requested_width: width,
             requested_height: height,
-            device_features_sel: 0,
-            driver_features_sel: 0,
-            driver_features: [0; 2],
-            config_msix_vector: VIRTIO_MSI_NO_VECTOR,
-            queue_sel: 0,
-            queues: [VirtioGpuQueue::new(0), VirtioGpuQueue::new(1)],
-            pending_msix_queue_bits: 0,
-            status: 0,
-            interrupt_status: 0,
+            pci: VirtioPciState::new(),
             events_read: 0,
             events_clear: 0,
             pending_config_change: false,
@@ -317,17 +301,7 @@ impl VirtioGpu {
         self.height = self.requested_height;
         let width = self.width;
         let height = self.height;
-        self.device_features_sel = 0;
-        self.driver_features_sel = 0;
-        self.driver_features = [0; 2];
-        self.config_msix_vector = VIRTIO_MSI_NO_VECTOR;
-        self.queue_sel = 0;
-        for queue in &mut self.queues {
-            queue.reset();
-        }
-        self.pending_msix_queue_bits = 0;
-        self.status = 0;
-        self.interrupt_status = 0;
+        self.pci.reset();
         self.events_read = 0;
         self.events_clear = 0;
         self.pending_config_change = false;
