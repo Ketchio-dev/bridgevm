@@ -35,6 +35,13 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- An interrupted snapshot create or export (for example, its process was
+  killed) left a hidden, half-made copy of the VM's disk and vars in the
+  snapshot folder, plus an empty folder for an app snapshot. The snapshot list
+  never showed them and nothing removed them. On APFS each one held on to the
+  disk's old blocks as the VM changed; on other volumes each was a full copy.
+  The next create or export into the same folder now removes them, and keeps
+  anything it does not recognise.
 - After 256 starts or stops from the CLI in one app session, every further
   one was refused until the app was reopened.
 - A Stop could end as "not confirmed", needing Force Stop, when the app and
