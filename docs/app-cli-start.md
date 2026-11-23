@@ -10,60 +10,42 @@ bridgevm app stop 개발-vm --json
 Use the exact ID from `bridgevm app list`. The app must already own the selected
 library and retain its library model. Start supports saved, installed own-HVF
 entries. It does not open an app or window, install a guest, attach to an existing
-process, repair a registration, or use a legacy wrapper. See [CLI setup](app-cli.md).
+process, or repair a registration. See [CLI setup](app-cli.md).
 
-The command binds one operation to the app instance, canonical library identity,
-VM ID and normalized saved configuration digest. The retained model must match
-the saved configuration. Changes to either, an unsupported backend, a pending
-installation, or competing runtime/storage work refuse admission. Edited runtime
-options in an existing session must also match the saved launch configuration.
-TPM recovery/reset and snapshot work reserve the same session before beginning.
+The CLI sends only the VM ID. The app starts that VM's current saved
+configuration through the same start path as the library's Start button: if
+`vm.json` changed since the app last read it, the app reads the library again
+first, so the CLI always starts what is saved. The start refuses while the VM is
+running or starting, while its settings sheet is open (an edit may be about to be
+saved), while an installation is pending, and while another runtime or library
+operation (snapshot, TPM reset, delete, clone, move, install) holds the VM.
 
-Exit 0 requires a validated supervisor READY message and initial helper startup
-for the accepted run, with no earlier terminal or protocol failure. This is a
-startup milestone, not proof of guest boot, display readiness or guest health.
-The milestone remains historical evidence if that run later stops; query `status`
-for current app observations. No release criterion is closed by this command.
+Exit 0 requires a supervisor READY message and initial helper startup for the
+accepted run. This is a startup milestone, not proof of guest boot, display
+readiness or guest health. The milestone remains historical evidence if that run
+later stops; query `status` for current app observations.
 
-The CLI observes for up to 30 seconds from invocation. The app separately fixes
-its startup deadline at 30 seconds from the first accepted admission. The initial
-status exchange consumes part of the CLI window. Each transport exchange has its
-existing two-second deadline; a lost response is queried and, only if admission
-is unknown, retried using the identical operation and binding. No retry renews
-a deadline or selects a new owner. Starting a new CLI invocation creates a new
-operation and never aliases an earlier start.
+The CLI observes for up to 30 seconds from invocation. Each transport exchange has
+its two-second deadline; a lost response is queried and, only if admission is
+unknown, retried using the identical operation ID. A new CLI invocation creates a
+new operation and never aliases an earlier start. Disconnecting or timing out the
+CLI does not cancel the start: the VM keeps booting in the app, exactly as if it
+had been started there. The app keeps the newest 256 finished start records for
+status queries; App restart does not restore them.
 
-Disconnecting or timing out the CLI does not cancel admitted app-owned work.
-A pending synchronous key or preparation call remains retained until it returns.
-Late results cannot launch a replacement or turn missed-deadline failure into
-success. Possible owned processes remain reserved until cleanup is established.
-The app retains at most 256 start records for its lifetime without evicting old
-ones. At capacity, new admissions fail; existing records remain queryable.
-App restart does not restore these operation tickets.
+A refused or failed start prints the app's own one-sentence reason (the same text
+the app shows, including the underlying error text when a launch step fails), for
+example a missing Windows disk or an unavailable Keychain key. The TPM key is
+handled exactly as for a start from the app.
 
-Start reads an existing TPM key without creating, updating or deleting a key,
-including when no TPM state exists yet. An inaccessible or absent selected key
-returns failure. A resolved Keychain backend is reused; otherwise a read-only
-entitlement inspection chooses one candidate. A missing key does not trigger a
-cross-backend fallback. Historical transient backend fallback was not persisted,
-so absence describes the selected backend rather than every possible store.
-
-The data-protection lookup uses a fresh context with interaction disabled.
-Legacy lookup saves, disables and restores the process interaction policy under
-a shared BridgeVM key-operation gate, restoring before consuming the result.
-Busy access fails promptly. A restoration failure discards the key and disables
-that access service. The legacy policy is process-global; unrelated framework
-calls do not participate in the BridgeVM gate. Injected tests establish control
-flow, not platform-wide proof that no prompt can appear.
-
-JSON uses `schema: "bridgevm.app-start.v1"` and `scope: "app-owned-runtime-start"`.
-Fields include `vmID`, `libraryPath`, `appInstanceID`, `operationID`,
-`expectedSavedConfigurationDigest`, `started`, `observation` and
-`unavailableReason`; absent optional fields may be omitted. Observations include
-phase, fixed deadlines, worker/process ownership, failure and startup proof.
-The proof's launch-manifest digest is distinct from the saved-config digest.
-Wire start/startStatus messages use their own strict version 1 schemas on the
-same private endpoint; existing status and stop schemas remain unchanged.
+JSON uses `schema: "bridgevm.app-start.v2"` and `scope: "app-owned-runtime-start"`.
+Fields include `vmID`, `libraryPath`, `appInstanceID`, `operationID`, `started`,
+`observation` and `unavailableReason`; absent optional fields may be omitted.
+Observations include `phase` (`preparing`, `awaitingStartup`, `started`,
+`failed`), the owned run `target`, the startup `proof` (launch-manifest digest and
+initial helper PID) and the `failure` sentence. Wire start/startStatus messages use
+the `bridgevm.app-runtime-start-request.v2` / `bridgevm.app-runtime-start.v2`
+schemas on the same private endpoint.
 
 Exit codes: 0 for confirmed startup, 1 for refused/unavailable/unconfirmed startup,
 and 2 for invalid usage. Admission alone never yields successful exit status.

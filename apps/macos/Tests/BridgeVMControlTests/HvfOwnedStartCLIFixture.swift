@@ -53,7 +53,7 @@ final class HvfOwnedStartCLIFixture {
     func startStatus(operationID: String) async throws -> NativeRuntimeStartResponse {
         let request = NativeRuntimeStartRequest(schema: NativeRuntimeStartCodec.requestSchema, operation: .startStatus,
             requestID: UUID().uuidString, library: library.identity, vmID: runner.config.slug, appInstanceID: appInstanceID,
-            expectedSavedConfigurationDigest: try NativeRuntimeConfigurationIdentity.digest(config: runner.config), operationID: operationID)
+            operationID: operationID)
         let root = runner.libraryRoot
         return try await Task.detached { try NativeRuntimeStartClient.query(rootURL: root, request: request) }.value
     }

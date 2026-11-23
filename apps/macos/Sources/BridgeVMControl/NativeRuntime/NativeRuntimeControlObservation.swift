@@ -2,12 +2,11 @@ import Foundation
 
 extension NativeRuntimeStopObservation {
     init(_ value: HvfOwnedStopObservation) throws {
-        guard let phase = Phase(rawValue: value.phase.rawValue) else { throw NativeRuntimeError.invalidMessage }
         if let operationID = value.supervisorComplete?.operationID, UUID(uuidString: operationID) == nil {
             throw NativeRuntimeError.invalidMessage
         }
         self.operationID = value.operationID.uuidString
-        self.phase = phase
+        phase = value.phase
         acceptedUptime = value.acceptedUptime
         deadlineUptime = value.deadlineUptime
         supervisorComplete = value.supervisorComplete.map { receipt in
@@ -27,9 +26,6 @@ extension NativeRuntimeStopObservation {
             return .init(process: .init(token: exit.identity.token.uuidString, processID: exit.identity.processID),
                          reason: reason, status: exit.status)
         }
-        if let reason = value.failure {
-            guard let mapped = NativeRuntimeStopFailure(rawValue: reason.rawValue) else { throw NativeRuntimeError.invalidMessage }
-            failure = mapped
-        } else { failure = nil }
+        failure = value.failure
     }
 }

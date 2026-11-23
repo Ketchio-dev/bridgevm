@@ -18,23 +18,20 @@ enum NativeCLIStartWaiter {
         while now() < deadline {
             let request = NativeRuntimeStartRequest(schema: initial.schema, operation: operation,
                 requestID: UUID().uuidString, library: initial.library, vmID: initial.vmID,
-                appInstanceID: initial.appInstanceID,
-                expectedSavedConfigurationDigest: initial.expectedSavedConfigurationDigest,
-                operationID: initial.operationID)
+                appInstanceID: initial.appInstanceID, operationID: initial.operationID)
             do {
                 let response = try query(request)
-                try NativeRuntimeStartCodec.validate(response, for: request)
                 guard now() < deadline else { break }
                 last = response
                 if let refusal = response.refusal {
                     if refusal == .operationUnknown, operation == .startStatus, !admissionKnown {
                         operation = .start
-                    } else { return Result(response: response, failure: refusal.rawValue) }
+                    } else { return Result(response: response, failure: response.reason ?? refusal.rawValue) }
                 } else if let observation = response.observation {
                     admissionKnown = true
                     if observation.phase == .started { return Result(response: response, failure: nil) }
-                    if observation.phase == .failed || observation.phase == .unconfirmed {
-                        return Result(response: response, failure: observation.failure?.rawValue ?? "startupUnconfirmed")
+                    if observation.phase == .failed {
+                        return Result(response: response, failure: observation.failure ?? "startupFailed")
                     }
                     operation = .startStatus
                 }

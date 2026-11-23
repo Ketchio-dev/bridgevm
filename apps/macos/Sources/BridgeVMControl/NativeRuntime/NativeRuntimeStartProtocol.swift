@@ -1,5 +1,6 @@
 import Foundation
 
+/// CLI start names only the VM; the app starts that VM's current saved configuration.
 struct NativeRuntimeStartRequest: Codable, Equatable, Sendable {
     enum Operation: String, Codable, Sendable { case start, startStatus }
     let schema: String
@@ -8,7 +9,6 @@ struct NativeRuntimeStartRequest: Codable, Equatable, Sendable {
     let library: NativeRuntimeLibraryIdentity
     let vmID: String
     let appInstanceID: String
-    let expectedSavedConfigurationDigest: String
     let operationID: String
 }
 
@@ -20,41 +20,32 @@ struct NativeRuntimeStartResponse: Codable, Equatable, Sendable {
     let library: NativeRuntimeLibraryIdentity
     let vmID: String
     let appInstanceID: String
-    let expectedSavedConfigurationDigest: String
     let requestedOperationID: String
     let disposition: Disposition
     let observation: NativeRuntimeStartObservation?
     let refusal: NativeRuntimeStartRefusal?
+    /// One plain sentence for the user when the start was refused.
+    let reason: String?
 }
 
+/// The CLI only tells these apart: a restarted app, a status query for an unknown operation, and
+/// every other refusal, whose `reason` sentence is printed as is.
 enum NativeRuntimeStartRefusal: String, Codable, Error, Sendable {
-    case ownerChanged, operationUnknown, operationConflict, operationUnavailable
-    case modelUnavailable, targetUnavailable, ambiguousTarget, configurationChanged, unsupportedRuntime
-    case busy, runtimeActive, mutationActive, configurationMismatch, admissionRefused
-}
-
-enum NativeRuntimeStartFailure: String, Codable, Sendable {
-    case readiness, preparation, keyUnavailable, configurationChanged, helperUnavailable
-    case processLaunch, protocolInvalid, runnerExited, deadlineExceeded
+    case ownerChanged, operationUnknown, refused
 }
 
 struct NativeRuntimeStartObservation: Codable, Equatable, Sendable {
-    enum Phase: String, Codable, Sendable { case preparing, awaitingStartup, started, failed, unconfirmed }
+    enum Phase: String, Codable, Sendable { case preparing, awaitingStartup, started, failed }
     let operationID: String
-    let expectedSavedConfigurationDigest: String
     let phase: Phase
-    let acceptedUptime: Double
-    let deadlineUptime: Double
     let target: NativeRuntimeProcessObservation?
     let proof: NativeRuntimeStartProof?
-    let failure: NativeRuntimeStartFailure?
-    let workerPending: Bool
-    let mayHaveOwnedWork: Bool
+    /// The start path's own error sentence (the text the app shows), when the start failed.
+    let failure: String?
 }
 
 struct NativeRuntimeStartProof: Codable, Equatable, Sendable {
     let target: NativeRuntimeProcessObservation
     let manifestSHA256: String
     let helperPID: Int32
-    let helperGeneration: UInt64
 }

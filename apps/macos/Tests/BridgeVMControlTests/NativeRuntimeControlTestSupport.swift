@@ -26,12 +26,13 @@ enum NativeRuntimeControlTestSupport {
     }
     static func response(_ request: NativeRuntimeControlRequest,
                          observation: NativeRuntimeStopObservation? = nil,
-                         refusal: NativeRuntimeStopRefusal? = nil,
+                         refusal: NativeRuntimeStopRefusal? = nil, reason: String? = nil,
                          disposition: NativeRuntimeControlResponse.Disposition? = nil) -> NativeRuntimeControlResponse {
         .init(schema: NativeRuntimeControlCodec.responseSchema, scope: NativeRuntimeControlCodec.scope,
               requestID: request.requestID, library: request.library, vmID: request.vmID, appInstanceID: app,
               requestedOperationID: request.operationID, target: request.target,
               disposition: disposition ?? (refusal == nil ? (request.operation == .stop ? .accepted : .status) : .refused),
-              observation: refusal == nil ? observation ?? Self.observation(request) : nil, refusal: refusal)
+              observation: refusal == nil ? observation ?? Self.observation(request) : nil, refusal: refusal,
+              reason: reason)
     }
 }

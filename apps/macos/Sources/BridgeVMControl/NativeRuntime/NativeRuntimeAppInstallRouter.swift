@@ -13,11 +13,9 @@ final class NativeRuntimeAppInstallRouter {
         self.validateOwner = validateOwner; self.retainedModel = retainedModel
     }
 
-    func handle(_ request: NativeInstallControlRequest,
-                context: NativeRuntimeRequestContext) throws -> NativeInstallControlResponse {
-        try NativeInstallControlCodec.validate(request)
+    /// The request was decoded and checked once by the server (peer, size, library); it is trusted here.
+    func handle(_ request: NativeInstallControlRequest) throws -> NativeInstallControlResponse {
         guard NativeLibraryReader.isCanonicalID(request.vmID) else { throw NativeRuntimeError.invalidMessage }
-        try context.validateAdmission(); try validateOwner(); try context.validateAdmission()
         guard request.appInstanceID == appInstanceID else { return reply(request, refusal: .ownerChanged) }
         guard let model = retainedModel() else { return reply(request, refusal: .modelUnavailable) }
         do {

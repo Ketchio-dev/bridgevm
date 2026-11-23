@@ -12,13 +12,13 @@ or a release gate result. Product claims remain in
 
 | Boundary | Transport | Schema and operations |
 | --- | --- | --- |
-| CLI → running app | Private Unix socket, one request per connection | Read-only status v1; separate control v2 `stop` / `stopStatus` |
+| CLI → running app | Private Unix socket, one request per connection | Read-only status v1; separate control v3 `stop` / `stopStatus`; start v2 `start` / `startStatus` |
 | App → retained runner | Dedicated stdin/stdout pipes | `schemaVersion: 1`; `hello`, `stop`, and sequenced runner events |
 
 The existing status request `bridgevm.app-runtime-request.v1` and response
 `bridgevm.app-runtime.v1` retain their `app-observation` scope and APIs.
-Control uses `bridgevm.app-runtime-control-request.v2` and
-`bridgevm.app-runtime-control.v2`, with scope `app-owned-runtime-control`, on the
+Control uses `bridgevm.app-runtime-control-request.v3` and
+`bridgevm.app-runtime-control.v3`, with scope `app-owned-runtime-control`, on the
 same endpoint. The command result `bridgevm.app-stop.v1` is a separate CLI envelope.
 The runner mode is `--owned-runtime-stdio`; protocol stdout carries framed events.
 
@@ -36,9 +36,20 @@ cleanup failure, not a protocol error.
 
 The endpoint is selected from the account and the physical library directory
 identity. Its private directories and socket are checked by retained file identity,
-type, owner and mode; peers must have the same effective UID. The owner retains a
-permanent lock file and verifies its lock/socket/library ownership around requests.
-This is a local account ownership boundary, not a remote authentication protocol.
+type, owner and mode; peers must have the same effective UID. The owner checks its
+permanent lock file (regular, 0600, owned by the account, one link) once when it
+takes the `flock`, and holds that lock for the whole app session. Each request is
+decoded and checked once by the server (frame size, schema, library identity, a
+canonical VM ID, the app instance ID); handlers trust it afterwards. This is a
+local account ownership boundary, not a remote authentication protocol.
+
+A start request names only the library, VM ID, app instance and operation ID. The
+app starts the VM's current saved configuration through the GUI start path, so a
+CLI start and a Start click share admission, readiness checks, key handling and
+error text. Start failures carry that path's sentence in the observation's
+`failure`. Start and stop refusals use only `ownerChanged`, `operationUnknown`
+(the CLI then retries its admission) and `refused`, and always carry one plain
+sentence in `reason`, which the CLI prints.
 
 A stop request binds the library identity, canonical VM ID, app instance UUID,
 run token, retained runner PID and accepted registration digest. That digest
@@ -46,8 +57,7 @@ identifies the source VM registration captured for the session; it is distinct
 from the launch-manifest digest used by the runner. Later registration edits do
 not retarget an accepted run. Missing registrations can still have retained runs.
 
-The MainActor router rechecks cancellation, the connection deadline and current
-owner identity immediately before ledger admission. It uses an existing model
+The MainActor router uses an existing model
 and exact retained session, without creating a model, attaching, scanning for a
 replacement process, or launching the app. Unsupported legacy launches and attached
 observations are refused. Multiple owned candidates are ambiguous. An attached
@@ -154,10 +164,10 @@ falls back to an attached runtime or starts an owner. A late reply is not succes
 ## Source and deterministic checks
 
 - Outer schemas and validation: [control DTOs](../../apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeRuntimeControlProtocol.swift), [codec](../../apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeRuntimeControlCodec.swift), [phase validation](../../apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeRuntimeControlValidation.swift).
-- Admission and waiting: [app router](../../apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeRuntimeAppControlRouter.swift), [operation ledger](../../apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeRuntimeStopLedger.swift), [CLI waiter](../../apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLIStopWaiter.swift).
+- Admission and waiting: [start ledger](../../apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeRuntimeStartLedger.swift), [app router](../../apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeRuntimeAppControlRouter.swift), [operation ledger](../../apps/macos/Sources/BridgeVMControl/NativeRuntime/NativeRuntimeStopLedger.swift), [CLI waiter](../../apps/macos/Sources/BridgeVMControl/NativeCLI/NativeCLIStopWaiter.swift).
 - Inner protocol: [golden payload index and hashes](../../tests/fixtures/owned-runtime-v1/index.json), [Rust codec](../../runners/hvf-runner/src/owned_protocol_codec.rs), [Swift codec](../../apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOwnedRuntimeCodec.swift), [lifecycle ledger](../../apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOwnedRuntimeLedger.swift).
 - Ownership implementation: [controller](../../apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOwnedRunController.swift), [guest append worker](../../apps/macos/Sources/BridgeVMControl/HvfEngine/HvfOwnedGuestShutdown.swift), [retained child wait](../../crates/bridgevm-hvf-runtime/src/owned_child_wait.rs).
-- Boundary checks: [socket contracts](../../tests/integration/native-runtime-transport-contract.py), [admission](../../apps/macos/Tests/BridgeVMControlTests/NativeRuntimeControlAdmissionTests.swift), [response validation](../../apps/macos/Tests/BridgeVMControlTests/NativeRuntimeControlCodecTests.swift), [CLI waiting](../../apps/macos/Tests/BridgeVMControlTests/NativeCLIStopTests.swift).
+- Boundary checks: [socket contracts](../../tests/integration/native-runtime-transport-contract.py), [start admission](../../apps/macos/Tests/BridgeVMControlTests/LibraryModelOwnedRuntimeStartTests.swift), [response validation](../../apps/macos/Tests/BridgeVMControlTests/NativeRuntimeControlCodecTests.swift), [CLI waiting](../../apps/macos/Tests/BridgeVMControlTests/NativeCLIStopTests.swift).
 - Lifecycle checks: [controller faults and deadlines](../../apps/macos/Tests/BridgeVMControlTests/HvfOwnedRuntimeControllerTests.swift), [retention](../../apps/macos/Tests/BridgeVMControlTests/HvfOwnedRuntimeRetentionTests.swift), [actual runner pipe contracts](../../runners/hvf-runner/tests/owned_protocol.rs), [paired Rust/native CLI route](../../apps/macos/Tests/BridgeVMControlTests/HvfOwnedRunnerCLITests.swift).
 
 These tests use synthetic media and harmless child fixtures, including an actual

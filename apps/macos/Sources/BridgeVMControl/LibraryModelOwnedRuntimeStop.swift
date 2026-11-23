@@ -8,11 +8,11 @@ extension LibraryModel {
         let matches = runtimeRecords(slug: request.vmID).filter {
             $0.session.runtimeObservation().ownedProcessIdentity == identity
         }
-        guard !matches.isEmpty else { throw NativeRuntimeStopRefusal.targetUnavailable }
-        guard matches.count == 1, let record = matches.first else { throw NativeRuntimeStopRefusal.ambiguousTarget }
+        guard !matches.isEmpty else { throw NativeRuntimeStopRefused.targetUnavailable }
+        guard matches.count == 1, let record = matches.first else { throw NativeRuntimeStopRefused.ambiguousTarget }
         guard let config = record.sourceConfig,
               try NativeRuntimeConfigurationIdentity.digest(config: config) == request.target.acceptedConfigurationDigest
-        else { throw NativeRuntimeStopRefusal.configurationChanged }
+        else { throw NativeRuntimeStopRefused.configurationChanged }
         return record.session.requestOwnedStop(target: identity, operationID: operationID)
     }
 }

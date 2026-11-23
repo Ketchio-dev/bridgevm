@@ -3,6 +3,7 @@ extension NativeRuntimeRequestRouter {
     private struct Schema: Decodable { let schema: String }
 
     /// Dispatches on the explicit `schema` field, so tolerant decoding cannot route a request to another handler.
+    /// Each request is checked once here (size, schema, library identity); handlers trust it afterwards.
     func reply(to bytes: Data, context: NativeRuntimeRequestContext) async throws -> Data {
         try context.validateAdmission()
         let limit = NativeRuntimeCodec.maximumRequestBytes
@@ -19,19 +20,14 @@ extension NativeRuntimeRequestRouter {
             try NativeRuntimeControlCodec.validate(request)
             guard request.library == library else { throw NativeRuntimeError.libraryChanged }
             guard let control else { throw NativeRuntimeError.invalidMessage }
-            let response = try await control(request, context)
-            try NativeRuntimeControlCodec.validate(response, for: request)
-            return try NativeRuntimeCodec.encode(response)
+            return try NativeRuntimeCodec.encode(try await control(request, context))
         case NativeInstallControlCodec.requestSchema:
             return try await installReply(bytes, context: context)
         case NativeRuntimeStartCodec.requestSchema:
             let request = try NativeRuntimeCodec.decode(NativeRuntimeStartRequest.self, from: bytes, limit: limit)
-            try NativeRuntimeStartCodec.validate(request)
             guard request.library == library else { throw NativeRuntimeError.libraryChanged }
             guard let start else { throw NativeRuntimeError.invalidMessage }
-            let response = try await start(request, context)
-            try NativeRuntimeStartCodec.validate(response, for: request)
-            return try NativeRuntimeCodec.encode(response)
+            return try NativeRuntimeCodec.encode(try await start(request, context))
         default:
             throw NativeRuntimeError.invalidMessage
         }

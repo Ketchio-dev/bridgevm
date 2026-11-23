@@ -57,14 +57,9 @@ final class HvfNetworkPreferenceTests: XCTestCase {
         XCTAssertEqual(HvfEngineConfig.libraryVM(current, rootURL: library.rootURL,
             e2eHostDiagnosticStopAdmitted: library.e2eHostDiagnosticStopAdmitted), session.config,
             "The CLI's launch must equal the rebound session or it is refused as configurationMismatch")
-        session.ownedStartWorker = { _ in .failure(.readiness) }
-        let identity = try NativeRuntimeLibraryHandle.open(rootURL: fixture.root, create: false).identity
-        let request = NativeRuntimeStartRequest(schema: NativeRuntimeStartCodec.requestSchema, operation: .start,
-            requestID: UUID().uuidString, library: identity, vmID: current.slug, appInstanceID: UUID().uuidString,
-            expectedSavedConfigurationDigest: try NativeRuntimeConfigurationIdentity.digest(config: current),
-            operationID: UUID().uuidString)
-        let result = try library.requestOwnedRuntimeStart(request, validateOwner: {}, onReserved: { _ in })
-        guard case let .accepted(ticket) = result else { return XCTFail("CLI start refused: \(result)") }
+        session.guiStartWorker = { _ in .init(result: .failed(.processLaunch, "fixture")) }
+        let result = library.requestCLIStart(vmID: current.slug)
+        guard case let .accepted(ticket, _) = result else { return XCTFail("CLI start refused: \(result)") }
         XCTAssertFalse(ticket.configuration.virtioNet)
         XCTAssertFalse(ownedArguments(ticket.configuration).contains("--virtio-net"))
         try await drain { ticket.workerPending }

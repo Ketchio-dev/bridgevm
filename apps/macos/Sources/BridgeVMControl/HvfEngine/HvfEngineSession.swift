@@ -31,15 +31,12 @@ final class HvfEngineSession: ObservableObject {
     var workAdmission: LibraryWorkAdmission?
     var reservedWorkAdmission: (@MainActor (UUID, Bool) -> String?)?
     var onConfigurationPersisted: (@MainActor (_ previous: VMConfig, _ saved: VMConfig) -> Void)? // library rebind + reload
-    var ownedStartOperation: HvfOwnedStartOperation?
-    var ownedStartExecution: HvfOwnedStartExecution?
     var guiStartOperation: HvfGUIStartOperation?
     var guiStartExecution: HvfGUIStartExecution?
     var guiStartCleanupOnly = false
     var guiStartWorker: HvfGUIStartExecution.Worker = HvfGUIStartWorker.run
     var mutationReservation: HvfRuntimeMutationReservation?
     var ownedStartNow: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
-    var ownedStartWorker: HvfOwnedStartExecution.Worker = HvfOwnedStartExecution.run
     let workAdmissionGate = HvfRuntimeWorkAdmissionGate()
     let sleepPreventionID = UUID()
     var sleepPrevention = ControlAppPower.shared
@@ -154,7 +151,6 @@ final class HvfEngineSession: ObservableObject {
     func ownedRuntimeChanged(token: UUID) { // runs on every controller tick: assign only a changed state
         defer { updateSleepPrevention() }
         guard let controller = ownedController, controller.identity.token == token else { return }
-        refreshOwnedStart()
         lastOwnedExit = controller.runnerExit
         if controller.teardownConfirmed { markStopped() }
         else if controller.failure != nil, !(controller.supervisionLost && controller.operation == nil && controller.process.isRunning) {
