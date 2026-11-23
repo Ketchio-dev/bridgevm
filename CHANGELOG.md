@@ -65,6 +65,12 @@ All notable changes to BridgeVM are documented in this file.
   or `snapshot-export` left the snapshot helper running, so a restore could
   still change the VM after the command had ended. The command now stops the
   helper, waits for it, reports `cancelled` and exits 130 (143 for SIGTERM).
+- Long typed or pasted text in a Windows app built on a RichEdit 5 control
+  (for example a WinForms RichTextBox) went in one character at a time,
+  about 5 ms each, and from roughly 2,000 characters failed partway with an
+  input error. It now goes in as one undoable edit, as in Notepad: 5,000
+  mixed characters in under half a second (#665). Needs the updated guest
+  agent.
 
 ### Removed
 
