@@ -6,7 +6,7 @@
 //! that root, then publishes its complete generation as `current`.
 
 use super::files::copy_and_sync;
-use super::{verify_snapshot, SnapshotError, SnapshotManifest};
+use super::{inspect_snapshot, SnapshotError, SnapshotManifest};
 use crate::media_lease::MediaLease;
 use sha2::{Digest, Sha256};
 use std::ffi::OsString;
@@ -140,24 +140,29 @@ impl LockedPair {
         publish: impl FnOnce(&Path, &Path) -> io::Result<()>,
     ) -> Result<SnapshotManifest, SnapshotError> {
         let (snapshot, manifest) = self.admit_restore(snapshot)?;
-        // Gone before the disk changes: a crash in between leaves the old disk without its state,
-        // which only lets the Mac copy win.
-        super::remove_share_state(&self.vars)?;
         initialize(&self.root, |_| {})?;
         let (staged, copied) = self.stage_restore(&snapshot, &manifest, copy)?;
-        staged.publish(&self.root.join("current"), publish)?;
+        let vars = &self.vars;
+        staged.publish(&self.root.join("current"), |staged, current| {
+            // Gone once the staged pair verified, before the disk changes: a crash in between
+            // leaves the old disk without its state, which only lets the Mac copy win.
+            super::remove_share_state(vars)?;
+            publish(staged, current)
+        })?;
         self.own_selected()?;
         acknowledge(&self.root)?;
         Ok(copied)
     }
 
-    /// Verify the source before touching any previous restore's staging.
+    /// Verify the source before touching any previous restore's staging: a refused restore
+    /// keeps that copy, which may be the only intact one. With none, the manifest and member
+    /// types and sizes suffice here; staging hashes its copy, the bytes it publishes.
     fn admit_restore(&self, snapshot: &Path) -> Result<(PathBuf, SnapshotManifest), SnapshotError> {
         let snapshot = fs::canonicalize(snapshot)?;
         if snapshot.starts_with(&self.root) {
             return Err(io::Error::other("restore source must be outside managed storage").into());
         }
-        let manifest = verify_snapshot(&snapshot)?;
+        let manifest = inspect_snapshot(&snapshot, seal::previous_attempt(&self.root)?)?;
         self.reclaim_staging()?;
         Ok((snapshot, manifest))
     }

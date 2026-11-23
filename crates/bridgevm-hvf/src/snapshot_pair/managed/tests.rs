@@ -102,6 +102,36 @@ fn corrupt_source_and_missing_selected_file_fail_closed() {
     assert!(LockedPair::open(&disk, &vars).is_err());
 }
 
+/// One full read: the source is not hashed before its copy, so a same-size corrupt member
+/// reaches staging and the staged hash refuses it before share state or selection change.
+#[test]
+fn restore_hashes_only_its_staged_copy() {
+    let (s, disk, vars, snapshot) = fixture("managed-hash-once");
+    fs::write(snapshot.join("disk.raw"), b"bad-disk").unwrap();
+    let share = s.write("vars.share-sync", b"synced");
+    let mut pair = LockedPair::open(&disk, &vars).unwrap();
+    let mut copied = Vec::new();
+    let result = pair.restore_copying(
+        &snapshot,
+        |src, dst| {
+            copied.push(src.file_name().unwrap().to_str().unwrap().to_owned());
+            copy_and_sync(src, dst)
+        },
+        |_, _| panic!("a corrupt copy reached publication"),
+    );
+    assert_eq!(copied, ["disk.raw", "vars.fd", "manifest.json"]);
+    assert!(
+        matches!(&result, Err(SnapshotError::HashMismatch { file }) if file == "disk.raw"),
+        "{result:?}"
+    );
+    assert_eq!(
+        contents(&pair),
+        (b"old-disk".to_vec(), b"old-vars".to_vec())
+    );
+    assert_eq!(fs::read(share).unwrap(), b"synced");
+    assert!(!pair.root.join("staging").exists());
+}
+
 #[test]
 fn selected_directory_symlink_is_not_followed() {
     let (s, disk, vars, _) = fixture("managed-symlink");
