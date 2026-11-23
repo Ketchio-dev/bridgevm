@@ -72,7 +72,7 @@ pub(crate) struct HostWake {
 
 impl HostWake {
     /// The wake thread, when the VMM has set [`NET_RX_HOOK`] and a kqueue is
-    /// available; otherwise the NAT polls on exits only, as before.
+    /// available; otherwise the NAT polls on exits only.
     pub(crate) fn start() -> Option<Self> {
         NET_RX_HOOK.get()?;
         imp::start()

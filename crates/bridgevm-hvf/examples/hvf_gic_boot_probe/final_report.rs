@@ -1,4 +1,29 @@
-include!("present_health.rs");
+/// Prints the end-of-run 3D presentation churn health summary.
+pub(crate) fn print_present_health(platform: &bridgevm_hvf::platform_virt::VirtPlatform) {
+    let Some(stats) = platform.virtio_gpu_stats() else {
+        return;
+    };
+    // Whether the guest drove a hardware cursor (viogpudo HWCursor=1) this boot.
+    if stats.cursor_updates + stats.cursor_moves > 0 {
+        println!(
+            "virtio-gpu cursor updates={} moves={} hides={}",
+            stats.cursor_updates, stats.cursor_moves, stats.cursor_hides
+        );
+    }
+    let create3d = stats.resource_create_3d_count;
+    let flush = stats.scanout_3d_flushes;
+    if flush == 0 {
+        println!(
+            "present health create3d={create3d} flush={flush} ratio=n/a healthy=false threshold=0.10"
+        );
+        return;
+    }
+    let ratio = create3d as f64 / flush as f64;
+    println!(
+        "present health create3d={create3d} flush={flush} ratio={ratio:.4} healthy={} threshold=0.10",
+        ratio <= 0.10
+    );
+}
 macro_rules! persist_and_report_stop {
     ($platform:ident, ($media:ident, $media_lease:ident), $vcpu:ident, $guest_ram:ident, $last_pc:ident, $last_pre_run_pc:ident, $last_watch_pc:ident, $last_watch_lr:ident, $stop_reason:ident, $stop_reason_code:ident, $exits:ident, $vtimer_exits:ident, $psci_calls:ident, $surplus_canceled_exits:ident, $wake_coordinator:ident, $wake_cancel_claims:ident, $boot_timer:ident, $boot_timer_elapsed:ident, $diagnostic_generation:ident, $secondary_stop:ident, $drain_stats:ident, $unimpl:ident, $mmio_traces:ident, $recent_pcie_ecam:ident, $recent_pcie_mmio:ident, $recent_pcie_pio:ident, $recent_xhci:ident, $uart_triggers:ident, $xhci_hid_boot_key_triggers:ident, $xhci_setup_input_triggers:ident, $xhci_pointer_input_triggers:ident, $redist_lo:ident, $redist_hi:ident, $smp_trace:ident $(,)?) => {{
         let mut platform_guard = $platform.lock().expect("platform mutex");

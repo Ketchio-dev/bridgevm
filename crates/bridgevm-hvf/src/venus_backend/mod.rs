@@ -1,4 +1,3 @@
-//! venus_backend, split for the 1000-line rule.
 mod map_resource_ref;
 mod poll_stall;
 mod poll_watchdog;

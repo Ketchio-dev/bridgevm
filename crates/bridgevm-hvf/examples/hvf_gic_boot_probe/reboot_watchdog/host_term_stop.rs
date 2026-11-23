@@ -37,7 +37,7 @@ extern "C" fn record_host_term(_: libc::c_int) {
 }
 
 /// Replaces TERM's default action. If that fails, TERM still ends the
-/// process immediately, as before.
+/// process immediately.
 pub(crate) fn install_host_term_handler() {
     // SAFETY: Category 8 - FFI boundary. The action is fully initialised
     // before sigaction reads it, and the handler only stores to an atomic.

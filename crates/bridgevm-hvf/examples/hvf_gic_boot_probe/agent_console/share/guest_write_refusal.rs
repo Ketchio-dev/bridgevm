@@ -4,7 +4,7 @@
 //! EACCES or EPERM (a deny ACL, a flag), or an msdos/exfat mark that does not
 //! read back. Fetching the same unchanged guest file again cannot succeed, so
 //! the share remembers these refusals (share_write_failures.rs). Any other
-//! failure is retried at the next guest listing, as before.
+//! failure is retried at the next guest listing.
 
 use std::error::Error;
 use std::fmt;

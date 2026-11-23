@@ -1,5 +1,3 @@
-//! Split out of main.rs to keep files under 800 lines.
-
 use std::path::Path;
 use std::path::PathBuf;
 

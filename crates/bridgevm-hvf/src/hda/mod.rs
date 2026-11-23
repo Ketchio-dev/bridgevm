@@ -1,4 +1,3 @@
-//! hda, split for the 1000-line rule.
 mod codec_parameter;
 mod hdapcmsink;
 mod wav_pcm_source;

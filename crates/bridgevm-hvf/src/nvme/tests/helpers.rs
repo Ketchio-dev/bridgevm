@@ -1,5 +1,3 @@
-//! Split test module.
-
 use super::super::*;
 pub(super) use super::scratch_path::temp_path;
 use crate::fwcfg::GuestMemoryMut;

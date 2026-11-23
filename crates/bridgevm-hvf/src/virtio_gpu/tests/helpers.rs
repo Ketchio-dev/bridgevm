@@ -1,5 +1,3 @@
-//! Split test module.
-
 use super::super::*;
 use crate::fwcfg::GuestMemoryMut;
 use crate::pcie::VIRTIO_GPU_MSIX_TABLE_OFFSET;

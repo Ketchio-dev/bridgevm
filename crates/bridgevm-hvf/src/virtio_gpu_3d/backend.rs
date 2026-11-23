@@ -1,7 +1,59 @@
 //! The host-renderer abstraction and the plain value types that cross it.
-
-include!("backend_types.rs");
 use super::{ScanoutPresentPending, ScanoutPresentResult};
+
+// Renderer capability, fence, and submission result value types.
+
+// Bounded renderer submission results carried to JSONL diagnostics.
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Submit3dDiagnostic {
+    pub renderer_status: i32,
+    pub command_offset_dwords: Option<u32>,
+    pub command_id: Option<u32>,
+    pub command_header: Option<u32>,
+    pub resource_id: Option<u32>,
+    pub resource_found: Option<bool>,
+    pub resource_backed: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Submit3dResult {
+    pub accepted: bool,
+    pub diagnostic: Option<Submit3dDiagnostic>,
+}
+
+impl Submit3dResult {
+    pub fn accepted() -> Self {
+        Self {
+            accepted: true,
+            diagnostic: None,
+        }
+    }
+
+    pub fn rejected(renderer_status: i32) -> Self {
+        Self {
+            accepted: false,
+            diagnostic: Some(Submit3dDiagnostic {
+                renderer_status,
+                ..Submit3dDiagnostic::default()
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CapsetInfo {
+    pub capset_id: u32,
+    pub max_version: u32,
+    pub max_size: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompletedFence {
+    pub ctx_id: u32,
+    pub ring_idx: u8,
+    pub fence_id: u64,
+}
 
 pub trait GpuShmMapPort: Send {
     fn map(&mut self, host_ptr: *mut u8, size: usize, shm_offset: u64) -> Result<(), i32>;

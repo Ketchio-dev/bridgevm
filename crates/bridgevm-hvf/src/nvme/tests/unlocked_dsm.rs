@@ -340,7 +340,7 @@ fn a_deallocate_stays_inline_with_unlocked_io_off_or_a_bad_range() {
     );
     assert!(!punched(&path, None));
     // BRIDGEVM_NVME_UNLOCKED_IO=0 and checkpoints: the punch runs under the
-    // doorbell's hold, as before.
+    // doorbell's hold.
     ctrl.set_unlocked_io(false);
     let sqe = deallocate_second_block(&mut mem, 0xa2);
     assert_eq!(ring(&mut ctrl, &mut mem, 1, &sqe).len(), 1);

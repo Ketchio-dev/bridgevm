@@ -1,5 +1,3 @@
-//! Split out of venus_backend.rs to keep files under 500 lines.
-
 #![allow(non_camel_case_types)]
 #![allow(dead_code)]
 use super::*;
@@ -15,17 +13,193 @@ use std::{
     thread::{self, JoinHandle},
 };
 
+use crate::virtio_gpu_3d::Submit3dDiagnostic;
 use crate::virtio_gpu_3d::{
     CapsetInfo, CompletedFence, Create3dArgs, CreateBlobArgs, MappedBlob, ScanoutMappedBlob,
     ScanoutPresentPending, ScanoutPresentResult, Submit3dResult, Transfer3dArgs,
     VirtioGpu3dBackend,
 };
 
-include!("ffi_submit.rs");
-include!("submit_3d.rs");
-include!("submit_diagnostic.rs");
-include!("threaded_submit.rs");
-include!("threaded_worker.rs");
+// BridgeVM virglrenderer submission ABI extensions.
+
+unsafe extern "C" {
+    pub(super) fn virgl_renderer_bridgevm_get_last_submit_diagnostic(
+        out: *mut VirglSubmitDiagnostic,
+    ) -> c_int;
+}
+// Renderer SUBMIT_3D status and bounded diagnostic propagation.
+
+impl VenusBackend {
+    pub(crate) fn submit_renderer_command(&mut self, ctx_id: u32, cmdbuf: &[u8]) -> Submit3dResult {
+        host_gl::rebind_last_context();
+        let ndw = cmdbuf.len().div_ceil(4);
+        let ret = if cmdbuf.is_empty() {
+            unsafe { virgl_renderer_submit_cmd(std::ptr::null_mut(), ctx_id as c_int, 0) }
+        } else {
+            unsafe {
+                virgl_renderer_submit_cmd(
+                    cmdbuf.as_ptr() as *mut c_void,
+                    ctx_id as c_int,
+                    ndw as c_int,
+                )
+            }
+        };
+        if ret == 0 {
+            return Submit3dResult::accepted();
+        }
+
+        let diagnostic = Some(take_submit_diagnostic(ret));
+        eprintln!(
+            "{}: submit_cmd ctx={ctx_id} bytes={} ret={ret}",
+            self.protocol.label(),
+            cmdbuf.len()
+        );
+        // The legacy VirGL path records renderer diagnostics without turning
+        // a vrend context error into a virtio command error.
+        Submit3dResult {
+            accepted: self.protocol == VirtioGpuRendererProtocol::Virgl,
+            diagnostic,
+        }
+    }
+}
+// Conversion between virglrenderer's bounded submit diagnostic ABI and Rust values.
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct VirglSubmitDiagnostic {
+    pub renderer_status: c_int,
+    pub command_offset_dwords: u32,
+    pub command_id: u32,
+    pub command_header: u32,
+    pub resource_id: u32,
+    pub flags: u32,
+}
+
+pub(crate) const VALID_COMMAND: u32 = 1 << 0;
+pub(crate) const VALID_RESOURCE: u32 = 1 << 1;
+pub(crate) const RESOURCE_FOUND: u32 = 1 << 2;
+pub(crate) const RESOURCE_BACKED: u32 = 1 << 3;
+
+pub(crate) fn take_submit_diagnostic(renderer_status: i32) -> Submit3dDiagnostic {
+    let mut raw = VirglSubmitDiagnostic::default();
+    if unsafe { virgl_renderer_bridgevm_get_last_submit_diagnostic(&mut raw) } != 0
+        || raw.renderer_status != renderer_status
+    {
+        return Submit3dDiagnostic {
+            renderer_status,
+            ..Submit3dDiagnostic::default()
+        };
+    }
+    Submit3dDiagnostic {
+        renderer_status,
+        command_offset_dwords: (raw.flags & VALID_COMMAND != 0)
+            .then_some(raw.command_offset_dwords),
+        command_id: (raw.flags & VALID_COMMAND != 0).then_some(raw.command_id),
+        command_header: (raw.flags & VALID_COMMAND != 0).then_some(raw.command_header),
+        resource_id: (raw.flags & VALID_RESOURCE != 0).then_some(raw.resource_id),
+        resource_found: (raw.flags & VALID_RESOURCE != 0)
+            .then_some(raw.flags & RESOURCE_FOUND != 0),
+        resource_backed: (raw.flags & VALID_RESOURCE != 0)
+            .then_some(raw.flags & RESOURCE_BACKED != 0),
+    }
+}
+// Thread-confined renderer forwarding for SUBMIT_3D.
+
+impl ThreadedVenusBackend {
+    pub(crate) fn submit_renderer_command(&self, ctx_id: u32, cmdbuf: &[u8]) -> Submit3dResult {
+        let cmdbuf_address = cmdbuf.as_ptr() as usize;
+        let cmdbuf_len = cmdbuf.len();
+        self.call(move |backend| {
+            // call() blocks, so the immutable command buffer stays alive.
+            let cmdbuf =
+                unsafe { std::slice::from_raw_parts(cmdbuf_address as *const u8, cmdbuf_len) };
+            backend.submit_3d(ctx_id, cmdbuf)
+        })
+    }
+}
+// Renderer-worker receive loop and idle Venus feedback polling.
+
+const VENUS_IDLE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1);
+
+enum VenusWorkerWake {
+    Message(VenusWorkerMessage),
+    Idle,
+    Disconnected,
+}
+
+fn wait_for_venus_worker(
+    receiver: &std::sync::mpsc::Receiver<VenusWorkerMessage>,
+) -> VenusWorkerWake {
+    match receiver.recv_timeout(VENUS_IDLE_POLL_INTERVAL) {
+        Ok(message) => VenusWorkerWake::Message(message),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => VenusWorkerWake::Idle,
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => VenusWorkerWake::Disconnected,
+    }
+}
+
+fn run_venus_worker(
+    protocol: VirtioGpuRendererProtocol,
+    receiver: std::sync::mpsc::Receiver<VenusWorkerMessage>,
+    init_sender: std::sync::mpsc::SyncSender<Result<(), String>>,
+    fence_tx: std::sync::mpsc::Sender<CompletedFence>,
+) {
+    let mut backend = match VenusBackend::new_for_protocol(protocol) {
+        Ok(backend) => {
+            let _ = init_sender.send(Ok(()));
+            backend
+        }
+        Err(error) => {
+            let _ = init_sender.send(Err(error));
+            return;
+        }
+    };
+    loop {
+        match wait_for_venus_worker(&receiver) {
+            VenusWorkerWake::Message(VenusWorkerMessage::Run(job)) => job(&mut backend),
+            VenusWorkerWake::Message(VenusWorkerMessage::Shutdown) => {
+                // Shutdown quiet is not a stall.
+                backend.poll_watchdog.disarm();
+                backend.reset();
+                break;
+            }
+            VenusWorkerWake::Idle if !backend.contexts.is_empty() => {
+                // Venus feedback slots live in guest-visible shared memory and
+                // do not have a virtqueue fence to trigger another VM exit.
+                // Poll on the renderer-owning thread so those waits progress.
+                backend.poll_fences();
+                for fence in backend.drain_completed_fences() {
+                    let _ = fence_tx.send(fence);
+                }
+            }
+            VenusWorkerWake::Idle => {}
+            VenusWorkerWake::Disconnected => break,
+        }
+    }
+}
+
+#[cfg(test)]
+mod threaded_worker_tests {
+    use super::*;
+
+    #[test]
+    fn idle_worker_wakes_without_a_message() {
+        let (_sender, receiver) = std::sync::mpsc::channel();
+        assert!(matches!(
+            wait_for_venus_worker(&receiver),
+            VenusWorkerWake::Idle
+        ));
+    }
+
+    #[test]
+    fn queued_shutdown_wins_over_idle_polling() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        sender.send(VenusWorkerMessage::Shutdown).unwrap();
+        assert!(matches!(
+            wait_for_venus_worker(&receiver),
+            VenusWorkerWake::Message(VenusWorkerMessage::Shutdown)
+        ));
+    }
+}
 pub(crate) type virgl_renderer_gl_context = *mut c_void;
 
 #[repr(C)]

@@ -1,5 +1,3 @@
-//! Split out of net_nat.rs to keep files under 850 lines.
-
 use super::reply_queue::MAX_TCP_WRITE_BACKLOG;
 use super::*;
 

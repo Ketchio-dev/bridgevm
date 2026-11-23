@@ -1,5 +1,5 @@
 //! The stop request the ramfb display exporter's thread sleeps on between
-//! ticks, split out of ramfb_display_thread.rs unchanged.
+//! ticks.
 
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::Instant;

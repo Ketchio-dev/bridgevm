@@ -1,5 +1,3 @@
-//! Split test module.
-
 use super::super::*;
 use std::{
     io::{self},

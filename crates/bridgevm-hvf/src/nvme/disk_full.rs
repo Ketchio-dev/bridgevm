@@ -25,7 +25,7 @@ use crate::fwcfg::GuestMemoryMut;
 const HELD: u16 = 0x8000;
 
 /// The status for a failed disk write or sync: held when the host volume is
-/// full or over quota, else `otherwise`, as before.
+/// full or over quota, else `otherwise`.
 pub(crate) fn host_failure(error: &io::Error, otherwise: u16) -> u16 {
     match error.raw_os_error() {
         Some(errno @ (libc::ENOSPC | libc::EDQUOT)) => HELD | errno as u16,
