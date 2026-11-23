@@ -12,9 +12,39 @@ All notable changes to BridgeVM are documented in this file.
 - The Fast VZ (Linux) and QEMU compatibility engines were removed from the app.
   A VM saved with one of them stays in the library, marked as no longer
   supported, with its files untouched, and can be deleted from there.
+- `bridgevm app start` runs the same start as the Start button: a failure now
+  prints the app's own sentence with the underlying error, and a VM whose
+  settings were saved after the app loaded them starts with the saved
+  settings instead of being refused. Stop and install no longer refuse after
+  a settings change either; install uses what is saved. The JSON schemas
+  changed accordingly (`bridgevm.app-start.v2`, `bridgevm.app-stop.v2`,
+  `bridgevm.app-install-command.v2`, `bridgevm.app-create-windows.v2`, which no
+  longer carries `configurationDigest`).
+- A VM started from the CLI keeps booting if Windows takes longer than 30 s to
+  report ready, as after a Start click; the CLI still reports that readiness
+  was not confirmed.
+- A Windows install finishes sooner: the new disk is hashed once when it is
+  sealed instead of six times (about 2–3 minutes less for a 64 GiB disk,
+  estimated). Snapshot create, export and disk import no longer re-read the
+  whole disk to verify right after writing it; a restore still verifies
+  before it touches the VM. An A19 restore-boot lane, which creates,
+  restores and exports a 64 GiB pair, took about 6 minutes instead of about 9
+  on the same Mac.
+- Two snapshot exports to different names in the same folder can run at the
+  same time.
 
 ### Fixed
 
+- After 256 starts or stops from the CLI in one app session, every further
+  one was refused until the app was reopened.
+- A Stop could end as "not confirmed", needing Force Stop, when the app and
+  the runner disagreed on a harmless detail of a status message. Both sides
+  now ignore fields they do not know.
+- A never-started VM in a folder that reports itself group- or
+  world-writable, as exFAT and some shared folders do, can be deleted. The
+  check refused it without protecting anything.
+- The guest agent's input capability line is accepted when it carries extra
+  keywords from a newer agent.
 - After an unclean stop, the shared folder keeps the Windows version of a file
   beside the Mac one as "(Windows copy)". If the VM stopped again before the
   Mac version was sent back, the next start made a second, identical
@@ -24,6 +54,13 @@ All notable changes to BridgeVM are documented in this file.
   keychain in the other Unicode form (composed or decomposed, for example
   after the library was copied). Before, the VM refused to start with a
   missing-key error (#689).
+
+### Removed
+
+- The legacy Rust CLI commands (`bridgevm --store …`, `--socket`, the daemon,
+  disk, snapshot-store and QEMU/VZ commands) and their crates. `bridgevm app …`
+  is the CLI for the app's library; `bridgevm hvf` keeps three Graphics Lab
+  report tools.
 
 ## [1.1.1] - 2026-11-21
 
