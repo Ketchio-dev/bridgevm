@@ -143,12 +143,16 @@ impl LockedPair {
         initialize(&self.root, |_| {})?;
         let (staged, copied) = self.stage_restore(&snapshot, &manifest, copy)?;
         let vars = &self.vars;
-        staged.publish(&self.root.join("current"), |staged, current| {
-            // Gone once the staged pair verified, before the disk changes: a crash in between
-            // leaves the old disk without its state, which only lets the Mac copy win.
-            super::remove_share_state(vars)?;
-            publish(staged, current)
-        })?;
+        staged.publish(
+            &self.root.join("current"),
+            &mut self._lease,
+            |staged, current| {
+                // Gone once the staged pair verified, before the disk changes: a crash in between
+                // leaves the old disk without its state, which only lets the Mac copy win.
+                super::remove_share_state(vars)?;
+                publish(staged, current)
+            },
+        )?;
         self.own_selected()?;
         acknowledge(&self.root)?;
         Ok(copied)
@@ -157,7 +161,10 @@ impl LockedPair {
     /// Verify the source before touching any previous restore's staging: a refused restore
     /// keeps that copy, which may be the only intact one. With none, the manifest and member
     /// types and sizes suffice here; staging hashes its copy, the bytes it publishes.
-    fn admit_restore(&self, snapshot: &Path) -> Result<(PathBuf, SnapshotManifest), SnapshotError> {
+    fn admit_restore(
+        &mut self,
+        snapshot: &Path,
+    ) -> Result<(PathBuf, SnapshotManifest), SnapshotError> {
         let snapshot = fs::canonicalize(snapshot)?;
         if snapshot.starts_with(&self.root) {
             return Err(io::Error::other("restore source must be outside managed storage").into());

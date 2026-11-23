@@ -30,9 +30,9 @@ impl LockedPair {
     }
 
     /// Validate the managed parent before removing its private stale staging.
-    pub(super) fn reclaim_staging(&self) -> io::Result<()> {
+    pub(super) fn reclaim_staging(&mut self) -> io::Result<()> {
         // Do not create storage during admission, or follow a replaced root.
-        if seal::reclaim_sealed(&self.root)? {
+        if seal::reclaim_sealed(&self.root, &mut self._lease)? {
             reclaim_unsealed(&self.root.join("staging"))?;
         }
         Ok(())
@@ -108,16 +108,12 @@ impl StageOwner {
     pub(super) fn publish(
         &self,
         destination: &Path,
+        lease: &mut MediaLease,
         publish: impl FnOnce(&Path, &Path) -> io::Result<()>,
     ) -> io::Result<()> {
-        self.finish_publication(publish(&self.path, destination))
-    }
-
-    /// Keep ownership across a failed publish and retire only confirmed current metadata.
-    fn finish_publication(&self, result: io::Result<()>) -> io::Result<()> {
-        result.inspect_err(|_| self.clear())?;
+        publish(&self.path, destination).inspect_err(|_| self.clear())?;
         if self.record.is_some() {
-            seal::retire_current(self.path.parent().unwrap())?;
+            seal::retire_current(self.path.parent().unwrap(), lease)?;
         }
         Ok(())
     }
