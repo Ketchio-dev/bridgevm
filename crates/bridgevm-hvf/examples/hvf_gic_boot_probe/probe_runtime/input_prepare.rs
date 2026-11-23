@@ -1,22 +1,27 @@
 //! Keep prelude diagnostics ordered, then release the platform before input-file access.
 //! The prelude prints how late a queued DCI5 report is against its own deadline.
 
+use crate::*;
 use std::time::Instant;
 
-macro_rules! prepare_live_input {
-    ($platform:ident, $smp_trace:ident, $automation_gate:ident, $live_input:ident, $input_wake:ident $(,)?) => {{
-        {
-            let platform_guard =
-                lock_platform(&$platform, $smp_trace.as_deref(), 0, HoldSite::Automation);
-            $automation_gate.note_checked();
-            if let Some(deadline) = platform_guard.xhci_pointer_report_deadline() {
-                input_prepare::report_overdue(deadline);
-            }
+/// The automation pass's prelude under its own short hold; then, unlocked,
+/// live input's tick. Returns whether that tick left input to apply.
+pub(crate) fn prepare_live_input(
+    platform: &Arc<Mutex<VirtPlatform>>,
+    smp_trace: Option<&SmpTrace>,
+    automation_gate: &mut AutomationGate,
+    live_input: &mut LiveInputController,
+    input_wake: bool,
+) -> bool {
+    {
+        let platform_guard = lock_platform(platform, smp_trace, 0, HoldSite::Automation);
+        automation_gate.note_checked();
+        if let Some(deadline) = platform_guard.xhci_pointer_report_deadline() {
+            report_overdue(deadline);
         }
-        $live_input.prepare_tick(std::time::Instant::now(), $input_wake)
-    }};
+    }
+    live_input.prepare_tick(std::time::Instant::now(), input_wake)
 }
-pub(crate) use prepare_live_input;
 
 /// A report still queued past its deadline means the automation pass that
 /// would emit it ran late, which separates a missed host wake from a guest TD
