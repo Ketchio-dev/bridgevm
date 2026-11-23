@@ -27,7 +27,13 @@ Text output describes the host operation and its limitation. JSON uses
 `schema: "bridgevm.app-snapshot.v1"` with the operation, exact VM ID,
 library path, snapshot path, completion state and refusal reason when present.
 
-Exit codes are 0 for a completed host operation, 1 for refusal or failure, and
-2 for invalid usage. Success does not prove Windows boots after restore, a guest
-marker survived, or A19 is complete. Those claims require the live sample and
+Ctrl-C (SIGINT) or SIGTERM stops the running helper and waits for it: the
+VM's disk and vars, a new snapshot and an export destination are each left as
+they were or complete (a restore leaves the old pair or the snapshot), never a
+mix. The command then reports `cancelled` (JSON `cancelSignal`) and exits 130
+or 143.
+
+Exit codes are 0 for a completed host operation, 1 for refusal or failure,
+130 or 143 when cancelled, and 2 for invalid usage. Success does not prove
+Windows boots after restore, a guest marker survived, or A19 is complete. Those claims require the live sample and
 interruption evidence in the [V1 snapshot scope](windows-arm/snapshot-scope-v1.md).

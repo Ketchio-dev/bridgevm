@@ -100,7 +100,9 @@ extension NativeCLI {
     or running. OUTPUT is an absolute directory outside the VM bundle. Media and
     helper paths come from the saved app library; disk, vars and secrets stay off argv.
     JSON schema: bridgevm.app-snapshot.v1.
-    Exit codes: 0 complete, 1 refused/failed, 2 invalid usage.
+    Ctrl-C or SIGTERM stops the helper and waits for it: disk, vars and OUTPUT
+    are left as before or complete, never mixed.
+    Exit codes: 0 complete, 1 refused/failed, 130/143 cancelled, 2 invalid usage.
     """
 }
 

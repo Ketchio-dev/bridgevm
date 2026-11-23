@@ -7,6 +7,15 @@ enum HvfHelperProcess {
     static let outputLimit = 1 << 20
     static let overflowTail = 4 * 1024
 
+    /// Set by the native CLI only; the app never sets it. Foundation starts the helper in its own
+    /// process group, so Ctrl-C and SIGTERM reach only the CLI and the helper would run on. With
+    /// this set, `run` passes them to the helper as SIGTERM, waits for it, and throws `Cancelled`.
+    /// Killing the snapshot helper leaves the old pair or the complete new one.
+    static var forwardsCancelSignals = false
+
+    /// The helper was stopped by a forwarded SIGINT or SIGTERM and did not succeed.
+    struct Cancelled: Error { let signal: Int32 }
+
     struct Completion {
         let output: Data
         let totalBytes: UInt64
@@ -38,7 +47,10 @@ enum HvfHelperProcess {
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = pipe
         process.standardError = pipe
+        let forwarder = forwardsCancelSignals ? SignalForwarder() : nil
+        defer { _ = forwarder?.finish() }
         try process.run()
+        forwarder?.forward(to: process.processIdentifier)
         // Only the child may hold the write end, or EOF never arrives.
         try? pipe.fileHandleForWriting.close()
         var retained = Data()
@@ -63,9 +75,62 @@ enum HvfHelperProcess {
         // After a read failure, closing makes further child writes fail so the wait ends.
         try? reader.close()
         process.waitUntilExit()
+        let cancelled = forwarder?.finish()
         if let readFailure { throw readFailure }
-        return Completion(output: retained, totalBytes: total,
-                          status: process.terminationStatus, reason: process.terminationReason)
+        let completion = Completion(output: retained, totalBytes: total,
+                                    status: process.terminationStatus, reason: process.terminationReason)
+        // A helper that finished before the signal reached it completed its work.
+        if let cancelled, !completion.succeeded { throw Cancelled(signal: cancelled) }
+        return completion
+    }
+
+    /// For one helper run, takes SIGINT and SIGTERM from their default action and sends the helper
+    /// SIGTERM instead. A signal the CLI inherited as ignored (a background job) stays ignored.
+    /// Foundation resets the child's signal dispositions, so the helper still dies of SIGTERM.
+    private final class SignalForwarder {
+        private let queue = DispatchQueue(label: "BridgeVM.HelperSignalForwarder")
+        private var previous: [(Int32, sig_t?)] = []
+        private var sources: [DispatchSourceSignal] = []
+        private var helper: pid_t = 0
+        private var received: Int32?
+
+        init() {
+            for number in [SIGINT, SIGTERM] {
+                let old = signal(number, SIG_IGN)
+                previous.append((number, old))
+                if let old, unsafeBitCast(old, to: Int.self) == unsafeBitCast(SIG_IGN, to: Int.self) { continue }
+                let source = DispatchSource.makeSignalSource(signal: number, queue: queue)
+                // Handlers run on `queue`, and finish cancels them there, so none outlives self.
+                source.setEventHandler { [unowned self] in
+                    if received == nil { received = number }
+                    if helper > 0 { kill(helper, SIGTERM) }
+                }
+                source.resume()
+                sources.append(source)
+            }
+        }
+
+        /// A signal that arrived while the helper was being started is forwarded now.
+        func forward(to pid: pid_t) {
+            queue.sync {
+                helper = pid
+                if received != nil { kill(pid, SIGTERM) }
+            }
+        }
+
+        /// Called once the helper has exited, before its PID can be reused. Returns the signal
+        /// that asked to cancel it, if any; a repeated call only returns that signal.
+        func finish() -> Int32? {
+            let signalled = queue.sync {
+                helper = 0
+                for source in sources { source.cancel() }
+                sources = []
+                return received
+            }
+            for (number, old) in previous { signal(number, old) }
+            previous = []
+            return signalled
+        }
     }
 
     /// Takes whole `progress <percent>` lines out of the output; without a reporter all passes through.
