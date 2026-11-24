@@ -110,7 +110,7 @@ final class HvfWindowsSnapshotModel: ObservableObject {
         }
         if text.contains("No space left on device")
             || (error.domain == NSCocoaErrorDomain && error.code == NSFileWriteOutOfSpaceError) {
-            return "Mac 저장 공간이 부족해 \(failed) 공간을 확보한 뒤 다시 시도하세요."
+            return "VM이 저장된 드라이브에 공간이 부족해 \(failed) 공간을 확보한 뒤 다시 시도하세요."
         }
         if text.contains("does not match the hash") || text.contains("unusable snapshot manifest") {
             return operation == .create

@@ -63,7 +63,7 @@ impl std::fmt::Display for SnapshotError {
             SnapshotError::Io(e) if e.raw_os_error() == Some(libc::ENOSPC) => {
                 write!(
                     f,
-                    "No space left on device; free space on your Mac and try again."
+                    "No space left on device. Free space on the destination volume and try again."
                 )
             }
             SnapshotError::Io(e) => write!(f, "{e}"),

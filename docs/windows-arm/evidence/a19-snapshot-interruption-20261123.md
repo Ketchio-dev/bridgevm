@@ -81,3 +81,33 @@ restore or export left a mixed, partial or unbootable pair, and no retry
 needed repair. Exports were interrupted only in the candidate run (3 kills). Rank: local
 physical-Mac runs, no queue seal. Not covered: host power loss, a full or
 failing volume, non-APFS destinations, and kills of the app (GUI) process.
+
+## November 24 follow-up
+
+Across five earlier packages, the full local record contains 54 successful trials.
+The harness found a helper present for 47 kill attempts across 23 creates, 16
+restores and eight exports. Seven restores finished before the scheduled signal.
+Those attempts are distinct from observing a child exit on SIGKILL.
+
+Ten independent Windows lifecycle runs on the locally installed build from
+`b8dcb32a` restored the original guest file, after a verified overwrite, on all
+ten boots of the exported pair. On the hosted build of the same source code,
+the restore helper was killed immediately after the current directory changed
+and reaped on SIGKILL. The ordinary app CLI retried the restore, exported the
+pair and booted Windows. The original file was present with its expected
+contents. All three boot phases ended in guest shutdown and NVMe write-back.
+[Hosted package build](https://github.com/Ketchio-dev/bridgevm/actions/runs/45299518867)
+· [Restore recovery](https://github.com/Ketchio-dev/bridgevm/pull/741)
+
+The hosted package's snapshot helper also ran with a writable 128 MiB APFS
+disk image on the development Mac. The source was on another volume, so each
+operation needed space for a copy. A replacement export had 9,207,808 bytes
+available for a 4 MiB disk and 16 MiB vars. A managed restore had 31,404,032
+bytes available for a 4 MiB disk and 48 MiB vars. Both returned a space error.
+The old export including its manifest still verified, the selected managed
+disk and vars still matched their prior hashes, and neither attempt left new
+staging entries. Removing the test filler allowed both ordinary retries to
+publish the complete new pair. These storage fixtures used synthetic files.
+
+A19 remains open. The ten-lane campaign belongs to the designated release
+build. The per-operation byte quota was removed in [#711](https://github.com/Ketchio-dev/bridgevm/pull/711).
