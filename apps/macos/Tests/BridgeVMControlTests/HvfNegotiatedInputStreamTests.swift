@@ -21,32 +21,34 @@ final class HvfNegotiatedInputStreamTests: XCTestCase {
         return stream
     }
 
-    func testNegotiationWaitsForLegacyDrainBeforeAdmission() {
+    func testLateCapabilityReceiptWaitsForLegacyDrainBeforeAdmission() {
         var stream = HvfNegotiatedInputStream()
         XCTAssertEqual(stream.enqueue(.text("old"), now: now), .legacy)
         var query = ""
         _ = stream.poll(serviceReady: true, legacyQuiescent: false, lines: [], now: now) { query = $0; return true }
         XCTAssertTrue(query.hasPrefix("INPUTCAPS "))
-        _ = stream.poll(serviceReady: true, legacyQuiescent: false, lines: support(query), now: now) { _ in false }
+        let later = now.addingTimeInterval(31)
+        _ = stream.poll(serviceReady: true, legacyQuiescent: false, lines: [], now: later) {
+            _ in XCTFail("retried INPUTCAPS while its reply was pending"); return false
+        }
+        XCTAssertEqual(stream.enqueue(.text("still old"), now: later), .legacy)
+        _ = stream.poll(serviceReady: true, legacyQuiescent: false, lines: support(query), now: later) { _ in false }
         XCTAssertEqual(stream.state, .waitingForLegacy)
-        _ = stream.poll(serviceReady: true, legacyQuiescent: false, lines: [], now: now) { _ in false }
-        XCTAssertEqual(stream.enqueue(.text("still old"), now: now), .legacy)
-        _ = stream.poll(serviceReady: true, legacyQuiescent: true, lines: [], now: now) { _ in false }
-        XCTAssertEqual(stream.enqueue(.text("new"), now: now), .queued)
+        _ = stream.poll(serviceReady: true, legacyQuiescent: false, lines: [], now: later) { _ in false }
+        XCTAssertEqual(stream.enqueue(.text("draining"), now: later), .legacy)
+        _ = stream.poll(serviceReady: true, legacyQuiescent: true, lines: [], now: later) { _ in false }
+        XCTAssertEqual(stream.enqueue(.text("new"), now: later), .queued)
         XCTAssertEqual(stream.count, 1)
     }
 
-    func testUnsupportedOrSilentAgentAllowsLegacyButDoesNotSendInput() {
-        for silent in [false, true] {
-            var stream = HvfNegotiatedInputStream()
-            var query = ""
-            _ = stream.poll(serviceReady: true, legacyQuiescent: true, lines: [], now: now) { query = $0; return true }
-            let lines = silent ? [] : ["BVAGENT CMD \(query) exit=1"]
-            _ = stream.poll(serviceReady: true, legacyQuiescent: true, lines: lines,
-                            now: now.addingTimeInterval(silent ? 30 : 0)) { _ in XCTFail("unexpected send"); return false }
-            XCTAssertEqual(stream.state, .unavailable)
-            XCTAssertEqual(stream.enqueue(.text("legacy"), now: now), .legacy)
-        }
+    func testUnsupportedAgentAllowsLegacy() {
+        var stream = HvfNegotiatedInputStream()
+        var query = ""
+        _ = stream.poll(serviceReady: true, legacyQuiescent: true, lines: [], now: now) { query = $0; return true }
+        _ = stream.poll(serviceReady: true, legacyQuiescent: true,
+                        lines: ["BVAGENT CMD \(query) exit=1"], now: now) { _ in XCTFail("unexpected send"); return false }
+        XCTAssertEqual(stream.state, .unavailable)
+        XCTAssertEqual(stream.enqueue(.text("legacy"), now: now), .legacy)
     }
 
     func testFailureAfterDispatchCannotFallBackOrReplay() {

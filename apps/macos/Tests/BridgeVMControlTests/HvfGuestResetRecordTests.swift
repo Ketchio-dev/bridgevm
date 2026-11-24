@@ -24,8 +24,8 @@ final class HvfGuestResetRecordTests: XCTestCase {
         for reset in resets {
             var text = try XCTUnwrap(HvfUnicodeInputRequest(text: "a", now: now))
             XCTAssertEqual(text.consume(lines: receipt(text.command) + [reset], now: now), .failed(.restarted), reset)
-            var caps = HvfInputCapabilitiesRequest(now: now)
-            XCTAssertEqual(caps.consume(lines: support(caps.command) + [reset], now: now), .failed(.restarted), reset)
+            var caps = HvfInputCapabilitiesRequest()
+            XCTAssertEqual(caps.consume(lines: support(caps.command) + [reset]), .failed(.restarted), reset)
             var inventory = HvfWindowInventoryRequest(now: now)
             if case .failure(.restarted) = inventory.consume(lines: windows(inventory.command) + [reset], now: now) {}
             else { XCTFail("inventory published across \(reset)") }
@@ -63,8 +63,8 @@ final class HvfGuestResetRecordTests: XCTestCase {
         for line in inert {
             var text = try XCTUnwrap(HvfUnicodeInputRequest(text: "a", now: now))
             XCTAssertEqual(text.consume(lines: receipt(text.command) + [line], now: now), .inserted, line)
-            var caps = HvfInputCapabilitiesRequest(now: now)
-            XCTAssertEqual(caps.consume(lines: support(caps.command) + [line], now: now), .supported, line)
+            var caps = HvfInputCapabilitiesRequest()
+            XCTAssertEqual(caps.consume(lines: support(caps.command) + [line]), .supported, line)
             var inventory = HvfWindowInventoryRequest(now: now)
             if case .success = inventory.consume(lines: windows(inventory.command) + [line], now: now) {}
             else { XCTFail("inventory discarded on \(line)") }

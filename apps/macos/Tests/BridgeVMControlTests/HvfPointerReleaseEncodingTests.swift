@@ -22,11 +22,10 @@ final class HvfPointerReleaseEncodingTests: XCTestCase {
     }
 
     func testVersionTwoWithoutCommonReleaseIsRejected() {
-        let now = Date(timeIntervalSince1970: 2_000)
-        var request = HvfInputCapabilitiesRequest(now: now)
+        var request = HvfInputCapabilitiesRequest()
         let id = request.command.split(separator: " ")[1]
         let lines = ["BVAGENT CMD \(request.command) exit=0", "BVINPUT_CAPS \(id) 2 TEXTINPUT KEYINPUT POINTERINPUT 65536",
                      "BVAGENT END \(request.command)"]
-        XCTAssertEqual(request.consume(lines: lines, now: now), .failed(.invalidReceipt))
+        XCTAssertEqual(request.consume(lines: lines), .failed(.invalidReceipt))
     }
 }
