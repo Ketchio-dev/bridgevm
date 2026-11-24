@@ -23,6 +23,10 @@ must be absolute and outside the managed VM bundle. Disk and vars paths come
 from the exact saved app-library entry; secrets remain off argv. The bundled
 helper must be a canonical regular executable in the BridgeVM installation.
 
+On an exFAT drive, give each export a new folder name. macOS can add hidden
+metadata files alongside the disk and UEFI variables. BridgeVM preserves the
+earlier export when the folder contains these files.
+
 Text output describes the host operation and its limitation. JSON uses
 `schema: "bridgevm.app-snapshot.v1"` with the operation, exact VM ID,
 library path, snapshot path, completion state and refusal reason when present.

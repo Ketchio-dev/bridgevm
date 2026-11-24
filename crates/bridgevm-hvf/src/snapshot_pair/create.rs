@@ -273,14 +273,13 @@ fn listed(dir: &Path, allowed: &[&str], companions: bool) -> Result<Vec<OsString
     Ok(names)
 }
 
-/// The managed in-app path has no output choice, so removal is offered too.
+/// The app chooses its snapshot path. Moving an entry aside keeps it recoverable.
 fn refusal(what: &str, path: &Path, why: String) -> io::Error {
     io::Error::new(
         io::ErrorKind::AlreadyExists,
         format!(
-            "snapshot {what} {} {why}; it was left intact: {}",
-            path.display(),
-            "remove or rename it, or choose a new output path"
+            "snapshot {what} {} {why}. The {what} was left intact. Choose a new output path or move it aside.",
+            path.display()
         ),
     )
 }

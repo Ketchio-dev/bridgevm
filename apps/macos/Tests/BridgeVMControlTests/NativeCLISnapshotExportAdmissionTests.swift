@@ -18,7 +18,7 @@ final class NativeCLISnapshotExportAdmissionTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: personal.path), ["keep.txt"])
         XCTAssertFalse(result.complete, "export replaced an unrelated directory")
         XCTAssertNil(result.snapshotPath)
-        XCTAssertTrue(result.unavailableReason?.contains("left intact: remove or rename it") == true, result.unavailableReason ?? "")
+        XCTAssertTrue(result.unavailableReason?.contains("destination was left intact. Choose a new output path") == true, result.unavailableReason ?? "")
         let staging = personal.deletingLastPathComponent().appendingPathComponent(".personal.staging")
         XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
     }
