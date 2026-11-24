@@ -3,7 +3,7 @@
 //! that still has to be replayed are refused; sector-bitmap entries only
 //! matter for differencing disks and are skipped.
 
-use super::{le16, le32, le64, within, Refusal, Result, Run, MAX_VIRTUAL_BYTES};
+use super::{le16, le32, le64, within, Refusal, Result, Run, RunSource, MAX_VIRTUAL_BYTES};
 use std::fs::File;
 use std::os::unix::fs::FileExt;
 
@@ -157,21 +157,21 @@ impl Vhdx {
                 }
                 let virt = block_index * self.block;
                 let len = self.block.min(self.size - virt);
-                let host = match entry & 7 {
+                let source = match entry & 7 {
                     // NOT_PRESENT, UNDEFINED, ZERO, UNMAPPED
-                    0..=3 => None,
+                    0..=3 => RunSource::Hole,
                     6 => {
                         let offset = entry & !(MIB - 1);
                         if offset < HEADER_SECTION || offset >= self.file_len {
                             return Err(Refusal::Damaged("VHDX block is outside the file").into());
                         }
-                        Some(offset)
+                        RunSource::Data(offset)
                     }
                     // PARTIALLY_PRESENT: only a differencing disk has these.
                     7 => return Err(Refusal::Differencing.into()),
                     _ => return Err(Refusal::Damaged("VHDX block state is unknown").into()),
                 };
-                sink(Run { virt, len, host })?;
+                sink(Run { virt, len, source })?;
                 block_index += 1;
             }
             first += count;

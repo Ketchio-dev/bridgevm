@@ -225,7 +225,7 @@ fn refusals_name_what_the_user_must_do() {
         .to_string()
         .starts_with("이 디스크는 다른 디스크를 기반으로 하니"));
 
-    // A compressed cluster is refused only when one is met.
+    // The fixture marks non-deflate bytes as a compressed cluster.
     let (image, _) = qcow2(
         3,
         16,
@@ -235,7 +235,13 @@ fn refusals_name_what_the_user_must_do() {
             (9, Cluster::Compressed),
         ],
     );
-    assert_eq!(refusal(&s, &image), Refusal::Compressed);
+    assert_eq!(
+        refusal(&s, &image),
+        Refusal::Damaged("invalid QCOW2 deflate cluster")
+    );
+    let mut other_codec = image;
+    patch_be(&mut other_codec, q::INCOMPATIBLE, 8, 8);
+    assert_eq!(refusal(&s, &other_codec), Refusal::Compressed);
     let mut image = base.clone();
     patch_be(&mut image, q::INCOMPATIBLE, 8, 8); // the compression-type bit alone
     assert!(convert(&s, &image).is_ok());

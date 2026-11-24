@@ -3,8 +3,8 @@
 //!
 //! The source file is untrusted. Its metadata is walked completely before
 //! anything is written: every offset, size and count is checked against the
-//! file length and fixed limits, and every refusal (a compressed cluster, a
-//! backing file, a VHDX log to replay...) is met then, so a refused image
+//! file length and fixed limits, and every metadata refusal (a backing file, a
+//! VHDX log to replay...) is met then, so a refused image
 //! leaves nothing behind. The second walk copies: runs of data contiguous in
 //! both the image and the file become one large read, and only non-zero 4 KiB
 //! blocks are written, so unallocated, zero and all-zero clusters stay holes.
@@ -82,7 +82,7 @@ impl fmt::Display for Refusal {
         const GB: u64 = 1_000_000_000;
         match self {
             Refusal::NotAnImage => write!(f, "QCOW2나 VHDX 디스크가 아니니 디스크 파일을 다시 선택하세요."),
-            Refusal::Compressed => write!(f, "이 QCOW2 디스크에는 압축된 영역이 있으니 qemu-img로 압축하지 않은 디스크로 변환한 뒤 다시 가져오세요."),
+            Refusal::Compressed => write!(f, "이 QCOW2 압축 형식을 지원하지 않으니 원래 VM 앱에서 RAW로 변환한 뒤 다시 가져오세요."),
             Refusal::Encrypted => write!(f, "암호화된 QCOW2 디스크는 가져올 수 없으니 qemu-img로 암호화를 푼 디스크로 변환한 뒤 다시 가져오세요."),
             Refusal::BackingFile => write!(f, "이 디스크는 다른 디스크를 기반으로 하니 qemu-img로 하나의 디스크로 합친 뒤 다시 가져오세요."),
             Refusal::ExternalDataFile => write!(f, "이 QCOW2 디스크는 데이터를 별도 파일에 두니 qemu-img로 하나의 디스크로 변환한 뒤 다시 가져오세요."),
@@ -137,14 +137,19 @@ impl std::error::Error for ConvertError {}
 
 type Result<T> = std::result::Result<T, ConvertError>;
 
-/// One stretch of the virtual disk: data at `host` in the image file, or a
-/// hole (unallocated or zero) when `host` is None. Runs arrive in order and
-/// tile `[0, virtual size)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RunSource {
+    Hole,
+    Data(u64),
+    Deflate(qcow2::CompressedCluster),
+}
+
+/// Runs arrive in virtual disk order and tile `[0, virtual size)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Run {
     virt: u64,
     len: u64,
-    host: Option<u64>,
+    source: RunSource,
 }
 
 /// The parsed metadata of a source image.
@@ -198,7 +203,7 @@ pub fn convert_to_raw(src: &Path, dst: &Path, mut progress: impl FnMut(u8)) -> R
     // to copy is counted, before anything exists at the destination.
     let mut data_bytes = 0u64;
     image.walk(&file, &mut |run| {
-        if run.host.is_some() {
+        if run.source != RunSource::Hole {
             data_bytes += run.len;
         }
         Ok(())
@@ -251,8 +256,16 @@ struct Copier<'a> {
 
 impl Copier<'_> {
     fn add(&mut self, run: Run) -> Result<()> {
-        let Some(mut host) = run.host else {
-            return self.flush();
+        let mut host = match run.source {
+            RunSource::Hole => return self.flush(),
+            RunSource::Data(offset) => offset,
+            RunSource::Deflate(cluster) => {
+                self.flush()?;
+                let data = cluster.decode(self.src, &mut self.buf)?;
+                write_nonzero(self.out, &data[..run.len as usize], run.virt)?;
+                self.advance(run.len);
+                return Ok(());
+            }
         };
         let (mut virt, mut len) = (run.virt, run.len);
         while len > 0 {
@@ -279,13 +292,17 @@ impl Copier<'_> {
         let buf = &mut self.buf[..len as usize];
         read_padded(self.src, buf, host)?;
         write_nonzero(self.out, buf, virt)?;
+        self.advance(len);
+        Ok(())
+    }
+
+    fn advance(&mut self, len: u64) {
         self.done += len;
         let percent = (self.done.saturating_mul(100) / self.total.max(1)).min(99) as u8;
         if percent > self.percent {
             self.percent = percent;
             (self.progress)(percent);
         }
-        Ok(())
     }
 }
 
