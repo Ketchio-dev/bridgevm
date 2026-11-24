@@ -103,7 +103,7 @@ scripts/run-hvf-windows-installed-boot.sh \
   --hda-coreaudio \
   --agent-service-control "$CTL" \
   ${launch_options[@]+"${launch_options[@]}"} \
-  > "$OUT/launcher.out" 2>&1 &
+  < /dev/null > "$OUT/launcher.out" 2>&1 &
 LAUNCHER=$!
 set +m
 
