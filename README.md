@@ -78,7 +78,7 @@ Choose the Windows setup path that matches what you have:
 
 | Starting point | What you provide |
 | --- | --- |
-| **Install from ISO** | Your own licensed Windows 11 Arm ISO. On your click the app downloads the Microsoft-signed Red Hat virtio-win storage/serial/network drivers (about 95 MB) from the official source and checks them against a pinned SHA-256; you can still choose your own signed ARM64 driver folder and manifest instead. One live install from an ISO with the downloaded drivers reached Windows setup with storage, serial and network working (2026-11-20, development Mac); a clean-Mac run through the app is not yet recorded. |
+| **Install from ISO** | Your own licensed Windows 11 Arm ISO. Choose **드라이버 자동 준비** to download the Microsoft-signed Red Hat virtio-win storage, serial and network drivers (about 95 MB) and check their pinned SHA-256. You can also select your own signed ARM64 driver folder and manifest. |
 | **Import an installed VM** | A Windows 11 Arm disk in RAW, QCOW2 or Hyper-V VHDX format. Import needs no driver payload. |
 
 In current source builds, quitting during import offers **Finish Then Quit**
