@@ -7,7 +7,8 @@
 //! them are unaffected and it never writes these words:
 //!
 //! - bytes 32..40, the request: a little-endian u64 written only by the reader,
-//!   with `pwrite`, once per display tick. It is the reader's
+//!   with `pwrite`. Display ticks offer requests, coalescing to the latest when
+//!   a previous write is busy. It is the reader's
 //!   `CLOCK_UPTIME_RAW` time in nanoseconds, so a writer on the same host can
 //!   tell both that a new request came and how long ago it was posted.
 //! - bytes 40..44, the marker: [`FRAME_REQUEST_MARKER`] as a little-endian

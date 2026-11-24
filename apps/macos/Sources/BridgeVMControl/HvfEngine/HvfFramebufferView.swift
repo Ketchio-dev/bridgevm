@@ -29,7 +29,7 @@ final class FBLayerView: HvfFramebufferTextInput {
     var frameReader = HvfFramebufferFrameReader()
     /// Where 2D frames are copied and shown from; nil once IOSurfaces cannot be made (then CGImages).
     var surfaces: HvfFramebufferSurfaces? = HvfFramebufferSurfaces()
-    let frameRequester = HvfFramebufferFrameRequester()
+    let frameRequester: HvfFramebufferFrameRequester
     private var iosurfacePresenter = HvfIOSurfacePresenter()
     private var pointerMoves = HvfPointerMoveMailbox()
     private let pointerCapture = HvfPointerCapture()
@@ -59,9 +59,11 @@ final class FBLayerView: HvfFramebufferTextInput {
         reportDisplaySize(settled: false)
     }
 
-    init(session: HvfEngineSession, imageFactory: HvfFramebufferImageFactory = HvfFramebufferImageFactory()) {
+    init(session: HvfEngineSession, imageFactory: HvfFramebufferImageFactory = HvfFramebufferImageFactory(),
+         frameRequester: HvfFramebufferFrameRequester = HvfFramebufferFrameRequester()) {
         self.session = session
         self.imageFactory = imageFactory
+        self.frameRequester = frameRequester
         super.init(frame: .zero)
 
         wantsLayer = true
@@ -541,8 +543,8 @@ extension FBLayerView {
     }
 
     func resetMapping() {
-        framebufferMapping = nil
         frameRequester.reset()
+        framebufferMapping = nil
         lastProcessedSeq = .max
     }
 }
