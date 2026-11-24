@@ -73,6 +73,9 @@ class PackagePublicationTests(unittest.TestCase):
                     self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
                     if kind == "dmg" and mode == "create-fail":
                         self.assertIn("hdiutil: create failed - Resource busy", result.stderr)
+                    if kind == "dmg" and mode == "verify-fail":
+                        self.assertIn("hdiutil: verify failed - image data corrupted", result.stderr)
+                        self.assertEqual([c[1] for c in f.commands() if c[0] == "hdiutil"], ["create", "verify"])
                     self.assertFalse(os.path.lexists(f.output))
                     self.assertEqual(snapshot(f.app), before)
                     self.assert_clean(f)
@@ -81,6 +84,18 @@ class PackagePublicationTests(unittest.TestCase):
                     self.assertTrue(f.output.is_file())
                     self.assertEqual(snapshot(f.app), before)
                     self.assert_clean(f)
+
+    def test_temporary_dmg_verification_rechecks_the_created_image(self):
+        f = self.fixture("dmg")
+        result = f.run("verify-temporary")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("hdiutil: verify failed - Resource temporarily unavailable", result.stderr)
+        create, first_verify, second_verify = [c for c in f.commands() if c[0] == "hdiutil"]
+        self.assertEqual([create[1], first_verify[1], second_verify[1]], ["create", "verify", "verify"])
+        self.assertEqual(create[-1], first_verify[-1])
+        self.assertEqual(first_verify, second_verify)
+        self.assertEqual(f.output.read_bytes(), b"synthetic disk image")
+        self.assert_clean(f)
 
     def test_concurrent_output_creation_is_never_replaced(self):
         for kind in ("dmg", "tar"):

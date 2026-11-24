@@ -37,7 +37,15 @@ elif tool == "hdiutil":
                 print("hdiutil: create failed - Resource busy", file=sys.stderr)
             sys.exit(73)
     elif args[0] == "verify":
-        if mode == "verify-fail": sys.exit(74)
+        if mode == "verify-fail":
+            print("hdiutil: verify failed - image data corrupted", file=sys.stderr)
+            sys.exit(1)
+        if mode == "verify-temporary":
+            attempted = archive.with_name("verification-attempted")
+            if not attempted.exists():
+                attempted.touch()
+                print("hdiutil: verify failed - Resource temporarily unavailable", file=sys.stderr)
+                sys.exit(1)
         if mode == "race": race()
         assert archive.read_bytes() == b"synthetic disk image"
     else: sys.exit(75)
