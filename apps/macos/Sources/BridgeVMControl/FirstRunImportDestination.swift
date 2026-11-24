@@ -3,6 +3,8 @@ import Darwin
 
 /// Owns one newly created registration directory; existing entries are never reused.
 struct FirstRunImportDestination {
+    struct NameInUse: Error {}
+
     let root: URL
     private let device: dev_t
     private let inode: ino_t
@@ -17,7 +19,9 @@ struct FirstRunImportDestination {
         try fileManager.createDirectory(at: libraryRoot, withIntermediateDirectories: true)
         // Foundation accepts an existing directory here. mkdir reserves it exclusively.
         guard mkdir(root.path, S_IRWXU) == 0 else {
-            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+            if code == .EEXIST { throw NameInUse() }
+            throw POSIXError(code)
         }
         var metadata = stat()
         guard lstat(root.path, &metadata) == 0 else {
