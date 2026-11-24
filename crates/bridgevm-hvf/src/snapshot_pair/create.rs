@@ -6,7 +6,8 @@
 //! leased; the manifest is written last, so only staging that holds one can be
 //! a completed snapshot. The destination is admitted again right before
 //! publication, which is the check that keeps what arrived during the copy.
-//! A create also clears sibling staging that a killed create left behind.
+//! The app's stored-snapshot path can also reclaim its interrupted attempts
+//! under the VM's snapshot store.
 
 use super::files::{copy_and_sync, sha256_file};
 use super::publish::publish;
@@ -16,12 +17,15 @@ use super::{
     SNAPSHOT_FORMAT_VERSION, VARS_NAME,
 };
 use crate::media_lease::MediaLease;
+use ownership::Record;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::path::{Path, PathBuf};
+
+mod ownership;
 
 /// Internal durable boundaries in snapshot creation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -77,12 +81,32 @@ fn create_stopped(
     let (disk, vars) = (selected_disk.as_path(), selected_vars.as_path());
 
     let dest = prepare_destination(dest, [&logical_disk, &logical_vars, disk, vars])?;
-    let (_members, staging) = claim_staging(&dest)?;
+    let reservation = store_reservation(&dest, &logical_disk, &logical_vars);
+    let (_members, staging) = claim_staging(&dest, reservation)?;
+    if reservation.is_some() {
+        reclaim_abandoned(&staging.path);
+    }
     let manifest = staging.fill([disk, vars], vm_id, copy, &mut observe)?;
     // Never remove the previous snapshot before its replacement is published.
-    staging.publish(&dest, publish)?;
+    staging.publish(&dest, reservation, publish)?;
     observe(CreateStage::SnapshotPublished);
     Ok(manifest)
+}
+
+/// The app reserves a destination in this exact store before calling the
+/// helper. Native export destinations are outside the source VM's bundle.
+fn store_reservation(destination: &Path, disk: &Path, vars: &Path) -> Option<(u64, u64)> {
+    let bundle = disk.parent()?.parent()?;
+    if disk == bundle.join("disks/hvf-target.raw")
+        && vars == bundle.join("metadata/hvf-vars.fd")
+        && destination.parent() == Some(bundle.join("metadata/snapshots").as_path())
+        && present_directory(destination).ok() == Some(true)
+        && empty(destination)
+    {
+        identity(destination).ok()
+    } else {
+        None
+    }
 }
 
 /// Resolve a snapshot destination without permitting source overlap.
@@ -120,7 +144,10 @@ fn prepare_destination(dest: &Path, sources: [&Path; 4]) -> io::Result<PathBuf> 
 /// and another create of this destination holds those of its staging. The
 /// keys of an existing directory's members are canonical, so a case or
 /// Unicode alias of the same name meets the same keys.
-fn claim_staging(destination: &Path) -> io::Result<(MediaLease, OwnedStaging)> {
+fn claim_staging(
+    destination: &Path,
+    reservation: Option<(u64, u64)>,
+) -> io::Result<(MediaLease, OwnedStaging)> {
     admit_destination(destination)?;
     let staged = staging_path(destination);
     let mut lease = MediaLease::acquire([])?;
@@ -131,20 +158,17 @@ fn claim_staging(destination: &Path) -> io::Result<(MediaLease, OwnedStaging)> {
     let staging = OwnedStaging::create(&staged)?;
     // Reserve the fresh member path keys before copying either file; for
     // staging that existed above they are already held.
-    own_members(&mut lease, &staged)?;
-    reclaim_abandoned(&staged);
+    own_members(&mut lease, &staged)
+        .and_then(|()| staging.record_ownership(reservation))
+        .inspect_err(|_| drop(staging.discard()))?;
     Ok((lease, staging))
 }
 
 /// Best effort: clear what earlier killed creates left beside this one.
 ///
-/// A killed create leaves `.N.staging` and, from the app, its empty `N`
-/// reservation; later creates choose new names, so their own reclaim never
-/// meets it. A sibling is cleared only when `N` is absent or an empty
-/// directory, no create owns its member keys and `reclaim_staging` finds only
-/// creation's own unfinished files; then the empty `N` is removed. Empty
-/// staging is skipped: a live create's is empty until it owns those keys.
-/// Anything else is kept, and nothing here fails this create.
+/// App creates choose a new name each time. Recover only stages with a record
+/// of an app reservation, and remove that reservation only while it is still
+/// the same empty directory. Unknown siblings stay in place.
 fn reclaim_abandoned(own: &Path) {
     let (Some(parent), Some(own)) = (own.parent(), own.file_name()) else {
         return;
@@ -163,22 +187,36 @@ fn reclaim_abandoned(own: &Path) {
         };
         let reservation = parent.join(OsStr::from_bytes(reserved));
         let staging = parent.join(&name);
-        if name.as_os_str() == own || !absent_or_empty(&reservation) || empty(&staging) {
+        if name.as_os_str() == own || present_directory(&staging).ok() != Some(true) {
             continue;
         }
+        let Ok(record) = Record::read(&staging) else {
+            continue;
+        };
+        let Some(reserved_identity) = record.reservation else {
+            continue;
+        };
+        let reservation_present = match fs::symlink_metadata(&reservation) {
+            Ok(metadata)
+                if metadata.is_dir()
+                    && (metadata.dev(), metadata.ino()) == reserved_identity
+                    && empty(&reservation) =>
+            {
+                true
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+            _ => continue,
+        };
         let Ok(mut lease) = MediaLease::acquire([]) else {
             return;
         };
-        if own_members(&mut lease, &staging).is_ok() && reclaim_staging(&staging).is_ok() {
+        if own_members(&mut lease, &staging).is_ok()
+            && reclaim_owned(&staging, &record).is_ok()
+            && reservation_present
+            && identity(&reservation).is_ok_and(|actual| actual == reserved_identity)
+        {
             let _ = fs::remove_dir(&reservation);
         }
-    }
-}
-
-fn absent_or_empty(path: &Path) -> bool {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata.is_dir() && empty(path),
-        Err(error) => error.kind() == io::ErrorKind::NotFound,
     }
 }
 
@@ -299,8 +337,16 @@ fn clear_staging_then(staging: &Path, after_listing: impl FnOnce()) -> io::Resul
     if !present_directory(staging).map_err(refuse)? {
         return Ok(());
     }
-    let allowed = [DISK_NAME, VARS_NAME, MANIFEST_NAME, MANIFEST_TEMPORARY];
-    let names = listed(staging, &allowed, true).map_err(refuse)?;
+    let allowed = [
+        DISK_NAME,
+        VARS_NAME,
+        MANIFEST_NAME,
+        MANIFEST_TEMPORARY,
+        ownership::NAME,
+    ];
+    let mut names = listed(staging, &allowed, true).map_err(refuse)?;
+    // Keep the ownership proof until the copied files have been removed.
+    names.sort_by_key(|name| name == ownership::NAME);
     after_listing();
     for name in names {
         // On exFAT, unlinking a file also unlinks its "._" companion.
@@ -313,14 +359,8 @@ fn clear_staging_then(staging: &Path, after_listing: impl FnOnce()) -> io::Resul
     fs::remove_dir(staging)
 }
 
-/// Reclaim pre-existing staging only when it provably never completed.
-///
-/// `.NAME.staging` is also a name a user may export to, and a completed export
-/// there is indistinguishable from an attempt that finished staging and then
-/// died before publication. Creation renames manifest.json into staging last,
-/// so only its absence proves no snapshot completed there. Staging holding it
-/// is kept for the user to move or remove; this attempt's own staging is still
-/// cleared by `clear_staging` after a failure.
+/// Reclaim an earlier attempt only if its ownership record still identifies
+/// this unfinished staging directory.
 ///
 /// Runs under the member leases, before staging is claimed.
 fn reclaim_staging(staging: &Path) -> io::Result<()> {
@@ -328,8 +368,25 @@ fn reclaim_staging(staging: &Path) -> io::Result<()> {
     if !present_directory(staging).map_err(refuse)? {
         return Ok(());
     }
+    require_unpublished(staging)?;
+    let record = Record::read(staging)
+        .map_err(|_| refuse("has no matching BridgeVM ownership record".into()))?;
+    reclaim_owned(staging, &record)
+}
+
+fn reclaim_owned(staging: &Path, record: &Record) -> io::Result<()> {
+    let refuse = |why: String| refusal("staging directory", staging, why);
+    if identity(staging)? != record.stage {
+        return Err(refuse("changed before recovery".into()));
+    }
+    require_unpublished(staging)?;
+    clear_staging(staging)
+}
+
+fn require_unpublished(staging: &Path) -> io::Result<()> {
+    let refuse = |why: String| refusal("staging directory", staging, why);
     match fs::symlink_metadata(staging.join(MANIFEST_NAME)) {
-        Err(error) if error.kind() == io::ErrorKind::NotFound => clear_staging(staging),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Ok(_) => Err(refuse(format!(
             "holds a published {MANIFEST_NAME}, so it may be a completed snapshot \
              (such as an earlier export) rather than an unfinished attempt"
@@ -354,10 +411,26 @@ struct OwnedStaging {
 impl OwnedStaging {
     /// Create staging empty and record its identity before anything else runs.
     fn create(path: &Path) -> io::Result<Self> {
-        fs::create_dir(path)?;
+        fs::DirBuilder::new().mode(0o700).create(path)?;
         let identity = identity(path)?;
         let path = path.to_path_buf();
         Ok(Self { path, identity })
+    }
+
+    fn record_ownership(&self, reservation: Option<(u64, u64)>) -> io::Result<()> {
+        Record {
+            stage: self.identity,
+            reservation,
+        }
+        .write(&self.path)
+    }
+
+    fn require_identity(&self) -> io::Result<()> {
+        if identity(&self.path)? == self.identity {
+            Ok(())
+        } else {
+            Err(io::Error::other("snapshot staging directory changed"))
+        }
     }
 
     /// Staging was created empty under the member leases, so a failure leaves
@@ -369,8 +442,7 @@ impl OwnedStaging {
         copy: impl FnMut(&Path, &Path) -> io::Result<u64>,
         observe: &mut impl FnMut(CreateStage),
     ) -> Result<SnapshotManifest, SnapshotError> {
-        fill_staging(sources, &self.path, vm_id, copy, observe)
-            .inspect_err(|_| drop(self.discard()))
+        fill_staging(sources, self, vm_id, copy, observe).inspect_err(|_| drop(self.discard()))
     }
 
     /// Re-admit after staging, so a destination that changed meanwhile is kept.
@@ -378,11 +450,29 @@ impl OwnedStaging {
     fn publish(
         &self,
         destination: &Path,
+        reservation: Option<(u64, u64)>,
         publish: impl FnOnce(&Path, &Path) -> io::Result<()>,
     ) -> io::Result<()> {
-        admit_destination(destination)
-            .and_then(|()| publish(&self.path, destination))
-            .map_err(|error| self.refusal(error))
+        let result = (|| {
+            self.require_identity()?;
+            if let Some(reserved) = reservation {
+                // A late nonempty destination must make the rename fail. The
+                // app allocated this name for a new snapshot, never a replacement.
+                if identity(destination)? != reserved {
+                    return Err(refusal(
+                        "destination",
+                        destination,
+                        "changed after reservation".into(),
+                    ));
+                }
+                fs::rename(&self.path, destination)?;
+                sync_dir(destination.parent().unwrap())
+            } else {
+                admit_destination(destination)?;
+                publish(&self.path, destination)
+            }
+        })();
+        result.map_err(|error| self.refusal(error))
     }
 
     /// Clearing follows debris rules, so content that arrived meanwhile stays.
@@ -434,11 +524,12 @@ const UNSUPPORTED_GUIDANCE: &str =
 /// Stage a copied pair, then hash it and publish its manifest last.
 fn fill_staging(
     [disk, vars]: [&Path; 2],
-    staging: &Path,
+    stage: &OwnedStaging,
     vm_id: &str,
     mut copy: impl FnMut(&Path, &Path) -> io::Result<u64>,
     observe: &mut impl FnMut(CreateStage),
 ) -> Result<SnapshotManifest, SnapshotError> {
+    let staging = &stage.path;
     let disk_bytes = copy(disk, &staging.join(DISK_NAME))?;
     observe(CreateStage::DiskSynced);
     let vars_bytes = copy(vars, &staging.join(VARS_NAME))?;
@@ -453,7 +544,9 @@ fn fill_staging(
         vars_sha256: sha256_file(&staging.join(VARS_NAME))?,
     };
     // The manifest is written last and is what makes the directory valid.
+    stage.require_identity()?;
     write_file_atomically(&staging.join(MANIFEST_NAME), encode(&manifest)?.as_bytes())?;
+    fs::remove_file(staging.join(ownership::NAME))?;
     observe(CreateStage::ManifestPublished);
     sync_dir(staging)?;
     observe(CreateStage::StagingDirectorySynced);

@@ -152,15 +152,14 @@ fn a_share_state_that_cannot_be_removed_fails_the_restore_before_the_pair_change
 }
 
 #[test]
-fn an_interrupted_create_leaves_the_previous_snapshot_intact() {
+fn unowned_legacy_staging_leaves_the_previous_snapshot_intact() {
     let s = Scratch::new("interrupted");
     let disk = s.write("disk", b"first");
     let vars = s.write("vars", b"first vars");
     let dest = s.path("snap");
     let first = create_snapshot(&disk, &vars, &dest, "vm").unwrap();
 
-    // Simulate a crash partway through a second snapshot: a staging directory
-    // exists with a half-written disk and no manifest.
+    // An interruption from a version without a staging ownership record.
     let staging = staging_path(&dest);
     fs::create_dir_all(&staging).unwrap();
     fs::write(staging.join(DISK_NAME), b"partial").unwrap();
@@ -168,11 +167,15 @@ fn an_interrupted_create_leaves_the_previous_snapshot_intact() {
     // The published snapshot is untouched and still verifies.
     assert_eq!(verify_snapshot(&dest).unwrap(), first);
 
-    // And the next create clears the debris rather than mixing with it.
+    // A retry can choose a fresh output while preserving both existing directories.
     fs::write(&disk, b"second").unwrap();
-    let second = create_snapshot(&disk, &vars, &dest, "vm").unwrap();
+    assert!(create_snapshot(&disk, &vars, &dest, "vm").is_err());
+    assert_eq!(verify_snapshot(&dest).unwrap(), first);
+    let new_dest = s.path("new-snap");
+    let second = create_snapshot(&disk, &vars, &new_dest, "vm").unwrap();
     assert_ne!(second.disk_sha256, first.disk_sha256);
-    assert_eq!(verify_snapshot(&dest).unwrap(), second);
+    assert_eq!(verify_snapshot(&new_dest).unwrap(), second);
+    assert_eq!(fs::read(staging.join(DISK_NAME)).unwrap(), b"partial");
 }
 
 #[test]
