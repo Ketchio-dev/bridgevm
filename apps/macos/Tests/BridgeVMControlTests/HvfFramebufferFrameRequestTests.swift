@@ -25,6 +25,10 @@ final class HvfFramebufferFrameRequestTests: XCTestCase {
 
     func testDisplayTickLeavesAWriterWithoutTheMarkAlone() async throws {
         try await withView(marker: 0) { view, path, original in
+            view.frameRequester.clock = {
+                XCTFail("An unmarked writer must not receive a request")
+                return 1
+            }
             view.refreshFrame(at: 0)
             view.refreshFrame(at: 1)
             XCTAssertNotNil(view.layer?.contents)
@@ -36,7 +40,7 @@ final class HvfFramebufferFrameRequestTests: XCTestCase {
         let requests = Requests()
         let writing = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
         let requester = HvfFramebufferFrameRequester { descriptor, timestamp in
-            if requests.add(timestamp) {
+            if requests.record() {
                 writing.signal()
                 _ = release.wait(timeout: .now() + 5)
                 errno = EINTR
@@ -46,30 +50,34 @@ final class HvfFramebufferFrameRequestTests: XCTestCase {
         }
         try await withView(marker: 0x5145_5242, requester: requester) { view, path, _ in
             defer { release.signal() }
+            requester.clock = { 1 }
             view.refreshFrame(at: 0)
             let writerReached = await waitOffCooperativePool(writing, seconds: 2)
             XCTAssertTrue(writerReached)
-            for tick in 1...12 { view.refreshFrame(at: Double(tick)) }
+            for tick in 1...12 {
+                requester.clock = { UInt64(tick + 1) }
+                view.refreshFrame(at: Double(tick))
+            }
             XCTAssertNotNil(view.layer?.contents)
-            XCTAssertEqual(requests.timestamps.count, 1)
+            XCTAssertEqual(requests.count, 1)
             XCTAssertEqual(try Self.request(path), 0)
 
             release.signal()
             let written = try await Self.nextRequest(path, after: 0)
-            XCTAssertEqual(requests.timestamps.count, 2)
-            XCTAssertEqual(written, requests.timestamps.last)
+            XCTAssertEqual(requests.count, 2)
+            XCTAssertEqual(written, 13, "The write must use the final offered timestamp")
         }
     }
 
     private final class Requests: @unchecked Sendable {
         private let lock = NSLock()
-        private var values: [UInt64] = []
-        var timestamps: [UInt64] { lock.withLock { values } }
+        private var attempts = 0
+        var count: Int { lock.withLock { attempts } }
 
-        func add(_ timestamp: UInt64) -> Bool {
+        func record() -> Bool {
             lock.withLock {
-                values.append(timestamp)
-                return values.count == 1
+                attempts += 1
+                return attempts == 1
             }
         }
     }
