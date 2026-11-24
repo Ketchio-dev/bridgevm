@@ -73,8 +73,8 @@ overwrites existing output, so delete `target/wimlib-runtime` or
 `target/BridgeVM.app` before building them again.
 
 The result is an ad-hoc-signed app; the packager refuses to finish if a resource
-the app requires for ISO installation is missing. The Windows ISO and driver
-payload are still yours to supply (see below). Set `BRIDGEVM_CODESIGN_IDENTITY`
+the app requires for ISO installation is missing. Choose your own Windows ISO,
+then let the app prepare the drivers or select your own signed driver payload. Set `BRIDGEVM_CODESIGN_IDENTITY`
 to sign with your own identity. A local build does not turn the checkout into
 release evidence. Contributors should follow
 [`CONTRIBUTING.md`](../CONTRIBUTING.md) and run the appropriate deterministic
@@ -212,13 +212,14 @@ optional install of the Microsoft-signed Red Hat virtio-win display driver,
 which Windows downloads itself. After a VM restart the display follows the
 window size; without it the resolution is fixed per VM (1280x800 by default).
 
-With the automatic driver download, an ISO is the only file you provide. A
-complete Windows install from an ISO plus the downloaded drivers has not yet
-been proven by a live run. Payload preflight verifies
-the declared ARM64 PE identity and each catalog's embedded CMS integrity; it
-does not claim that Windows accepted or bound a driver. That remains live guest
-evidence, and a missing or rejected payload leaves installation blocked rather
-than falling back to unsigned drivers.
+On November 24, 2026, a development Mac used **드라이버 자동 준비** with
+an empty cache and a Windows 11 Arm ISO. The app checked the archive and
+sealed its driver files into the VM. Driver preflight accepted all three catalogs.
+The installed system reached its first interactive desktop with the guest
+agent, VirtioSerial and NetKVM running. Windows used NVMe for its system
+drive, and DNS and an HTTP request succeeded over the guest network. The
+run used an unattended test account on the development Mac. Clean-machine
+coverage is tracked in [the release criteria](../STATUS.md).
 
 ## Updating, rolling back, uninstalling
 
