@@ -24,7 +24,7 @@ mkdir -p "$OUT_DIR"
 "$ZIG" cc -target aarch64-windows-gnu -O2 \
   -o "$OUT_DIR/bridgevm-d3d10-bench.exe" \
   "$ROOT_DIR/scripts/win-tests/bridgevm-d3d10-bench.c" \
-  -ld3d10 -ldxgi
+  -ld3d10 -ldxgi -ldxguid
 
 VULKAN_INCLUDE=${VULKAN_INCLUDE:-/opt/homebrew/include}
 "$ZIG" cc -target aarch64-windows-gnu -O2 \

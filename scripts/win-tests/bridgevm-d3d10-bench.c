@@ -17,7 +17,8 @@
  * 1280x800 target with no swapchain: per frame it clears, then issues
  * BV_BENCH_DRAWS instanced draws (BV_BENCH_INSTANCES quads each) with a
  * per-draw constant-buffer update, flushes, and after the timed frames
- * fences GPU completion with a staging copy + map before reading the clock.
+ * fences GPU completion with an event query before reading the clock.
+ * A separate staging readback checks the result outside the timed window.
  * The per-draw UpdateSubresource deliberately exercises the guest->host
  * buffer-upload path (the one the first-draw fix added a host flush to), so
  * regressions there show up directly in draws/s. */
@@ -64,7 +65,31 @@ static int env_int(const char *name, int fallback, int lo, int hi) {
   return fallback;
 }
 
-int main(void) {
+/* Read the adapter from the device that executes the draws. A hardware
+ * request can still resolve to the Microsoft Basic Render Driver. */
+static HRESULT adapter_desc(ID3D10Device *device, DXGI_ADAPTER_DESC1 *desc) {
+  IDXGIDevice *dxgi = NULL;
+  IDXGIAdapter *adapter = NULL;
+  IDXGIAdapter1 *adapter1 = NULL;
+  HRESULT hr = ID3D10Device_QueryInterface(device, &IID_IDXGIDevice,
+                                           (void **)&dxgi);
+  if (SUCCEEDED(hr)) hr = IDXGIDevice_GetAdapter(dxgi, &adapter);
+  if (SUCCEEDED(hr))
+    hr = IDXGIAdapter_QueryInterface(adapter, &IID_IDXGIAdapter1,
+                                     (void **)&adapter1);
+  if (SUCCEEDED(hr)) hr = IDXGIAdapter1_GetDesc1(adapter1, desc);
+  if (adapter1) IDXGIAdapter1_Release(adapter1);
+  if (adapter) IDXGIAdapter_Release(adapter);
+  if (dxgi) IDXGIDevice_Release(dxgi);
+  return hr;
+}
+
+int main(int argc, char **argv) {
+  int warp = argc == 2 && strcmp(argv[1], "--warp") == 0;
+  if (argc != 1 && !warp) {
+    fprintf(stderr, "usage: bridgevm-d3d10-bench [--warp]\n");
+    return 2;
+  }
   const int frames = env_int("BV_BENCH_FRAMES", 300, 10, 100000);
   const int warmup = env_int("BV_BENCH_WARMUP", 30, 0, 10000);
   const int draws = env_int("BV_BENCH_DRAWS", 100, 1, 10000);
@@ -128,9 +153,20 @@ int main(void) {
   D3D10_MAPPED_TEXTURE2D mapped;
   HRESULT hr;
 
-  hr = D3D10CreateDevice(NULL, D3D10_DRIVER_TYPE_HARDWARE, NULL, 0,
+  printf("BV-D3D10-BENCH-REQUEST driver=%s\n", warp ? "warp" : "hardware");
+  hr = D3D10CreateDevice(NULL, warp ? D3D10_DRIVER_TYPE_WARP : D3D10_DRIVER_TYPE_HARDWARE, NULL, 0,
                          D3D10_SDK_VERSION, &device);
   if (FAILED(hr)) return fail_hr("create-device", hr);
+
+  DXGI_ADAPTER_DESC1 desc;
+  hr = adapter_desc(device, &desc);
+  if (SUCCEEDED(hr)) {
+    printf("BV-D3D10-BENCH-ADAPTER vendor=0x%04x device=0x%04x software=%d desc=%ls\n",
+           desc.VendorId, desc.DeviceId, !!(desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE),
+           desc.Description);
+  } else {
+    printf("BV-D3D10-BENCH-ADAPTER unknown hr=0x%08lx\n", (unsigned long)hr);
+  }
 
   compiler_module = LoadLibraryA("d3dcompiler_47.dll");
   if (!compiler_module)
@@ -280,7 +316,7 @@ int main(void) {
       ID3D10Device_Flush(device);
     }
 
-    /* Fence every timed frame, then copy out and fence the copy. */
+    /* Drain the timed batch, stop the clock, then check the output. */
     BV_GPU_FENCE("fence-frames");
     QueryPerformanceCounter(&t1);
     ID3D10Device_CopyResource(device, (ID3D10Resource *)staging,
@@ -298,6 +334,7 @@ int main(void) {
     double fps = (double)frames / elapsed;
     double dps = fps * (double)draws;
     hr = ID3D10Device_GetDeviceRemovedReason(device);
+    if (FAILED(hr)) return fail_hr("device-removed", hr);
     printf("BV-D3D10-BENCH frames=%d draws=%d instances=%d elapsed_ms=%.1f "
            "fps=%.2f draws_per_s=%.0f center=%02x%02x%02x%02x "
            "removed_reason=0x%08lx\n",
