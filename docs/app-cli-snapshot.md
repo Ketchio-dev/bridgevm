@@ -37,3 +37,17 @@ Exit codes are 0 for a completed host operation, 1 for refusal or failure,
 130 or 143 when cancelled, and 2 for invalid usage. Success does not prove
 Windows boots after restore, a guest marker survived, or A19 is complete. Those claims require the live sample and
 interruption evidence in the [V1 snapshot scope](windows-arm/snapshot-scope-v1.md).
+
+## Recover a manually moved VM with older snapshot storage
+
+Older snapshot storage binds the managed disk and UEFI variables to their
+original absolute paths. If an externally moved VM reports
+`unbound managed media exists`, shut it down and return the entire VM bundle
+to its exact original location. Use the saved registration for that location.
+Run `bridgevm app snapshot-export ID OUTPUT` with a fresh absolute destination
+outside the bundle. A successful export confirms that BridgeVM matched the selected
+pair and upgraded its storage identity. You can then move the VM through the
+app.
+
+If the original location or registration is unavailable, preserve the
+moved bundle and recover the complete VM and its registration from a backup.
