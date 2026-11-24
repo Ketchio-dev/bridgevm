@@ -10,6 +10,7 @@ rust-version.workspace = true
 bridgevm-media = { path = "../bridgevm-media" }
 sha2.workspace = true
 libc.workspace = true
+miniz_oxide = { version = "0.9.1", default-features = false }
 serde.workspace = true
 serde_json.workspace = true
 

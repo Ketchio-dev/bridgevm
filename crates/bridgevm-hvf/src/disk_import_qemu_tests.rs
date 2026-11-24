@@ -122,6 +122,22 @@ fn qemu_made_qcow2_and_vhdx_convert_byte_identical_to_qemu_img() {
         );
     }
 
+    let compressed = s.path("compressed.qcow2");
+    run(
+        &qemu_img,
+        &[
+            "convert",
+            "-c",
+            "-f",
+            "raw",
+            "-O",
+            "qcow2",
+            &raw_arg,
+            compressed.to_str().unwrap(),
+        ],
+    );
+    assert_converts_like_qemu(&s, &qemu_img, &compressed, "qcow2");
+
     // Guest-style writes after creation: data, v3 zero clusters (allocated
     // and not) over data, and a discard.
     for (name, format) in [("written.qcow2", "qcow2"), ("written.vhdx", "vhdx")] {
@@ -159,21 +175,7 @@ fn qemu_made_images_the_converter_refuses() {
         return;
     };
     let s = Scratch::new("qemu-refused");
-    let raw = source_raw(&s).display().to_string();
     let at = |name: &str| s.path(name).display().to_string();
-    run(
-        &qemu_img,
-        &[
-            "convert",
-            "-f",
-            "raw",
-            "-O",
-            "qcow2",
-            "-c",
-            &raw,
-            &at("compressed.qcow2"),
-        ],
-    );
     run(
         &qemu_img,
         &["create", "-f", "qcow2", &at("base.qcow2"), "16M"],
@@ -230,7 +232,6 @@ fn qemu_made_images_the_converter_refuses() {
         ],
     );
     for (name, expected) in [
-        ("compressed.qcow2", Refusal::Compressed),
         ("overlay.qcow2", Refusal::BackingFile),
         ("subclusters.qcow2", Refusal::ExtendedL2),
         ("external.qcow2", Refusal::ExternalDataFile),

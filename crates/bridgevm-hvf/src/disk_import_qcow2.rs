@@ -2,7 +2,7 @@
 //! Refcounts, internal snapshots and header extensions are not needed to
 //! read the current disk and are ignored, as `qemu-img convert` does.
 
-use super::{be32, be64, read_padded, within, Refusal, Result, Run, MAX_VIRTUAL_BYTES};
+use super::{be32, be64, read_padded, within, Refusal, Result, Run, RunSource, MAX_VIRTUAL_BYTES};
 use std::fs::File;
 use std::os::unix::fs::FileExt;
 
@@ -16,13 +16,14 @@ const MAX_L1_BYTES: u64 = 32 << 20;
 const INCOMPAT_DIRTY: u64 = 1 << 0;
 const INCOMPAT_CORRUPT: u64 = 1 << 1;
 const INCOMPAT_DATA_FILE: u64 = 1 << 2;
-/// Only matters for compressed clusters, which are refused when met.
+/// A set bit selects a compression codec other than the default raw deflate.
 const INCOMPAT_COMPRESSION_TYPE: u64 = 1 << 3;
 const INCOMPAT_EXTENDED_L2: u64 = 1 << 4;
 
 pub(super) struct Qcow2 {
     pub(super) size: u64,
     cluster_bits: u32,
+    default_compression: bool,
     /// The L1 entries that cover the virtual size.
     l1: Vec<u64>,
     file_len: u64,
@@ -51,11 +52,13 @@ impl Qcow2 {
         if be64(&header, 8) != 0 {
             return Err(Refusal::BackingFile.into());
         }
+        let mut default_compression = true;
         if version == 3 {
             if readable < 104 || be32(&header, 100) < 104 {
                 return Err(Refusal::Damaged("QCOW2 v3 header is cut short").into());
             }
             let incompatible = be64(&header, 72);
+            default_compression = incompatible & INCOMPAT_COMPRESSION_TYPE == 0;
             if incompatible & INCOMPAT_DATA_FILE != 0 {
                 return Err(Refusal::ExternalDataFile.into());
             }
@@ -112,6 +115,7 @@ impl Qcow2 {
         Ok(Qcow2 {
             size,
             cluster_bits,
+            default_compression,
             l1,
             file_len,
         })
@@ -129,7 +133,7 @@ impl Qcow2 {
                 sink(Run {
                     virt: base,
                     len: span,
-                    host: None,
+                    source: RunSource::Hole,
                 })?;
                 continue;
             }
@@ -142,20 +146,72 @@ impl Qcow2 {
                 let entry = be64(&l2, slot as usize * 8);
                 let virt = base + slot * cluster;
                 let len = cluster.min(self.size - virt);
-                if entry & L2_COMPRESSED != 0 {
-                    return Err(Refusal::Compressed.into());
-                }
                 let data = entry & OFFSET_MASK;
-                let host = if entry & L2_ZERO != 0 || data == 0 {
-                    None
+                let source = if entry & L2_COMPRESSED != 0 {
+                    if !self.default_compression {
+                        return Err(Refusal::Compressed.into());
+                    }
+                    RunSource::Deflate(CompressedCluster::from_entry(
+                        entry,
+                        self.cluster_bits,
+                        self.file_len,
+                    )?)
+                } else if entry & L2_ZERO != 0 || data == 0 {
+                    RunSource::Hole
                 } else if data % cluster != 0 || data >= self.file_len {
                     return Err(Refusal::Damaged("QCOW2 data cluster is outside the file").into());
                 } else {
-                    Some(data)
+                    RunSource::Data(data)
                 };
-                sink(Run { virt, len, host })?;
+                sink(Run { virt, len, source })?;
             }
         }
         Ok(())
+    }
+}
+
+/// QCOW2 measures a compressed cluster in 512-byte sectors, starting at the
+/// sector containing its first byte. Adjacent streams can share a sector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct CompressedCluster {
+    offset: u64,
+    stored_bytes: usize,
+    cluster_bytes: usize,
+}
+
+impl CompressedCluster {
+    fn from_entry(entry: u64, cluster_bits: u32, file_len: u64) -> Result<Self> {
+        let size_bits = cluster_bits - 8;
+        let size_shift = 62 - size_bits;
+        let offset = entry & ((1u64 << size_shift) - 1);
+        if offset >= file_len || offset >> 56 != 0 {
+            return Err(Refusal::Damaged("QCOW2 compressed cluster is outside the file").into());
+        }
+        let extra_sectors = (entry >> size_shift) & ((1 << size_bits) - 1);
+        let bytes = (1 + extra_sectors) * 512 - offset % 512;
+        // The file can end before the sector padding after the last stream.
+        Ok(Self {
+            offset,
+            stored_bytes: bytes.min(file_len - offset) as usize,
+            cluster_bytes: 1 << cluster_bits,
+        })
+    }
+
+    pub(super) fn decode<'a>(&self, file: &File, buffer: &'a mut [u8]) -> Result<&'a [u8]> {
+        // Even the largest descriptor occupies at most two 2 MiB clusters.
+        // Both compressed bytes and a single output cluster fit the copy buffer.
+        let (compressed, remaining) = buffer.split_at_mut(self.stored_bytes);
+        file.read_exact_at(compressed, self.offset)?;
+        let decoded = &mut remaining[..self.cluster_bytes];
+        let result = miniz_oxide::inflate::decompress_slice_iter_to_slice(
+            decoded,
+            std::iter::once(&*compressed),
+            false,
+            true,
+        );
+        if result != Ok(self.cluster_bytes) {
+            return Err(Refusal::Damaged("invalid QCOW2 deflate cluster").into());
+        }
+        Ok(decoded)
     }
 }

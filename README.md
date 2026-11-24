@@ -174,8 +174,10 @@ supported, with its files untouched, and can be deleted from there.
 
 Windows HVF uses a QEMU `virt`-compatible guest contract with
 [documented deviations](docs/machine-contract/qemu-virt-deviations.json).
-Its RAW, QCOW2 and VHDX import uses BridgeVM's own converter; compressed,
-encrypted or backing-file disks need conversion first.
+BridgeVM imports RAW, QCOW2 and VHDX disks with its bundled converter.
+The current source also reads QCOW2 images made with QEMU's default deflate
+compression. Convert zstd-compressed or encrypted images to RAW first, and
+merge disks that depend on a backing file in their original VM app.
 
 ## More information
 
