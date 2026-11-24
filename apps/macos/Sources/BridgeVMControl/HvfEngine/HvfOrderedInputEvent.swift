@@ -2,9 +2,13 @@ import Foundation
 
 /// Retained by the queued draft until delivery or cancellation.
 final class HvfTextDraftDelivery: Equatable {
+    let multiline: Bool
     let onSent: (@MainActor () -> Void)?
 
-    init(onSent: (@MainActor () -> Void)?) { self.onSent = onSent }
+    init(multiline: Bool, onSent: (@MainActor () -> Void)?) {
+        self.multiline = multiline
+        self.onSent = onSent
+    }
 
     static func == (lhs: HvfTextDraftDelivery, rhs: HvfTextDraftDelivery) -> Bool { lhs === rhs }
 }

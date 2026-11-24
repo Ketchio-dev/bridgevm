@@ -124,9 +124,13 @@ final class HvfInputRouteSwitchTests: XCTestCase {
         try withClockedSession(negotiated: true) { session, fixture, clock in
             XCTAssertTrue(session.sendKey("enter"))
             let failed = try XCTUnwrap(try fixture.commands().last)
-            XCTAssertEqual(session.sendText("bc"), .acceptedForProcessing)
+            var draft = "bc"
+            var completions = 0
+            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session) { completions += 1 }, .acceptedForProcessing)
+            XCTAssertEqual(draft, "bc")
             session.sendPointerClick(location: point, viewSize: size, imageSize: size)
             try fixture.appendLog(notInserted(failed, verb: "InsertKey")); session.poll()
+            XCTAssertEqual(completions, 1, "The draft completes when its HID write succeeds")
             XCTAssertEqual(try fixture.commands().last, failed, "nothing more goes to the agent")
             XCTAssertTrue(session.sendKey("tab"), "later input takes the HID route")
             XCTAssertEqual(try legacy(fixture).map { String($0.prefix(18)) },

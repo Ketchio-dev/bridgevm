@@ -53,7 +53,7 @@ struct HvfAcknowledgedInputStream {
                 return .inserted(active.ticket.id, draft: active.ticket.event.draft)
             case .unsupported:
                 guard active.request.queuedTextDispatch else { return cancel(.transportFailed) }
-                if active.ticket.event.draft != nil { return cancel(.unsupportedEditor) }
+                if active.ticket.event.draft?.multiline == true { return cancel(.unsupportedEditor) }
                 guard let fallback = HvfUnicodeInputRequest(event: active.ticket.event, now: now) else { return cancel(.transportFailed) }
                 active.request = fallback
                 pending = active

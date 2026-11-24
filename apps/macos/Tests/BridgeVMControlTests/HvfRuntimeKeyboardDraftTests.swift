@@ -125,9 +125,7 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
         try fixture.withSession { session in
             try fixture.negotiateOrderedInput(session)
             for _ in 0..<HvfOrderedInputQueue.maximumEvents {
-                var accepted = "a"
-                XCTAssertEqual(HvfKeyboardDraft.submit(&accepted, to: session), .acceptedForProcessing)
-                XCTAssertEqual(accepted, "")
+                XCTAssertEqual(session.sendText("a"), .acceptedForProcessing)
             }
             let commands = try fixture.commands()
             XCTAssertEqual(commands.count, 2, "Only the first ordered text is sent without a completion receipt")
@@ -145,25 +143,33 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
         }
     }
 
-    func testAcceptedOrderedUnicodeClearsDraftAtHostAdmission() throws {
+    func testTargetChangeKeepsAnUnsentOrderedDraft() throws {
         let fixture = try HvfRuntimeKeyboardDraftFixture()
         defer { fixture.remove() }
         try fixture.withSession { session in
             try fixture.negotiateOrderedInput(session)
-            var draft = "순서대로 입력 🙂"
-            let encoded = Data(draft.utf8).base64EncodedString()
+            XCTAssertTrue(session.sendKey("enter"))
+            let beforeDraft = try fixture.commands()
+            let keyRequest = try XCTUnwrap(beforeDraft.last)
+            XCTAssertTrue(keyRequest.hasPrefix("KEYINPUT "))
+            let keyID = try XCTUnwrap(keyRequest.split(separator: " ").dropFirst().first)
+            let original = "순서대로 입력 🙂"
+            var draft = original
+            var completions = 0
 
-            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .acceptedForProcessing)
+            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session) { completions += 1 }, .acceptedForProcessing)
+            XCTAssertEqual(draft, original)
+            XCTAssertEqual(try fixture.commands(), beforeDraft, "Text waits behind the earlier key")
 
-            XCTAssertEqual(draft, "")
-            let commands = try fixture.commands()
-            XCTAssertEqual(commands.count, 2)
-            let words = try XCTUnwrap(commands.last).split(separator: " ")
-            XCTAssertEqual(words.count, 3)
-            XCTAssertEqual(words.first, "TEXTINPUT")
-            XCTAssertEqual(words.last, Substring(encoded))
+            session.cancelOrderedInputTarget()
+            let label = "KEYINPUT \(keyID)"
+            try fixture.appendLog("BVAGENT CMD \(label) exit=0\nBVINPUT_INSERTED \(keyID) 2\nBVAGENT END \(label)\n")
+            session.poll()
+
+            XCTAssertEqual(draft, original)
+            XCTAssertEqual(completions, 0)
+            XCTAssertEqual(try fixture.commands(), beforeDraft, "The old target's late receipt cannot send the draft")
             XCTAssertNil(try fixture.bytes(fixture.input))
-            // No insertion or application-consumption receipt is synthesized.
         }
     }
 

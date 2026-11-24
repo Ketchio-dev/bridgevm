@@ -2,23 +2,17 @@
 enum HvfKeyboardDraft {
     @discardableResult
     static func submit(_ draft: inout String, to session: HvfEngineSession,
-                       onPasteSent: (@MainActor () -> Void)? = nil) -> HvfTextInputSubmission {
+                       onSent: (@MainActor () -> Void)? = nil) -> HvfTextInputSubmission {
         guard session.submittedKeyboardDraft == nil else {
-            session.append(.unknown("text input refused: keyboard draft pending"))
+            let pending = session.legacyPaste.pending == nil ? "keyboard draft" : "clipboard paste"
+            session.append(.unknown("text input refused: \(pending) pending"))
             return .refused
         }
-        if draft.utf8.contains(where: { $0 == 10 || $0 == 13 }) {
-            let delivery = HvfTextDraftDelivery(onSent: onPasteSent)
-            session.submittedKeyboardDraft = delivery
-            return session.sendText(draft, draft: delivery)
-        }
-        let result = session.sendText(draft)
-        switch result {
-        case .refused: break
-        case .acceptedForProcessing where session.legacyPaste.pending != nil:
-            session.legacyPaste.pending?.onPasteSent = onPasteSent
-        case .acceptedForProcessing, .legacyAttempted: draft = ""
-        }
+        let multiline = draft.utf8.contains { $0 == 10 || $0 == 13 }
+        let delivery = HvfTextDraftDelivery(multiline: multiline, onSent: onSent)
+        session.submittedKeyboardDraft = delivery
+        let result = session.sendText(draft, draft: delivery)
+        if result == .legacyAttempted { draft = "" }
         return result
     }
 }
