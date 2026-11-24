@@ -24,15 +24,17 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
         }
     }
 
-    func testClipboardAcceptanceClearsButPendingPasteRefusalKeepsLaterDrafts() throws {
+    func testInterruptedClipboardPasteKeepsDraftAndNeverSends() throws {
         let fixture = try HvfRuntimeKeyboardDraftFixture()
         defer { fixture.remove() }
         try fixture.withSession { session in
             try fixture.connect(session)
             var first = "첫 번째 문장"
+            let original = first
             let encoded = Data(first.utf8).base64EncodedString()
-            XCTAssertEqual(HvfKeyboardDraft.submit(&first, to: session), .acceptedForProcessing)
-            XCTAssertEqual(first, "")
+            var sent = false
+            XCTAssertEqual(HvfKeyboardDraft.submit(&first, to: session) { sent = true }, .acceptedForProcessing)
+            XCTAssertEqual(first, original)
             let commands = try fixture.commands()
             XCTAssertEqual(commands.count, 1)
             let command = try XCTUnwrap(commands.first)
@@ -50,6 +52,13 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
                 XCTAssertEqual(try fixture.bytes(fixture.control), controlBefore)
                 XCTAssertNil(try fixture.bytes(fixture.input))
             }
+            let marker = try XCTUnwrap(session.legacyPaste.pending?.marker)
+            session.cancelOrderedInputTarget()
+            try fixture.appendLog("BVAGENT CMD \(marker) exit=0\n\(marker)\nBVAGENT END \(marker)\n")
+            session.poll()
+            XCTAssertEqual(first, original)
+            XCTAssertFalse(sent)
+            XCTAssertNil(try fixture.bytes(fixture.input))
         }
     }
 
