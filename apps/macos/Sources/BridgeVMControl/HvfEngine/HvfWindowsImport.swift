@@ -40,7 +40,9 @@ extension VMLibrary {
             toDisk: URL(fileURLWithPath: disk), toVars: URL(fileURLWithPath: vars), helper: snapshotHelper,
             converting: converting)
         } catch {
-            return HvfImportedDiskFormat.detect(path: sourceDisk.path) == nil ? nil : .refused(WindowsFileFailureFeedback.report("media-import", error, sentence: WindowsFileFailureFeedback.importing))
+            guard WindowsFileFailureFeedback.isImportOutOfSpace(error)
+                || HvfImportedDiskFormat.detect(path: sourceDisk.path) != nil else { return nil }
+            return .refused(WindowsFileFailureFeedback.reportImport("media-import", error))
         }
         let minimumDiskBytes = minimumImportedWindowsHVFDiskGiB * 1024 * 1024 * 1024
         let importedDiskSize = ((try? fm.attributesOfItem(atPath: disk)[.size] as? NSNumber)?.uint64Value) ?? 0
