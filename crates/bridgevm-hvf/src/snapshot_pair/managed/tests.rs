@@ -432,7 +432,10 @@ mod identity {
         let (s, disk, vars) = fixture("identity-orphan");
         fs::rename(stable_root(&disk, &vars), legacy_root(&disk, &vars)).unwrap();
         let (disk, vars) = moved(&s);
-        assert!(LockedPair::open(&disk, &vars).is_err());
+        let error = LockedPair::open(&disk, &vars)
+            .err()
+            .expect("moved legacy root remains unbound");
+        assert!(error.to_string().contains("exact original location"));
         assert!(create_snapshot(&disk, &vars, &s.path("wrong"), "move").is_err());
     }
 

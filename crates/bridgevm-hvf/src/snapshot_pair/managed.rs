@@ -360,7 +360,9 @@ fn resolve_root(disk: &Path, vars: &Path) -> io::Result<PathBuf> {
             .starts_with(b".bridgevm-pair-")
         {
             return Err(io::Error::other(
-                "unbound managed media exists; refusing stale-original fallback",
+                "unbound managed media exists; refusing stale-original fallback. If this VM was \
+                 moved, return the complete bundle to its exact original location with its original \
+                 registration, then export a powered-off snapshot before moving it again",
             ));
         }
     }
