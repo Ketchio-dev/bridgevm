@@ -64,7 +64,7 @@ fn assert_refused(result: Result<SnapshotManifest, SnapshotError>, case: &str) {
         Err(SnapshotError::Io(error)) => {
             let text = error.to_string();
             assert!(
-                text.contains("left intact: remove or rename it, or choose a new output path"),
+                text.contains("was left intact. Choose a new output path"),
                 "{case}: refusal does not say the path was kept: {text}"
             );
         }
@@ -266,7 +266,7 @@ fn a_snapshot_with_apple_double_companions_is_refused_as_not_a_snapshot() {
     let Err(SnapshotError::Io(error)) = result else {
         panic!("expected a refusal, got {result:?}");
     };
-    let expected = "contains \"._disk.raw\", which is not a snapshot file; it was left intact";
+    let expected = "contains \"._disk.raw\", which is not a snapshot file. The destination was left intact";
     assert!(error.to_string().contains(expected), "{error}");
 }
 
