@@ -89,8 +89,21 @@ at 720Hz. These samples do not measure unique rendered frames or physical output
 On resize, the guest asks to retain the selected rate. Windows offers further
 rates according to the monitor timings advertised at startup. On the r7
 development clone, 2560×1656 switched at up to 120 Hz and 3600×2260 at up to
-60 Hz. A display configuration saved with the stock driver can still start
-r7 at 30 Hz.
+60 Hz.
+
+### Restore the refresh rate after switching drivers
+
+In the disposable Windows 11 guest, the stock driver had saved 2048×1152 at
+64 Hz. The stored rate fell outside r7's mode list. On switching drivers,
+Windows saved and applied 30 Hz at the same resolution. The r7 mode list
+included 120 Hz.
+
+If the test driver starts at 30 Hz, open **Settings → System → Display →
+Advanced display** in Windows, select the BridgeVM display, and choose a rate
+listed for the current resolution. The live test saved 120 Hz through the
+Windows display settings API and read back 120 Hz after a clean restart.
+Selecting 30 Hz again and returning to 120 Hz also worked.
+[Windows refresh rate settings](https://support.microsoft.com/en-us/windows/hardware/display-graphics/change-the-refresh-rate-on-your-monitor-in-windows)
 
 The experimental DOD reserves 64MiB of framebuffer headroom, but attaches only
 the pages used by each resource. Attaching the entire reserve needs 66 direct
