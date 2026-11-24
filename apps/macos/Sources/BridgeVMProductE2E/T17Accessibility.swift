@@ -100,6 +100,8 @@ final class T17Accessibility: T17UIControlling {
 
     func clickDisplaySurface(at spot: CGPoint, timeout: TimeInterval = 15) throws {
         let application = AXUIElementCreateApplication(pid)
+        var triedPlacement = false
+        var displayWindow: AnyObject?
         try T17DisplayClick.click(at: spot, timeout: timeout, read: {
             guard let surface = try? descendants(of: application, limit: 12_000).first(where: {
                 attribute($0, kAXIdentifierAttribute as CFString) as? String == T17DisplayClick.surface
@@ -107,9 +109,37 @@ final class T17Accessibility: T17UIControlling {
             let window = attribute(surface, kAXWindowAttribute as CFString)
             let focused = attribute(application, kAXFocusedWindowAttribute as CFString)
             let frame = point(surface).flatMap { origin in size(surface).map { CGRect(origin: origin, size: $0) } }
+            displayWindow = window
             return T17DisplayClick.Target(value: attribute(surface, kAXValueAttribute as CFString) as? String,
                                           focused: window.flatMap { w in focused.map { CFEqual(w, $0) } } ?? false, frame: frame)
-        }, post: T17DisplayClick.post, coveredBy: { T17DisplayClick.otherOwner(at: $0, pid: self.pid) })
+        }, post: T17DisplayClick.post, coveredBy: { point in
+            let owner = T17DisplayClick.otherOwner(at: point, pid: self.pid)
+            if owner != nil, !triedPlacement, let window = displayWindow {
+                triedPlacement = true
+                self.moveOwnedDisplay(window, awayFrom: point)
+            }
+            return owner
+        })
+    }
+
+    private func moveOwnedDisplay(_ rawWindow: AnyObject, awayFrom click: CGPoint) {
+        guard CFGetTypeID(rawWindow) == AXUIElementGetTypeID() else { return }
+        let window = unsafeBitCast(rawWindow, to: AXUIElement.self)
+        var owner: pid_t = 0
+        var display: CGDirectDisplayID = 0
+        var displayCount: UInt32 = 0
+        guard AXUIElementGetPid(window, &owner) == .success, owner == pid,
+              CGGetDisplaysWithPoint(click, 1, &display, &displayCount) == .success, displayCount == 1,
+              let origin = point(window), let size = size(window) else { return }
+        let bounds = CGDisplayBounds(display)
+        let left = bounds.minX + 16
+        let right = bounds.maxX - size.width - 16
+        guard right > left else { return }
+        // Move only the test display window. The next read checks focus, frame and coverage again.
+        var destination = CGPoint(x: click.x < bounds.midX ? right : left, y: origin.y)
+        if abs(destination.x - origin.x) < 16 { destination.x = destination.x == left ? right : left }
+        guard abs(destination.x - origin.x) >= 16, let value = AXValueCreate(.cgPoint, &destination) else { return }
+        _ = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
     }
 
     private func element(_ identifier: String, role expectedRole: String? = nil,
