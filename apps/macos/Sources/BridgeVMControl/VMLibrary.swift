@@ -2,8 +2,15 @@ import Foundation
 
 struct VMLibraryIssue: Identifiable, Equatable, Sendable {
     let path: String
+    let entry: URL
     let message: String
     var id: String { path }
+
+    init(_ entry: URL, file: URL? = nil, message: String) {
+        self.entry = entry
+        self.path = (file ?? entry).path
+        self.message = message
+    }
 }
 
 struct VMLibraryScan: Sendable {
@@ -36,7 +43,7 @@ enum VMLibrary {
             try fm.createDirectory(at: rootURL, withIntermediateDirectories: true)
         } catch {
             return VMLibraryScan(configs: [], issues: [
-                VMLibraryIssue(path: rootURL.path, message: "라이브러리 디렉터리를 열 수 없습니다: \(error.localizedDescription)")
+                VMLibraryIssue(rootURL, message: "라이브러리 디렉터리를 열 수 없습니다: \(error.localizedDescription)")
             ])
         }
         let entries: [URL]
@@ -47,7 +54,7 @@ enum VMLibrary {
             )
         } catch {
             return VMLibraryScan(configs: [], issues: [
-                VMLibraryIssue(path: rootURL.path, message: "라이브러리 목록을 읽을 수 없습니다: \(error.localizedDescription)")
+                VMLibraryIssue(rootURL, message: "라이브러리 목록을 읽을 수 없습니다: \(error.localizedDescription)")
             ])
         }
         var decoded: [(directory: URL, config: VMConfig)] = []
@@ -57,18 +64,18 @@ enum VMLibrary {
             do {
                 values = try dir.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             } catch {
-                issues.append(VMLibraryIssue(path: dir.path, message: "항목 종류를 확인할 수 없습니다: \(error.localizedDescription)"))
+                issues.append(VMLibraryIssue(dir, message: "항목 종류를 확인할 수 없습니다: \(error.localizedDescription)"))
                 continue
             }
             if values.isSymbolicLink == true {
-                issues.append(VMLibraryIssue(path: dir.path, message: "심볼릭 링크 VM 항목은 안전을 위해 불러오지 않았습니다."))
+                issues.append(VMLibraryIssue(dir, message: "심볼릭 링크 VM 항목은 안전을 위해 불러오지 않았습니다."))
                 continue
             }
             guard values.isDirectory == true, !VMLibraryInternalEntries.isSourceCache(dir) else { continue }
             let canonicalID = VMConfig.slugify(dir.lastPathComponent)
             guard dir.lastPathComponent == canonicalID else {
                 issues.append(VMLibraryIssue(
-                    path: dir.path,
+                    dir,
                     message: "비정규 VM 디렉터리 이름입니다. 안전을 위해 불러오지 않았습니다 (정규 이름: \(canonicalID))."
                 ))
                 continue
@@ -78,14 +85,14 @@ enum VMLibrary {
                 let fileValues = try f.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
                 guard fileValues.isSymbolicLink != true, fileValues.isRegularFile == true else {
                     issues.append(VMLibraryIssue(
-                        path: f.path,
+                        dir, file: f,
                         message: "VM 설정이 일반 파일이 아니어서 안전을 위해 불러오지 않았습니다."
                     ))
                     continue
                 }
                 guard let fileSize = fileValues.fileSize, fileSize <= maximumConfigBytes else {
                     issues.append(VMLibraryIssue(
-                        path: f.path,
+                        dir, file: f,
                         message: "VM 설정 파일이 너무 큽니다 (최대 \(maximumConfigBytes)바이트)."
                     ))
                     continue
@@ -96,17 +103,17 @@ enum VMLibrary {
                 cfg.id = canonicalID
                 let recovery = HvfWindowsInstallFinalization.reconcile(config: cfg, libraryRoot: rootURL)
                 cfg = recovery.config
-                if let message = recovery.issue { issues.append(VMLibraryIssue(path: f.path, message: message)) }
+                if let message = recovery.issue { issues.append(VMLibraryIssue(dir, file: f, message: message)) }
                 decoded.append((dir, cfg))
             } catch {
-                issues.append(VMLibraryIssue(path: f.path, message: "VM 설정을 읽을 수 없습니다: \(error.localizedDescription)"))
+                issues.append(VMLibraryIssue(dir, file: f, message: "VM 설정을 읽을 수 없습니다: \(error.localizedDescription)"))
             }
         }
         var out: [VMConfig] = []
         for (slug, candidates) in Dictionary(grouping: decoded, by: { $0.config.slug }) {
             if candidates.contains(where: { VMRelocationJournal.isPending($0.config, rootURL: rootURL) }) {
                 for candidate in candidates {
-                    issues.append(VMLibraryIssue(path: candidate.directory.path,
+                    issues.append(VMLibraryIssue(candidate.directory,
                         message: VMRelocationJournal.recoveryIssue(candidate.config, rootURL: rootURL)))
                 }
                 continue
@@ -114,7 +121,7 @@ enum VMLibrary {
             guard candidates.count == 1 else {
                 for candidate in candidates {
                     issues.append(VMLibraryIssue(
-                        path: candidate.directory.path,
+                        candidate.directory,
                         message: "정규 VM ID '\(slug)'가 다른 항목과 충돌하여 불러오지 않았습니다."
                     ))
                 }
