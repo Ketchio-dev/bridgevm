@@ -88,7 +88,8 @@ final class HvfWindowsImportNoVarsTests: XCTestCase {
         XCTAssertEqual(try fm.attributesOfItem(atPath: source.path)[.modificationDate] as? Date, before)
     }
 
-    func testFirstRunImportAlsoAcceptsOmittedVars() throws {
+    @MainActor
+    func testFirstRunCanOpenSavedImportAfterBootPartitionNotice() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -96,9 +97,16 @@ final class HvfWindowsImportNoVarsTests: XCTestCase {
         try Data(repeating: 0, count: 4096).write(to: disk)
         let inputs = FirstRunImport.Inputs(displayName: "Imported", diskPath: disk.path, varsPath: "",
             vtpmStateDir: nil, memMiB: 4096, cpuCount: 4)
-        if let error = FirstRunImport.validate(inputs) { return XCTFail(error.description) }
-        let config = try FirstRunImport.register(inputs, slug: "imported", libraryRoot: root.appendingPathComponent("library"),
-            snapshotHelper: HvfMediaImportTestSupport.helper)
-        XCTAssertEqual(notice(bundlePath: config.bundlePath), noESP)
+        let library = LibraryModel(rootURL: root.appendingPathComponent("library"), migrateLegacy: false)
+        let warning = await library.importExistingHvfVM(inputs, snapshotHelper: HvfMediaImportTestSupport.helper)
+        XCTAssertEqual(warning, noESP)
+        let saved = try XCTUnwrap(library.firstRunImport.publishedConfig)
+        XCTAssertEqual(notice(bundlePath: saved.bundlePath), noESP)
+        try FileManager.default.removeItem(at: disk)
+
+        let error = await library.recoverPublishedFirstRunImport()
+        XCTAssertNil(error)
+        XCTAssertEqual(library.selectedID, saved.slug)
+        XCTAssertEqual(library.vms.map(\.slug), [saved.slug])
     }
 }
