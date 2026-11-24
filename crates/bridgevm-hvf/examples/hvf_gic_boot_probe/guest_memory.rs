@@ -58,9 +58,14 @@ pub(crate) struct HvGpuShmMapState {
 #[derive(Debug, Clone)]
 pub(crate) struct HvGpuShmMapPort {
     pub(crate) state: Arc<Mutex<HvGpuShmMapState>>,
+    page_size: GpuShmPageSize,
 }
 
 impl GpuShmMapPort for HvGpuShmMapPort {
+    fn page_size(&self) -> GpuShmPageSize {
+        self.page_size
+    }
+
     fn map(&mut self, host_ptr: *mut u8, size: usize, shm_offset: u64) -> Result<(), i32> {
         let state = self.state.lock().unwrap();
         let Some(bar2_base) = state.bar2_base else {
@@ -71,7 +76,11 @@ impl GpuShmMapPort for HvGpuShmMapPort {
             return Err(-12);
         };
         drop(state);
-        if (host_ptr as usize) % 0x4000 != 0 || (size % 0x4000) != 0 || shm_offset % 0x4000 != 0 {
+        let page_size = self.page_size.bytes();
+        if (host_ptr as usize) % page_size != 0
+            || size % page_size != 0
+            || shm_offset % page_size as u64 != 0
+        {
             eprintln!(
                 "virtio-gpu hv shm map: unaligned host_ptr={host_ptr:p} offset={shm_offset:#x} size={size:#x}"
             );
@@ -84,7 +93,7 @@ impl GpuShmMapPort for HvGpuShmMapPort {
         // later HOST write would COW onto a new page the guest never sees —
         // the guest then reads stale zeros forever (host-written venus fence
         // feedback slots and GPU results were invisible to the guest).
-        for off in (0..size).step_by(0x4000) {
+        for off in (0..size).step_by(page_size) {
             unsafe {
                 let p = host_ptr.add(off);
                 p.write_volatile(p.read_volatile());
@@ -119,15 +128,19 @@ impl GpuShmMapPort for HvGpuShmMapPort {
     }
 }
 
-pub(crate) fn install_gpu_shm_port(platform: &mut VirtPlatform) {
+pub(crate) fn install_gpu_shm_port(platform: &mut VirtPlatform, page_size: GpuShmPageSize) {
     let hv_gpu_shm_state = Arc::new(Mutex::new(HvGpuShmMapState::default()));
     let installed_hv_gpu_shm_port =
         platform.set_virtio_gpu_shm_map_port(Box::new(HvGpuShmMapPort {
             state: Arc::clone(&hv_gpu_shm_state),
+            page_size,
         }));
     register_gpu_shm_state(hv_gpu_shm_state);
     if installed_hv_gpu_shm_port {
-        println!("virtio-gpu host-visible shm map port: hv_vm_map enabled");
+        println!(
+            "virtio-gpu host-visible shm map port: hv_vm_map enabled, page size {} bytes",
+            page_size.bytes()
+        );
     }
 }
 

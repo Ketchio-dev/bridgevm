@@ -1,4 +1,3 @@
-use super::blob_host_mapping::HVF_PAGE_SIZE;
 use super::*;
 use crate::fwcfg::GuestMemoryMut;
 use helpers::*;
@@ -14,7 +13,7 @@ mod helpers;
 fn host3d_blob_maps_through_shm_port_then_unmaps_before_unref() {
     let backend = Arc::new(Mutex::new(MockBackend::new_venus()));
     let port = Arc::new(Mutex::new(MockMapPort::default()));
-    let layout = Layout::from_size_align(0x1_0000, HVF_PAGE_SIZE as usize).unwrap();
+    let layout = Layout::from_size_align(0x1_0000, GpuShmPageSize::KiB16.bytes()).unwrap();
     let ptr = unsafe { alloc_zeroed(layout) };
     assert!(!ptr.is_null());
     backend.lock().unwrap().mapped.insert(
@@ -62,7 +61,7 @@ fn host3d_blob_maps_through_shm_port_then_unmaps_before_unref() {
 fn unmap_blob_rejects_classify_destroyed_and_unknown_resources() {
     let backend = Arc::new(Mutex::new(MockBackend::new_venus()));
     let port = Arc::new(Mutex::new(MockMapPort::default()));
-    let layout = Layout::from_size_align(0x1_0000, HVF_PAGE_SIZE as usize).unwrap();
+    let layout = Layout::from_size_align(0x1_0000, GpuShmPageSize::KiB16.bytes()).unwrap();
     let ptr_a = unsafe { alloc_zeroed(layout) };
     let ptr_b = unsafe { alloc_zeroed(layout) };
     assert!(!ptr_a.is_null() && !ptr_b.is_null());
