@@ -24,7 +24,7 @@ struct CreateVMSheet: View {
     @State private var showAdvanced = false
     @State var ramMiB = 6144
     @State var cpuCount = 4
-    @State var working = false
+    var working: Bool { library.preparingNewVM }
     @State var error = ""
     @State var creationFailureCode = ""
     @State var creationState = CreateVMCreationState()
@@ -53,6 +53,9 @@ struct CreateVMSheet: View {
             CreateVMResourceSummary(cpuCount: cpuCount, ramMiB: ramMiB,
                                     diskGiB: createsFreshDisk ? diskGiB : nil)
                 .padding(.horizontal, 20).padding(.top, 12)
+            if library.quitAfterVMPreparation?.confirmed == true {
+                VMPreparationQuitStatus { library.quitAfterVMPreparation = nil }.padding(.horizontal, 20)
+            }
             creationFooter
         }
         .frame(width: 480, height: 640)
@@ -246,9 +249,7 @@ extension CreateVMSheet {
 extension CreateVMSheet {
     func recoverCreatedVM() {
         guard !working, !creationState.permitsCreation else { return }
-        working = true
         let loaded = creationState.recover(adopt: library.add)
-        working = false
         if loaded { dismiss() }
         else { error = creationState.recoveryFailureMessage }
     }
@@ -256,11 +257,12 @@ extension CreateVMSheet {
 
 extension CreateVMSheet {
     func completeCreation(_ outcome: HVFCreationOutcome?) {
-        working = false
         conversion = nil
         let result = creationState.complete(outcome, adopt: library.add)
         creationFailureCode = result.code
         error = result.message
         if result.dismiss { dismiss() }
+        library.preparingNewVM = false
+        library.finishVMPreparation(succeeded: result.dismiss)
     }
 }

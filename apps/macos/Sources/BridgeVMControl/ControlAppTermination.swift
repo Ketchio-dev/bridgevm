@@ -1,6 +1,5 @@
 #if canImport(AppKit)
 import AppKit
-import Combine
 
 /// One VM run whose runner the app's exit would cancel (its owner input closes).
 @MainActor
@@ -43,8 +42,8 @@ final class ControlAppTermination {
         /// Asked each time Windows has not turned off by the deadline. `afterForce` offers quitting anyway.
         var decideAtDeadline: @MainActor (_ afterForce: Bool, _ stillRunning: @escaping @MainActor () -> Bool) -> DeadlineChoice
         var confirmWithInstallations: (@MainActor (_ runningCount: Int, _ installCount: Int) -> Bool)? = nil
-        var confirmAfterImport: @MainActor () -> Bool = { false }
-        var revealImport: @MainActor () -> Void = {}
+        var confirmAfterPreparation: @MainActor () -> Bool = { false }
+        var revealLibrary: @MainActor () -> Void = {}
     }
 
     static let deadline: TimeInterval = 60
@@ -58,9 +57,8 @@ final class ControlAppTermination {
     private let presenter: Presenter
     private let reply: @MainActor (Bool) -> Void
     private let now: () -> TimeInterval
-    private let importLibrary: @MainActor () -> LibraryModel?
+    private let preparationLibrary: @MainActor () -> LibraryModel?
     private let retryQuit: @MainActor () -> Void
-    private var importCompletion: AnyCancellable?
     private var pending = false
     private var forced = false
     private var deciding = false
@@ -70,16 +68,16 @@ final class ControlAppTermination {
     init(sessions: @escaping @MainActor () -> [ControlAppTerminationSession], presenter: Presenter,
          reply: @escaping @MainActor (Bool) -> Void,
          now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
-         importLibrary: @escaping @MainActor () -> LibraryModel? = { nil },
+         preparationLibrary: @escaping @MainActor () -> LibraryModel? = { nil },
          retryQuit: @escaping @MainActor () -> Void = {}) {
         self.sessions = sessions; self.presenter = presenter; self.reply = reply; self.now = now
-        self.importLibrary = importLibrary; self.retryQuit = retryQuit
+        self.preparationLibrary = preparationLibrary; self.retryQuit = retryQuit
     }
 
     func shouldTerminate(reason: QuitReason) -> NSApplication.TerminateReply {
         guard !pending else { return .terminateCancel } // the pending quit answers for itself
-        if let library = importLibrary(), library.firstRunImportBusy {
-            if reason == .user { finishImportBeforeQuit(library) }
+        if let library = preparationLibrary(), library.preparingNewVM || library.firstRunImportBusy {
+            if reason == .user { finishPreparationBeforeQuit(library) }
             return .terminateCancel
         }
         let running = blocking()
@@ -99,24 +97,25 @@ final class ControlAppTermination {
         return .terminateLater
     }
 
-    private func finishImportBeforeQuit(_ library: LibraryModel) {
-        if !library.quitAfterFirstRunImport {
-            guard presenter.confirmAfterImport() else { return }
-            library.quitAfterFirstRunImport = true
-            // AppKit's terminateLater enters a modal loop where the import's
-            // MainActor continuation cannot finish. Retry the ordinary quit
-            // once its published state leaves busy in the normal run loop.
-            importCompletion = library.$firstRunImport.filter { !$0.isBusy }.prefix(1).sink { [weak self, weak library] result in
-                DispatchQueue.main.async {
-                    self?.importCompletion = nil
-                    guard let library, library.quitAfterFirstRunImport else { return }
-                    library.quitAfterFirstRunImport = false
-                    if result.error == nil, !library.firstRunImportBusy { self?.retryQuit() }
-                }
+    private func finishPreparationBeforeQuit(_ library: LibraryModel) {
+        if library.quitAfterVMPreparation == nil {
+            let retry = { [weak self] in DispatchQueue.main.async { self?.retryQuit() } }
+            // runModal can deliver the worker's completion before the user answers.
+            // Remember success during that interval. A failure clears the intent.
+            var finished = false
+            library.quitAfterVMPreparation = VMPreparationQuit(confirmed: false) { finished = true }
+            guard presenter.confirmAfterPreparation() else {
+                library.quitAfterVMPreparation = nil
+                return
             }
+            if finished { retry(); return }
+            guard library.quitAfterVMPreparation != nil else { return }
+            library.quitAfterVMPreparation = VMPreparationQuit(confirmed: true, onSuccess: retry)
         }
-        library.selectedID = LibraryModel.firstRunImportSelectionID
-        presenter.revealImport()
+        if library.firstRunImportBusy && !library.preparingNewVM {
+            library.selectedID = LibraryModel.firstRunImportSelectionID
+        }
+        presenter.revealLibrary()
     }
 
     /// One wait step: re-requests stops a pending start could not take yet, answers AppKit once
@@ -188,6 +187,15 @@ extension ControlAppTermination.QuitReason {
     }
 }
 
+extension LibraryModel {
+    func finishVMPreparation(succeeded: Bool) {
+        guard let request = quitAfterVMPreparation else { return }
+        if succeeded && (preparingNewVM || firstRunImportBusy) { return }
+        quitAfterVMPreparation = nil
+        if succeeded { request.onSuccess() }
+    }
+}
+
 extension ControlAppTermination.Presenter {
     static let alerts = Self(
         confirmQuit: { count in
@@ -231,14 +239,14 @@ extension ControlAppTermination.Presenter {
             alert.addButton(withTitle: "취소")
             return alert.runModal() == .alertFirstButtonReturn
         },
-        confirmAfterImport: {
+        confirmAfterPreparation: {
             let alert = NSAlert()
-            alert.messageText = "VM 가져오기를 마친 뒤 BridgeVM을 종료할까요?"
-            alert.informativeText = "가져오는 동안 진행 상태를 보고 종료 요청을 취소할 수 있습니다."
+            alert.messageText = "VM 파일 준비를 마친 뒤 BridgeVM을 종료할까요?"
+            alert.informativeText = "파일을 준비하는 동안에는 진행 상태를 보거나 종료 요청을 취소할 수 있습니다."
             alert.addButton(withTitle: "완료 후 종료")
             alert.addButton(withTitle: "계속 사용")
             return alert.runModal() == .alertFirstButtonReturn
         },
-        revealImport: { ControlLibraryWindow.show() })
+        revealLibrary: { ControlLibraryWindow.show() })
 }
 #endif

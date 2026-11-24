@@ -28,7 +28,9 @@ final class CreateVMPrerequisitePresentationTests: XCTestCase {
 
     func testWorkingAndPublishedRecoveryDoNotShowPrerequisiteGuidance() throws {
         try withLibrary { library in
-            let working = try footer(of: CreateVMSheet(library: library, mode: .windowsHVFInstall, working: true))
+            library.preparingNewVM = true
+            let working = try footer(of: CreateVMSheet(library: library, mode: .windowsHVFInstall))
+            library.preparingNewVM = false
             XCTAssertFalse(working.canCreate)
             XCTAssertEqual(working.error, "")
             var recovery = CreateVMCreationState()
