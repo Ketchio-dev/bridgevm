@@ -48,7 +48,9 @@ scripts/prepare-hvf-windows-refresh-build-kit.sh \
 
 On a Windows builder with VS2022 ARM64 C++ tools and an already installed WDK,
 run the kit's `build.ps1`. It builds VirtioLib and viogpudo, verifies the ARM64
-PE machine type, and copies unsigned SYS/INF plus the upstream licence.
+PE machine type, and runs Inf2Cat for Windows 11 24H2 ARM64. The output
+contains the unsigned SYS, INF and catalog, the matching linker PDB, and the
+upstream licence.
 
 An optional `-UseNuGet` route pins Microsoft's WDK and SDK packages to
 10.0.26100.6584. Those packages require Microsoft licence acceptance; authorize
@@ -105,6 +107,8 @@ Before production distribution: compile with the WDK, verify the INF/catalog, su
 the owner's Microsoft Hardware Developer account, and obtain a valid production
 signature. The upstream Red Hat catalog cannot sign a modified binary. Apple's
 app certificate cannot sign a Windows kernel driver.
+Use the unsigned package and matching PDB when preparing the
+[Microsoft signing submission](https://learn.microsoft.com/windows-hardware/drivers/dashboard/code-signing-attestation).
 
 Validate the signed candidate in a disposable VM clone: boot, mode enumeration,
 all rate switches, dynamic resolution, enable/disable, power transitions, stop and

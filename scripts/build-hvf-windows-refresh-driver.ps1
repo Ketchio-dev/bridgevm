@@ -69,20 +69,28 @@ try {
     $env:LIB = "$(Join-Path $SourceDirectory 'VirtIO\objfre_win11_arm64\arm64');$previousLib"
     foreach ($project in @("VirtIO\VirtioLib.vcxproj", "viogpu\viogpudo\viogpudo.vcxproj")) {
         & $msbuildPath $project /m /t:Build "/p:Configuration=Win11 Release" /p:Platform=ARM64 `
-            /p:PreferredToolArchitecture=x64 /p:SignMode=Off /p:Feature_PackOne=false /p:_BUILD_MINOR_VERSION_=58001
+            /p:PreferredToolArchitecture=x64 /p:SignMode=Off /p:Inf2CatWindowsVersionList=10_GE_ARM64 `
+            /p:Feature_PackOne=false /p:_BUILD_MINOR_VERSION_=58001
         if ($LASTEXITCODE -ne 0) { throw "ARM64 build failed: $project" }
     }
     $built = Join-Path $SourceDirectory "viogpu\viogpudo\objfre_win11_arm64\arm64"
-    $sys = Join-Path $built "viogpudo.sys"
-    $inf = Join-Path $built "viogpudo.inf"
-    if (-not (Test-Path $sys) -or -not (Test-Path $inf)) { throw "Expected SYS/INF outputs were not generated" }
+    # Use the package files that Inf2Cat hashed and the symbol file from that link.
+    $package = Join-Path $built "viogpudo"
+    $sys = Join-Path $package "viogpudo.sys"
+    $driverFiles = @(
+        $sys
+        (Join-Path $package "viogpudo.inf")
+        (Join-Path $package "viogpudo.cat")
+        (Join-Path $built "viogpudo.pdb")
+    )
     $pe = [System.IO.File]::ReadAllBytes($sys)
     $peOffset = [BitConverter]::ToInt32($pe, 0x3c)
     if ([BitConverter]::ToUInt16($pe, $peOffset + 4) -ne 0xaa64) { throw "Driver is not ARM64" }
+    $hashes = Get-FileHash -Algorithm SHA256 -LiteralPath $driverFiles
     New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
-    Copy-Item -LiteralPath $sys, $inf -Destination $OutputDirectory
+    Copy-Item -LiteralPath $driverFiles -Destination $OutputDirectory
     Copy-Item -LiteralPath (Join-Path $SourceDirectory "viogpu\viogpudo\LICENSE") -Destination $OutputDirectory
-    Get-FileHash -Algorithm SHA256 -LiteralPath $sys, $inf | Format-Table -AutoSize
+    $hashes | Format-Table -AutoSize
     Write-Host "Unsigned ARM64 candidate: $OutputDirectory"
     Write-Host "Microsoft production signing and disposable-VM validation remain required."
 } finally {
