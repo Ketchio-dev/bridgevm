@@ -51,7 +51,10 @@ final class FBLayerView: HvfFramebufferTextInput {
 
     func updateSession(_ next: HvfEngineSession) {
         synchronizeTextInputTarget()
-        guard session !== next else { return }
+        guard session !== next else {
+            if window != nil, next.connectionState != .stopped { startDisplayLink() }
+            return
+        }
         teardown()
         session = next
         inputFocusMonitor.watch(window: window) { [weak self] in self?.windowResignedKey() }

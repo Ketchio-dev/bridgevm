@@ -11,6 +11,8 @@ extension FBLayerView {
         let tick = refreshFrame(at: link.timestamp)
         session?.appPacing.display(tick, timestamp: link.timestamp, target: link.targetTimestamp,
                                    link: ObjectIdentifier(link), work: HvfAppPacingClock.now() &- started)
+        // Present the retained final frame once. A new boot on this same view restarts the link.
+        if session?.connectionState == .stopped { stopDisplayLink() }
     }
 }
 

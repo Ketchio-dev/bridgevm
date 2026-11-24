@@ -35,6 +35,30 @@ final class HvfFramebufferBindingTests: XCTestCase {
         XCTAssertNil(view.session)
     }
 
+    func testStoppedWindowKeepsFinalFrameAndRestartsOnNextBoot() throws {
+        try HvfFramebufferAvailabilityFixture.run { _, session, view, path in
+            let window = NSWindow(contentRect: view.bounds, styleMask: [], backing: .buffered, defer: true)
+            window.contentView = view
+            defer { window.contentView = nil }
+
+            try HvfFramebufferAvailabilityFixture.writeFrame(path, sequence: 4)
+            session.connectionState = .stopped
+            view.updateSession(session)
+            view.step(try XCTUnwrap(view.frameDisplayLink))
+            XCTAssertEqual(view.lastProcessedSeq, 4)
+            XCTAssertNil(view.frameDisplayLink)
+            view.updateSession(session)
+            XCTAssertNil(view.frameDisplayLink)
+
+            session.connectionState = .booting
+            view.updateSession(session)
+            try HvfFramebufferAvailabilityFixture.writeFrame(path, sequence: 6)
+            view.step(try XCTUnwrap(view.frameDisplayLink))
+            XCTAssertEqual(view.lastProcessedSeq, 6)
+            XCTAssertNotNil(view.frameDisplayLink)
+        }
+    }
+
     private func makeSession() -> HvfEngineSession {
         let root = URL(fileURLWithPath: "/tmp/bridgevm-binding-" + UUID().uuidString)
         let config = HvfEngineConfig(
