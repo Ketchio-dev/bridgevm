@@ -40,8 +40,8 @@ curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.s
 | Mac integration | Clipboard sharing, shared folders, networking and audio output. Display smoothness and audio continuity still need broader validation. |
 | VM lifecycle | Start, shut down and restart; persistent storage and TPM/Secure Boot workflows; [powered-off snapshots](docs/windows-arm/snapshot-scope-v1.md). Running-state suspend is outside v1. |
 
-These are preview capabilities. Setup on a genuinely clean Mac and recovery
-across interrupted storage operations remain open release criteria. The
+These are preview capabilities. ISO installation and installed-disk import on
+a clean Mac remain the open release criterion. The
 [capability matrix](docs/windows-arm/capability-matrix.md) records the evidence
 for each feature.
 
@@ -116,17 +116,17 @@ changes need their own checks and hardware evidence.
 <!-- BEGIN GENERATED: capability-summary -->
 **Product state: Engineering Preview.** Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots and window Coherence verbs. 3D acceleration is excluded from General Preview and v1; release-blocking evidence remains open and known defects are disclosed below.
 
-Release scenarios met: **2 / 5**.
+Release scenarios met: **3 / 5**.
 
 | ID | Scenario | State | Criteria | Known defects |
 | --- | --- | --- | --- | --- |
 | S1 | Get Windows running | `OPEN` | A9 (open), A1, A10 | **A9**: No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off. In the 3D-off configuration the app's live display window was choppy in recent hardware runs; its smoothness has not been measured since. Guest audio stuttered audibly: until 2026-11-03 every other 10 ms of Windows playback reached the host as silence, because the sound controller answered Windows' position reads at the 0x2084 alias with 0. Since that fix, 60-second live runs had 2-6 silent 10 ms blocks out of about 6,330, and under host load 0-8 blocks per run still repeated stale audio; at the v1.1.0 release head (2026-11-14) six such runs had 2-6 silent and 0-3 stale blocks out of about 6,400, and one of them had 2 host underrun callbacks. No listening check has confirmed the stutter is gone. |
 | S2 | Use the Windows desktop | `OPEN` | A4, B4, A5, A8 | The Windows display follows the window size only after the one-time display driver install in the VM view (Red Hat virtio-win, Microsoft-signed, downloaded by the guest) and a VM restart; until then the resolution is fixed per VM before it starts (1280x800 by default, up to 2560x1600). The app window was choppy in earlier runs and its smoothness has not been measured since, and no listening check has confirmed that the audio stutter is gone (see A9). |
 | S3 | Work with the Mac | `MET` | A6, A7 | none |
-| S4 | Keep the VM safe | `OPEN` | A19 (open), A15, A16, A12 | **A19**: A legacy managed pair moved before its storage identity was migrated can be refused. On an interrupted export replacement the CLI can require moving a named staging directory aside to preserve both generations. Build b8dcb32a passed ten Windows restore lanes. The designated release build still needs its ten lanes. |
+| S4 | Keep the VM safe | `MET` | A19, A15, A16, A12 | none |
 | S5 | Go online | `MET` | A20 | none |
 
-Release-blocking criteria proven: **12 / 14**. Open: A9, A19.
+Release-blocking criteria proven: **13 / 14**. Open: A9.
 
 Other known open defects:
 - **B6**: Window title, tab and menu glyphs can be blank on the experimental Windows graphics path; body text alone does not prove glyph correctness.
@@ -134,7 +134,7 @@ Other known open defects:
 - Graphics future path: Vulkan is a Graphics Lab future path, excluded from General Preview and v1; D3D11 compatibility is a Graphics Lab future path, excluded from General Preview and v1.
 - Guest platform: QEMU virt-compatible guest contract with documented deviations.
 
-State reviewed 2026-11-23 at commit `7bb3bd37f3dfa13b64cab76fe351c12c202c130d`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
+State reviewed 2026-11-24 at commit `084d07c8ab24d2fc9d4e704a0b738af9d2f924d9`. This block is generated from [`capabilities/windows-hvf.json`](capabilities/windows-hvf.json) by `scripts/render-capability-status.py`.
 <!-- END GENERATED: capability-summary -->
 
 </details>

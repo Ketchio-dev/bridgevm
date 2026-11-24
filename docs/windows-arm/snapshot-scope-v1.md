@@ -49,7 +49,14 @@ A future V1 implementation is complete only when it proves all of:
 6. interrupted create/restore leaves either the old complete pair or the new
    complete pair, never one file from each.
 
-## Current evidence boundary (2026-09-17)
+## Designated build on November 24, 2026
+
+The powered-off snapshot criterion passed on the designated hosted package.
+Windows restored its original file in ten independent VMs. Disk-full and
+process-interruption checks preserved complete disk and UEFI vars pairs.
+[Measurements and recovery limits](evidence/a19-snapshot-interruption-20261123.md#designated-build-on-november-24)
+
+## Historical evidence boundary (2026-09-17)
 
 A19 remains OPEN. Use its generated entry in [current status](../../STATUS.md)
 for capability wording and known defects.
