@@ -52,13 +52,16 @@ if [[ -z "${BRIDGEVM_INSTALL_ASSET_DIR:-}" ]]; then
   [[ "$(uname -s)/$(uname -m)" == "Darwin/arm64" ]] ||
     fail "BridgeVM runs Windows 11 ARM on Apple Silicon Macs only"
 fi
-work=$(mktemp -d); backup=""
+work=$(mktemp -d); backup=""; install_stage=""
 final_app="$DEST/$EXPECTED_APP"
 cleanup() {
   # On any failure after the old app was moved aside, put it back.
   if [[ -n "$backup" && -e "$backup" && ! -e "$final_app" ]]; then
     mv "$backup" "$final_app" 2>/dev/null &&
       echo "rolled back: previous app restored at $final_app" >&2
+  fi
+  if [[ -n "$install_stage" ]]; then
+    rm -rf -- "$install_stage" || true
   fi
   rm -rf "$work"
 }
@@ -199,23 +202,21 @@ except BlockingIOError:
 except OSError as error:
     sys.exit(f"Could not lock the installation destination ({error.strerror}).")
 PYLOCK
-staged="$DEST/.$EXPECTED_APP.install-$$"
-rm -rf "$staged"
-# Copy into the destination filesystem first so the final step is a rename.
-cp -R "$app" "$staged" || { rm -rf "$staged"; fail "could not stage the app in $DEST"; }
+# Stage in an owned directory on the destination filesystem so the last move is a rename.
+install_stage=$(mktemp -d -- "$DEST/.$EXPECTED_APP.install-XXXXXX") ||
+  fail "could not stage the app in $DEST"
+staged="$install_stage/$EXPECTED_APP"
+cp -R "$app" "$staged" || fail "could not stage the app in $DEST"
 codesign --verify --deep --strict "$staged" ||
-  { rm -rf "$staged"; fail "staged copy failed signature verification"; }
+  fail "staged copy failed signature verification"
 if [[ -e "$final_app" ]]; then
   backup_path="$DEST/$EXPECTED_APP.backup-$(date +%Y%m%d-%H%M%S)-$$"
   [[ ! -e "$backup_path" && ! -L "$backup_path" ]] ||
-    { rm -rf "$staged"; fail "the installer backup path already exists"; }
+    fail "the installer backup path already exists"
   backup="$backup_path"
-  mv "$final_app" "$backup" || { rm -rf "$staged"; fail "could not preserve the existing app"; }
+  mv "$final_app" "$backup" || fail "could not preserve the existing app"
 fi
-if ! mv "$staged" "$final_app"; then
-  rm -rf "$staged"
-  fail "could not move the new app into place"
-fi
+mv "$staged" "$final_app" || fail "could not move the new app into place"
 # Post-install verification; the trap restores the backup if this fails.
 codesign --verify --deep --strict "$final_app" || {
   rm -rf "$final_app"
