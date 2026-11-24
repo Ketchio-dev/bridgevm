@@ -17,21 +17,24 @@ enum WindowsFileFailureFeedback {
 
     static func report(_ stage: String, _ error: Error, sentence: String) -> String {
         NSLog("%@", diagnostic(stage, error))
-        // These converter refusals already give useful remediation; retain it without
-        // the helper's appended format/version details or English parser diagnostics.
         let ns = error as NSError
-        if ns.domain == "BridgeVM.MediaImport" {
-            let detail = ns.localizedDescription
-            if detail.hasPrefix("이 디스크는 다른 디스크를 기반으로") {
-                return "이 디스크는 다른 디스크를 기반으로 하니 원래 VM 앱에서 하나의 디스크로 합친 뒤 다시 가져오세요."
-            }
-            if detail.hasPrefix("이 디스크는 지원하지 않는 형식 기능") {
-                return "지원하지 않는 디스크 형식이므로 원래 VM 앱에서 디스크를 변환한 뒤 다시 가져오세요."
-            }
-            if detail.hasPrefix("디스크 이미지가 손상되었거나 구조가 올바르지") {
-                return "디스크 이미지가 손상되었거나 구조가 올바르지 않으니 원래 VM 앱에서 디스크를 점검한 뒤 다시 시도하세요."
-            }
+        guard ns.domain == "BridgeVM.MediaImport" else { return sentence }
+        let detail = ns.localizedDescription
+        switch detail {
+        // These converter sentences contain fixed guidance. Match the entire sentence
+        // before using it in the app, since other helper output can contain file paths.
+        case "이 VHDX는 4K 논리 섹터 디스크라 BridgeVM에서 부팅할 수 없으니 512바이트 논리 섹터 디스크에 설치한 Windows를 가져오세요.",
+             "이 디스크는 다른 디스크를 기반으로 하는 차이 디스크이니 Hyper-V에서 부모 디스크와 병합한 뒤 다시 가져오세요.",
+             "이 VHDX에는 반영되지 않은 변경 기록이 남아 있으니 Windows에서 이 VHDX를 한 번 연결했다가 분리한 뒤 다시 시도하세요.":
+            return detail
+        case _ where detail.hasPrefix("이 디스크는 다른 디스크를 기반으로"):
+            return "이 디스크는 다른 디스크를 기반으로 하니 원래 VM 앱에서 하나의 디스크로 합친 뒤 다시 가져오세요."
+        case _ where detail.hasPrefix("이 디스크는 지원하지 않는 형식 기능"):
+            return "지원하지 않는 디스크 형식이므로 원래 VM 앱에서 디스크를 변환한 뒤 다시 가져오세요."
+        case _ where detail.hasPrefix("디스크 이미지가 손상되었거나 구조가 올바르지"):
+            return "디스크 이미지가 손상되었거나 구조가 올바르지 않으니 원래 VM 앱에서 디스크를 점검한 뒤 다시 시도하세요."
+        default:
+            return sentence
         }
-        return sentence
     }
 }

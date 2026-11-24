@@ -63,6 +63,27 @@ fi
 exec 8<&-
 codesign --verify --deep --strict "$DEST/BridgeVM.app"
 
+# Interrupt a real update after the previous app has been moved to its backup.
+INTERRUPT_BIN="$WORK/interrupt-bin"; mkdir "$INTERRUPT_BIN"
+cat > "$INTERRUPT_BIN/mv" <<'EOF'
+#!/bin/bash
+set -eu
+/bin/mv "$@"
+if [[ $1 == "$INSTALL_TEST_DEST/BridgeVM.app" && $2 == "$INSTALL_TEST_DEST/BridgeVM.app.backup-"* ]]; then
+  echo "interrupted after moving previous app" >&2
+  kill -TERM "$PPID"
+fi
+EOF
+chmod +x "$INTERRUPT_BIN/mv"
+old_inode=$(stat -f %i "$DEST/BridgeVM.app")
+PATH="$INTERRUPT_BIN:$PATH" INSTALL_TEST_DEST="$DEST" \
+  check "interrupted update exits unsuccessfully" fail run_installer "$GOOD_ASSETS" "$DEST"
+if ! grep -Fq 'interrupted after moving previous app' "$WORK/last.out" ||
+   [[ "$(stat -f %i "$DEST/BridgeVM.app")" != "$old_inode" ]] ||
+   compgen -G "$DEST/.BridgeVM.app.install-*" >/dev/null; then
+  fail=$((fail+1)); echo "FAIL: interrupted update did not restore and clean up" >&2
+fi
+
 # --- checksum failures -------------------------------------------------------
 BAD_SUM="$WORK/bad-sum"; cp -R "$GOOD_ASSETS" "$BAD_SUM"
 printf '%064d  %s\n' 0 "$TARBALL" > "$BAD_SUM/SHA256SUMS"
