@@ -16,9 +16,7 @@ struct FirstRunImportStatusView: View {
             if let error = library.firstRunImportError {
                 Text(error).foregroundStyle(.red).font(.callout).accessibilityIdentifier("bridgevm.first-run.import.error")
             }
-            if library.quitAfterVMPreparation?.confirmed == true {
-                VMPreparationQuitStatus { library.quitAfterVMPreparation = nil }
-            }
+            VMPreparationQuitStatus(library: library)
             HStack {
                 Spacer()
                 if library.firstRunImport.publishedConfig != nil {
@@ -44,13 +42,15 @@ struct FirstRunImportStatusView: View {
 }
 
 struct VMPreparationQuitStatus: View {
-    let cancel: () -> Void
+    @ObservedObject var library: LibraryModel
 
     var body: some View {
-        HStack {
-            Text("VM 파일 준비를 마치면 BridgeVM을 종료합니다.")
-            Button("종료 취소", action: cancel)
+        if library.quitAfterVMPreparation?.confirmed == true {
+            HStack {
+                Text("VM 파일 준비를 마치면 BridgeVM을 종료합니다.")
+                Button("종료 취소") { library.quitAfterVMPreparation = nil }
+            }
+            .font(.callout)
         }
-        .font(.callout)
     }
 }

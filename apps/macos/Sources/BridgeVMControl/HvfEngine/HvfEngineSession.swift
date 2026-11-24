@@ -28,6 +28,7 @@ final class HvfEngineSession: ObservableObject {
     @Published var displayDriverUnboundDismissed = false
     @Published var displayDriverRestarting = false
     var repoRoot: URL
+    weak var library: LibraryModel?
     var workAdmission: LibraryWorkAdmission?
     var reservedWorkAdmission: (@MainActor (UUID, Bool) -> String?)?
     var onConfigurationPersisted: (@MainActor (_ previous: VMConfig, _ saved: VMConfig) -> Void)? // library rebind + reload

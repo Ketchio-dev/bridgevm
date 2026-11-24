@@ -25,6 +25,9 @@ struct HvfVMSettingsSheet: View {
                     .accessibilityIdentifier("bridgevm.runtime.settings.done")
             }
             .padding(20)
+            if let library = session.library {
+                VMPreparationQuitStatus(library: library)
+            }
             Form {
                 if let notice = runningNoticeText {
                     Text(notice).foregroundStyle(.secondary)

@@ -76,7 +76,7 @@ final class ControlAppTermination {
 
     func shouldTerminate(reason: QuitReason) -> NSApplication.TerminateReply {
         guard !pending else { return .terminateCancel } // the pending quit answers for itself
-        if let library = preparationLibrary(), library.preparingNewVM || library.firstRunImportBusy {
+        if let library = preparationLibrary(), library.vmPreparationInProgress {
             if reason == .user { finishPreparationBeforeQuit(library) }
             return .terminateCancel
         }
@@ -188,9 +188,13 @@ extension ControlAppTermination.QuitReason {
 }
 
 extension LibraryModel {
+    var vmPreparationInProgress: Bool {
+        preparingNewVM || firstRunImportBusy || appRuntimeSessions().contains(where: \.preparingSnapshot)
+    }
+
     func finishVMPreparation(succeeded: Bool) {
         guard let request = quitAfterVMPreparation else { return }
-        if succeeded && (preparingNewVM || firstRunImportBusy) { return }
+        if succeeded && vmPreparationInProgress { return }
         quitAfterVMPreparation = nil
         if succeeded { request.onSuccess() }
     }
