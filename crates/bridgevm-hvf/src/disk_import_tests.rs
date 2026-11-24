@@ -415,13 +415,10 @@ fn an_existing_destination_is_never_replaced() {
 }
 
 #[test]
-fn a_shortfall_of_free_space_is_one_sentence_with_the_numbers() {
-    let text = Refusal::NoSpace {
-        needed: 40_000_000_000,
-        available: 12_500_000_000,
-    }
-    .to_string();
-    assert_eq!(text, "변환한 디스크를 저장할 공간이 부족하니 대상 볼륨에 28 GB 이상을 비운 뒤 다시 시도하세요(필요 40 GB, 남은 공간 12 GB).");
+fn a_full_destination_has_recovery_guidance() {
+    let error = ConvertError::from(std::io::Error::from_raw_os_error(libc::ENOSPC));
+    assert!(matches!(error, ConvertError::Refused(Refusal::NoSpace)));
+    assert!(error.to_string().contains("대상 볼륨의 공간"));
 }
 
 #[test]
