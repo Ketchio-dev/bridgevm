@@ -82,8 +82,9 @@ Choose the Windows setup path that matches what you have:
 | **Import an installed VM** | A Windows 11 Arm disk in RAW, QCOW2 or Hyper-V VHDX format. Import needs no driver payload. |
 
 In current source builds, you can choose **Finish Then Quit** (`완료 후 종료`)
-during a first-run import or while **Create VM** prepares the files for an
-import or ISO installation. You can cancel the quit from the progress view.
+during a first-run import, while **Create VM** prepares files for an import or
+ISO installation, or during a powered-off snapshot operation. You can cancel
+the quit from the progress view or VM settings.
 
 The [installation guide](docs/install.md) covers both paths, required bundle
 resources and first-open trust. After Windows starts, install the signed guest
