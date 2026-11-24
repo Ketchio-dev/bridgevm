@@ -4,8 +4,8 @@
 clippy, msrv and the venus check are required checks that skip a pull request
 when no Rust build input changed. A build input missing from that list would
 let a lint or MSRV break through review, so this runs the step itself, taken
-from ci.yml, with a stub `git diff`. It also resolves every include_str! and
-include_bytes! in the tree and requires each target to count as a build
+from ci.yml, with a stub `git` that checks the diff inputs. It also resolves
+every include_str! and include_bytes! in the tree and requires each target to count as a build
 input, and requires the build scripts to read no files, which the list
 assumes. The macOS host contracts run exactly when the `rust` area does.
 
@@ -67,7 +67,12 @@ class ChangedAreas(unittest.TestCase):
         cls.work = pathlib.Path(tempfile.mkdtemp())
         (cls.work / "step.sh").write_text(diff_step())
         git = cls.work / "git"
-        git.write_text('#!/bin/sh\n[ "$1 $2" = "diff --name-only" ] || exit 64\ncat "$CHANGED_FILES"\n')
+        git.write_text('#!/bin/sh\n'
+                       'case "$*" in\n'
+                       '  "rev-parse --verify HEAD^2") exit 0 ;;\n'
+                       '  "diff --name-only --no-renames HEAD^1 HEAD --") cat "$CHANGED_FILES" ;;\n'
+                       '  *) exit 64 ;;\n'
+                       'esac\n')
         git.chmod(0o755)
 
     @classmethod
@@ -80,7 +85,7 @@ class ChangedAreas(unittest.TestCase):
         (self.work / "files").write_text("".join(path + "\n" for path in files))
         output = self.work / "output"
         output.write_text("")
-        env = dict(os.environ, PATH=f"{self.work}{os.pathsep}{os.environ['PATH']}", EVENT=event, BASE="0" * 40,
+        env = dict(os.environ, PATH=f"{self.work}{os.pathsep}{os.environ['PATH']}", EVENT=event,
                    GITHUB_OUTPUT=str(output), CHANGED_FILES=str(self.work / "files"))
         subprocess.run(["bash", "-e", str(self.work / "step.sh")], env=env, check=True, stdout=subprocess.DEVNULL)
         return dict(line.split("=", 1) for line in output.read_text().splitlines())

@@ -39,13 +39,15 @@ jobs:
       - id: diff
         env:
           EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           if [ "$EVENT" != pull_request ]; then
             printf 'rust=true\nrust_build=true\nhost_contracts=true\nswift=true\nswift_build=true\nvenus=true\n' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          files=$(git diff --name-only "$BASE" HEAD)
+          # The event's base can predate the base of the checked-out merge.
+          # Require a merge checkout and classify both sides of any rename.
+          git rev-parse --verify HEAD^2 >/dev/null
+          files=$(git diff --name-only --no-renames HEAD^1 HEAD --)
           printf '%s\n' "$files"
           # Rust jobs skip only when every file is documentation, another
           # workflow or the perf harness (Rust tests read Swift sources and
