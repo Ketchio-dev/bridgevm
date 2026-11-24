@@ -109,5 +109,47 @@ disk and vars still matched their prior hashes, and neither attempt left new
 staging entries. Removing the test filler allowed both ordinary retries to
 publish the complete new pair. These storage fixtures used synthetic files.
 
-A19 remains open. The ten-lane campaign belongs to the designated release
+At this checkpoint A19 remained open. The ten-lane campaign belongs to the designated release
 build. The per-operation byte quota was removed in [#711](https://github.com/Ketchio-dev/bridgevm/pull/711).
+
+## Designated build on November 24
+
+The designated package was built from `a8a606b5`. Its product code is
+`084d07c8`. The intervening commit records the tested revision in the capability
+registry and generated summaries. The local and hosted full project checks
+passed. The hosted packaging rehearsal produced artifact `14901045364` on its
+second attempt. The archive SHA-256 was
+`132d05af1049b5f95b62a24da7b74c041385213cbf13ef88ccd6f49c57237160`.
+The installed app tree, bundled probe and snapshot helper matched the verified
+package before testing. [Hosted project check](https://github.com/Ketchio-dev/bridgevm/actions/runs/45348171761) · [Hosted package](https://github.com/Ketchio-dev/bridgevm/actions/runs/45348175972/attempts/2)
+
+Ten independent Windows 11 Arm VMs each used an APFS disk clone and its own
+UEFI variables. Windows wrote a marker to C: and shut down. After taking the
+snapshot, Windows booted again, read the original marker, overwrote it, and
+shut down. The app CLI restored the snapshot and exported the selected pair.
+On the third boot Windows read the original marker from that export in all
+ten VMs. All 30 boots ended in guest shutdown with disk and UEFI variables
+written back. The exported file hashes matched their manifests. All test
+clones were removed, and the installed package fingerprints matched again at
+the end of the campaign.
+
+The installed package passed five storage cases on the development Mac.
+
+| Operation on private fixtures | Observed result |
+| --- | --- |
+| Replace an export with 39,616,512 bytes free | The copy returned a space error. The previous export still verified. After freeing space, retry published the expected disk and vars. |
+| Restore with 31,404,032 bytes free | The copy returned a space error. Both selected files retained their previous hashes. The ordinary retry succeeded after freeing space. |
+| Kill export during the staged copy | The previous export retained its exact bytes. The app CLI retried and published the expected pair. |
+| Kill restore just after the directory exchange | Both selected files matched the new generation. The app CLI retried successfully and cleared its staging. |
+| Kill export just after replacing an existing export | The published export and the previous export in staging each verified. The CLI identified the retained directory. Moving it aside preserved the earlier export and allowed a same-path retry. |
+
+The three interrupted helpers were each reaped on `SIGKILL` while macOS
+remained running. After an interrupted replacement export, using a fresh
+output name also preserves both directories. A legacy VM moved outside the app
+before storage-identity migration can require returning its media to the
+original location for recovery. [Snapshot CLI recovery](../../app-cli-snapshot.md)
+
+These results satisfy A19 on the designated build. The 54 trials on earlier
+packages remain separate observations. The original mixed-pair failure and
+the evidence gathered before this campaign remain available in the
+[previous capability record](https://github.com/Ketchio-dev/bridgevm/blob/81e5ebe6f9d9080f3296b47944cf89f56b9e8862/capabilities/windows-hvf.json).
