@@ -594,9 +594,8 @@ impl VirtioGpu3dBackend for VenusBackend {
         // passive detector structurally cannot -- polling stopping outright.
         self.poll_watchdog
             .observe_poll(self.contexts.len(), outstanding);
-        // The global dispatcher keeps VirGL polling and async Venus proxy
-        // completion separate. Direct context_poll enters proxy retirement,
-        // which asserts when ASYNC_FENCE_CB is enabled (live 2f00831a).
+        // The global dispatcher retires Venus proxy fences and services VirGL
+        // according to its fence mode.
         // Do not gate this on outstanding virtqueue fences: renderer feedback
         // and query progress also depend on polling.
         unsafe {
