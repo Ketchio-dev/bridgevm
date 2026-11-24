@@ -21,6 +21,8 @@ enum FirstRunImportWorker {
                 prepared.assignNewShare(in: libraryRoot)
                 return finishPublication(publish(prepared.config, libraryRoot), prepared: prepared)
             }
+        } catch is FirstRunImportDestination.NameInUse {
+            return .failed("라이브러리에서 이미 사용 중인 VM 이름입니다. 다른 이름을 입력한 뒤 다시 가져오세요.")
         } catch {
             return .failed(WindowsFileFailureFeedback.report("import", error, sentence: WindowsFileFailureFeedback.importing))
         }
