@@ -10,6 +10,7 @@ struct T17GuestJourney {
             throw T17Blocker(code: "guest-evidence-missing", detail: "first READY record changed before the product journey")
         }
         let pacing = T17FirstRunAppPacing.mark(bundle: bundle) // the app's records of this first session
+        try waitForSharedAssets()
         try keyboardAndPointer(); try prove(.keyboardPointer); readTPM(.first)
         try clipboard(); try prove(.clipboard)
         try workload("Share", output: "t17-guest-\(prefix).txt"); try prove(.folderShare)
@@ -24,12 +25,12 @@ struct T17GuestJourney {
         let first = try archiveLog(named: T17FirstRunHostRecords.archive, ready: "first-ready", shutdown: "first-shutdown")
         T17FirstRunAppPacing.archive(since: pacing, bundle: bundle)
         try createSnapshot(); try verifySnapshot(restored: false)
-        _ = try bootReady(); readTPM(.mutation)
+        _ = try bootReady(); try waitForSharedAssets(); readTPM(.mutation)
         try workload("MarkerB", output: "t17-snapshot-b-\(prefix).txt")
         try shutdown()
         let mutation = try archiveLog(named: "mutation-run.log", ready: "mutation-ready", shutdown: "mutation-shutdown")
         try restoreSnapshot(); try verifySnapshot(restored: true)
-        _ = try bootReady(); readTPM(.final)
+        _ = try bootReady(); try waitForSharedAssets(); readTPM(.final)
         try workload("MarkerRestoredA", output: "t17-snapshot-restored-a-\(prefix).txt")
         try workload("AgentResult", output: "t17-agent-result-\(prefix).json", includeIdentity: true)
         let artifacts = try T17GuestArtifacts.collect(request: request, fileManager: fileManager)
@@ -65,7 +66,6 @@ struct T17GuestJourney {
     }
 
     private func launchWorkload(_ action: String, includeIdentity: Bool = false) throws {
-        try waitForSharedAsset()
         var guest = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\\bridgevm-share\\bv-product-e2e-launch.ps1 -Action \(action) -Nonce \(request.nonce)"
         if includeIdentity {
             guest += " -JobID \(request.jobID) -Commit \(request.commit) -Lane \(request.lane) -VMSlug \(request.vmSlug)"
@@ -141,12 +141,11 @@ struct T17GuestJourney {
         }
     }
 
-    private func waitForSharedAsset() throws {
-        guard wait(timeout: 120, predicate: {
-            let log = self.currentLogText()
-            return log.contains("BVAGENT SHARE host->guest bv-product-e2e-launch.ps1 bytes=")
-                && log.contains("BVAGENT SHARE host->guest bv-product-e2e.ps1 bytes=")
-        }) else { throw T17Blocker(code: "guest-evidence-missing", detail: "product E2E guest asset was not synchronized") }
+    private func waitForSharedAssets() throws {
+        guard T17SharedAssets.wait(
+            ["bv-product-e2e-launch.ps1", "bv-product-e2e.ps1"], in: runLog, nonce: request.nonce, timeout: 120,
+            enter: { try T17RuntimeControlInput.enter($0, ui: ui) }
+        ) else { throw T17Blocker(code: "guest-evidence-missing", detail: "product E2E guest assets were unavailable") }
     }
 
     private func waitForStableLog() -> Bool {
