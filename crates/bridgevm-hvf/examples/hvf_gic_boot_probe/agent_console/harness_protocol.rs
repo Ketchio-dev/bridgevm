@@ -31,7 +31,7 @@ pub(super) fn command_result_text(command: &str, exit_code: i32, output: &str) -
     }
 }
 
-fn command_output_text(command: &str, exit_code: i32, output: &str) -> String {
+pub(super) fn command_output_text(command: &str, exit_code: i32, output: &str) -> String {
     let output = if command.starts_with(LEGACY_PASTE_MARKER) {
         // PowerShell errors can echo the source line containing the paste text.
         output.lines().find(|line| *line == command).unwrap_or("")
@@ -259,6 +259,9 @@ impl AgentConsoleHarness {
         progress
     }
     fn reply_progress(&mut self, line: &str, command: &str) -> ReplyProgress {
+        if let Some(progress) = super::clip_paste::clip_paste_reply(command, line) {
+            return progress;
+        }
         if let Some(progress) = super::clip_operator_reply::operator_clipset_reply(command, line) {
             return progress;
         }

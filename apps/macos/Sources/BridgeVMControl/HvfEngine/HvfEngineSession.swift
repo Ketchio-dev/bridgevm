@@ -269,7 +269,7 @@ final class HvfEngineSession: ObservableObject {
             guard serviceStarted, case .connected = connectionState else {
                 append(.unknown("clipboard paste refused: guest service is not connected")); return .refused
             }
-            let request = HvfClipboardPaste(base64: base64, now: Date())
+            let request = clipboardPaste(base64: base64)
             guard request.fitsGuestCommandLine(reportingTo: self), sendCtl(request.command) else { return .refused }
             legacyPaste.pending = request
             return .acceptedForProcessing

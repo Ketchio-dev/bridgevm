@@ -55,6 +55,9 @@ characters where the box allows that many). Older builds and other editors
 retain the input path tracked in
 [#665](https://github.com/Ketchio-dev/bridgevm/issues/665), where long commits
 can repeat or lose characters. Use clipboard sharing and paste if this occurs.
+The legacy clipboard route can send longer drafts in VMs started by the app.
+In a headless Windows run, a 3,000-character mixed Unicode paste matched both
+the editor content and its saved file.
 
 ## Try BridgeVM
 

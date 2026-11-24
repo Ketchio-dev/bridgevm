@@ -1,11 +1,16 @@
 import Foundation
 
 extension HvfEngineSession {
+    func clipboardPaste(base64: String) -> HvfClipboardPaste {
+        // An attachment may still use an older helper. An owned boot starts this app's relay.
+        HvfClipboardPaste(base64: base64, now: Date(), allowsLongPaste: inputDriver.router.eligible)
+    }
+
     /// Live-display admission. False means a refused route, failed write, or full paste backlog.
     func sendDisplayInput(_ input: HvfLegacyPasteState.Input) -> Bool {
         guard legacyPaste.pending != nil else { return deliverDisplayInput(input) }
         if case let .text(text) = input, let base64 = HvfTextInputPlan.clipboardBase64(for: text) {
-            let request = HvfClipboardPaste(base64: base64, now: Date())
+            let request = clipboardPaste(base64: base64)
             guard request.fitsGuestCommandLine(reportingTo: self) else { return false }
         }
         if legacyPaste.hold(input) { return true }

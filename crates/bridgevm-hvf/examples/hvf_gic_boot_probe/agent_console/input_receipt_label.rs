@@ -1,4 +1,5 @@
 use super::super::clip_paste::LEGACY_PASTE_MARKER;
+use super::super::protocol::valid_request_id;
 
 /// Input payloads belong on the wire, never in diagnostic command labels.
 pub(super) fn label(command: &str) -> &str {
@@ -22,17 +23,6 @@ fn legacy_paste_label(command: &str) -> Option<&str> {
     let (_, output) = body.rsplit_once(";Write-Output '")?;
     let label = output.strip_suffix("'\"")?;
     valid_request_id(label.strip_prefix(LEGACY_PASTE_MARKER)?).then_some(label)
-}
-
-fn valid_request_id(id: &str) -> bool {
-    id.len() == 36
-        && id.bytes().enumerate().all(|(i, b)| {
-            if matches!(i, 8 | 13 | 18 | 23) {
-                b == b'-'
-            } else {
-                b.is_ascii_hexdigit()
-            }
-        })
 }
 
 #[cfg(test)]

@@ -55,16 +55,23 @@ fn legacy_paste_marker_tracks_swift_paste_command() {
 
 #[test]
 fn legacy_paste_is_not_published_to_mac_pasteboard() {
-    let mut rig = ClipRig::synced("old");
-    rig.paste();
-    rig.settle();
-    rig.settle();
-    assert_eq!(rig.guest, "한글");
-    assert!(
-        rig.mac_sets().is_empty(),
-        "typed text written to the Mac pasteboard"
+    let long = "한글🙂".repeat(1_000);
+    let direct = format!(
+        "CLIPPASTE 0F6A2C1E-7B3D-4E59-9A8C-5D2E1F0B3A47 {}",
+        base64_encode(long.as_bytes())
     );
-    assert_eq!(rig.h.last_synced.text.as_deref(), Some("한글"));
+    for (command, text) in [(HANGUL_PASTE, "한글"), (direct.as_str(), long.as_str())] {
+        let mut rig = ClipRig::synced("old");
+        rig.h.queue.push_back(ServiceReq::Ctl(command.to_owned()));
+        rig.settle();
+        rig.settle();
+        assert_eq!(rig.guest, text);
+        assert!(
+            rig.mac_sets().is_empty(),
+            "typed text written to the Mac pasteboard"
+        );
+        assert_eq!(rig.h.last_synced.text.as_deref(), Some(text));
+    }
 }
 
 #[test]

@@ -138,5 +138,16 @@ pub(super) fn parse_out_line(line: &str) -> Option<(i32, &str)> {
     let (exit_code, output) = rest.split_once(' ')?;
     Some((exit_code.parse().ok()?, output))
 }
+
+pub(super) fn valid_request_id(id: &str) -> bool {
+    id.len() == 36
+        && id.bytes().enumerate().all(|(i, b)| {
+            if matches!(i, 8 | 13 | 18 | 23) {
+                b == b'-'
+            } else {
+                b.is_ascii_hexdigit()
+            }
+        })
+}
 #[path = "input_protocol.rs"]
 mod unicode_input;
