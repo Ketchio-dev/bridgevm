@@ -179,6 +179,26 @@ fi
 [[ -d "$DEST" ]] || fail "destination does not exist: $DEST"
 [[ -w "$DEST" ]] ||
   fail "no write permission for $DEST; re-run with a writable --dest or fix permissions (the installer does not invoke sudo for you)"
+
+# Keep one lock inode per destination. The inherited descriptor holds it
+# through publication or rollback, and the empty file stays for later installs.
+lock_path="$DEST/.$EXPECTED_APP.install.lock"
+if [[ ! -e "$lock_path" && ! -L "$lock_path" ]]; then
+  (umask 022; set -o noclobber; : > "$lock_path") 2>/dev/null || true
+fi
+[[ -f "$lock_path" && ! -L "$lock_path" ]] || fail "could not create the installer lock file"
+exec 9<"$lock_path" || fail "could not open the installer lock file"
+/usr/bin/python3 - <<'PYLOCK'
+import fcntl
+import sys
+
+try:
+    fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    sys.exit("Another BridgeVM installer is updating this destination. Try again after it finishes.")
+except OSError as error:
+    sys.exit(f"Could not lock the installation destination ({error.strerror}).")
+PYLOCK
 staged="$DEST/.$EXPECTED_APP.install-$$"
 rm -rf "$staged"
 # Copy into the destination filesystem first so the final step is a rename.
@@ -186,7 +206,10 @@ cp -R "$app" "$staged" || { rm -rf "$staged"; fail "could not stage the app in $
 codesign --verify --deep --strict "$staged" ||
   { rm -rf "$staged"; fail "staged copy failed signature verification"; }
 if [[ -e "$final_app" ]]; then
-  backup="$DEST/$EXPECTED_APP.backup-$(date +%Y%m%d-%H%M%S)"
+  backup_path="$DEST/$EXPECTED_APP.backup-$(date +%Y%m%d-%H%M%S)-$$"
+  [[ ! -e "$backup_path" && ! -L "$backup_path" ]] ||
+    { rm -rf "$staged"; fail "the installer backup path already exists"; }
+  backup="$backup_path"
   mv "$final_app" "$backup" || { rm -rf "$staged"; fail "could not preserve the existing app"; }
 fi
 if ! mv "$staged" "$final_app"; then
@@ -204,6 +227,7 @@ elif [[ -n "$backup" ]]; then
   echo "previous app kept at: $backup"
   backup=""  # do not let the rollback trap touch a deliberately kept backup
 fi
+exec 9<&-
 echo "Installed $final_app ($VERSION)"
 echo "Your VMs and their data were not touched."
 [[ $LAUNCH -eq 1 ]] && open "$final_app"
