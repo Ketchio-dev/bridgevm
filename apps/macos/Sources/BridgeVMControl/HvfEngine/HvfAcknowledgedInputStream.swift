@@ -4,7 +4,7 @@ import Foundation
 struct HvfAcknowledgedInputStream {
     enum Update: Equatable {
         case idle, waiting
-        case sent(UUID), inserted(UUID)
+        case sent(UUID), inserted(UUID, draft: HvfTextDraftDelivery? = nil)
         case cancelled(HvfOrderedInputQueue.Failure, discarded: Int)
     }
 
@@ -50,10 +50,11 @@ struct HvfAcknowledgedInputStream {
                     return .cancelled(reason, discarded: discarded)
                 }
                 assert(transition == .completed, "the active ticket is always acknowledged")
-                return .inserted(active.ticket.id)
+                return .inserted(active.ticket.id, draft: active.ticket.event.draft)
             case .unsupported:
-                guard active.request.queuedTextDispatch,
-                      let fallback = HvfUnicodeInputRequest(event: active.ticket.event, now: now) else { return cancel(.transportFailed) }
+                guard active.request.queuedTextDispatch else { return cancel(.transportFailed) }
+                if active.ticket.event.draft != nil { return cancel(.unsupportedEditor) }
+                guard let fallback = HvfUnicodeInputRequest(event: active.ticket.event, now: now) else { return cancel(.transportFailed) }
                 active.request = fallback
                 pending = active
                 // The guest positively dispatched no text. Keep the same logical event,

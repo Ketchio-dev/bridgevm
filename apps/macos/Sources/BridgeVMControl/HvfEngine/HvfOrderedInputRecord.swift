@@ -51,7 +51,7 @@ struct HvfOrderedInputRecord {
         case let .sent(id)?:
             sent &+= 1
             awaited = (id, now)
-        case let .inserted(id)?:
+        case let .inserted(id, _)?:
             if let awaited, awaited.id == id, now >= awaited.at {
                 let rtt = (now - awaited.at) / 1_000_000
                 inserted &+= 1

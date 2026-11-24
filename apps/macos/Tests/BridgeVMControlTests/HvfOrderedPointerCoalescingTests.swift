@@ -28,7 +28,7 @@ final class HvfOrderedPointerCoalescingTests: XCTestCase {
         for (index, separator) in separators.enumerated() {
             fixture.route([.pointer("move:\(index)x10"), .pointer("move:\(index)x20"), separator])
             switch separator {
-            case let .pointer(value), let .key(value), let .text(value): expected += ["move:\(index)x20", value]
+            case let .pointer(value), let .key(value), let .text(value, _): expected += ["move:\(index)x20", value]
             }
         }
         fixture.route([.pointer("move:99x10"), .pointer("move:99x20")])

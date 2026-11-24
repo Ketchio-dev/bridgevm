@@ -51,7 +51,7 @@ struct HvfRecoverableInputStream {
             if let active { cleanup.held.inserted(active) }
             active = nil
         case let .cancelled(reason, _):
-            if reason == .notInserted {
+            if reason.permitsLegacyRetry {
                 // Nothing of the awaited event reached Windows, so it pressed nothing either.
                 notInserted += (active.map { [$0] } ?? []) + queued
                 cleanup.held = heldBeforeActive

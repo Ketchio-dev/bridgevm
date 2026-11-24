@@ -70,8 +70,9 @@ final class HvfSessionInputDriver {
         let previous = router.state, held = router.count; defer { observeBindingDiscard(held: held) }
         var update = router.pollBatch(binding: binding, serviceReady: serviceReady, lines: lines, now: now(),
                                       legacyPending: legacyPending, send: send)
-        if case .inserted = update {
+        if case let .inserted(_, draft) = update {
             onUpdate?(update)
+            draft?.onSent?()
             fallbackReported = false
             // Never reuse a receipt batch to acknowledge the next request.
             update = router.poll(binding: binding, serviceReady: serviceReady, lines: [], now: now(),
@@ -83,8 +84,12 @@ final class HvfSessionInputDriver {
         let replay = router.takeLegacyReplay()
         if !replay.isEmpty {
             if !fallbackReported {
-                onDiagnostic?("ordered input fell back to the VMM keyboard and mouse: Windows inserted none of "
-                              + "\(replay.count) events (a lock, sign-in or UAC screen)")
+                if case .cancelled(.unsupportedEditor, _) = update {
+                    onDiagnostic?("the focused editor declined queued text: using the Windows clipboard")
+                } else {
+                    onDiagnostic?("ordered input fell back to the VMM keyboard and mouse: Windows inserted none of "
+                                  + "\(replay.count) events (a lock, sign-in or UAC screen)")
+                }
                 fallbackReported = true
             }
             onLegacyReplay?(replay)

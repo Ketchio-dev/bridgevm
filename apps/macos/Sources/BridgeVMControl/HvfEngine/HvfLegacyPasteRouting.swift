@@ -1,16 +1,18 @@
 import Foundation
 
 extension HvfEngineSession {
-    func clipboardPaste(base64: String) -> HvfClipboardPaste {
+    func clipboardPaste(base64: String, preferRelay: Bool = false) -> HvfClipboardPaste {
         // An attachment may still use an older helper. An owned boot starts this app's relay.
-        HvfClipboardPaste(base64: base64, now: Date(), allowsLongPaste: inputDriver.router.eligible)
+        let transport: HvfClipboardPaste.Transport = inputDriver.router.eligible
+            ? (preferRelay ? .relay : .relayForLongText) : .shell
+        return HvfClipboardPaste(base64: base64, now: Date(), transport: transport)
     }
 
     /// Live-display admission. False means a refused route, failed write, or full paste backlog.
     func sendDisplayInput(_ input: HvfLegacyPasteState.Input) -> Bool {
         guard legacyPaste.pending != nil else { return deliverDisplayInput(input) }
-        if case let .text(text) = input, let base64 = HvfTextInputPlan.clipboardBase64(for: text) {
-            let request = clipboardPaste(base64: base64)
+        if case let .text(text, draft) = input, let base64 = HvfTextInputPlan.clipboardBase64(for: text) {
+            let request = clipboardPaste(base64: base64, preferRelay: draft != nil)
             guard request.fitsGuestCommandLine(reportingTo: self) else { return false }
         }
         if legacyPaste.hold(input) { return true }
@@ -46,7 +48,7 @@ extension HvfEngineSession {
     private func deliverDisplayInput(_ input: HvfLegacyPasteState.Input) -> Bool {
         switch input {
         case let .key(action): return sendKey(action)
-        case let .text(text): return sendText(text) != .refused
+        case let .text(text, draft): return sendText(text, draft: draft) != .refused
         }
     }
 }

@@ -138,12 +138,12 @@ struct HvfSessionInputRouter {
         if fallback, quiet, !stream.isRecovering, !stream.owesRelease { fallback = false }
         if stream.state == .ready { activated = true }
         if case let .cancelled(reason, _) = update, activated {
-            if reason == .notInserted {
+            if reason.permitsLegacyRetry {
                 // Not discarded: the caller writes them to input.ctl (takeLegacyReplay).
                 replay += stream.takeNotInserted()
                 fallback = true
                 legacy.restart(now: now)
-                update = .cancelled(.notInserted, discarded: 0)
+                update = .cancelled(reason, discarded: 0)
             } else {
                 failure = .requestFailed
             }
