@@ -59,6 +59,25 @@ final class T17TPMReadTests: XCTestCase {
             pcr7SHA256: T17TPMGuestResultTests.pcr7, guestRestartBeforeRead: true))
     }
 
+    func testRetainedAssetsCanBeUsedAfterBootWithoutNewShareReceipts() throws {
+        try append("BVAGENT READY T17 v3-share2\nBVAGENT SERVICE start t=1\n")
+        var sent: [String] = []
+        let observed = read { command in
+            sent.append(command)
+            if command.contains("Test-Path") {
+                for asset in T17TPMBootReader.assets { XCTAssertTrue(command.contains(asset)) }
+                try self.append("BVAGENT CMD \(command) exit=0\nT17-SHARED-ASSETS-\(self.nonce)-ready\nBVAGENT END \(command)\n")
+            } else {
+                try self.reply(command)
+                try self.result(self.body())
+            }
+        }
+        XCTAssertEqual(sent.count, 2)
+        XCTAssertEqual(sent.last, command)
+        XCTAssertNil(observed.record.reason)
+        XCTAssertTrue(observed.record.tpmReady == true)
+    }
+
     func testEveryFailureIsAFixedReasonWithinItsBound() throws {
         let link = root.appendingPathComponent("elsewhere.txt")
         try Data(body().utf8).write(to: link)

@@ -18,7 +18,7 @@ struct T17TPMBootReader {
     }
 
     private func observe(_ boot: T17TPMBoot, enter: (String) throws -> Void) -> T17TPMBootRecord {
-        guard poll(timeouts.asset, { T17TPMRunLog.synchronized(Self.assets, in: runLog) }) else {
+        guard T17SharedAssets.wait(Self.assets, in: runLog, nonce: nonce, timeout: timeouts.asset, enter: enter) else {
             return .unavailable(boot, .assetMissing)
         }
         let action = "TpmBoot\(boot.rawValue)", prefix = String(nonce.prefix(12))
@@ -63,16 +63,13 @@ enum T17TPMRunLog {
         return (attributes[.size] as? NSNumber)?.intValue
     }
 
-    static func synchronized(_ names: [String], in url: URL) -> Bool {
-        guard let data = data(url) else { return false }
-        let text = String(decoding: data, as: UTF8.self)
-        return names.allSatisfy { text.contains("BVAGENT SHARE host->guest \($0) bytes=") }
+    static func text(_ url: URL, after offset: Int = 0) -> String {
+        guard let data = data(url), data.count > offset else { return "" }
+        return String(decoding: data.suffix(from: offset), as: UTF8.self)
     }
 
     static func replied(_ url: URL, after offset: Int, command: String, marker: String) -> Bool {
-        guard let data = data(url), data.count > offset else { return false }
-        return T17ControlReply.succeeded(tail: String(decoding: data.suffix(from: offset), as: UTF8.self),
-                                         command: command, marker: marker)
+        T17ControlReply.succeeded(tail: text(url, after: offset), command: command, marker: marker)
     }
 
     /// Whether the log holds a guest SYSTEM_RESET stop record, which in product runs is

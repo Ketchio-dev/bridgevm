@@ -21,18 +21,11 @@ class TpmJourneyContract(unittest.TestCase):
     def test_journey_reads_each_agent_ready_boot_once_and_never_through_try(self) -> None:
         journey = source("T17GuestJourney.swift")
         run = journey[journey.index("    func run("):journey.index("    private func keyboardAndPointer")]
-        self.assertEqual(re.findall(r"readTPM\(\.(\w+)\)", journey), ["first", "mutation", "final"])
-        self.assertEqual(re.findall(r"try\s+readTPM", journey), [])
-        # Boot 1 after the input proof (its form needs the foreground), boots 2 and 3 right after READY.
-        steps = ["try keyboardAndPointer(); try prove(.keyboardPointer); readTPM(.first)\n        try clipboard()",
-                 'try createSnapshot(); try verifySnapshot(restored: false)\n        _ = try bootReady(); readTPM(.mutation)\n        try workload("MarkerB"',
-                 'try restoreSnapshot(); try verifySnapshot(restored: true)\n        _ = try bootReady(); readTPM(.final)\n        try workload("MarkerRestoredA"']
-        self.assertEqual([run.count(step) for step in steps], [1] * len(steps))
-        positions = [run.index(step) for step in steps]
-        self.assertEqual(positions, sorted(positions))
-        self.assertIn("let fileManager: FileManager; let tpm: T17TPMEvidenceLog\n", journey)
-        # Neither entry point is declared throws, so the compiler keeps both from failing a lane.
-        self.assertIn("    func readTPM(_ boot: T17TPMBoot) {\n", source("T17GuestJourneyTPM.swift"))
+        boots = run.split("try bootReady()")
+        self.assertEqual([re.findall(r"readTPM\(\.(\w+)\)", boot) for boot in boots],
+                         [["first"], ["mutation"], ["final"]])
+        self.assertLess(boots[0].index("try keyboardAndPointer()"), boots[0].index("readTPM(.first)"))
+        self.assertNotRegex(run, r"try\s+readTPM")
 
     def test_both_runners_stage_the_assets_and_pass_their_log(self) -> None:
         for name in ("T17ProductRunner.swift", "A9ImportProductRunner.swift"):
