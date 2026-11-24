@@ -411,7 +411,9 @@ struct OwnedStaging {
 impl OwnedStaging {
     /// Create staging empty and record its identity before anything else runs.
     fn create(path: &Path) -> io::Result<Self> {
-        fs::DirBuilder::new().mode(0o700).create(path)?;
+        // Publication carries the directory mode forward. Keep the usual
+        // umask-filtered read access while reserving staging writes for its owner.
+        fs::DirBuilder::new().mode(0o755).create(path)?;
         let identity = identity(path)?;
         let path = path.to_path_buf();
         Ok(Self { path, identity })
