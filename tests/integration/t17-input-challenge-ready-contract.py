@@ -34,7 +34,7 @@ class InputChallengeReady(unittest.TestCase):
     def test_host_waits_for_the_exact_marker_before_any_input(self) -> None:
         journey = body((E2E / "T17GuestJourney.swift").read_text(encoding="utf-8"), "private func keyboardAndPointer() throws {")
         steps = ['try launchWorkload("KeyboardPointer")',
-                 "try T17InputChallenge(sharePath: request.sharePath, nonce: request.nonce, ui: ui, runLog: runLog).deliver()"]
+                 "try T17InputChallenge(sharePath: request.sharePath, nonce: request.nonce, ui: ui).deliver()"]
         self.assertEqual([line.strip() for line in journey.strip().splitlines()], steps)
         source = (E2E / "T17InputChallenge.swift").read_text(encoding="utf-8")
         deliver = body(source, "func deliver() throws {")

@@ -17,8 +17,13 @@ enum T17InputChallengeShare {
     }
 
     static func awaitOutput(share: URL, nonce: String, timeout: TimeInterval) throws {
-        try T17GuestWorkloadOutput.await(share: share, name: "t17-keyboard-pointer-\(prefix(nonce)).txt", prefix: prefix(nonce), timeout: timeout) {
+        let name = "t17-keyboard-pointer-\(prefix(nonce)).txt"
+        try T17GuestWorkloadOutput.await(share: share, name: name, prefix: prefix(nonce), timeout: timeout) {
             progress(share.appendingPathComponent("t17-keyboard-pointer-progress-\(prefix(nonce)).txt")).map { "guest form saw \($0)" }
+        }
+        let expected = Data("bridgevm-t17-keyboard-pointer-v1\n\(nonce)\n".utf8)
+        guard (try? Data(contentsOf: share.appendingPathComponent(name))) == expected else {
+            throw T17Blocker(code: "guest-evidence-missing", detail: "guest keyboard and pointer challenge output did not match")
         }
     }
 

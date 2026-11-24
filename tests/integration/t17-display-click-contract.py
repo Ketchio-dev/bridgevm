@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""T17 clicks the guest display only once it shows a frame, and proves the click reached the guest."""
+"""T17 clicks the guest display only once it shows a frame."""
 from __future__ import annotations
 
 import re
@@ -32,16 +32,6 @@ class DisplayClick(unittest.TestCase):
         self.assertIn("guestSize.width > 0 && guestSize.height > 0", view)
         self.assertIn('guard size.width > 0, size.height > 0 else { return "no-frame" }', text(ENGINE / "HvfDisplaySurfaceAccessibility.swift"))
         self.assertIn("guard target.focused, let guest = T17DisplayImageRect.guestSize(target.value)", text(E2E / "T17DisplayClick.swift"))
-
-    def test_keyboard_waits_for_inserted_pointer_receipts(self) -> None:
-        deliver = text(E2E / "T17InputChallenge.swift").split("func deliver() throws {", 1)[1].split("\n    }\n", 1)[0]
-        spots = "for spot in [CGPoint(x: 0.04, y: 0.5), CGPoint(x: 0.5, y: 0.5)] {"
-        click = "try T17PointerReceipt.require(runLog, timeout: 15, diagnostic: ui.displayInputDiagnostic) { try ui.clickDisplaySurface(at: spot, timeout: 15) }"
-        self.assertEqual((deliver.count(spots), deliver.count(click)), (1, 1))
-        self.assertLess(deliver.index("bridgevm.runtime.display.open"), deliver.index(spots))
-        self.assertLess(deliver.index(click), deliver.index("bridgevm.runtime.keyboard.input"))
-        for needle in ("static let clickInsertions = 2", 'fields[2] == "POINTERINPUT", fields[4] == "exit=0"'):
-            self.assertIn(needle, text(E2E / "T17PointerReceipt.swift"))
 
     def test_only_the_display_click_posts_mouse_events(self) -> None:
         for path in E2E.glob("*.swift"):
