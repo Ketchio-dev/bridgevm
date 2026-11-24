@@ -28,7 +28,7 @@ struct LibraryIssuesSection: View {
                 .foregroundColor(.orange)
             ForEach(Array(issues.prefix(3))) { issue in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(URL(fileURLWithPath: issue.path).deletingLastPathComponent().lastPathComponent)
+                    Text(issue.entry.lastPathComponent)
                         .font(.caption.bold())
                     Text(issue.message).font(.caption2).foregroundColor(.secondary)
                 }

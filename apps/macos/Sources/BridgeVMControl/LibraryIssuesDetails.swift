@@ -12,8 +12,14 @@ struct LibraryIssuesDetails: View {
                 .foregroundStyle(.secondary)
             List(issues) { issue in
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(URL(fileURLWithPath: issue.path).deletingLastPathComponent().lastPathComponent)
-                        .font(.headline)
+                    HStack {
+                        Text(issue.entry.lastPathComponent).font(.headline)
+                        Spacer()
+                        Button("Finder에서 보기") {
+                            NSWorkspace.shared.activateFileViewerSelecting([issue.entry])
+                        }
+                        .buttonStyle(.borderless)
+                    }
                     Text(issue.message).fixedSize(horizontal: false, vertical: true)
                     Text(issue.path).font(.caption.monospaced()).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

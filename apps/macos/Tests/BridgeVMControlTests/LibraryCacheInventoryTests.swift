@@ -22,7 +22,8 @@ final class LibraryCacheInventoryTests: XCTestCase {
                 }
             }
             XCTAssertFalse(VMLibraryInternalEntries.isSourceCache(entry))
-            XCTAssertEqual(VMLibrary.scan(rootURL: root).issues.count, 1)
+            let expectedEntry = URL(fileURLWithPath: try LibraryWarningPhysicalPath.of(root)).appendingPathComponent(name)
+            XCTAssertEqual(VMLibrary.scan(rootURL: root).issues.map { $0.entry.path }, [expectedEntry.path])
             XCTAssertEqual(try NativeLibraryReader.snapshot(rootURL: root).issues.count, 1)
         }
     }
