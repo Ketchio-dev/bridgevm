@@ -113,7 +113,8 @@ final class A9ImportProductRunner {
     }
 
     private func bootToFirstReady(_ ui: T17UIControlling) throws -> String {
-        try T17RuntimeIntegrationSetup.apply(sharePath: request.sharePath, ui: ui)
+        let bundle = URL(fileURLWithPath: request.bundlePath, isDirectory: true)
+        try T17RuntimeIntegrationSetup.apply(sharePath: request.sharePath, bundle: bundle, ui: ui)
         try ui.press("bridgevm.windows.runtime.start", timeout: 20)
         return try T17FirstReadyWaiter.wait(observe: {
             let ready = A9FirstReadyLine.first(in: self.boundedLines(self.runLog))
