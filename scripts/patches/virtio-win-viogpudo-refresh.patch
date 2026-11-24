@@ -64,7 +64,7 @@ index 361f476..baad45d 100644
  NTSTATUS
  APIENTRY
 diff --git a/viogpu/viogpudo/viogpudo.cpp b/viogpu/viogpudo/viogpudo.cpp
-index f950814..4c19bf3 100644
+index f950814..e69d6a9 100644
 --- a/viogpu/viogpudo/viogpudo.cpp
 +++ b/viogpu/viogpudo/viogpudo.cpp
 @@ -34,12 +34,18 @@
@@ -81,7 +81,7 @@ index f950814..4c19bf3 100644
 +// BridgeVM private config extension v1, following the standard GPU_CONFIG.
 +static const ULONG BVM_REFRESH_MAGIC = 0x31525642; // little endian "BVR1"
 +static const ULONG BVM_VSYNC_EVENT = 0x80000000;
-+static const ULONG g_BridgeRefreshRates[] = {120, 30, 60, 75, 90, 144, 165, 180, 240, 360, 480, 540, 600, 720};
++static const ULONG g_BridgeRefreshRates[] = {120, 30, 60, 64, 75, 90, 144, 165, 180, 240, 360, 480, 540, 600, 720};
 +static const UINT g_BridgeRefreshRateCount = RTL_NUMBER_OF(g_BridgeRefreshRates);
 
  PAGED_CODE_SEG_BEGIN

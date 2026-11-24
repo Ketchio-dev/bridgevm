@@ -17,7 +17,7 @@ fn dod_refresh_uses_config_interrupts_at_the_selected_rate_without_3d() {
         u64::from(u32::from_le_bytes(*b"BVR1"))
     );
     for hz in [
-        30, 60, 75, 90, 120, 144, 165, 180, 240, 360, 480, 540, 600, 720,
+        30, 60, 64, 75, 90, 120, 144, 165, 180, 240, 360, 480, 540, 600, 720,
     ] {
         pci_write(&mut dev, REFRESH_HZ, 4, hz, &mut mem);
         pci_write(&mut dev, RETRACE_ENABLE, 4, 1, &mut mem);

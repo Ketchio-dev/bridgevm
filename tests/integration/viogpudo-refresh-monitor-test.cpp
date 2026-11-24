@@ -1,5 +1,6 @@
 // The actual AddSingleMonitorMode body is included by the source-kit test.
 // Only the WDDM allocation/ownership callbacks are replaced here.
+#include <algorithm>
 #include <cassert>
 #include <vector>
 
@@ -18,11 +19,10 @@ constexpr NTSTATUS addFailure = -2;
 #define DbgPrint(...) ((void)0)
 #define NT_ASSERT(value) assert(value)
 #define UNREFERENCED_PARAMETER(value) ((void)(value))
+#define RTL_NUMBER_OF(value) (sizeof(value) / sizeof(value[0]))
 constexpr int D3DKMDT_MCO_DRIVER = 1, D3DKMDT_MP_PREFERRED = 1;
 constexpr int D3DKMDT_MP_NOTPREFERRED = 0, D3DKMDT_CB_SRGB = 1;
 constexpr UINT NOM_WIDTH_SIZE = 1024, NOM_HEIGHT_SIZE = 768;
-static const ULONG g_BridgeRefreshRates[] = {120,30,60,75,90,144,165,180,240,360,480,540,600,720};
-constexpr UINT g_BridgeRefreshRateCount = 14;
 
 struct VIDEO_MODE_INFORMATION { UINT VisScreenWidth, VisScreenHeight; ULONG Frequency; };
 using PVIDEO_MODE_INFORMATION = VIDEO_MODE_INFORMATION*;
@@ -101,11 +101,14 @@ int main() {
     set.registered.push_back({1920,1200,120});
     DXGKARG_RECOMMENDMONITORMODES request{&set, &callbacks};
     assert(driver.AddSingleMonitorMode(&request) == STATUS_SUCCESS);
-    assert(set.registered.size() == 28); // Both geometries, every refresh preset.
+    assert(set.registered.size() == 30); // Both geometries, every refresh preset.
+    assert(std::any_of(set.registered.begin(), set.registered.end(), [](const Signal& mode) {
+        return mode.width == 1920 && mode.height == 1200 && mode.hz == 64;
+    }));
     assert(set.allocated == 0 && set.releases > 0);
     const int released = set.releases;
     assert(driver.AddSingleMonitorMode(&request) == STATUS_SUCCESS);
-    assert(set.registered.size() == 28 && set.allocated == 0 && set.releases > released);
+    assert(set.registered.size() == 30 && set.allocated == 0 && set.releases > released);
     // A real callback error must survive the release of the unowned mode.
     Modes failing;
     failing.failCustom = true;
@@ -117,11 +120,15 @@ int main() {
     source.Format.Graphics.VisibleRegionSize = {3600,2260};
     Modes targets;
     assert(driver.AddSingleTargetMode(&callbacks, &targets, &source, 0) == STATUS_SUCCESS);
-    assert(targets.registered.size() == 14);
+    assert(targets.registered.size() == 15);
     for (const auto& mode : targets.registered) assert(mode.width == 3600 && mode.height == 2260);
+    for (const ULONG hz : {30UL, 60UL, 64UL, 120UL}) {
+        assert(std::any_of(targets.registered.begin(), targets.registered.end(),
+                           [hz](const Signal& mode) { return mode.hz == hz; }));
+    }
     Modes unconstrained;
     assert(driver.AddSingleTargetMode(&callbacks, &unconstrained, nullptr, 0) == STATUS_SUCCESS);
-    assert(unconstrained.registered.size() == 28);
+    assert(unconstrained.registered.size() == 30);
     Modes targetFailure;
     targetFailure.failCustom = true;
     assert(driver.AddSingleTargetMode(&callbacks, &targetFailure, &source, 0) == addFailure);

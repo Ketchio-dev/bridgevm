@@ -7,6 +7,9 @@ import sys
 import tempfile
 
 source = Path(sys.argv[1]).read_text()
+rates_start = source.index("static const ULONG g_BridgeRefreshRates[] =")
+rate_count_start = source.index("static const UINT g_BridgeRefreshRateCount =", rates_start)
+rates_end = source.index(";", rate_count_start) + 1
 
 
 def body(name):
@@ -23,6 +26,7 @@ def body(name):
 with tempfile.TemporaryDirectory(prefix="bridgevm-monitor-") as temporary:
     work = Path(temporary)
     (work / "monitor-body.inc").write_text(
+        source[rates_start:rates_end] + "\n" +
         body("AddSingleMonitorMode") + "\n" + body("AddSingleTargetMode"))
     fixture = Path(__file__).with_suffix(".cpp")
     binary = work / "monitor-test"
