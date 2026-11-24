@@ -45,25 +45,19 @@ a clean Mac remain the open release criterion. The
 [capability matrix](docs/windows-arm/capability-matrix.md) records the evidence
 for each feature.
 
-Current source uses queued text dispatch for compatible Windows editors; long
-Korean and emoji input, selection replacement and undo were checked in Windows
-11 Notepad and a RichEdit 5 control (a WinForms RichTextBox). The Run, Save-as
-and Explorer rename boxes, classic edit controls, RichEdit 2.0 and an Edge text
-area use the older per-character path; in one headless run (2026-11-23) each
-kept mixed Korean and emoji text exact up to the box's own length limit (3,000
-characters where the box allows that many). Older builds and other editors
-retain the input path tracked in
-[#665](https://github.com/Ketchio-dev/bridgevm/issues/665), where long commits
-can repeat or lose characters. Use clipboard sharing and paste if this occurs.
-
 To send a draft to the focused Windows editor, open the running VM's **HVF
 Engine** view, enter the text in **Windows에 입력할 텍스트**, and select **입력**.
-If the editor declines a multiline draft on the queued route, the app sends
-that draft through the Windows clipboard. The legacy keyboard route also uses
-the clipboard for characters it cannot type. This replaces the previous
-Windows clipboard copy, and an interruption leaves the draft in the text field.
-In a headless Windows run, an 8,440-byte draft with Korean and emoji matched a
-classic edit field and its saved file.
+The field keeps the draft while it waits for an input receipt or a clipboard
+paste. If the editor declines queued dispatch for a multiline draft, the app
+checks the text on the Windows clipboard and sends one paste. The legacy
+keyboard route also uses the clipboard for characters it cannot type. Either
+clipboard route replaces the previous Windows clipboard copy.
+
+Compatible Windows editors such as Notepad and WinForms RichTextBox use queued
+text dispatch. Some editors and older agents use per-character input. If a
+long passage loses characters on that path, use clipboard sharing and paste.
+The application readback, saved-file and Undo checks for WPF and Edge are
+recorded in [#665](https://github.com/Ketchio-dev/bridgevm/issues/665).
 
 ## Try BridgeVM
 

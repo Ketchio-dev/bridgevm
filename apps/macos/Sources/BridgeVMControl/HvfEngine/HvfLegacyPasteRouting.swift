@@ -12,7 +12,7 @@ extension HvfEngineSession {
     func sendDisplayInput(_ input: HvfLegacyPasteState.Input) -> Bool {
         guard legacyPaste.pending != nil else { return deliverDisplayInput(input) }
         if case let .text(text, draft) = input, let base64 = HvfTextInputPlan.clipboardBase64(for: text) {
-            let request = clipboardPaste(base64: base64, preferRelay: draft != nil)
+            let request = clipboardPaste(base64: base64, preferRelay: draft?.multiline == true)
             guard request.fitsGuestCommandLine(reportingTo: self) else { return false }
         }
         if legacyPaste.hold(input) { return true }
@@ -48,7 +48,10 @@ extension HvfEngineSession {
     private func deliverDisplayInput(_ input: HvfLegacyPasteState.Input) -> Bool {
         switch input {
         case let .key(action): return sendKey(action)
-        case let .text(text, draft): return sendText(text, draft: draft) != .refused
+        case let .text(text, draft):
+            let result = sendText(text, draft: draft)
+            if result == .legacyAttempted { draft?.onSent?() }
+            return result != .refused
         }
     }
 }
