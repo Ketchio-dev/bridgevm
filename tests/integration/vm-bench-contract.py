@@ -11,6 +11,7 @@ import base64
 import contextlib
 import io
 import os
+import shutil
 import signal
 import sys
 import tempfile
@@ -205,6 +206,38 @@ class VmBenchContract(unittest.TestCase):
                                                        "--agent-service-control", "--input-control")]
         for path in paths + [launched["env"]["BRIDGEVM_PREBUILT_PROBE"]]:
             self.assertTrue(Path(path).is_absolute(), path)
+
+    def test_a_packaged_probe_runs_from_a_private_copy_of_its_bundle(self):
+        with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(scratch).resolve()
+            app = root / "BridgeVM.app"
+            probe_path = Path("Contents/Resources/target/release/examples/hvf_gic_boot_probe")
+            library_path = Path("Contents/Frameworks/libvirglrenderer.1.dylib")
+            probe = app / probe_path
+            probe.parent.mkdir(parents=True)
+            probe.write_bytes(b"signed probe")
+            (app / "Contents/Info.plist").write_text("example app")
+            (app / library_path).parent.mkdir()
+            (app / library_path).write_bytes(b"signed library")
+            out = root / "run"
+            staged_app = out / "bin/BridgeVM.app"
+            args = types.SimpleNamespace(engine="bridgevm", out=out, probe=probe, disk=root / "disk.raw",
+                                         vars=root / "vars.fd", boots=1, net=False, keep_media=False)
+
+            def copy_bundle(command, **_):
+                self.assertEqual(command, ["/usr/bin/ditto", str(app), str(staged_app)])
+                shutil.copytree(command[1], command[2], symlinks=True)
+
+            with mock.patch.object(vm_bench, "identity", return_value={}), \
+                    mock.patch.object(vm_bench, "clone"), \
+                    mock.patch.object(vm_bench.subprocess, "run", side_effect=copy_bundle) as copy_command, \
+                    mock.patch.object(vm_bench, "one_boot", return_value={"boot": 1}):
+                vm_bench.run(args)
+            copy_command.assert_called_once()
+            self.assertEqual(Path(args.probe), staged_app / probe_path)
+            self.assertEqual(Path(args.probe).read_bytes(), probe.read_bytes())
+            self.assertEqual((staged_app / library_path).read_bytes(), (app / library_path).read_bytes())
+            self.assertEqual((out / "bin").stat().st_mode & 0o777, 0o700)
 
     def test_an_unknown_only_test_stops_before_any_vm_starts(self):
         argv = ["vm_bench.py", "run", "--engine", "qemu", "--disk", "d", "--vars", "v", "--out", "o",

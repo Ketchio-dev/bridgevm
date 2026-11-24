@@ -753,17 +753,34 @@ def identity(args) -> dict:
     return ident
 
 
+def stage_probe(source: Path, bin_dir: Path) -> Path:
+    """Keep a private copy so later builds cannot change the running campaign."""
+    source = source.resolve(strict=True)
+    bin_dir.mkdir(mode=0o700)
+    for contents in source.parents:
+        app = contents.parent
+        if (contents.name == "Contents" and app.suffix.lower() == ".app"
+                and (contents / "Info.plist").is_file()):
+            # The signed probe loads the app's Frameworks relative to its own path.
+            staged_app = bin_dir / app.name
+            subprocess.run(["/usr/bin/ditto", str(app), str(staged_app)], check=True, capture_output=True)
+            return staged_app / source.relative_to(app)
+
+    staged_probe = bin_dir / "hvf_gic_boot_probe"
+    shutil.copy2(source, staged_probe)
+    subprocess.run(["codesign", "--sign", "-", "--force", "--entitlements",
+                    str(ROOT / "apps/macos/HvfRunner.entitlements"), str(staged_probe)],
+                   check=True, capture_output=True)
+    return staged_probe
+
+
 def run(args) -> None:
     out = Path(args.out).resolve()  # the BridgeVM runner starts in ROOT
     results = {"identity": identity(args), "boots": []}
     out.mkdir(parents=True)
     disk, vars_fd = out / "disk.raw", out / "vars.fd"
-    if args.engine == "bridgevm":  # a private signed copy: later rebuilds cannot change a running campaign
-        (out / "bin").mkdir()
-        shutil.copy2(args.probe, out / "bin" / "hvf_gic_boot_probe")
-        args.probe = str(out / "bin" / "hvf_gic_boot_probe")
-        subprocess.run(["codesign", "--sign", "-", "--force", "--entitlements",
-                        str(ROOT / "apps/macos/HvfRunner.entitlements"), args.probe], check=True, capture_output=True)
+    if args.engine == "bridgevm":
+        args.probe = str(stage_probe(Path(args.probe), out / "bin"))
         results["identity"]["probe_sha256"] = hashlib.sha256(Path(args.probe).read_bytes()).hexdigest()
     engine = (Qemu if args.engine == "qemu" else BridgeVM)(args, disk, vars_fd)
     args.blob_url = blob_server() if args.net else None
@@ -835,7 +852,8 @@ def main() -> None:
     r.add_argument("--disk", required=True)
     r.add_argument("--vars", required=True)
     r.add_argument("--out", required=True)
-    r.add_argument("--probe", default=str(ROOT / "target/release/examples/hvf_gic_boot_probe"))
+    r.add_argument("--probe", default=str(ROOT / "target/release/examples/hvf_gic_boot_probe"),
+                   help="BridgeVM probe executable from a packaged app or standalone build")
     r.add_argument("--boots", type=int, default=2)
     r.add_argument("--cpus", type=int, default=4)
     r.add_argument("--ram-mib", type=int, default=6144)
