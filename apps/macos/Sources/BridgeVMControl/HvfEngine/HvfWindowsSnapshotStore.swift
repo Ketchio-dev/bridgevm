@@ -57,7 +57,7 @@ enum HvfWindowsSnapshotStore {
         var date = now
         while true {
             let name = formatter.string(from: date) + ".snapshot"
-            if !occupied.contains(name), !occupied.contains(name + ".name") {
+            if !occupied.contains(name), !occupied.contains(name + ".name"), !occupied.contains(".\(name).staging") {
                 return directory(bundle: bundle).appendingPathComponent(name)
             }
             date = date.addingTimeInterval(1)

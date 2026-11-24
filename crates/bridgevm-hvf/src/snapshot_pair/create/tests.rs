@@ -215,7 +215,10 @@ fn existing_destination_member_or_hardlink_owner_refuses_before_staging_cleanup(
         let dest = scratch.path("snapshot");
         create_snapshot(&disk, &vars, &dest, "vm").unwrap();
         let staged = staging_path(&dest);
-        fs::create_dir(&staged).unwrap();
+        OwnedStaging::create(&staged)
+            .unwrap()
+            .record_ownership(None)
+            .unwrap();
         fs::write(staged.join(DISK_NAME), b"debris-kept").unwrap();
         let member = dest.join(VARS_NAME);
         let owned = if hardlink {
@@ -227,14 +230,14 @@ fn existing_destination_member_or_hardlink_owner_refuses_before_staging_cleanup(
         };
         let owner = MediaLease::acquire([owned.as_path()]).unwrap();
         assert_eq!(
-            claim_staging(&dest).unwrap_err().kind(),
+            claim_staging(&dest, None).unwrap_err().kind(),
             io::ErrorKind::WouldBlock
         );
         assert_eq!(fs::read(staged.join(DISK_NAME)).unwrap(), b"debris-kept");
         assert_eq!(fs::read(dest.join(VARS_NAME)).unwrap(), b"vars");
         drop(owner);
-        let (_owner, rebuilt) = claim_staging(&dest).unwrap();
-        assert!(fs::read_dir(rebuilt.path).unwrap().next().is_none());
+        let (_owner, rebuilt) = claim_staging(&dest, None).unwrap();
+        assert!(!rebuilt.path.join(DISK_NAME).exists());
     }
 }
 
@@ -248,7 +251,7 @@ fn leased_staging_member_is_not_reclaimed() {
     fs::write(&member, b"retained").unwrap();
     let _owner = MediaLease::acquire([member.as_path()]).unwrap();
     assert_eq!(
-        claim_staging(&dest).unwrap_err().kind(),
+        claim_staging(&dest, None).unwrap_err().kind(),
         io::ErrorKind::WouldBlock
     );
     assert_eq!(fs::read(member).unwrap(), b"retained");
@@ -259,7 +262,7 @@ fn leased_staging_member_is_not_reclaimed() {
 fn fresh_staging_member_paths_stay_owned_until_export_owner_drops() {
     let scratch = Scratch::new("fresh-staging-member");
     let dest = scratch.path("snapshot");
-    let (owner, staged) = claim_staging(&dest).unwrap();
+    let (owner, staged) = claim_staging(&dest, None).unwrap();
     for name in [DISK_NAME, VARS_NAME] {
         let member = staged.path.join(name);
         fs::write(&member, b"new").unwrap();
@@ -691,17 +694,16 @@ fn hard_exit_during_create_selects_only_one_complete_snapshot_and_allows_retry()
     }
 }
 
-/// A killed create leaves `.N.staging` and the app's empty `N` reservation,
-/// and the next create chooses a new name. That create clears the debris, but
-/// keeps a paused concurrent create's staging, staging holding another file,
-/// staging beside a non-empty `N` and staging holding a published manifest.
+/// The app's next create uses a new name and recovers its owned interrupted
+/// staging. A public export, a live lease and unfamiliar directories are kept.
 #[test]
-fn a_create_clears_staging_that_earlier_killed_creates_left() {
+fn a_stored_create_clears_only_its_earlier_interrupted_stages() {
     let scratch = Scratch::new("create-sibling-debris");
-    let parent = scratch.path("snapshots");
-    fs::create_dir(&parent).unwrap();
-    let disk = scratch.write("disk", b"disk");
-    let vars = scratch.write("vars", b"vars");
+    let parent = scratch.path("bundle/metadata/snapshots");
+    fs::create_dir_all(&parent).unwrap();
+    fs::create_dir(scratch.path("bundle/disks")).unwrap();
+    let disk = scratch.write("bundle/disks/hvf-target.raw", b"disk");
+    let vars = scratch.write("bundle/metadata/hvf-vars.fd", b"vars");
     let killed = parent.join("20261123-100000.snapshot");
     fs::create_dir(&killed).unwrap();
     crash_create("vars-synced", 82, &disk, &vars, &killed);
@@ -718,7 +720,10 @@ fn a_create_clears_staging_that_earlier_killed_creates_left() {
         }
         staging
     };
-    let killed_export = debris("export", &[DISK_NAME, MANIFEST_TEMPORARY]);
+    let export = parent.join("export");
+    crash_create("disk-synced", 81, &disk, &vars, &export);
+    let killed_export = staging_path(&export);
+    let unknown = debris("unknown", &[DISK_NAME]);
     let foreign = debris("foreign", &[DISK_NAME, "notes.txt"]);
     let beside_user = debris("user", &[DISK_NAME]);
     fs::create_dir(parent.join("user")).unwrap();
@@ -727,41 +732,56 @@ fn a_create_clears_staging_that_earlier_killed_creates_left() {
 
     let live = parent.join("20261123-100001.snapshot");
     fs::create_dir(&live).unwrap();
-    let live_disk = scratch.write("live-disk", b"live-disk");
-    let live_vars = scratch.write("live-vars", b"live-vars");
-    let (staged_tx, staged_rx) = mpsc::channel();
-    let (resume_tx, resume_rx) = mpsc::channel::<()>();
-    let live_destination = live.clone();
-    let concurrent = thread::spawn(move || {
-        create_snapshot_using(&live_disk, &live_vars, &live_destination, "live", |stage| {
-            if stage == CreateStage::DiskSynced {
-                staged_tx.send(()).unwrap();
-                let _ = resume_rx.recv();
-            }
-        })
-    });
-    staged_rx
-        .recv_timeout(Duration::from_secs(10))
-        .expect("the concurrent create stages its disk");
+    let live_stage = staging_path(&live);
+    OwnedStaging::create(&live_stage)
+        .unwrap()
+        .record_ownership(Some(identity(&live).unwrap()))
+        .unwrap();
+    let live_disk = live_stage.join(DISK_NAME);
+    fs::write(&live_disk, b"live-disk").unwrap();
+    let _live_lease = MediaLease::acquire([live_disk.as_path()]).unwrap();
 
     let created = parent.join("20261123-100002.snapshot");
+    fs::create_dir(&created).unwrap();
     let result = create_snapshot(&disk, &vars, &created, "new");
-    let live_staged = fs::read(staging_path(&live).join(DISK_NAME));
-    drop(resume_tx);
-    let live_manifest = concurrent.join().unwrap().expect("concurrent create");
     assert_eq!(verify_snapshot(&created).unwrap(), result.unwrap());
-    assert_eq!(live_staged.unwrap(), b"live-disk");
-    assert_eq!(verify_snapshot(&live).unwrap(), live_manifest);
+    assert_eq!(fs::read(live_disk).unwrap(), b"live-disk");
 
-    for gone in [&killed_staging, &killed, &killed_export] {
+    for gone in [&killed_staging, &killed] {
         assert!(!gone.exists(), "{} was left behind", gone.display());
     }
-    for kept in [&foreign, &beside_user, &completed] {
+    assert_eq!(fs::read(killed_export.join(DISK_NAME)).unwrap(), b"disk");
+    for kept in [&unknown, &foreign, &beside_user, &completed] {
         assert_eq!(fs::read(kept.join(DISK_NAME)).unwrap(), b"kept");
     }
     assert_eq!(fs::read(foreign.join("notes.txt")).unwrap(), b"kept");
     assert_eq!(fs::read(parent.join("user/notes.txt")).unwrap(), b"user");
     assert_eq!(fs::read(completed.join(MANIFEST_NAME)).unwrap(), b"kept");
+}
+
+#[test]
+fn stored_create_preserves_a_snapshot_that_arrives_after_reservation() {
+    let scratch = Scratch::new("stored-reservation-filled");
+    let parent = scratch.path("bundle/metadata/snapshots");
+    fs::create_dir_all(&parent).unwrap();
+    fs::create_dir(scratch.path("bundle/disks")).unwrap();
+    let disk = scratch.write("bundle/disks/hvf-target.raw", b"disk");
+    let vars = scratch.write("bundle/metadata/hvf-vars.fd", b"vars");
+    let arriving = scratch.path("arriving");
+    let expected = create_snapshot(&disk, &vars, &arriving, "arriving").unwrap();
+    let dest = parent.join("20261123-100000.snapshot");
+    fs::create_dir(&dest).unwrap();
+
+    let outcome = create_snapshot_using(&disk, &vars, &dest, "new", |stage| {
+        if stage == CreateStage::StagingDirectorySynced {
+            for name in [DISK_NAME, VARS_NAME, MANIFEST_NAME] {
+                fs::copy(arriving.join(name), dest.join(name)).unwrap();
+            }
+        }
+    });
+    assert!(outcome.is_err());
+    assert_eq!(verify_snapshot(&dest).unwrap(), expected);
+    assert!(!staging_path(&dest).exists());
 }
 
 #[test]

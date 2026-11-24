@@ -272,6 +272,48 @@ fn a_snapshot_with_apple_double_companions_is_refused_as_not_a_snapshot() {
 }
 
 #[test]
+fn export_leaves_an_unrelated_hidden_workspace_untouched() {
+    let scratch = Scratch::new("export-foreign-sibling");
+    let (disk, vars) = sources(&scratch);
+    let workspace = scratch.path(".backup.staging");
+    fs::create_dir(&workspace).unwrap();
+    fs::write(workspace.join(DISK_NAME), b"backup data").unwrap();
+    let before = tree(&workspace);
+
+    let destination = scratch.path("export");
+    let manifest = create_snapshot(&disk, &vars, &destination, "vm").unwrap();
+    assert_eq!(verify_snapshot(&destination).unwrap(), manifest);
+    assert_eq!(tree(&workspace), before);
+}
+
+#[test]
+fn export_refuses_to_reclaim_an_unowned_directory_at_its_staging_name() {
+    for copied_record in [false, true] {
+        let scratch = Scratch::new(&format!("export-foreign-staging-{copied_record}"));
+        let (disk, vars) = sources(&scratch);
+        let destination = scratch.path("export");
+        let workspace = staging_path(&destination);
+        fs::create_dir(&workspace).unwrap();
+        fs::write(workspace.join(DISK_NAME), b"unrelated disk data").unwrap();
+        if copied_record {
+            let other = OwnedStaging::create(&scratch.path("another-stage")).unwrap();
+            other.record_ownership(None).unwrap();
+            fs::copy(
+                other.path.join(ownership::NAME),
+                workspace.join(ownership::NAME),
+            )
+            .unwrap();
+        }
+        let before = tree(&workspace);
+
+        let result = create_snapshot(&disk, &vars, &destination, "vm");
+        assert_eq!(tree(&workspace), before);
+        assert_refused(result, "unowned staging");
+        assert!(!destination.exists());
+    }
+}
+
+#[test]
 fn unrelated_staging_contents_are_refused_and_left_intact() {
     let s = Scratch::new("admission-staging-unrelated");
     let (disk, vars) = sources(&s);
@@ -319,7 +361,7 @@ fn staging_that_is_not_bridgevm_debris_is_refused_and_left_intact() {
 
 /// Staging holding a published manifest is kept (`completed_staging_tests`).
 #[test]
-fn staging_holding_only_bridgevm_debris_is_cleared_for_retry() {
+fn owned_unfinished_staging_is_cleared_for_retry() {
     let cases: [&[&str]; 3] = [
         &[],
         &[DISK_NAME],
@@ -330,7 +372,10 @@ fn staging_holding_only_bridgevm_debris_is_cleared_for_retry() {
         let (disk, vars) = sources(&s);
         let dest = s.path("snapshot");
         let staging = staging_path(&dest);
-        fs::create_dir(&staging).unwrap();
+        OwnedStaging::create(&staging)
+            .unwrap()
+            .record_ownership(None)
+            .unwrap();
         for name in names {
             fs::write(staging.join(name), b"partial").unwrap();
         }
@@ -360,7 +405,10 @@ fn apple_double_companions_in_staging_are_cleared_for_retry() {
         let (disk, vars) = sources(&s);
         let dest = s.path("snapshot");
         let staging = staging_path(&dest);
-        fs::create_dir(&staging).unwrap();
+        OwnedStaging::create(&staging)
+            .unwrap()
+            .record_ownership(None)
+            .unwrap();
         for name in names {
             fs::write(staging.join(name), b"partial").unwrap();
         }

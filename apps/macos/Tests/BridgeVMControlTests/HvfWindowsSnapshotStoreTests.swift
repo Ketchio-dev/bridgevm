@@ -28,6 +28,8 @@ final class HvfWindowsSnapshotStoreTests: XCTestCase {
         XCTAssertEqual(second.lastPathComponent, "19700101-000001.snapshot")
         let orphan = Store.nextURL(bundle: bundle, now: now, occupied: [first.lastPathComponent + ".name"])
         XCTAssertEqual(orphan.lastPathComponent, "19700101-000001.snapshot", "never inherit an orphaned display name")
+        let staged = Store.nextURL(bundle: bundle, now: now, occupied: [".\(first.lastPathComponent).staging"])
+        XCTAssertEqual(staged.lastPathComponent, "19700101-000001.snapshot")
         let snapshot = try entry(bundle, first.lastPathComponent, date: 100)
         let name = "../../a/b..." + String(repeating: "긴 이름/", count: 10_000)
         try name.write(to: Store.nameFile(snapshot), atomically: true, encoding: .utf8)

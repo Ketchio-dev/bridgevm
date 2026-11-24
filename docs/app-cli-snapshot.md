@@ -22,6 +22,8 @@ The export destination is the only media path accepted on the command line. It
 must be absolute and outside the managed VM bundle. Disk and vars paths come
 from the exact saved app-library entry; secrets remain off argv. The bundled
 helper must be a canonical regular executable in the BridgeVM installation.
+If an export reports a staging directory it cannot identify, choose a fresh
+output path or move that directory aside before retrying.
 
 On an exFAT drive, give each export a new folder name. macOS can add hidden
 metadata files alongside the disk and UEFI variables. BridgeVM preserves the
