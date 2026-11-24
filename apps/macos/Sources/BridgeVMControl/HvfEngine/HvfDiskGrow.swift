@@ -26,7 +26,7 @@ enum HvfDiskGrow {
     /// Agent starts that try the extend before a failure leaves it to Disk Management.
     static let maximumAttempts = 3
 
-    static let sparseHelp = "디스크 파일은 sparse 파일이라 늘려도 Windows가 새 공간에 실제로 쓰기 전까지 Mac 저장 공간을 쓰지 않습니다. 늘린 디스크는 줄일 수 없고, 그 전에 만든 스냅샷을 복원하면 디스크도 그때 크기로 돌아갑니다."
+    static let sparseHelp = "추가된 가상 디스크 공간은 Windows가 데이터를 쓸 때 Mac 저장 공간에서 할당됩니다. 늘린 디스크는 줄일 수 없고, 이전 스냅샷을 복원하면 그때 용량으로 돌아갑니다."
     static let pendingNote = "다음 Windows 시작 때 C: 드라이브를 자동으로 확장합니다. 확장되지 않으면 Windows의 디스크 관리에서 C: 볼륨을 확장하세요."
     static let stopFirst = "VM을 완전히 중지한 뒤 디스크 크기를 변경하세요."
 

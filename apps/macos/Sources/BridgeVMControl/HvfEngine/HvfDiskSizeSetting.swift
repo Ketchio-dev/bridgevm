@@ -20,13 +20,13 @@ struct HvfDiskSizeSetting: View {
         if session.persistsLibraryPreferences, plan != nil {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 10) {
-                    Text("디스크 크기")
+                    Text("가상 디스크 용량")
                     Text(currentBytes.map(Self.sizeText) ?? "—")
                     if let range {
                         Text("→")
                         TextField("", value: $targetGiB, format: .number)
                             .labelsHidden().frame(width: 52)
-                        Stepper("디스크 크기", value: $targetGiB, in: range).labelsHidden()
+                        Stepper("가상 디스크 용량", value: $targetGiB, in: range).labelsHidden()
                             .fixedSize()
                         Text("GiB (최대 \(range.upperBound) GiB)").font(.caption).foregroundColor(.secondary)
                         Button("디스크 늘리기") { confirming = range.contains(targetGiB) }
@@ -47,7 +47,7 @@ struct HvfDiskSizeSetting: View {
                 Button("디스크 늘리기") { grow(to: targetGiB) }
                 Button("취소", role: .cancel) {}
             } message: {
-                Text("늘린 디스크는 다시 줄일 수 없습니다. " + HvfDiskGrow.sparseHelp)
+                Text(HvfDiskGrow.sparseHelp)
             }
         }
     }
