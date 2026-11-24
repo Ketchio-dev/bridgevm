@@ -5,33 +5,50 @@ set -euo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO"
+source "$REPO/scripts/live-gates/live-process-cleanup.sh"
 
 fail_early() { echo "FAIL: $*" >&2; exit 1; }
 
 TARGET=${TARGET:-$HOME/BridgeVM/work/net-live-20260724.raw}
 VARS=${VARS:-$HOME/BridgeVM/work/net-live-20260724-vars.fd}
-OUT=${OUT:-$HOME/BridgeVM/runs/audio-verify-$(date +%Y%m%d-%H%M%S)}
 BOOT_TIMEOUT=${BOOT_TIMEOUT:-1500}
 STEP_TIMEOUT=${STEP_TIMEOUT:-180}
-VIOGPU_DIR=${VIOGPU3D_DIR:-$HOME/BridgeVM/work/download-120.45-backing-only}
 
-WORK=$HOME/BridgeVM/work/audio-verify
-rm -rf "$WORK"; mkdir -p "$WORK" "$OUT"
-cp -c "$TARGET" "$WORK/disk.raw"
-cp "$VARS" "$WORK/vars.fd"
+# Keep temporary media beside the evidence directory so it stays out of archives.
+if [[ -n "${OUT:-}" ]]; then
+  mkdir -p -- "$(dirname -- "$OUT")"
+  mkdir -m 700 -- "$OUT" || fail_early "choose a new output directory: $OUT"
+else
+  runs=$HOME/BridgeVM/runs
+  mkdir -p -- "$runs"
+  OUT=$(mktemp -d "$runs/audio-verify-$(date +%Y%m%d-%H%M%S).XXXXXX")
+fi
+WORK=$(mktemp -d "$(dirname -- "$OUT")/.bridgevm-audio-media.XXXXXX")
+LAUNCHER=""
+
+cleanup() {
+  local status=$?
+  if [[ -n "$LAUNCHER" ]]; then
+    if ! bridgevm_terminate_process_group_bounded "$LAUNCHER"; then
+      fail_early "launcher did not stop; media kept at $WORK"
+    fi
+    wait "$LAUNCHER" 2>/dev/null || true
+  fi
+  rm -rf -- "$WORK" || status=1
+  exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+cp -c -- "$TARGET" "$WORK/disk.raw"
+cp -- "$VARS" "$WORK/vars.fd"
+chmod u+w "$WORK/disk.raw" "$WORK/vars.fd"
 
 CTL=$OUT/agent.ctl
 : > "$CTL"
 RUN_LOG=$OUT/run.log
-LAUNCHER=""
-
-cleanup() {
-  if [[ -n "$LAUNCHER" ]]; then
-    kill "$LAUNCHER" 2>/dev/null || true
-  fi
-  pkill -f hvf_gic_boot_probe 2>/dev/null || true
-}
-trap cleanup EXIT
 
 wait_for() { # $1 = pattern, $2 = count, $3 = timeout
   local deadline=$((SECONDS + $3)) n
@@ -68,16 +85,27 @@ powershell_encoded() { # stdin/string -> UTF-16LE base64 for -EncodedCommand
   printf '%s' "$1" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\n'
 }
 
+launch_options=()
+if [[ -n "${BRIDGEVM_PREBUILT_PROBE:-}" ]]; then
+  launch_options+=(--release --skip-build)
+fi
+if [[ -n "${VIOGPU3D_DIR:-}" ]]; then
+  launch_options+=(--virtio-gpu-3d --gpu-trace "$OUT/virtio-gpu.jsonl"
+    --gpu-trace-protocol venus --viogpu3d-dir "$VIOGPU3D_DIR")
+fi
+
+# Run the launcher and its children in their own process group.
+set -m
 scripts/run-hvf-windows-installed-boot.sh \
   --target "$WORK/disk.raw" --vars "$WORK/vars.fd" \
   --evidence-dir "$OUT" --watchdog-ms $((BOOT_TIMEOUT * 1000)) \
   --ram-mib 6144 --smp-cpus 4 \
   --hda-coreaudio \
   --agent-service-control "$CTL" \
-  --virtio-gpu-3d --gpu-trace "$OUT/virtio-gpu.jsonl" \
-  --gpu-trace-protocol venus --viogpu3d-dir "$VIOGPU_DIR" \
-  > "$OUT/launcher.out" 2>&1 &
+  ${launch_options[@]+"${launch_options[@]}"} \
+  < /dev/null > "$OUT/launcher.out" 2>&1 &
 LAUNCHER=$!
+set +m
 
 wait_for '^BVAGENT SERVICE start' 1 "$BOOT_TIMEOUT" \
   || fail_early "agent never reached service state within ${BOOT_TIMEOUT}s"
@@ -116,10 +144,11 @@ echo "playback returned at ${SECONDS}s"
 
 # The sink prints its final counters while the launcher shuts down.
 printf '%s\n' 'shutdown /s /t 3' >> "$CTL"
-set +e
-wait "$LAUNCHER" 2>/dev/null
-LAUNCHER_EXIT=$?
-set -e
+LAUNCHER_EXIT=0
+wait "$LAUNCHER" 2>/dev/null || LAUNCHER_EXIT=$?
+if bridgevm_process_group_alive "$LAUNCHER"; then
+  fail_early "launcher exited with owned processes still running"
+fi
 LAUNCHER=""
 
 STATS=$(python3 scripts/live-gates/hvf_terminal_evidence.py --host-stats "$RUN_LOG" || true)
