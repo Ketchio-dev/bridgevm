@@ -2,7 +2,13 @@ import XCTest
 @testable import BridgeVMProductE2E
 
 final class T17ControlReplyTests: XCTestCase {
-    func testRawClipboardSetDoesNotRequireAnInventedEndRecord() {
+    func testClipboardSetMatchesItsFingerprintOrExactLegacyReply() {
+        let fingerprint = "BVAGENT CLIPSET bytes=1 sha256=ca978112ca1bbdca"
+        let acknowledged = "\(fingerprint) -> OK CLIPSET\r\n"
+        XCTAssertTrue(T17ControlReply.succeeded(tail: acknowledged, command: "CLIPSET YQ==", marker: "OK CLIPSET"))
+        XCTAssertFalse(T17ControlReply.succeeded(tail: acknowledged, command: "CLIPSET Yg==", marker: "OK CLIPSET"))
+        XCTAssertFalse(T17ControlReply.succeeded(tail: acknowledged + "\(fingerprint) -> ERR CLIPSET\n",
+            command: "CLIPSET YQ==", marker: "OK CLIPSET"))
         XCTAssertTrue(T17ControlReply.succeeded(tail: "BVAGENT CLIPSET YQ== -> OK CLIPSET\n",
             command: "CLIPSET YQ==", marker: "OK CLIPSET"))
         XCTAssertFalse(T17ControlReply.succeeded(tail: "BVAGENT CLIPSET YQ== -> ERR CLIPSET busy\n",

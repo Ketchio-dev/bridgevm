@@ -6,9 +6,13 @@ enum T17ControlReply {
         let lines = tail.replacingOccurrences(of: "\r\n", with: "\n")
             .components(separatedBy: "\n")
         if command.hasPrefix("CLIPSET ") {
-            return marker == "OK CLIPSET"
-                && lines.contains("BVAGENT \(command) -> OK CLIPSET")
-                && !lines.contains(where: { $0.hasPrefix("BVAGENT \(command) -> ERR") })
+            guard marker == "OK CLIPSET" else { return false }
+            var labels = ["BVAGENT \(command)"]
+            if let bytes = Data(base64Encoded: String(command.dropFirst("CLIPSET ".count))) {
+                labels.append("BVAGENT CLIPSET \(T17ClipboardFingerprint.fields(of: bytes))")
+            }
+            return labels.contains(where: { lines.contains("\($0) -> OK CLIPSET") })
+                && !lines.contains(where: { line in labels.contains { line.hasPrefix("\($0) -> ERR") } })
         }
         // The probe prints a CLIPGET's byte length and SHA-256 prefix, never the text.
         if command == "CLIPGET" {

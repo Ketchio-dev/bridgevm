@@ -259,6 +259,9 @@ impl AgentConsoleHarness {
         progress
     }
     fn reply_progress(&mut self, line: &str, command: &str) -> ReplyProgress {
+        if let Some(progress) = super::clip_operator_reply::operator_clipset_reply(command, line) {
+            return progress;
+        }
         let command = input_receipt_label::label(command);
         if let Some(progress) = handle_verb_reply(line, command) {
             return progress;

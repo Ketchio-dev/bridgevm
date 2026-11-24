@@ -1,11 +1,13 @@
 import CryptoKit
 import Foundation
 
-/// What the probe prints for a CLIPGET reply instead of the guest's text: the text's UTF-8 byte length and the first 16
-/// hex digits of its SHA-256.
+/// The clipboard log fingerprint: byte length and the first 16 hex digits of SHA-256.
 enum T17ClipboardFingerprint {
     static func fields(of text: String) -> String {
-        let bytes = Data(text.utf8)
+        fields(of: Data(text.utf8))
+    }
+
+    static func fields(of bytes: Data) -> String {
         let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
         return "bytes=\(bytes.count) sha256=\(digest.prefix(16))"
     }
