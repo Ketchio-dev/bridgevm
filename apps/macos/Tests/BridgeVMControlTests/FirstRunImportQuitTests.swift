@@ -21,7 +21,7 @@ final class FirstRunImportQuitTests: XCTestCase {
         defer { fixture.remove() }
         let library = LibraryModel(rootURL: fixture.library, migrateLegacy: false)
         library.preparingNewVM = true
-        let retry = expectation(description: "Retry ordinary quit")
+        var retries = 0
         let termination = ControlAppTermination(sessions: { [] },
             presenter: .init(confirmQuit: { _ in false }, decideAtDeadline: { _, _ in .cancelQuit },
                 confirmAfterPreparation: {
@@ -30,11 +30,14 @@ final class FirstRunImportQuitTests: XCTestCase {
                     library.finishVMPreparation(succeeded: true)
                     return true
                 }), reply: { _ in XCTFail("Unexpected modal quit") }, preparationLibrary: { library },
-            retryQuit: { retry.fulfill() })
+            retryQuit: { retries += 1 })
 
         XCTAssertEqual(termination.shouldTerminate(reason: .user), .terminateCancel)
         XCTAssertNil(library.quitAfterVMPreparation)
-        await fulfillment(of: [retry], timeout: 2)
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        XCTAssertEqual(retries, 1)
     }
 
     private func checkQuit(cancel: Bool = false, fail: Bool = false) async throws {
