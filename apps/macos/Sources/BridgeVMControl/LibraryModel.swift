@@ -389,6 +389,7 @@ extension LibraryModel {
 
 extension LibraryModel {
     func bindRuntimeSession(_ session: HvfEngineSession, configuration: VMConfig) {
+        session.library = self
         bindRuntimeWorkAdmission(session, configuration: configuration)
         session.onConfigurationPersisted = { [weak self, weak session] previous, saved in
             guard let self, let session else { return }

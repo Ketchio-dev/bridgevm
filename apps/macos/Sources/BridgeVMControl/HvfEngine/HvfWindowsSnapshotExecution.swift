@@ -1,6 +1,8 @@
 import Foundation
 
 extension HvfEngineSession {
+    var preparingSnapshot: Bool { mutationReservation?.kind == .snapshot }
+
     /// Creates or restores the stopped VM's powered-off snapshot under a runtime-mutation
     /// reservation, rechecked before every file and helper effect. A failure's technical detail goes
     /// to the event feed; the card shows HvfWindowsSnapshotModel.message for it.
@@ -26,13 +28,19 @@ extension HvfEngineSession {
         guard let reservation = reserveRuntimeMutation(kind: .snapshot, configuration: configuration) else {
             throw Command.notStopped()
         }
-        defer { finishRuntimeMutation(reservation) }
+        var succeeded = false
+        defer {
+            finishRuntimeMutation(reservation)
+            library?.finishVMPreparation(succeeded: succeeded)
+        }
         guard validateRuntimeMutation(reservation) else { throw Command.notStopped() }
         let plan = try Command.plan(config: reservation.configuration, repoRoot: repoRoot, operation: operation,
                                     target: target, name: name)
-        return try await Command.run(operation, plan: plan) {
+        let notice = try await Command.run(operation, plan: plan) {
             guard await self.validateRuntimeMutation(reservation) else { throw Command.notStopped() }
             try reservation.checkEffect()
         }
+        succeeded = notice == nil
+        return notice
     }
 }
