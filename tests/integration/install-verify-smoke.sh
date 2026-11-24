@@ -53,6 +53,16 @@ ls "$DEST"/BridgeVM.app.backup-* >/dev/null 2>&1 ||
   { fail=$((fail+1)); echo "FAIL: --keep-backup kept no backup" >&2; }
 rm -rf "$DEST"/BridgeVM.app.backup-*
 
+# A second installer must leave the first installer's destination alone.
+exec 8<"$DEST/.BridgeVM.app.install.lock"
+/usr/bin/python3 -c 'import fcntl; fcntl.flock(8, fcntl.LOCK_EX)'
+check "concurrent update refuses before replacement" fail run_installer "$GOOD_ASSETS" "$DEST"
+if ! grep -Fq 'Another BridgeVM installer is updating this destination.' "$WORK/last.out"; then
+  fail=$((fail+1)); echo "FAIL: concurrent update did not report the active installer" >&2
+fi
+exec 8<&-
+codesign --verify --deep --strict "$DEST/BridgeVM.app"
+
 # --- checksum failures -------------------------------------------------------
 BAD_SUM="$WORK/bad-sum"; cp -R "$GOOD_ASSETS" "$BAD_SUM"
 printf '%064d  %s\n' 0 "$TARBALL" > "$BAD_SUM/SHA256SUMS"
