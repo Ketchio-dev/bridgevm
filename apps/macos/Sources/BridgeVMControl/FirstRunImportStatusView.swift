@@ -16,6 +16,13 @@ struct FirstRunImportStatusView: View {
             if let error = library.firstRunImportError {
                 Text(error).foregroundStyle(.red).font(.callout).accessibilityIdentifier("bridgevm.first-run.import.error")
             }
+            if library.quitAfterFirstRunImport {
+                HStack {
+                    Text("가져오기를 마치면 BridgeVM을 종료합니다.")
+                    Button("종료 취소") { library.quitAfterFirstRunImport = false }
+                }
+                .font(.callout)
+            }
             HStack {
                 Spacer()
                 if library.firstRunImport.publishedConfig != nil {

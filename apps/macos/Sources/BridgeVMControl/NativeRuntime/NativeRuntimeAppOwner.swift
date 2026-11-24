@@ -55,8 +55,9 @@ final class NativeRuntimeAppOwner {
 
     /// The library's VM sessions: those a quit must stop first, and where opened files go; none
     /// before the library model exists.
-    static var sessions: [HvfEngineSession] { prepared?.cache.retainedValue?.appRuntimeSessions() ?? [] }
-    static var terminationSessions: [ControlAppTerminationSession] { prepared?.cache.retainedValue?.appTerminationSessions() ?? [] }
+    static var retainedLibrary: LibraryModel? { prepared?.cache.retainedValue }
+    static var sessions: [HvfEngineSession] { retainedLibrary?.appRuntimeSessions() ?? [] }
+    static var terminationSessions: [ControlAppTerminationSession] { retainedLibrary?.appTerminationSessions() ?? [] }
 
     static func shutdown() {
         if let startup = prepared?.startup { startup.close() }

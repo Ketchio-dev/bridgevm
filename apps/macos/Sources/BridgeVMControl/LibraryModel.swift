@@ -18,6 +18,7 @@ final class LibraryModel: ObservableObject {
     @Published var moveError: String?
     @Published var operationError: String?
     @Published var firstRunImport = FirstRunImportProgress()
+    @Published var quitAfterFirstRunImport = false
     @Published private(set) var deletingSlugs: Set<String> = []
     @Published private(set) var cloningConfigurations: [String: VMConfig] = [:]
     @Published private(set) var movingSlugs: Set<String> = []
