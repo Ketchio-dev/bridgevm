@@ -77,7 +77,7 @@ pub(super) fn write(fd: i32, bytes: &[u8]) -> io::Result<Option<usize>> {
         Err(error)
     }
 }
-pub(super) fn tick(input: i32, output: i32, wants_output: bool) -> io::Result<()> {
+pub(super) fn tick(input: i32, output: i32, wants_output: bool, idle: bool) -> io::Result<()> {
     // Darwin does not report a closed pipe reader when events=0. Probe
     // POLLOUT without waiting, then omit an idle writable descriptor from
     // the timed poll so an ordinary live owner cannot cause a busy loop.
@@ -108,8 +108,11 @@ pub(super) fn tick(input: i32, output: i32, wants_output: bool) -> io::Result<()
             revents: 0,
         },
     ];
+    // Input still wakes poll immediately. With no frame or deadline in progress,
+    // only newly queued output and an idle stdout reader's loss need the next probe.
+    let wait_millis = if idle { 50 } else { 10 };
     // SAFETY: exactly two initialized pollfd rows are borrowed during poll.
-    if unsafe { libc::poll(rows.as_mut_ptr(), 2, 10) } < 0 {
+    if unsafe { libc::poll(rows.as_mut_ptr(), 2, wait_millis) } < 0 {
         let error = io::Error::last_os_error();
         if error.kind() != io::ErrorKind::Interrupted {
             return Err(error);
@@ -132,6 +135,9 @@ impl Reader {
             expected: None,
             started: None,
         }
+    }
+    pub fn is_idle(&self) -> bool {
+        self.started.is_none()
     }
     pub fn step(&mut self, fd: i32) -> io::Result<ReadResult> {
         if self.started.is_some_and(|at| at.elapsed() >= IO_BOUND) {

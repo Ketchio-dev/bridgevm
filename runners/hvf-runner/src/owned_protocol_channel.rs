@@ -38,7 +38,9 @@ impl Channel {
                     break value?;
                 }
                 io::ReadResult::Eof => return Err(codec::invalid()),
-                io::ReadResult::Pending => io::tick(input.as_raw_fd(), output.as_raw_fd(), false)?,
+                io::ReadResult::Pending => {
+                    io::tick(input.as_raw_fd(), output.as_raw_fd(), false, false)?
+                }
             }
         };
         let state = Arc::new(Mutex::new(State::default()));

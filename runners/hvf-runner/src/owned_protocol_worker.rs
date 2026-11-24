@@ -53,6 +53,9 @@ pub(super) fn run(
                 }
             }
         }
+        // Finish queues its final frame under the same lock. Read finishing
+        // before checking the queue so an empty read cannot discard that frame.
+        let finished = state.lock().unwrap().finishing;
         let mut queue_empty = false;
         if pending.is_none() {
             match receiver.try_recv() {
@@ -105,7 +108,6 @@ pub(super) fn run(
                 pending = None;
             }
         }
-        let finished = state.lock().unwrap().finishing;
         if let Some(at) = finished {
             if at.elapsed() >= io::IO_BOUND {
                 state.lock().unwrap().broken();
@@ -119,6 +121,7 @@ pub(super) fn run(
             if open_input { input.as_raw_fd() } else { -1 },
             output.as_raw_fd(),
             pending.is_some(),
+            queue_empty && reader.is_idle() && finished.is_none(),
         )
         .is_err()
         {
