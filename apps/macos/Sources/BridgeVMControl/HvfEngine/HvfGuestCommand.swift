@@ -2,10 +2,9 @@ import Foundation
 
 enum HvfGuestCommand {
     static let maximumBytes = 64 * 1024
-    /// First tokens the Rust relay sends raw, not as `RUN <base64>` (`is_raw_verb` and
-    /// input verbs); it matches case-sensitively after splitting on Unicode whitespace.
+    /// First tokens the Rust relay treats as protocol commands.
     static let relayProtocolVerbs: Set<String> = [
-        "CLIPGET", "CLIPSET", "LS", "LSR", "GET", "PUT", "PUTBEG", "PUTCHUNK", "PUTEND", "DEL", "PING",
+        "CLIPGET", "CLIPSET", "CLIPPASTE", "LS", "LSR", "GET", "PUT", "PUTBEG", "PUTCHUNK", "PUTEND", "DEL", "PING",
         "WINLIST", "WINBOUNDS", "WINFOCUS", "WINCLOSE", "TEXTINPUT", "KEYINPUT", "POINTERINPUT", "INPUTCAPS", "LINKWATCH",
         "CARET", "STARTAPPS", "STARTAPP", "PRINTWATCH"
     ]

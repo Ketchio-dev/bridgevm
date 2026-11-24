@@ -52,6 +52,30 @@ final class HvfClipboardPasteCommandLimitTests: XCTestCase {
         }
     }
 
+    func testOwnedLegacyTextBeyondCmdLimitWaitsForOneClipboardReceipt() throws {
+        let fixture = try HvfRuntimeKeyboardDraftFixture()
+        defer { fixture.remove() }
+        try fixture.withSession { session in
+            try fixture.connect(session)
+            session.beginOwnedInputBoot()
+            let text = String(repeating: "한🙂e\u{301}", count: 1_100)
+            var draft = text
+            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .acceptedForProcessing)
+            let commands = try fixture.commands()
+            XCTAssertEqual(commands.count, 1)
+            let command = try XCTUnwrap(commands.first)
+            let parts = command.split(separator: " ")
+            guard parts.count == 3, parts[0] == "CLIPPASTE" else { return XCTFail("Expected a clipboard request") }
+            XCTAssertEqual(Data(base64Encoded: String(parts[2])), Data(text.utf8))
+            XCTAssertNil(try fixture.bytes(fixture.input))
+            let marker = "BVPASTE_READY \(parts[1])"
+            let receipt = "BVAGENT CMD \(marker) exit=0\n\(marker)\nBVAGENT END \(marker)\n"
+            try fixture.appendLog(receipt + receipt)
+            session.poll()
+            XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY ctrl+v\n".utf8))
+        }
+    }
+
     func testDisplayKeyEventOverLimitIsConsumedButLogsRefusalWithoutWriting() throws {
         let fixture = try HvfRuntimeKeyboardDraftFixture()
         defer { fixture.remove() }

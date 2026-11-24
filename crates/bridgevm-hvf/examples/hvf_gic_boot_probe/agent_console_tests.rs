@@ -70,6 +70,7 @@ pub(super) mod tests {
             clip_max_bytes: 8 * 1024,
             queue: VecDeque::new(),
             in_flight: None,
+            confirming_clip_paste: false,
             overdue_beats: 0,
             last_synced: ClipBaseline::default(),
             pasteboard: None,

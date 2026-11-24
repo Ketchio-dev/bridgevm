@@ -56,6 +56,12 @@ retain the input path tracked in
 [#665](https://github.com/Ketchio-dev/bridgevm/issues/665), where long commits
 can repeat or lose characters. Use clipboard sharing and paste if this occurs.
 
+To send a draft to the focused Windows editor, open the running VM's **HVF
+Engine** view, enter the text in **Windows에 입력할 텍스트**, and select **입력**.
+For a VM started by BridgeVM on the legacy keyboard route, this can send a
+long draft through the guest clipboard. In a headless Windows run, an
+8,440-byte draft with Korean and emoji matched a classic edit field and its saved file.
+
 ## Try BridgeVM
 
 **Host:** Apple silicon and macOS 15+ (the engine uses the macOS 15

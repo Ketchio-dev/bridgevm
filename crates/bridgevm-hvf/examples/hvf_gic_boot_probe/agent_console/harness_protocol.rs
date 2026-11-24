@@ -31,7 +31,7 @@ pub(super) fn command_result_text(command: &str, exit_code: i32, output: &str) -
     }
 }
 
-fn command_output_text(command: &str, exit_code: i32, output: &str) -> String {
+pub(super) fn command_output_text(command: &str, exit_code: i32, output: &str) -> String {
     let output = if command.starts_with(LEGACY_PASTE_MARKER) {
         // PowerShell errors can echo the source line containing the paste text.
         output.lines().find(|line| *line == command).unwrap_or("")
@@ -113,6 +113,7 @@ impl AgentConsoleHarness {
                 as usize,
             queue: VecDeque::new(),
             in_flight: None,
+            confirming_clip_paste: false,
             overdue_beats: 0,
             last_synced: ClipBaseline::default(),
             pasteboard,

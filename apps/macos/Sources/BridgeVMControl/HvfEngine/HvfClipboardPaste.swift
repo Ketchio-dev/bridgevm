@@ -2,6 +2,9 @@ import Foundation
 
 /// Correlates one clipboard write across log chunks before permitting HID paste.
 struct HvfClipboardPaste {
+    // The RUN wrapper quotes its command on a cmd.exe line that holds 8,191 characters.
+    static let maximumCommandCharacters = 8_191 - #""C:\Windows\system32\cmd.exe" /c """#.count
+
     let command: String
     let marker: String
     private let deadline: Date
@@ -10,12 +13,15 @@ struct HvfClipboardPaste {
     private var acknowledged = false
     private var finished = false
 
-    init(base64: String, now: Date, id: UUID = UUID()) {
+    init(base64: String, now: Date, id: UUID = UUID(), allowsLongPaste: Bool = false) {
         marker = "BVPASTE_READY \(id.uuidString)" // relay agent_console/clip_paste.rs keys clipboard sync on it
-        command = "powershell -NoProfile -STA -Command \"$ErrorActionPreference='Stop';"
+        let shell = "powershell -NoProfile -STA -Command \"$ErrorActionPreference='Stop';"
             + "Set-Clipboard -Value ([Text.Encoding]::UTF8.GetString("
             + "[Convert]::FromBase64String('\(base64)'))) -ErrorAction Stop;"
             + "Write-Output '\(marker)'\""
+        command = allowsLongPaste && shell.utf8.count > Self.maximumCommandCharacters
+            ? "CLIPPASTE \(id.uuidString) \(base64)"
+            : shell
         envelope = HvfInputReceiptEnvelope(command: command, redactedLabel: marker)
         deadline = now.addingTimeInterval(30)
     }

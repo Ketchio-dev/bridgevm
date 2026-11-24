@@ -55,16 +55,29 @@ fn legacy_paste_marker_tracks_swift_paste_command() {
 
 #[test]
 fn legacy_paste_is_not_published_to_mac_pasteboard() {
-    let mut rig = ClipRig::synced("old");
-    rig.paste();
-    rig.settle();
-    rig.settle();
-    assert_eq!(rig.guest, "한글");
-    assert!(
-        rig.mac_sets().is_empty(),
-        "typed text written to the Mac pasteboard"
+    let long = "한글🙂".repeat(1_000);
+    let direct = format!(
+        "CLIPPASTE 0F6A2C1E-7B3D-4E59-9A8C-5D2E1F0B3A47 {}",
+        base64_encode(long.as_bytes())
     );
-    assert_eq!(rig.h.last_synced.text.as_deref(), Some("한글"));
+    for (command, text) in [(HANGUL_PASTE, "한글"), (direct.as_str(), long.as_str())] {
+        let mut rig = ClipRig::synced("old");
+        rig.h.queue.push_back(ServiceReq::Ctl(command.to_owned()));
+        if command == direct {
+            let set = rig.send();
+            rig.answer(&set);
+            assert!(rig.h.in_flight.is_some());
+            rig.answer("CLIPGET\n");
+        }
+        rig.settle();
+        rig.settle();
+        assert_eq!(rig.guest, text);
+        assert!(
+            rig.mac_sets().is_empty(),
+            "typed text written to the Mac pasteboard"
+        );
+        assert_eq!(rig.h.last_synced.text.as_deref(), Some(text));
+    }
 }
 
 #[test]
@@ -75,6 +88,37 @@ fn guest_copy_after_adopted_paste_still_syncs() {
     rig.guest = "guest-copy".into();
     rig.settle();
     assert_eq!(rig.mac_sets(), vec!["guest-copy".to_owned()]);
+}
+
+#[test]
+fn overdue_clipboard_copy_reply_cannot_arm_a_later_paste() {
+    let mut rig = ClipRig::new("old");
+    rig.h.queue.push_back(ServiceReq::ClipPush("host-copy".into(), None));
+    let payload = base64_encode("새 글".repeat(2_000).as_bytes());
+    let paste = format!(
+        "CLIPPASTE 0F6A2C1E-7B3D-4E59-9A8C-5D2E1F0B3A47 {payload}",
+    );
+    let mut wire = Vec::new();
+    let mut send = |line: &[u8]| wire.push(line.to_vec());
+    rig.h.service_pump_with_sender(rig.now, &mut send);
+    for _ in 0..3 {
+        rig.now += SERVICE_OVERDUE_INTERVAL;
+        rig.h.service_pump_with_sender(rig.now, &mut send);
+    }
+    rig.h.queue.push_back(ServiceReq::Ctl(paste.clone()));
+    rig.h.handle_service_reply("OK CLIPSET", None, None, rig.now);
+    rig.h.service_pump_with_sender(rig.now, &mut send);
+    assert_eq!(wire.len(), 3);
+    assert_eq!(wire[0], wire[1]);
+    assert_ne!(wire[1], wire[2]);
+
+    rig.h.handle_service_reply_with_sender("OK CLIPSET", rig.now, &mut |line| wire.push(line.to_vec()));
+    assert_eq!(wire[3], b"CLIPGET\n");
+    assert!(matches!(rig.h.in_flight.as_ref(), Some((ServiceReq::Ctl(c), _)) if c == &paste));
+    rig.h.handle_service_reply("OK CLIPSET", None, None, rig.now);
+    assert!(matches!(rig.h.in_flight.as_ref(), Some((ServiceReq::Ctl(c), _)) if c == &paste));
+    rig.h.handle_service_reply(&format!("CLIP {payload}"), None, None, rig.now);
+    assert!(rig.h.in_flight.is_none());
 }
 
 #[test]
