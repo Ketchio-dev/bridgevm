@@ -166,9 +166,11 @@ int main(int argc, char **argv) {
   DXGI_ADAPTER_DESC1 desc;
   hr = adapter_desc(device, &desc);
   if (SUCCEEDED(hr)) {
-    printf("BV-D3D10-BENCH-ADAPTER vendor=0x%04x device=0x%04x software=%d desc=%ls\n",
-           desc.VendorId, desc.DeviceId, !!(desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE),
-           desc.Description);
+    /* The default Basic Render Driver on a 3D-off Windows guest can report flags=0. */
+    int software = (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) ||
+                   (desc.VendorId == 0x1414 && desc.DeviceId == 0x008c);
+    printf("BV-D3D10-BENCH-ADAPTER vendor=0x%04x device=0x%04x software=%d flags=0x%x desc=%ls\n",
+           desc.VendorId, desc.DeviceId, software, desc.Flags, desc.Description);
   } else {
     printf("BV-D3D10-BENCH-ADAPTER unknown hr=0x%08lx\n", (unsigned long)hr);
   }
