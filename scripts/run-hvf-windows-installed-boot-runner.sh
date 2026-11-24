@@ -498,6 +498,12 @@ build_installed_boot_env_args() {
     # needs neither. Only wire these for the venus protocol; a caller-supplied
     # value wins (venus prefix / alt MoltenVK).
     if [[ "$(virtio_gpu_3d_runtime_protocol)" == "venus" ]]; then
+      # A packaged renderer can retain its build machine's libexec path.
+      local venus_prefix="${BRIDGEVM_VENUS_PREFIX:-${BRIDGEVM_3D_DIR:-$HOME/BridgeVM/3d}/prefix}"
+      local render_server="${RENDER_SERVER_EXEC_PATH:-$venus_prefix/libexec/virgl_render_server}"
+      if [[ -f "$render_server" && -x "$render_server" ]]; then
+        ENV_ARGS+=("RENDER_SERVER_EXEC_PATH=$render_server")
+      fi
       ENV_ARGS+=("BRIDGEVM_VULKAN_LIB=${BRIDGEVM_VULKAN_LIB:-/opt/homebrew/lib/libMoltenVK.dylib}")
       ENV_ARGS+=("BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB=${BRIDGEVM_VIRTIO_GPU_HOSTMEM_MIB:-512}")
     fi

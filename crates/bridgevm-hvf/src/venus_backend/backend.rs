@@ -458,12 +458,13 @@ impl VirtioGpuRendererProtocol {
     pub(crate) fn init_flags(self) -> c_int {
         match self {
             Self::Venus => {
+                // The macOS proxy has no eventfd worker. Its completed fences
+                // reach the guest through virgl_renderer_poll().
                 VIRGL_RENDERER_USE_EXTERNAL_BLOB
                     | VIRGL_RENDERER_VENUS
                     | VIRGL_RENDERER_RENDER_SERVER
                     | VIRGL_RENDERER_USE_GUEST_VRAM
                     | VIRGL_RENDERER_THREAD_SYNC
-                    | VIRGL_RENDERER_ASYNC_FENCE_CB
             }
             Self::Virgl => {
                 VIRGL_RENDERER_USE_EXTERNAL_BLOB
