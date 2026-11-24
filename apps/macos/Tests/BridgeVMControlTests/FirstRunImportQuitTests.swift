@@ -16,6 +16,30 @@ final class FirstRunImportQuitTests: XCTestCase {
         try await checkQuit(fail: true)
     }
 
+    func testCreateFinishingInsideQuitPromptRetriesAfterAcceptance() async throws {
+        let fixture = try FirstRunImportTransactionFixture()
+        defer { fixture.remove() }
+        let library = LibraryModel(rootURL: fixture.library, migrateLegacy: false)
+        library.preparingNewVM = true
+        var retries = 0
+        let termination = ControlAppTermination(sessions: { [] },
+            presenter: .init(confirmQuit: { _ in false }, decideAtDeadline: { _, _ in .cancelQuit },
+                confirmAfterPreparation: {
+                    XCTAssertEqual(library.quitAfterVMPreparation?.confirmed, false)
+                    library.preparingNewVM = false
+                    library.finishVMPreparation(succeeded: true)
+                    return true
+                }), reply: { _ in XCTFail("Unexpected modal quit") }, preparationLibrary: { library },
+            retryQuit: { retries += 1 })
+
+        XCTAssertEqual(termination.shouldTerminate(reason: .user), .terminateCancel)
+        XCTAssertNil(library.quitAfterVMPreparation)
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        XCTAssertEqual(retries, 1)
+    }
+
     private func checkQuit(cancel: Bool = false, fail: Bool = false) async throws {
         let fixture = try FirstRunImportTransactionFixture()
         defer { fixture.remove() }
@@ -25,9 +49,9 @@ final class FirstRunImportQuitTests: XCTestCase {
         var confirmations = 0, reveals = 0, quitRequests = 0
         let termination = ControlAppTermination(sessions: { library.appTerminationSessions() },
             presenter: .init(confirmQuit: { _ in XCTFail("Unexpected VM stop prompt"); return false },
-                decideAtDeadline: { _, _ in .cancelQuit }, confirmAfterImport: { confirmations += 1; return true },
-                revealImport: { reveals += 1 }), reply: { _ in XCTFail("Quit must leave the main run loop available") },
-            importLibrary: { library }, retryQuit: { quitRequests += 1 })
+                decideAtDeadline: { _, _ in .cancelQuit }, confirmAfterPreparation: { confirmations += 1; return true },
+                revealLibrary: { reveals += 1 }), reply: { _ in XCTFail("Quit must leave the main run loop available") },
+            preparationLibrary: { library }, retryQuit: { quitRequests += 1 })
 
         let operation = Task {
             await library.importExistingHvfVM(fixture.inputs(), snapshotHelper: HvfMediaImportTestSupport.helper,
@@ -44,12 +68,12 @@ final class FirstRunImportQuitTests: XCTestCase {
         let reached = await waitOffCooperativePool(reachedPublication, seconds: 10)
         XCTAssertTrue(reached)
         XCTAssertEqual(termination.shouldTerminate(reason: .user), .terminateCancel)
-        XCTAssertTrue(library.quitAfterFirstRunImport)
+        XCTAssertNotNil(library.quitAfterVMPreparation)
         XCTAssertEqual(library.selectedID, LibraryModel.firstRunImportSelectionID)
         XCTAssertEqual(confirmations, 1)
         XCTAssertEqual(reveals, 1)
         XCTAssertEqual(quitRequests, 0)
-        if cancel { library.quitAfterFirstRunImport = false }
+        if cancel { library.quitAfterVMPreparation = nil }
 
         allowPublication.signal()
         let error = await operation.value
@@ -57,7 +81,7 @@ final class FirstRunImportQuitTests: XCTestCase {
             DispatchQueue.main.async { continuation.resume() }
         }
 
-        XCTAssertFalse(library.quitAfterFirstRunImport)
+        XCTAssertNil(library.quitAfterVMPreparation)
         XCTAssertEqual(quitRequests, cancel || fail ? 0 : 1)
         if fail {
             XCTAssertNotNil(error)

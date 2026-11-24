@@ -81,8 +81,9 @@ Choose the Windows setup path that matches what you have:
 | **Install from ISO** | Your own licensed Windows 11 Arm ISO. Choose **드라이버 자동 준비** to download the Microsoft-signed Red Hat virtio-win storage, serial and network drivers (about 95 MB) and check their pinned SHA-256. You can also select your own signed ARM64 driver folder and manifest. |
 | **Import an installed VM** | A Windows 11 Arm disk in RAW, QCOW2 or Hyper-V VHDX format. Import needs no driver payload. |
 
-In current source builds, quitting during import offers **Finish Then Quit**
-(`완료 후 종료`). You can cancel the pending quit in the import progress view.
+In current source builds, you can choose **Finish Then Quit** (`완료 후 종료`)
+during a first-run import or while **Create VM** prepares the files for an
+import or ISO installation. You can cancel the quit from the progress view.
 
 The [installation guide](docs/install.md) covers both paths, required bundle
 resources and first-open trust. After Windows starts, install the signed guest

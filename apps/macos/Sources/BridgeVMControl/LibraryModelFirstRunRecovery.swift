@@ -24,6 +24,7 @@ extension LibraryModel {
             error = message
         }
         firstRunImport.finish(error: error, publishedConfig: published)
+        finishVMPreparation(succeeded: error == nil)
         return error
     }
 
@@ -41,6 +42,7 @@ extension LibraryModel {
         guard let expected = firstRunImport.publishedConfig else { return firstRunImportError }
         guard !Task.isCancelled else { return firstRunImportError }
         firstRunImport.beginRecovery()
+        defer { finishVMPreparation(succeeded: firstRunImportError == nil) }
         let root = rootURL
         let persisted = await Task.detached(priority: .userInitiated) {
             readback(expected, root)

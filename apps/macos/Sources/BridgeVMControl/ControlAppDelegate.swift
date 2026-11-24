@@ -7,7 +7,7 @@ final class ControlAppDelegate: NSObject, NSApplicationDelegate {
         reply: {
             ControlDisplayClose.quitting = $0
             NSApp.reply(toApplicationShouldTerminate: $0)
-        }, importLibrary: { NativeRuntimeAppOwner.retainedLibrary },
+        }, preparationLibrary: { NativeRuntimeAppOwner.retainedLibrary },
         retryQuit: { NSApp.terminate(nil) })
 
     func applicationDidFinishLaunching(_ notification: Notification) {

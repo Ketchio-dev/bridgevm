@@ -4,12 +4,10 @@ extension CreateVMSheet {
     func create() {
         guard !working, creationState.permitsCreation else { return }
         creationFailureCode = ""
-        working = true
         error = ""
         guard let normalizedName = VMLibrary.normalizedVMName(name) else {
             creationFailureCode = "invalid-vm-name"
             error = "VM 이름은 제어문자 없이 1~\(VMLibrary.maximumVMNameCharacters)자이며 파일 ID 제한 안이어야 합니다."
-            working = false
             return
         }
         let selectedMode = mode
@@ -24,9 +22,9 @@ extension CreateVMSheet {
             targetDiskPath: target, varsPath: vars) {
             creationFailureCode = "hvf-import-invalid"
             error = importError
-            working = false
             return
         }
+        library.preparingNewVM = true
         let storage = storageDir
         conversion = selectedMode == .windowsHVF ? HvfImportedDiskFormat.detect(path: target).map { ($0, 0) } : nil
         let width = resolutions[resIndex].0
