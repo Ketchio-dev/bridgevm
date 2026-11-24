@@ -71,15 +71,11 @@ pub enum Refusal {
     Unsupported(String),
     /// A structure that is out of range or inconsistent.
     Damaged(&'static str),
-    NoSpace {
-        needed: u64,
-        available: u64,
-    },
+    NoSpace,
 }
 
 impl fmt::Display for Refusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        const GB: u64 = 1_000_000_000;
         match self {
             Refusal::NotAnImage => write!(f, "QCOW2나 VHDX 디스크가 아니니 디스크 파일을 다시 선택하세요."),
             Refusal::Compressed => write!(f, "이 QCOW2 압축 형식을 지원하지 않으니 원래 VM 앱에서 RAW로 변환한 뒤 다시 가져오세요."),
@@ -95,13 +91,7 @@ impl fmt::Display for Refusal {
             Refusal::TooLarge => write!(f, "가상 크기가 16 TiB를 넘는 디스크는 가져올 수 없습니다."),
             Refusal::Unsupported(what) => write!(f, "이 디스크는 지원하지 않는 형식 기능({what})을 사용하니 qemu-img convert -O raw로 먼저 변환한 뒤 다시 가져오세요."),
             Refusal::Damaged(what) => write!(f, "디스크 이미지가 손상되었거나 구조가 올바르지 않으니 원래 VM 앱에서 디스크를 점검한 뒤 다시 시도하세요({what})."),
-            Refusal::NoSpace { needed, available } => write!(
-                f,
-                "변환한 디스크를 저장할 공간이 부족하니 대상 볼륨에 {} GB 이상을 비운 뒤 다시 시도하세요(필요 {} GB, 남은 공간 {} GB).",
-                (needed - available).div_ceil(GB),
-                needed.div_ceil(GB),
-                available / GB
-            ),
+            Refusal::NoSpace => write!(f, "대상 볼륨의 공간이 부족해 디스크를 가져오지 못했습니다. 공간을 확보한 뒤 다시 시도하세요."),
         }
     }
 }
@@ -114,6 +104,9 @@ pub enum ConvertError {
 
 impl From<io::Error> for ConvertError {
     fn from(error: io::Error) -> Self {
+        if error.raw_os_error() == Some(libc::ENOSPC) {
+            return ConvertError::Refused(Refusal::NoSpace);
+        }
         ConvertError::Io(error)
     }
 }
@@ -208,20 +201,8 @@ pub fn convert_to_raw(src: &Path, dst: &Path, mut progress: impl FnMut(u8)) -> R
         }
         Ok(())
     })?;
-    let parent = match dst.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => parent,
-        _ => Path::new("."),
-    };
-    if let Some(available) = crate::snapshot_pair::files::available_bytes(parent) {
-        if available < data_bytes {
-            return Err(Refusal::NoSpace {
-                needed: data_bytes,
-                available,
-            }
-            .into());
-        }
-    }
-
+    // Allocated source blocks can contain zeros that occupy no space in the
+    // sparse destination. Report ENOSPC only when the filesystem returns it.
     // Pass 2: copy.
     let out = output::RawOutput::create(dst, size)?;
     let mut copier = Copier {
