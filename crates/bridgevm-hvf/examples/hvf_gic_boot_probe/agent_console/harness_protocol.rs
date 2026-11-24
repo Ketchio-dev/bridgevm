@@ -113,6 +113,7 @@ impl AgentConsoleHarness {
                 as usize,
             queue: VecDeque::new(),
             in_flight: None,
+            confirming_clip_paste: false,
             overdue_beats: 0,
             last_synced: ClipBaseline::default(),
             pasteboard,
@@ -259,9 +260,6 @@ impl AgentConsoleHarness {
         progress
     }
     fn reply_progress(&mut self, line: &str, command: &str) -> ReplyProgress {
-        if let Some(progress) = super::clip_paste::clip_paste_reply(command, line) {
-            return progress;
-        }
         if let Some(progress) = super::clip_operator_reply::operator_clipset_reply(command, line) {
             return progress;
         }

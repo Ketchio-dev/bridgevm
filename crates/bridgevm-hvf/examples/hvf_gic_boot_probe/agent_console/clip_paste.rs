@@ -1,9 +1,7 @@
 //! Legacy (non-ordered) text entry sends non-ASCII through the guest
-//! clipboard. A long paste goes over the existing guest CLIPSET verb with a
-//! relay-owned request ID. Either command emits BVPASTE_READY before Ctrl+V.
-//! The clipboard change belongs to the app's paste, so the
-//! next CLIPGET re-learns the baseline instead of publishing the typed text
-//! (possibly a password) to the Mac pasteboard and Universal Clipboard.
+//! clipboard. A long paste uses CLIPSET and verifies the clipboard with CLIPGET.
+//! The relay emits BVPASTE_READY before Ctrl+V, and clipboard sync re-learns
+//! the guest baseline without publishing the typed text to the Mac.
 
 use super::*;
 
@@ -21,24 +19,40 @@ fn paste_arguments(args: &str) -> Option<(&str, &str)> {
     (valid_request_id(id) && !payload.is_empty()).then_some((id, payload))
 }
 
-// Only the matching clipboard success can arm Ctrl+V. The service already
-// keeps one request on the guest wire, so the ID never needs to go to Windows.
-pub(super) fn clip_paste_reply(command: &str, line: &str) -> Option<ReplyProgress> {
-    let args = command.strip_prefix(CLIPPASTE)?;
-    let Some((id, _)) = paste_arguments(args) else {
-        return Some(ReplyProgress::Ignored);
-    };
-    let marker = format!("{LEGACY_PASTE_MARKER}{id}");
-    let reply = match line {
-        "OK CLIPSET" => super::harness_protocol::command_output_text(&marker, 0, &marker),
-        error if error.starts_with("ERR ") => super::harness_protocol::command_output_text(&marker, 1, ""),
-        _ => return Some(ReplyProgress::Ignored),
-    };
-    println!("{reply}");
-    Some(ReplyProgress::Complete)
-}
-
 impl AgentConsoleHarness {
+    pub(super) fn handle_clip_paste_reply(
+        &mut self,
+        command: &str,
+        line: &str,
+        send: &mut dyn FnMut(&[u8]),
+    ) -> bool {
+        let Some((id, payload)) = command.strip_prefix(CLIPPASTE).and_then(paste_arguments) else {
+            return false;
+        };
+        if self.confirming_clip_paste {
+            if let Some(clipboard) = line.strip_prefix("CLIP ") {
+                self.finish_clip_paste(id, clipboard == payload);
+            }
+        } else if line == "OK CLIPSET" {
+            // A retransmitted clipboard sync can leave a stale OK on the wire.
+            // Check the bytes with a read that the guest processes after this write.
+            self.confirming_clip_paste = true;
+            send(b"CLIPGET\n");
+        } else if line == "ERR CLIPSET" || line.starts_with("ERR CLIPSET ") {
+            self.finish_clip_paste(id, false);
+        }
+        true
+    }
+
+    fn finish_clip_paste(&mut self, id: &str, ready: bool) {
+        let marker = format!("{LEGACY_PASTE_MARKER}{id}");
+        let output = if ready { marker.as_str() } else { "" };
+        let reply = super::harness_protocol::command_output_text(&marker, i32::from(!ready), output);
+        println!("{reply}");
+        self.get_accum = None;
+        self.complete_in_flight();
+    }
+
     /// Encode a control command. Marking at write time covers a reply, a failure,
     /// and an agent restart (READY) that drops it after Set-Clipboard ran; a guest
     /// child outliving that restart can still land late (not covered). A later
@@ -49,6 +63,7 @@ impl AgentConsoleHarness {
                 eprintln!("BVAGENT CLIPPASTE invalid request");
                 return false;
             };
+            self.confirming_clip_paste = false;
             self.last_synced.rebaseline = true;
             let _ = writeln!(self.service_line_scratch, "CLIPSET {payload}");
             return true;
