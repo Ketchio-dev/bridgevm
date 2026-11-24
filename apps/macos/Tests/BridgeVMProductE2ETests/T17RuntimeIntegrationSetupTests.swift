@@ -45,7 +45,7 @@ final class T17RuntimeIntegrationSetupTests: XCTestCase {
     private func makeBundle(clipboardSyncEnabled: Bool) throws -> URL {
         let vmDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: vmDirectory, withIntermediateDirectories: false)
-        addTeardownBlock { try FileManager.default.removeItem(at: vmDirectory) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: vmDirectory) }
         let bundle = vmDirectory.appendingPathComponent("bundle.vmbridge", isDirectory: true)
         let config: [String: Any] = ["id": vmDirectory.lastPathComponent, "bundlePath": bundle.path,
                                      "clipboardSyncEnabled": clipboardSyncEnabled]
