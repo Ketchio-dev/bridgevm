@@ -7,6 +7,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 from package_publication import publish_exclusive
 
@@ -40,13 +41,27 @@ def run(*arguments):
     subprocess.run([str(argument) for argument in arguments], check=True)
 
 
+def verify_dmg(archive):
+    command = ["hdiutil", "verify", str(archive)]
+    for delay in (0.5, 1.0, None):
+        result = subprocess.run(command, stderr=subprocess.PIPE, text=True, errors="replace")
+        print(result.stderr, end="", file=sys.stderr, flush=True)
+        if result.returncode == 0:
+            return
+        temporary = "hdiutil: verify failed - Resource temporarily unavailable" in result.stderr.splitlines()
+        if delay is None or result.returncode != 1 or not temporary:
+            result.check_returncode()
+        print(f"Retrying DMG verification in {delay:g}s", file=sys.stderr, flush=True)
+        time.sleep(delay)
+
+
 def build_verified(kind, app, archive, work):
     if kind == "dmg":
         run("cp", "-R", app, str(work) + "/")
         (work / "Applications").symlink_to("/Applications")
         run("hdiutil", "create", "-volname", "BridgeVM", "-srcfolder", work,
             "-format", "UDZO", archive)
-        run("hdiutil", "verify", archive)
+        verify_dmg(archive)
     else:
         # Keep the native tar implementation and its macOS metadata handling.
         run("tar", "-czf", archive, "-C", app.parent, "--", app.name)
