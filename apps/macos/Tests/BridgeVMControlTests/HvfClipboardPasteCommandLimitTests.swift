@@ -40,7 +40,7 @@ final class HvfClipboardPasteCommandLimitTests: XCTestCase {
                 try fixture.connect(session)
                 var draft = text
                 XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .acceptedForProcessing)
-                XCTAssertEqual(draft, "")
+                XCTAssertEqual(draft, text)
                 let commands = try fixture.commands()
                 XCTAssertEqual(commands.count, 1)
                 let command = try XCTUnwrap(commands.first)
@@ -60,7 +60,9 @@ final class HvfClipboardPasteCommandLimitTests: XCTestCase {
             session.beginOwnedInputBoot()
             let text = String(repeating: "한🙂e\u{301}", count: 1_100)
             var draft = text
-            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .acceptedForProcessing)
+            var sent = 0
+            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session) { sent += 1 }, .acceptedForProcessing)
+            XCTAssertEqual(draft, text)
             let commands = try fixture.commands()
             XCTAssertEqual(commands.count, 1)
             let command = try XCTUnwrap(commands.first)
@@ -73,6 +75,7 @@ final class HvfClipboardPasteCommandLimitTests: XCTestCase {
             try fixture.appendLog(receipt + receipt)
             session.poll()
             XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY ctrl+v\n".utf8))
+            XCTAssertEqual(sent, 1)
         }
     }
 

@@ -14,6 +14,7 @@ struct HvfRuntimeKeyboardInput: View {
                 Button("입력", action: submit)
                     .disabled(draft.isEmpty)
                     .accessibilityIdentifier("bridgevm.runtime.keyboard.send")
+                    .help("클립보드로 입력하면 Windows에서 마지막으로 복사한 내용이 바뀝니다.")
                 Button("Tab") { submissionRefused = !session.sendToolbarKey("tab") }
                 Button("Enter") { submissionRefused = !session.sendToolbarKey("enter") }
                 Button("Space") { submissionRefused = !session.sendToolbarKey("space") }
@@ -31,6 +32,10 @@ struct HvfRuntimeKeyboardInput: View {
 
     private func submit() {
         guard !draft.isEmpty else { return }
-        submissionRefused = HvfKeyboardDraft.submit(&draft, to: session) == .refused
+        let submitted = draft
+        let editor = $draft
+        submissionRefused = HvfKeyboardDraft.submit(&draft, to: session) {
+            if editor.wrappedValue.utf8.elementsEqual(submitted.utf8) { editor.wrappedValue = "" }
+        } == .refused
     }
 }

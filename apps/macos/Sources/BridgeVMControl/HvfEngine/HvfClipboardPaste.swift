@@ -7,6 +7,7 @@ struct HvfClipboardPaste {
 
     let command: String
     let marker: String
+    var onPasteSent: (@MainActor () -> Void)?
     private let deadline: Date
     private var envelope: HvfInputReceiptEnvelope
     private var began = false
