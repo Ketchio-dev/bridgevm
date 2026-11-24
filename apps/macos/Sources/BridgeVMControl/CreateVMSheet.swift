@@ -53,9 +53,7 @@ struct CreateVMSheet: View {
             CreateVMResourceSummary(cpuCount: cpuCount, ramMiB: ramMiB,
                                     diskGiB: createsFreshDisk ? diskGiB : nil)
                 .padding(.horizontal, 20).padding(.top, 12)
-            if library.quitAfterVMPreparation?.confirmed == true {
-                VMPreparationQuitStatus { library.quitAfterVMPreparation = nil }.padding(.horizontal, 20)
-            }
+            VMPreparationQuitStatus(library: library).padding(.horizontal, 20)
             creationFooter
         }
         .frame(width: 480, height: 640)
