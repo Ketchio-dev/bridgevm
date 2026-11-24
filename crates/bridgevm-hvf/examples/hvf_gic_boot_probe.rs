@@ -67,7 +67,7 @@ use bridgevm_hvf::ramfb::{RamfbConfig, RamfbSnapshot, RamfbSnapshotError, RamfbS
 use bridgevm_hvf::stage1::{self, Stage1Context, Stage1WalkStep};
 use bridgevm_hvf::tpm_tis::{SwtpmUnixBackend, Tpm2Backend};
 use bridgevm_hvf::virtio_blk::{VirtioBlockRequestTrace, VirtioMmioBlockStats, INSTALLER_ISO_SLOT};
-use bridgevm_hvf::virtio_gpu_3d::GpuShmMapPort;
+use bridgevm_hvf::virtio_gpu_3d::{GpuShmMapPort, GpuShmPageSize};
 
 // Every module lives in the hvf_gic_boot_probe/ directory beside this
 // file. Cargo resolves example submodules relative to the examples/

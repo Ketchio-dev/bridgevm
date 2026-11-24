@@ -55,6 +55,7 @@ pub struct MockBackend {
 #[cfg(test)]
 #[derive(Debug, Default)]
 pub(crate) struct MockMapPort {
+    pub(crate) page_size: GpuShmPageSize,
     pub(crate) maps: Vec<(usize, usize, u64)>,
     pub(crate) unmaps: Vec<(u64, usize)>,
 }
@@ -285,6 +286,10 @@ impl VirtioGpu3dBackend for std::sync::Arc<std::sync::Mutex<MockBackend>> {
 
 #[cfg(test)]
 impl GpuShmMapPort for std::sync::Arc<std::sync::Mutex<MockMapPort>> {
+    fn page_size(&self) -> GpuShmPageSize {
+        self.lock().unwrap().page_size
+    }
+
     fn map(&mut self, host_ptr: *mut u8, size: usize, shm_offset: u64) -> Result<(), i32> {
         self.lock()
             .unwrap()

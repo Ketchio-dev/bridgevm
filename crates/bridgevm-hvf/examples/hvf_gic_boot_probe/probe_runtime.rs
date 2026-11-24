@@ -115,7 +115,18 @@ unsafe fn run_vm(
     probe_exit: &mut ProbeExit,
 ) {
     let (media, platform_cfg, ram_size) = (&config.media, config.platform_cfg, config.ram_size);
-    create_vm();
+    #[cfg(feature = "venus")]
+    let use_4k_ipa = platform_cfg.devices.virtio_gpu_present
+        && platform_cfg.devices.virtio_gpu_pci_device_id
+            == bridgevm_hvf::pcie::VIRTIO_GPU_DEVICE_ID
+        && env_flag("BRIDGEVM_VIRTIO_GPU_3D")
+        && matches!(
+            bridgevm_hvf::venus_backend::VirtioGpuRendererProtocol::from_env(),
+            Ok(bridgevm_hvf::venus_backend::VirtioGpuRendererProtocol::Venus)
+        );
+    #[cfg(not(feature = "venus"))]
+    let use_4k_ipa = false;
+    let shm_page_size = create_vm(use_4k_ipa);
     let _vm_guard = HvVmGuard;
     create_gic();
     let (mut platform, vars_data, boot_dtb) = prepare_platform(media, platform_cfg, tpm_backend);
@@ -154,7 +165,7 @@ unsafe fn run_vm(
         &mut platform,
     )
     .unwrap_or_else(|error| panic!("restore VM checkpoint: {error}"));
-    install_gpu_shm_port(&mut platform);
+    install_gpu_shm_port(&mut platform, shm_page_size);
     configure_gpu_unlocked_copy(&mut platform);
     let vm = Vm {
         vcpu,

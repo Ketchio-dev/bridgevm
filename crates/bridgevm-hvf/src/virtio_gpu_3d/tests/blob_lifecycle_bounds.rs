@@ -93,3 +93,67 @@ fn map_blob_rejects_a_size_without_a_page_rounded_footprint() {
         );
     }
 }
+
+#[test]
+fn host3d_4k_mappings_allow_adjacent_blobs_and_keep_overlap_checks() {
+    #[repr(align(16384))]
+    struct Backing([u8; 0x8000]);
+    let mut backing = Backing([0; 0x8000]);
+    let first = backing.0.as_mut_ptr();
+    let subpage = first.wrapping_add(0x5000);
+    let backend = Arc::new(Mutex::new(MockBackend::new_venus()));
+    let port = Arc::new(Mutex::new(MockMapPort {
+        page_size: GpuShmPageSize::KiB4,
+        ..MockMapPort::default()
+    }));
+    for (id, ptr, size) in [(5, first, 0x2100), (6, subpage, 0x1000)] {
+        backend.lock().unwrap().mapped.insert(
+            id,
+            MappedBlob {
+                host_ptr: ptr,
+                size,
+                map_info: 0,
+            },
+        );
+    }
+
+    let mut gpu = VirtioGpu3d::with_backend(Box::new(backend));
+    gpu.set_shm_map_port(Box::new(port.clone()), 0x10000);
+    let mut context = ctrl_req(VIRTIO_GPU_CMD_CTX_CREATE, CTX);
+    context.resize(CTX_CREATE_LEN, 0);
+    ok(&mut gpu, &context);
+    ok(
+        &mut gpu,
+        &create_blob_req(5, VIRTIO_GPU_BLOB_MEM_HOST3D, 1, 0x2100, CTX),
+    );
+    ok(
+        &mut gpu,
+        &create_blob_req(6, VIRTIO_GPU_BLOB_MEM_HOST3D, 2, 0x1000, CTX),
+    );
+
+    for (id, offset, expected) in [
+        (5, 0, VIRTIO_GPU_RESP_OK_MAP_INFO),
+        (6, 0x2000, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER),
+        (6, 0x3000, VIRTIO_GPU_RESP_OK_MAP_INFO),
+    ] {
+        let request = map_blob_req(id, offset);
+        let hdr = CtrlHdr3d::parse(&request).unwrap();
+        assert_eq!(
+            read_le_u32(&gpu.handle(&request, hdr).unwrap(), 0),
+            Some(expected)
+        );
+    }
+    assert_eq!(
+        port.lock().unwrap().maps,
+        vec![
+            (first as usize, 0x3000, 0),
+            (subpage as usize, 0x1000, 0x3000)
+        ]
+    );
+    ok(&mut gpu, &unmap_blob_req(5));
+    ok(&mut gpu, &unmap_blob_req(6));
+    assert_eq!(
+        port.lock().unwrap().unmaps,
+        vec![(0, 0x3000), (0x3000, 0x1000)]
+    );
+}

@@ -11,8 +11,6 @@ pub(crate) fn aligned_usize(value: usize, align: usize) -> bool {
     value % align == 0
 }
 
-pub(crate) const HVF_PAGE_SIZE: u64 = 16 * 1024;
-
 impl VirtioGpu3d {
     pub(crate) fn resource_map_blob_into(
         &mut self,
@@ -60,9 +58,14 @@ impl VirtioGpu3d {
             return;
         }
         let size = resource.size;
+        let page_size = self
+            .shm_port
+            .as_ref()
+            .map_or(GpuShmPageSize::default(), |port| port.page_size())
+            .bytes();
         // Validate against the page-rounded footprint the mapping will occupy.
         // The guest chose `size`; one within a page of u64::MAX has none.
-        let Some(rounded_size) = size.checked_next_multiple_of(HVF_PAGE_SIZE) else {
+        let Some(rounded_size) = size.checked_next_multiple_of(page_size as u64) else {
             let window = self.shm_window_size;
             venus_start_trace_map_blob_reject(
                 resource_id,
@@ -74,14 +77,14 @@ impl VirtioGpu3d {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         };
-        if !aligned_u64(shm_offset, HVF_PAGE_SIZE)
+        if !aligned_u64(shm_offset, page_size as u64)
             || shm_offset
                 .checked_add(rounded_size)
                 .is_none_or(|end| end > self.shm_window_size)
             || self.interval_overlaps(shm_offset, rounded_size)
         {
-            let reason = if !aligned_u64(shm_offset, HVF_PAGE_SIZE) {
-                "shm_offset not 16KiB aligned"
+            let reason = if !aligned_u64(shm_offset, page_size as u64) {
+                "shm_offset is not mapping-page aligned"
             } else if shm_offset
                 .checked_add(rounded_size)
                 .is_none_or(|end| end > self.shm_window_size)
@@ -122,15 +125,12 @@ impl VirtioGpu3d {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY, Some(hdr));
             return;
         };
-        // Guests may create blobs at their own (4 KiB) page granularity while
-        // hv_vm_map needs 16 KiB pages. The host allocation backing a Vulkan
-        // mapping is vm-page (16 KiB) granular on macOS, so it is safe to map
-        // the blob's pages rounded up to the HVF page size as long as the host
-        // pointer itself is page-aligned; the guest-visible blob size stays
-        // `size`.
+        // The host mapping backs whole host pages. Both supported HVF
+        // granules divide a macOS host page, so rounding to the selected
+        // granule stays within the host page containing the end of the blob.
         let map_size = rounded_size as usize;
         if mapped.host_ptr.is_null()
-            || !aligned_usize(mapped.host_ptr as usize, HVF_PAGE_SIZE as usize)
+            || !aligned_usize(mapped.host_ptr as usize, page_size)
             || (mapped.size as u64) < size
         {
             venus_start_trace_map_blob_reject(
@@ -140,7 +140,7 @@ impl VirtioGpu3d {
                 self.shm_window_size,
                 if mapped.host_ptr.is_null() {
                     "backend host_ptr null"
-                } else if !aligned_usize(mapped.host_ptr as usize, HVF_PAGE_SIZE as usize) {
+                } else if !aligned_usize(mapped.host_ptr as usize, page_size) {
                     "backend host_ptr unaligned"
                 } else {
                     "backend mapping smaller than blob"

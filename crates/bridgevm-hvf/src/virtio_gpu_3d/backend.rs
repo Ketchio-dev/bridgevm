@@ -55,7 +55,27 @@ pub struct CompletedFence {
     pub fence_id: u64,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub enum GpuShmPageSize {
+    KiB4,
+    #[default]
+    KiB16,
+}
+
+impl GpuShmPageSize {
+    pub const fn bytes(self) -> usize {
+        match self {
+            Self::KiB4 => 4 * 1024,
+            Self::KiB16 => 16 * 1024,
+        }
+    }
+}
+
 pub trait GpuShmMapPort: Send {
+    fn page_size(&self) -> GpuShmPageSize {
+        GpuShmPageSize::default()
+    }
+
     fn map(&mut self, host_ptr: *mut u8, size: usize, shm_offset: u64) -> Result<(), i32>;
     fn unmap(&mut self, shm_offset: u64, size: usize) -> Result<(), i32>;
 }
