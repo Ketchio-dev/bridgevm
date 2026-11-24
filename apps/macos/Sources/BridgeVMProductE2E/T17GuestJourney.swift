@@ -46,12 +46,13 @@ struct T17GuestJourney {
         try T17InputChallenge(sharePath: request.sharePath, nonce: request.nonce, ui: ui).deliver()
     }
 
+    /// Round-trip synthetic text through the Windows clipboard via the guest agent.
     private func clipboard() throws {
         let body = "브리지VM T17 클립보드 왕복 v1\n\(request.nonce)\n"
-        let host = URL(fileURLWithPath: request.sharePath)
+        let seed = URL(fileURLWithPath: request.sharePath)
             .appendingPathComponent("t17-clipboard-host-\(prefix).txt")
-        guard try Data(contentsOf: host) == Data(body.utf8) else {
-            throw T17Blocker(code: "guest-evidence-missing", detail: "host clipboard challenge bytes changed")
+        guard try Data(contentsOf: seed) == Data(body.utf8) else {
+            throw T17Blocker(code: "guest-evidence-missing", detail: "guest clipboard challenge seed changed")
         }
         let encoded = Data(body.utf8).base64EncodedString()
         try control("CLIPSET \(encoded)", requires: "OK CLIPSET")

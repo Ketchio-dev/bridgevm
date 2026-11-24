@@ -159,6 +159,10 @@ this step again. Earlier T17 receipts reported
 `worker_cleanup_verified` without forgetting these keys.
 T19 seals a packaged app, fixed-identity helper, runner, installed disk, exact 64 MiB vars and symlink-free vTPM tree; each lane imports independent read-only clones through `--windows-import-product-e2e`, runs the full guest journey, reauthenticates canonical inputs, and retains `claim_eligible=false` because A9 also requires T17.
 
+T17 and T19 turn off Mac clipboard sync in the lane VM settings and check the
+saved setting before starting the installed VM. The clipboard stage checks a
+synthetic Windows clipboard round trip through the guest agent.
+
 ## Foreground wait policy
 
 Local deterministic developer checks, including `scripts/check-project.sh`,

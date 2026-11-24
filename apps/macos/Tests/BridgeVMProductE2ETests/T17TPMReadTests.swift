@@ -119,7 +119,7 @@ final class T17TPMReadTests: XCTestCase {
 
     func testFirstBootIsReadAfterTheInputProofAndTheJourneyGoesOn() throws {
         let (ui, log, error) = try journeyToClipboard(answerTPM: true)
-        XCTAssertEqual(error, T17Blocker(code: "guest-evidence-missing", detail: "host clipboard challenge bytes changed"))
+        XCTAssertEqual(error, T17Blocker(code: "guest-evidence-missing", detail: "guest clipboard challenge seed changed"))
         XCTAssertEqual(Array(ui.events.prefix(1)), ["launch KeyboardPointer"])
         XCTAssertEqual(ui.events.last, "launch TpmBoot1")
         XCTAssertNil(log.evidence.boots[0].reason)
@@ -129,7 +129,7 @@ final class T17TPMReadTests: XCTestCase {
 
     func testAnUnansweredTPMReadDoesNotStopTheJourney() throws {
         let (ui, log, error) = try journeyToClipboard(answerTPM: false)
-        XCTAssertEqual(error, T17Blocker(code: "guest-evidence-missing", detail: "host clipboard challenge bytes changed"))
+        XCTAssertEqual(error, T17Blocker(code: "guest-evidence-missing", detail: "guest clipboard challenge seed changed"))
         XCTAssertEqual(ui.events.last, "launch TpmBoot1")
         XCTAssertEqual(log.evidence.boots[0], T17TPMBootRecord(boot: .first, reason: .launchFailed, guestRestartBeforeRead: false))
     }

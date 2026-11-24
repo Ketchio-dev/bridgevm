@@ -4,7 +4,7 @@ extension T17ProductRunner {
     func bootToFirstReady(_ ui: T17UIControlling) throws -> String {
         if (try? ui.waitFor("bridgevm.windows.runtime.view", timeout: 1)) == nil { try ui.press("bridgevm.dashboard.advanced", timeout: 60) }
         try ui.waitFor("bridgevm.windows.runtime.view", timeout: 60)
-        try T17RuntimeIntegrationSetup.apply(sharePath: request.sharePath, ui: ui)
+        try T17RuntimeIntegrationSetup.apply(sharePath: request.sharePath, bundle: bundle, ui: ui)
         try ui.press("bridgevm.windows.runtime.start", timeout: 20)
         let log = bundle.appendingPathComponent("logs/hvf/run.log")
         return try T17FirstReadyWaiter.wait(observe: {

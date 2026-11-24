@@ -78,9 +78,9 @@ def verify(request: dict) -> list[Path]:
         "snapshot_marker_b_sha256": (share / f"t17-snapshot-b-{prefix}.txt", f"bridgevm-t17-snapshot-b-v1\n{nonce}\n".encode()),
         "snapshot_marker_restored_a_sha256": (share / f"t17-snapshot-restored-a-{prefix}.txt", f"bridgevm-t17-snapshot-a-v1\n{nonce}\n".encode()),
     }
-    host_clipboard = share / f"t17-clipboard-host-{prefix}.txt"
-    if _bytes(host_clipboard, share, 8192) != clipboard:
-        raise ValueError("host clipboard challenge bytes are invalid")
+    clipboard_seed = share / f"t17-clipboard-host-{prefix}.txt"
+    if _bytes(clipboard_seed, share, 8192) != clipboard:
+        raise ValueError("guest clipboard challenge seed is invalid")
     for key, (path, expected) in raw_specs.items():
         actual = _bytes(path, share, 8192)
         if actual != expected or evidence.get(key) != _digest(actual):
@@ -111,4 +111,4 @@ def verify(request: dict) -> list[Path]:
     if any(not values[0] < values[1] for values in offsets.values()):
         raise ValueError("guest READY/PONG/SYSTEM_OFF order is invalid")
     _audio(log_data["first"])
-    return [evidence_path, *logs.values(), agent_path, guest_agent_path, host_clipboard, *[path for key, (path, _) in raw_specs.items() if key != "share_host_to_guest_sha256"]]
+    return [evidence_path, *logs.values(), agent_path, guest_agent_path, clipboard_seed, *[path for key, (path, _) in raw_specs.items() if key != "share_host_to_guest_sha256"]]
