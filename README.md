@@ -58,11 +58,12 @@ can repeat or lose characters. Use clipboard sharing and paste if this occurs.
 
 To send a draft to the focused Windows editor, open the running VM's **HVF
 Engine** view, enter the text in **Windows에 입력할 텍스트**, and select **입력**.
-For a VM started by BridgeVM on the legacy keyboard route, this can send a
-long draft through the guest clipboard. This replaces the previous Windows
-clipboard copy. The text field keeps the draft if the paste is interrupted.
-In a headless Windows run, an
-8,440-byte draft with Korean and emoji matched a classic edit field and its saved file.
+If the editor declines a multiline draft on the queued route, the app sends
+that draft through the Windows clipboard. The legacy keyboard route also uses
+the clipboard for characters it cannot type. This replaces the previous
+Windows clipboard copy, and an interruption leaves the draft in the text field.
+In a headless Windows run, an 8,440-byte draft with Korean and emoji matched a
+classic edit field and its saved file.
 
 ## Try BridgeVM
 

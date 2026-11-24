@@ -102,6 +102,7 @@ final class HvfEngineSession: ObservableObject {
     @Published var diskGrowNotice: String? // the guest's report on extending C: after a disk grow (HvfDiskGrow)
     var diskExtendInFlight = false
     var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it
+    weak var submittedKeyboardDraft: HvfTextDraftDelivery?
     var heldKeys = HvfHeldKeys() // Mac keys held down on the guest (HvfEngineSessionHeldKeys.swift)
     var guestCaretQuery: HvfGuestCaretQuery? // where the guest's text caret is, asked once per composition
     let inputDriver = HvfSessionInputDriver()
@@ -248,19 +249,19 @@ final class HvfEngineSession: ObservableObject {
     }
 
     @discardableResult
-    func sendText(_ value: String) -> HvfTextInputSubmission {
+    func sendText(_ value: String, draft: HvfTextDraftDelivery? = nil) -> HvfTextInputSubmission {
         guard !guiStartCleanupOnly, !pause.holdsInput else { return .refused }
         guard legacyPaste.pending == nil else { append(.unknown("text input refused: clipboard paste pending")); return .refused }
         guard !value.isEmpty else { return .refused }
-        switch inputDriver.route(.text(value), binding: inputBinding) {
+        switch inputDriver.route(.text(value, draft: draft), binding: inputBinding) {
         case .queued: return .acceptedForProcessing
         case .refused: return .refused
-        case .legacy: return sendLegacyText(value)
+        case .legacy: return sendLegacyText(value, draft: draft)
         }
     }
 
     /// Text on input.ctl: HID keys for printable ASCII, a clipboard paste for anything else.
-    @discardableResult func sendLegacyText(_ value: String) -> HvfTextInputSubmission {
+    @discardableResult func sendLegacyText(_ value: String, draft: HvfTextDraftDelivery? = nil) -> HvfTextInputSubmission {
         let plan = HvfTextInputPlan.make(for: value)
         for chunk in plan.hidChunks {
             guard appendLiveInput("KEY text-hex:\(chunk)") else { return .refused }
@@ -269,8 +270,9 @@ final class HvfEngineSession: ObservableObject {
             guard serviceStarted, case .connected = connectionState else {
                 append(.unknown("clipboard paste refused: guest service is not connected")); return .refused
             }
-            let request = clipboardPaste(base64: base64)
+            var request = clipboardPaste(base64: base64, preferRelay: draft != nil)
             guard request.fitsGuestCommandLine(reportingTo: self), sendCtl(request.command) else { return .refused }
+            if let draft { request.onPasteSent = { draft.onSent?() } }
             legacyPaste.pending = request
             return .acceptedForProcessing
         }

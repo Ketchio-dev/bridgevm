@@ -67,8 +67,7 @@ struct HvfNegotiatedInputStream {
             if legacyQuiescent { state = .ready }
         case .ready:
             let update = stream.advance(lines: lines, now: now, queuedTextDispatch: capability?.queuedTextDispatch == true, send: send)
-            // Nothing of a not-inserted event reached Windows: the stream stays usable for a later retry.
-            if case let .cancelled(reason, _) = update, reason != .notInserted { state = .failed }
+            if case let .cancelled(reason, _) = update, !reason.permitsLegacyRetry { state = .failed }
             return update
         case .unavailable, .failed:
             break

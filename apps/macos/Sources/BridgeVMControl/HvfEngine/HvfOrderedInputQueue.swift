@@ -9,10 +9,11 @@ struct HvfOrderedInputQueue {
         let event: Event
     }
 
-    /// `notInserted`: the guest inserted nothing of the awaited event (HvfUnicodeInputRequest), so it and
-    /// every event behind it are still undelivered.
+    /// A legacy retry requires a reply establishing that the awaited event and its successors are undelivered.
     enum Failure: Equatable {
-        case expired, transportFailed, sessionChanged, targetChanged, notInserted
+        case expired, transportFailed, sessionChanged, targetChanged, notInserted, unsupportedEditor
+
+        var permitsLegacyRetry: Bool { self == .notInserted || self == .unsupportedEditor }
     }
 
     enum Transition: Equatable {

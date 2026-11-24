@@ -7,7 +7,10 @@ import Foundation
 /// replays in order after that `KEY ctrl+v`. Any other end of the paste (failure, expiry, guest
 /// reset, pointer press, target change, stop, attach, owned boot) discards it with the paste.
 struct HvfLegacyPasteState {
-    enum Input: Equatable { case key(String), text(String) }
+    enum Input: Equatable {
+        case key(String)
+        case text(String, draft: HvfTextDraftDelivery? = nil)
+    }
 
     /// Entries after merging; far more than a paste round trip of typing (a paste expires in 30 s).
     static let maximumBacklog = 256
@@ -18,7 +21,7 @@ struct HvfLegacyPasteState {
     /// Adjacent text merges into one later paste while that paste still fits the guest cmd.exe
     /// line, and therefore the 64 KiB control line. False when a new entry would exceed the bound.
     mutating func hold(_ input: Input) -> Bool {
-        if case let .text(next) = input, case let .text(last)? = backlog.last, Self.fits(last + next) {
+        if case let .text(next, nil) = input, case let .text(last, nil)? = backlog.last, Self.fits(last + next) {
             backlog[backlog.count - 1] = .text(last + next)
             return true
         }

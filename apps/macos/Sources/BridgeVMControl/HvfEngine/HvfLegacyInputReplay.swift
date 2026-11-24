@@ -19,8 +19,9 @@ extension HvfEngineSession {
                 if command.hasPrefix(HvfModifierChord.up) { continue }
                 let key = HvfModifierChord.heldAction(command) ?? command
                 sent = legacyPaste.pending != nil ? legacyPaste.hold(.key(key)) : appendLiveInput("KEY " + key)
-            case let .text(text):
-                sent = legacyPaste.pending != nil ? legacyPaste.hold(.text(text)) : sendLegacyText(text) != .refused
+            case let .text(text, draft):
+                sent = legacyPaste.pending != nil ? legacyPaste.hold(.text(text, draft: draft))
+                    : sendLegacyText(text, draft: draft) != .refused
             case let .pointer(pointer):
                 // What the VMM's mouse cannot do is skipped: later input does not depend on it as on text before it.
                 guard let line = Self.legacyPointerLine(pointer) else { lost += 1; continue }

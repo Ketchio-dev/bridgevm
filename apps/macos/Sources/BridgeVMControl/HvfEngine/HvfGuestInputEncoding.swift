@@ -9,7 +9,7 @@ struct HvfGuestInputEncoding {
     init?(_ event: HvfOrderedInputQueue.Event) {
         let value: String
         switch event {
-        case let .text(text):
+        case let .text(text, _):
             guard !text.isEmpty, text.utf8.count <= 65_536 else { return nil }
             value = text
             verb = "TEXTINPUT"

@@ -82,6 +82,43 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
         }
     }
 
+    func testDeclinedMultilineDraftPastesOnceBeforeFollowingKey() throws {
+        let fixture = try HvfRuntimeKeyboardDraftFixture()
+        defer { fixture.remove() }
+        try fixture.withSession { session in
+            try fixture.negotiateOrderedInput(session, text: ["QUEUED_DISPATCH"])
+            let original = "첫째 줄\r\n둘째 줄 🙂"
+            var draft = original
+            var sent = 0
+            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session) { sent += 1 }, .acceptedForProcessing)
+            XCTAssertEqual(draft, original)
+            let command = try XCTUnwrap(fixture.commands().last)
+            let words = command.split(separator: " ")
+            XCTAssertEqual(words.first, "TEXTINPUT")
+            XCTAssertEqual(words.last, "S")
+            let id = try XCTUnwrap(words.dropFirst().first)
+            XCTAssertTrue(session.sendKey("enter"))
+            XCTAssertEqual(try fixture.commands().count, 2)
+
+            let label = "TEXTINPUT \(id)"
+            try fixture.appendLog("BVAGENT CMD \(label) exit=0\nBVTEXT_UNSUPPORTED \(id)\nBVAGENT END \(label)\n")
+            session.poll()
+            let commands = try fixture.commands()
+            XCTAssertEqual(commands.count, 3)
+            let request = try XCTUnwrap(session.legacyPaste.pending)
+            XCTAssertEqual(commands.last, request.command)
+            XCTAssertTrue(request.command.hasPrefix("CLIPPASTE "))
+            XCTAssertNil(try fixture.bytes(fixture.input))
+            XCTAssertEqual(sent, 0)
+
+            let receipt = "BVAGENT CMD \(request.marker) exit=0\n\(request.marker)\nBVAGENT END \(request.marker)\n"
+            try fixture.appendLog(receipt + receipt)
+            session.poll()
+            XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY ctrl+v\nKEY enter\n".utf8))
+            XCTAssertEqual(sent, 1)
+        }
+    }
+
     func testFullOrderedQueuePreservesRefusedDraftAndExistingCommandBytes() throws {
         let fixture = try HvfRuntimeKeyboardDraftFixture()
         defer { fixture.remove() }
