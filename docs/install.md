@@ -194,6 +194,17 @@ VHDX), with its UEFI variables if you have them. Import copies or converts the
 disk into the library and leaves the source unchanged; it needs no driver
 payload.
 
+For compressed QCOW2 in the v0.1.0 download, import a RAW copy. Builds from
+current source support QEMU's default deflate compression. Use RAW for
+zstd-compressed QCOW2 with either build. Export a RAW copy from the original
+VM app, or use `qemu-img` with a new output filename.
+
+```sh
+qemu-img convert -O raw "Windows.qcow2" "Windows.raw"
+```
+
+Choose `Windows.raw` in the import wizard.
+
 The General Preview bundles no Windows driver and accepts no graphics-driver
 package at creation; Windows-HVF creation shows that 3D injection is
 unavailable and proceeds without it. Once Windows runs, VM settings offer an
