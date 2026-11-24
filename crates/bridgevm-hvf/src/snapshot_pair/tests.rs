@@ -421,7 +421,7 @@ fn failed_clone_with_short_space_refuses_before_copy_and_preserves_pair() {
         );
         assert_eq!(
             result.unwrap_err().to_string(),
-            "No space left on device; free space on your Mac and try again."
+            "No space left on device. Free space on the destination volume and try again."
         );
         assert!(
             !destination.unwrap().parent().unwrap().exists(),
@@ -438,7 +438,7 @@ fn copy_out_of_space_has_one_plain_sentence() {
     let error = SnapshotError::from(std::io::Error::from_raw_os_error(libc::ENOSPC));
     assert_eq!(
         error.to_string(),
-        "No space left on device; free space on your Mac and try again."
+        "No space left on device. Free space on the destination volume and try again."
     );
 }
 
