@@ -572,7 +572,7 @@
         "docs/history/windows-hvf/t22-loader-admission-hosted-full-failure-20261003.md",
         "docs/windows-arm/evidence/a19-snapshot-interruption-20261123.md"
       ],
-      "known_defect": "A legacy managed pair moved before its storage identity was migrated can be refused. On an interrupted export replacement the CLI can require moving a named staging directory aside to preserve both generations. The latest development build passed ten Windows restore lanes. The designated release build still needs its ten lanes."
+      "known_defect": "A legacy managed pair moved before its storage identity was migrated can be refused. On an interrupted export replacement the CLI can require moving a named staging directory aside to preserve both generations. Build b8dcb32a passed ten Windows restore lanes. The designated release build still needs its ten lanes."
     },
     {
       "id": "A20",
