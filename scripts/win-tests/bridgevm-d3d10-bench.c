@@ -17,7 +17,9 @@
  * 1280x800 target with no swapchain: per frame it clears, then issues
  * BV_BENCH_DRAWS instanced draws (BV_BENCH_INSTANCES quads each) with a
  * per-draw constant-buffer update, flushes, and after the timed frames
- * fences GPU completion with a staging copy + map before reading the clock.
+ * fences GPU completion with an event query before reading the clock.
+ * A separate staging readback checks the result outside the timed window.
+ * BV_BENCH_READBACK=1 also checks a frame-specific pixel inside each timed frame.
  * The per-draw UpdateSubresource deliberately exercises the guest->host
  * buffer-upload path (the one the first-draw fix added a host flush to), so
  * regressions there show up directly in draws/s. */
@@ -42,9 +44,9 @@ static int fail_hr(const char *step, HRESULT hr) {
 
 static HRESULT compile_shader(d3d_compile_fn compile, const char *source,
                               const char *entry, const char *profile,
-                              ID3DBlob **shader) {
+                              const D3D_SHADER_MACRO *defines, ID3DBlob **shader) {
   ID3DBlob *errors = NULL;
-  HRESULT hr = compile(source, strlen(source), "bridgevm-bench", NULL, NULL,
+  HRESULT hr = compile(source, strlen(source), "bridgevm-bench", defines, NULL,
                        entry, profile, 0, 0, shader, &errors);
   if (errors) {
     printf("BV-D3D10-BENCH-COMPILER %.*s\n",
@@ -64,11 +66,38 @@ static int env_int(const char *name, int fallback, int lo, int hi) {
   return fallback;
 }
 
-int main(void) {
+/* Read the adapter from the device that executes the draws. A hardware
+ * request can still resolve to the Microsoft Basic Render Driver. */
+static HRESULT adapter_desc(ID3D10Device *device, DXGI_ADAPTER_DESC1 *desc) {
+  IDXGIDevice *dxgi = NULL;
+  IDXGIAdapter *adapter = NULL;
+  IDXGIAdapter1 *adapter1 = NULL;
+  HRESULT hr = ID3D10Device_QueryInterface(device, &IID_IDXGIDevice,
+                                           (void **)&dxgi);
+  if (SUCCEEDED(hr)) hr = IDXGIDevice_GetAdapter(dxgi, &adapter);
+  if (SUCCEEDED(hr))
+    hr = IDXGIAdapter_QueryInterface(adapter, &IID_IDXGIAdapter1,
+                                     (void **)&adapter1);
+  if (SUCCEEDED(hr)) hr = IDXGIAdapter1_GetDesc1(adapter1, desc);
+  if (adapter1) IDXGIAdapter1_Release(adapter1);
+  if (adapter) IDXGIAdapter_Release(adapter);
+  if (dxgi) IDXGIDevice_Release(dxgi);
+  return hr;
+}
+
+int main(int argc, char **argv) {
+  int warp = argc == 2 && strcmp(argv[1], "--warp") == 0;
+  if (argc != 1 && !warp) {
+    fprintf(stderr, "usage: bridgevm-d3d10-bench [--warp]\n");
+    return 2;
+  }
   const int frames = env_int("BV_BENCH_FRAMES", 300, 10, 100000);
   const int warmup = env_int("BV_BENCH_WARMUP", 30, 0, 10000);
   const int draws = env_int("BV_BENCH_DRAWS", 100, 1, 10000);
   const int instances = env_int("BV_BENCH_INSTANCES", 64, 1, 65536);
+  const int readback_each_frame = env_int("BV_BENCH_READBACK", 0, 0, 1);
+  const D3D_SHADER_MACRO alpha[] = {
+      {"FRAME_ALPHA", readback_each_frame ? "tint.a" : "1.0"}, {NULL, NULL}};
   const int width = 1280, height = 800;
 
   /* BV_BENCH_SHADER=legacy selects the shader pair that vrend fails to
@@ -92,7 +121,7 @@ int main(void) {
       "  float acc = 0.0;"
       "  [unroll] for (int i = 0; i < 16; ++i)"
       "    acc = acc * 1.0009 + sin(uv.x * (i + 1)) * cos(uv.y * (i + 2));"
-      "  return float4(saturate(tint.rgb * (0.5 + 0.5 * frac(acc))), 1.0);"
+      "  return float4(saturate(tint.rgb * (0.5 + 0.5 * frac(acc))), FRAME_ALPHA);"
       "}";
   static const char vs_source[] =
       "cbuffer Params : register(b0) { float4 xform; float4 tint; }"
@@ -109,7 +138,7 @@ int main(void) {
       "  float acc = 0.0;"
       "  [unroll] for (int i = 0; i < 8; ++i)"
       "    acc = acc * 1.0009 + sin(uv.x * (i + 1)) * cos(uv.y * (i + 2));"
-      "  return float4(saturate(tint.rgb * (0.5 + 0.5 * frac(acc))), 1.0);"
+      "  return float4(saturate(tint.rgb * (0.5 + 0.5 * frac(acc))), FRAME_ALPHA);"
       "}";
   static const struct vertex vertices[4] = {
       {{-1.0f, -1.0f}}, {{-1.0f, 1.0f}}, {{1.0f, -1.0f}}, {{1.0f, 1.0f}}};
@@ -128,9 +157,23 @@ int main(void) {
   D3D10_MAPPED_TEXTURE2D mapped;
   HRESULT hr;
 
-  hr = D3D10CreateDevice(NULL, D3D10_DRIVER_TYPE_HARDWARE, NULL, 0,
+  printf("BV-D3D10-BENCH-REQUEST driver=%s readback=%s\n", warp ? "warp" : "hardware",
+         readback_each_frame ? "each-frame" : "final-frame");
+  hr = D3D10CreateDevice(NULL, warp ? D3D10_DRIVER_TYPE_WARP : D3D10_DRIVER_TYPE_HARDWARE, NULL, 0,
                          D3D10_SDK_VERSION, &device);
   if (FAILED(hr)) return fail_hr("create-device", hr);
+
+  DXGI_ADAPTER_DESC1 desc;
+  hr = adapter_desc(device, &desc);
+  if (SUCCEEDED(hr)) {
+    /* The default Basic Render Driver on a 3D-off Windows guest can report flags=0. */
+    int software = (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) ||
+                   (desc.VendorId == 0x1414 && desc.DeviceId == 0x008c);
+    printf("BV-D3D10-BENCH-ADAPTER vendor=0x%04x device=0x%04x software=%d flags=0x%x desc=%ls\n",
+           desc.VendorId, desc.DeviceId, software, desc.Flags, desc.Description);
+  } else {
+    printf("BV-D3D10-BENCH-ADAPTER unknown hr=0x%08lx\n", (unsigned long)hr);
+  }
 
   compiler_module = LoadLibraryA("d3dcompiler_47.dll");
   if (!compiler_module)
@@ -167,10 +210,10 @@ int main(void) {
   const int legacy_shaders = strcmp(shader_mode, "legacy") == 0;
   if (legacy_shaders) puts("BV-D3D10-BENCH shader=legacy (vrend repro)");
   hr = compile_shader(compile, legacy_shaders ? vs_legacy_source : vs_source,
-                      "main", "vs_4_0", &vs_blob);
+                      "main", "vs_4_0", NULL, &vs_blob);
   if (FAILED(hr)) return fail_hr("compile-vs", hr);
   hr = compile_shader(compile, legacy_shaders ? ps_legacy_source : ps_source,
-                      "main", "ps_4_0", &ps_blob);
+                      "main", "ps_4_0", alpha, &ps_blob);
   if (FAILED(hr)) return fail_hr("compile-ps", hr);
   hr = ID3D10Device_CreateVertexShader(
       device, ID3D10Blob_GetBufferPointer(vs_blob),
@@ -265,6 +308,9 @@ int main(void) {
         QueryPerformanceCounter(&t0);
       }
       ID3D10Device_ClearRenderTargetView(device, view, black);
+      /* Keep the clear alpha (255) distinct from every expected frame marker. */
+      uint8_t marker = (uint8_t)(1 + frame % 250);
+      if (readback_each_frame) p.tint[3] = (float)marker / 255.0f;
       for (int d = 0; d < draws; ++d) {
         p.xform[0] = 0.15f * (float)(d % 7) - 0.45f;
         p.xform[1] = 0.15f * (float)(d % 5) - 0.30f;
@@ -277,10 +323,29 @@ int main(void) {
                                        NULL, &p, 0, 0);
         ID3D10Device_DrawInstanced(device, 4, (UINT)instances, 0, 0);
       }
-      ID3D10Device_Flush(device);
+      if (!readback_each_frame) {
+        ID3D10Device_Flush(device);
+        continue;
+      }
+
+      const D3D10_BOX center = {width / 2, height / 2, 0, width / 2 + 1,
+                                height / 2 + 1, 1};
+      ID3D10Device_CopySubresourceRegion(device, (ID3D10Resource *)staging, 0,
+                                         0, 0, 0, (ID3D10Resource *)target, 0, &center);
+      BV_GPU_FENCE("fence-frame-copy");
+      hr = ID3D10Texture2D_Map(staging, 0, D3D10_MAP_READ, 0, &mapped);
+      if (FAILED(hr)) return fail_hr("map-frame", hr);
+      uint8_t pixel[4];
+      memcpy(pixel, mapped.pData, sizeof(pixel));
+      ID3D10Texture2D_Unmap(staging, 0);
+      if (pixel[3] != marker || !(pixel[0] | pixel[1] | pixel[2])) {
+        printf("BV-D3D10-BENCH-FAIL frame=%d expected_alpha=%u pixel=%02x%02x%02x%02x\n",
+               frame, marker, pixel[0], pixel[1], pixel[2], pixel[3]);
+        return 1;
+      }
     }
 
-    /* Fence every timed frame, then copy out and fence the copy. */
+    /* Drain the timed batch, stop the clock, then check the output. */
     BV_GPU_FENCE("fence-frames");
     QueryPerformanceCounter(&t1);
     ID3D10Device_CopyResource(device, (ID3D10Resource *)staging,
@@ -298,6 +363,7 @@ int main(void) {
     double fps = (double)frames / elapsed;
     double dps = fps * (double)draws;
     hr = ID3D10Device_GetDeviceRemovedReason(device);
+    if (FAILED(hr)) return fail_hr("device-removed", hr);
     printf("BV-D3D10-BENCH frames=%d draws=%d instances=%d elapsed_ms=%.1f "
            "fps=%.2f draws_per_s=%.0f center=%02x%02x%02x%02x "
            "removed_reason=0x%08lx\n",

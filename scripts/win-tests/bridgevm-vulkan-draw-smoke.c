@@ -298,7 +298,14 @@ static void copy_image_to_buffer(VkCommandBuffer cmd, VkImage image,
                            buffer, 1, &region);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+  /* Let the Vulkan loader use its normal driver selection even if an older
+   * lab manifest remains on disk. Explicit loader environment settings still apply. */
+  const int loader_default = argc == 2 && strcmp(argv[1], "--loader-default") == 0;
+  if (argc != 1 && !loader_default) {
+    fprintf(stderr, "usage: bridgevm-vulkan-draw-smoke [--loader-default]\n");
+    return 2;
+  }
   /* Truncate the log so every run reads as one bounded record. */
   FILE *f = fopen(log_path(), "w");
   if (f) fclose(f);
@@ -306,7 +313,7 @@ int main(void) {
 #ifdef _WIN32
   /* Pin the Venus ICD so an unrelated software ICD cannot mask a package
    * failure, matching bvgpu-vulkan-probe.ps1. */
-  if (!getenv("VK_DRIVER_FILES")) {
+  if (!loader_default && !getenv("VK_DRIVER_FILES")) {
     DWORD attrs = GetFileAttributesA(DEFAULT_ICD_JSON);
     if (attrs != INVALID_FILE_ATTRIBUTES &&
         !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
