@@ -473,7 +473,10 @@ fn assert_kept_and_named(result: Result<SnapshotManifest, SnapshotError>, stagin
         named.contains(&true),
         "refusal names neither {staging:?} nor {canonical:?}: {text}"
     );
-    for wanted in ["holds a published manifest.json", "staging directory was left intact"] {
+    for wanted in [
+        "holds a published manifest.json",
+        "staging directory was left intact",
+    ] {
         assert!(text.contains(wanted), "refusal lacks {wanted:?}: {text}");
     }
 }

@@ -266,7 +266,8 @@ fn a_snapshot_with_apple_double_companions_is_refused_as_not_a_snapshot() {
     let Err(SnapshotError::Io(error)) = result else {
         panic!("expected a refusal, got {result:?}");
     };
-    let expected = "contains \"._disk.raw\", which is not a snapshot file. The destination was left intact";
+    let expected =
+        "contains \"._disk.raw\", which is not a snapshot file. The destination was left intact";
     assert!(error.to_string().contains(expected), "{error}");
 }
 
