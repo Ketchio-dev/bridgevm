@@ -47,15 +47,19 @@ for each feature.
 
 To send a draft to the focused Windows editor, open the running VM's **HVF
 Engine** view, enter the text in **Windows에 입력할 텍스트**, and select **입력**.
-The field keeps the draft while it waits for an input receipt or a clipboard
-paste. If the editor declines queued dispatch for a multiline draft, the app
-checks the text on the Windows clipboard and sends one paste. The legacy
-keyboard route also uses the clipboard for characters it cannot type. Either
-clipboard route replaces the previous Windows clipboard copy.
+Builds from current source keep the draft while the app waits for an input
+receipt or a clipboard paste. If the editor declines queued dispatch for a
+multiline draft, the app checks the text on the Windows clipboard and sends
+one paste. The legacy keyboard route also uses the clipboard for characters
+it cannot type. Either clipboard route replaces the previous Windows clipboard
+copy.
 
 Compatible Windows editors such as Notepad and WinForms RichTextBox use queued
-text dispatch. Some editors and older agents use per-character input. If a
-long passage loses characters on that path, use clipboard sharing and paste.
+text dispatch. Some editors and older agents use per-character input. For long
+passages in the v0.1.0 download or when per-character input loses text, enable
+**클립보드 공유** (Clipboard sharing) while the VM is stopped. After the Windows
+agent connects, copy the text on your Mac and press **Ctrl+V** in the Windows
+editor.
 The application readback, saved-file and Undo checks for WPF and Edge are
 recorded in [#665](https://github.com/Ketchio-dev/bridgevm/issues/665).
 
@@ -175,9 +179,13 @@ supported, with its files untouched, and can be deleted from there.
 Windows HVF uses a QEMU `virt`-compatible guest contract with
 [documented deviations](docs/machine-contract/qemu-virt-deviations.json).
 BridgeVM imports RAW, QCOW2 and VHDX disks with its bundled converter.
-The current source also reads QCOW2 images made with QEMU's default deflate
-compression. Convert zstd-compressed or encrypted images to RAW first, and
-merge disks that depend on a backing file in their original VM app.
+The v0.1.0 download imports uncompressed QCOW2. Builds from current source also
+read QEMU's default deflate compression. Use RAW for compressed QCOW2 in v0.1.0
+or for zstd-compressed QCOW2 in either build.
+[RAW conversion steps](docs/install.md#what-you-need-after-installing)
+
+Convert encrypted images to RAW first, and merge disks that depend on a backing
+file in their original VM app.
 
 ## More information
 
