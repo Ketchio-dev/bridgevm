@@ -31,7 +31,7 @@ done
 }
 [[ -f "$SOURCE" ]] || { echo 'catalog verifier source is missing' >&2; exit 1; }
 mkdir -p "$(dirname "$OUTPUT")"
-/usr/bin/clang -std=c11 -O2 -Wall -Wextra -Werror \
+/usr/bin/clang -std=c11 -O2 -Wall -Wextra -Werror -mmacosx-version-min=15.0 \
   -I"$OPENSSL_PREFIX/include" "$SOURCE" "$ROOT/apps/macos/Helpers/bridgevm-catalog-content-digest.c" \
   -L"$OPENSSL_PREFIX/lib" -lcrypto -o "$OUTPUT"
 [[ -x "$OUTPUT" && ! -L "$OUTPUT" ]] || { echo 'catalog verifier build failed' >&2; exit 1; }
