@@ -6,7 +6,7 @@ struct FirstRunView: View {
     @State private var displayName = "Windows 11"
     @State private var diskPath = ""; @State private var varsPath = ""; @State private var vtpmPath = ""
     @State private var vtpmPackagePath = ""; @State private var vtpmCodePath = ""
-    @State private var memGiB = 6
+    @State private var memGiB = CreateVMMemoryOptions.current.recommendedMiB / 1024
     @State private var cpuCount = 4
 
     private var showsImport: Bool {
