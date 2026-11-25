@@ -147,16 +147,22 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
         return HvfWindowsDriverPreflight.inspect(packageDirectory: directory).userMessage
     }
 
+    private var isoRecoveryHint: String {
+        let relativePath = WindowsHVFProductPolicy.installerISO
+        let location = request.isoPath == bundlePath + "/" + relativePath ? "VM 번들의 \(relativePath)" : "원래 위치"
+        return "VM 생성에 사용한 원본 ISO를 \(location)에 복원한 뒤 다시 시도하세요."
+    }
+
     func validationError() -> String? {
         if let blocker = VMLibrary.windowsHVFInjectionError(requested: request.injectViogpu3d) {
             return blocker
         }
         let fm = FileManager.default
         guard fm.isReadableFile(atPath: request.isoPath) else {
-            return "Windows 11 ARM64 ISO 파일을 찾을 수 없습니다."
+            return "Windows 설치 ISO를 읽을 수 없습니다. \(isoRecoveryHint)"
         }
         guard HvfWindowsInstallCacheIdentity.sha256File(request.isoPath) == sealedISOSHA256 else {
-            return "선택한 Windows ISO가 VM 생성 후 변경되었습니다."
+            return "Windows 설치 ISO가 VM 생성 때와 다릅니다. \(isoRecoveryHint)"
         }
         guard HvfWindowsInstallCacheIdentity.key(
                 isoSHA256: sealedISOSHA256,
