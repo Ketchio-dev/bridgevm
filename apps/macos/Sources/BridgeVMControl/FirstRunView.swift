@@ -30,7 +30,8 @@ struct FirstRunView: View {
                                 memGiB: $memGiB, cpuCount: $cpuCount)
                         }
                         FirstRunImportStatusView(library: library,
-                            canImport: FirstRunImportNameField.hasName(displayName) && !diskPath.isEmpty, importAction: runImport)
+                            canImport: FirstRunImportNameField.hasName(displayName) && !diskPath.isEmpty,
+                            recoveryIssue: recoveryIssue, importAction: runImport)
                     }
                     .padding(28)
                     .frame(maxWidth: 900, alignment: .leading)
@@ -47,13 +48,20 @@ struct FirstRunView: View {
         .navigationTitle(showsImport ? "VM 가져오기" : "시작하기")
     }
 
+    private var recoveryIssue: FirstRunImport.ValidationError? {
+        guard FirstRunImportVTPMValidation.trimmed(vtpmPath) != nil,
+              case .failure(let error) = FirstRunImportVTPMValidation.recoveryFiles(
+                package: vtpmPackagePath, code: vtpmCodePath) else { return nil }
+        return error
+    }
+
     private func runImport() {
         guard !library.firstRunImportBusy else { return }
+        let state = FirstRunImportVTPMValidation.trimmed(vtpmPath)
         let inputs = FirstRunImport.Inputs(
             displayName: displayName, diskPath: diskPath, varsPath: varsPath,
-            vtpmStateDir: vtpmPath.isEmpty ? nil : vtpmPath,
-            vtpmRecoveryPackagePath: vtpmPath.isEmpty || vtpmPackagePath.isEmpty ? nil : vtpmPackagePath,
-            vtpmRecoveryCodePath: vtpmPath.isEmpty || vtpmCodePath.isEmpty ? nil : vtpmCodePath,
+            vtpmStateDir: state, vtpmRecoveryPackagePath: state == nil ? nil : vtpmPackagePath,
+            vtpmRecoveryCodePath: state == nil ? nil : vtpmCodePath,
             memMiB: memGiB * 1024,
             cpuCount: cpuCount)
         Task { await library.importExistingHvfVM(inputs) }

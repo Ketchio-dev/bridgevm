@@ -16,17 +16,15 @@ enum FirstRunImportVTPMRecovery {
     static func materialize(_ inputs: FirstRunImport.Inputs, destinationStableVMID: String,
         destination: URL, fileManager: FileManager,
         keyStore: VTPMStateKeyManaging = KeychainVTPMStateKeyStore()) throws -> ImportedVTPMKeyCustody? {
-        guard let source = nonempty(inputs.vtpmStateDir) else { return nil }
-        guard let packagePath = nonempty(inputs.vtpmRecoveryPackagePath),
-              let codePath = nonempty(inputs.vtpmRecoveryCodePath) else {
-            throw FirstRunImport.ValidationError.vtpmRecoveryMissing("")
-        }
+        guard let source = FirstRunImportVTPMValidation.trimmed(inputs.vtpmStateDir) else { return nil }
+        let paths = try FirstRunImportVTPMValidation.recoveryFiles(
+            package: inputs.vtpmRecoveryPackagePath, code: inputs.vtpmRecoveryCodePath).get()
         for entry in try fileManager.contentsOfDirectory(atPath: source) where entry != ".lock" {
             try fileManager.copyItem(atPath: (source as NSString).appendingPathComponent(entry),
                 toPath: destination.appendingPathComponent(entry).path)
         }
-        let package = URL(fileURLWithPath: packagePath)
-        let codeURL = URL(fileURLWithPath: codePath)
+        let package = URL(fileURLWithPath: paths.package)
+        let codeURL = URL(fileURLWithPath: paths.code)
         try requireBoundedRegular(package, maximum: 1_048_576)
         try requireBoundedRegular(codeURL, maximum: 4_096, ownerOnly: true)
         let code = try String(contentsOf: codeURL, encoding: .utf8)
@@ -35,10 +33,6 @@ enum FirstRunImportVTPMRecovery {
             destinationStableVMID: destinationStableVMID, stateDirectory: destination,
             packageURL: package, recoveryCode: code)
         return ImportedVTPMKeyCustody(stableID: destinationStableVMID, keyStore: keyStore)
-    }
-    private static func nonempty(_ value: String?) -> String? {
-        let result = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return result.isEmpty ? nil : result
     }
 
     private static func requireBoundedRegular(_ url: URL, maximum: Int, ownerOnly: Bool = false) throws {
