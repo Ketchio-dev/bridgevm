@@ -3,6 +3,8 @@ import SwiftUI
 struct LibraryWorkspaceList: View {
     @ObservedObject var library: LibraryModel
     var createIdentifier = "bridgevm.library.overview.create"
+    var focusesSearchOnAppear = false
+    var didSelect: (() -> Void)?
     @State private var query = ""
 
     private var matchingVMs: [VMConfig] {
@@ -22,7 +24,7 @@ struct LibraryWorkspaceList: View {
             if library.vms.isEmpty {
                 emptyState
             } else {
-                LibrarySearchField(query: $query)
+                LibrarySearchField(query: $query, focusesOnAppear: focusesSearchOnAppear)
                     .padding(.horizontal, 22).padding(.vertical, 16)
                 let results = matchingVMs
                 ScrollView {
@@ -32,7 +34,8 @@ struct LibraryWorkspaceList: View {
                                 library: library,
                                 config: config,
                                 model: library.model(for: config),
-                                selected: library.selectedID == config.slug && !library.proMode
+                                selected: library.selectedID == config.slug && !library.proMode,
+                                didSelect: didSelect
                             )
                         }
                     }
@@ -66,6 +69,7 @@ struct LibraryWorkspaceList: View {
                 Button {
                     library.proMode = false
                     library.selectedID = LibraryModel.firstRunImportSelectionID
+                    didSelect?()
                 } label: {
                     Image(systemName: "square.and.arrow.down")
                 }
@@ -101,6 +105,7 @@ struct LibraryWorkspaceRow: View {
     let config: VMConfig
     @ObservedObject var model: ControlModel
     let selected: Bool
+    var didSelect: (() -> Void)?
     var runtimeState: LibraryDashboardRuntimeState? = nil
 
     var body: some View {
@@ -148,6 +153,7 @@ struct LibraryWorkspaceRow: View {
     private func select() {
         library.proMode = false
         library.selectedID = config.slug
+        didSelect?()
     }
 
     private var stateText: String {

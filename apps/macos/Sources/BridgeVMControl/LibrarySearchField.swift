@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LibrarySearchField: View {
     @Binding var query: String
+    var focusesOnAppear = false
     @State private var focusRequests = 0
 
     var body: some View {
@@ -16,6 +17,11 @@ struct LibrarySearchField: View {
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .accessibilityLabel("검색 지우기")
+            }
+        }
+        .onAppear {
+            if focusesOnAppear {
+                DispatchQueue.main.async { focusRequests += 1 }
             }
         }
         .frame(minHeight: 32)

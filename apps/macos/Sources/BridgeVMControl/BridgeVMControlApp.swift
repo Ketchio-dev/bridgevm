@@ -14,7 +14,7 @@ struct BridgeVMControlApp: App {
         #endif
         return WindowGroup("BridgeVM Control") {
             BridgeVMControlAppContent(library: library)
-                .frame(minWidth: 1100)
+                .frame(minWidth: 480, minHeight: 250)
                 .background(ControlLibraryWindow())
                 .appUIHostSceneObservation()
         }
