@@ -23,7 +23,6 @@ final class HvfWindowsSnapshotModel: ObservableObject {
     }
 
     nonisolated static let idleText = "VM을 종료한 뒤 디스크와 UEFI vars를 한 쌍으로 저장할 수 있습니다."
-    @Published private(set) var confirmation: Confirmation?
     @Published private(set) var busy = false
     @Published private(set) var status = idleText
     @Published private(set) var failed = false
@@ -31,32 +30,28 @@ final class HvfWindowsSnapshotModel: ObservableObject {
 
     func requestListRefresh() { listRevision += 1 }
 
-    /// Creates immediately; asks before restoring or deleting the selected entry.
     @discardableResult
-    func request(_ operation: Operation, snapshotDate: Date?, label: String? = nil, run: @escaping Run) -> Task<Void, Never>? {
+    func create(run: @escaping Run) -> Task<Void, Never>? {
+        start(.create, run)
+    }
+
+    func confirmation(for operation: Operation, snapshotDate: Date?, label: String? = nil, run: @escaping Run) -> Confirmation? {
         guard !busy else { return nil }
-        if operation != .create, let snapshotDate {
-            confirmation = Confirmation(operation: operation, label: label ?? Self.dateText(snapshotDate), run: run)
-            return nil
-        }
-        guard operation == .create else {
+        guard let snapshotDate else {
             status = Self.noSnapshot; failed = true
             return nil
         }
-        return start(operation, run)
+        return Confirmation(operation: operation, label: label ?? Self.dateText(snapshotDate), run: run)
     }
 
     /// The user agreed to `confirmation`, the one the dialog showed.
     @discardableResult
     func confirm(_ confirmation: Confirmation) -> Task<Void, Never>? {
-        self.confirmation = nil
-        guard !busy else { return nil }
-        return start(confirmation.operation, confirmation.run)
+        start(confirmation.operation, confirmation.run)
     }
 
-    func cancel() { confirmation = nil }
-
-    private func start(_ operation: Operation, _ run: @escaping Run) -> Task<Void, Never> {
+    private func start(_ operation: Operation, _ run: @escaping Run) -> Task<Void, Never>? {
+        guard !busy else { return nil }
         busy = true; failed = false
         status = operation == .create ? "스냅샷 생성 중…" : operation == .restore ? "스냅샷 복원 중…" : "스냅샷 삭제 중…"
         return Task {
