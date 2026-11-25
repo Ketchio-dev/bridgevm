@@ -10,34 +10,28 @@ struct LibraryDashboardRuntimeControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            LazyVGrid(columns: DashboardActionButton.columns, spacing: 10) {
-                DashboardActionButton(title: lifecycleBusy ? "작업 중" : (runtimeActive ? "창 열기" : "시작"),
-                    symbol: "play.fill", prominent: true, disabled: lifecycleBusy) {
-                    LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library)
-                }
+            LibraryDashboardActionBar(runtimeActive: runtimeActive, lifecycleBusy: lifecycleBusy,
+                open: { LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library) },
+                showAdvanced: showAdvanced, showSettings: showSettings, refresh: model.refresh,
+                clone: { library.requestWindowsClone(config) },
+                cloneDisabled: runtimeActive || library.cloningSlugs.contains(config.slug))
+            HStack(alignment: .top, spacing: 8) {
                 LibraryDashboardRuntimeStopControl(config: config, model: model, library: library,
                     session: session, runtimeActive: runtimeActive, lifecycleBusy: lifecycleBusy)
                 HvfRestartControl(session: session, identifier: "bridgevm.dashboard.runtime") { enabled, press in
-                    DashboardActionButton(title: "다시 시작", symbol: "arrow.counterclockwise",
-                        disabled: !enabled || lifecycleBusy, action: press)
-                    .accessibilityIdentifier("bridgevm.dashboard.runtime.restart")
+                    if runtimeActive {
+                        Button("다시 시작", systemImage: "arrow.counterclockwise", action: press)
+                            .disabled(!enabled || lifecycleBusy)
+                            .accessibilityIdentifier("bridgevm.dashboard.runtime.restart")
+                    }
                 }
                 HvfPauseControl(session: session, identifier: "bridgevm.dashboard.runtime") { enabled, paused, press in
-                    DashboardActionButton(title: HvfPauseControl<EmptyView>.title(paused: paused),
-                        symbol: HvfPauseControl<EmptyView>.symbol(paused: paused),
-                        disabled: !enabled || lifecycleBusy, action: press)
-                    .accessibilityIdentifier("bridgevm.dashboard.runtime.pause")
-                }
-                DashboardActionButton(title: "새로고침", symbol: "arrow.clockwise", action: model.refresh)
-                DashboardActionButton(title: "복제", symbol: "plus.square.on.square",
-                    disabled: runtimeActive || library.cloningSlugs.contains(config.slug)) {
-                    library.requestWindowsClone(config)
-                }
-                DashboardActionButton(title: "고급", symbol: "gearshape", action: showAdvanced)
-                    .accessibilityIdentifier("bridgevm.dashboard.advanced")
-                if let showSettings {
-                    DashboardActionButton(title: "설정", symbol: "slider.horizontal.3", action: showSettings)
-                        .accessibilityIdentifier("bridgevm.runtime.settings.open")
+                    if runtimeActive {
+                        Button(HvfPauseControl<EmptyView>.title(paused: paused),
+                               systemImage: HvfPauseControl<EmptyView>.symbol(paused: paused), action: press)
+                            .disabled(!enabled || lifecycleBusy)
+                            .accessibilityIdentifier("bridgevm.dashboard.runtime.pause")
+                    }
                 }
             }
             if let pending = session.runtimePendingWorkText {

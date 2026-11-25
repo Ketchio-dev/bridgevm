@@ -10,11 +10,14 @@ struct LibraryDashboardRuntimeStopControl: View {
 
     var body: some View {
         HvfForceStopControl(session: session, identifier: "bridgevm.dashboard.runtime") {
-            DashboardActionButton(title: "정지", symbol: "stop.fill", disabled: !presentation.isEnabled) {
-                LibraryDashboardPrimaryAction.stop(config: config, model: model, library: library)
+            if runtimeActive {
+                Button("정지", systemImage: "stop.fill") {
+                    LibraryDashboardPrimaryAction.stop(config: config, model: model, library: library)
+                }
+                .disabled(!presentation.isEnabled)
+                .help(presentation.guidance)
+                .accessibilityHint(presentation.guidance)
             }
-            .help(presentation.guidance)
-            .accessibilityHint(presentation.guidance)
         }
     }
 }
