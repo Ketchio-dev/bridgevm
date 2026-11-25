@@ -155,6 +155,8 @@ $savedProgramData = $env:ProgramData
 $env:ProgramData = Join-Path $base 'ProgramData'
 $startupDir = Join-Path $env:ProgramData 'Microsoft/Windows/Start Menu/Programs/Startup'
 $global:BvRegisterFails = 0
+# The in-process guard skips its own PID when stopping old agents.
+$oldAgentProcessId = $PID + 1
 
 # A fresh guest: the old agent's task, a locked root and nothing staged.
 function Reset-Guest([string]$Label) {
@@ -170,8 +172,9 @@ function Reset-Guest([string]$Label) {
     $global:BvTasks = @{ 'BridgeVM Guest Agent' = (New-FakeTask $oldArguments $global:BvOldTaskXml) }
     $global:BvCalls = @()
     $global:BvProcesses = @(
-        [pscustomobject]@{ ProcessId = 4100; CommandLine = 'powershell.exe -NoProfile -WindowStyle Hidden -File C:\bvagent.ps1' },
-        [pscustomobject]@{ ProcessId = 4200; CommandLine = 'powershell.exe -NoProfile -File C:\other.ps1' })
+        [pscustomobject]@{ ProcessId = $oldAgentProcessId; CommandLine = 'powershell.exe -NoProfile -WindowStyle Hidden -File C:\bvagent.ps1' },
+        [pscustomobject]@{ ProcessId = $PID; CommandLine = 'powershell.exe -NoProfile -File C:\bvagent.ps1' },
+        [pscustomobject]@{ ProcessId = ($PID + 2); CommandLine = 'powershell.exe -NoProfile -File C:\other.ps1' })
     $global:BvRunValue = $null
     $global:BvNow = [DateTime]::new(2026, 8, 1, 0, 0, 0)
     $global:BvSleeps = 0
@@ -312,7 +315,7 @@ try {
     $calls = $global:BvCalls -join ','
     Assert-True ($guard.Exit -eq 0) ('the guard failed: ' + $guard.Out)
     # The new definition goes in before the old agent stops, so a per-minute start in between runs the new agent.
-    Assert-True ($calls -ceq 'register BridgeVM Guest Agent,stop BridgeVM Guest Agent,kill 4100,start BridgeVM Guest Agent,unregister BridgeVM Guest Tools Update') ('guard calls: ' + $calls)
+    Assert-True ($calls -ceq "register BridgeVM Guest Agent,stop BridgeVM Guest Agent,kill $oldAgentProcessId,start BridgeVM Guest Agent,unregister BridgeVM Guest Tools Update") ('guard calls: ' + $calls)
     $switched = $global:BvTasks['BridgeVM Guest Agent'].Xml
     Assert-True ($switched -ceq (Get-GuestAgentTaskXml 'bridge' (Join-Path $version 'bvagent.ps1'))) 'the agent task is not the bundled bvagent-task.ps1 definition'
     Assert-True ($switched.Contains('<Interval>PT1M</Interval>')) 'the updated agent task has no per-minute start'
@@ -353,7 +356,7 @@ try {
     Assert-True (($global:BvNow - $start).TotalSeconds -ge 180) 'rolled back before 180 s'
     # The backed-up definition goes in before the stop, so no per-minute start of the new one follows it.
     $calls = $global:BvCalls -join ','
-    Assert-True ($calls -ceq 'register BridgeVM Guest Agent,stop BridgeVM Guest Agent,kill 4100,start BridgeVM Guest Agent,register BridgeVM Guest Agent,stop BridgeVM Guest Agent,start BridgeVM Guest Agent,unregister BridgeVM Guest Tools Update') ('rollback calls: ' + $calls)
+    Assert-True ($calls -ceq "register BridgeVM Guest Agent,stop BridgeVM Guest Agent,kill $oldAgentProcessId,start BridgeVM Guest Agent,register BridgeVM Guest Agent,stop BridgeVM Guest Agent,start BridgeVM Guest Agent,unregister BridgeVM Guest Tools Update") ('rollback calls: ' + $calls)
     Assert-RolledBack 'no Confirm' $version
 
     # A failed switch rolls back at once.
@@ -428,7 +431,7 @@ try {
     $global:BvConfirmAtSleep = 3
     [void](Invoke-Update $version @{ Guard = $true; Id = $id })
     $calls = $global:BvCalls -join ','
-    Assert-True ($calls -ceq 'register BridgeVM Guest Agent,stop BridgeVM Guest Agent,kill 4100,start BridgeVM Guest Agent,unregister BridgeVM Guest Tools Update') ('a task with the battery defaults was not re-registered: ' + $calls)
+    Assert-True ($calls -ceq "register BridgeVM Guest Agent,stop BridgeVM Guest Agent,kill $oldAgentProcessId,start BridgeVM Guest Agent,unregister BridgeVM Guest Tools Update") ('a task with the battery defaults was not re-registered: ' + $calls)
     Assert-True ($global:BvTasks['BridgeVM Guest Agent'].Xml -ceq (Get-GuestAgentTaskXml 'bridge' (Join-Path $version 'bvagent.ps1'))) 'the re-registered task is not the bundled definition'
     Assert-True ((Read-State 'result.txt') -ceq ('ok ' + $id)) 'the re-registered update did not complete'
     # The guard running again (a logon while the update is still pending)
