@@ -25,7 +25,6 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
         state.window = window
         let hostingController = NSHostingController(
             rootView: HvfLiveDisplaySurface(session: session, window: state)
-                .frame(minWidth: 640, minHeight: 400)
         )
         if #available(macOS 13.0, *) {
             hostingController.sizingOptions = []
