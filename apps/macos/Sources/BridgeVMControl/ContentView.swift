@@ -5,6 +5,7 @@ import AppKit
 struct ContentView: View {
     @ObservedObject var library: LibraryModel
     @State private var showPalette = false
+    @State private var welcomeMedia = FirstRunWindowMedia()
     var body: some View {
         #if DEBUG && BRIDGEVM_APP_UI_HOST
         let _ = AppUIHost.prepared?.lifecycle.record(.contentBodyEvaluated)
@@ -13,6 +14,10 @@ struct ContentView: View {
         .tint(LibraryAppearance.accent)
         .groupBoxStyle(LibraryGroupBoxStyle())
         .background(LibraryAppearance.canvas)
+        .environment(\.firstRunWindowMedia, $welcomeMedia)
+        .sheet(item: $welcomeMedia.installer) { media in
+            CreateVMSheet(library: library, isoPath: media.url.path)
+        }
         .sheet(isPresented: $library.showingCreate) {
             CreateVMSheet(library: library)
         }

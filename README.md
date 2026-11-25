@@ -74,8 +74,9 @@ complete [build and packaging guide](docs/install.md#build-the-current-source),
 because `cargo build` and `swift build` alone do not prepare a
 Windows-installation app.
 
-On first launch, choose the setup path that matches your Windows media. The
-button labels below are from current source builds.
+On first launch, choose the setup path that matches your Windows media.
+In current source builds, you can also drop a Windows installer ISO or an
+installed disk from Finder onto the matching card to open its setup form.
 
 | Starting point | What you provide |
 | --- | --- |
