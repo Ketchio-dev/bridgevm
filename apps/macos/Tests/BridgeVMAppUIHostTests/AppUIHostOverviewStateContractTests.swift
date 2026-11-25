@@ -19,10 +19,18 @@ final class AppUIHostOverviewStateContractTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: base) }
         let capture = try AppUIHostCapture(output: output)
         let library = AppUIHost.makeLibrary(root: root, capture: capture)
-        try XCTUnwrap(values(FirstRunWelcomeView.self, in: FirstRunView(library: library).body).first).importAction()
-        AppUIHost.seedOverview(library, root: root, work: capture.work)
+        let welcome = try XCTUnwrap(values(FirstRunWelcomeView.self, in: FirstRunView(library: library).body).first)
         let overview = overviewButtonContents(in: LibrarySidebar(library: library).body).flatMap { closures(in: $0) }
         XCTAssertEqual(overview.count, 1, "exactly one bridgevm.library.overview button action")
+        welcome.importAction()
+        overview.forEach { $0() }
+        XCTAssertNil(library.selectedID, "leave an unsubmitted import in an empty library")
+        welcome.importAction()
+        _ = library.firstRunImport.begin()
+        overview.forEach { $0() }
+        XCTAssertEqual(library.selectedID, LibraryModel.firstRunImportSelectionID, "keep import progress visible")
+        library.firstRunImport.returnToInputs()
+        AppUIHost.seedOverview(library, root: root, work: capture.work)
         overview.forEach { $0() }
         XCTAssertTrue(AppUIHostOverviewState.reached(library), "the scenario's state after import, seeding and overview")
         XCTAssertFalse(library.proMode || library.selectedID == nil, "the d1f17b2d wait (Pro mode, no selection) is unmet")

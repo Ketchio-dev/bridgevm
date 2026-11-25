@@ -3,7 +3,10 @@ struct LibraryDetailView: View {
     @ObservedObject var library: LibraryModel
 
     var body: some View {
-        if library.selectedID == LibraryModel.firstRunImportSelectionID {
+        // Keep the same view and its draft fields while switching between the
+        // two empty-library entry routes.
+        if library.selectedID == LibraryModel.firstRunImportSelectionID
+            || (library.selectedID == nil && library.vms.isEmpty && !library.proMode) {
             FirstRunView(library: library)
         } else if let record = library.selectedRetainedControl {
             RetainedControlDetailView(library: library, record: record)
