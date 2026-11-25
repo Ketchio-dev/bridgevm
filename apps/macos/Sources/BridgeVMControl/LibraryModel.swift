@@ -567,17 +567,17 @@ extension LibraryModel {
                 return [paletteControlNavigation(id: id, name: m.config.name, dismiss: dismiss)]
             }
             if !m.running && !m.lifecycleBusy {
-                c.append(.init(title: "시작: \(m.config.name)", subtitle: "VM 시작 / 창 열기", systemImage: "play.fill") { m.start(); dismiss() })
+                c.append(.init(id: "start.\(id)", title: "시작: \(m.config.name)", subtitle: "VM 시작 / 창 열기", systemImage: "play.fill") { m.start(); dismiss() })
             } else if m.running && !m.lifecycleBusy {
-                c.append(.init(title: "정지: \(m.config.name)", subtitle: "VM 정지", systemImage: "stop.fill") { m.stop(); dismiss() })
+                c.append(.init(id: "stop.\(id)", title: "정지: \(m.config.name)", subtitle: "VM 정지", systemImage: "stop.fill") { m.stop(); dismiss() })
             }
-            c.append(.init(title: "새로고침: \(m.config.name)", subtitle: "상태 갱신", systemImage: "arrow.clockwise") { m.refresh(); dismiss() })
+            c.append(.init(id: "refresh.\(id)", title: "새로고침: \(m.config.name)", subtitle: "상태 갱신", systemImage: "arrow.clockwise") { m.refresh(); dismiss() })
         }
         return c
     }
 
     private func paletteControlNavigation(id: String, name: String, dismiss: @escaping () -> Void) -> PaletteCommand {
-        .init(title: "VM 제어 화면 열기: \(name)", subtitle: "시작·중지와 설치 상태 확인", systemImage: "desktopcomputer") {
+        .init(id: "open.\(id)", title: "VM 제어 화면 열기: \(name)", subtitle: "시작·중지와 설치 상태 확인", systemImage: "desktopcomputer") {
             self.selectedID = id
             self.proMode = false
             dismiss()

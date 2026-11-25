@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import XCTest
 @testable import BridgeVMControl
 
@@ -22,6 +24,41 @@ final class LibraryDashboardNavigationTests: XCTestCase {
         XCTAssertEqual(restored.config, model.config)
         XCTAssertFalse(model.running)
         XCTAssertFalse(model.lifecycleBusy)
+    }
+
+    func testSearchFieldReturnOpensTheOnlyMatchingVM() async throws {
+        let f = try LibraryDashboardNavigationFixture()
+        defer { f.clean() }
+        f.library.selectedID = nil
+        let host = NSHostingView(rootView: CommandPaletteView(library: f.library))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 400),
+            styleMask: [.titled], backing: .buffered, defer: true)
+        window.contentView = host
+        defer { window.contentView = nil }
+        await Task.yield()
+        host.layoutSubtreeIfNeeded()
+
+        func editableField(in view: NSView) -> NSTextField? {
+            if let field = view as? NSTextField, field.isEditable { return field }
+            return view.subviews.lazy.compactMap { editableField(in: $0) }.first
+        }
+        let field = try XCTUnwrap(editableField(in: host))
+        XCTAssertTrue(window.makeFirstResponder(field))
+        let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+            timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "\r",
+            charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+
+        // A blank search lists several actions, including Create.
+        window.sendEvent(enter)
+        XCTAssertNil(f.library.selectedID)
+        XCTAssertFalse(f.library.showingCreate)
+        XCTAssertTrue(window.makeFirstResponder(field))
+        let searchEditor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+        searchEditor.insertText("Owned", replacementRange: NSRange(location: 0, length: 0))
+        await Task.yield()
+        host.layoutSubtreeIfNeeded()
+        window.sendEvent(enter)
+        XCTAssertEqual(f.library.selectedID, "owned")
     }
 
     func testExplicitImportSelectionKeepsFirstRunAheadOfFleet() throws {
