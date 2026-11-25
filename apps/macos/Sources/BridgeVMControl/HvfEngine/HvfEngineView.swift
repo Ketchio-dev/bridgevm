@@ -35,6 +35,7 @@ struct HvfEngineView: View {
                 header
                 statusCard
                 screenshotCard
+                keyboardCard
                 readinessCard
                 if session.config.vtpmStateDir != nil { vtpmLifecycleCard }
                 configCard
@@ -119,12 +120,24 @@ struct HvfEngineView: View {
                 if session.config.allowsExperimental3D {
                     Toggle("Graphics Lab 3D", isOn: $virtioGpu3d)
                 }
+            }
+            .padding(6)
+        } label: {
+            Label("부팅 구성", systemImage: "gearshape.2")
+        }
+    }
+
+    private var keyboardCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Windows 창에서 입력할 위치를 먼저 선택하세요.")
+                    .font(.callout).foregroundStyle(.secondary)
                 HvfRuntimeKeyboardInput(session: session, draft: $keyboardInput)
                 HvfRuntimeSpecialKeys(session: session)
             }
             .padding(6)
         } label: {
-            Label("부팅 구성", systemImage: "gearshape.2")
+            Label("Windows 키보드", systemImage: "keyboard")
         }
     }
 
