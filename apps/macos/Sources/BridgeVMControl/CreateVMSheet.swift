@@ -4,7 +4,6 @@ import AppKit
 import UniformTypeIdentifiers
 #endif
 
-// MARK: - Create sheet (gallery)
 struct CreateVMSheet: View {
     @ObservedObject var library: LibraryModel
     @Environment(\.dismiss) var dismiss
@@ -46,7 +45,7 @@ struct CreateVMSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("새 VM 만들기").font(.title2.bold()).padding(20)
+            Text("Windows VM 만들기").font(.title2.bold()).accessibilityAddTraits(.isHeader).padding(20)
             Divider()
             ScrollView { fields.padding(20).disabled(working || !creationState.permitsCreation) }
             Divider()
@@ -62,13 +61,6 @@ struct CreateVMSheet: View {
 
     private var fields: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // 운영체제: Windows만 지원합니다.
-            HStack(spacing: 12) {
-                CreateVMChoiceTile(title: "Windows", icon: "pc", selected: true) {}
-                    .accessibilityIdentifier("bridgevm.create.os.windows")
-            }
-
-            // 설치 방식
             HStack(spacing: 8) {
                 CreateVMMethodChoiceTile(title: "ISO에서 설치", selected: mode == .windowsHVFInstall) {
                     mode = .windowsHVFInstall; autofillWin11()
@@ -77,6 +69,19 @@ struct CreateVMSheet: View {
                 CreateVMMethodChoiceTile(title: "설치된 디스크 가져오기", selected: mode == .windowsHVF) {
                     mode = .windowsHVF; isoPath = ""
                 }
+            }
+
+            HStack {
+                Text("이름").frame(width: 64, alignment: .leading)
+                TextField("Windows 11", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("가상 머신 이름")
+                    .accessibilityIdentifier("bridgevm.create.name")
+            }
+            if !name.isEmpty, VMLibrary.normalizedVMName(name) == nil {
+                Text("이름은 제어문자 없이 1~\(VMLibrary.maximumVMNameCharacters)자이며 파일 ID 제한 안이어야 합니다.")
+                    .font(.caption)
+                    .foregroundColor(.red)
             }
 
             if mode == .windowsHVF {
@@ -106,35 +111,23 @@ struct CreateVMSheet: View {
                     fetchDrivers: fetchGuestDrivers)
             }
 
-            HStack {
-                Text("이름").frame(width: 64, alignment: .leading)
-                TextField("Windows 11", text: $name)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier("bridgevm.create.name")
-            }
-            if !name.isEmpty, VMLibrary.normalizedVMName(name) == nil {
-                Text("이름은 제어문자 없이 1~\(VMLibrary.maximumVMNameCharacters)자이며 파일 ID 제한 안이어야 합니다.")
-                    .font(.caption)
-                    .foregroundColor(.red)
-            }
-
-            HStack {
-                Text("저장 위치").frame(width: 64, alignment: .leading)
-                Button("폴더 선택…") { pickStorage() }
-                Text(storageDir?.path ?? "기본 (라이브러리)")
-                    .font(.caption).foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
-                if storageDir != nil {
-                    Button { storageDir = nil } label: { Image(systemName: "xmark.circle.fill") }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("저장 위치를 기본 라이브러리로 재설정")
-                }
-            }
-
-            CreateVMResolutionRow(usesGuestScreen: true,
-                                  selection: $resIndex, resolutions: resolutions)
-
             DisclosureGroup("고급 설정", isExpanded: $showAdvanced) {
                 VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("저장 위치").frame(width: 64, alignment: .leading)
+                        Button("폴더 선택…") { pickStorage() }
+                        Text(storageDir?.path ?? "기본 (라이브러리)")
+                            .font(.caption).foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
+                        if storageDir != nil {
+                            Button { storageDir = nil } label: { Image(systemName: "xmark.circle.fill") }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("저장 위치를 기본 라이브러리로 재설정")
+                        }
+                    }
+
+                    CreateVMResolutionRow(usesGuestScreen: true,
+                                          selection: $resIndex, resolutions: resolutions)
+
                     HStack {
                         Text("메모리").frame(width: 64, alignment: .leading)
                         Picker("메모리", selection: $ramMiB) {
@@ -164,8 +157,6 @@ struct CreateVMSheet: View {
                 .padding(.top, 8)
             }
             .font(.callout)
-
-
         }
     }
 
