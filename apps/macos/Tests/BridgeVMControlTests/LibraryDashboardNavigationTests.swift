@@ -29,6 +29,12 @@ final class LibraryDashboardNavigationTests: XCTestCase {
     func testSearchFieldReturnOpensTheOnlyMatchingVM() async throws {
         let f = try LibraryDashboardNavigationFixture()
         defer { f.clean() }
+        var duplicate = try XCTUnwrap(f.library.vms.first)
+        duplicate.name = "서울"
+        duplicate.id = "seoul-a"
+        f.library.vms.append(duplicate)
+        duplicate.id = "seoul-b"
+        f.library.vms.append(duplicate)
         f.library.selectedID = nil
         let host = NSHostingView(rootView: CommandPaletteView(library: f.library))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 400),
@@ -57,6 +63,27 @@ final class LibraryDashboardNavigationTests: XCTestCase {
         searchEditor.insertText("Owned", replacementRange: NSRange(location: 0, length: 0))
         await Task.yield()
         host.layoutSubtreeIfNeeded()
+        searchEditor.setMarkedText("Owned", selectedRange: NSRange(location: 5, length: 0),
+                                   replacementRange: NSRange(location: 0, length: 5))
+        XCTAssertTrue(searchEditor.hasMarkedText())
+        window.sendEvent(enter)
+        XCTAssertNil(f.library.selectedID, "Return while composing belongs to the input method")
+
+        searchEditor.insertText("서울", replacementRange: NSRange(location: 0, length: 5))
+        await Task.yield()
+        window.sendEvent(enter)
+        XCTAssertNil(f.library.selectedID)
+        let down = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.numericPad, .function],
+            timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "\u{f701}",
+            charactersIgnoringModifiers: "\u{f701}", isARepeat: false, keyCode: 125))
+        window.sendEvent(down)
+        window.sendEvent(down)
+        window.sendEvent(enter)
+        XCTAssertEqual(f.library.selectedID, "seoul-b")
+
+        f.library.selectedID = nil
+        searchEditor.insertText("Owned", replacementRange: NSRange(location: 0, length: 2))
+        await Task.yield()
         window.sendEvent(enter)
         XCTAssertEqual(f.library.selectedID, "owned")
     }
