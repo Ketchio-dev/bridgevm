@@ -43,6 +43,12 @@ struct LibrarySidebar: View {
 
     private func showOverview() {
         library.proMode = false
-        if library.selectedID == nil { library.selectedID = library.vms.first?.slug }
+        if library.vms.isEmpty, library.selectedID == LibraryModel.firstRunImportSelectionID,
+           !library.firstRunImportBusy, library.firstRunImportError == nil,
+           library.firstRunImport.publishedConfig == nil {
+            library.selectedID = nil
+        } else if library.selectedID == nil {
+            library.selectedID = library.vms.first?.slug
+        }
     }
 }
