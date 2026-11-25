@@ -119,6 +119,40 @@ final class HvfRuntimeKeyboardDraftTests: XCTestCase {
         }
     }
 
+    func testMultilineDraftUsesOnePasteWhenAgentLacksQueuedDispatch() throws {
+        let fixture = try HvfRuntimeKeyboardDraftFixture()
+        defer { fixture.remove() }
+        try fixture.withSession { session in
+            try fixture.negotiateOrderedInput(session)
+            XCTAssertTrue(session.sendKey("enter"))
+            let beforeDraft = try fixture.commands()
+            let earlierKey = try XCTUnwrap(beforeDraft.last)
+            let id = try XCTUnwrap(earlierKey.split(separator: " ").dropFirst().first)
+            var draft = "첫 줄\r\n둘째 줄 🙂"
+            let base64 = Data(draft.utf8).base64EncodedString()
+            var sent = 0
+            XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session) { sent += 1 }, .acceptedForProcessing)
+            XCTAssertTrue(session.sendKey("tab"))
+            XCTAssertEqual(try fixture.commands(), beforeDraft)
+
+            let label = "KEYINPUT \(id)"
+            try fixture.appendLog("BVAGENT CMD \(label) exit=0\nBVINPUT_INSERTED \(id) 2\nBVAGENT END \(label)\n")
+            session.poll()
+            let request = try XCTUnwrap(session.legacyPaste.pending)
+            XCTAssertTrue(request.command.hasPrefix("CLIPPASTE "))
+            XCTAssertTrue(request.command.hasSuffix(" " + base64))
+            XCTAssertEqual(try fixture.commands(), beforeDraft + [request.command])
+            XCTAssertNil(try fixture.bytes(fixture.input))
+            XCTAssertEqual(sent, 0)
+
+            let receipt = "BVAGENT CMD \(request.marker) exit=0\n\(request.marker)\nBVAGENT END \(request.marker)\n"
+            try fixture.appendLog(receipt + receipt)
+            session.poll()
+            XCTAssertEqual(try fixture.bytes(fixture.input), Data("KEY ctrl+v\nKEY tab\n".utf8))
+            XCTAssertEqual(sent, 1)
+        }
+    }
+
     func testFullOrderedQueuePreservesRefusedDraftAndExistingCommandBytes() throws {
         let fixture = try HvfRuntimeKeyboardDraftFixture()
         defer { fixture.remove() }

@@ -84,8 +84,8 @@ final class HvfSessionInputDriver {
         let replay = router.takeLegacyReplay()
         if !replay.isEmpty {
             if !fallbackReported {
-                if case .cancelled(.unsupportedEditor, _) = update {
-                    onDiagnostic?("the focused editor declined queued text: using the Windows clipboard")
+                if case .cancelled(.clipboardRequired, _) = update {
+                    onDiagnostic?("queued editor dispatch unavailable: using the Windows clipboard for multiline input")
                 } else {
                     onDiagnostic?("ordered input fell back to the VMM keyboard and mouse: Windows inserted none of "
                                   + "\(replay.count) events (a lock, sign-in or UAC screen)")

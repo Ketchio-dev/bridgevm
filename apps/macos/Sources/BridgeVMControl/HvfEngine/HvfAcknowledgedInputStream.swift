@@ -25,6 +25,8 @@ struct HvfAcknowledgedInputStream {
         }) { return cancel(.sessionChanged) }
         switch queue.poll(now: now) {
         case let .send(ticket):
+            // Older agents accept key packets but may lose multiline formatting in the target editor.
+            if !queuedTextDispatch, ticket.event.draft?.multiline == true { return cancel(.clipboardRequired) }
             guard let request = HvfUnicodeInputRequest(event: ticket.event, now: now, id: ticket.id, queuedTextDispatch: queuedTextDispatch) else {
                 assertionFailure("enqueue admits only encodable events")
                 return cancel(.transportFailed)
@@ -53,7 +55,7 @@ struct HvfAcknowledgedInputStream {
                 return .inserted(active.ticket.id, draft: active.ticket.event.draft)
             case .unsupported:
                 guard active.request.queuedTextDispatch else { return cancel(.transportFailed) }
-                if active.ticket.event.draft?.multiline == true { return cancel(.unsupportedEditor) }
+                if active.ticket.event.draft?.multiline == true { return cancel(.clipboardRequired) }
                 guard let fallback = HvfUnicodeInputRequest(event: active.ticket.event, now: now) else { return cancel(.transportFailed) }
                 active.request = fallback
                 pending = active

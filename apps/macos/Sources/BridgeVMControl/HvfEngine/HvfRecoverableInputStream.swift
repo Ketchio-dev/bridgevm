@@ -7,7 +7,7 @@ struct HvfRecoverableInputStream {
     private var queued: [HvfOrderedInputQueue.Event] = [] // The stream's unsent events, a replaced move included.
     private var active: HvfOrderedInputQueue.Event?
     private var heldBeforeActive = HvfPointerHeldState()
-    /// A `notInserted` cancellation's events, the awaited one first, in their original order (`takeNotInserted`).
+    /// Events that did not reach Windows, in their original order (`takeNotInserted`).
     private var notInserted: [HvfOrderedInputQueue.Event] = []
     var isRecovering: Bool { cleanup.recovering && !cleanup.blocked }
     var state: HvfNegotiatedInputStream.State { cleanup.blocked ? .failed : (isRecovering ? .negotiating : stream.state) }
@@ -52,9 +52,12 @@ struct HvfRecoverableInputStream {
             active = nil
         case let .cancelled(reason, _):
             if reason.permitsLegacyRetry {
-                // Nothing of the awaited event reached Windows, so it pressed nothing either.
-                notInserted += (active.map { [$0] } ?? []) + queued
-                cleanup.held = heldBeforeActive
+                // An active request that reached Windows in part would not be eligible for retry.
+                if let active {
+                    notInserted.append(active)
+                    cleanup.held = heldBeforeActive
+                }
+                notInserted += queued
             }
             queued.removeAll()
             active = nil
