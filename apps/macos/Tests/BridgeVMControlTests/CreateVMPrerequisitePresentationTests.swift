@@ -4,6 +4,14 @@ import XCTest
 
 @MainActor
 final class CreateVMPrerequisitePresentationTests: XCTestCase {
+    func testDefaultMemoryIsAnAvailableChoiceOnEightGiBAndLargerMacs() {
+        for (hostGiB, expectedMiB) in [(8, 4096), (16, 6144)] {
+            let memory = CreateVMMemoryOptions(hostBytes: UInt64(hostGiB) << 30)
+            XCTAssertEqual(memory.recommendedMiB, expectedMiB)
+            XCTAssertTrue(memory.choicesMiB.contains(memory.recommendedMiB))
+        }
+    }
+
     func testWindowsModesStartWithoutCreationWarning() throws {
         try withLibrary { library in
             for mode: CreateVMSheet.Mode in [.windowsHVF, .windowsHVFInstall] {

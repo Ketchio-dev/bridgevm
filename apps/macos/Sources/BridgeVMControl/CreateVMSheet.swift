@@ -22,7 +22,7 @@ struct CreateVMSheet: View {
     @State var storageDir: URL? = nil
     @State var resIndex = 1
     @State private var showAdvanced = false
-    @State var ramMiB = 6144
+    @State var ramMiB = CreateVMMemoryOptions.current.recommendedMiB
     @State var cpuCount = 4
     var working: Bool { library.preparingNewVM }
     @State var error = ""
@@ -32,12 +32,6 @@ struct CreateVMSheet: View {
     @State var conversion: (format: HvfImportedDiskFormat, percent: Int)?
     let resolutions = [(1280, 800), (1440, 900), (1920, 1080), (2560, 1440)]
     enum Mode: Equatable { case windowsHVF, windowsHVFInstall }
-    /// Memory choices in MiB, capped just under host physical RAM.
-    private var ramOptions: [Int] {
-        let hostMiB = Int(library.hostMemGiB * 1024)
-        let ceiling = max(4096, hostMiB - 4096) // leave headroom for macOS
-        return [2048, 4096, 6144, 8192, 12288, 16384, 24576, 32768].filter { $0 <= ceiling }
-    }
     private var maxCPU: Int { max(1, library.hostCPU - 1) }
     /// Modes that allocate a brand-new blank disk the user can size.
     private var createsFreshDisk: Bool { mode == .windowsHVFInstall }
@@ -138,7 +132,7 @@ struct CreateVMSheet: View {
                     HStack {
                         Text("메모리").frame(width: 64, alignment: .leading)
                         Picker("메모리", selection: $ramMiB) {
-                            ForEach(ramOptions, id: \.self) { Text("\($0 / 1024) GiB").tag($0) }
+                            ForEach(CreateVMMemoryOptions.current.choicesMiB, id: \.self) { Text("\($0 / 1024) GiB").tag($0) }
                         }.labelsHidden().frame(width: 150)
                         Spacer()
                     }
