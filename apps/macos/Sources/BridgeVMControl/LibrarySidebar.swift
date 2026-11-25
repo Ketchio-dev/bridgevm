@@ -7,7 +7,7 @@ struct LibrarySidebar: View {
     var body: some View {
         VStack(spacing: 0) {
             LibraryBrand()
-            Button(action: showOverview) {
+            Button { showOverview(in: presentation) } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "desktopcomputer").font(.title3)
                     Text("가상 머신").font(.body.weight(.medium))
@@ -32,7 +32,7 @@ struct LibrarySidebar: View {
         }
         .toolbar {
             ToolbarItem {
-                Button(action: showOverview) { Label("모든 VM", systemImage: "square.grid.2x2") }
+                Button { showOverview(in: presentation) } label: { Label("모든 VM", systemImage: "square.grid.2x2") }
                     .help("전체 VM 보기")
             }
             ToolbarItem {
@@ -42,7 +42,11 @@ struct LibrarySidebar: View {
         }
     }
 
-    private func showOverview() {
+    func showOverview(in presentation: Binding<LibraryWindowPresentation>?) {
+        if let presentation, presentation.wrappedValue.showsImportDraft {
+            presentation.wrappedValue.showsImportDraft = false
+            return
+        }
         library.proMode = false
         if library.vms.isEmpty, library.selectedID == LibraryModel.firstRunImportSelectionID,
            !library.firstRunImportBusy, library.firstRunImportError == nil,

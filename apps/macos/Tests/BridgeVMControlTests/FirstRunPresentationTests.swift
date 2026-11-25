@@ -42,15 +42,16 @@ final class FirstRunPresentationTests: XCTestCase {
         }
     }
 
-    func testWelcomeImportActionLeavesProModeAndSelectsImportFields() throws {
+    func testWelcomeImportOpensAnUnsubmittedWindowDraft() throws {
         try withLibrary { library in
-            library.proMode = true
-            let welcome = try XCTUnwrap(values(FirstRunWelcomeView.self,
-                in: FirstRunView(library: library).body).first)
+            var presentation = LibraryWindowPresentation()
+            let binding = Binding(get: { presentation }, set: { presentation = $0 })
+            let welcome = FirstRunView(library: library).welcome(in: binding, diskPath: .constant(""))
             welcome.importAction()
-            XCTAssertEqual(library.selectedID, LibraryModel.firstRunImportSelectionID)
-            XCTAssertFalse(library.proMode)
-            assertImportPresentation(library, editable: true)
+            XCTAssertTrue(presentation.showsImportDraft)
+            XCTAssertNil(library.selectedID)
+            XCTAssertFalse(library.firstRunImportBusy)
+            XCTAssertNil(presentation.sheet)
         }
     }
 

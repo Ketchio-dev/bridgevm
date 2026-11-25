@@ -56,7 +56,7 @@ enum AppUIHostDriverScenario {
         let importing = deadline()
         try await client.perform(.pressImport, phase: .importing, deadline: importing)
         try await AppUIHostDriverClient.wait("import form", deadline: importing) {
-            guard host.library.selectedID == LibraryModel.firstRunImportSelectionID else { return false }
+            guard host.library.selectedID == nil else { return false }
             return try await client.perform(.importForm, phase: .importing, deadline: importing)?.nameVisible == true
         }
         try capture.capture(content, name: "import-form")

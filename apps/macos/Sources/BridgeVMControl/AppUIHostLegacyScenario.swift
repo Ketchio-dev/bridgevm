@@ -34,7 +34,7 @@ enum AppUIHostLegacyScenario {
         try capture.action("create_cancelled")
         try AppUIHostAccessibility.press("bridgevm.first-run.import", in: content)
         try await AppUIHostAccessibility.wait("import form") {
-            try host.library.selectedID == LibraryModel.firstRunImportSelectionID
+            try host.library.selectedID == nil
                 && AppUIHostAccessibility.find("bridgevm.first-run.name", in: content) != nil
         }
         try capture.capture(content, name: "import-form")
