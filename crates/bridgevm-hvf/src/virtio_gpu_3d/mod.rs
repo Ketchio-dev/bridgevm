@@ -20,6 +20,7 @@ mod scanout_present;
 mod scanout_types;
 mod submit_3d;
 pub(crate) mod trace;
+mod venus_work_wake;
 
 pub use backend::*;
 pub use blob_resource::*;
@@ -29,6 +30,7 @@ pub(crate) use local_resource_copy::*;
 pub use protocol::*;
 pub use scanout_types::*;
 pub(crate) use trace::*;
+pub use venus_work_wake::VenusWorkWake;
 
 // The mocks are test-only; gating the module keeps the per-item
 // #[cfg(test)] attributes honest and keeps the re-export out of the lib build.

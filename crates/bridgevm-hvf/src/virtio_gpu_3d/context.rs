@@ -4,7 +4,7 @@ use super::*;
 
 impl VirtioGpu3d {
     pub fn has_live_context(&self, ctx_id: u32) -> bool {
-        self.live_contexts.contains(&ctx_id)
+        self.live_contexts.contains_key(&ctx_id)
     }
 
     pub fn ctx_has_resource(&self, ctx_id: u32, resource_id: u32) -> bool {
@@ -20,7 +20,7 @@ impl VirtioGpu3d {
         };
         if request.len() < CTX_CREATE_LEN
             || hdr.ctx_id == 0
-            || self.live_contexts.contains(&hdr.ctx_id)
+            || self.live_contexts.contains_key(&hdr.ctx_id)
         {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
@@ -32,13 +32,16 @@ impl VirtioGpu3d {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, Some(hdr));
             return;
         }
-        self.live_contexts.insert(hdr.ctx_id);
+        self.live_contexts.insert(
+            hdr.ctx_id,
+            context_init & VIRTIO_GPU_CONTEXT_INIT_CAPSET_MASK,
+        );
         self.ctx_resources.entry(hdr.ctx_id).or_default();
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
     }
 
     pub(crate) fn ctx_destroy_into(&mut self, hdr: CtrlHdr3d, out: &mut Vec<u8>) {
-        if !self.live_contexts.remove(&hdr.ctx_id) {
+        if self.live_contexts.remove(&hdr.ctx_id).is_none() {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         }

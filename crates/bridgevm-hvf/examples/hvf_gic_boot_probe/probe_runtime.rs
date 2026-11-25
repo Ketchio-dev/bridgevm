@@ -28,6 +28,9 @@ mod service_wake_interval;
 mod system_reset_failure;
 #[path = "probe_runtime/vtimer_recovery.rs"]
 pub(crate) mod vtimer_recovery;
+#[cfg(feature = "venus")]
+#[path = "probe_runtime/venus_work_wake.rs"]
+mod venus_work_wake;
 use super::*;
 use crate::agent_console::ServiceThread;
 use crate::boot_media_setup::attach_boot_media;
@@ -167,7 +170,14 @@ unsafe fn run_vm(
     .unwrap_or_else(|error| panic!("restore VM checkpoint: {error}"));
     install_gpu_shm_port(&mut platform, shm_page_size);
     configure_gpu_unlocked_copy(&mut platform);
+    #[cfg(feature = "venus")]
+    let venus_work_wake = (matches!(shm_page_size, GpuShmPageSize::KiB4)
+        && env_flag("BRIDGEVM_VIRTIO_GPU_DIRECT_RENDERER"))
+    .then(|| venus_work_wake::Worker::start(vcpu, &mut platform))
+    .flatten();
     let vm = Vm {
+        #[cfg(feature = "venus")]
+        venus_work_wake,
         vcpu,
         exit,
         ram,
@@ -183,6 +193,8 @@ unsafe fn run_vm(
 /// vCPU0, guest RAM and the platform as `run_vm` made them, moved into the
 /// boot loop (`run_vm` keeps the HVF guards and the RAM backing).
 struct Vm {
+    #[cfg(feature = "venus")]
+    venus_work_wake: Option<venus_work_wake::Worker>,
     vcpu: HvVcpuT,
     exit: *mut HvVcpuExit,
     ram: *mut u8,
@@ -614,6 +626,8 @@ unsafe fn run_boots(
     probe_exit: &mut ProbeExit,
 ) {
     let Vm {
+        #[cfg(feature = "venus")]
+        venus_work_wake,
         vcpu,
         exit,
         ram,
@@ -659,6 +673,10 @@ unsafe fn run_boots(
             &mut probe_exit.fatal_vcpu_run_error,
         );
         if generation.requested_system_reset {
+            #[cfg(feature = "venus")]
+            if let Some(wake) = &venus_work_wake {
+                wake.clear();
+            }
             dump_on_reset(&mut resets_dumped, reboot_count, vcpu, ram, ram_size);
             match decide_system_reset(reboot_count, supervision.reboot_plan) {
                 SystemResetDecision::Reboot { next_reboot_count } => {
@@ -702,6 +720,8 @@ unsafe fn run_boots(
 
         // Terminal runs only; the export's stop record must precede the report footer.
         supervision.boot_progress.disarm();
+        #[cfg(feature = "venus")]
+        drop(venus_work_wake);
         drop(ramfb_display);
         drop(hda_service_tick);
         // The report's names; the agent console stays in `generation` and is
