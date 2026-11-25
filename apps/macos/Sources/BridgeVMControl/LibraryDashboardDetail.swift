@@ -113,7 +113,7 @@ struct LibraryDashboardDetail: View {
                       alignment: .leading, spacing: 18) {
                 LibraryMetadataLabel(title: "프로세서", value: "\(model.cpu) vCPU", symbol: "cpu")
                 LibraryMetadataLabel(title: "메모리", value: memoryText, symbol: "memorychip")
-                LibraryMetadataLabel(title: "디스플레이", value: displayText, symbol: "display")
+                LibraryMetadataLabel(title: "디스플레이", value: Self.displayText(for: config), symbol: "display")
                 if config.engineKind == .hvfEngine {
                     LibraryMetadataLabel(title: "네트워크", value: config.networkEnabled == false ? "꺼짐" : "공유 네트워크 (NAT)",
                                          symbol: "network")
@@ -176,10 +176,18 @@ struct LibraryDashboardDetail: View {
             : String(format: "%.1f GiB", model.memGiB)
     }
 
-    private var displayText: String {
-        config.engineKind == .hvfEngine
-            ? (config.retinaResolution == true ? "Retina · 창 크기에 맞춤" : "창 크기에 맞춤")
-            : "\(config.displayWidth) × \(config.displayHeight)"
+    static func displayText(for config: VMConfig) -> String {
+        guard config.engineKind == .hvfEngine else {
+            return "\(config.displayWidth) × \(config.displayHeight)"
+        }
+        if HvfEngineConfig.virtioGpu2d(for: config) {
+            return config.retinaResolution == true ? "Retina · 창 크기에 맞춤" : "창 크기에 맞춤"
+        }
+        if let mode = HvfGuestResolutionPicker.firmwareMode(config.guestResolution) {
+            return "부팅 시 " + mode.replacingOccurrences(of: "x", with: " × ")
+        }
+        // Automatic preserves an existing firmware choice. A supplied invalid mode leaves it untouched.
+        return config.guestResolution == nil ? "부팅 시 자동 (기본 1280 × 800)" : "부팅 시 펌웨어 설정"
     }
 
     private func revealBundle() {
