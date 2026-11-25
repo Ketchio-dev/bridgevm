@@ -4,36 +4,148 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="description" content="BridgeVM is an Engineering Preview for Windows 11 Arm on Apple silicon, built on its own Hypervisor.framework VMM. Install the General Preview v0.1.0 or build the current source.">
+  <meta name="description" content="Run Windows 11 Arm on Apple silicon with BridgeVM, an open-source Mac app built on its own Hypervisor.framework engine. Explore General Preview v0.1.0.">
   <title>BridgeVM — Windows 11 Arm on Apple silicon</title>
   <link rel="icon" href="icon.png" type="image/png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
-  <header class="site-header" id="top"><div class="shell header-inner">
-    <a class="brand" href="#top" aria-label="BridgeVM home"><img class="brand-logo" src="icon.png" alt="" width="34" height="34">BridgeVM</a>
-    <nav aria-label="Main navigation"><a href="#platform">Platform</a><a href="#status">Current state</a><a href="#build">Build</a><a class="nav-source" href="https://github.com/Ketchio-dev/bridgevm">Source <span aria-hidden="true">↗</span></a></nav>
-  </div></header>
+  <header class="site-header" id="top">
+    <div class="shell header-inner">
+      <a class="brand" href="#top" aria-label="BridgeVM home">
+        <img class="brand-logo" src="icon.png" alt="" width="36" height="36">
+        BridgeVM
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="#setup">Setup</a>
+        <a href="#capabilities">Capabilities</a>
+        <a href="#status">Preview notes</a>
+      </nav>
+      <a class="header-source" href="https://github.com/Ketchio-dev/bridgevm">GitHub</a>
+    </div>
+  </header>
+
   <main id="main">
-    <section class="hero" aria-labelledby="hero-title"><div class="shell hero-grid">
-      <div class="hero-copy"><p class="eyebrow"><span class="eyebrow-mark" aria-hidden="true"></span> ENGINEERING PREVIEW <span class="eyebrow-separator">/</span> APPLE SILICON</p>
-        <h1 id="hero-title">Windows 11 Arm.<br><span>On your Mac.</span></h1>
-        <p class="hero-lead">An independent Windows desktop project for Apple silicon, built on BridgeVM’s own Hypervisor.framework virtual machine monitor. Open source. In active development.</p>
-        <div class="hero-actions"><a class="button button-primary" href="https://github.com/Ketchio-dev/bridgevm/blob/main/docs/install.md">Install the General Preview <span aria-hidden="true">↗</span></a><a class="quiet-link" href="#status">Explore current state <span aria-hidden="true">↓</span></a></div>
-        <p class="hero-caveat"><strong>General Preview v0.1.0 is available.</strong> Install it with the terminal installer or the DMG from the <a href="https://github.com/Ketchio-dev/bridgevm/blob/main/docs/install.md">installation guide <span aria-hidden="true">↗</span></a>; the app is ad-hoc signed, not notarized.</p>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="shell hero-grid">
+        <div class="hero-copy">
+          <p class="release-label">General Preview <span>v0.1.0</span></p>
+          <h1 id="hero-title">Windows 11<br><span>on your Mac.</span></h1>
+          <p class="hero-lead">Run Windows 11 Arm alongside macOS in an open-source app built for Apple silicon. BridgeVM uses its own Hypervisor.framework virtual machine monitor.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="https://github.com/Ketchio-dev/bridgevm/releases/tag/v0.1.0">Download v0.1.0</a>
+            <a class="button button-quiet" href="https://github.com/Ketchio-dev/bridgevm/blob/main/docs/install.md">Installation guide</a>
+          </div>
+          <p class="system-requirements">Apple silicon · macOS 15+ to run a VM · M4/M5 tested · 3D-off</p>
+        </div>
+        <figure class="hero-media">
+          <div class="media-stage">
+            <img src="images/windows-guest-20260813.webp" width="1200" height="900" alt="Windows 11 Arm guest desktop from the August 2026 archive. Windows Test Mode is visible. This is not a current release or app UI screenshot.">
+          </div>
+          <figcaption>August 2026 archive · Windows Test Mode · not a current release or app UI screenshot. <a href="https://github.com/Ketchio-dev/bridgevm/blob/main/docs/media/windows-hvf-desktop.png">Original capture</a></figcaption>
+        </figure>
       </div>
-      <figure class="hero-media"><div class="media-stage"><span class="archive-tag">ARCHIVE · TEST MODE</span><img src="images/windows-guest-20260813.webp" width="1200" height="900" alt="Historical Windows 11 Arm guest desktop with Edge and Recycle Bin icons and a visible Test Mode watermark; not a current release or app UI screenshot."></div><figcaption><span class="caption-label">ACTUAL GUEST CAPTURE</span><span>August 2026 archive · Windows Test Mode · not a current release or app UI screenshot. <a href="https://github.com/Ketchio-dev/bridgevm/blob/main/docs/media/windows-hvf-desktop.png">Original image ↗</a></span></figcaption></figure>
-    </div></section>
-    <div class="scope-strip"><div class="shell scope-strip-inner"><span>WINDOWS 11 ARM</span><span>OWN HYPERVISOR.FRAMEWORK VMM</span><span>OPEN SOURCE</span><span>3D-OFF PRODUCT PATH</span></div></div>
-    <section class="section platform shell" id="platform" aria-labelledby="platform-title"><div class="platform-heading"><p class="section-kicker">THE PLATFORM</p><h2 id="platform-title">An independent engine.<br>A familiar desktop.</h2><p>BridgeVM develops its own VMM for Apple silicon, with a QEMU <code>virt</code>-compatible guest contract and documented deviations. The architecture, implementation and evidence are open to inspect.</p><a class="section-link" href="https://github.com/Ketchio-dev/bridgevm/blob/main/docs/machine-contract/qemu-virt.md">Read the machine contract <span aria-hidden="true">↗</span></a></div>
-      <div class="platform-detail"><p class="detail-heading">FROM THE CAPABILITY REGISTRY</p><p id="engine-summary">Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots and window Coherence verbs. 3D acceleration is excluded from General Preview and v1; release-blocking evidence remains open and known defects are disclosed below.</p><a class="section-link" href="https://github.com/Ketchio-dev/bridgevm/blob/main/capabilities/windows-hvf.json">Read the capability registry <span aria-hidden="true">↗</span></a></div>
     </section>
-    <section class="section status-section" id="status" aria-labelledby="status-title"><div class="shell status-grid"><div class="status-heading"><p class="section-kicker">CURRENT STATE</p><h2 id="status-title">A real desktop.<br><span>Open questions.</span></h2><p>Engineering Preview is not General Preview. Release-blocking evidence remains open, and this page is not a substitute for the dated status record.</p><a class="button button-outline" href="https://github.com/Ketchio-dev/bridgevm/blob/main/STATUS.md#known-limitations">Read current limitations <span aria-hidden="true">↗</span></a></div>
-      <div class="status-list"><details open><summary><span class="status-index">01 / PRODUCT JOURNEY</span><span class="status-title">Install and import need proof.</span></summary><p>No retained clean-machine product-flow receipt yet proves either journey through the app.</p></details><details open><summary><span class="status-index">02 / LIVE EXPERIENCE</span><span class="status-title">Display is choppy. Audio stutters.</span></summary><p>The 3D-off app window was choppy in recent hardware runs, and guest audio stuttered. Later measurements do not establish that either is resolved.</p></details><details open><summary><span class="status-index">03 / GRAPHICS</span><span class="status-title">3D is not in this release path.</span></summary><p>Vulkan and D3D11 compatibility are experimental Graphics Lab future paths, excluded from General Preview and v1.</p><a class="section-link" href="https://github.com/Ketchio-dev/bridgevm/blob/main/docs/distribution-channels.md">Distribution boundaries <span aria-hidden="true">↗</span></a></details></div>
-    </div></section>
-    <section class="section build-section shell" id="build" aria-labelledby="build-title"><div class="build-copy"><p class="section-kicker">GET STARTED</p><h2 id="build-title">Install, or build it yourself.</h2><p>The General Preview runs on Apple silicon with macOS 14+. The terminal installer checks the release contract, checksum and signature before it replaces anything. To inspect exactly what you run, build a local app with Xcode/Swift and Rust 1.85+. The declared host matrix is M4/M5; M1, M2 and M3 remain uncovered.</p><a class="button button-primary" href="https://github.com/Ketchio-dev/bridgevm/blob/main/docs/install.md">Installation guide <span aria-hidden="true">↗</span></a> <a class="quiet-link" href="https://github.com/Ketchio-dev/bridgevm/blob/main/docs/install.md#build-the-current-source">Build from source <span aria-hidden="true">↗</span></a></div><div class="build-requirements"><h3>Before you install Windows</h3><ol><li>Your own licensed Windows 11 Arm ISO and about 64 GiB of free disk</li><li>An internet connection the first time: on your click the app fetches the Microsoft-signed Red Hat virtio-win storage, serial and network drivers (about 95 MB) from their official source and checks a pinned SHA-256</li><li>Or your own signed ARM64 driver payload with an external SHA-256 manifest</li></ol><p>BridgeVM does not redistribute these drivers or enable Windows TESTSIGNING.</p></div></section>
+
+    <section class="section shell" id="setup" aria-labelledby="setup-title">
+      <div class="section-intro">
+        <h2 id="setup-title">Start with the Windows<br>image you already have.</h2>
+        <p>Open BridgeVM and choose the setup that matches your files. The installation guide covers the terminal installer, the DMG and the first-open steps.</p>
+      </div>
+      <div class="setup-grid">
+        <article class="setup-card setup-iso">
+          <p class="file-label">Windows 11 Arm ISO</p>
+          <h3>Install Windows</h3>
+          <p>Bring your own licensed ISO and about 64 GiB of free disk space. BridgeVM can download and verify the signed storage, serial and network drivers when you choose automatic driver setup.</p>
+          <a class="text-link" href="https://github.com/Ketchio-dev/bridgevm/blob/main/docs/install.md#what-you-need-after-installing">Windows setup requirements</a>
+        </article>
+        <article class="setup-card setup-import">
+          <p class="file-label">RAW, QCOW2 or Hyper-V VHDX</p>
+          <h3>Import an installed disk</h3>
+          <p>Bring a disk with Windows 11 Arm already installed. Choose the installed-disk import in BridgeVM. This setup skips the installer driver payload.</p>
+          <a class="text-link" href="https://github.com/Ketchio-dev/bridgevm/blob/main/docs/install.md#what-you-need-after-installing">Import requirements</a>
+        </article>
+      </div>
+    </section>
+
+    <section class="capabilities section" id="capabilities" aria-labelledby="capabilities-title">
+      <div class="shell">
+        <div class="section-intro">
+          <h2 id="capabilities-title">A Windows desktop.<br>Mac integration.</h2>
+          <p>The preview focuses on running an installed Windows 11 Arm desktop and moving everyday work between the guest and your Mac.</p>
+        </div>
+        <div class="capability-grid">
+          <article>
+            <h3>Display and input</h3>
+            <p>Use a native Mac window, keyboard and mouse. Guest display drivers enable window-following resolution after a restart.</p>
+          </article>
+          <article>
+            <h3>Files and clipboard</h3>
+            <p>Share a folder or copy and paste between macOS and Windows with guest integration enabled.</p>
+          </article>
+          <article>
+            <h3>VM lifecycle</h3>
+            <p>Keep files on a persistent disk and take a powered-off snapshot before making changes.</p>
+          </article>
+        </div>
+        <a class="text-link" href="https://github.com/Ketchio-dev/bridgevm/blob/main/STATUS.md">Read current capability and test status</a>
+      </div>
+    </section>
+
+    <section class="section shell preview-section" id="status" aria-labelledby="status-title">
+      <div class="preview-intro">
+        <p class="state-label">Engineering Preview</p>
+        <h2 id="status-title">Know what to expect.</h2>
+        <p>General Preview v0.1.0 is available now. The app is ad-hoc signed, not notarized. The installation guide covers first open and download verification.</p>
+        <a class="text-link" href="https://github.com/Ketchio-dev/bridgevm/blob/main/STATUS.md#known-limitations">Read known limitations</a>
+      </div>
+      <div class="preview-details">
+        <details>
+          <summary>Graphics</summary>
+          <p>3D acceleration is excluded from General Preview and v1. Vulkan and D3D11 work continues in the experimental Graphics Lab.</p>
+          <a class="text-link" href="https://github.com/Ketchio-dev/bridgevm/blob/main/docs/distribution-channels.md">Distribution channels</a>
+        </details>
+        <details>
+          <summary>Display, audio and setup coverage</summary>
+          <p>In retained hardware runs, the 3D-off display was choppy and guest audio stuttered. Clean-Mac evidence for ISO installation and installed-disk import remains open.</p>
+        </details>
+        <details>
+          <summary>Windows drivers</summary>
+          <p>Automatic setup verifies the roughly 95 MB signed Red Hat virtio-win payload against a pinned SHA-256. You can also provide your own signed ARM64 drivers and checksum manifest. BridgeVM does not redistribute these drivers or enable Windows TESTSIGNING.</p>
+        </details>
+        <details>
+          <summary>Engine and source builds</summary>
+          <p id="engine-summary">Runs an installed Windows 11 Arm desktop on BridgeVM's own Hypervisor.framework VMM with persistent storage, display/input, network, audio, clipboard and folder integration, TPM/Secure Boot workflows, snapshots and window Coherence verbs. 3D acceleration is excluded from General Preview and v1; release-blocking evidence remains open and known defects are disclosed below.</p>
+          <a class="text-link" href="https://github.com/Ketchio-dev/bridgevm/blob/main/docs/install.md#build-the-current-source">Build from source</a>
+          <a class="text-link" href="https://github.com/Ketchio-dev/bridgevm/blob/main/capabilities/windows-hvf.json">Capability registry</a>
+        </details>
+      </div>
+    </section>
+
+    <section class="download" aria-labelledby="download-title">
+      <div class="shell download-inner">
+        <div>
+          <h2 id="download-title">Try BridgeVM.</h2>
+          <p>General Preview for Apple silicon Macs running macOS 15 or later.</p>
+        </div>
+        <a class="button button-primary" href="https://github.com/Ketchio-dev/bridgevm/releases/tag/v0.1.0">Download v0.1.0</a>
+      </div>
+    </section>
   </main>
-  <footer class="site-footer"><div class="shell footer-inner"><div><a class="brand" href="#top"><img class="brand-logo" src="icon.png" alt="" width="28" height="28">BridgeVM</a><p>Engineering Preview · Built in the open.</p></div><div><a href="https://github.com/Ketchio-dev/bridgevm">GitHub</a><a href="https://github.com/Ketchio-dev/bridgevm/blob/main/STATUS.md">Status</a><a href="https://github.com/Ketchio-dev/bridgevm/blob/main/LICENSE">Apache-2.0</a></div></div></footer>
+
+  <footer class="site-footer">
+    <div class="shell footer-inner">
+      <a class="brand" href="#top" aria-label="BridgeVM home">
+        <img class="brand-logo" src="icon.png" alt="" width="30" height="30">
+        BridgeVM
+      </a>
+      <nav aria-label="Footer navigation">
+        <a href="https://github.com/Ketchio-dev/bridgevm">GitHub</a>
+        <a href="https://github.com/Ketchio-dev/bridgevm/blob/main/STATUS.md">Status</a>
+        <a href="https://github.com/Ketchio-dev/bridgevm/blob/main/LICENSE">Apache-2.0</a>
+      </nav>
+    </div>
+  </footer>
 </body>
 </html>
