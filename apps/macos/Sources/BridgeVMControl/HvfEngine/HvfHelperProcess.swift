@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Runs a finite, non-interactive helper with stdout and stderr on one pipe.
@@ -63,15 +64,20 @@ enum HvfHelperProcess {
             let keep = total > UInt64(outputLimit) ? overflowTail : outputLimit
             if retained.count > keep { retained = Data(retained.suffix(keep)) }
         }
-        do {
-            // Keep draining past the limit: a child blocked on a full pipe never exits.
-            while let chunk = try reader.read(upToCount: 64 * 1024), !chunk.isEmpty {
-                retain(lines.filter(chunk))
+        // FileHandle.read(upToCount:) may wait for the whole buffer. A pipe read returns
+        // available bytes so a short progress line reaches the UI while conversion is running.
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        while true {
+            let count = Darwin.read(reader.fileDescriptor, &buffer, buffer.count)
+            if count == 0 { break }
+            if count < 0 {
+                if errno == EINTR { continue }
+                readFailure = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                break
             }
-            retain(lines.finish())
-        } catch {
-            readFailure = error
+            retain(lines.filter(Data(buffer.prefix(count))))
         }
+        retain(lines.finish())
         // After a read failure, closing makes further child writes fail so the wait ends.
         try? reader.close()
         process.waitUntilExit()
