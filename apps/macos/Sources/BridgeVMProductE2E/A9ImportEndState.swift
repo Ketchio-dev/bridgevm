@@ -72,6 +72,6 @@ enum A9ImportEndState {
     private static let validation = [
         "VM 이름을 입력하세요.", "디스크 이미지를 찾을 수 없습니다:", "디스크 경로가 파일이 아닙니다:", "디스크 이미지가 비어 있습니다:",
         "UEFI vars 파일", "vTPM 상태 경로가 디렉터리가 아닙니다:", "vTPM 복구 파일을 찾을 수 없습니다:", "vTPM 복구 파일을 사용하려면",
-        "RAM은 2048 MiB 이상",
+        "vTPM 복구 패키지를 선택하세요.", "vTPM 복구 코드 파일을 선택하세요.", "RAM은 2048 MiB 이상",
     ]
 }

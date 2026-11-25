@@ -45,11 +45,15 @@ enum FirstRunOptionalRecoveryFixture {
         try await body(fixture, library, host)
     }
 
-    static func submit(_ host: NSView, library: LibraryModel) async throws {
+    static func pressReturn(_ host: NSView) throws -> Bool {
         let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
             timestamp: 0, windowNumber: 0, context: nil, characters: "\r",
             charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 0x24))
-        XCTAssertTrue(host.performKeyEquivalent(with: enter), "Synthetic default action must invoke actual view submission")
+        return host.performKeyEquivalent(with: enter)
+    }
+
+    static func submit(_ host: NSView, library: LibraryModel) async throws {
+        XCTAssertTrue(try pressReturn(host), "Synthetic default action must invoke actual view submission")
         for _ in 0..<3000 {
             if library.firstRunImport.stage != nil && !library.firstRunImportBusy { break }
             try await Task.sleep(nanoseconds: 10_000_000)

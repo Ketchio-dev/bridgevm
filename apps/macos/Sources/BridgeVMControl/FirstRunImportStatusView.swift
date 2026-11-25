@@ -3,6 +3,7 @@ import SwiftUI
 struct FirstRunImportStatusView: View {
     @ObservedObject var library: LibraryModel
     let canImport: Bool
+    let recoveryIssue: FirstRunImport.ValidationError?
     let importAction: () -> Void
 
     var body: some View {
@@ -13,7 +14,11 @@ struct FirstRunImportStatusView: View {
                     Text(stage.label).font(.callout).accessibilityIdentifier("bridgevm.first-run.import.stage")
                 }
             }
-            if let error = library.firstRunImportError {
+            if !library.firstRunImportBusy, library.firstRunImport.publishedConfig == nil, let recoveryIssue {
+                Label(recoveryIssue.description, systemImage: "exclamationmark.circle")
+                    .font(.caption).foregroundStyle(.red)
+                    .accessibilityIdentifier("bridgevm.first-run.vtpm.required")
+            } else if let error = library.firstRunImportError {
                 Text(error).foregroundStyle(.red).font(.callout).accessibilityIdentifier("bridgevm.first-run.import.error")
             }
             VMPreparationQuitStatus(library: library)
@@ -29,7 +34,7 @@ struct FirstRunImportStatusView: View {
                 } else {
                     Button(library.firstRunImportBusy ? "가져오는 중…" : "가져오기", action: importAction)
                         .keyboardShortcut(.defaultAction).accessibilityIdentifier("bridgevm.first-run.import.commit")
-                        .disabled(library.firstRunImportBusy || !canImport)
+                        .disabled(library.firstRunImportBusy || !canImport || recoveryIssue != nil)
                 }
             }
             if library.firstRunImport.publishedConfig != nil {

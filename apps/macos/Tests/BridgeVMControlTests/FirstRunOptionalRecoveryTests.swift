@@ -42,6 +42,48 @@ final class FirstRunOptionalRecoveryTests: XCTestCase {
         }
     }
 
+    func testStateRequiresBothRecoveryPathsBeforeReturnCanSubmit() async throws {
+        try await UI.run { fixture, library, host in
+            let state = fixture.root.appendingPathComponent("state")
+            try FileManager.default.createDirectory(at: state, withIntermediateDirectories: false)
+            UI.edit(try XCTUnwrap(UI.fields(host).last), to: state.path)
+            await UI.settle(host)
+            let fields = UI.fields(host)
+            XCTAssertEqual(fields.count, 6)
+            guard fields.count == 6 else { return }
+
+            _ = try UI.pressReturn(host)
+            await UI.settle(host)
+            XCTAssertNil(library.firstRunImport.stage, "Missing recovery package must keep the form open")
+            guard library.firstRunImport.stage == nil else { return }
+
+            UI.edit(fields[4], to: fixture.disk.path)
+            UI.edit(fields[5], to: "  ")
+            await UI.settle(host)
+            _ = try UI.pressReturn(host)
+            await UI.settle(host)
+            XCTAssertNil(library.firstRunImport.stage, "Missing recovery code must keep the form open")
+            guard library.firstRunImport.stage == nil else { return }
+
+            let absent = fixture.root.appendingPathComponent("missing-code").path
+            UI.edit(fields[5], to: absent)
+            await UI.settle(host)
+            try await UI.submit(host, library: library)
+            XCTAssertEqual(library.firstRunImportError, FirstRunImport.ValidationError.vtpmRecoveryMissing(absent).description)
+        }
+    }
+
+    func testMissingRecoverySelectionNamesTheRequiredFile() throws {
+        let fixture = try FirstRunImportTransactionFixture()
+        defer { fixture.remove() }
+        var inputs = fixture.inputs()
+        inputs.vtpmStateDir = fixture.root.path
+        XCTAssertEqual(FirstRunImport.validate(inputs)?.description, "vTPM 복구 패키지를 선택하세요.")
+        inputs.vtpmRecoveryPackagePath = fixture.disk.path
+        inputs.vtpmRecoveryCodePath = "  "
+        XCTAssertEqual(FirstRunImport.validate(inputs)?.description, "vTPM 복구 코드 파일을 선택하세요.")
+    }
+
     func testInitiallyOmittedStateStillImportsThroughActualDefaultAction() async throws {
         try await UI.run { fixture, library, host in
             XCTAssertEqual(UI.fields(host).count, 4)
