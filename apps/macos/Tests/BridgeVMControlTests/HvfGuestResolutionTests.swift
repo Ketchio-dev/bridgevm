@@ -40,6 +40,22 @@ final class HvfGuestResolutionTests: XCTestCase {
         XCTAssertFalse(String(decoding: restored, as: UTF8.self).contains("guestResolution"))
     }
 
+    func testDashboardDescribesTheSavedDisplayConfiguration() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        var config = fixture.config()
+        config.retinaResolution = true
+        XCTAssertEqual(LibraryDashboardDetail.displayText(for: config), "부팅 시 자동 (기본 1280 × 800)")
+        config.guestResolution = " 1600x900\n"
+        XCTAssertEqual(LibraryDashboardDetail.displayText(for: config), "부팅 시 1600 × 900")
+        config.virtioDisplayDriverInstalled = true
+        XCTAssertEqual(LibraryDashboardDetail.displayText(for: config), "Retina · 창 크기에 맞춤")
+        config.experimental3DAllowed = true
+        XCTAssertEqual(LibraryDashboardDetail.displayText(for: config), "부팅 시 1600 × 900")
+        config.guestResolution = "3840x2160"
+        XCTAssertEqual(LibraryDashboardDetail.displayText(for: config), "부팅 시 펌웨어 설정")
+    }
+
     /// vm.json may hold any of the VMM's 15 modes (hand-edited): the picker shows such a mode as its own
     /// selected entry instead of nothing, and a value the VMM ignores as Automatic.
     func testPickerShowsTheSavedModeTheVMMApplies() {
