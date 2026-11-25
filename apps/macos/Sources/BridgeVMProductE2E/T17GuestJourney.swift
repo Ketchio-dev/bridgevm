@@ -56,25 +56,25 @@ struct T17GuestJourney {
             throw T17Blocker(code: "guest-evidence-missing", detail: "guest clipboard challenge seed changed")
         }
         let encoded = Data(body.utf8).base64EncodedString()
-        try control("CLIPSET \(encoded)", requires: "OK CLIPSET")
-        try control("CLIPGET", requires: body)
+        try control("CLIPSET \(encoded)", requires: "OK CLIPSET", operation: "CLIPSET")
+        try control("CLIPGET", requires: body, operation: "CLIPGET")
         try workload("Clipboard", output: "t17-clipboard-guest-\(prefix).txt")
     }
 
-    private func workload(_ action: String, output: String, includeIdentity: Bool = false) throws {
+    private func workload(_ action: StaticString, output: String, includeIdentity: Bool = false) throws {
         try launchWorkload(action, includeIdentity: includeIdentity)
         try requireOutput(output, timeout: 120)
     }
 
-    private func launchWorkload(_ action: String, includeIdentity: Bool = false) throws {
+    private func launchWorkload(_ action: StaticString, includeIdentity: Bool = false) throws {
         var guest = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\\bridgevm-share\\bv-product-e2e-launch.ps1 -Action \(action) -Nonce \(request.nonce)"
         if includeIdentity {
             guest += " -JobID \(request.jobID) -Commit \(request.commit) -Lane \(request.lane) -VMSlug \(request.vmSlug)"
         }
-        try control(guest, requires: "T17-LAUNCHED-\(action)-\(prefix)")
+        try control(guest, requires: "T17-LAUNCHED-\(action)-\(prefix)", operation: action)
     }
 
-    private func control(_ command: String, requires marker: String) throws {
+    private func control(_ command: String, requires marker: String, operation: StaticString) throws {
         let before = (try? Data(contentsOf: runLog).count) ?? 0
         try T17RuntimeControlInput.enter(command, ui: ui)
         guard wait(timeout: 120, predicate: {
@@ -83,7 +83,7 @@ struct T17GuestJourney {
                 .replacingOccurrences(of: "\r\n", with: "\n")
             return T17ControlReply.succeeded(tail: tail, command: command, marker: marker)
         }) else {
-            throw T17Blocker(code: "guest-evidence-missing", detail: "guest control command lacked its nonce-bound completion")
+            throw T17Blocker(code: "guest-evidence-missing", detail: "no matching guest control reply for \(operation)")
         }
     }
 
