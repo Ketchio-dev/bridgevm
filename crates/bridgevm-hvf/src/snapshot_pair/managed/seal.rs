@@ -3,8 +3,8 @@
 //! Seal before opening the staged disk for verification. An unsupported link
 //! keeps the existing unsealed restore path, never weaker recovery authority.
 //!
-//! Only an intact pinned attempt can authorize later-process staging cleanup.
-//! A second crash during cleanup leaves incomplete proof and refuses next time.
+//! Only a pinned attempt can authorize later-process staging cleanup. Retry can
+//! resume an interrupted unlink sequence while the directory and pin survive.
 
 use super::private_directory;
 use crate::media_lease::MediaLease;
@@ -165,18 +165,26 @@ impl Record {
         Ok(record)
     }
 
-    fn matches_stage(&self, stage: &Path) -> io::Result<()> {
+    fn check_stage_directory(&self, stage: &Path) -> io::Result<()> {
         if !private_directory(stage, false)? || !self.stage.matches(stage)? {
             return Err(io::Error::other(
                 "restore stage no longer matches its sealed identity",
             ));
         }
-        shape(stage, true)?;
-        for (name, expected) in [
+        shape(stage, true)
+    }
+
+    fn stage_members(&self) -> [(&'static str, Member); 3] {
+        [
             ("disk.raw", self.disk),
             ("vars.fd", self.vars),
             ("manifest.json", self.manifest),
-        ] {
+        ]
+    }
+
+    fn matches_stage(&self, stage: &Path) -> io::Result<()> {
+        self.check_stage_directory(stage)?;
+        for (name, expected) in self.stage_members() {
             if member(&stage.join(name))? != expected {
                 return Err(io::Error::other(
                     "restore member no longer matches its sealed identity",
@@ -620,17 +628,28 @@ fn clear_sealed(root: &Path, stage: &Path, record: &Record) -> io::Result<()> {
     if observed.record != record.record || !record.root.matches(root)? {
         return Err(io::Error::other("restore ownership record was replaced"));
     }
-    record.matches_stage(stage)?;
+    record.check_stage_directory(stage)?;
+    let mut remaining = Vec::new();
+    // A prior cleanup may have stopped after some of these unlinks. Validate
+    // the complete surviving suffix before removing anything else.
+    for (name, expected) in record.stage_members() {
+        let path = stage.join(name);
+        match optional_member(&path)? {
+            Some(actual) if actual == expected => remaining.push((path, expected)),
+            None if remaining.is_empty() => {}
+            _ => {
+                return Err(io::Error::other(
+                    "restore member no longer matches its sealed identity",
+                ));
+            }
+        }
+    }
     // Check the identities again immediately before unlinking each member.
-    for (name, member) in [
-        ("disk.raw", record.disk),
-        ("vars.fd", record.vars),
-        ("manifest.json", record.manifest),
-    ] {
-        if !record.stage.matches(stage)? || !member.identity.matches(&stage.join(name))? {
+    for (path, member) in remaining {
+        if !record.stage.matches(stage)? || !member.identity.matches(&path)? {
             return Err(io::Error::other("restore member changed before cleanup"));
         }
-        fs::remove_file(stage.join(name))?;
+        fs::remove_file(path)?;
     }
     if !record.stage.matches(stage)? || !record.record.matches(&stage.join(PIN_NAME))? {
         return Err(io::Error::other("restore pin changed before cleanup"));

@@ -739,6 +739,41 @@ mod recovery {
         }
     }
     #[cfg(target_os = "macos")]
+    fn set_immutable(path: &Path, immutable: bool) {
+        assert!(std::process::Command::new("/usr/bin/chflags")
+            .arg(if immutable { "uchg" } else { "nouchg" })
+            .arg(path)
+            .status()
+            .unwrap()
+            .success());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn retry_after_partial_unpublished_cleanup_clears_the_sealed_stage() {
+        let fixture = Fixture::new("owned-unpublished-unlink-error", true, true);
+        let vars = fixture.stage.join("vars.fd");
+        set_immutable(&vars, true);
+        let result = fixture.pair().restore(&fixture.snapshot);
+        set_immutable(&vars, false);
+
+        assert!(!fixture.stage.join("disk.raw").exists());
+        assert_eq!(fs::read(&vars).unwrap(), fixture.source[1]);
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("preserve any remaining staging"));
+        fixture.assert_inputs();
+
+        let mut pair = fixture.pair();
+        assert_eq!(pair.restore(&fixture.snapshot).unwrap(), fixture.manifest);
+        assert_eq!(contents(&fixture.root.join("current")), fixture.source);
+        assert_eq!(contents(&fixture.snapshot), fixture.source);
+        assert!(!fixture.stage.exists());
+        assert!(!fixture.root.join(ROOT_NAME).exists());
+    }
+
+    #[cfg(target_os = "macos")]
     #[test]
     fn retry_after_partial_previous_cleanup_reports_and_preserves_survivors() {
         let fixture = Fixture::new("owned-xchg-unlink-error", true, true);
@@ -749,17 +784,9 @@ mod recovery {
         fs::rename(&parked, &fixture.stage).unwrap();
         let vars = fixture.stage.join("vars.fd");
         let old_vars = fs::read(&vars).unwrap();
-        let flags = |value| {
-            std::process::Command::new("/usr/bin/chflags")
-                .arg(value)
-                .arg(&vars)
-                .status()
-                .unwrap()
-                .success()
-        };
-        assert!(flags("uchg"));
+        set_immutable(&vars, true);
         let result = fixture.pair().restore(&fixture.snapshot);
-        assert!(flags("nouchg"));
+        set_immutable(&vars, false);
         assert!(!fixture.stage.join("disk.raw").exists());
         assert_eq!(fs::read(&vars).unwrap(), old_vars);
         assert_eq!(contents(&current), fixture.source);
