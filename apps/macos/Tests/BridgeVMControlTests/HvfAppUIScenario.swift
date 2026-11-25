@@ -66,6 +66,12 @@ enum HvfAppUIScenario {
             }
             try capture.capture(content, name: "overview-search")
             try capture.action("search_filtered")
+            try HvfAppUIAccessibility.setText("No matching VM", identifier: "bridgevm.library.search", in: content)
+            try await HvfAppUIAccessibility.wait("no matching VM") {
+                try HvfAppUIAccessibility.find("bridgevm.library.search.no-results", in: content) != nil
+                    && !HvfAppUIAccessibility.hasRow(HvfAppUIOverview.indigo, in: content)
+                    && !HvfAppUIAccessibility.hasRow(HvfAppUIOverview.amber, in: content)
+            }
             try HvfAppUIAccessibility.pressButton(label: "검색 지우기", in: content)
             try await HvfAppUIAccessibility.wait("cleared search") {
                 try HvfAppUIAccessibility.hasRow(HvfAppUIOverview.amber, in: content)

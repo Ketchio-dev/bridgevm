@@ -9,15 +9,7 @@ struct ContentView: View {
         #if DEBUG && BRIDGEVM_APP_UI_HOST
         let _ = AppUIHost.prepared?.lifecycle.record(.contentBodyEvaluated)
         #endif
-        NavigationSplitView(columnVisibility: .constant(.all)) {
-            LibrarySidebar(library: library)
-                .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 270)
-        } content: {
-            LibraryOverviewView(library: library)
-                .navigationSplitViewColumnWidth(min: 390, ideal: 480, max: 580)
-        } detail: {
-            LibraryDashboardRoute(library: library)
-        }
+        libraryNavigation
         .tint(LibraryAppearance.accent)
         .groupBoxStyle(LibraryGroupBoxStyle())
         .background(LibraryAppearance.canvas)
@@ -55,6 +47,31 @@ struct ContentView: View {
                 .keyboardShortcut("k", modifiers: .command)
                 .opacity(0)
         )
+    }
+
+    @ViewBuilder
+    private var libraryNavigation: some View {
+        if library.vms.isEmpty && library.libraryIssues.isEmpty {
+            NavigationSplitView(columnVisibility: .constant(.all)) {
+                sidebar
+            } detail: {
+                LibraryDashboardRoute(library: library)
+            }
+        } else {
+            NavigationSplitView(columnVisibility: .constant(.all)) {
+                sidebar
+            } content: {
+                LibraryOverviewView(library: library)
+                    .navigationSplitViewColumnWidth(min: 390, ideal: 480, max: 580)
+            } detail: {
+                LibraryDashboardRoute(library: library)
+            }
+        }
+    }
+
+    private var sidebar: some View {
+        LibrarySidebar(library: library)
+            .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 270)
     }
 }
 

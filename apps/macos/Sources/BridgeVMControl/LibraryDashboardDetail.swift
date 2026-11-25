@@ -48,11 +48,17 @@ struct LibraryDashboardDetail: View {
     private var dashboard: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                hero
-                actionStrip
+                VStack(alignment: .leading, spacing: 16) {
+                    hero
+                    if let note = visibleStatusNote {
+                        Text(note).font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                    actionStrip
+                }
+                .padding(20).modifier(LibraryCardSurface())
                 configurationCard
-                runtimeCard
-                quickActions
             }
             .padding(24)
             .frame(maxWidth: 760, alignment: .topLeading)
@@ -66,13 +72,11 @@ struct LibraryDashboardDetail: View {
         HStack(alignment: .top, spacing: 20) {
             LibraryVMEmblem(engine: config.engineKind)
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Text(config.name).font(.system(size: 27, weight: .bold)).lineLimit(2)
-                    Spacer(minLength: 0)
-                }
+                Text(config.name).font(.system(size: 27, weight: .bold)).lineLimit(2)
                 HStack(spacing: 7) {
                     LibraryVMRunState(text: statusText, color: statusColor,
-                        session: library.hvfRuntimeSessions.existingRecord(slug: config.slug)?.session, dot: 10)
+                        session: library.hvfRuntimeSessions.existingRecord(slug: config.slug)?.session, dot: 8)
+                    if model.busy || model.lifecycleBusy { ProgressView().controlSize(.small) }
                 }
                 .font(.headline)
                 if config.displayName != config.name {
@@ -105,46 +109,32 @@ struct LibraryDashboardDetail: View {
     private var configurationCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("구성").font(.headline)
-            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: 20) {
-                metric("프로세서", value: "\(model.cpu) vCPU", symbol: "cpu")
-                metric("메모리", value: memoryText, symbol: "memorychip")
-                metric("디스플레이", value: displayText, symbol: "display")
-                metric("엔진", value: config.engineShortLabel, symbol: "cube")
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 2),
+                      alignment: .leading, spacing: 18) {
+                LibraryMetadataLabel(title: "프로세서", value: "\(model.cpu) vCPU", symbol: "cpu")
+                LibraryMetadataLabel(title: "메모리", value: memoryText, symbol: "memorychip")
+                LibraryMetadataLabel(title: "디스플레이", value: displayText, symbol: "display")
+                if config.engineKind == .hvfEngine {
+                    LibraryMetadataLabel(title: "네트워크", value: config.networkEnabled == false ? "꺼짐" : "공유 네트워크 (NAT)",
+                                         symbol: "network")
+                }
             }
-        }
-        .padding(20).modifier(LibraryCardSurface())
-    }
-
-    private var runtimeCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("현재 상태").font(.headline)
-                Spacer()
-                if model.busy || model.lifecycleBusy { ProgressView().controlSize(.small) }
-            }
-            HStack(spacing: 24) {
-                LibraryMetadataLabel(title: "상태", value: statusText, symbol: "power")
-                LibraryMetadataLabel(title: "IP 주소", value: isActive ? model.ip : "—", symbol: "network")
-                Spacer(minLength: 0)
-            }
-            if let note = visibleStatusNote {
-                Divider()
-                Text(note).font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(20).modifier(LibraryCardSurface())
-    }
-
-    private var quickActions: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("빠른 작업").font(.headline)
+            Divider()
             HStack(spacing: 12) {
-                // 고급 is in the action grid above; one route is enough.
-                Button { revealBundle() } label: { Label("Finder에서 보기", systemImage: "folder") }
+                Image(systemName: "folder").foregroundStyle(.secondary).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("저장 위치").font(.caption).foregroundStyle(.secondary)
+                    Text(verbatim: (config.bundlePath as NSString).abbreviatingWithTildeInPath)
+                        .font(.callout).lineLimit(1).truncationMode(.middle)
+                        .textSelection(.enabled).help(config.bundlePath)
+                }
+                .accessibilityElement(children: .combine)
+                Spacer(minLength: 0)
+                Button("Finder에서 보기", action: revealBundle)
+                    .fixedSize()
             }
-            .buttonStyle(.bordered).controlSize(.large)
         }
+        .padding(20).modifier(LibraryCardSurface())
     }
 
     @ViewBuilder private var advancedView: some View {
@@ -165,26 +155,11 @@ struct LibraryDashboardDetail: View {
         }
     }
 
-    private func metric(_ title: String, value: String, symbol: String) -> some View {
-        Label {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.caption).foregroundStyle(.secondary)
-                Text(value).font(.callout.weight(.semibold)).lineLimit(2)
-            }
-        } icon: {
-            Image(systemName: symbol).font(.title3).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .accessibilityElement(children: .combine)
-    }
-
     private var statusText: String {
         if config.installPending == true { return "설치 필요" }
         return runtimeState?.title ?? (model.running ? "실행 중" : "정지됨")
     }
 
-    private var isActive: Bool { runtimeState?.isActive ?? model.running }
     private var visibleStatusNote: String? {
         if let runtimeState { return runtimeState.note(model.statusNote) }
         return model.statusNote.isEmpty ? nil : model.statusNote
