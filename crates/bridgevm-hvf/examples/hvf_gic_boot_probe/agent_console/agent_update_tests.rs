@@ -836,6 +836,63 @@ fn confirm_new_agent(h: &mut AgentConsoleHarness, now: Instant) {
     h.handle_service_reply_with_sender(&ready, now, &mut |_| {});
 }
 
+#[test]
+fn the_planned_agent_swap_delivers_queued_commands_once_to_the_new_agent() {
+    let bundle = Bundle::new("swap-commands");
+    let mut h = resident(&bundle, "session-1");
+    let mut guest = Guest::default();
+    let now = h.start + SETTLE;
+    h.note_agent_ready(OLD_READY, h.start);
+    run(&mut h, &mut guest, now);
+    assert!(matches!(phase(&h), UpdatePhase::Armed { late: false, .. }));
+
+    let launch = "powershell.exe -NoProfile -File C:\\bridgevm-share\\work.ps1 -Action Share";
+    for command in [launch, "CLIPSET eA==", "CLIPGET"] {
+        h.queue.push_back(ServiceReq::Ctl(command.to_owned()));
+    }
+    let mut wire = Vec::new();
+    h.service_pump_with_sender(now, &mut |line| wire.push(String::from_utf8_lossy(line).into_owned()));
+    assert!(wire.is_empty(), "sent to the agent that the updater is about to stop");
+
+    let ready = now + Duration::from_secs(8);
+    confirm_new_agent(&mut h, ready);
+    h.service_pump_with_sender(ready, &mut |line| wire.push(String::from_utf8_lossy(line).into_owned()));
+    answer(&mut h, &mut guest, std::mem::take(&mut wire), ready);
+    assert_eq!(phase(&h), UpdatePhase::Done);
+    for (command, reply) in [(launch, "OUT 0 eA=="), ("CLIPSET eA==", "OK CLIPSET"), ("CLIPGET", "CLIP eA==")] {
+        h.service_pump_with_sender(ready, &mut |line| wire.push(String::from_utf8_lossy(line).into_owned()));
+        assert_eq!(wire, [command_wire_line(command)]);
+        wire.clear();
+        h.handle_service_reply_with_sender(reply, ready, &mut |_| {});
+    }
+    h.service_pump_with_sender(ready, &mut |_| panic!("a completed command was sent twice"));
+}
+
+#[test]
+fn the_agent_swap_keeps_stop_and_input_live_and_releases_commands_at_the_existing_deadline() {
+    let bundle = Bundle::new("swap-controls");
+    let mut h = resident(&bundle, "session-1");
+    let now = h.start;
+    h.agent_update.as_mut().unwrap().phase = UpdatePhase::Armed { since: now, late: false };
+    for input in ["KEYINPUT 00000000-0000-4000-8000-000000000001 YQ==", "CLIPPASTE 00000000-0000-4000-8000-000000000001 YQ==", "powershell -Command \"Write-Output 'BVPASTE_READY p1'\""] {
+        assert!(!waits_for_replacement_agent(&ServiceReq::Ctl(input.into())));
+    }
+    let waiting = "whoami";
+    let stop = "C:\\Windows\\System32\\SHUTDOWN.EXE /s /t 0";
+    for command in [waiting, stop] {
+        h.queue.push_back(ServiceReq::Ctl(command.into()));
+    }
+    let mut wire = Vec::new();
+    h.service_pump_with_sender(now, &mut |line| wire.extend_from_slice(line));
+    assert_eq!(wire, command_wire_line(stop).as_bytes());
+    h.handle_service_reply_with_sender("OUT 0 eA==", now, &mut |_| {});
+    wire.clear();
+    let late = now + READY_DEADLINE;
+    h.enqueue_agent_update(late);
+    h.service_pump_with_sender(late, &mut |line| wire.extend_from_slice(line));
+    assert_eq!(wire, command_wire_line(waiting).as_bytes());
+}
+
 /// A guest image announced while the guard switches agents is not queued for
 /// fetching: the polls go on and rewrite guest.png, so a queued fetch would
 /// find a later image after the update and refuse it as a mismatch. The first
