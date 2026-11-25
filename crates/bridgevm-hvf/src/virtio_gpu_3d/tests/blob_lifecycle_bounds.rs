@@ -57,6 +57,68 @@ fn unref_detaches_the_resource_from_every_context() {
 }
 
 #[test]
+fn reset_removes_guest_blob_mapping_before_releasing_renderer_backing() {
+    const RESOURCE: u32 = 5;
+
+    struct CheckingMapPort {
+        backend: Arc<Mutex<MockBackend>>,
+        port: Arc<Mutex<MockMapPort>>,
+    }
+
+    impl GpuShmMapPort for CheckingMapPort {
+        fn map(&mut self, host_ptr: *mut u8, size: usize, offset: u64) -> Result<(), i32> {
+            self.port.map(host_ptr, size, offset)
+        }
+
+        fn unmap(&mut self, offset: u64, size: usize) -> Result<(), i32> {
+            let backend = self.backend.lock().unwrap();
+            assert!(backend.mapped.contains_key(&RESOURCE));
+            assert!(backend.unmapped.is_empty());
+            self.port.unmap(offset, size)
+        }
+    }
+
+    #[repr(align(16384))]
+    struct Backing([u8; 0x4000]);
+    let mut backing = Backing([0; 0x4000]);
+    let backend = Arc::new(Mutex::new(MockBackend::new_venus()));
+    backend.lock().unwrap().mapped.insert(
+        RESOURCE,
+        MappedBlob {
+            host_ptr: backing.0.as_mut_ptr(),
+            size: backing.0.len(),
+            map_info: 0,
+        },
+    );
+    let port = Arc::new(Mutex::new(MockMapPort::default()));
+    let mut gpu = VirtioGpu3d::with_backend(Box::new(backend.clone()));
+    gpu.set_shm_map_port(
+        Box::new(CheckingMapPort {
+            backend: backend.clone(),
+            port: port.clone(),
+        }),
+        0x10000,
+    );
+    let mut context = ctrl_req(VIRTIO_GPU_CMD_CTX_CREATE, CTX);
+    context.resize(CTX_CREATE_LEN, 0);
+    ok(&mut gpu, &context);
+    create_blob(&mut gpu, RESOURCE);
+    let request = map_blob_req(RESOURCE, 0x4000);
+    let hdr = CtrlHdr3d::parse(&request).unwrap();
+    assert_eq!(
+        read_le_u32(&gpu.handle(&request, hdr).unwrap(), 0),
+        Some(VIRTIO_GPU_RESP_OK_MAP_INFO)
+    );
+
+    gpu.reset();
+
+    assert_eq!(port.lock().unwrap().unmaps, [(0x4000, 0x4000)]);
+    let backend = backend.lock().unwrap();
+    assert_eq!(backend.unmapped, [RESOURCE]);
+    assert!(backend.mapped.is_empty());
+}
+
+#[test]
 fn resource_churn_keeps_context_and_destroyed_id_bookkeeping_bounded() {
     let mut gpu = gpu_with_context();
     let rounds = MAX_DESTROYED_BLOB_IDS as u32 + 512;
