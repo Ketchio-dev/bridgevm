@@ -59,7 +59,9 @@ text dispatch. Some editors and older agents use per-character input. For long
 passages in the v0.1.0 download or when per-character input loses text, enable
 **클립보드 공유** (Clipboard sharing) while the VM is stopped. After the Windows
 agent connects, copy the text on your Mac and press **Ctrl+V** in the Windows
-editor.
+editor. Builds from current source show a notice when text is too large to
+share in either direction. Copy it in smaller sections or transfer it as a
+file through a shared folder.
 The application readback, saved-file and Undo checks for WPF and Edge are
 recorded in [#665](https://github.com/Ketchio-dev/bridgevm/issues/665).
 
