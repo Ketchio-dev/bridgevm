@@ -74,12 +74,13 @@ complete [build and packaging guide](docs/install.md#build-the-current-source),
 because `cargo build` and `swift build` alone do not prepare a
 Windows-installation app.
 
-Choose the Windows setup path that matches what you have:
+On first launch, choose the setup path that matches your Windows media. The
+button labels below are from current source builds.
 
 | Starting point | What you provide |
 | --- | --- |
-| **Install from ISO** | Your own licensed Windows 11 Arm ISO. Choose **드라이버 자동 준비** to download the Microsoft-signed Red Hat virtio-win storage, serial and network drivers (about 95 MB) and check their pinned SHA-256. You can also select your own signed ARM64 driver folder and manifest. |
-| **Import an installed VM** | A Windows 11 Arm disk in RAW, QCOW2 or Hyper-V VHDX format. Import needs no driver payload. |
+| **Windows 새로 설치** (Install Windows) | Select your licensed Windows 11 Arm ISO. **드라이버 자동 준비** downloads the Microsoft-signed Red Hat virtio-win storage, serial and network drivers (about 95 MB) and checks their pinned SHA-256. You can also select your own signed ARM64 driver folder and manifest. Choose **생성** (Create), then **설치 시작** (Start installation) in the VM detail view. |
+| **기존 디스크 가져오기** (Import an existing disk) | Select an installed Windows 11 Arm disk in RAW, QCOW2 or Hyper-V VHDX format. Choose **가져오기** (Import), then **시작** (Start) once the VM appears in your library. This path needs no driver payload. |
 
 In current source builds, you can choose **Finish Then Quit** (`완료 후 종료`)
 during a first-run import, while **Create VM** prepares files for an import or
