@@ -9,11 +9,11 @@ struct HvfOrderedInputQueue {
         let event: Event
     }
 
-    /// A legacy retry requires a reply establishing that the awaited event and its successors are undelivered.
+    /// Legacy delivery requires that the awaited event was unsent or that Windows inserted nothing.
     enum Failure: Equatable {
-        case expired, transportFailed, sessionChanged, targetChanged, notInserted, unsupportedEditor
+        case expired, transportFailed, sessionChanged, targetChanged, notInserted, clipboardRequired
 
-        var permitsLegacyRetry: Bool { self == .notInserted || self == .unsupportedEditor }
+        var permitsLegacyRetry: Bool { self == .notInserted || self == .clipboardRequired }
     }
 
     enum Transition: Equatable {
