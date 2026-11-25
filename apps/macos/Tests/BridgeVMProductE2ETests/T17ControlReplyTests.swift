@@ -37,4 +37,14 @@ final class T17ControlReplyTests: XCTestCase {
         XCTAssertFalse(T17ControlReply.succeeded(tail: "BVAGENT CLIPSET Yg== -> OK CLIPSET\nBVAGENT END other\n",
             command: "CLIPSET YQ==", marker: "OK CLIPSET"))
     }
+
+    func testMatchingGuestErrorsEndTheWaitForAReply() {
+        let error = "BVAGENT CLIPSET bytes=1 sha256=ca978112ca1bbdca -> ERR CLIPSET\n"
+        XCTAssertEqual(T17ControlReply.outcome(tail: error, command: "CLIPSET YQ==", marker: "OK CLIPSET"), .rejected)
+        XCTAssertEqual(T17ControlReply.outcome(tail: error, command: "CLIPSET Yg==", marker: "OK CLIPSET"), .pending)
+        let header = "BVAGENT CMD start guest-task exit=1\n"
+        let completed = header + "BVAGENT END start guest-task\n"
+        XCTAssertEqual(T17ControlReply.outcome(tail: header, command: "start guest-task", marker: "ready"), .pending)
+        XCTAssertEqual(T17ControlReply.outcome(tail: completed, command: "start guest-task", marker: "ready"), .rejected)
+    }
 }
