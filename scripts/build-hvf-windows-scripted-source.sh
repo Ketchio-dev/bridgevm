@@ -17,20 +17,28 @@ for f in winpeshl.ini bvinstall.cmd bvdiskpart.txt bvagent.ps1 bvagent-firstboot
 done
 [[ "$WIMLIB" == /* && -x "$WIMLIB" ]] || { echo "FAIL: WIMLIB must name an absolute executable" >&2; exit 1; }
 [[ "$FILE_COMPARE" == /* && -f "$FILE_COMPARE" && ! -L "$FILE_COMPARE" ]] || { echo "FAIL: WINDOWS_FILE_COMPARE must name an absolute regular non-symlink file" >&2; exit 1; }
+ISO_DEV=""
+DST_DEV=""
+MOUNT_ROOT=""
+WORK_ROOT=""
 cleanup() {
   [[ -n "${ISO_DEV:-}" ]] && bridgevm_detach_image "$ISO_DEV" 2>/dev/null || true
   [[ -n "${DST_DEV:-}" ]] && bridgevm_detach_image "$DST_DEV" 2>/dev/null || true
-  [[ -n "${MOUNT_ROOT:-}" && -d "$MOUNT_ROOT/provisioning" ]] && rm -rf "$MOUNT_ROOT/provisioning" || true
+  [[ -n "$WORK_ROOT" ]] && rm -rf "$WORK_ROOT" || true
   [[ -n "${MOUNT_ROOT:-}" ]] && rmdir "$MOUNT_ROOT/iso" "$MOUNT_ROOT/dst" "$MOUNT_ROOT" 2>/dev/null || true
 }
 trap cleanup EXIT
 mkdir -p "$(dirname "$OUT")"; OUT="$(cd "$(dirname "$OUT")" && pwd -P)/$(basename "$OUT")"
-MOUNT_ROOT="$(mktemp -d "$(dirname "$OUT")/bridgevm-win-source.XXXXXX")"
+WORK_ROOT="$(mktemp -d "$(dirname "$OUT")/bridgevm-win-source.XXXXXX")"
+# Disk Arbitration requires an owned mountpoint even when OUT is on a volume
+# that ignores ownership. Only these two empty directories use host storage.
+HOST_TEMP="$(getconf DARWIN_USER_TEMP_DIR)"
+MOUNT_ROOT="$(mktemp -d "${HOST_TEMP%/}/bridgevm-win-mount.XXXXXX")"
 ISO_MNT="$MOUNT_ROOT/iso"
 DST_VOL="$MOUNT_ROOT/dst"
 mkdir "$ISO_MNT" "$DST_VOL"
-PROVISION_STAGE="$MOUNT_ROOT/provisioning"
-TMPDIR="$MOUNT_ROOT" "$SCRIPT_DIR/stage-hvf-windows-guest-payload.sh" \
+PROVISION_STAGE="$WORK_ROOT/provisioning"
+TMPDIR="$WORK_ROOT" "$SCRIPT_DIR/stage-hvf-windows-guest-payload.sh" \
   --payload-dir "${WINDOWS_GUEST_PAYLOAD_DIR:-}" --manifest "${WINDOWS_GUEST_PAYLOAD_MANIFEST:-}" \
   --assets "$ASSETS" --output "$PROVISION_STAGE" \
   --catalog-verifier "${WINDOWS_GUEST_PAYLOAD_CATALOG_VERIFIER:-}"
