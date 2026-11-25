@@ -4,8 +4,7 @@ import AppKit
 #endif
 struct ContentView: View {
     @ObservedObject var library: LibraryModel
-    @State private var showPalette = false
-    @State private var welcomeMedia = FirstRunWindowMedia()
+    @State private var presentation = LibraryWindowPresentation()
     var body: some View {
         #if DEBUG && BRIDGEVM_APP_UI_HOST
         let _ = AppUIHost.prepared?.lifecycle.record(.contentBodyEvaluated)
@@ -14,15 +13,14 @@ struct ContentView: View {
         .tint(LibraryAppearance.accent)
         .groupBoxStyle(LibraryGroupBoxStyle())
         .background(LibraryAppearance.canvas)
-        .environment(\.firstRunWindowMedia, $welcomeMedia)
-        .sheet(item: $welcomeMedia.installer) { media in
-            CreateVMSheet(library: library, isoPath: media.url.path)
-        }
-        .sheet(isPresented: $library.showingCreate) {
-            CreateVMSheet(library: library)
-        }
-        .sheet(isPresented: $showPalette) {
-            CommandPaletteView(library: library)
+        .environment(\.libraryWindowPresentation, $presentation)
+        .sheet(item: $presentation.sheet) { sheet in
+            switch sheet {
+            case .palette:
+                CommandPaletteView(library: library) { presentation.sheet = .create(installer: nil) }
+            case .create(let installer):
+                CreateVMSheet(library: library, isoPath: installer?.path ?? "")
+            }
         }
         .sheet(item: $library.pendingWindowsClone) { cfg in
             CloneWindowsHVFSheet(library: library, config: cfg)
@@ -48,7 +46,7 @@ struct ContentView: View {
         }
         .modifier(LibraryOperationAlerts(library: library))
         .background(
-            Button("") { showPalette = true }
+            Button("") { presentation.sheet = .palette }
                 .keyboardShortcut("k", modifiers: .command)
                 .opacity(0)
         )

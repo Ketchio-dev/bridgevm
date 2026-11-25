@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct LibrarySidebar: View {
+    @Environment(\.libraryWindowPresentation) private var presentation
     @ObservedObject var library: LibraryModel
 
     var body: some View {
@@ -35,7 +36,7 @@ struct LibrarySidebar: View {
                     .help("전체 VM 보기")
             }
             ToolbarItem {
-                Button { library.showingCreate = true } label: { Label("새 VM", systemImage: "plus") }
+                Button { presentation?.wrappedValue.sheet = .create(installer: nil) } label: { Label("새 VM", systemImage: "plus") }
                     .accessibilityIdentifier("bridgevm.library.toolbar.create")
             }
         }
