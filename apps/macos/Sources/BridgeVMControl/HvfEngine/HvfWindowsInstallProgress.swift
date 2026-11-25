@@ -37,11 +37,24 @@ extension HvfWindowsInstallStage {
     }
 
     var primaryActionTitle: String {
-        if isRunning { return "설치 진행 중…" }
         switch self {
         case .failed, .cancelled: return "다시 시도"
         case .done: return "설치 완료"
         default: return "설치 시작"
+        }
+    }
+}
+
+extension HvfWindowsInstallStage {
+    static let steps = ["파일 확인", "이미지 준비", "Windows 설치", "VM 저장"]
+
+    var installationStep: Int? {
+        switch self {
+        case .validating: 0
+        case .preparingSource: 1
+        case .installing: 2
+        case .finalizing: 3
+        case .idle, .recovering, .cancelling, .cancelled, .done, .failed: nil
         }
     }
 }

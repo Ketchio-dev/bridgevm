@@ -7,6 +7,7 @@ struct HvfWindowsInstallView: View {
     let config: VMConfig
     @ObservedObject var library: LibraryModel
     @ObservedObject private(set) var session: HvfWindowsInstallSession
+    @State private var showsLog = false
 
     init(config: VMConfig, library: LibraryModel, session: HvfWindowsInstallSession) {
         self.config = config
@@ -17,15 +18,19 @@ struct HvfWindowsInstallView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("\(config.displayName) — Windows 설치")
-                    .font(.title2.bold())
-                requestCard
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Windows 설치").font(.title.bold())
+                    Text(config.displayName).font(.headline).foregroundStyle(.secondary)
+                }
                 HvfWindowsInstallStatusCard(session: session)
-                HvfWindowsInstallControls(session: session)
-                logCard
+                requestCard
+                if !session.logLines.isEmpty { logCard }
             }
             .padding(20)
+            .frame(maxWidth: 760, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
+        .background(LibraryAppearance.canvas)
         .accessibilityIdentifier("bridgevm.windows.install.view")
     }
 
@@ -41,14 +46,12 @@ struct HvfWindowsInstallView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color.gray.opacity(0.08))
-        .cornerRadius(10)
+        .padding(16)
+        .modifier(LibraryCardSurface())
     }
 
     private var logCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("로그").font(.headline)
+        DisclosureGroup(isExpanded: $showsLog) {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
@@ -62,15 +65,20 @@ struct HvfWindowsInstallView: View {
                     }
                 }
                 .frame(height: 220)
+                .onAppear {
+                    if !session.logLines.isEmpty { proxy.scrollTo(session.logLines.count - 1, anchor: .bottom) }
+                }
                 .onChange(of: session.logLines) { _, lines in
                     if !lines.isEmpty { proxy.scrollTo(lines.count - 1, anchor: .bottom) }
                 }
             }
+        } label: {
+            Label("설치 로그", systemImage: "text.alignleft").font(.headline)
         }
+        .accessibilityIdentifier("bridgevm.windows.install.log")
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color.gray.opacity(0.08))
-        .cornerRadius(10)
+        .padding(16)
+        .modifier(LibraryCardSurface())
     }
 
     private func row(_ label: String, _ value: String) -> some View {

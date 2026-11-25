@@ -19,7 +19,7 @@ final class RetainedInstallCancellationTests: XCTestCase {
                 .buttonStyle(InstallCancellationProbeStyle(probe: ordinaryButtons)))
             ordinary.frame = NSRect(x: 0, y: 0, width: 700, height: 100)
             await fixture.settle(ordinary)
-            XCTAssertEqual(ordinaryButtons.entries.count, 2)
+            XCTAssertEqual(ordinaryButtons.entries.count, 1, "Only Cancel is shown during installation")
             XCTAssertTrue(ordinaryButtons.entries.values.allSatisfy { !$0.enabled })
             XCTAssertFalse(retained.enabled, "Retained controls must not offer cancellation after commit begins")
             retained.activateIfEnabled()
