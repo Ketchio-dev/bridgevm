@@ -421,5 +421,69 @@ mod smoke {
 
 #[cfg(feature = "venus")]
 fn main() {
-    smoke::main();
+    if std::env::args().nth(1).as_deref() == Some("--threaded-reset") {
+        threaded_reset_smoke();
+    } else {
+        smoke::main();
+    }
+}
+
+#[cfg(feature = "venus")]
+fn threaded_reset_smoke() {
+    use bridgevm_hvf::venus_backend::{ThreadedVenusBackend, VirtioGpuRendererProtocol};
+    use bridgevm_hvf::virtio_gpu_3d::{CompletedFence, VirtioGpu3dBackend};
+    use std::time::{Duration, Instant};
+
+    let mut backend = ThreadedVenusBackend::new_for_protocol(VirtioGpuRendererProtocol::Venus)
+        .expect("initialize threaded Venus");
+    fn wait_for_one(backend: &mut ThreadedVenusBackend, expected: CompletedFence) {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut completed = Vec::new();
+        loop {
+            backend.poll_fences();
+            backend.drain_completed_fences_into(&mut completed);
+            if !completed.is_empty() {
+                assert_eq!(completed, [expected]);
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "new native fence did not complete"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    let first = CompletedFence {
+        ctx_id: 1,
+        ring_idx: 0,
+        fence_id: 1,
+    };
+    let queued = CompletedFence {
+        fence_id: 2,
+        ..first
+    };
+    assert!(backend.ctx_create(first.ctx_id, 4, b"venus-reset-smoke"));
+    assert!(backend.create_fence(first.ctx_id, first.ring_idx, first.fence_id));
+    wait_for_one(&mut backend, first);
+    assert!(backend.create_fence(queued.ctx_id, queued.ring_idx, queued.fence_id));
+
+    // Poll on the owner and leave the native completion in the channel.
+    for _ in 0..40 {
+        backend.poll_fences();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    backend.reset();
+    let mut completed = Vec::new();
+    backend.drain_completed_fences_into(&mut completed);
+    assert!(
+        completed.is_empty(),
+        "discard queued old-generation fence: {completed:?}"
+    );
+
+    // The new context may reuse both the context and fence IDs.
+    assert!(backend.ctx_create(queued.ctx_id, 4, b"venus-reset-smoke"));
+    assert!(backend.create_fence(queued.ctx_id, queued.ring_idx, queued.fence_id));
+    wait_for_one(&mut backend, queued);
+    println!("PASS: threaded Venus device reset discarded a queued completion");
 }

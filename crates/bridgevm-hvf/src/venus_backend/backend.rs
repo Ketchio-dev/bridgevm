@@ -859,5 +859,8 @@ impl VirtioGpu3dBackend for ThreadedVenusBackend {
 
     fn reset(&mut self) {
         self.call(|backend| backend.reset());
+        // The owner cleared renderer state, but completions it already sent
+        // are still in this channel and may match reused fence IDs.
+        while self.fence_rx.try_recv().is_ok() {}
     }
 }
