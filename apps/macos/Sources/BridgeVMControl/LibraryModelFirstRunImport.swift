@@ -14,7 +14,7 @@ extension LibraryModel {
         guard !firstRunImportBusy else { return "VM 가져오기가 이미 진행 중입니다." }
         guard firstRunImport.publishedConfig == nil else { return firstRunImportError }
         guard !Task.isCancelled else { return "VM 가져오기를 시작하지 않았습니다." }
-        let operation = firstRunImport.begin()
+        let operation = firstRunImport.begin(displayName: inputs.displayName)
         let root = rootURL
         let result = await Task.detached(priority: .userInitiated) {
             worker(inputs, root, snapshotHelper) { stage in

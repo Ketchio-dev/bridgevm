@@ -9,10 +9,31 @@ struct FirstRunImportStatusView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if library.firstRunImportBusy, let stage = library.firstRunImport.stage {
-                HStack {
-                    ProgressView().controlSize(.small)
-                    Text(stage.label).font(.callout).accessibilityIdentifier("bridgevm.first-run.import.stage")
+                VStack(alignment: .leading, spacing: 10) {
+                    if let name = library.firstRunImport.displayName {
+                        Text(name).font(.headline)
+                    }
+                    HStack(spacing: 8) {
+                        if stage.conversionFraction == nil {
+                            ProgressView().controlSize(.small).accessibilityHidden(true)
+                        }
+                        Text(stage.label).font(.callout).monospacedDigit()
+                            .accessibilityIdentifier("bridgevm.first-run.import.stage")
+                    }
+                    if let fraction = stage.conversionFraction {
+                        GeometryReader { track in
+                            Capsule().fill(.quaternary)
+                                .overlay(alignment: .leading) {
+                                    Capsule().fill(.tint).frame(width: track.size.width * fraction)
+                                }
+                        }
+                        .frame(height: 6)
+                        .accessibilityHidden(true) // The stage text also carries the measured percent.
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .modifier(LibraryCardSurface())
             }
             if !library.firstRunImportBusy, library.firstRunImport.publishedConfig == nil, let recoveryIssue {
                 Label(recoveryIssue.description, systemImage: "exclamationmark.circle")
@@ -31,10 +52,10 @@ struct FirstRunImportStatusView: View {
                         Task { await library.recoverPublishedFirstRunImport() }
                     }
                     .disabled(library.firstRunImportBusy).accessibilityIdentifier("bridgevm.first-run.import.recover")
-                } else {
-                    Button(library.firstRunImportBusy ? "가져오는 중…" : "가져오기", action: importAction)
+                } else if !library.firstRunImportBusy {
+                    Button("가져오기", action: importAction)
                         .keyboardShortcut(.defaultAction).accessibilityIdentifier("bridgevm.first-run.import.commit")
-                        .disabled(library.firstRunImportBusy || !canImport || recoveryIssue != nil)
+                        .disabled(!canImport || recoveryIssue != nil)
                 }
             }
             if library.firstRunImport.publishedConfig != nil {

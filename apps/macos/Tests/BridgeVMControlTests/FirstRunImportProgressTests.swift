@@ -57,15 +57,18 @@ final class FirstRunImportProgressTests: XCTestCase {
 
     func testConversionPercentOnlyRisesAndSavingFollows() {
         var state = FirstRunImportProgress()
-        let operation = state.begin()
+        let operation = state.begin(displayName: "Windows Studio")
+        XCTAssertEqual(state.displayName, "Windows Studio")
         state.advance(.converting(.qcow2, percent: 0), operation: operation)
         state.advance(.converting(.qcow2, percent: 40), operation: operation)
         state.advance(.converting(.qcow2, percent: 12), operation: operation)
         XCTAssertEqual(state.stage, .converting(.qcow2, percent: 40))
         XCTAssertEqual(state.stage?.label, "QCOW2 디스크를 변환하는 중… 40%")
+        XCTAssertEqual(state.stage?.conversionFraction, 0.4)
         state.advance(.saving, operation: operation)
         state.advance(.converting(.qcow2, percent: 100), operation: operation)
         XCTAssertEqual(state.stage, .saving)
+        XCTAssertNil(state.stage?.conversionFraction)
     }
 
     func testProgressIsMonotonicAndIgnoresFinishedAndPreviousOperations() {
