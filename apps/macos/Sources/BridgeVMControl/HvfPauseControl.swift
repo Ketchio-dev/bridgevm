@@ -47,7 +47,7 @@ struct LibraryVMRunState: View {
 
     @ViewBuilder fileprivate static func row(_ text: String, _ color: Color, _ dot: CGFloat) -> some View {
         Circle().fill(color).frame(width: dot, height: dot)
-        Text(text).foregroundStyle(color)
+        Text(text).foregroundStyle(.primary)
     }
 
     private struct Observed: View {
