@@ -196,18 +196,22 @@ impl Function {
         (base != 0).then_some(base)
     }
 
-    pub(crate) fn mmio_target_of_bar(&self, idx: usize, gpa: u64) -> Option<PcieMmioTargetMru> {
+    pub(crate) fn mmio_bar_range(&self, idx: usize) -> Option<std::ops::Range<u64>> {
         let bar = self.bars.get(idx)?;
         let (base, size) = match bar.kind {
             BarKind::Memory32 => (bar.assigned_base()?, bar.size()),
             BarKind::Memory64Low => (self.memory64_assigned_base(idx)?, bar.size()),
             BarKind::Memory64High | BarKind::Io => return None,
         };
-        let end = base.checked_add(size)?;
-        let offset = gpa.checked_sub(base)?;
-        (offset < size).then_some(PcieMmioTargetMru {
-            base,
-            end,
+        Some(base..base.checked_add(size)?)
+    }
+
+    pub(crate) fn mmio_target_of_bar(&self, idx: usize, gpa: u64) -> Option<PcieMmioTargetMru> {
+        let range = self.mmio_bar_range(idx)?;
+        let offset = gpa.checked_sub(range.start)?;
+        (gpa < range.end).then_some(PcieMmioTargetMru {
+            base: range.start,
+            end: range.end,
             target: PcieMmioTarget {
                 bdf: self.bdf,
                 bar_index: idx,

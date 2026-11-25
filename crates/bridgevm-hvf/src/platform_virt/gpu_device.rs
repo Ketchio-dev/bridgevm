@@ -3,6 +3,8 @@
 use super::*;
 use crate::display_fb::DisplayFramebuffer;
 use crate::fwcfg::GuestMemoryMut;
+use crate::machine::PCIE_MMIO_64_PREFETCH;
+use crate::mmio_data_abort::{q_store_pair_fault_ipa, Q_STORE_PAIR_BYTES};
 use crate::virtio_gpu::GpuCopy;
 use crate::virtio_gpu::VblankWakeState;
 use crate::virtio_gpu::VirtioGpuResult;
@@ -104,6 +106,50 @@ impl VirtPlatform {
 
     pub fn virtio_gpu_host_visible_bar_base(&self) -> Option<u64> {
         self.pcie.virtio_gpu_host_visible_bar_base()
+    }
+
+    /// BAR2 holes ignore writes. Accept the whole pair store only while the
+    /// 3D device is reset and neither of its beats can reach a live blob.
+    pub fn can_ignore_reset_gpu_bar2_store(
+        &self,
+        syndrome: u64,
+        word: u32,
+        fault_va: u64,
+        fault_ipa: u64,
+        read_x: impl FnOnce(u32) -> Option<u64>,
+    ) -> bool {
+        let Some(dev) = self.virtio_gpu.as_ref() else {
+            return false;
+        };
+        if dev.gpu.pci.status != 0 || !dev.gpu.three_d.has_backend() {
+            return false;
+        }
+        let Some(first) = q_store_pair_fault_ipa(syndrome, word, fault_va, fault_ipa, read_x)
+        else {
+            return false;
+        };
+        let Some(last) = first.checked_add(Q_STORE_PAIR_BYTES - 1) else {
+            return false;
+        };
+        // A guest can program BAR2 outside the machine's PCI memory window.
+        if !PCIE_MMIO_64_PREFETCH.contains(first) || !PCIE_MMIO_64_PREFETCH.contains(last) {
+            return false;
+        }
+        let (Some(base), Some(size)) = (
+            self.pcie.virtio_gpu_host_visible_bar_base(),
+            self.pcie.virtio_gpu_host_visible_bar_size(),
+        ) else {
+            return false;
+        };
+        // Windows disables PCI memory decoding after resetting the GPU. Only
+        // discard this stale store if the entire programmed BAR2 span is idle.
+        first >= base
+            && last - base < size
+            && !self.pcie.any_mmio_bar_decodes(first, last)
+            && !dev
+                .gpu
+                .three_d
+                .interval_overlaps(first - base, Q_STORE_PAIR_BYTES)
     }
 
     pub(crate) fn virtio_gpu_msix_access(&mut self, offset: u64, op: MmioOp) -> MmioOutcome {

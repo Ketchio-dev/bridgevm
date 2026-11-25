@@ -41,6 +41,39 @@ impl DataAbort {
     }
 }
 
+pub(crate) const Q_STORE_PAIR_BYTES: u64 = 32;
+
+/// Resolve the entire AArch64 STP Q offset store on an ISV=0 translation
+/// fault. Both 16-byte stores must address the same guest page.
+pub(crate) fn q_store_pair_fault_ipa(
+    syndrome: u64,
+    word: u32,
+    fault_va: u64,
+    fault_ipa: u64,
+    read_x: impl FnOnce(u32) -> Option<u64>,
+) -> Option<u64> {
+    // Lower EL, 32-bit instruction, write translation fault. The offset
+    // form has no register writeback.
+    if !matches!(syndrome, 0x9200_0044..=0x9200_0047) || word & 0xffc0_0000 != 0xad00_0000 {
+        return None;
+    }
+    let register = (word >> 5) & 31;
+    if register == 31 {
+        return None;
+    }
+    let imm7 = ((word >> 15) & 0x7f) as i8;
+    let displacement = i64::from(imm7 << 1 >> 1) * 16;
+    let first_va = read_x(register)?.checked_add_signed(displacement)?;
+    let last_va = first_va.checked_add(Q_STORE_PAIR_BYTES - 1)?;
+    if first_va >> 12 != last_va >> 12
+        || !(first_va..=last_va).contains(&fault_va)
+        || fault_va & 0xfff != fault_ipa & 0xfff
+    {
+        return None;
+    }
+    fault_ipa.checked_sub(fault_va - first_va)
+}
+
 #[cfg(test)]
 #[path = "mmio_data_abort_tests.rs"]
 mod tests;

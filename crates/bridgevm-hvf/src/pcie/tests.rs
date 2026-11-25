@@ -660,6 +660,108 @@ fn virtio_gpu_2d_config_has_no_host_visible_bar_or_shared_memory_capability() {
 }
 
 #[test]
+fn retired_gpu_bar_store_requires_a_reset_device_and_unmapped_page() {
+    use crate::platform_virt::VirtPlatform;
+    use crate::virtio_gpu::VirtioPciGpu;
+    use crate::virtio_gpu_3d::MockBackend;
+    use std::sync::Arc;
+
+    with_hostmem_mib_env("512", || {
+        let mut platform = VirtPlatform::new(crate::dtb::VirtFdtConfig::default());
+        platform.pcie = PcieEcam::new_with_config(PcieEcamConfig {
+            virtio_gpu_present: true,
+            virtio_gpu_3d_enabled: true,
+            ..PcieEcamConfig::default()
+        });
+        platform.virtio_gpu = Some(VirtioPciGpu::with_3d_backend(
+            1280,
+            800,
+            Box::new(Arc::new(Mutex::new(MockBackend::new_venus()))),
+        ));
+        let bar2 = machine::PCIE_MMIO_64.end() - 512 * 1024 * 1024;
+        let program_bar2 = |ecam: &mut PcieEcam, base: u64| {
+            ecam.cfg_write(
+                bdf_ecam_offset(VIRTIO_GPU_BDF, REG_BAR0 + 8),
+                4,
+                base & 0xffff_ffff,
+            );
+            ecam.cfg_write(
+                bdf_ecam_offset(VIRTIO_GPU_BDF, REG_BAR0 + 12),
+                4,
+                base >> 32,
+            );
+        };
+        program_bar2(&mut platform.pcie, bar2);
+
+        // The fault observed after the Windows DWM ring was unmapped at reset.
+        const SYNDROME: u64 = 0x9200_0046;
+        const STORE: u32 = 0xad00_0400;
+        const VA: u64 = 0x01e6_1a33_9814;
+        const IPA: u64 = 0x00ff_f02c_9814;
+        let ignore = |platform: &VirtPlatform, word, va, ipa| {
+            platform.can_ignore_reset_gpu_bar2_store(SYNDROME, word, va, ipa, |register| {
+                (register == 0).then_some(va)
+            })
+        };
+        let dev = platform.virtio_gpu.as_mut().unwrap();
+        dev.gpu.pci.status = 15;
+        assert!(!ignore(&platform, STORE, VA, IPA));
+
+        let gpu_command = bdf_ecam_offset(VIRTIO_GPU_BDF, REG_COMMAND_STATUS);
+        platform
+            .pcie
+            .cfg_write(gpu_command, 2, u64::from(CMD_MEMORY_SPACE));
+        platform.virtio_gpu.as_mut().unwrap().reset_runtime_state();
+        assert!(!ignore(&platform, STORE, VA, IPA));
+        // Windows disables GPU memory decoding after it resets the device.
+        platform.pcie.cfg_write(gpu_command, 2, 0x400);
+        assert_eq!(platform.pcie_mmio_target(IPA), None);
+        assert!(ignore(&platform, STORE, VA, IPA));
+        assert!(platform.can_ignore_reset_gpu_bar2_store(
+            SYNDROME,
+            0xad3f_0ca2,
+            VA + 4,
+            IPA + 4,
+            |register| (register == 5).then_some(VA + 36),
+        ));
+        assert!(!ignore(&platform, STORE | (1 << 23), VA, IPA));
+        assert!(!ignore(&platform, STORE, VA, IPA + 1));
+        assert!(!ignore(&platform, STORE, VA | 0xff0, IPA | 0xff0));
+        assert!(!ignore(&platform, STORE, VA, machine::RAM_BASE + 0x814));
+
+        let dev = platform.virtio_gpu.as_mut().unwrap();
+        dev.gpu
+            .three_d
+            .mapped_intervals
+            .insert(0x1010_0000, (0x20_1000, 12));
+        assert!(!ignore(&platform, STORE, VA, IPA));
+
+        let dev = platform.virtio_gpu.as_mut().unwrap();
+        dev.gpu.three_d.mapped_intervals.clear();
+        // A different endpoint can claim the former GPU aperture.
+        for (reg, size, value) in [
+            (REG_BAR0, 4, IPA & 0xffff_ffff),
+            (REG_BAR0 + 4, 4, IPA >> 32),
+            (REG_COMMAND_STATUS, 2, u64::from(CMD_MEMORY_SPACE)),
+        ] {
+            platform
+                .pcie
+                .cfg_write(bdf_ecam_offset(NVME_BDF, reg), size, value);
+        }
+        assert_eq!(platform.pcie_mmio_target(IPA).unwrap().bdf, NVME_BDF);
+        assert!(!ignore(&platform, STORE, VA, IPA));
+        let offset = IPA - bar2;
+        for base in [0x20_0000_0000, machine::PCIE_MMIO_64_NON_PREFETCH.base] {
+            program_bar2(&mut platform.pcie, base);
+            let outside_ipa = base + offset;
+            assert_eq!(platform.pcie.virtio_gpu_host_visible_bar_base(), Some(base));
+            assert_eq!(platform.pcie_mmio_target(outside_ipa), None);
+            assert!(!ignore(&platform, STORE, VA, outside_ipa));
+        }
+    });
+}
+
+#[test]
 fn virtio_gpu_3d_exposes_prefetchable_bar2_and_host_visible_shm_capability() {
     with_hostmem_mib_env("1024", || {
         let mut ecam = PcieEcam::new_with_config(PcieEcamConfig {

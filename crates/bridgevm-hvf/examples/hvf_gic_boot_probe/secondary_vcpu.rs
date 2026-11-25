@@ -414,10 +414,21 @@ impl SecondaryRunLoopContext<'_> {
         {
             return Ok(Next::Run);
         }
-        trace_isv0_data_abort(esr, pc, ipa);
         let access = match DataAbort::decode(esr) {
             Ok(access) => access,
             Err(error) => {
+                let ignored = ignore_reset_gpu_bar2_store(
+                    vcpu,
+                    pc,
+                    unsafe { &(*self.exit).exception },
+                    self.guest_ram,
+                    self.platform,
+                )
+                .is_some();
+                trace_isv0_data_abort(esr, pc, ipa, ignored);
+                if ignored {
+                    return Ok(Next::CheckExitCap);
+                }
                 self.control.record_run_error(self.primary_vcpu);
                 println!("secondary vCPU{} {error} @ PC {pc:#x}", index);
                 return Err(true);

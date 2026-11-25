@@ -25,10 +25,9 @@ pub(crate) fn vcpu_nvme_io_worker(index: u64, ram: usize, len: usize) -> NvmeIoW
 
 /// `BRIDGEVM_TRACE_VENUS_START=1`: flag EC=0x24 exits whose syndrome has
 /// ISV=0 (no valid instruction syndrome — stp/ldp, DC ZVA, NEON, atomics).
-/// SRT/size are meaningless for these exits. The run loops refuse them before
-/// device effects or register writeback; this trace retains the rejected exit.
-/// It does not establish the cause of a past guest failure.
-pub(crate) fn trace_isv0_data_abort(esr: u64, pc: u64, ipa: u64) {
+/// SRT/size are meaningless for these exits. Record whether the run loop
+/// recognized a write to a reset GPU's empty shared-memory aperture.
+pub(crate) fn trace_isv0_data_abort(esr: u64, pc: u64, ipa: u64, ignored: bool) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     let enabled = *ENABLED.get_or_init(|| {
@@ -42,10 +41,63 @@ pub(crate) fn trace_isv0_data_abort(esr: u64, pc: u64, ipa: u64) {
     static COUNT: AtomicU64 = AtomicU64::new(0);
     let n = COUNT.fetch_add(1, Ordering::Relaxed) + 1;
     if n <= 16 || n % 65536 == 0 {
+        let outcome = if ignored {
+            "reset GPU BAR2 write ignored"
+        } else {
+            "MMIO emulation refused"
+        };
         println!(
-            "venus-start: ISV=0 data abort n={n} pc={pc:#x} ipa={ipa:#x} esr={esr:#x} (MMIO emulation refused)"
+            "venus-start: ISV=0 data abort n={n} pc={pc:#x} ipa={ipa:#x} esr={esr:#x} ({outcome})"
         );
     }
+}
+
+/// Retire a known store to a reset GPU aperture. The caller owns this vCPU
+/// and it is stopped at the faulting instruction.
+pub(crate) fn ignore_reset_gpu_bar2_store(
+    vcpu: HvVcpuT,
+    pc: u64,
+    fault: &HvVcpuExitException,
+    mem: &dyn GuestMemoryMut,
+    platform: &Mutex<VirtPlatform>,
+) -> Option<()> {
+    let next_pc = pc.checked_add(4).filter(|_| pc & 3 == 0)?;
+    let read_register = |register| {
+        let mut value = 0;
+        (unsafe { hv_vcpu_get_reg(vcpu, register, &mut value) } == 0).then_some(value)
+    };
+    if read_register(HV_REG_CPSR)? & 0x10 != 0 {
+        return None;
+    }
+    let read_system_register = |register| {
+        let mut value = 0;
+        (unsafe { hv_vcpu_get_sys_reg(vcpu, register, &mut value) } == 0).then_some(value)
+    };
+    let stage1 = Stage1Context {
+        sctlr_el1: read_system_register(HV_SYS_REG_SCTLR_EL1)?,
+        tcr_el1: read_system_register(HV_SYS_REG_TCR_EL1)?,
+        ttbr0_el1: read_system_register(HV_SYS_REG_TTBR0_EL1)?,
+        ttbr1_el1: read_system_register(HV_SYS_REG_TTBR1_EL1)?,
+        mair_el1: read_system_register(HV_SYS_REG_MAIR_EL1)?,
+    };
+    if stage1.sctlr_el1 & 1 == 0
+        || translated_ipa(mem, &stage1, fault.virtual_address).ok() != Some(fault.physical_address)
+    {
+        return None;
+    }
+    let word = read_translated_instruction_word(mem, translated_ipa(mem, &stage1, pc).ok())?;
+    // Keep the aperture state stable until the faulting instruction retires.
+    let platform = platform.lock().ok()?;
+    if !platform.can_ignore_reset_gpu_bar2_store(
+        fault.syndrome,
+        word,
+        fault.virtual_address,
+        fault.physical_address,
+        |register| read_register(HV_REG_X0 + register),
+    ) {
+        return None;
+    }
+    (unsafe { hv_vcpu_set_reg(vcpu, HV_REG_PC, next_pc) } == 0).then_some(())
 }
 
 #[derive(Debug, Default)]

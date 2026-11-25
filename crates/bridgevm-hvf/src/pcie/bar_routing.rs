@@ -60,6 +60,17 @@ impl PcieEcam {
         None
     }
 
+    /// True when a memory-enabled endpoint decodes any byte from first through last.
+    pub(crate) fn any_mmio_bar_decodes(&self, first: u64, last: u64) -> bool {
+        self.functions.iter().any(|func| {
+            func.command & CMD_MEMORY_SPACE != 0
+                && (0..func.bars.len()).any(|idx| {
+                    func.mmio_bar_range(idx)
+                        .is_some_and(|range| first < range.end && range.start <= last)
+                })
+        })
+    }
+
     /// Resolve a PCI I/O-port address to the programmed endpoint BAR that
     /// decodes it. Only functions with I/O Space enabled in the command register
     /// are allowed to answer.
