@@ -8,30 +8,24 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
     typealias Operation = HvfWindowsSnapshotCommand.Operation
     private let made = Date(timeIntervalSince1970: 1_794_000_000)
 
-    func testRestoreRunsOnlyOnceConfirmedAndCancelRunsNothing() async throws {
+    func testRestoreRunsOnlyAfterTheDisplayedQuestionIsConfirmed() async throws {
         let model = HvfWindowsSnapshotModel()
         var ran: [Operation] = []
         let run: HvfWindowsSnapshotModel.Run = { ran.append($0); return nil }
 
-        XCTAssertNil(model.request(.restore, snapshotDate: made, run: run))
-        let asked = try XCTUnwrap(model.confirmation)
+        let asked = try XCTUnwrap(model.confirmation(for: .restore, snapshotDate: made, run: run))
         XCTAssertEqual(asked.title, "‘\(HvfWindowsSnapshotModel.dateText(made))’ 스냅샷으로 되돌릴까요?")
         XCTAssertEqual(asked.message, "‘\(HvfWindowsSnapshotModel.dateText(made))’ 스냅샷으로 복원하면 그 뒤에 바뀐 디스크 내용은 모두 사라집니다.")
         XCTAssertEqual(asked.action, "복원")
         XCTAssertEqual(ran, [], "asking runs nothing")
-        model.cancel()
-        XCTAssertNil(model.confirmation)
         await Task.yield()
-        XCTAssertEqual(ran, [], "cancel runs nothing")
         XCTAssertEqual(model.listRevision, 0)
         XCTAssertFalse(model.busy)
         XCTAssertEqual(model.status, HvfWindowsSnapshotModel.idleText)
 
-        model.request(.restore, snapshotDate: made, run: run)
-        await model.confirm(try XCTUnwrap(model.confirmation))?.value
+        await model.confirm(asked)?.value
         XCTAssertEqual(ran, [.restore])
         XCTAssertEqual(model.listRevision, 1)
-        XCTAssertNil(model.confirmation)
         XCTAssertEqual(model.status, "스냅샷 복원 완료")
         XCTAssertFalse(model.failed)
     }
@@ -40,17 +34,13 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         let model = HvfWindowsSnapshotModel()
         var ran: [Operation] = []
         let run: HvfWindowsSnapshotModel.Run = { ran.append($0); return nil }
-        await model.request(.create, snapshotDate: made, run: run)?.value
+        await model.create(run: run)?.value
         XCTAssertEqual(ran, [.create])
-        XCTAssertNil(model.confirmation)
-        model.request(.delete, snapshotDate: made, label: "설치 완료", run: run)
-        let asked = try XCTUnwrap(model.confirmation)
+        let asked = try XCTUnwrap(model.confirmation(for: .delete, snapshotDate: made, label: "설치 완료", run: run))
         XCTAssertEqual(asked.title, "‘설치 완료’ 스냅샷을 삭제할까요?")
         XCTAssertEqual(asked.message, "‘설치 완료’ 스냅샷만 영구 삭제하며 현재 VM 디스크는 바뀌지 않습니다.")
-        model.cancel()
         XCTAssertEqual(ran, [.create])
-        model.request(.delete, snapshotDate: made, label: "설치 완료", run: run)
-        await model.confirm(try XCTUnwrap(model.confirmation))?.value
+        await model.confirm(asked)?.value
         XCTAssertEqual(ran, [.create, .delete])
         XCTAssertEqual(model.listRevision, 2)
         XCTAssertEqual(model.status, "스냅샷 삭제 완료")
@@ -59,10 +49,9 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
     func testRestoreWithoutASnapshotRunsNothing() async {
         let model = HvfWindowsSnapshotModel()
         var ran: [Operation] = []
-        XCTAssertNil(model.request(.restore, snapshotDate: nil) { ran.append($0); return nil })
+        XCTAssertNil(model.confirmation(for: .restore, snapshotDate: nil) { ran.append($0); return nil })
         await Task.yield()
         XCTAssertEqual(ran, [])
-        XCTAssertNil(model.confirmation)
         XCTAssertEqual(model.status, "되돌릴 스냅샷이 없으니 먼저 스냅샷을 만드세요.")
         XCTAssertTrue(model.failed)
     }
@@ -70,7 +59,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
     /// main showed "스냅샷 실패: The operation couldn't be completed. (BridgeVM.RuntimeMutation error 1.)".
     func testAFailedRunShowsItsSentenceNeverTheEmptyError() async {
         let model = HvfWindowsSnapshotModel()
-        await model.request(.create, snapshotDate: nil) { _ in
+        await model.create { _ in
             throw NSError(domain: "BridgeVM.RuntimeMutation", code: 1)
         }?.value
         XCTAssertEqual(model.status, "VM이 실행 중이거나 다른 작업 중이라 스냅샷을 만들지 못했으니 VM을 완전히 종료한 뒤 다시 시도하세요.")
@@ -161,7 +150,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         }
 
         XCTAssertNil(HvfWindowsSnapshotCommand.snapshotDate(config: config))
-        await model.request(.create, snapshotDate: nil, run: run)?.value
+        await model.create(run: run)?.value
         XCTAssertEqual(model.status, "스냅샷 생성 완료", session.events.last?.displayText ?? "")
         let date = try XCTUnwrap(HvfWindowsSnapshotCommand.snapshotDate(config: config))
         let first = try XCTUnwrap(HvfWindowsSnapshotStore.list(bundle: bundle).first)
@@ -175,9 +164,9 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
             ran.append($0)
             return try await session.runSnapshot($0, configuration: config, target: first.url)
         }
-        model.request(.restore, snapshotDate: date, label: first.label, run: restoreFirst)
+        let restore = try XCTUnwrap(model.confirmation(for: .restore, snapshotDate: date, label: first.label, run: restoreFirst))
         XCTAssertEqual(ran, [.create], "the restore waits for its answer")
-        await model.confirm(try XCTUnwrap(model.confirmation))?.value
+        await model.confirm(restore)?.value
         XCTAssertEqual(model.status, "스냅샷 복원 완료", session.events.last?.displayText ?? "")
         let selectedDigest = try HvfWindowsSnapshotCommand.invoke(helper, ["digest", disk.path, vars.path])
         let firstDigest = try HvfWindowsSnapshotCommand.invoke(helper, ["digest", first.url.appendingPathComponent("disk.raw").path,
@@ -187,16 +176,16 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
 
         let snapshot = first.url
         try Data(repeating: 1, count: 128).write(to: snapshot.appendingPathComponent("disk.raw"))
-        model.request(.restore, snapshotDate: date, run: restoreFirst)
-        await model.confirm(try XCTUnwrap(model.confirmation))?.value
+        let corruptRestore = try XCTUnwrap(model.confirmation(for: .restore, snapshotDate: date, run: restoreFirst))
+        await model.confirm(corruptRestore)?.value
         XCTAssertEqual(ran, [.create, .restore, .restore])
         XCTAssertEqual(model.status, "스냅샷이 손상되어 되돌리지 못했으니 새 스냅샷을 만드세요.")
         XCTAssertTrue(model.failed)
         let feed = session.events.last?.displayText ?? ""
         XCTAssertTrue(feed.hasPrefix("powered-off snapshot restore failed (BridgeVM.HvfWindowsSnapshot 1): "), feed)
         XCTAssertTrue(feed.contains("does not match the hash"), feed)
-        model.request(.delete, snapshotDate: date, label: first.label, run: restoreFirst)
-        await model.confirm(try XCTUnwrap(model.confirmation))?.value
+        let delete = try XCTUnwrap(model.confirmation(for: .delete, snapshotDate: date, label: first.label, run: restoreFirst))
+        await model.confirm(delete)?.value
         XCTAssertEqual(model.status, "스냅샷 삭제 완료")
         XCTAssertEqual(HvfWindowsSnapshotStore.list(bundle: bundle).count, 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: first.url.path))
@@ -205,7 +194,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         // The helper owns staging; a failed invocation must not publish an entry.
         let before = HvfWindowsSnapshotStore.list(bundle: bundle)
         try Data("#!/bin/sh\nexit 1\n".utf8).write(to: helper)
-        await model.request(.create, snapshotDate: nil, run: run)?.value
+        await model.create(run: run)?.value
         XCTAssertTrue(model.failed)
         XCTAssertEqual(HvfWindowsSnapshotStore.list(bundle: bundle), before)
         XCTAssertFalse(session.hasActiveRuntimeWork)

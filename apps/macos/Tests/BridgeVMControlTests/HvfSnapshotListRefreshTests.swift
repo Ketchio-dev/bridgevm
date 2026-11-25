@@ -5,6 +5,34 @@ import XCTest
 
 @MainActor
 final class HvfSnapshotListRefreshTests: XCTestCase {
+    func testReopenedCardRefreshesWhenAnExistingSnapshotOperationFinishes() async throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        let saved = fixture.config()
+        fixture.save(saved)
+        let library = fixture.library()
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+        let (release, continuation) = AsyncStream<Void>.makeStream()
+        defer { continuation.finish() }
+        let work = try XCTUnwrap(session.snapshotModel.create { _ in
+            for await _ in release { break }
+            return nil
+        })
+
+        let probe = ReadProbe()
+        var reopened = HvfWindowsSnapshotCard(config: session.config, session: session)
+        reopened.listEntries = { probe.read($0) }
+        let host = NSHostingView(rootView: reopened.environment(\.controlActiveState, .inactive))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 360),
+                              styleMask: [.titled], backing: .buffered, defer: true)
+        window.contentView = host
+        defer { window.contentView = nil }
+        try await waitForReads(1, probe: probe, host: host)
+        continuation.finish()
+        await work.value
+        try await waitForReads(2, probe: probe, host: host)
+    }
+
     func testReturningToSettingsLoadsExternalChangesWithoutReadingForSessionEvents() async throws {
         let fixture = try HvfRuntimeSessionStoreFixture()
         defer { fixture.clean() }
