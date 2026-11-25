@@ -128,7 +128,7 @@ extension HvfWindowsInstallSession {
             guard await runProcess(arguments: build.arguments, extraEnvironment: build.environment,
                                    progressLog: nil) else {
                 try? FileManager.default.removeItem(atPath: plan.sourceImagePath)
-                failUnlessCancelled("설치 소스 생성이 실패했습니다.")
+                failUnlessCancelled("Windows ISO에서 설치에 필요한 파일을 준비하지 못했습니다.")
                 return
             }
             guard !acknowledgeCancellation(cleanup: true) else { return }

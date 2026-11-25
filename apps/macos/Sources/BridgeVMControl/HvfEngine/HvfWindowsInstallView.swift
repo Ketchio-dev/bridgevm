@@ -23,8 +23,13 @@ struct HvfWindowsInstallView: View {
                     Text(config.displayName).font(.headline).foregroundStyle(.secondary)
                 }
                 HvfWindowsInstallStatusCard(session: session)
-                requestCard
-                if !session.logLines.isEmpty { logCard }
+                if case .failed = session.stage, !session.logLines.isEmpty {
+                    logCard(showsLog ? "설치 오류 로그 접기" : "설치 오류 로그 보기")
+                    requestCard
+                } else {
+                    requestCard
+                    if !session.logLines.isEmpty { logCard("설치 로그") }
+                }
             }
             .padding(20)
             .frame(maxWidth: 760, alignment: .leading)
@@ -50,7 +55,7 @@ struct HvfWindowsInstallView: View {
         .modifier(LibraryCardSurface())
     }
 
-    private var logCard: some View {
+    private func logCard(_ title: String) -> some View {
         DisclosureGroup(isExpanded: $showsLog) {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -73,7 +78,7 @@ struct HvfWindowsInstallView: View {
                 }
             }
         } label: {
-            Label("설치 로그", systemImage: "text.alignleft").font(.headline)
+            Label(title, systemImage: "text.alignleft").font(.headline)
         }
         .accessibilityIdentifier("bridgevm.windows.install.log")
         .frame(maxWidth: .infinity, alignment: .leading)
