@@ -78,12 +78,8 @@ pub(crate) fn composite_local_3d_to_scanout(
     for y in rect.y..y_end {
         let row_offset = u64::from(y) * resource_stride + u64::from(rect.x) * 4;
         if read_from_blob_backing_into(mem, backing, row_offset, row_pixels) {
-            for x in rect.x..x_end {
-                let src = ((x - rect.x) as usize) * 4;
-                let dst = ((y as usize) * (scanout_width as usize) + (x as usize)) * 4;
-                scanout[dst..dst + 4]
-                    .copy_from_slice(&to_xrgb8888(&row_pixels[src..src + 4], info.format));
-            }
+            let dst = ((y as usize) * (scanout_width as usize) + (rect.x as usize)) * 4;
+            convert_row_to_xrgb(row_pixels, &mut scanout[dst..dst + row_bytes], info.format);
             copied_any = true;
             continue;
         }
@@ -133,14 +129,12 @@ pub(crate) fn composite_guest_blob_to_scanout(
             row_src,
             composite.row_pixels,
         ) {
-            for x in rect.x..x_end {
-                let src = ((x - rect.x) as usize) * 4;
-                let dst = ((y as usize) * (composite.scanout_width as usize) + (x as usize)) * 4;
-                composite.scanout[dst..dst + 4].copy_from_slice(&to_xrgb8888(
-                    &composite.row_pixels[src..src + 4],
-                    composite.blob.format,
-                ));
-            }
+            let dst = ((y as usize) * (composite.scanout_width as usize) + (rect.x as usize)) * 4;
+            convert_row_to_xrgb(
+                composite.row_pixels,
+                &mut composite.scanout[dst..dst + row_bytes],
+                composite.blob.format,
+            );
             continue;
         }
         for x in rect.x..x_end {
@@ -168,16 +162,36 @@ pub(crate) fn composite_host_blob_to_scanout(
     x_end: u32,
     y_end: u32,
 ) {
+    let row_bytes = (x_end.saturating_sub(rect.x) as usize) * 4;
+    if row_bytes == 0 {
+        return;
+    }
     for y in rect.y..y_end {
-        for x in rect.x..x_end {
-            let src = (blob.offset as usize)
-                .saturating_add((y as usize).saturating_mul(blob.stride as usize))
-                .saturating_add((x as usize).saturating_mul(4));
-            if !matches!(src.checked_add(4), Some(end) if end <= pixels.len()) {
-                continue;
-            }
-            let dst = ((y as usize) * (scanout_width as usize) + (x as usize)) * 4;
-            scanout[dst..dst + 4].copy_from_slice(&to_xrgb8888(&pixels[src..src + 4], blob.format));
+        let src = (blob.offset as usize)
+            .saturating_add((y as usize).saturating_mul(blob.stride as usize))
+            .saturating_add((rect.x as usize).saturating_mul(4));
+        let Some(source) = pixels.get(src..) else {
+            break;
+        };
+        let available = row_bytes.min(source.len() / 4 * 4);
+        if available == 0 {
+            break;
+        }
+        let dst = ((y as usize) * (scanout_width as usize) + (rect.x as usize)) * 4;
+        convert_row_to_xrgb(
+            &source[..available],
+            &mut scanout[dst..dst + available],
+            blob.format,
+        );
+    }
+}
+
+fn convert_row_to_xrgb(source: &[u8], target: &mut [u8], format: u32) {
+    if matches!(format, FORMAT_B8G8R8A8_UNORM | FORMAT_B8G8R8X8_UNORM) {
+        compositor_bgr::convert_bgr_row_to_xrgb(source, target);
+    } else {
+        for (pixel, out) in source.chunks_exact(4).zip(target.chunks_exact_mut(4)) {
+            out.copy_from_slice(&to_xrgb8888(pixel, format));
         }
     }
 }
