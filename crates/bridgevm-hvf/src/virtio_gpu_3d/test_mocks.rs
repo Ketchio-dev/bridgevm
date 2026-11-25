@@ -280,7 +280,9 @@ impl VirtioGpu3dBackend for std::sync::Arc<std::sync::Mutex<MockBackend>> {
     }
 
     fn reset(&mut self) {
-        self.lock().unwrap().completed.clear();
+        let mut backend = self.lock().unwrap();
+        backend.mapped.clear();
+        backend.completed.clear();
     }
 }
 

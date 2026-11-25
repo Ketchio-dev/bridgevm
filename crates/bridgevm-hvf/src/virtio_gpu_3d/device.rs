@@ -33,6 +33,8 @@ impl VirtioGpu3d {
         if let Some(wake) = &self.venus_work_wake {
             wake.clear();
         }
+        // Remove guest aliases while the renderer still owns their backing.
+        self.unmap_all_blobs();
         if let Some(backend) = self.backend.as_mut() {
             backend.reset();
         }
@@ -42,7 +44,6 @@ impl VirtioGpu3d {
         self.resource_3d_ids.clear();
         self.resource_3d_info.clear();
         self.local_3d_backing.clear();
-        self.unmap_all_blobs();
         self.blob_resources.clear();
         self.mapped_intervals.clear();
         self.destroyed_blob_mapped_ids.clear();
