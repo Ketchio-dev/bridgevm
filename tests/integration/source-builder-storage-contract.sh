@@ -10,6 +10,7 @@ printf 'fake ISO\n' > "$TMP/windows.iso"
 python3 "$ROOT/tests/fixtures/make-synthetic-windows-guest-payload.py" "$TMP/payload" "$TMP/payload.tsv"
 cat > "$FAKE/hdiutil" <<'MOCK'
 #!/usr/bin/env bash
+set -eu
 python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "$@" >> "$BRIDGEVM_HDIUTIL_LOG"
 case "$1" in
   attach)
@@ -19,6 +20,16 @@ case "$1" in
       if [[ "$1" == -mountpoint ]]; then mountpoint="$2"; shift; fi
       shift
     done
+    if [[ -n "$mountpoint" ]]; then
+      receipt=("$BRIDGEVM_TEST_OUTPUT"/bridgevm-win-source.*/provisioning/payload-receipt.tsv)
+      [[ -f "${receipt[0]}" ]]
+      [[ "${BRIDGEVM_FAIL_ATTACH:-0}" == 0 ]] || exit 1
+      state="$BRIDGEVM_HDIUTIL_LOG.$readonly"
+      printf '%s\n' "$mountpoint" > "$state"
+      # A real detach reveals the original empty directory.
+      rmdir "$mountpoint"
+      ln -s "$(mktemp -d "$BRIDGEVM_TEST_OUTPUT/../volume.XXXXXX")" "$mountpoint"
+    fi
     if [[ -n "$mountpoint" && "$readonly" == 1 ]]; then
       mkdir -p "$mountpoint/sources" "$mountpoint/efi/boot"
       : > "$mountpoint/sources/install.wim"
@@ -32,7 +43,17 @@ case "$1" in
       printf '/dev/disk-destination\n'
     fi
     ;;
-  detach|info) ;;
+  detach)
+    if [[ "$2" == /dev/disk-iso ]]; then readonly=1; else readonly=0; fi
+    state="$BRIDGEVM_HDIUTIL_LOG.$readonly"
+    if [[ -f "$state" ]]; then
+      IFS= read -r mountpoint < "$state"
+      [[ -L "$mountpoint" ]]
+      rm "$mountpoint" "$state"
+      mkdir "$mountpoint"
+    fi
+    ;;
+  info) ;;
   *) exit 2 ;;
 esac
 MOCK
@@ -61,15 +82,18 @@ case "$1" in
 esac
 MOCK
 chmod 755 "$FAKE/"*; : > "$TMP/bv-file-compare.exe"
-for iteration in 1 2; do
-BRIDGEVM_HDIUTIL_LOG="$TMP/hdiutil.log" \
+build_source() {
+BRIDGEVM_TEST_OUTPUT="$TMP/output" BRIDGEVM_HDIUTIL_LOG="$TMP/$1.log" BRIDGEVM_FAIL_ATTACH="$2" \
 ISO="$TMP/windows.iso" ASSETS="$TMP/assets" OUT="$TMP/output/source.raw" \
 WIMLIB="$FAKE/wimlib-imagex" \
 WINDOWS_FILE_COMPARE="$TMP/bv-file-compare.exe" \
 WINDOWS_GUEST_PAYLOAD_DIR="$TMP/payload" WINDOWS_GUEST_PAYLOAD_MANIFEST="$TMP/payload.tsv" WINDOWS_GUEST_PAYLOAD_CATALOG_VERIFIER="$CATALOG_VERIFIER" \
 TMPDIR="$TMP" PATH="$FAKE:/usr/bin:/bin:/usr/sbin:/sbin" \
   "$ROOT/scripts/build-hvf-windows-scripted-source.sh" >/dev/null
-done
+}
+build_source hdiutil 0
+build_source hdiutil 0
+if build_source failed 1; then echo "expected forced ISO attach failure" >&2; exit 1; fi
 python3 - "$TMP/hdiutil.log" "$TMP/windows.iso" <<'PY'
 import json,sys
 commands=[json.loads(line) for line in open(sys.argv[1])]; assert sum(c[0]=="attach" for c in commands)==6; assert sum(c[0]=="detach" for c in commands)==6; assert sum("-readonly" in c for c in commands)==2; assert sum(sys.argv[2] in c for c in commands)==2
