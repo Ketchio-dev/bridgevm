@@ -421,10 +421,21 @@ impl VirtioGpu3dBackend for VenusBackend {
     fn map_blob(&mut self, resource_id: u32) -> Option<MappedBlob> {
         host_gl::rebind_last_context();
         let mapped = self.map_resource_ref(resource_id)?;
+        let map_info = match mapped.map_info {
+            Ok(info) => info,
+            Err(error) => {
+                self.unmap_resource_ref(resource_id);
+                eprintln!(
+                    "{}: resource_get_map_info res={resource_id} ret={error}",
+                    self.protocol.label()
+                );
+                return None;
+            }
+        };
         Some(MappedBlob {
             host_ptr: mapped.host_ptr,
             size: mapped.size,
-            map_info: mapped.map_info,
+            map_info,
         })
     }
 
