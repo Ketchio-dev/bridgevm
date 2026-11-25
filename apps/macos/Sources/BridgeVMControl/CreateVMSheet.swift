@@ -10,10 +10,7 @@ struct CreateVMSheet: View {
     @State var mode: Mode = .windowsHVFInstall
     @State var name = ""
     @State var isoPath: String = ""
-    @State var guestPayloadPath: String = ""
-    @State var guestPayloadManifestPath: String = ""
-    @State var fetchingDrivers = false
-    @State var driverFetchError = ""
+    @State var drivers = CreateVMDriverSelection()
     @State var hvfTargetPath: String = ""
     @State var hvfVarsPath: String = ""
     @State var diskGiB = 64
@@ -61,7 +58,7 @@ struct CreateVMSheet: View {
                 }
                 .accessibilityIdentifier("bridgevm.create.windows.install")
                 CreateVMMethodChoiceTile(title: "설치된 디스크 가져오기", selected: mode == .windowsHVF) {
-                    mode = .windowsHVF; isoPath = ""
+                    mode = .windowsHVF
                 }
             }
 
@@ -98,10 +95,8 @@ struct CreateVMSheet: View {
                 Text("이번 버전은 3D 가속을 지원하지 않습니다. 기본 디스플레이 구성으로 가져옵니다.")
                     .font(.caption).foregroundColor(.secondary)
             } else {
-                CreateWindowsInstallFields(isoPath: isoPath, guestPayloadPath: guestPayloadPath,
-                    guestPayloadManifestPath: guestPayloadManifestPath, pickISO: pickISO,
+                CreateWindowsInstallFields(isoPath: isoPath, drivers: drivers, pickISO: pickISO,
                     pickGuestPayload: pickGuestPayload, pickGuestPayloadManifest: pickGuestPayloadManifest,
-                    fetchingDrivers: fetchingDrivers, driverFetchError: driverFetchError,
                     fetchDrivers: fetchGuestDrivers)
             }
 
@@ -163,31 +158,19 @@ struct CreateVMSheet: View {
     }
 
     private func pickGuestPayload() {
-        FileSelection.choose(directories: true) { guestPayloadPath = $0.path }
+        FileSelection.choose(directories: true) { drivers.choosePayload($0.path) }
     }
 
     private func pickGuestPayloadManifest() {
-        FileSelection.choose(directories: false, extensions: ["tsv"]) { guestPayloadManifestPath = $0.path }
+        FileSelection.choose(directories: false, extensions: ["tsv"]) { drivers.chooseManifest($0.path) }
     }
 
     /// Only on the user's click: the sheet opens with every source selection empty.
     private func fetchGuestDrivers() {
-        guard !fetchingDrivers else { return }
-        fetchingDrivers = true
-        driverFetchError = ""
+        guard drivers.beginFetch() else { return }
         Task.detached {
             let result = Result { try HvfWindowsDriverPayloadFetch.prepare() }
-            await MainActor.run {
-                fetchingDrivers = false
-                switch result {
-                case .success(let prepared):
-                    guestPayloadPath = prepared.payloadDirectory
-                    guestPayloadManifestPath = prepared.manifestPath
-                case .failure(let failure):
-                    driverFetchError = (failure as? HvfWindowsDriverPayloadFetch.Failure)?.message
-                        ?? "드라이버를 준비하지 못했습니다. 다시 시도하세요."
-                }
-            }
+            await MainActor.run { drivers.finishFetch(result) }
         }
     }
 
@@ -205,7 +188,7 @@ struct CreateVMSheet: View {
         case .windowsHVF:
             return !hvfTargetPath.isEmpty
         case .windowsHVFInstall:
-            return !isoPath.isEmpty && !guestPayloadPath.isEmpty && !guestPayloadManifestPath.isEmpty
+            return !isoPath.isEmpty && drivers.ready
         }
     }
 
