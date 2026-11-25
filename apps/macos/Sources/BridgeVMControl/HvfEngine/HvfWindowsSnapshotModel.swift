@@ -27,6 +27,9 @@ final class HvfWindowsSnapshotModel: ObservableObject {
     @Published private(set) var busy = false
     @Published private(set) var status = idleText
     @Published private(set) var failed = false
+    @Published private(set) var listRevision = 0
+
+    func requestListRefresh() { listRevision += 1 }
 
     /// Creates immediately; asks before restoring or deleting the selected entry.
     @discardableResult
@@ -64,6 +67,7 @@ final class HvfWindowsSnapshotModel: ObservableObject {
                 status = Self.message(for: error, operation: operation); failed = true
             }
             busy = false
+            requestListRefresh()
         }
     }
 

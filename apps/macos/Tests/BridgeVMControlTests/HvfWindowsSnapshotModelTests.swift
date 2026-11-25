@@ -23,12 +23,14 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         XCTAssertNil(model.confirmation)
         await Task.yield()
         XCTAssertEqual(ran, [], "cancel runs nothing")
+        XCTAssertEqual(model.listRevision, 0)
         XCTAssertFalse(model.busy)
         XCTAssertEqual(model.status, HvfWindowsSnapshotModel.idleText)
 
         model.request(.restore, snapshotDate: made, run: run)
         await model.confirm(try XCTUnwrap(model.confirmation))?.value
         XCTAssertEqual(ran, [.restore])
+        XCTAssertEqual(model.listRevision, 1)
         XCTAssertNil(model.confirmation)
         XCTAssertEqual(model.status, "스냅샷 복원 완료")
         XCTAssertFalse(model.failed)
@@ -50,6 +52,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         model.request(.delete, snapshotDate: made, label: "설치 완료", run: run)
         await model.confirm(try XCTUnwrap(model.confirmation))?.value
         XCTAssertEqual(ran, [.create, .delete])
+        XCTAssertEqual(model.listRevision, 2)
         XCTAssertEqual(model.status, "스냅샷 삭제 완료")
     }
 
