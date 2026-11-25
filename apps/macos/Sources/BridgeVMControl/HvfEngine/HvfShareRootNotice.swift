@@ -17,6 +17,8 @@ final class HvfShareRootNotice: ObservableObject {
     /// and the runtime shares the folder once it appears (`root-state ready`). A guest restart clears it;
     /// the next boot reports a still missing folder as blocked.
     @Published private(set) var missingFolder: String?
+    @Published private(set) var lastRecoveredCopy: String?
+
     func consume(_ event: BvAgentEvent) {
         // A whole file's arrival; a large one logs this line too.
         if case let .shareEvent(.guestToHost, name, _, _) = event { return arrived(name) }
@@ -31,7 +33,9 @@ final class HvfShareRootNotice: ObservableObject {
             if missingFolder != nil { missingFolder = nil }
         case "BVAGENT SHARE resumed": if paused != nil { paused = nil }
         default:
-            if stopped == nil, let stop = HvfShareStop(line: line) {
+            if let copy = Self.recoveredCopy(in: line) {
+                lastRecoveredCopy = copy
+            } else if stopped == nil, let stop = HvfShareStop(line: line) {
                 stopped = stop
             } else if let pause = HvfSharePaused(line: line) {
                 if paused != pause { paused = pause }
@@ -43,6 +47,27 @@ final class HvfShareRootNotice: ObservableObject {
                 arrived(file.name)
             }
         }
+    }
+
+    /// The host reports both leaf names after publishing the copy beside the original.
+    private static func recoveredCopy(in line: String) -> String? {
+        let prefix = "BVAGENT SHARE conflict kept-mac="
+        guard line.hasPrefix(prefix) else { return nil }
+        let names = line.dropFirst(prefix.count)
+        guard !names.contains("/"), !names.contains("\\"), !names.contains(where: \.isNewline),
+              !names.unicodeScalars.contains(where: { $0.properties.generalCategory == .control || $0.properties.isBidiControl })
+        else { return nil }
+
+        // A literal field separator in the original name also occurs in the copy's name.
+        // The host only inserts " (Windows copy...)" before the extension, so the middle
+        // separator always divides the two names.
+        let separator = " windows-copy="
+        let pieces = names.components(separatedBy: separator)
+        guard pieces.count.isMultiple(of: 2) else { return nil }
+        let half = pieces.count / 2
+        guard !pieces.prefix(half).joined(separator: separator).isEmpty else { return nil }
+        let copy = pieces.suffix(half).joined(separator: separator)
+        return copy.isEmpty ? nil : copy
     }
 
     /// `name` reached the Mac. Every synced file says so: only a waiting one changes the notice.
@@ -59,6 +84,7 @@ final class HvfShareRootNotice: ObservableObject {
         if stopped != nil { stopped = nil }
         if paused != nil { paused = nil }
         if tooLarge != nil { tooLarge = nil }
+        if lastRecoveredCopy != nil { lastRecoveredCopy = nil }
         if lowSpace != nil { lowSpace = nil }
     }
 
