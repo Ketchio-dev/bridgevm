@@ -20,7 +20,7 @@ use crate::virtio_gpu_3d::{CompletedFence, VIRTIO_GPU_RESP_ERR_UNSPEC};
 pub(crate) struct VenusMappedResource {
     pub(crate) host_ptr: *mut u8,
     pub(crate) size: usize,
-    pub(crate) map_info: u32,
+    pub(crate) map_info: Result<u32, c_int>,
     pub(crate) refs: usize,
 }
 
@@ -44,16 +44,13 @@ impl VenusBackend {
         }
         let mut map_info = 0u32;
         let info_ret = unsafe { virgl_renderer_resource_get_map_info(resource_id, &mut map_info) };
-        if info_ret != 0 {
-            eprintln!(
-                "{}: resource_get_map_info res={resource_id} ret={info_ret}",
-                self.protocol.label()
-            );
-            unsafe {
-                virgl_renderer_resource_unmap(resource_id);
-            }
-            return None;
-        }
+        // A shared texture can have a CPU mapping and no guest cache policy.
+        // Scanout needs the bytes. MAP_BLOB also needs the cache policy.
+        let map_info = if info_ret == 0 {
+            Ok(map_info)
+        } else {
+            Err(info_ret)
+        };
         let mapped = VenusMappedResource {
             host_ptr: ptr_out.cast::<u8>(),
             size: usize::try_from(size).ok()?,
