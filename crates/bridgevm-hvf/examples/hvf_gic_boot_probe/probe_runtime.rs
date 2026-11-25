@@ -1081,10 +1081,21 @@ impl BootGeneration {
         {
             return Ok(AfterExit::RunAgain);
         }
-        trace_isv0_data_abort(esr, last_pc, ipa);
         let access = match DataAbort::decode(esr) {
             Ok(access) => access,
             Err(error) => {
+                let ignored = ignore_reset_gpu_bar2_store(
+                    vcpu,
+                    last_pc,
+                    &(*probe.exit).exception,
+                    probe.guest_ram,
+                    probe.platform,
+                )
+                .is_some();
+                trace_isv0_data_abort(esr, last_pc, ipa, ignored);
+                if ignored {
+                    return Ok(AfterExit::Automation);
+                }
                 *probe.fatal_vcpu_run_error = true;
                 return Err(error);
             }
