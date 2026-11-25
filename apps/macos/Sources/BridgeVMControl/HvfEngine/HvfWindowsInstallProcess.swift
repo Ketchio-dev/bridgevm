@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 @MainActor
@@ -41,29 +42,41 @@ final class HvfWindowsInstallProcess: HvfWindowsInstallProcessRunning {
             activeID = nil
             current = nil
         }
+        let handle = pipe.fileHandleForReading
         let accumulator = LineAccumulator()
-        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            let lines = accumulator.append(data)
-            guard !lines.isEmpty else { return }
-            Task { @MainActor [weak self] in
-                guard self?.activeID == id else { return }
-                for line in lines { output(line) }
+        let source = DispatchSource.makeReadSource(fileDescriptor: handle.fileDescriptor, queue: .main)
+        // Only the main queue reads this pipe. On Darwin st_size is the number
+        // of queued pipe bytes; a descendant may keep its write end open.
+        func drain() {
+            var info = stat()
+            guard fstat(handle.fileDescriptor, &info) == 0 else { return }
+            var remaining = Int(info.st_size)
+            while remaining > 0, let data = try? handle.read(upToCount: remaining), !data.isEmpty {
+                for line in accumulator.append(data) { output(line) }
+                remaining -= data.count
             }
         }
-        return await withCheckedContinuation { continuation in
+        source.setEventHandler { [weak self] in
+            guard self?.activeID == id else { return }
+            drain()
+            if source.data == 0 { source.cancel() }
+        }
+        source.resume()
+        let succeeded = await withCheckedContinuation { continuation in
             process.terminationHandler = { finished in
-                pipe.fileHandleForReading.readabilityHandler = nil
                 continuation.resume(returning: finished.terminationStatus == 0)
             }
             do { try process.run() }
             catch {
-                pipe.fileHandleForReading.readabilityHandler = nil
                 output("실행 실패: \(error.localizedDescription)")
                 continuation.resume(returning: false)
             }
         }
+        source.cancel()
+        drain()
+        // The last diagnostic need not end in a newline.
+        for line in accumulator.append(Data([0x0a])) { output(line) }
+        return succeeded
     }
 
     private func startProgressTimer(_ progressLog: URL?, id: UUID, output: @escaping (String) -> Void) {
