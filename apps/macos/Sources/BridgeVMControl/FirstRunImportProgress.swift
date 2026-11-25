@@ -18,6 +18,11 @@ enum FirstRunImportStage: Equatable, Sendable {
         }
     }
 
+    var conversionFraction: Double? {
+        guard case let .converting(_, percent) = self else { return nil }
+        return Double(percent) / 100
+    }
+
     var label: String {
         switch self {
         case .validating: return "입력 파일 확인 중…"
@@ -41,13 +46,15 @@ typealias FirstRunImportOperation = @Sendable (FirstRunImport.Inputs, URL, URL,
 
 struct FirstRunImportProgress {
     private(set) var operationID: UUID?
+    private(set) var displayName: String?
     private(set) var stage: FirstRunImportStage?
     private(set) var error: String?
     private(set) var publishedConfig: VMConfig?
     private var publicationWarning: String?
     var isBusy: Bool { operationID != nil }
 
-    mutating func begin() -> UUID {
+    mutating func begin(displayName: String? = nil) -> UUID {
+        self.displayName = displayName
         error = nil
         stage = .validating
         let id = UUID()
@@ -56,6 +63,7 @@ struct FirstRunImportProgress {
     }
 
     mutating func beginRecovery() {
+        displayName = publishedConfig?.name
         operationID = UUID()
         stage = .readingLibrary
         // Keep the publication warning visible until explicit read-back succeeds.
