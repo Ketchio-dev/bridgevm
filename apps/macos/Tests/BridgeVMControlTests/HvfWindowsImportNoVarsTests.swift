@@ -100,9 +100,16 @@ final class HvfWindowsImportNoVarsTests: XCTestCase {
         let library = LibraryModel(rootURL: root.appendingPathComponent("library"), migrateLegacy: false)
         let warning = await library.importExistingHvfVM(inputs, snapshotHelper: HvfMediaImportTestSupport.helper)
         XCTAssertEqual(warning, noESP)
+        XCTAssertTrue(library.firstRunImport.savedWithNotice)
+        XCTAssertEqual(library.firstRunImport.stage, .complete)
         let saved = try XCTUnwrap(library.firstRunImport.publishedConfig)
         XCTAssertEqual(notice(bundlePath: saved.bundlePath), noESP)
         try FileManager.default.removeItem(at: disk)
+
+        let readback = await library.recoverPublishedFirstRunImport { _, _ in nil }
+        XCTAssertTrue(try XCTUnwrap(readback).contains(noESP))
+        XCTAssertFalse(library.firstRunImport.savedWithNotice)
+        XCTAssertEqual(library.firstRunImport.publishedConfig?.slug, saved.slug)
 
         let error = await library.recoverPublishedFirstRunImport()
         XCTAssertNil(error)

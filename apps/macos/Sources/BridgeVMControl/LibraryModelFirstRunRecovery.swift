@@ -7,6 +7,7 @@ extension LibraryModel {
     func finishFirstRunImport(_ result: FirstRunImportResult, adopt: ((VMConfig) -> Bool)?) -> String? {
         let error: String?
         var published: VMConfig?
+        var savedWithNotice = false
         switch result {
         case .committed(let config):
             if let operation = firstRunImport.operationID {
@@ -15,7 +16,10 @@ extension LibraryModel {
             let adopted = adopt?(config) ?? add(config)
             if adopted { proMode = false }
             error = adopted ? HvfWindowsImportNotice.read(bundlePath: config.bundlePath) : "VM은 저장했지만 라이브러리에서 찾지 못했습니다. 저장된 파일은 보존했습니다."
-            if adopted, error != nil { selectedID = Self.firstRunImportSelectionID }
+            if adopted, error != nil {
+                savedWithNotice = true
+                selectedID = Self.firstRunImportSelectionID
+            }
             published = error == nil ? nil : config
         case .publishedButUnsynced(let config, let message):
             published = config
@@ -23,7 +27,7 @@ extension LibraryModel {
         case .failed(let message):
             error = message
         }
-        firstRunImport.finish(error: error, publishedConfig: published)
+        firstRunImport.finish(error: error, publishedConfig: published, savedWithNotice: savedWithNotice)
         finishVMPreparation(succeeded: error == nil)
         return error
     }
