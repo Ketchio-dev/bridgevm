@@ -48,6 +48,16 @@ extension HvfWindowsInstallStage {
 extension HvfWindowsInstallStage {
     static let steps = ["파일 확인", "이미지 준비", "Windows 설치", "VM 저장"]
 
+    /// Builder log lines can include private paths. Only show the known operation.
+    static func sourceActivity(for line: String) -> String? {
+        if line == "[build-src] attaching ISO" { return "설치 디스크를 연결하는 중…" }
+        if line.hasPrefix("[build-src] copying ISO tree") { return "ISO에서 설치 파일을 복사하는 중…" }
+        if line.hasPrefix("[build-src] splitting install.wim") { return "Windows 설치 이미지를 분할하는 중…" }
+        if line.hasPrefix("[build-src] injecting bvinstall payload") { return "Windows 부팅 파일을 준비하는 중…" }
+        if line == "[build-src] verifying payload + boot files" { return "설치 파일을 확인하는 중…" }
+        return nil
+    }
+
     var installationStep: Int? {
         switch self {
         case .validating: 0
