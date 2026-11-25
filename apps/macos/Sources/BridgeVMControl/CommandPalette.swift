@@ -109,7 +109,7 @@ private struct PaletteResults: View {
                 .listRowBackground(cmd.id == selectedID ? Color.accentColor.opacity(0.16) : Color.clear)
             }
             .onChange(of: selectedID) { _, id in
-                if let id { reader.scrollTo(id) }
+                if let id { reader.scrollTo(id, anchor: .center) }
             }
         }
         .overlay {
