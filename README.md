@@ -47,16 +47,16 @@ for each feature.
 
 To send a draft to the focused Windows editor, open the running VM's **HVF
 Engine** view, enter the text in **Windows에 입력할 텍스트**, and select **입력**.
-Builds from current source keep the draft while the app waits for an input
-receipt or a clipboard paste. If the editor declines queued dispatch for a
-multiline draft, the app checks the text on the Windows clipboard and sends
-one paste. The legacy keyboard route also uses the clipboard for characters
-it cannot type. Either clipboard route replaces the previous Windows clipboard
-copy.
+Current source builds keep the draft in the field while awaiting an input
+receipt or a clipboard paste. Editors such as Notepad and WinForms RichTextBox
+support queued text dispatch. If the Windows agent lacks this feature or the
+editor declines it, BridgeVM sends a multiline draft by verifying the text on
+the Windows clipboard and pressing **Ctrl+V** once. The legacy keyboard route
+also uses the clipboard for characters it cannot type. Both clipboard routes
+replace the previous Windows clipboard contents.
 
-Compatible Windows editors such as Notepad and WinForms RichTextBox use queued
-text dispatch. Some editors and older agents use per-character input. For long
-passages in the v0.1.0 download or when per-character input loses text, enable
+Single-line drafts can use per-character input with some editors and older
+agents. For long passages in the v0.1.0 download or if that input loses text, enable
 **클립보드 공유** (Clipboard sharing) while the VM is stopped. After the Windows
 agent connects, copy the text on your Mac and press **Ctrl+V** in the Windows
 editor.
