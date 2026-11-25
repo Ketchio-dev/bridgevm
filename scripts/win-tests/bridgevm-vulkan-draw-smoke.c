@@ -862,15 +862,17 @@ int main(int argc, char **argv) {
        * an A/B against the default ~15.6 ms quantum that the fence-wait
        * sleep ladder inherits through Sleep(). */
       if (getenv("BV_BENCH_TIMER_RES")) {
-        HMODULE winmm = LoadLibraryA("winmm.dll");
-        if (winmm) {
-          typedef UINT(WINAPI * time_begin_period_fn)(UINT);
-          time_begin_period_fn begin_period =
-              (time_begin_period_fn)(void *)GetProcAddress(winmm,
-                                                           "timeBeginPeriod");
-          if (begin_period) begin_period(1);
-          logf_line("bench timer_res=1ms");
-        }
+        HMODULE winmm = LoadLibraryExW(L"winmm.dll", NULL,
+                                       LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!winmm) return fail(38, "bench_timer_load", GetLastError());
+        typedef UINT(WINAPI * time_begin_period_fn)(UINT);
+        time_begin_period_fn begin_period =
+            (time_begin_period_fn)(void *)GetProcAddress(winmm,
+                                                         "timeBeginPeriod");
+        if (!begin_period) return fail(38, "bench_timer_symbol", GetLastError());
+        UINT timer_status = begin_period(1);
+        if (timer_status != 0) return fail(38, "bench_timer_request", timer_status);
+        logf_line("bench timer_res=1ms");
       }
 #endif
       const long warmup = 10;
