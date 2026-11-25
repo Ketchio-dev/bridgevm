@@ -186,33 +186,3 @@ struct LibraryDashboardDetail: View {
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: config.bundlePath)])
     }
 }
-
-struct DashboardActionButton: View {
-    static let columns = [GridItem(.adaptive(minimum: 140), spacing: 10)]
-    let title: String
-    let symbol: String
-    var prominent = false
-    var disabled = false
-    let action: () -> Void
-
-    var body: some View {
-        Group {
-            if prominent { actionButton.buttonStyle(.borderedProminent) }
-            else { actionButton.buttonStyle(.bordered) }
-        }
-        .controlSize(.large)
-        .disabled(disabled)
-    }
-
-    private var actionButton: some View {
-        Button(action: action) {
-            Label {
-                Text(title).font(.callout.weight(.medium)).fixedSize()
-            } icon: {
-                Image(systemName: symbol).font(.body)
-            }
-            .frame(maxWidth: .infinity, minHeight: 28)
-            .padding(.vertical, 4)
-        }
-    }
-}

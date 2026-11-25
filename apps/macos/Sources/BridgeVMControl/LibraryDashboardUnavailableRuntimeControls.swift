@@ -7,18 +7,16 @@ struct LibraryDashboardUnavailableRuntimeControls: View {
     let showAdvanced: () -> Void
 
     var body: some View {
-        LazyVGrid(columns: DashboardActionButton.columns, spacing: 10) {
-            DashboardActionButton(title: model.running ? "창 열기" : "시작",
-                symbol: "play.fill", prominent: true, disabled: model.lifecycleBusy) {
-                LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library)
+        VStack(alignment: .leading, spacing: 8) {
+            LibraryDashboardActionBar(runtimeActive: model.running, lifecycleBusy: model.lifecycleBusy,
+                open: { LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library) },
+                showAdvanced: showAdvanced, refresh: model.refresh)
+            if model.running {
+                Button("정지", systemImage: "stop.fill") {
+                    LibraryDashboardPrimaryAction.stop(config: config, model: model, library: library)
+                }
+                .disabled(model.lifecycleBusy)
             }
-            DashboardActionButton(title: "정지", symbol: "stop.fill",
-                disabled: !model.running || model.lifecycleBusy) {
-                LibraryDashboardPrimaryAction.stop(config: config, model: model, library: library)
-            }
-            DashboardActionButton(title: "새로고침", symbol: "arrow.clockwise", action: model.refresh)
-            DashboardActionButton(title: "고급", symbol: "gearshape", action: showAdvanced)
-                .accessibilityIdentifier("bridgevm.dashboard.advanced")
         }
     }
 }
