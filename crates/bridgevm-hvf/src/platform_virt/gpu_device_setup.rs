@@ -58,11 +58,15 @@ pub(crate) fn make_virtio_gpu() -> VirtioPciGpu {
                         );
                     }
                     if env_flag("BRIDGEVM_VIRTIO_GPU_IOSURFACE_SCANOUT") {
-                        gpu.set_3d_scanout_iosurface(
-                            true,
-                            env_flag("BRIDGEVM_VIRTIO_GPU_IOSURFACE_VERIFY"),
-                        );
-                        eprintln!("virtio-gpu: 3D scanout IOSurface GPU blit enabled");
+                        if crate::venus_backend::renderer_has_iosurface_scanout() {
+                            gpu.set_3d_scanout_iosurface(
+                                true,
+                                env_flag("BRIDGEVM_VIRTIO_GPU_IOSURFACE_VERIFY"),
+                            );
+                            eprintln!("virtio-gpu: 3D scanout IOSurface GPU blit enabled");
+                        } else {
+                            eprintln!("virtio-gpu: renderer lacks IOSurface scanout; using CPU readback for display");
+                        }
                     }
                     configure_virtio_gpu_vblank(&mut gpu);
                     eprintln!(
