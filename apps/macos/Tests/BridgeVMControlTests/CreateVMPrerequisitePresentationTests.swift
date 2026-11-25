@@ -18,9 +18,30 @@ final class CreateVMPrerequisitePresentationTests: XCTestCase {
                 let sheet = CreateVMSheet(library: library, mode: mode)
                 let footer = try footer(of: sheet)
                 XCTAssertFalse(footer.canCreate)
+                XCTAssertFalse(footer.needsName)
                 XCTAssertEqual(footer.error, "")
                 XCTAssertEqual(footer.failureCode, "")
             }
+        }
+    }
+
+    func testReadyMediaExplainsTheMissingNameUntilItIsEntered() throws {
+        try withLibrary { library in
+            var drivers = CreateVMDriverSelection()
+            drivers.choosePayload("drivers")
+            drivers.chooseManifest("manifest.tsv")
+            let install = try footer(of: CreateVMSheet(library: library, isoPath: "Windows.iso", drivers: drivers))
+            XCTAssertTrue(install.needsName)
+            XCTAssertFalse(install.canCreate)
+
+            let disk = try footer(of: CreateVMSheet(library: library, mode: .windowsHVF,
+                                                   name: "  ", hvfTargetPath: "Windows.raw"))
+            XCTAssertTrue(disk.needsName)
+            XCTAssertFalse(disk.canCreate)
+            let named = try footer(of: CreateVMSheet(library: library, mode: .windowsHVF,
+                                                    name: "Windows 11", hvfTargetPath: "Windows.raw"))
+            XCTAssertFalse(named.needsName)
+            XCTAssertTrue(named.canCreate)
         }
     }
 
