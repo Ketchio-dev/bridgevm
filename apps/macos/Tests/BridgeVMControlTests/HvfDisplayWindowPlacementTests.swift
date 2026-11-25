@@ -79,6 +79,26 @@ final class HvfDisplayWindowPlacementTests: XCTestCase {
         }
     }
 
+    func testFramebufferFitsACompactVMWindow() throws {
+        let vm = config()
+        defer { forget(vm) }
+        let running = session(vm)
+        running.connectionState = .connected(host: "fixture")
+        let display = HvfDisplayWindowController(session: running, title: "vm")
+        defer { display.close() }
+        let window = try XCTUnwrap(display.window)
+        let content = try XCTUnwrap(window.contentView)
+        window.setContentSize(NSSize(width: 480, height: 300))
+        content.layoutSubtreeIfNeeded()
+
+        func framebuffer(in view: NSView) -> FBLayerView? {
+            if let surface = view as? FBLayerView { return surface }
+            return view.subviews.lazy.compactMap { framebuffer(in: $0) }.first
+        }
+        let surface = try XCTUnwrap(framebuffer(in: content))
+        XCTAssertEqual(surface.convert(surface.bounds, to: content), content.bounds)
+    }
+
     private func controller(_ config: HvfEngineConfig) -> HvfDisplayWindowController {
         HvfDisplayWindowController(session: session(config), title: "vm")
     }
