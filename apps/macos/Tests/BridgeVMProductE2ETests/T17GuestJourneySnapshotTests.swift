@@ -2,7 +2,8 @@ import XCTest
 @testable import BridgeVMProductE2E
 
 final class T17GuestJourneySnapshotTests: XCTestCase {
-    private let sheetRoute = ["press bridgevm.dashboard.back", "press bridgevm.runtime.settings.open", "wait bridgevm.runtime.settings"]
+    private let sheetRoute = ["press bridgevm.dashboard.back", "press bridgevm.runtime.settings.open", "wait bridgevm.runtime.settings",
+                             "press bridgevm.runtime.settings.snapshots"]
     private let backToRuntime = ["press bridgevm.runtime.settings.done", "press bridgevm.dashboard.advanced",
                                  "wait bridgevm.windows.runtime.view", "press bridgevm.windows.runtime.start"]
 

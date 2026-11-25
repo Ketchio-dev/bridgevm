@@ -9,9 +9,10 @@ final class T17RuntimeIntegrationSetupTests: XCTestCase {
         try ui.press("bridgevm.windows.runtime.start", timeout: 20)
         XCTAssertEqual(ui.events, [
             "press bridgevm.dashboard.back", "press bridgevm.runtime.settings.open", "wait bridgevm.runtime.settings",
-            "toggle bridgevm.runtime.clipboard false", "toggle bridgevm.runtime.network true",
+            "press bridgevm.runtime.settings.sharing", "toggle bridgevm.runtime.clipboard false",
             "toggle bridgevm.runtime.share.enabled true",
             "choose /private/lane/share bridgevm.runtime.share.host.choose", "text bridgevm.runtime.share.guest",
+            "press bridgevm.runtime.settings.network", "toggle bridgevm.runtime.network true",
             "press bridgevm.runtime.settings.done", "press bridgevm.dashboard.advanced", "wait bridgevm.windows.runtime.view",
             "press bridgevm.windows.runtime.start",
         ])

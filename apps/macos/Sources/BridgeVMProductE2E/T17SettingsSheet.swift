@@ -6,12 +6,16 @@ import Foundation
 enum T17SettingsSheet {
     static let sheet = "bridgevm.runtime.settings"
     static let done = "bridgevm.runtime.settings.done"
+    static let sharing = "bridgevm.runtime.settings.sharing"
+    static let network = "bridgevm.runtime.settings.network"
+    static let snapshots = "bridgevm.runtime.settings.snapshots"
 
     /// From the runtime view, runs `steps` in the sheet and comes back to the runtime view.
-    static func edit(_ ui: T17UIControlling, _ steps: () throws -> Void) throws {
+    static func edit(_ ui: T17UIControlling, section: String, _ steps: () throws -> Void) throws {
         try ui.press("bridgevm.dashboard.back", timeout: 10)
         try ui.press("bridgevm.runtime.settings.open", timeout: 10)
         try ui.waitFor(sheet, timeout: 10)
+        try ui.press(section, timeout: 10)
         try steps()
         try ui.press(done, timeout: 10)
         let deadline = Date().addingTimeInterval(10)

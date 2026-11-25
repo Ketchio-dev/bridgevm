@@ -44,7 +44,7 @@ final class HvfVMSettingsSheetValueTests: XCTestCase {
         fixture.save(saved)
         let library = fixture.library()
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
-        let sheet = HvfVMSettingsSheet(session: session).body
+        let sheet = HvfVMSettingsSheet(session: session).settingsForm
         let advanced = HvfEngineView(session: session).body
         assertMoved(HvfStartCloseSettings.self, sheet: sheet, advanced: advanced)
         assertMoved(HvfResourceSetting.self, sheet: sheet, advanced: advanced)
@@ -86,7 +86,7 @@ final class HvfVMSettingsSheetValueTests: XCTestCase {
         var saved = fixture.config(); saved.networkEnabled = true; fixture.save(saved)
         let library = fixture.library(probe: probe)
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
-        let sheet = HvfVMSettingsSheet(session: session).body
+        let sheet = HvfVMSettingsSheet(session: session).settingsForm
         let control = try XCTUnwrap(values(HvfNetworkToggle.self, in: sheet).first)
         // The exact action used by Toggle, not a reflection of SwiftUI's opaque Binding storage.
         control.update(false)
@@ -107,7 +107,7 @@ final class HvfVMSettingsSheetValueTests: XCTestCase {
         XCTAssertNil(session.saveLibraryPreference("외부 디스플레이 설정", publish: {
             VMRegistrationWriter.commit($0, to: $1)
         }) { $0.virtioDisplayDriverInstalled = true })
-        let network = try XCTUnwrap(values(HvfNetworkToggle.self, in: sheet.body).first)
+        let network = try XCTUnwrap(values(HvfNetworkToggle.self, in: sheet.settingsForm).first)
         network.update(false)
         let file = try JSONDecoder().decode(VMConfig.self, from: Data(contentsOf: fixture.registration(saved)))
         XCTAssertEqual(file.virtioDisplayDriverInstalled, true)
@@ -125,7 +125,7 @@ final class HvfVMSettingsSheetValueTests: XCTestCase {
         XCTAssertNil(sheet.runningNoticeText)
         session.connectionState = .booting
         defer { session.connectionState = .stopped }
-        let running = sheet.body
+        let running = sheet.settingsForm
         XCTAssertEqual(sheet.runningNoticeText, "일부 설정은 Windows를 종료한 뒤 바꿀 수 있습니다.")
         XCTAssertTrue(try XCTUnwrap(values(HvfResourceSetting.self, in: running).first).isDisabled)
         XCTAssertTrue(try XCTUnwrap(values(HvfNetworkToggle.self, in: running).first).isDisabled)

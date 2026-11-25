@@ -124,7 +124,7 @@ struct T17GuestJourney {
 
     /// The snapshot card is in the 설정 sheet.
     func createSnapshot() throws {
-        try T17SettingsSheet.edit(ui) {
+        try T17SettingsSheet.edit(ui, section: T17SettingsSheet.snapshots) {
             try ui.press("bridgevm.runtime.snapshot.create", timeout: 15)
             guard wait(timeout: 900, predicate: {
                 (try? ui.text("bridgevm.runtime.snapshot.status", timeout: 1)) == "스냅샷 생성 완료"
@@ -133,7 +133,7 @@ struct T17GuestJourney {
     }
 
     func restoreSnapshot() throws {
-        try T17SettingsSheet.edit(ui) {
+        try T17SettingsSheet.edit(ui, section: T17SettingsSheet.snapshots) {
             try ui.press("bridgevm.runtime.snapshot.restore", timeout: 15)
             try ui.press("bridgevm.runtime.snapshot.confirm", timeout: 15) // the product asks before it restores
             guard wait(timeout: 900, predicate: {
