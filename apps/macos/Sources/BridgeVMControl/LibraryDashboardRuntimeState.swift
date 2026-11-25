@@ -56,8 +56,6 @@ enum LibraryDashboardRuntimeState: Equatable {
         }
     }
 
-    var isActive: Bool { self != .stopped && self != .failed }
-
     func note(_ text: String) -> String? {
         text.isEmpty || Self.transientNotes.contains(text) ? nil : text
     }
