@@ -72,7 +72,10 @@ def check():
         elif href.startswith("https://"):
             u = urlparse(href)
             assert u.netloc == "github.com" and u.path.startswith("/Ketchio-dev/bridgevm"), href
-            if u.path != "/Ketchio-dev/bridgevm":
+            if u.path not in {
+                "/Ketchio-dev/bridgevm",
+                "/Ketchio-dev/bridgevm/releases/tag/v0.1.0",
+            }:
                 prefix = "/Ketchio-dev/bridgevm/blob/main/"
                 assert u.path.startswith(prefix), href
                 target = ROOT / unquote(u.path[len(prefix):])
