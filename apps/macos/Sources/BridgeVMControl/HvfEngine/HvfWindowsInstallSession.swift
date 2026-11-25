@@ -3,7 +3,10 @@ import Combine
 
 @MainActor
 final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSession {
-    @Published private(set) var stage: HvfWindowsInstallStage = .idle
+    @Published private(set) var stage: HvfWindowsInstallStage = .idle {
+        didSet { if stage != oldValue { onStageChange?() } }
+    }
+    var onStageChange: (() -> Void)?
     @Published private(set) var logLines: [String] = []
     @Published private(set) var sourceActivity: String?
     @Published private(set) var startedAt: Date?
