@@ -1,11 +1,9 @@
 import XCTest
 
-/// Every SwiftUI `Menu` the app declares is the shared VM actions menu, which sets an
-/// accessibility identifier: an `AXMenuButton` without one refuses every `AXIdentifier` read
-/// with kAXErrorFailure (-25200). The one other is the menu bar's 가상 머신 > Windows 앱
-/// submenu (a menu bar item, no window's AXMenuButton), which sets its own identifier too.
+/// Window menus need an identifier for AXIdentifier reads on their AXMenuButtons.
+/// The Windows 앱 submenu in the menu bar also exposes its own identifier.
 final class LibraryMenuIdentifierSourceTests: XCTestCase {
-    func testEveryDeclaredMenuIsTheIdentifiedActionsMenu() throws {
+    func testEveryDeclaredMenuHasAnAccessibilityIdentifier() throws {
         let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/BridgeVMControl", isDirectory: true)
@@ -21,11 +19,14 @@ final class LibraryMenuIdentifierSourceTests: XCTestCase {
             }
         }
         XCTAssertEqual(declared.map { $0.components(separatedBy: ":")[0] }.sorted(),
-                       ["HvfVirtualMachineMenu.swift", "LibraryVMActionsMenu.swift"],
-                       "every Menu is the shared actions menu or Windows 앱; found \(declared.sorted())")
+                       ["HvfVirtualMachineMenu.swift", "LibraryDashboardActionBar.swift", "LibraryVMActionsMenu.swift"],
+                       "check the identifier for every declared Menu; found \(declared.sorted())")
         let bar = try String(contentsOf: sources.appendingPathComponent("HvfVirtualMachineMenu.swift"), encoding: .utf8)
         XCTAssertTrue(bar.contains("Menu(\"Windows 앱\")") && bar.contains(".accessibilityIdentifier(\"runtime.windowsApps\")"),
                       "the menu bar's Windows 앱 submenu sets its identifier")
+        let dashboard = try String(contentsOf: sources.appendingPathComponent("LibraryDashboardActionBar.swift"), encoding: .utf8)
+        XCTAssertTrue(dashboard.contains(".accessibilityIdentifier(\"bridgevm.dashboard.actions\")"),
+                      "the dashboard's 추가 작업 menu sets its identifier")
         let menu = try String(contentsOf: sources.appendingPathComponent("LibraryVMActionsMenu.swift"), encoding: .utf8)
         XCTAssertTrue(menu.contains(".accessibilityIdentifier(Self.identifier)"), "the shared menu sets its identifier")
         XCTAssertTrue(menu.contains("static let identifier = \"bridgevm.library.vm-actions\""))

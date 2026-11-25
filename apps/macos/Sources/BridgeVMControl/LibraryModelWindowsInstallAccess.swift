@@ -22,6 +22,7 @@ extension LibraryModel {
     }
 
     func bindWindowsInstallSession(_ session: HvfWindowsInstallSession, slug: String) -> HvfWindowsInstallSession {
+        session.onStageChange = { [weak self] in self?.objectWillChange.send() }
         bindInstallAdmissions(session, slug: slug)
         return session
     }

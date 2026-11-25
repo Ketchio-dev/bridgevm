@@ -18,11 +18,14 @@ struct FirstRunView: View {
             if showsImport {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
+                        let showsInputs = !library.firstRunImportBusy && library.firstRunImport.publishedConfig == nil
                         VStack(alignment: .leading, spacing: 8) {
                             Text("기존 Windows VM 가져오기").font(.system(size: 28, weight: .bold))
-                            Text("파일을 선택해 등록한 뒤 VM 상세 화면에서 시작하세요.").foregroundStyle(.secondary)
+                            if showsInputs {
+                                Text("파일을 선택해 등록한 뒤 VM 상세 화면에서 시작하세요.").foregroundStyle(.secondary)
+                            }
                         }
-                        if !library.firstRunImportBusy && library.firstRunImport.publishedConfig == nil {
+                        if showsInputs {
                             FirstRunImportFields(displayName: draft.displayName, diskPath: draft.diskPath, varsPath: draft.varsPath,
                                 vtpmPath: draft.vtpmPath, vtpmPackagePath: draft.vtpmPackagePath, vtpmCodePath: draft.vtpmCodePath,
                                 memGiB: draft.memGiB, cpuCount: draft.cpuCount)

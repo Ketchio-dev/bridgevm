@@ -22,6 +22,17 @@ final class HvfDiskGrowTests: XCTestCase {
         XCTAssertEqual(HvfDiskGrow.gibText(gib * 3 / 2), "1.5 GiB")
     }
 
+    func testDiskEntryRequiresAWholeLocalizedSizeInTheOfferedRange() {
+        let range = 65...1200
+        let locale = Locale(identifier: "en_US")
+        for invalid in ["64", "", "65.9", "72 GiB", "1e3", "1201"] {
+            XCTAssertNil(HvfDiskSizeSetting.targetSize(invalid, in: range, locale: locale), invalid)
+        }
+        XCTAssertEqual(HvfDiskSizeSetting.targetSize("65", in: range, locale: locale), 65)
+        XCTAssertEqual(HvfDiskSizeSetting.targetSize("1,000", in: range, locale: locale), 1000)
+        XCTAssertEqual(HvfDiskSizeSetting.targetSize("1.000", in: range, locale: Locale(identifier: "de_DE")), 1000)
+    }
+
     /// One agent line under cmd.exe's limit that extends C: to the largest size Windows supports.
     func testTheExtendCommandIsOneAgentLineThatExtendsCToItsLargestSize() throws {
         let command = HvfDiskGrow.extendCommand

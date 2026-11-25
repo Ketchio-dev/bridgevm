@@ -302,8 +302,7 @@ impl AgentUpdate {
     /// The app's Stop and quit send `shutdown.exe ...` through the control file.
     pub(super) fn note_ctl_command(&mut self, command: &str) {
         let program = command.split_whitespace().next().unwrap_or("");
-        let program = program.rsplit(['\\', '/']).next().unwrap_or(program);
-        if program.eq_ignore_ascii_case("shutdown") || program.eq_ignore_ascii_case("shutdown.exe") {
+        if is_shutdown_program(program) {
             self.stop_requested = true;
         }
     }
@@ -379,6 +378,26 @@ fn bvupdate_line(output: &str) -> Option<&str> {
 
 fn is_update_req(req: &ServiceReq) -> bool {
     matches!(req, ServiceReq::AgentUpdate(_))
+}
+
+fn is_shutdown_program(program: &str) -> bool {
+    let name = program.rsplit(['\\', '/']).next().unwrap_or(program);
+    name.eq_ignore_ascii_case("shutdown") || name.eq_ignore_ascii_case("shutdown.exe")
+}
+
+/// The guard stops the old agent after Arm. Keep new shell and clipboard commands
+/// in the queue until its replacement arrives. Input and paste tickets carry
+/// their own deadlines, and a shutdown must still reach a responsive guest.
+pub(super) fn waits_for_replacement_agent(req: &ServiceReq) -> bool {
+    let ServiceReq::Ctl(command) = req else { return false };
+    let verb = command.split_whitespace().next().unwrap_or("");
+    if matches!(verb, "CLIPSET" | "CLIPGET") {
+        return true;
+    }
+    !super::protocol::is_direct_agent_command(command)
+        && verb != "CLIPPASTE"
+        && !super::clip_paste::is_legacy_paste(command)
+        && !is_shutdown_program(verb)
 }
 
 /// A clipboard image on the move: a Mac image (PUT, then CLIPSETIMG) or a

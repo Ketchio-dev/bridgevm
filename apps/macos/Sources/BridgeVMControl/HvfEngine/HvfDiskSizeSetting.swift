@@ -6,15 +6,30 @@ struct HvfDiskSizeSetting: View {
     let config: HvfEngineConfig
     @State private var currentBytes: UInt64?
     @State private var range: ClosedRange<Int>?
-    @State private var targetGiB = 0
+    @Environment(\.locale) private var locale
+    @State private var targetText = ""
     @State private var busy = false
-    @State private var confirming = false
+    @State private var confirmationSize: Int?
 
     private var plan: HvfDiskGrow.Plan? { HvfDiskGrow.plan(config: config, repoRoot: session.repoRoot) }
     private var stopped: Bool { session.libraryPreferencesEditable && !session.hasActiveRuntimeWork }
 
     /// Sizes are binary and labelled GiB, as in the create sheet and the dashboard.
     static func sizeText(_ bytes: UInt64) -> String { HvfDiskGrow.gibText(bytes) }
+
+    /// Accept a whole localized GiB amount. Foundation also parses fractions and exponents as integers.
+    static func targetSize(_ text: String, in range: ClosedRange<Int>, locale: Locale) -> Int? {
+        let input = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let digits = CharacterSet.decimalDigits.union(CharacterSet(charactersIn: locale.groupingSeparator ?? ""))
+        guard !input.isEmpty, input.unicodeScalars.allSatisfy(digits.contains) else { return nil }
+        guard let size = input.wholeMatch(of: IntegerFormatStyle<Int>.number.locale(locale))?.output,
+              range.contains(size) else { return nil }
+        return size
+    }
+
+    private var validSize: Int? {
+        range.flatMap { Self.targetSize(targetText, in: $0, locale: locale) }
+    }
 
     var body: some View {
         if session.persistsLibraryPreferences, plan != nil {
@@ -24,12 +39,17 @@ struct HvfDiskSizeSetting: View {
                     Text(currentBytes.map(Self.sizeText) ?? "—")
                     if let range {
                         Text("→")
-                        TextField("", value: $targetGiB, format: .number)
+                        TextField("새 용량", text: $targetText)
                             .labelsHidden().frame(width: 52)
-                        Stepper("가상 디스크 용량", value: $targetGiB, in: range).labelsHidden()
+                            .accessibilityLabel("새 가상 디스크 용량 (GiB)")
+                        Stepper("가상 디스크 용량", value: Binding(
+                            get: { validSize ?? range.lowerBound },
+                            set: { targetText = $0.formatted(.number.locale(locale)) }
+                        ), in: range).labelsHidden()
                             .fixedSize()
                         Text("GiB (최대 \(range.upperBound) GiB)").font(.caption).foregroundColor(.secondary)
-                        Button("디스크 늘리기") { confirming = range.contains(targetGiB) }
+                        Button("디스크 늘리기") { confirmationSize = validSize }
+                            .disabled(validSize == nil)
                             .accessibilityIdentifier("bridgevm.runtime.disk-grow")
                     }
                     if busy { ProgressView().controlSize(.small) }
@@ -42,11 +62,12 @@ struct HvfDiskSizeSetting: View {
             .help(HvfDiskGrow.sparseHelp)
             .onAppear(perform: refresh)
             .onChange(of: stopped) { _, _ in refresh() }
-            .confirmationDialog("디스크를 \(targetGiB) GiB로 늘리시겠습니까?", isPresented: $confirming,
-                                titleVisibility: .visible) {
-                Button("디스크 늘리기") { grow(to: targetGiB) }
+            .confirmationDialog(confirmationSize.map { "디스크를 \($0) GiB로 늘리시겠습니까?" } ?? "",
+                isPresented: Binding(get: { confirmationSize != nil }, set: { if !$0 { confirmationSize = nil } }),
+                titleVisibility: .visible, presenting: confirmationSize) { size in
+                Button("디스크 늘리기") { grow(to: size) }
                 Button("취소", role: .cancel) {}
-            } message: {
+            } message: { _ in
                 Text(HvfDiskGrow.sparseHelp)
             }
         }
@@ -55,6 +76,9 @@ struct HvfDiskSizeSetting: View {
     /// The session's latest message: a grow's result until the guest's extend report replaces it.
     private var note: String {
         if busy { return "디스크를 늘리는 중…" }
+        if stopped, let range, validSize == nil {
+            return "새 용량은 \(range.lowerBound.formatted(.number.locale(locale)))~\(range.upperBound.formatted(.number.locale(locale))) GiB 사이의 정수로 입력하세요."
+        }
         if let notice = session.diskGrowNotice { return notice }
         if !stopped { return HvfDiskGrow.stopFirst }
         if currentBytes != nil, range == nil {
@@ -77,7 +101,7 @@ struct HvfDiskSizeSetting: View {
             guard let (current, available) = measured else { return }
             currentBytes = current
             range = HvfDiskGrow.sizeRange(currentBytes: current, availableBytes: available)
-            if let range, !range.contains(targetGiB) { targetGiB = range.lowerBound }
+            if let range, validSize == nil { targetText = range.lowerBound.formatted(.number.locale(locale)) }
         }
     }
 
