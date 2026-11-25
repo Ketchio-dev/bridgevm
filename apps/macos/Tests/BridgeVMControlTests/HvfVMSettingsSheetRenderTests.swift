@@ -5,6 +5,38 @@ import XCTest
 
 @MainActor
 final class HvfVMSettingsSheetRenderTests: XCTestCase {
+    func testSnapshotShortcutRevealsNameFieldInTheNormalSheet() async throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        let config = fixture.config()
+        fixture.save(config)
+        let library = fixture.library()
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: config))
+        let host = NSHostingView(rootView: HvfVMSettingsSheet(session: session))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 720),
+                              styleMask: [.titled], backing: .buffered, defer: true)
+        window.contentView = host
+        defer { window.contentView = nil }
+        await FirstRunOptionalRecoveryFixture.settle(host)
+
+        func nameFieldIsVisible() -> Bool {
+            FirstRunOptionalRecoveryFixture.fields(host).contains { field in
+                field.placeholderString?.contains("스냅샷 이름") == true && !field.visibleRect.isEmpty
+            }
+        }
+        XCTAssertFalse(nameFieldIsVisible())
+        let jump = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
+            timestamp: 0, windowNumber: 0, context: nil, characters: "5", charactersIgnoringModifiers: "5",
+            isARepeat: false, keyCode: 23))
+        XCTAssertTrue(host.performKeyEquivalent(with: jump) || window.performKeyEquivalent(with: jump))
+        let deadline = ContinuousClock.now + .seconds(2)
+        while !nameFieldIsVisible() && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+            host.layoutSubtreeIfNeeded()
+        }
+        XCTAssertTrue(nameFieldIsVisible())
+    }
+
     func testOffscreenSettingsCaptures() async throws {
         guard let output = ProcessInfo.processInfo.environment["BRIDGEVM_SETTINGS_SHEET_OUTPUT"] else {
             throw XCTSkip("Opt-in offscreen settings capture")

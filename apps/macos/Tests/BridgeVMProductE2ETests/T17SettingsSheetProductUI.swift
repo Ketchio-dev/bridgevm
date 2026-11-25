@@ -18,6 +18,7 @@ final class T17SettingsSheetProductUI: T17UIControlling {
 
     private static let sheetControls: Set<String> = [
         "bridgevm.runtime.settings", "bridgevm.runtime.settings.done",
+        "bridgevm.runtime.settings.sharing", "bridgevm.runtime.settings.network", "bridgevm.runtime.settings.snapshots",
         "bridgevm.runtime.clipboard", "bridgevm.runtime.network", "bridgevm.runtime.share.enabled",
         "bridgevm.runtime.share.host.choose", "bridgevm.runtime.share.guest",
         "bridgevm.runtime.snapshot.create", "bridgevm.runtime.snapshot.restore", "bridgevm.runtime.snapshot.status",
