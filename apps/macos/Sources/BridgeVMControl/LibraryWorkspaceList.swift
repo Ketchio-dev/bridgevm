@@ -24,9 +24,10 @@ struct LibraryWorkspaceList: View {
             } else {
                 LibrarySearchField(query: $query)
                     .padding(.horizontal, 22).padding(.vertical, 16)
+                let results = matchingVMs
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        ForEach(matchingVMs) { config in
+                        ForEach(results) { config in
                             LibraryWorkspaceRow(
                                 library: library,
                                 config: config,
@@ -36,6 +37,16 @@ struct LibraryWorkspaceList: View {
                         }
                     }
                     .padding(.horizontal, 22).padding(.bottom, 22)
+                }
+                .overlay {
+                    if results.isEmpty {
+                        ContentUnavailableView {
+                            Label("검색 결과 없음", systemImage: "magnifyingglass")
+                        } description: {
+                            Text("다른 VM 이름이나 엔진으로 검색해 보세요.")
+                        }
+                        .accessibilityIdentifier("bridgevm.library.search.no-results")
+                    }
                 }
             }
         }
