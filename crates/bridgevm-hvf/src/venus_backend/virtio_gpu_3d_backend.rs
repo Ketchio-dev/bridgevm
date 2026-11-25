@@ -497,37 +497,35 @@ impl VirtioGpu3dBackend for VenusBackend {
     }
 
     fn scanout_blit_iosurface(&mut self, resource_id: u32, width: u32, height: u32) -> Option<u32> {
+        let blit = renderer_extensions().scanout_blit?;
         host_gl::rebind_last_context();
         // Same ctx0/CGL discipline as scanout_read: the blit runs in vrend's
         // GL context on whichever vCPU thread services the flush.
         unsafe { virgl_renderer_force_ctx_0() };
         let mut surface_id: u32 = 0;
-        let ret = unsafe {
-            virgl_renderer_bridgevm_scanout_blit_iosurface(
-                resource_id,
-                width,
-                height,
-                &mut surface_id,
-            )
-        };
+        let ret = unsafe { blit(resource_id, width, height, &mut surface_id) };
         (ret == 0).then_some(surface_id)
     }
 
     fn scanout_iosurface_checksum(&mut self) -> Option<u64> {
+        let read = renderer_extensions().scanout_checksum?;
         host_gl::rebind_last_context();
         unsafe { virgl_renderer_force_ctx_0() };
         let mut checksum: u64 = 0;
-        let ret = unsafe { virgl_renderer_bridgevm_scanout_iosurface_checksum(&mut checksum) };
+        let ret = unsafe { read(&mut checksum) };
         (ret == 0).then_some(checksum)
     }
 
     fn scanout_iosurface_dump(&mut self, path: &std::path::Path) -> bool {
+        let Some(dump) = renderer_extensions().scanout_dump else {
+            return false;
+        };
         host_gl::rebind_last_context();
         let Ok(cpath) = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()) else {
             return false;
         };
         unsafe { virgl_renderer_force_ctx_0() };
-        unsafe { virgl_renderer_bridgevm_scanout_iosurface_dump(cpath.as_ptr()) == 0 }
+        unsafe { dump(cpath.as_ptr()) == 0 }
     }
 
     fn destroy_resource(&mut self, resource_id: u32) {

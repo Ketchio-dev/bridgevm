@@ -20,13 +20,6 @@ use crate::virtio_gpu_3d::{
     VirtioGpu3dBackend,
 };
 
-// BridgeVM virglrenderer submission ABI extensions.
-
-unsafe extern "C" {
-    pub(super) fn virgl_renderer_bridgevm_get_last_submit_diagnostic(
-        out: *mut VirglSubmitDiagnostic,
-    ) -> c_int;
-}
 // Renderer SUBMIT_3D status and bounded diagnostic propagation.
 
 impl VenusBackend {
@@ -82,7 +75,12 @@ pub(crate) const RESOURCE_BACKED: u32 = 1 << 3;
 
 pub(crate) fn take_submit_diagnostic(renderer_status: i32) -> Submit3dDiagnostic {
     let mut raw = VirglSubmitDiagnostic::default();
-    if unsafe { virgl_renderer_bridgevm_get_last_submit_diagnostic(&mut raw) } != 0
+    if !renderer_extensions()
+        .submit_diagnostic
+        .is_some_and(|diagnostic| {
+            // SAFETY: raw is a writable out buffer matching this renderer ABI.
+            unsafe { diagnostic(&mut raw) == 0 }
+        })
         || raw.renderer_status != renderer_status
     {
         return Submit3dDiagnostic {
@@ -357,16 +355,6 @@ unsafe extern "C" {
         iov: *mut iovec,
         iovec_cnt: c_int,
     ) -> c_int;
-    pub(super) fn virgl_renderer_bridgevm_scanout_blit_iosurface(
-        res_handle: u32,
-        width: u32,
-        height: u32,
-        out_surface_id: *mut u32,
-    ) -> c_int;
-    pub(super) fn virgl_renderer_bridgevm_scanout_iosurface_checksum(
-        out_checksum: *mut u64,
-    ) -> c_int;
-    pub(super) fn virgl_renderer_bridgevm_scanout_iosurface_dump(path: *const c_char) -> c_int;
     pub(super) fn virgl_renderer_context_create_fence(
         ctx_id: u32,
         flags: u32,
