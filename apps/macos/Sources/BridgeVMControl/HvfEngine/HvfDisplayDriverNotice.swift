@@ -71,8 +71,8 @@ struct HvfDisplayDriverNoticeView: View {
                 else { session.displayDriverNoticeDismissed = true }
             }) {
                 Text(notice == .unbound
-                     ? "디스플레이 드라이버가 연결되지 않아 화면을 창 크기에 맞출 수 없으니 Windows 장치 관리자에서 디스플레이 어댑터를 확인하세요."
-                     : notice == .install ? "창 크기에 맞춰 Windows 화면을 바꾸려면 디스플레이 드라이버가 필요합니다"
+                     ? "Windows에서 virtio 디스플레이 어댑터를 찾지 못했습니다. 해상도가 창 크기에 맞지 않으면 장치 관리자를 확인하세요."
+                     : notice == .install ? "디스플레이 드라이버를 설치하면 창 크기에 맞춰 Windows 해상도를 자동으로 조정할 수 있습니다."
                      : "다시 시작하면 적용됩니다")
                 if notice == .install {
                     HvfDisplayDriverInstallButton(session: session, onInstalled: { _ in
