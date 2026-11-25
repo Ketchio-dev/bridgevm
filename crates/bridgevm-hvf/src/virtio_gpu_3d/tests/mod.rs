@@ -8,6 +8,7 @@ use std::sync::Mutex;
 
 mod blob_lifecycle_bounds;
 mod helpers;
+mod venus_work_wake;
 
 #[test]
 fn host3d_blob_maps_through_shm_port_then_unmaps_before_unref() {

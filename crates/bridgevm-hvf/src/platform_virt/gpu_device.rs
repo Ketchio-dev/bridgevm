@@ -22,6 +22,13 @@ impl VirtPlatform {
         self.virtio_gpu.as_ref().and_then(VirtioPciGpu::scanout)
     }
 
+    /// Notify the VMM when the GPU forwards real Venus commands.
+    pub fn install_venus_work_wake(&mut self, wake: Arc<crate::virtio_gpu_3d::VenusWorkWake>) {
+        if let Some(device) = self.virtio_gpu.as_mut() {
+            device.gpu.three_d.venus_work_wake = Some(wake);
+        }
+    }
+
     /// Wake signal for the host vblank waker thread; `Some` only when
     /// `BRIDGEVM_VBLANK_HZ` pacing is active on the virtio-gpu device.
     pub fn virtio_gpu_vblank_wake(&self) -> Option<Arc<VblankWakeState>> {

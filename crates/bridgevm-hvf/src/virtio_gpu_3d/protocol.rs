@@ -46,6 +46,9 @@ pub const VIRTIO_GPU_FLAG_FENCE: u32 = 1;
 
 pub const VIRTIO_GPU_FLAG_INFO_RING_IDX: u32 = 1 << 1;
 
+pub const VIRTIO_GPU_CAPSET_VENUS: u32 = 4;
+pub(crate) const VIRTIO_GPU_CONTEXT_INIT_CAPSET_MASK: u32 = 0xff;
+
 pub const VIRTIO_GPU_CMD_GET_CAPSET_INFO: u32 = 0x0108;
 
 pub const VIRTIO_GPU_CMD_GET_CAPSET: u32 = 0x0109;

@@ -3,6 +3,7 @@
 use super::*;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 // Debug rendering for VirtioGpu3d state.
 
@@ -29,6 +30,9 @@ impl std::fmt::Debug for VirtioGpu3d {
 
 impl VirtioGpu3d {
     pub fn reset(&mut self) {
+        if let Some(wake) = &self.venus_work_wake {
+            wake.clear();
+        }
         if let Some(backend) = self.backend.as_mut() {
             backend.reset();
         }
@@ -64,7 +68,8 @@ pub struct VirtioGpu3d {
     pub(crate) backend: Option<Box<dyn VirtioGpu3dBackend>>,
     pub(crate) shm_port: Option<Box<dyn GpuShmMapPort>>,
     pub(crate) shm_window_size: u64,
-    pub(crate) live_contexts: BTreeSet<u32>,
+    pub(crate) live_contexts: BTreeMap<u32, u32>,
+    pub(crate) venus_work_wake: Option<Arc<VenusWorkWake>>,
     pub(crate) ctx_resources: BTreeMap<u32, BTreeSet<u32>>,
     pub(crate) resource_2d_ids: BTreeSet<u32>,
     pub(crate) resource_3d_ids: BTreeSet<u32>,

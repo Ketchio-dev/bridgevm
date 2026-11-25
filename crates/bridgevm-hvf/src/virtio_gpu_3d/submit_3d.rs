@@ -33,6 +33,13 @@ impl VirtioGpu3d {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_UNSPEC, Some(hdr));
             return;
         }
+        if let Some(wake) = &self.venus_work_wake {
+            if !cmdbuf.is_empty()
+                && self.live_contexts.get(&hdr.ctx_id) == Some(&VIRTIO_GPU_CAPSET_VENUS)
+            {
+                wake.submitted();
+            }
+        }
         self.submits = self.submits.saturating_add(1);
         response_hdr_into(out, VIRTIO_GPU_RESP_OK_NODATA, Some(hdr));
     }
@@ -111,7 +118,7 @@ impl VirtioGpu3d {
         if self.dispatch_local_resource_copies(mem, cmdbuf, hdr, out) {
             return;
         }
-        if !self.live_contexts.contains(&hdr.ctx_id) {
+        if !self.live_contexts.contains_key(&hdr.ctx_id) {
             response_hdr_into(out, VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER, Some(hdr));
             return;
         }
