@@ -8,7 +8,7 @@ struct CreateVMSheet: View {
     @ObservedObject var library: LibraryModel
     @Environment(\.dismiss) var dismiss
     @State var mode: Mode = .windowsHVFInstall
-    @State var name = ""
+    @State var name = "Windows 11"
     @State var isoPath: String = ""
     @State var drivers = CreateVMDriverSelection()
     @State var hvfTargetPath: String = ""
