@@ -20,6 +20,7 @@ final class LibraryModel: ObservableObject {
     @Published var cloneError: String?
     @Published var moveError: String?
     @Published var operationError: String?
+    @Published var showsSettingsReloadNotice = false
     @Published var firstRunImport = FirstRunImportProgress()
     @Published var preparingNewVM = false
     @Published var quitAfterVMPreparation: VMPreparationQuit?
@@ -331,7 +332,7 @@ extension LibraryModel {
     func mismatchedCachedControlRefusal(for cfg: VMConfig) -> String {
         guard let cached = cachedControlModels[cfg.slug], cached.isRetained,
               retainedControlRecords.contains(where: { $0.descriptor.identity == .generic(ObjectIdentifier(cached)) })
-        else { return "VM 제어 정보가 최신 등록 정보와 다릅니다. 기존 VM을 완전히 중지하고 목록을 새로고침한 뒤 다시 시도하세요." }
+        else { return "The VM’s registration changed. Once the original VM has stopped, reload the library and try again." }
         return "An operation from the previous registration is still listed. Open it under Recent operations in the sidebar. Once it finishes, choose Dismiss and try again."
     }
 }
@@ -404,7 +405,7 @@ extension LibraryModel {
         }
         reload()
         if hvfRuntimeSession(for: saved) !== session {
-            operationError = "VM 설정을 저장했지만 VM 등록 정보도 바뀌어 VM 화면을 저장된 설정으로 다시 불러왔습니다. 저장하지 않은 다른 화면 설정은 적용되지 않았으니 확인하세요."
+            showsSettingsReloadNotice = true
         }
     }
 }
