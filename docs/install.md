@@ -184,8 +184,9 @@ on current macOS, so the Settings route is the real one.
 - A Windows 11 ARM64 ISO, downloaded from Microsoft yourself. The app does not
   fetch Windows media; it asks you to choose the ISO file.
 - Signed ARM64 storage, serial and network drivers. Either:
-  - click **드라이버 자동 준비** in the create sheet (or pass `--fetch-drivers` to
-    `bridgevm app create-windows`): the app downloads the pinned Red Hat
+  - Click **Download Drivers** in the Create window (**드라이버 자동 준비** in
+    v0.1.0), or pass `--fetch-drivers` to `bridgevm app create-windows`.
+    BridgeVM downloads the pinned Red Hat
     virtio-win 0.1-299 archive (about 95 MB, Microsoft-signed) from the official
     fedorapeople.org source, refuses it unless its length and SHA-256 match the
     pins, keeps it under `~/Library/Application Support/BridgeVM/driver-payloads`,
