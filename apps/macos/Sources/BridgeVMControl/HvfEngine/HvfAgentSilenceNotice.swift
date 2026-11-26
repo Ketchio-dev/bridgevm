@@ -47,6 +47,12 @@ final class HvfAgentSilenceNotice: ObservableObject {
         }
     }
 
+    /// Missing tools have their own install strip; the first connection uses the window subtitle.
+    var windowConnectionWarning: String? {
+        guard !dismissedInWindow, shown == .notConnected || shown == .notResponding else { return nil }
+        return text
+    }
+
     func consume(_ event: BvAgentEvent) {
         switch event {
         case let .overdue(kind, _, tMs) where Self.quickKinds.contains(kind):
@@ -131,7 +137,7 @@ struct HvfAgentSilenceStrip: View {
     @ObservedObject var notice: HvfAgentSilenceNotice
 
     var body: some View {
-        if let text = notice.text, notice.shown != .awaitingFirstConnection, !notice.dismissedInWindow {
+        if let text = notice.windowConnectionWarning {
             HvfNoticeStrip(identifier: "bridgevm.display.agent-silence", dismiss: { notice.dismissInWindow() }) {
                 Label {
                     Text(text).fixedSize(horizontal: false, vertical: true)

@@ -56,11 +56,21 @@ struct HvfGuestToolsStrip: View {
     }
 
     var body: some View {
-        if !dismissed, !session.serviceStarted,
-           notice.shown == .missingTools || session.guestToolsMessage != nil {
-            HvfNoticeStrip(identifier: "bridgevm.display.guest-tools", dismiss: { dismissed = true }) {
-                HvfGuestToolsAction(session: session)
+        let needsTools = !session.serviceStarted && (notice.shown == .missingTools || session.guestToolsMessage != nil)
+        Group {
+            if needsTools && !dismissed {
+                HvfNoticeStrip(identifier: "bridgevm.display.guest-tools", dismiss: { dismissed = true }) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if session.guestToolsMessage == nil {
+                            Text(HvfGuestTools.missing).fixedSize(horizontal: false, vertical: true)
+                        }
+                        HvfGuestToolsAction(session: session)
+                    }
+                }
             }
+        }
+        .onChange(of: needsTools) { _, needed in
+            if !needed { dismissed = false }
         }
     }
 }
