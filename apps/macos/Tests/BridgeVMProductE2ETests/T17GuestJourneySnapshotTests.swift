@@ -26,6 +26,17 @@ final class T17GuestJourneySnapshotTests: XCTestCase {
         ] + backToRuntime)
     }
 
+    func testRecognizesSnapshotCompletionInOlderPackagedApps() throws {
+        let create = T17SettingsSheetProductUI()
+        create.snapshotCreated = "스냅샷 생성 완료"
+        try journey(create).createSnapshot()
+
+        let restore = T17SettingsSheetProductUI()
+        restore.snapshotRestored = "스냅샷 복원 완료"
+        try journey(restore).restoreSnapshot()
+        XCTAssertTrue(restore.events.contains("press bridgevm.runtime.snapshot.confirm"))
+    }
+
     private func journey(_ ui: T17UIControlling) -> T17GuestJourney {
         T17GuestJourney(request: Request(), ui: ui, fileManager: .default, tpm: T17TPMEvidenceLog())
     }
