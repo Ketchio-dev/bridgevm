@@ -20,7 +20,7 @@ final class HvfRuntimeStopActionTests: XCTestCase {
             refresh: { refreshes += 1 })
 
         XCTAssertEqual(forwarded, identity)
-        XCTAssertEqual(message, "VM 정지 요청을 보냈습니다.")
+        XCTAssertEqual(message, "Stop requested.")
         XCTAssertEqual(refreshes, 1)
     }
 
@@ -39,7 +39,7 @@ final class HvfRuntimeStopActionTests: XCTestCase {
             refresh: { XCTFail("Refusal must not refresh after a stop") })
 
         XCTAssertEqual(stopCalls, 0)
-        XCTAssertEqual(message, "다른 실행 경로에서 시작된 VM은 이 앱이 안전하게 정지할 수 없습니다.")
+        XCTAssertEqual(message, "Stop the VM from the app or tool that started it.")
     }
 
     func testPendingStartIsRefusedWithoutCallingStop() throws {
@@ -57,7 +57,7 @@ final class HvfRuntimeStopActionTests: XCTestCase {
             refresh: { XCTFail("Refusal must not refresh after a stop") })
 
         XCTAssertEqual(stopCalls, 0)
-        XCTAssertEqual(message, "VM 시작 준비가 끝난 뒤 다시 정지하세요.")
+        XCTAssertEqual(message, "Wait for startup to finish, then stop the VM.")
     }
 
     func testOwnershipRaceReportsNotOwnedForCapturedIdentity() throws {
@@ -80,6 +80,6 @@ final class HvfRuntimeStopActionTests: XCTestCase {
             refresh: {})
 
         XCTAssertEqual(forwarded, accepted)
-        XCTAssertEqual(message, "실행 프로세스 소유권이 변경되어 정지를 중단했습니다.")
+        XCTAssertEqual(message, "The running process changed. Check its status before trying to stop it again.")
     }
 }

@@ -13,7 +13,7 @@ final class LibraryDashboardPrimaryActionTests: XCTestCase {
             }, attach: { _ in XCTFail("attached stopped VM"); return false },
             present: { _ in presentations += 1 }, report: { messages.append($0) })
         XCTAssertEqual(starts, 1); XCTAssertEqual(presentations, 1)
-        XCTAssertEqual(messages, ["VM 시작 중…"])
+        XCTAssertEqual(messages, ["Starting VM…"])
     }
 
     func testStoppedVMReportsTypedStartRefusalWithoutPresenting() throws {
