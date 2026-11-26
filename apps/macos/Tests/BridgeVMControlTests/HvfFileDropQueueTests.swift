@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
 import XCTest
 @testable import BridgeVMControl
 
@@ -95,6 +98,21 @@ final class HvfFileDropQueueTests: XCTestCase {
         XCTAssertEqual(session.fileDrops.notice, .init(text: HvfFileDropQueue.notReadyText, failed: true))
         XCTAssertFalse(FileManager.default.fileExists(atPath: session.config.ctlFilePath))
     }
+
+    #if canImport(AppKit)
+    func testFramebufferRefusesTheDragWhenTheGuestIsNotReady() {
+        let root = scratch()
+        let session = session(root: root)
+        let surface = FBLayerView(session: session)
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        XCTAssertTrue(pasteboard.writeObjects([root.appendingPathComponent("example.txt") as NSURL]))
+
+        XCTAssertFalse(surface.acceptFileDrop(from: pasteboard))
+        XCTAssertEqual(session.fileDrops.notice, .init(text: HvfFileDropQueue.notReadyText, failed: true))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: session.config.ctlFilePath))
+    }
+    #endif
 
     func testADropIsStagedNextToTheControlFileAndHandedToTheRuntime() async throws {
         let root = scratch()
