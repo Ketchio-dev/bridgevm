@@ -25,7 +25,9 @@ final class VMCreationCollisionRetentionTests: XCTestCase {
             snapshotHelper: HvfMediaImportTestSupport.helper, publish: { config, root in
             collideThenMoveWinner(config, root: root, archive: archive)
         })
-        guard case .failed = result else { return XCTFail("collision must remain a failed import") }
+        guard case let .failed(message) = result else { return XCTFail("collision must remain a failed import") }
+        XCTAssertTrue(message.contains("already used the VM ID “\(fixture.entry.lastPathComponent)”"), message)
+        XCTAssertTrue(message.contains("kept the prepared files"), message)
         XCTAssertFalse(NativeLibraryReader.entryMayExist(fixture.entry.appendingPathComponent("vm.json")))
         XCTAssertEqual(try Data(contentsOf: fixture.entry.appendingPathComponent("bundle/disks/hvf-target.raw")),
             try Data(contentsOf: fixture.disk))

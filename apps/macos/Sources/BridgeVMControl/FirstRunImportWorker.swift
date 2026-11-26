@@ -37,7 +37,8 @@ extension FirstRunImportWorker {
         case .committed:
             return .committed(prepared.config)
         case .notPublished(let error):
-            return .failed(WindowsFileFailureFeedback.report("import-publication", error, sentence: WindowsFileFailureFeedback.publication))
+            let message = (error as? VMRegistrationCollision)?.localizedDescription ?? WindowsFileFailureFeedback.publication
+            return .failed(WindowsFileFailureFeedback.report("import-publication", error, sentence: message))
         case .publishedButUnsynced(let error):
             return .publishedButUnsynced(prepared.config,
                 WindowsFileFailureFeedback.report("import-publication-sync", error, sentence: WindowsFileFailureFeedback.unsynced))

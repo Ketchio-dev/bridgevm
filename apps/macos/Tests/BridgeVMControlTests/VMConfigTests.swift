@@ -146,30 +146,37 @@ final class VMLibraryPersistenceTests: XCTestCase {
 
         XCTAssertEqual(scan.configs.map(\.slug), ["valid"])
         XCTAssertEqual(scan.issues.count, 2)
-        XCTAssertTrue(scan.issues.contains { $0.path.hasSuffix("corrupt/vm.json") })
-        XCTAssertTrue(scan.issues.contains { $0.path.hasSuffix("missing/vm.json") })
+        let issues = Dictionary(uniqueKeysWithValues: scan.issues.map { ($0.entry.lastPathComponent, $0) })
+        let corruptIssue = try XCTUnwrap(issues["corrupt"])
+        let missingIssue = try XCTUnwrap(issues["missing"])
+        XCTAssertTrue(corruptIssue.message.contains("settings in vm.json"))
+        XCTAssertTrue(missingIssue.message.contains("file exists and is readable"))
+        XCTAssertTrue(corruptIssue.path.hasSuffix("/corrupt/vm.json"))
+        XCTAssertTrue(missingIssue.path.hasSuffix("/missing/vm.json"))
     }
 
     func testScanQuarantinesNoncanonicalDirectoryWithoutConfusingCanonicalVM() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        XCTAssertTrue(VMLibrary.save(config(id: "safe-vm"), rootURL: root))
-        let noncanonical = root.appendingPathComponent("safe--vm", isDirectory: true)
+        var valid = config(id: "café-서울")
+        valid.displayName = "Café 서울 — Windows"
+        XCTAssertTrue(VMLibrary.save(valid, rootURL: root))
+        let noncanonical = root.appendingPathComponent("café--서울", isDirectory: true)
         try FileManager.default.createDirectory(at: noncanonical, withIntermediateDirectories: true)
-        let encoded = try JSONEncoder().encode(config(id: "safe--vm"))
+        let encoded = try JSONEncoder().encode(config(id: "café--서울"))
         try encoded.write(to: noncanonical.appendingPathComponent("vm.json"))
 
         let scan = VMLibrary.scan(rootURL: root)
 
-        XCTAssertEqual(scan.configs.map(\.slug), ["safe-vm"])
+        XCTAssertEqual(scan.configs, [valid])
         XCTAssertEqual(scan.issues.count, 1)
         XCTAssertEqual(
             URL(fileURLWithPath: scan.issues[0].path).resolvingSymlinksInPath(),
             noncanonical.resolvingSymlinksInPath()
         )
-        XCTAssertTrue(scan.issues[0].message.contains("비정규"))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: noncanonical.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("safe-vm/vm.json").path))
+        XCTAssertTrue(scan.issues[0].message.contains("expected VM ID “café-서울”"))
+        XCTAssertEqual(try Data(contentsOf: noncanonical.appendingPathComponent("vm.json")), encoded)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("café-서울/vm.json").path))
     }
 
     func testScanQuarantinesUppercaseDirectoryInsteadOfRetargetingIt() throws {
@@ -233,7 +240,7 @@ final class VMLibraryPersistenceTests: XCTestCase {
         let scan = VMLibrary.scan(rootURL: root)
         XCTAssertTrue(scan.configs.isEmpty)
         XCTAssertEqual(scan.issues.count, 1)
-        XCTAssertTrue(scan.issues[0].message.contains("심볼릭 링크"))
+        XCTAssertTrue(scan.issues[0].message.contains("symbolic link"))
         XCTAssertFalse(VMLibrary.save(config(id: "linked"), rootURL: root))
     }
 
@@ -255,7 +262,7 @@ final class VMLibraryPersistenceTests: XCTestCase {
 
         XCTAssertTrue(scan.configs.isEmpty)
         XCTAssertEqual(scan.issues.count, 1)
-        XCTAssertTrue(scan.issues[0].message.contains("일반 파일"))
+        XCTAssertTrue(scan.issues[0].message.contains("regular file"))
         XCTAssertFalse(VMLibrary.save(config(id: "linked-config"), rootURL: root))
         XCTAssertEqual(try Data(contentsOf: outside), original)
     }
@@ -276,7 +283,7 @@ final class VMLibraryPersistenceTests: XCTestCase {
 
         XCTAssertTrue(scan.configs.isEmpty)
         XCTAssertEqual(scan.issues.count, 1)
-        XCTAssertTrue(scan.issues[0].message.contains("너무 큽니다"))
+        XCTAssertTrue(scan.issues[0].message.contains("\(VMLibrary.maximumConfigBytes) bytes"))
     }
 
     func testDeletionImpactDistinguishesManagedAndExternalBundles() {

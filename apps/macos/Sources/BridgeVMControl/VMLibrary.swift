@@ -43,7 +43,7 @@ enum VMLibrary {
             try fm.createDirectory(at: rootURL, withIntermediateDirectories: true)
         } catch {
             return VMLibraryScan(configs: [], issues: [
-                VMLibraryIssue(rootURL, message: "라이브러리 디렉터리를 열 수 없습니다: \(error.localizedDescription)")
+                VMLibraryIssue(rootURL, message: "BridgeVM could not open the library folder. Check its location and permissions in Finder.")
             ])
         }
         let entries: [URL]
@@ -54,7 +54,7 @@ enum VMLibrary {
             )
         } catch {
             return VMLibraryScan(configs: [], issues: [
-                VMLibraryIssue(rootURL, message: "라이브러리 목록을 읽을 수 없습니다: \(error.localizedDescription)")
+                VMLibraryIssue(rootURL, message: "BridgeVM could not list the library folder. Check that the folder is readable in Finder.")
             ])
         }
         var decoded: [(directory: URL, config: VMConfig)] = []
@@ -64,11 +64,11 @@ enum VMLibrary {
             do {
                 values = try dir.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             } catch {
-                issues.append(VMLibraryIssue(dir, message: "항목 종류를 확인할 수 없습니다: \(error.localizedDescription)"))
+                issues.append(VMLibraryIssue(dir, message: "BridgeVM could not identify this library entry. Check that it is a readable folder."))
                 continue
             }
             if values.isSymbolicLink == true {
-                issues.append(VMLibraryIssue(dir, message: "심볼릭 링크 VM 항목은 안전을 위해 불러오지 않았습니다."))
+                issues.append(VMLibraryIssue(dir, message: "BridgeVM skipped this symbolic link. A VM registration must be stored in a regular folder."))
                 continue
             }
             guard values.isDirectory == true, !VMLibraryInternalEntries.isSourceCache(dir) else { continue }
@@ -76,7 +76,7 @@ enum VMLibrary {
             guard dir.lastPathComponent == canonicalID else {
                 issues.append(VMLibraryIssue(
                     dir,
-                    message: "비정규 VM 디렉터리 이름입니다. 안전을 위해 불러오지 않았습니다 (정규 이름: \(canonicalID))."
+                    message: "BridgeVM skipped this folder because its name does not match the expected VM ID “\(canonicalID)”."
                 ))
                 continue
             }
@@ -86,14 +86,14 @@ enum VMLibrary {
                 guard fileValues.isSymbolicLink != true, fileValues.isRegularFile == true else {
                     issues.append(VMLibraryIssue(
                         dir, file: f,
-                        message: "VM 설정이 일반 파일이 아니어서 안전을 위해 불러오지 않았습니다."
+                        message: "BridgeVM skipped this registration because vm.json must be a regular file."
                     ))
                     continue
                 }
                 guard let fileSize = fileValues.fileSize, fileSize <= maximumConfigBytes else {
                     issues.append(VMLibraryIssue(
                         dir, file: f,
-                        message: "VM 설정 파일이 너무 큽니다 (최대 \(maximumConfigBytes)바이트)."
+                        message: "The vm.json file exceeds the limit of \(maximumConfigBytes) bytes."
                     ))
                     continue
                 }
@@ -105,8 +105,10 @@ enum VMLibrary {
                 cfg = recovery.config
                 if let message = recovery.issue { issues.append(VMLibraryIssue(dir, file: f, message: message)) }
                 decoded.append((dir, cfg))
+            } catch is DecodingError {
+                issues.append(VMLibraryIssue(dir, file: f, message: "BridgeVM could not read the settings in vm.json. Check the file or restore it from a backup."))
             } catch {
-                issues.append(VMLibraryIssue(dir, file: f, message: "VM 설정을 읽을 수 없습니다: \(error.localizedDescription)"))
+                issues.append(VMLibraryIssue(dir, file: f, message: "BridgeVM could not open vm.json. Check that the file exists and is readable."))
             }
         }
         var out: [VMConfig] = []
@@ -122,7 +124,7 @@ enum VMLibrary {
                 for candidate in candidates {
                     issues.append(VMLibraryIssue(
                         candidate.directory,
-                        message: "정규 VM ID '\(slug)'가 다른 항목과 충돌하여 불러오지 않았습니다."
+                        message: "More than one library entry uses the VM ID “\(slug)”. BridgeVM skipped each conflicting entry."
                     ))
                 }
                 continue
@@ -261,7 +263,7 @@ extension VMLibrary {
             let data = try encoder.encode(cfg)
             guard data.count <= maximumConfigBytes else {
                 return .notPublished(CocoaError(.fileWriteUnknown,
-                    userInfo: [NSLocalizedDescriptionKey: "VM 등록 정보가 최대 크기(\(maximumConfigBytes)바이트)를 초과했습니다."]))
+                    userInfo: [NSLocalizedDescriptionKey: "The VM registration exceeds the limit of \(maximumConfigBytes) bytes."]))
             }
             return publish(data, configURL)
         } catch {
