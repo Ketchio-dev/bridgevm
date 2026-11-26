@@ -30,6 +30,15 @@ struct ControlLibraryWindow: NSViewRepresentable {
     func makeNSView(context: Context) -> Observer { Observer() }
     func updateNSView(_ view: Observer, context: Context) {}
 
+    /// A stopped display can outlive a closed library window or a replaced registration.
+    static func show(_ vm: VMConfig, in library: LibraryModel) {
+        if library.vms.contains(where: { $0.slug == vm.slug && $0.bundlePath == vm.bundlePath }) {
+            library.proMode = false
+            library.selectedID = vm.slug
+        }
+        show()
+    }
+
     static func show() {
         guard let window else { return }
         if window.isMiniaturized { window.deminiaturize(nil) }
