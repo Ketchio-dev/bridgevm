@@ -10,11 +10,11 @@ enum HvfMediaImportHelper {
     /// `progress` sees the helper's `progress <percent>` lines, which then stay out of its diagnostic.
     static func invoke(_ executable: URL, arguments: [String], progress: ((Int) -> Void)? = nil) throws {
         let canonical = executable.resolvingSymlinksInPath().standardizedFileURL
-        let values = try executable.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
         guard executable.standardizedFileURL == canonical,
+              let values = try? executable.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
               values.isRegularFile == true, values.isSymbolicLink != true,
               FileManager.default.isExecutableFile(atPath: executable.path) else {
-            throw failure("가져오기에 필요한 엔진 도구가 없거나 안전하지 않습니다.")
+            throw CocoaError(.executableNotLoadable, userInfo: [NSFilePathErrorKey: executable.path])
         }
         // The helper prints a six-line manifest; output past the shared limit
         // is not retained and fails the import instead of passing unread.
