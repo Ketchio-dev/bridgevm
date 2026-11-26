@@ -126,12 +126,12 @@ struct T17GuestJourney {
         return proof
     }
 
-    /// The snapshot card is in the 설정 sheet.
+    /// The snapshot card is in Settings.
     func createSnapshot() throws {
         try T17SettingsSheet.edit(ui, section: T17SettingsSheet.snapshots) {
             try ui.press("bridgevm.runtime.snapshot.create", timeout: 15)
             guard wait(timeout: 900, predicate: {
-                (try? ui.text("bridgevm.runtime.snapshot.status", timeout: 1)) == "스냅샷 생성 완료"
+                snapshotShows("Snapshot created", fromOlderApp: "스냅샷 생성 완료")
             }) else { throw T17Blocker(code: "snapshot-unavailable", detail: "product UI did not complete snapshot creation") }
         }
     }
@@ -141,9 +141,14 @@ struct T17GuestJourney {
             try ui.press("bridgevm.runtime.snapshot.restore", timeout: 15)
             try ui.press("bridgevm.runtime.snapshot.confirm", timeout: 15) // the product asks before it restores
             guard wait(timeout: 900, predicate: {
-                (try? ui.text("bridgevm.runtime.snapshot.status", timeout: 1)) == "스냅샷 복원 완료"
+                snapshotShows("Snapshot restored", fromOlderApp: "스냅샷 복원 완료")
             }) else { throw T17Blocker(code: "snapshot-unavailable", detail: "product UI did not complete snapshot restore") }
         }
+    }
+
+    private func snapshotShows(_ expected: String, fromOlderApp previous: String) -> Bool {
+        guard let status = try? ui.text("bridgevm.runtime.snapshot.status", timeout: 1) else { return false }
+        return status == expected || status == previous
     }
 
     private func waitForSharedAssets() throws {

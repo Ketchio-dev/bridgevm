@@ -57,8 +57,8 @@ final class HvfWindowsSnapshotCommandTests: XCTestCase {
         XCTAssertEqual(HvfWindowsSnapshotCommand.snapshotDate(config: fixture.config), made)
     }
 
-    /// Each refusal before the helper runs keeps its English for the CLI and reads in Korean on the card.
-    func testPlanRefusalsReadAsTheirKoreanSentence() throws {
+    /// Each refusal before the helper runs keeps its English for the CLI and gives an actionable explanation on the card.
+    func testPlanRefusalsExplainTheRecoveryOnTheCard() throws {
         var fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         func refusal(_ operation: HvfWindowsSnapshotCommand.Operation) -> String {
@@ -71,19 +71,18 @@ final class HvfWindowsSnapshotCommandTests: XCTestCase {
                 return HvfWindowsSnapshotModel.message(for: error, operation: operation)
             }
         }
-        XCTAssertEqual(refusal(.restore), "되돌릴 스냅샷이 없으니 먼저 스냅샷을 만드세요.")
+        XCTAssertEqual(refusal(.restore), "Create a snapshot before trying to restore one.")
 
         let folder = fixture.bundle.appendingPathComponent("metadata/snapshots")
         try FileManager.default.createSymbolicLink(at: folder, withDestinationURL: fixture.root)
-        XCTAssertEqual(refusal(.create), "VM 번들 안의 스냅샷 폴더를 안전하게 쓸 수 없어 스냅샷을 만들지 못했으니 "
-                       + "그 폴더가 심볼릭 링크가 아닌 일반 폴더인지 확인하세요.")
+        XCTAssertEqual(refusal(.create), "Check that the snapshots folder in the VM bundle is a regular directory before creating a snapshot.")
         try FileManager.default.removeItem(at: folder)
 
         let helper = fixture.repo.appendingPathComponent("target/release/examples/snapshot_pair_cli")
         try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: helper.path)
-        XCTAssertEqual(refusal(.create), "스냅샷 도우미 프로그램을 찾지 못해 스냅샷을 만들지 못했으니 BridgeVM을 다시 설치하세요.")
+        XCTAssertEqual(refusal(.create), "Reinstall BridgeVM to restore the missing snapshot helper before creating a snapshot.")
 
-        let libraryOnly = "스냅샷은 BridgeVM 라이브러리에 있는 VM에서만 쓸 수 있으니 라이브러리에서 VM을 열어 다시 시도하세요."
+        let libraryOnly = "Open the VM from the BridgeVM library to use snapshots."
         fixture.config.vtpmKeyID = nil
         XCTAssertEqual(refusal(.create), libraryOnly)
         fixture.config.targetDiskPath = fixture.root.appendingPathComponent("elsewhere.raw").path

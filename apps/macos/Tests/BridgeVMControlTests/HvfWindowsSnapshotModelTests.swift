@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 @testable import BridgeVMControl
 
-/// The snapshot card confirms destructive actions and reports failures in Korean.
+/// The snapshot card confirms destructive actions and reports actionable failures in English.
 @MainActor
 final class HvfWindowsSnapshotModelTests: XCTestCase {
     typealias Operation = HvfWindowsSnapshotCommand.Operation
@@ -14,9 +14,9 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         let run: HvfWindowsSnapshotModel.Run = { ran.append($0); return nil }
 
         let asked = try XCTUnwrap(model.confirmation(for: .restore, snapshotDate: made, run: run))
-        XCTAssertEqual(asked.title, "‘\(HvfWindowsSnapshotModel.dateText(made))’ 스냅샷으로 되돌릴까요?")
-        XCTAssertEqual(asked.message, "‘\(HvfWindowsSnapshotModel.dateText(made))’ 스냅샷으로 복원하면 그 뒤에 바뀐 디스크 내용은 모두 사라집니다.")
-        XCTAssertEqual(asked.action, "복원")
+        XCTAssertEqual(asked.title, "Restore “\(HvfWindowsSnapshotModel.dateText(made))”?")
+        XCTAssertEqual(asked.message, "Restoring “\(HvfWindowsSnapshotModel.dateText(made))” discards all disk changes made since this snapshot.")
+        XCTAssertEqual(asked.action, "Restore")
         XCTAssertEqual(ran, [], "asking runs nothing")
         await Task.yield()
         XCTAssertEqual(model.listRevision, 0)
@@ -26,7 +26,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         await model.confirm(asked)?.value
         XCTAssertEqual(ran, [.restore])
         XCTAssertEqual(model.listRevision, 1)
-        XCTAssertEqual(model.status, "스냅샷 복원 완료")
+        XCTAssertEqual(model.status, "Snapshot restored")
         XCTAssertFalse(model.failed)
     }
 
@@ -37,13 +37,13 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         await model.create(run: run)?.value
         XCTAssertEqual(ran, [.create])
         let asked = try XCTUnwrap(model.confirmation(for: .delete, snapshotDate: made, label: "설치 완료", run: run))
-        XCTAssertEqual(asked.title, "‘설치 완료’ 스냅샷을 삭제할까요?")
-        XCTAssertEqual(asked.message, "‘설치 완료’ 스냅샷만 영구 삭제하며 현재 VM 디스크는 바뀌지 않습니다.")
+        XCTAssertEqual(asked.title, "Delete “설치 완료”?")
+        XCTAssertEqual(asked.message, "This permanently deletes the snapshot “설치 완료” and preserves the current VM disk.")
         XCTAssertEqual(ran, [.create])
         await model.confirm(asked)?.value
         XCTAssertEqual(ran, [.create, .delete])
         XCTAssertEqual(model.listRevision, 2)
-        XCTAssertEqual(model.status, "스냅샷 삭제 완료")
+        XCTAssertEqual(model.status, "Snapshot deleted")
     }
 
     func testRestoreWithoutASnapshotRunsNothing() async {
@@ -52,7 +52,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         XCTAssertNil(model.confirmation(for: .restore, snapshotDate: nil) { ran.append($0); return nil })
         await Task.yield()
         XCTAssertEqual(ran, [])
-        XCTAssertEqual(model.status, "되돌릴 스냅샷이 없으니 먼저 스냅샷을 만드세요.")
+        XCTAssertEqual(model.status, "Create a snapshot before trying to restore one.")
         XCTAssertTrue(model.failed)
     }
 
@@ -62,42 +62,42 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         await model.create { _ in
             throw NSError(domain: "BridgeVM.RuntimeMutation", code: 1)
         }?.value
-        XCTAssertEqual(model.status, "VM이 실행 중이거나 다른 작업 중이라 스냅샷을 만들지 못했으니 VM을 완전히 종료한 뒤 다시 시도하세요.")
+        XCTAssertEqual(model.status, "Shut down the VM and wait for other operations to finish before creating a snapshot.")
         XCTAssertTrue(model.failed)
         XCTAssertFalse(model.busy)
     }
 
     /// Each failure the snapshot path reports, as it reaches the card, and the helper's own refusals.
-    func testEachKnownFailureReadsAsOneKoreanSentence() throws {
+    func testEachKnownFailureGivesOneActionableSentence() throws {
         typealias Command = HvfWindowsSnapshotCommand
-        let notStopped = "VM이 실행 중이거나 다른 작업 중이라 스냅샷을 만들지 못했으니 VM을 완전히 종료한 뒤 다시 시도하세요."
+        let notStopped = "Shut down the VM and wait for other operations to finish before creating a snapshot."
         let stale = HvfRuntimeMutationReservation(kind: .snapshot, configuration: HvfEngineView.defaultConfig())
         stale.invalidate()
         let cases: [(Error, Operation, String)] = [
             (NSError(domain: "BridgeVM.RuntimeMutation", code: 1), .create, notStopped),
             (Result { try stale.checkEffect() }.failure!, .create, notStopped),
             (Command.notStopped(), .restore,
-             "VM이 실행 중이거나 다른 작업 중이라 스냅샷으로 되돌리지 못했으니 VM을 완전히 종료한 뒤 다시 시도하세요."),
+             "Shut down the VM and wait for other operations to finish before restoring the snapshot."),
             (Command.failure("settings edited on this page are not saved yet", .settingsUnsaved), .create,
-             "이 화면에서 바꾼 설정이 아직 적용되지 않아 스냅샷을 만들지 못했으니 바꾼 내용을 되돌리거나 VM을 한 번 시작해 적용한 뒤 다시 시도하세요."),
+             "Undo the pending settings changes or start the VM once to apply them before creating a snapshot."),
             (try helper("media is in use by a running VM or another snapshot operation: held by pid 42"), .create, notStopped),
             (try helper("No space left on device (os error 28)"), .create,
-             "VM이 저장된 드라이브에 공간이 부족해 스냅샷을 만들지 못했으니 공간을 확보한 뒤 다시 시도하세요."),
+             "Free up space on the drive that holds the VM before creating a snapshot."),
             (try helper("No space left on device; free space on your Mac and try again."), .restore,
-             "VM이 저장된 드라이브에 공간이 부족해 스냅샷으로 되돌리지 못했으니 공간을 확보한 뒤 다시 시도하세요."),
+             "Free up space on the drive that holds the VM before restoring the snapshot."),
             (try helper("disk.raw does not match the hash recorded in the manifest"), .restore,
-             "스냅샷이 손상되어 되돌리지 못했으니 새 스냅샷을 만드세요."),
+             "This snapshot is damaged, so create a new snapshot."),
             (try helper("unusable snapshot manifest: unknown format_version 9"), .create,
-             "새 스냅샷이 검증을 통과하지 못했으니 스냅샷을 다시 만드세요."),
+             "The new snapshot failed verification, so create it again."),
             (try helper("Operation not permitted (os error 1)"), .create,
-             "스냅샷을 만들지 못했으니 다시 시도하고, 계속 실패하면 아래 이벤트 피드에서 자세한 내용을 확인하세요."),
+             "Try creating a snapshot again and check the event feed for details if the problem continues."),
             (try helper(nil), .restore,
-             "스냅샷으로 되돌리지 못했으니 다시 시도하고, 계속 실패하면 아래 이벤트 피드에서 자세한 내용을 확인하세요."),
+             "Try restoring the snapshot again and check the event feed for details if the problem continues."),
         ]
         for (error, operation, expected) in cases {
             let message = HvfWindowsSnapshotModel.message(for: error, operation: operation)
             XCTAssertEqual(message, expected, error.localizedDescription)
-            Self.assertPlainKoreanSentence(message)
+            Self.assertPlainSentence(message)
         }
     }
 
@@ -119,7 +119,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
     }
 
     /// The card's whole path with the shipped helper: a create with nothing to replace, a restore that
-    /// waits for its answer, and a damaged snapshot refused in Korean with the helper's words in the feed.
+    /// waits for its answer, and a damaged snapshot refused with a recovery message with the helper's words in the feed.
     func testShippedHelperCreatesRestoresOnceConfirmedAndRefusesADamagedSnapshot() async throws {
         let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
             .appendingPathComponent("snapshot-model-" + UUID().uuidString)
@@ -151,7 +151,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
 
         XCTAssertNil(HvfWindowsSnapshotCommand.snapshotDate(config: config))
         await model.create(run: run)?.value
-        XCTAssertEqual(model.status, "스냅샷 생성 완료", session.events.last?.displayText ?? "")
+        XCTAssertEqual(model.status, "Snapshot created", session.events.last?.displayText ?? "")
         let date = try XCTUnwrap(HvfWindowsSnapshotCommand.snapshotDate(config: config))
         let first = try XCTUnwrap(HvfWindowsSnapshotStore.list(bundle: bundle).first)
         try Data(repeating: 5, count: 128).write(to: disk)
@@ -167,7 +167,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         let restore = try XCTUnwrap(model.confirmation(for: .restore, snapshotDate: date, label: first.label, run: restoreFirst))
         XCTAssertEqual(ran, [.create], "the restore waits for its answer")
         await model.confirm(restore)?.value
-        XCTAssertEqual(model.status, "스냅샷 복원 완료", session.events.last?.displayText ?? "")
+        XCTAssertEqual(model.status, "Snapshot restored", session.events.last?.displayText ?? "")
         let selectedDigest = try HvfWindowsSnapshotCommand.invoke(helper, ["digest", disk.path, vars.path])
         let firstDigest = try HvfWindowsSnapshotCommand.invoke(helper, ["digest", first.url.appendingPathComponent("disk.raw").path,
                                                                         first.url.appendingPathComponent("vars.fd").path])
@@ -179,14 +179,14 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         let corruptRestore = try XCTUnwrap(model.confirmation(for: .restore, snapshotDate: date, run: restoreFirst))
         await model.confirm(corruptRestore)?.value
         XCTAssertEqual(ran, [.create, .restore, .restore])
-        XCTAssertEqual(model.status, "스냅샷이 손상되어 되돌리지 못했으니 새 스냅샷을 만드세요.")
+        XCTAssertEqual(model.status, "This snapshot is damaged, so create a new snapshot.")
         XCTAssertTrue(model.failed)
         let feed = session.events.last?.displayText ?? ""
         XCTAssertTrue(feed.hasPrefix("powered-off snapshot restore failed (BridgeVM.HvfWindowsSnapshot 1): "), feed)
         XCTAssertTrue(feed.contains("does not match the hash"), feed)
         let delete = try XCTUnwrap(model.confirmation(for: .delete, snapshotDate: date, label: first.label, run: restoreFirst))
         await model.confirm(delete)?.value
-        XCTAssertEqual(model.status, "스냅샷 삭제 완료")
+        XCTAssertEqual(model.status, "Snapshot deleted")
         XCTAssertEqual(HvfWindowsSnapshotStore.list(bundle: bundle).count, 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: first.url.path))
         XCTAssertEqual(try HvfWindowsSnapshotCommand.invoke(helper, ["digest", disk.path, vars.path]), selectedDigest)
@@ -212,22 +212,17 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
             XCTAssertEqual(error.domain, HvfWindowsSnapshotCommand.errorDomain, file: file, line: line)
             XCTAssertEqual(error.code, failure.rawValue, file: file, line: line)
             XCTAssertFalse(error.localizedDescription.isEmpty, file: file, line: line)
-            Self.assertPlainKoreanSentence(HvfWindowsSnapshotModel.message(for: error, operation: .create),
+            Self.assertPlainSentence(HvfWindowsSnapshotModel.message(for: error, operation: .create),
                                            file: file, line: line)
         }
         XCTAssertEqual(session.events.count, events + 1, "the detail goes to the feed", file: file, line: line)
         XCTAssertFalse(session.hasPendingRuntimeMutation, file: file, line: line)
     }
 
-    /// One sentence in Korean: no helper English, no NSError text; only the product's own names.
-    static func assertPlainKoreanSentence(_ message: String, file: StaticString = #filePath, line: UInt = #line) {
+    /// The card gives a single recovery sentence and keeps internal error domains in the event feed.
+    static func assertPlainSentence(_ message: String, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(message.hasSuffix("."), message, file: file, line: line)
         XCTAssertEqual(message.filter { $0 == "." }.count, 1, "one sentence: \(message)", file: file, line: line)
-        XCTAssertTrue(message.unicodeScalars.contains { (0xAC00...0xD7A3).contains($0.value) }, message, file: file, line: line)
-        var rest = message
-        for name in ["BridgeVM", "VM", "Mac"] { rest = rest.replacingOccurrences(of: name, with: "") }
-        XCTAssertFalse(rest.unicodeScalars.contains { CharacterSet.letters.contains($0) && $0.isASCII },
-                       "no English: \(message)", file: file, line: line)
         XCTAssertFalse(message.contains("RuntimeMutation"), message, file: file, line: line)
     }
 
