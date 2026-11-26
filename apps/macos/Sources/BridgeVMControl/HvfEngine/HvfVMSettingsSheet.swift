@@ -113,8 +113,8 @@ struct HvfVMSettingsSheet: View {
                 if session.config.virtioNet {
                     HvfPortForwardSetting(session: session, text: $draft.forwards,
                         commit: { draft.commitForwards() })
+                    if let message = draft.forwardsMessage { validationMessage(message) }
                 }
-                if let message = draft.forwardsMessage { validationMessage(message) }
             }
             .id(Destination.network)
             Section("스냅샷") {
