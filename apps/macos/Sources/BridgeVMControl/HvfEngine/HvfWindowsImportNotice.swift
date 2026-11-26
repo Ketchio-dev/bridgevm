@@ -2,9 +2,9 @@ import Foundation
 
 /// A nonblocking import notice kept with the destination, including after publication/read-back.
 enum HvfWindowsImportNotice {
-    static let noESP = "이 디스크에는 UEFI 부팅 파티션이 없어 시작되지 않을 수 있습니다."
-    static let varsHelp = "다른 QEMU 기반 환경에서 디스크와 함께 받은 UEFI vars 파일이 있고 BitLocker 또는 사용자 지정 부팅 항목을 사용한다면 선택하세요."
-    static let bitLockerHelp = "다른 컴퓨터의 TPM으로 보호된 BitLocker 디스크는 이 VM의 vTPM이 새로 생성되므로 복구 키를 요구합니다."
+    static let noESP = "This disk has no UEFI boot partition. Windows may fail to start."
+    static let varsHelp = "If you use BitLocker or custom boot entries, include the matching UEFI variables file from your QEMU-based VM."
+    static let bitLockerHelp = "If BitLocker protected this disk with another TPM, have your BitLocker recovery key ready."
 
     private static func url(nextTo vars: URL) -> URL {
         vars.deletingLastPathComponent().appendingPathComponent("hvf-import-notice.txt")
@@ -16,6 +16,8 @@ enum HvfWindowsImportNotice {
 
     static func read(bundlePath: String) -> String? {
         let vars = URL(fileURLWithPath: bundlePath).appendingPathComponent("metadata/hvf-vars.fd")
-        return try? String(contentsOf: url(nextTo: vars), encoding: .utf8)
+        let notice = try? String(contentsOf: url(nextTo: vars), encoding: .utf8)
+        // Older imports stored the missing-partition notice as display text.
+        return notice == "이 디스크에는 UEFI 부팅 파티션이 없어 시작되지 않을 수 있습니다." ? noESP : notice
     }
 }

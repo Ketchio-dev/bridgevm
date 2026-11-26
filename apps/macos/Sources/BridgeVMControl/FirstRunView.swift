@@ -27,15 +27,15 @@ struct FirstRunView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 if let presentation, presentation.wrappedValue.showsImportDraft {
                                     Button { presentation.wrappedValue.showsImportDraft = false } label: {
-                                        Label("시작 화면으로", systemImage: "chevron.backward")
+                                        Label("Back to Get Started", systemImage: "chevron.backward")
                                     }
                                     .buttonStyle(.link)
                                     .keyboardShortcut(.cancelAction)
                                     .accessibilityIdentifier("bridgevm.first-run.back")
                                 }
-                                Text("기존 Windows VM 가져오기").font(.system(size: 28, weight: .bold))
+                                Text("Import a Windows VM").font(.system(size: 28, weight: .bold))
                                 if showsInputs {
-                                    Text("파일을 선택해 등록한 뒤 VM 상세 화면에서 시작하세요.").foregroundStyle(.secondary)
+                                    Text("Choose your installed Windows disk. After import, open the VM in your library to start Windows.").foregroundStyle(.secondary)
                                 }
                             }
                             if showsInputs {
@@ -65,7 +65,7 @@ struct FirstRunView: View {
             }
         }
         .background(LibraryAppearance.canvas)
-        .navigationTitle(showsImport ? "VM 가져오기" : "시작하기")
+        .navigationTitle(showsImport ? "Import VM" : "Get Started")
     }
 
     func welcome(in presentation: Binding<LibraryWindowPresentation>?, diskPath: Binding<String>) -> FirstRunWelcomeView {

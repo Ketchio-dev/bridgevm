@@ -53,7 +53,7 @@ impl Format {
 }
 
 /// Why an image cannot be converted. Each displays as one plain sentence
-/// that tells the user what to do; the app shows it unchanged.
+/// with recovery guidance. The app omits diagnostic details from its messages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Refusal {
     NotAnImage,
@@ -80,22 +80,22 @@ pub enum Refusal {
 impl fmt::Display for Refusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Refusal::NotAnImage => write!(f, "변환할 수 있는 QCOW2, 고정 크기 VHD 또는 VHDX 디스크를 선택하세요."),
-            Refusal::Compressed => write!(f, "이 QCOW2 압축 형식을 지원하지 않으니 원래 VM 앱에서 RAW로 변환한 뒤 다시 가져오세요."),
-            Refusal::Encrypted => write!(f, "암호화된 QCOW2 디스크는 가져올 수 없으니 qemu-img로 암호화를 푼 디스크로 변환한 뒤 다시 가져오세요."),
-            Refusal::BackingFile => write!(f, "이 디스크는 다른 디스크를 기반으로 하니 qemu-img로 하나의 디스크로 합친 뒤 다시 가져오세요."),
-            Refusal::ExternalDataFile => write!(f, "이 QCOW2 디스크는 데이터를 별도 파일에 두니 qemu-img로 하나의 디스크로 변환한 뒤 다시 가져오세요."),
-            Refusal::ExtendedL2 => write!(f, "이 QCOW2 디스크는 확장 L2(서브클러스터) 형식이니 qemu-img로 일반 디스크로 변환한 뒤 다시 가져오세요."),
-            Refusal::Dirty => write!(f, "이 QCOW2 디스크는 사용 중이거나 제대로 닫히지 않았으니 이 디스크를 쓰던 VM을 완전히 종료한 뒤 다시 가져오세요."),
-            Refusal::Corrupt => write!(f, "이 QCOW2 디스크에는 손상 표시가 있으니 qemu-img check -r all로 고친 뒤 다시 가져오세요."),
-            Refusal::VhdxLog => write!(f, "이 VHDX에는 반영되지 않은 변경 기록이 남아 있으니 Windows에서 이 VHDX를 한 번 연결했다가 분리한 뒤 다시 시도하세요."),
-            Refusal::DynamicVhd => write!(f, "동적 VHD는 Hyper-V에서 고정 크기 VHD 또는 VHDX로 변환한 뒤 다시 가져오세요."),
-            Refusal::Differencing => write!(f, "이 디스크는 다른 디스크를 기반으로 하는 차이 디스크이니 Hyper-V에서 부모 디스크와 병합한 뒤 다시 가져오세요."),
-            Refusal::Sector4K => write!(f, "이 VHDX는 4K 논리 섹터 디스크라 BridgeVM에서 부팅할 수 없으니 512바이트 논리 섹터 디스크에 설치한 Windows를 가져오세요."),
-            Refusal::TooLarge => write!(f, "가상 크기가 16 TiB를 넘는 디스크는 가져올 수 없습니다."),
-            Refusal::Unsupported(what) => write!(f, "이 디스크는 지원하지 않는 형식 기능({what})을 사용하니 qemu-img convert -O raw로 먼저 변환한 뒤 다시 가져오세요."),
-            Refusal::Damaged(what) => write!(f, "디스크 이미지가 손상되었거나 구조가 올바르지 않으니 원래 VM 앱에서 디스크를 점검한 뒤 다시 시도하세요({what})."),
-            Refusal::NoSpace => write!(f, "대상 볼륨의 공간이 부족해 디스크를 가져오지 못했습니다. 공간을 확보한 뒤 다시 시도하세요."),
+            Refusal::NotAnImage => write!(f, "Choose a QCOW2, fixed-size VHD, or VHDX disk to convert."),
+            Refusal::Compressed => write!(f, "This QCOW2 uses unsupported compression. Export it as RAW from the original VM app and import the copy."),
+            Refusal::Encrypted => write!(f, "This QCOW2 disk is encrypted. Use qemu-img to export a decrypted copy and import it."),
+            Refusal::BackingFile => write!(f, "This disk depends on a backing file. Export a standalone disk from the original VM app and import the copy."),
+            Refusal::ExternalDataFile => write!(f, "This QCOW2 stores data in a separate file. Use qemu-img to export a standalone disk and import the copy."),
+            Refusal::ExtendedL2 => write!(f, "This QCOW2 uses extended L2 tables. Use qemu-img to convert it to RAW and import the copy."),
+            Refusal::Dirty => write!(f, "This QCOW2 is still in use or was closed unexpectedly. Shut down the source VM cleanly and try again."),
+            Refusal::Corrupt => write!(f, "This QCOW2 is marked as corrupt. Check a copy with qemu-img check and import it after repair."),
+            Refusal::VhdxLog => write!(f, "This VHDX has pending changes. Attach it in Windows, detach it cleanly, then try again."),
+            Refusal::DynamicVhd => write!(f, "Convert the dynamic VHD to a fixed-size VHD or VHDX in Hyper-V, then import the converted disk."),
+            Refusal::Differencing => write!(f, "This differencing disk depends on a parent disk. Merge the chain in Hyper-V, then import the merged disk."),
+            Refusal::Sector4K => write!(f, "This VHDX uses 4 KB logical sectors. Import Windows from a disk that uses 512-byte logical sectors."),
+            Refusal::TooLarge => write!(f, "Choose a disk with a virtual size of 16 TiB or less."),
+            Refusal::Unsupported(what) => write!(f, "This disk uses an unsupported feature ({what}). Export it as RAW from the original VM app and import the copy."),
+            Refusal::Damaged(what) => write!(f, "The disk image is damaged ({what}). Check it in the original VM app and try again."),
+            Refusal::NoSpace => write!(f, "No space left on device. Free space on the destination volume and try again."),
         }
     }
 }
@@ -125,7 +125,7 @@ impl fmt::Display for ConvertError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ConvertError::Refused(refusal) => refusal.fmt(f),
-            ConvertError::Io(error) => write!(f, "디스크를 변환하지 못했습니다: {error}"),
+            ConvertError::Io(error) => write!(f, "Could not convert the disk: {error}"),
         }
     }
 }

@@ -21,7 +21,7 @@ enum HvfMediaImportHelper {
         let completion = try HvfHelperProcess.run(executable, arguments, progress: progress)
         guard completion.succeeded else {
             let message = completion.diagnostic
-            throw failure(message.isEmpty ? "디스크와 부팅 설정을 가져오지 못했습니다." : message)
+            throw failure(message.isEmpty ? "The disk and firmware settings could not be imported." : message)
         }
     }
 

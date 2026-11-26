@@ -13,17 +13,17 @@ struct LibraryFileField: View {
             Label(title, systemImage: chooseDirectory ? "folder" : "doc")
                 .font(.callout.weight(.semibold))
             HStack(spacing: 10) {
-                TextField(chooseDirectory ? "폴더 경로" : "파일 경로", text: $path)
+                TextField(chooseDirectory ? "Folder path" : "File path", text: $path)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel(title).accessibilityIdentifier("\(accessibilityIdentifier).path")
                     .help(path.isEmpty ? detail : path)
-                Button(chooseDirectory ? "폴더 선택 또는 놓기" : "파일 선택 또는 놓기") {
+                Button(chooseDirectory ? "Choose or drop folder…" : "Choose or drop file…") {
                     dropRejected = false
                     Self.choose(with: NSOpenPanel(), directory: chooseDirectory, path: $path)
                 }
                 .fixedSize()
-                .accessibilityLabel("\(title) 선택").accessibilityIdentifier("\(accessibilityIdentifier).choose")
-                .accessibilityHint(chooseDirectory ? "Finder에서 폴더를 놓을 수 있습니다." : "Finder에서 파일을 놓을 수 있습니다.")
+                .accessibilityLabel("Choose \(title)").accessibilityIdentifier("\(accessibilityIdentifier).choose")
+                .accessibilityHint(chooseDirectory ? "You can also drop a folder here from Finder." : "You can also drop a file here from Finder.")
                 .overlay {
                     if isDropTarget {
                         RoundedRectangle(cornerRadius: 6)
@@ -34,7 +34,7 @@ struct LibraryFileField: View {
                 }
             }
             if dropRejected {
-                Label(chooseDirectory ? "Finder에서 폴더 한 개를 놓으세요." : "Finder에서 파일 한 개를 놓으세요.",
+                Label(chooseDirectory ? "Drop one folder here from Finder." : "Drop one file here from Finder.",
                       systemImage: "exclamationmark.circle")
                     .font(.caption).foregroundStyle(.red)
             } else {
