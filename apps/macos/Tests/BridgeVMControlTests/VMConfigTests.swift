@@ -96,6 +96,17 @@ final class VMLibraryPersistenceTests: XCTestCase {
                  guestName: "", displayWidth: 0, displayHeight: 0)
     }
 
+    func testIdenticallyNamedRegistrationsKeepTheirIDOrderAfterReload() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for id in ["studio-c", "studio-a", "studio-b"] {
+            XCTAssertTrue(VMLibrary.save(config(id: id), rootURL: root))
+        }
+        for _ in 0..<3 {
+            XCTAssertEqual(VMLibrary.list(rootURL: root).map(\.slug), ["studio-a", "studio-b", "studio-c"])
+        }
+    }
+
     func testSaveWritesNormalizedIdentityAtomically() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

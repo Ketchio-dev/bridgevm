@@ -131,7 +131,10 @@ enum VMLibrary {
             }
             out.append(candidates[0].config)
         }
-        let sorted = out.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        let sorted = out.sorted {
+            let order = $0.displayName.localizedCaseInsensitiveCompare($1.displayName)
+            return order == .orderedSame ? $0.slug < $1.slug : order == .orderedAscending
+        }
         return VMLibraryScan(configs: sorted, issues: issues.sorted { $0.path < $1.path })
     }
 

@@ -8,6 +8,7 @@ struct LibraryVMActionsMenu: View {
     @ObservedObject var library: LibraryModel
     let config: VMConfig
     let size: CGSize
+    var accessibleName: String? = nil
 
     var body: some View {
         Menu {
@@ -16,7 +17,7 @@ struct LibraryVMActionsMenu: View {
             Image(systemName: "ellipsis").frame(width: size.width, height: size.height)
         }
         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-        .accessibilityLabel("Actions for \(config.name)")
+        .accessibilityLabel("Actions for \(accessibleName ?? config.name)")
         .accessibilityIdentifier(Self.identifier)
     }
 }

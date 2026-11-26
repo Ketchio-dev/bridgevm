@@ -33,7 +33,7 @@ final class LibrarySearchFieldAccessibilityTests: XCTestCase {
         XCTAssertEqual(element.accessibilityIdentifier(), "bridgevm.library.search", "the element carries the identifier")
         XCTAssertFalse(field.isAccessibilityElement() || field.accessibilityIdentifier() == "bridgevm.library.search",
                        "only the element carries it, so an accessibility walk finds the field once")
-        XCTAssertEqual(field.placeholderString, "Search by VM name or engine")
+        XCTAssertEqual(field.placeholderString, "Search by VM name, ID, or engine")
         element.setAccessibilityValue("Indigo")
         await settle(host)
         XCTAssertEqual(element.accessibilityValue() as? String, "Indigo", "the element reads back the value")
