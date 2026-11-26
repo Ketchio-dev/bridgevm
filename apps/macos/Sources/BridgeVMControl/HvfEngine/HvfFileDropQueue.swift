@@ -11,7 +11,7 @@ final class HvfFileDropQueue: ObservableObject {
         let failed: Bool
     }
 
-    static let notReadyText = "게스트 에이전트가 아직 준비되지 않아 파일을 복사하지 않았습니다. Windows가 시작된 뒤 다시 끌어다 놓으세요."
+    static let notReadyText = "Windows isn’t ready to receive files. Try again after Guest Tools connects."
 
     @Published private(set) var notice: Notice?
     /// How long a finished drop's notice stays up.
@@ -51,7 +51,7 @@ final class HvfFileDropQueue: ObservableObject {
     func staged(_ id: String, _ summary: HvfFileDropStaging.Summary, sent: Bool) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
         guard sent else {
-            return finish(index, Notice(text: "게스트 에이전트에 복사를 요청하지 못했습니다. 잠시 뒤 다시 끌어다 놓으세요.", failed: true))
+            return finish(index, Notice(text: "Couldn’t start the copy. Try again in a moment.", failed: true))
         }
         jobs[index].sent = true
         jobs[index].skipped = summary.skipped
@@ -62,19 +62,19 @@ final class HvfFileDropQueue: ObservableObject {
 
     func nothingToCopy(_ id: String) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
-        finish(index, Notice(text: "복사할 파일이 없습니다. 바로가기(심볼릭 링크)와 특수 파일은 복사하지 않습니다.", failed: true))
+        finish(index, Notice(text: "Nothing to copy. Choose regular files or folders instead of symbolic links or special files.", failed: true))
     }
 
     func stagingFailed(_ id: String) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
-        finish(index, Notice(text: "Mac에서 파일을 읽거나 복사 준비를 하지 못해 복사하지 않았습니다. 파일 권한과 Mac의 남은 공간을 확인하세요.", failed: true))
+        finish(index, Notice(text: "Couldn’t prepare the files. Check their permissions and the free space on your Mac.", failed: true))
     }
 
     func consume(_ event: BvAgentEvent) {
         guard case let .unknown(raw) = event else { return }
         let line = raw.hasSuffix("\r") ? String(raw.dropLast()) : raw
         if HvfGuestResetRecord.matches(line) {
-            return abandon("Windows가 다시 시작되어 파일 복사가 중단되었습니다. 다시 끌어다 놓으세요.")
+            return abandon("Windows restarted before the copy finished. Try again.")
         }
         let fields = line.split(separator: " ").map(String.init)
         guard fields.count >= 4, fields[0] == "BVAGENT", fields[1] == "DROP",
@@ -94,24 +94,24 @@ final class HvfFileDropQueue: ObservableObject {
             show()
         case "done":
             let job = jobs[index]
-            let copied = "파일 \(job.files.done)개(\(Self.size(job.bytes.done)))"
-            var done = Notice(text: "\(copied)를 Windows 바탕 화면에 복사했습니다.", failed: false)
-            // `opened=<ok>/<asked>`, or `opened=old-agent` (file_drop.rs); a plain drop has neither.
+            let copied = "Copied to the Windows desktop (\(Self.quantity(job.files.done, "file")), \(Self.size(job.bytes.done)))."
+            var done = Notice(text: copied, failed: false)
+            // 'opened' counts selected items, which may include folders with multiple files.
             if job.open, let opened = values["opened"] {
                 if opened == "old-agent" {
-                    done = Notice(text: "이 VM의 게스트 에이전트는 파일을 열 수 없어 \(copied)를 Windows 바탕 화면에 복사만 했습니다.", failed: true)
+                    done = Notice(text: "\(copied) This version of Guest Tools can’t open items automatically.", failed: true)
                 } else if let counts = Self.counts(opened), let ok = counts.done {
                     done = ok < counts.total
-                        ? Notice(text: "\(copied)를 Windows 바탕 화면에 복사했지만 \(counts.total - ok)개는 열지 못했으니 바탕 화면에서 직접 여세요.", failed: true)
-                        : Notice(text: "\(copied)를 Windows 바탕 화면에 복사하고 열었습니다.", failed: false)
+                        ? Notice(text: "\(copied) Open \(Self.quantity(counts.total - ok, "remaining item")) from the desktop.", failed: true)
+                        : Notice(text: "\(copied) Opened \(Self.quantity(ok, "selected item")).", failed: false)
                 }
             }
-            let skipped = job.skipped > 0 ? " 바로가기와 특수 파일 \(job.skipped)개는 건너뛰었습니다." : ""
+            let skipped = job.skipped > 0 ? " Skipped \(Self.quantity(job.skipped, "unsupported item")) (symbolic links or special files)." : ""
             finish(index, Notice(text: done.text + skipped, failed: done.failed))
         case "failed":
             let job = jobs[index]
             let reason = fields.count > 4 ? fields[4] : ""
-            let partial = job.files.done > 0 ? " (파일 \(job.files.done)/\(job.files.total)개는 복사됨)" : ""
+            let partial = job.files.done > 0 ? " Copied \(job.files.done) of \(Self.quantity(job.files.total, "file"))." : ""
             finish(index, Notice(text: Self.failureText(reason) + partial, failed: true))
         default:
             break
@@ -128,15 +128,15 @@ final class HvfFileDropQueue: ObservableObject {
     static func failureText(_ reason: String) -> String {
         switch reason {
         case "agent-too-old":
-            return "이 VM의 게스트 에이전트가 파일 끌어다 놓기를 지원하지 않아 복사하지 않았습니다. 게스트 에이전트를 업데이트하세요."
+            return "Update Guest Tools in Windows to copy files from the Mac."
         case "guest-error":
-            return "Windows에 파일을 쓰지 못해 복사를 멈췄습니다. Windows 바탕 화면의 남은 공간과 권한을 확인하세요."
+            return "Windows couldn’t save the files. Check free disk space and write access to the Windows desktop."
         case "stalled", "agent-restarted":
-            return "게스트 에이전트와의 연결이 끊겨 복사를 멈췄습니다. 다시 끌어다 놓으세요."
+            return "Guest Tools disconnected during the copy. Try again after it reconnects."
         case "read-error", "staging-unreadable":
-            return "Mac에서 복사할 파일을 읽지 못해 복사를 멈췄습니다."
+            return "The copy stopped because the Mac couldn’t read a file. Check its permissions and try again."
         default:
-            return "파일 복사에 실패했습니다. 다시 끌어다 놓으세요."
+            return "Couldn’t copy the files. Try again."
         }
     }
 
@@ -163,14 +163,14 @@ final class HvfFileDropQueue: ObservableObject {
 
     private func show() {
         guard let job = jobs.first else { return }
-        let waiting = jobs.count > 1 ? " · 대기 \(jobs.count - 1)건" : ""
+        let waiting = jobs.count > 1 ? " · \(jobs.count - 1) queued" : ""
         let text: String
         if !job.sent {
-            text = "끌어다 놓은 항목을 복사할 준비를 하고 있습니다…"
+            text = "Preparing to copy…"
         } else if !job.started {
-            text = "Windows로 복사를 시작하고 있습니다…"
+            text = "Starting the copy to Windows…"
         } else {
-            text = "Windows로 복사 중: 파일 \(job.files.done)/\(job.files.total)개 · "
+            text = "Copying to Windows · \(job.files.done) of \(Self.quantity(job.files.total, "file")) · "
                 + "\(Self.size(job.bytes.done)) / \(Self.size(job.bytes.total))"
         }
         notice = Notice(text: text + waiting, failed: false)
@@ -184,6 +184,10 @@ final class HvfFileDropQueue: ObservableObject {
         case 2: return parts[0].flatMap { done in parts[1].map { (done, $0) } }
         default: return nil
         }
+    }
+
+    private static func quantity(_ count: some BinaryInteger, _ noun: String) -> String {
+        "\(count) \(noun)\(count == 1 ? "" : "s")"
     }
 
     private static func size(_ bytes: Int64) -> String {
