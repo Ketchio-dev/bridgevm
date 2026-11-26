@@ -392,8 +392,7 @@ extension LibraryModel {
         }
     }
 
-    /// Only runtime-view preference keys (clipboard, network, shared folder) changed, so the stopped session
-    /// is rebound in place. Replacing it would rebuild the runtime view and silently drop its other unsaved edits.
+    /// Rebind the stopped session after its settings are saved so its open views keep their pending edits.
     private func adoptSavedRuntimePreferences(_ session: HvfEngineSession, previous: VMConfig, saved: VMConfig) {
         var expected = saved.keepingRuntimePreferences(of: previous)
         expected.id = previous.id

@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 @testable import BridgeVMControl
 
-/// 가상 머신 > Windows 앱: the agent's STARTAPPS rows are guest bytes, parsed row by row; STARTAPP goes only to an
+/// Virtual Machine > Windows Apps: the agent's STARTAPPS rows are guest bytes, parsed row by row; STARTAPP goes only to an
 /// agent whose READY carries `startapps`, with an AppID the agent takes.
 final class HvfGuestStartAppsTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1000)

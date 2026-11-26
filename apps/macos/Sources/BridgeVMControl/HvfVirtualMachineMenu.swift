@@ -3,7 +3,7 @@ import AppKit
 import SwiftUI
 
 /// One VM display window (HvfDisplayWindowController): its session, its Guest windows sheet, and its Windows apps
-/// (the 가상 머신 > Windows 앱 submenu and its 모든 앱… sheet).
+/// (the Virtual Machine > Windows Apps submenu and its All Apps… sheet).
 @MainActor
 final class HvfDisplayWindowState: ObservableObject {
     let session: HvfEngineSession
@@ -20,7 +20,7 @@ final class HvfDisplayWindowState: ObservableObject {
     }
 }
 
-/// The VM display window that is the main window, which the menu bar's 가상 머신 menu acts on;
+/// The VM display window that is the main window, which the menu bar's Virtual Machine menu acts on;
 /// none while the library window is in front.
 @MainActor
 final class HvfVirtualMachineMenuTarget: ObservableObject {
@@ -28,7 +28,7 @@ final class HvfVirtualMachineMenuTarget: ObservableObject {
     @Published private(set) var display: HvfDisplayWindowState?
     private var menuBarTracking: NSObjectProtocol?
 
-    /// The menu bar opening asks the guest for its apps again when the list is stale, so Windows 앱 is current
+    /// The menu bar opening asks the guest for its apps again when the list is stale, so Windows Apps is current
     /// (NSMenu.didBeginTrackingNotification's object is the main menu for the menu bar).
     init() {
         menuBarTracking = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification,
@@ -62,7 +62,7 @@ struct HvfVirtualMachineMenuState: Equatable {
     var restarts = false
     var stops = false
     var listsWindows = false
-    /// Why Windows 앱 lists no app, in one plain sentence; nil when the guest takes STARTAPPS now.
+    /// Why Windows Apps lists no app, in one plain sentence; nil when the guest takes STARTAPPS now.
     var windowsAppsUnavailable: String? = HvfGuestStartApps.notRunning
 }
 
@@ -75,7 +75,7 @@ extension HvfVirtualMachineMenuState {
         paused = session.pause.showsResume
         pauses = paused || session.pauseAvailable // HvfPauseControl
         restarts = running // HvfRestartControl
-        // The dashboard's 정지, as a quit asks it: this app's own run, with no stop under way.
+        // The dashboard's Stop, as a quit asks it: this app's own run, with no stop under way.
         stops = session.mayHaveOwnedWork && session.terminationStopAvailable && !session.runtimeStartupWorkerPending
         if case .connected = session.connectionState { listsWindows = !session.pause.holdsInput }
         windowsAppsUnavailable = HvfGuestStartApps.unavailableReason(session)
@@ -91,10 +91,10 @@ extension HvfDisplayWindowState {
     func perform(_ action: HvfVirtualMachineMenuAction) {
         switch action {
         case .ctrlAltDelete:
-            if !session.sendToolbarKey("ctrl+alt+delete") { tell("Windows에 Ctrl+Alt+Delete를 보내지 못했습니다. 잠시 뒤 다시 시도하세요.") }
+            if !session.sendToolbarKey("ctrl+alt+delete") { tell("Couldn’t send Ctrl+Alt+Delete to Windows. Try again in a moment.") }
         case .screenCapture:
             // Windows+Shift+S opens the Snipping Tool's capture bar, whatever the Command key setting.
-            if !session.sendToolbarKey("win+shift+s") { tell("Windows에 화면 캡처 키(Windows+Shift+S)를 보내지 못했습니다. 잠시 뒤 다시 시도하세요.") }
+            if !session.sendToolbarKey("win+shift+s") { tell("Couldn’t send Windows+Shift+S to open Snipping Tool. Try again in a moment.") }
         case .pause:
             tell(session.togglePause().message)
         case .restart:
@@ -121,9 +121,9 @@ extension HvfDisplayWindowState {
         let alert = NSAlert()
         alert.messageText = HvfRestartControl<EmptyView>.title(prompt)
         alert.informativeText = HvfRestartControl<EmptyView>.message(prompt)
-        alert.addButton(withTitle: "취소")
-        alert.addButton(withTitle: "재설정").hasDestructiveAction = true
-        if prompt == .windowsHasNotRestarted { alert.addButton(withTitle: "다시 요청") }
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Reset").hasDestructiveAction = true
+        if prompt == .windowsHasNotRestarted { alert.addButton(withTitle: "Request Restart Again") }
         present(alert) { [self] response in
             switch response {
             case .alertSecondButtonReturn: tell(session.requestReset().message)
@@ -137,7 +137,7 @@ extension HvfDisplayWindowState {
         guard let message else { return }
         let alert = NSAlert()
         alert.messageText = message
-        alert.addButton(withTitle: "확인")
+        alert.addButton(withTitle: "OK")
         present(alert) { _ in }
     }
 
@@ -147,21 +147,21 @@ extension HvfDisplayWindowState {
     }
 }
 
-/// The menu bar's 가상 머신 menu. Cmd+, opens this VM's settings.
+/// The menu bar's Virtual Machine menu. Cmd+, opens this VM's settings.
 struct HvfVirtualMachineCommands: Commands {
     var body: some Commands {
-        CommandMenu("가상 머신") { HvfVirtualMachineMenuContent() }
+        CommandMenu("Virtual Machine") { HvfVirtualMachineMenuContent() }
     }
 }
 
 /// SwiftUI rebuilds a menu bar menu from its views as the menu opens, so the items follow the
 /// window in front and its session's state at that moment.
-private struct HvfVirtualMachineMenuContent: View {
+struct HvfVirtualMachineMenuContent: View {
     @ObservedObject var target = HvfVirtualMachineMenuTarget.shared
     @FocusedValue(\.hvfVMSettings) private var showSettings
 
     var body: some View {
-        Button("설정…") {
+        Button("Settings…") {
             if let showSettings { showSettings() }
             else if let display = target.display { display.showsSettings = true }
         }
@@ -193,14 +193,14 @@ struct HvfVirtualMachineMenuItems: View {
     let perform: @MainActor (HvfVirtualMachineMenuAction) -> Void
 
     var body: some View {
-        Button("Ctrl+Alt+Delete 보내기") { perform(.ctrlAltDelete) }.disabled(!state.sendsKeys)
-        Button("화면 캡처 (Snipping Tool)") { perform(.screenCapture) }.disabled(!state.sendsKeys)
+        Button("Send Ctrl+Alt+Delete") { perform(.ctrlAltDelete) }.disabled(!state.sendsKeys)
+        Button("Open Snipping Tool") { perform(.screenCapture) }.disabled(!state.sendsKeys)
         Divider()
         Button(HvfPauseControl<EmptyView>.title(paused: state.paused)) { perform(.pause) }.disabled(!state.pauses)
-        Button("다시 시작") { perform(.restart) }.disabled(!state.restarts)
-        Button("정지") { perform(.stop) }.disabled(!state.stops)
+        Button("Restart") { perform(.restart) }.disabled(!state.restarts)
+        Button("Stop") { perform(.stop) }.disabled(!state.stops)
         Divider()
-        Menu("Windows 앱") {
+        Menu("Windows Apps") {
             if let reason = state.windowsAppsUnavailable {
                 Button(reason) {}.disabled(true)
             } else if let startApps {
@@ -208,12 +208,12 @@ struct HvfVirtualMachineMenuItems: View {
             }
         }
         .accessibilityIdentifier("runtime.windowsApps")
-        Button("Windows 창 목록…") { perform(.windows) }.disabled(!state.listsWindows)
+        Button("Show Guest Windows…") { perform(.windows) }.disabled(!state.listsWindows)
             .accessibilityIdentifier("runtime.windows.open")
     }
 }
 
-/// Windows 앱's items: up to HvfGuestStartApps.menuLimit apps, alphabetically, or what the list is doing.
+/// Windows Apps's items: up to HvfGuestStartApps.menuLimit apps, alphabetically, or what the list is doing.
 struct HvfGuestStartAppsMenuItems: View {
     @ObservedObject var apps: HvfGuestStartAppsController
     let perform: @MainActor (HvfVirtualMachineMenuAction) -> Void
@@ -223,8 +223,8 @@ struct HvfGuestStartAppsMenuItems: View {
         if shown.isEmpty { Button(apps.statusText) {}.disabled(true) }
         ForEach(shown) { app in Button(app.name) { perform(.startApp(app)) } }
         Divider()
-        Button("모든 앱…") { perform(.allApps) }
-        Button("목록 새로 고침") { perform(.refreshApps) }.disabled(apps.status == .loading)
+        Button("All Apps…") { perform(.allApps) }
+        Button("Refresh List") { perform(.refreshApps) }.disabled(apps.status == .loading)
     }
 }
 #endif

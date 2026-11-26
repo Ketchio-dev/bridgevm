@@ -21,7 +21,7 @@ struct HvfVMSettingsSheet: View {
 
         var item: (title: String, icon: String, shortcut: KeyEquivalent) {
             switch self {
-            case .general: ("일반", "gearshape", "1")
+            case .general: ("General", "gearshape", "1")
             case .display: ("디스플레이", "display", "2")
             case .sharing: ("공유", "folder", "3")
             case .network: ("네트워크", "network", "4")
@@ -40,7 +40,7 @@ struct HvfVMSettingsSheet: View {
                             Text(vmName).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer()
-                        Button("완료") { finish(proxy) }
+                        Button("Done") { finish(proxy) }
                             .keyboardShortcut(.cancelAction)
                             .accessibilityIdentifier("bridgevm.runtime.settings.done")
                     }
@@ -72,17 +72,18 @@ struct HvfVMSettingsSheet: View {
             .focusedSceneValue(\.hvfVMSettings, { finish(proxy) })
         }
         .frame(width: 680, height: captureHeight)
-        // Without a container element the sheet's identifier replaces the 완료 button's own.
+        // Without a container element the sheet's identifier replaces the Done button's own.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("bridgevm.runtime.settings")
         .onAppear(perform: draft.didAppear)
+        .onChange(of: session.config.libraryContext?.config.name) { draft.refreshName() }
         .onDisappear(perform: draft.didDisappear)
         .interactiveDismissDisabled()
     }
 
     var settingsForm: some View {
         Form {
-            HvfStartCloseSettings(session: session)
+            HvfStartCloseSettings(session: session, draft: draft)
                 .id(Destination.general)
             Section("하드웨어") {
                 HvfResourceSetting(session: session, ramMiB: binding(\.ramMiB), cpus: binding(\.smpCpus))
@@ -137,8 +138,11 @@ struct HvfVMSettingsSheet: View {
 
     private func validate(_ proxy: ScrollViewProxy) -> Bool {
         if draft.finish() { return true }
-        let destination: Destination = draft.shareMessage == nil ? .network : .sharing
-        proxy.scrollTo(destination, anchor: .top)
+        if draft.nameMessage != nil {
+            proxy.scrollTo(Destination.general, anchor: .top)
+        } else {
+            proxy.scrollTo(draft.shareMessage == nil ? Destination.network : .sharing, anchor: .top)
+        }
         return false
     }
 

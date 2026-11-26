@@ -22,22 +22,22 @@ struct FirstRunWelcomeView: View {
         VStack(alignment: .leading, spacing: 26) {
             VStack(alignment: .leading, spacing: 12) {
                 LibraryVMEmblem(engine: .hvfEngine)
-                Text("첫 번째 가상 머신 추가")
+                Text("Add your first virtual machine")
                     .font(.largeTitle.bold())
                     .accessibilityAddTraits(.isHeader)
-                Text("Engineering Preview · 3D 가속 없음")
+                Text("Engineering Preview · No 3D acceleration")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumCardWidth), spacing: 16)],
                       alignment: .leading, spacing: 16) {
-                FirstRunChoiceCard(title: "Windows 새로 설치", symbol: "opticaldisc",
-                    description: "Windows ARM64 설치 ISO를 여기에 놓거나 클릭해 설치를 준비하세요.",
+                FirstRunChoiceCard(title: "Install Windows", symbol: "opticaldisc",
+                    description: "Drop a Windows Arm64 installer ISO here, or click to set up a new VM.",
                     choice: .installer, action: createAction, dropAction: dropAction)
                     .accessibilityIdentifier("bridgevm.first-run.create")
-                FirstRunChoiceCard(title: "기존 디스크 가져오기", symbol: "externaldrive",
-                    description: "Windows가 설치된 RAW, QCOW2, 고정 크기 VHD 또는 VHDX 파일을 여기에 놓거나 클릭해 가져오세요.",
+                FirstRunChoiceCard(title: "Import an existing disk", symbol: "externaldrive",
+                    description: "Drop a RAW, QCOW2, fixed-size VHD or VHDX disk with Windows installed, or click to set up the import.",
                     choice: .disk, action: importAction, dropAction: dropAction)
                     .accessibilityIdentifier("bridgevm.first-run.import")
             }
