@@ -115,8 +115,7 @@ anything else. The installer then fails closed at every step:
 Install and update replace only the app bundle. Your VMs (disks, UEFI
 variables and vTPM state, by default under
 `~/Library/Application Support/BridgeVM/vms` or in the storage folder you
-chose), their shared folders under `~/BridgeVM 공유` and app settings are never
-touched.
+chose), their shared folders and app settings are preserved.
 
 Useful options (forwarded through the one-liner with `bash -s --`):
 
@@ -173,11 +172,20 @@ on current macOS, so the Settings route is the real one.
 
 ### Install Windows from an ISO
 
+1. In v0.1.0, choose **Install Windows** (**새 Windows VM 만들기**), then **Choose ISO…**
+   (**ISO 선택…**) and select your Windows 11 Arm ISO.
+2. Type a VM name in **Name** (**이름**). The displayed “Windows 11” is a
+   placeholder. Choose **Download Drivers** (**드라이버 자동 준비**) or select
+   your own driver folder and its manifest.
+3. Choose **Create** (**생성**). In the new VM’s detail view, choose
+   **Start Installation** (**설치 시작**) to begin Windows setup.
+
 - A Windows 11 ARM64 ISO, downloaded from Microsoft yourself. The app does not
   fetch Windows media; it asks you to choose the ISO file.
 - Signed ARM64 storage, serial and network drivers. Either:
-  - click **드라이버 자동 준비** in the create sheet (or pass `--fetch-drivers` to
-    `bridgevm app create-windows`): the app downloads the pinned Red Hat
+  - Click **Download Drivers** in the Create window (**드라이버 자동 준비** in
+    v0.1.0), or pass `--fetch-drivers` to `bridgevm app create-windows`.
+    BridgeVM downloads the pinned Red Hat
     virtio-win 0.1-299 archive (about 95 MB, Microsoft-signed) from the official
     fedorapeople.org source, refuses it unless its length and SHA-256 match the
     pins, keeps it under `~/Library/Application Support/BridgeVM/driver-payloads`,
@@ -200,11 +208,18 @@ restored file against its original SHA-256 before preparing Windows.
 
 ### Import an installed Windows disk
 
-Choose an installed Windows 11 Arm disk (RAW, QCOW2 or Hyper-V VHDX) and its
-matching UEFI variables if you have them. BridgeVM copies or converts the disk
-into the library and leaves the source unchanged. Import needs no driver
-payload. Builds from current source also accept fixed-size Hyper-V VHD. Convert
-a dynamic VHD to VHDX in Hyper-V before importing.
+1. In v0.1.0, choose **Import an existing disk** (**기존 VM 가져오기**). Keep the
+   prefilled name “Windows 11” or enter a different name.
+2. Beside **Windows disk** (**Windows 디스크**), click **Choose…** (**선택…**)
+   and select the installed Windows 11 Arm disk. If you have its matching UEFI variables
+   file, select it in the separate optional UEFI field.
+3. Choose **Import** (**가져오기**). Select the saved VM in the library and
+   choose **Start** (**시작**) to boot it.
+
+The v0.1.0 download accepts RAW, QCOW2 and Hyper-V VHDX. BridgeVM copies or
+converts the disk into the library and leaves the source unchanged. Import
+needs no driver payload. Builds from current source also accept fixed-size
+Hyper-V VHD. Convert a dynamic VHD to VHDX in Hyper-V before importing.
 
 For compressed QCOW2 in the v0.1.0 download, import a RAW copy. Builds from
 current source support QEMU's default deflate compression. Use RAW for
@@ -245,8 +260,10 @@ coverage is tracked in [the release criteria](../STATUS.md).
 - **Uninstall**: delete `/Applications/BridgeVM.app`. That removes the app
   only. Your VMs live under `~/Library/Application Support/BridgeVM/vms` (or
   the storage folder you chose); delete them only if you also want to destroy
-  their disks and vTPM state. Each VM's shared folder `~/BridgeVM 공유/<VM name>`
-  holds your own files and is not removed. vTPM keys stay in the Keychain
+  their disks and vTPM state. New VMs in source builds use
+  `~/BridgeVM Shared Folders/<VM name>` by default. VMs created by v0.1.0
+  keep their saved path, normally `~/BridgeVM 공유/<VM name>`. Uninstalling
+  preserves those folders and their files. vTPM keys stay in the Keychain
   (`com.bridgevm.vtpm-state-key.v1`).
 
 ## Known limits of the unsigned distribution

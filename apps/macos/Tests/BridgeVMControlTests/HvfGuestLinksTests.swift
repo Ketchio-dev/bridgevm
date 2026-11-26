@@ -73,7 +73,7 @@ final class HvfGuestLinksTests: XCTestCase {
         XCTAssertNil(library.latestConfiguration(for: saved).openGuestLinksOnMac, "off while never on stays absent")
 
         session.connectionState = .connected(host: "guest")
-        XCTAssertEqual(session.applyGuestLinksToggle(true).message, "VM을 완전히 중지한 뒤 링크 설정을 변경하세요.")
+        XCTAssertEqual(session.applyGuestLinksToggle(true).message, "Shut down Windows before changing this setting.")
         XCTAssertNil(library.latestConfiguration(for: saved).openGuestLinksOnMac)
 
         session.connectionState = .stopped

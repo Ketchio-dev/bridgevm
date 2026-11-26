@@ -6,16 +6,16 @@ struct LibraryIssuesDetails: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Label("라이브러리 경고 \(issues.count)개", systemImage: "exclamationmark.triangle")
+            Label("Library warnings (\(issues.count))", systemImage: "exclamationmark.triangle")
                 .font(.title2.weight(.semibold))
-            Text("라이브러리를 읽는 중 아래 문제가 발생했습니다.")
+            Text("BridgeVM found these issues while reading your library.")
                 .foregroundStyle(.secondary)
             List(issues) { issue in
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text(issue.entry.lastPathComponent).font(.headline)
                         Spacer()
-                        Button("Finder에서 보기") {
+                        Button("Show in Finder") {
                             NSWorkspace.shared.activateFileViewerSelecting([issue.entry])
                         }
                         .buttonStyle(.borderless)
@@ -30,7 +30,7 @@ struct LibraryIssuesDetails: View {
             .accessibilityIdentifier("bridgevm.library.issues.list")
             HStack {
                 Spacer()
-                Button("닫기", action: dismiss)
+                Button("Close", action: dismiss)
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("bridgevm.library.issues.close")
             }

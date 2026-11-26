@@ -1,10 +1,10 @@
 # Start an app-owned native VM
 
 ```sh
-bridgevm app start 개발-vm
-bridgevm app start 개발-vm --json --library "/absolute/path/to/native-library"
-bridgevm app status 개발-vm --json
-bridgevm app stop 개발-vm --json
+bridgevm app start dev-vm
+bridgevm app start dev-vm --json --library "/absolute/path/to/native-library"
+bridgevm app status dev-vm --json
+bridgevm app stop dev-vm --json
 ```
 
 Use the exact ID from `bridgevm app list`. The app must already own the selected

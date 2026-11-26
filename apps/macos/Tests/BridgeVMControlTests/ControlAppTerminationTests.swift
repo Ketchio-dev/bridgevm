@@ -76,6 +76,17 @@ final class ControlAppTerminationTests: XCTestCase {
         XCTAssertEqual(running.stops, 0)
     }
 
+    func testShutdownDelayDefaultsToKeepWaitingBeforeAndAfterAForceStop() {
+        for afterForce in [false, true] {
+            let alert = ControlAppTermination.Presenter.shutdownDelayAlert(afterForce: afterForce)
+            alert.layout()
+            XCTAssertEqual(alert.buttons.map(\.title), ["Keep Waiting", afterForce ? "Quit Anyway" : "Force Stop and Quit", "Cancel Quit"])
+            XCTAssertEqual(alert.buttons[0].keyEquivalent, "\r")
+            XCTAssertTrue(alert.buttons[1].hasDestructiveAction)
+            XCTAssertEqual(alert.buttons[2].keyEquivalent, "\u{1b}")
+        }
+    }
+
     func testDeadlineOffersForceStopThenQuitAnyway() {
         let h = Harness()
         let running = FakeSession(running: true)

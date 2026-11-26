@@ -22,6 +22,7 @@ final class HvfDisplaySurfaceAccessibilityTests: XCTestCase {
         defer { view.teardown() }
         XCTAssertTrue(view.isAccessibilityElement())
         XCTAssertEqual(view.accessibilityRole(), .image)
+        XCTAssertEqual(view.accessibilityLabel(), "Windows display")
         XCTAssertEqual(view.accessibilityIdentifier(), "bridgevm.runtime.display.surface")
         XCTAssertEqual(view.accessibilityValue() as? String, "no-frame")
     }

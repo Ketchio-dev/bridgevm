@@ -8,7 +8,7 @@ struct HvfWindowsReadinessCard: View {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     Label(
-                        report.launchReady ? "부팅 준비 완료" : "부팅 차단 \(report.launchBlockers.count)건",
+                        report.launchReady ? "Ready to start Windows" : "Startup blockers (\(report.launchBlockers.count))",
                         systemImage: report.launchReady ? "checkmark.circle.fill" : "xmark.octagon.fill"
                     )
                     .foregroundColor(report.launchReady ? .green : .red)
@@ -21,10 +21,10 @@ struct HvfWindowsReadinessCard: View {
                 }
                 Divider()
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("제품 출시 검증").font(.subheadline.weight(.semibold))
+                    Text("Release readiness").font(.subheadline.weight(.semibold))
                     Text(report.releaseReady
-                         ? "제품 출시 게이트도 통과했습니다."
-                         : "제품 출시 차단 \(report.releaseBlockers.count)건 — 개발 VM 부팅 가능 여부와 별도입니다.")
+                         ? "The release checks passed."
+                         : "Release blockers (\(report.releaseBlockers.count)). These checks do not block development VM startup.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     ForEach(report.releaseBlockers) { issue in
@@ -37,7 +37,7 @@ struct HvfWindowsReadinessCard: View {
                 if !report.productLimitations.isEmpty {
                     Divider()
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("제품 제한").font(.subheadline.weight(.semibold))
+                        Text("Product limitations").font(.subheadline.weight(.semibold))
                         ForEach(report.productLimitations, id: \.self) { limitation in
                             Text(limitation)
                                 .font(.caption)
@@ -50,7 +50,7 @@ struct HvfWindowsReadinessCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(6)
         } label: {
-            Label("Windows 실행 준비 상태", systemImage: "checklist")
+            Label("Windows startup readiness", systemImage: "checklist")
         }
     }
 }

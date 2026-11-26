@@ -332,7 +332,7 @@ extension LibraryModel {
         guard let cached = cachedControlModels[cfg.slug], cached.isRetained,
               retainedControlRecords.contains(where: { $0.descriptor.identity == .generic(ObjectIdentifier(cached)) })
         else { return "VM 제어 정보가 최신 등록 정보와 다릅니다. 기존 VM을 완전히 중지하고 목록을 새로고침한 뒤 다시 시도하세요." }
-        return "이전 등록 정보로 보관한 제어가 남아 있습니다. 사이드바 '진행 중이거나 종료된 작업'에서 그 항목을 열어, 실행이 끝났으면 '목록에서 닫기'를 누른 뒤 다시 시도하세요."
+        return "An operation from the previous registration is still listed. Open it under Recent operations in the sidebar. Once it finishes, choose Dismiss and try again."
     }
 }
 
@@ -392,8 +392,7 @@ extension LibraryModel {
         }
     }
 
-    /// Only runtime-view preference keys (clipboard, network, shared folder) changed, so the stopped session
-    /// is rebound in place. Replacing it would rebuild the runtime view and silently drop its other unsaved edits.
+    /// Rebind the stopped session after its settings are saved so its open views keep their pending edits.
     private func adoptSavedRuntimePreferences(_ session: HvfEngineSession, previous: VMConfig, saved: VMConfig) {
         var expected = saved.keepingRuntimePreferences(of: previous)
         expected.id = previous.id
@@ -499,18 +498,18 @@ extension LibraryModel {
         if current == nil || (try? NativeRuntimeLibraryHandle.open(rootURL: rootURL, create: false))
             .flatMap({ try? NativeCLIStatusConfigReader.read(library: $0, id: vmID) }) != current { reload() }
         guard let saved = vms.first(where: { $0.slug == vmID }) else {
-            return .refused("이 라이브러리에 '\(vmID)' VM이 없습니다. `bridgevm app list`로 ID를 확인하세요.")
+            return .refused("No VM has the ID ‘\(vmID)’ in this library. Run `bridgevm app list` to find its ID.")
         }
         guard saved.engineKind == .hvfEngine else {
-            return .refused("이 VM은 BridgeVM 엔진을 쓰지 않아 CLI로 시작할 수 없습니다.")
+            return .refused("The start command supports Windows VMs that use the BridgeVM engine.")
         }
         guard saved.installPending != true else {
-            return .refused("Windows 설치가 끝나지 않은 VM입니다. 설치를 마친 뒤 시작하세요.")
+            return .refused("Finish installing Windows in BridgeVM before starting this VM.")
         }
         guard let launch = HvfEngineConfig.libraryVM(saved, rootURL: rootURL,
                   e2eHostDiagnosticStopAdmitted: e2eHostDiagnosticStopAdmitted),
               let session = hvfRuntimeDetailSession(for: saved) else {
-            return .refused("저장된 VM 실행 구성을 읽지 못했습니다.")
+            return .refused("BridgeVM could not read the saved VM configuration. Reload the library and try again.")
         }
         switch session.requestGUIStart(configuration: launch, policy: .requireNew) {
         case let .accepted(ticket): return .accepted(ticket, session)
@@ -529,7 +528,7 @@ extension LibraryModel {
         session.workAdmission = boundWorkAdmission(slug: configuration.slug, owns: owns)
         session.reservedWorkAdmission = { [weak self, weak session] token, reportRefusal in
             guard let self, let session, session.matchesRuntimeReservation(token) else {
-                return "VM 작업 예약이 변경되었습니다. 다시 시도하세요."
+                return "The operation on this VM changed. Check its status and try again."
             }
             let refusal = self.libraryWorkRefusal(slug: configuration.slug,
                 excluding: (session, token), owns: owns)
@@ -564,17 +563,17 @@ extension LibraryModel {
                 return [paletteControlNavigation(id: id, name: m.config.name, dismiss: dismiss)]
             }
             if !m.running && !m.lifecycleBusy {
-                c.append(.init(id: "start.\(id)", title: "시작: \(m.config.name)", subtitle: "VM 시작 / 창 열기", systemImage: "play.fill") { m.start(); dismiss() })
+                c.append(.init(id: "start.\(id)", title: "Start \(m.config.name)", subtitle: "Start the VM and open its window", systemImage: "play.fill") { m.start(); dismiss() })
             } else if m.running && !m.lifecycleBusy {
-                c.append(.init(id: "stop.\(id)", title: "정지: \(m.config.name)", subtitle: "VM 정지", systemImage: "stop.fill") { m.stop(); dismiss() })
+                c.append(.init(id: "stop.\(id)", title: "Stop \(m.config.name)", subtitle: "Stop the VM", systemImage: "stop.fill") { m.stop(); dismiss() })
             }
-            c.append(.init(id: "refresh.\(id)", title: "새로고침: \(m.config.name)", subtitle: "상태 갱신", systemImage: "arrow.clockwise") { m.refresh(); dismiss() })
+            c.append(.init(id: "refresh.\(id)", title: "Refresh \(m.config.name)", subtitle: "Refresh VM status", systemImage: "arrow.clockwise") { m.refresh(); dismiss() })
         }
         return c
     }
 
     private func paletteControlNavigation(id: String, name: String, dismiss: @escaping () -> Void) -> PaletteCommand {
-        .init(id: "open.\(id)", title: "VM 제어 화면 열기: \(name)", subtitle: "시작·중지와 설치 상태 확인", systemImage: "desktopcomputer") {
+        .init(id: "open.\(id)", title: "Open controls for \(name)", subtitle: "View startup, shutdown and installation controls", systemImage: "desktopcomputer") {
             self.selectedID = id
             self.proMode = false
             dismiss()
@@ -721,7 +720,7 @@ extension LibraryModel {
             case let .accepted(operation):
                 guard libraryWorkRefusal(slug: saved.slug, excludingInstall: operation,
                     owns: { _, current in current == saved }) == nil else {
-                    operation.fail("이 VM의 다른 작업이 진행 중입니다.")
+                    operation.fail("Another operation is using this VM. Try again when it finishes.")
                     throw NativeInstallControlRefusal.busy
                 }
                 beginOwnedInstallPreparation(saved: saved, library: library,

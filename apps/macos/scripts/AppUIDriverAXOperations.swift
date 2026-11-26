@@ -51,7 +51,7 @@ struct AppUIDriverAXOperations<Access: AppUIDriverAXAccess> {
             guard try access.string(node, A.role) == "AXTextField" else { throw AppUIDriverFailure.invalidElement }
             guard try access.enabled(node) else { throw AppUIDriverFailure.elementDisabled }
             return .search(node)
-        case .clearSearch: return try button(labelled("검색 지우기", nodes))
+        case .clearSearch: return try button(identified("bridgevm.library.search.clear", nodes))
         case .searchState:
             let node = try required("bridgevm.library.search", nodes)
             guard let value = try access.string(node, A.value) else { throw AppUIDriverFailure.invalidElement }

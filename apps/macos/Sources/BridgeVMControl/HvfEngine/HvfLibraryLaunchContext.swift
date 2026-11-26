@@ -63,7 +63,7 @@ extension HvfLibraryLaunchContext {
         }
         if HvfWindowsInstallTransactionResidue.isPresent(config, rootURL: rootURL) {
             issues.append(.init(code: "install-cleanup-pending", scope: .launch,
-                summary: "Windows installation cleanup is incomplete. Refresh the library. If it’s still blocked, check the saved installation record and avoid running the installer again."))
+                summary: "Windows installation cleanup is incomplete. Refresh the library. If startup is still blocked, check the retained installation record. Do not reinstall Windows."))
         }
         return issues
     }

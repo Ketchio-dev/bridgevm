@@ -5,10 +5,10 @@ enum ControlDisplayCloseChoice: String, CaseIterable {
     case background, pause, shutdown, cancel
     var title: String {
         switch self {
-        case .background: return "백그라운드에서 계속 실행"
-        case .pause: return "일시 정지"
-        case .shutdown: return "Windows 종료"
-        case .cancel: return "취소"
+        case .background: return "Keep running in the background"
+        case .pause: return "Pause Windows"
+        case .shutdown: return "Shut down Windows"
+        case .cancel: return "Cancel"
         }
     }
 }
@@ -29,13 +29,13 @@ enum ControlDisplayClose {
     static var quitting = false
     static func alert(choices: [ControlDisplayCloseChoice]) -> NSAlert {
         let alert = NSAlert()
-        alert.messageText = "창을 닫은 뒤 Windows를 어떻게 할까요?"
+        alert.messageText = "What should Windows do when you close this window?"
         choices.forEach {
             let button = alert.addButton(withTitle: $0.title)
             if $0 == .cancel { button.keyEquivalent = "\u{1b}" }
         }
         alert.showsSuppressionButton = true
-        alert.suppressionButton?.title = "다시 묻지 않음"
+        alert.suppressionButton?.title = "Remember my choice"
         return alert
     }
     static func remembered(defaults: UserDefaults = .standard) -> ControlDisplayCloseChoice? {

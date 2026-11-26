@@ -15,7 +15,7 @@ final class NativeRuntimeAppStartRouter {
         guard NativeLibraryReader.isCanonicalID(request.vmID) else { throw NativeRuntimeError.invalidMessage }
         return ledger.process(request) { vmID in
             guard let model = retainedModel() else {
-                return .refused("VM 라이브러리가 아직 열리지 않았습니다. 앱의 라이브러리 화면을 연 뒤 다시 시도하세요.")
+                return .refused("Open the VM library in BridgeVM, then try again.")
             }
             return model.requestCLIStart(vmID: vmID)
         }

@@ -15,10 +15,10 @@ enum HvfForceStopResult: Equatable, Sendable {
 
     var message: String {
         switch self {
-        case .requested: return "강제 중단을 요청했습니다. VM이 멈추는 것을 확인합니다."
+        case .requested: return "Force Stop requested. Waiting for the VM to turn off."
         case .refused(.targetChanged), .refused(.operationChanged):
-            return "실행 또는 종료 요청이 변경되어 강제 중단하지 않았습니다."
-        case .refused(.notWaiting): return "현재는 정상 종료를 기다리는 상태가 아닙니다."
+            return "The running VM or shutdown request changed. Check the VM’s current status before trying again."
+        case .refused(.notWaiting): return "The VM is no longer waiting for Windows to shut down. Check its current status."
         }
     }
 }

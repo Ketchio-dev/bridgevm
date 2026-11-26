@@ -27,9 +27,9 @@ final class HvfVMSettingsSheetValueTests: XCTestCase {
         let saved = fixture.config(); fixture.save(saved)
         let library = fixture.library()
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
-        XCTAssertEqual(HvfDisplayDriverInstall.unavailableReason(session), "Windows를 시작하고 연결될 때까지 기다리세요.")
+        XCTAssertEqual(HvfDisplayDriverInstall.unavailableReason(session), "Start Windows and wait for it to connect.")
         session.connectionState = .connected(host: "fixture")
-        XCTAssertEqual(HvfDisplayDriverInstall.unavailableReason(session), "Windows 도우미가 준비될 때까지 기다리세요.")
+        XCTAssertEqual(HvfDisplayDriverInstall.unavailableReason(session), "Wait for the Windows helper to be ready.")
         session.serviceStarted = true
         XCTAssertNil(HvfDisplayDriverInstall.unavailableReason(session))
         session.connectionState = .stopped
@@ -126,7 +126,7 @@ final class HvfVMSettingsSheetValueTests: XCTestCase {
         session.connectionState = .booting
         defer { session.connectionState = .stopped }
         let running = sheet.settingsForm
-        XCTAssertEqual(sheet.runningNoticeText, "일부 설정은 Windows를 종료한 뒤 바꿀 수 있습니다.")
+        XCTAssertEqual(sheet.runningNoticeText, "Shut down Windows to change settings that are currently unavailable.")
         XCTAssertTrue(try XCTUnwrap(values(HvfResourceSetting.self, in: running).first).isDisabled)
         XCTAssertTrue(try XCTUnwrap(values(HvfNetworkToggle.self, in: running).first).isDisabled)
         XCTAssertTrue(try XCTUnwrap(values(HvfClipboardSyncToggle.self, in: running).first).isDisabled)

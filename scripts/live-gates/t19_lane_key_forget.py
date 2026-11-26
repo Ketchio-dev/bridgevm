@@ -49,7 +49,8 @@ BUNDLE = {"disk_path": "disks/hvf-target.raw", "vars_path": "metadata/hvf-vars.f
           "guest_evidence_path": "metadata/product-e2e-guest-evidence.json"}
 SEALED = {"source_vtpm": "vtpm", "source_vtpm_package": "vtpm-recovery.json", "source_vtpm_code": "vtpm-recovery-code.txt"}
 # VTPMStateSecurityError.missingKeyForExistingState as VTPMImportCleanupCommand prints it.
-MISSING_KEY = ("ERROR: 기존 vTPM 상태의 Keychain 키가 없습니다. 상태를 덮어쓰지 않았습니다. "
+MISSING_KEY = "ERROR: The Keychain key for this vTPM is missing. BridgeVM kept the encrypted state. Restore its matching recovery key, or reset the TPM identity to start with a new TPM."
+LEGACY_MISSING_KEY = ("ERROR: 기존 vTPM 상태의 Keychain 키가 없습니다. 상태를 덮어쓰지 않았습니다. "
                "복구 키를 복원하거나 명시적으로 TPM을 재설정하세요.")
 FORGOT = "forgot_imported_key="
 PATTERNS = {"job_id": re.compile(WORK.JOB + r"\Z"), "commit": re.compile(r"[0-9a-f]{40}\Z"),
@@ -233,8 +234,9 @@ def forget(executable: Path, digest: str, slug: str, inputs: Path) -> str:
     proofs = [line for line in completed.stdout.decode("utf-8", "replace").splitlines() if line.startswith(FORGOT)]
     if completed.returncode == 0 and proofs == [FORGOT + slug]:
         return "forgotten"
+    error_lines = completed.stderr.decode("utf-8", "replace").splitlines()
     if (completed.returncode == 1 and not proofs
-            and MISSING_KEY in completed.stderr.decode("utf-8", "replace").splitlines()):
+            and (MISSING_KEY in error_lines or LEGACY_MISSING_KEY in error_lines)):
         return "absent"
     raise Refusal(f"forget-import exited {completed.returncode} without the product's proof or missing-key line")
 

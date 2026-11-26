@@ -60,11 +60,16 @@ struct ContentView: View {
             Text(LibraryDeletionPrompt(config: config, rootURL: library.rootURL).message)
         }
         .modifier(LibraryOperationAlerts(library: library))
-        .background(
-            Button("") { presentation.sheet = .palette }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { presentation.sheet = .palette } label: {
+                    Label("Command Palette", systemImage: "magnifyingglass")
+                }
                 .keyboardShortcut("k", modifiers: .command)
-                .opacity(0)
-        )
+                .help("Search commands or VMs (⌘K)")
+                .accessibilityIdentifier("bridgevm.library.toolbar.palette")
+            }
+        }
     }
 
     @ViewBuilder
@@ -147,19 +152,19 @@ struct VMDetailPanel: View {
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 18) {
-                    integrationBadge("클립보드", model.backend.supportsClipboard)
+                    integrationBadge("Clipboard", model.backend.supportsClipboard)
                     integrationBadge("SSH", model.backend.supportsSSH)
-                    integrationBadge("NAT 네트워크", true)
+                    integrationBadge("NAT network", true)
                 }
                 Divider()
                 HStack {
-                    Text(model.running ? "✓ 실행 중 — 세부 설정은 Advanced 탭에서" : "정지됨 — 시작하면 창이 열립니다")
+                    Text(model.running ? "Running. Open Advanced for more settings." : "Stopped. Start the VM to open its window.")
                         .font(.callout).foregroundColor(.secondary)
                     Spacer()
                     Button("Advanced…") { lens = .advanced }
                 }
             }.padding(6)
-        } label: { Label("요약", systemImage: "sparkles") }
+        } label: { Label("Summary", systemImage: "sparkles") }
     }
 
     private func integrationBadge(_ t: String, _ on: Bool) -> some View {
@@ -172,19 +177,19 @@ struct VMDetailPanel: View {
     private var detailsCard: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 8) {
-                detailRow("엔진", model.config.engineDetailLabel)
-                detailRow("부팅 모드", model.config.effectiveBootMode)
-                detailRow("번들", model.config.bundlePath)
-                detailRow("제어", model.backend.supportsSSH
+                detailRow("Engine", model.config.engineDetailLabel)
+                detailRow("Boot mode", model.config.effectiveBootMode)
+                detailRow("Bundle", model.config.bundlePath)
+                detailRow("Control", model.backend.supportsSSH
                           ? "SSH · \(model.config.sshUser)@\(model.ip)"
-                          : (model.backend.supportsGuestCommands ? "BVAGENT · virtio-console" : "없음"))
+                          : (model.backend.supportsGuestCommands ? "BVAGENT · virtio-console" : "None"))
                 Divider()
                 Button(role: .destructive) { presentation?.wrappedValue.deletionTarget = library.requestDeletion(model.config) } label: {
-                    Label("이 VM 삭제", systemImage: "trash")
+                    Label("Remove this VM…", systemImage: "trash")
                 }
                 .disabled(model.running || library.deletingSlugs.contains(model.config.slug))
             }.padding(6)
-        } label: { Label("상세 / 관리", systemImage: "gearshape") }
+        } label: { Label("Details and management", systemImage: "gearshape") }
     }
 
     private func detailRow(_ k: String, _ v: String) -> some View {
@@ -208,18 +213,18 @@ struct VMDetailPanel: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     Circle().fill(model.running ? Color.green : Color.red).frame(width: 12, height: 12)
-                    Text(model.running ? "실행 중" : "정지됨").font(.headline)
+                    Text(model.running ? "Running" : "Stopped").font(.headline)
                     Spacer()
                 }
                 HStack(spacing: 24) {
-                    infoItem("IP 주소", model.ip)
-                    infoItem("메모리", String(format: "%.0f GiB", model.memGiB))
-                    infoItem("CPU", "\(model.cpu) 코어")
+                    infoItem("IP address", model.ip)
+                    infoItem("Memory", String(format: "%.0f GiB", model.memGiB))
+                    infoItem("CPU", "\(model.cpu) cores")
                 }
                 HStack(spacing: 10) {
-                    Button(action: model.start) { Label("시작 / 창 열기", systemImage: "play.fill") }.disabled(model.running || model.lifecycleBusy)
-                    Button(action: model.stop) { Label("정지", systemImage: "stop.fill") }.disabled(!model.running || model.lifecycleBusy)
-                    Button(action: model.refresh) { Label("새로고침", systemImage: "arrow.clockwise") }
+                    Button(action: model.start) { Label("Start / Open Window", systemImage: "play.fill") }.disabled(model.running || model.lifecycleBusy)
+                    Button(action: model.stop) { Label("Stop", systemImage: "stop.fill") }.disabled(!model.running || model.lifecycleBusy)
+                    Button(action: model.refresh) { Label("Refresh", systemImage: "arrow.clockwise") }
                     if model.busy || model.lifecycleBusy { ProgressView().scaleEffect(0.6) }
                     Spacer()
                 }
@@ -227,7 +232,7 @@ struct VMDetailPanel: View {
                     Text(model.statusNote).font(.caption).foregroundColor(.secondary)
                 }
             }.padding(6)
-        } label: { Label("상태", systemImage: "desktopcomputer") }
+        } label: { Label("Status", systemImage: "desktopcomputer") }
     }
 
     private func infoItem(_ k: String, _ v: String) -> some View {
@@ -242,7 +247,7 @@ struct VMDetailPanel: View {
             if model.backend.supportsResourceChanges {
                 VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("메모리").frame(width: 60, alignment: .leading)
+                    Text("Memory").frame(width: 60, alignment: .leading)
                     Slider(
                         value: $model.pendingMemGiB,
                         in: Double(VMResourceLimits.minimumMemoryMiB) / 1024...Double(VMResourceLimits.maximumMemoryMiB) / 1024,
@@ -257,21 +262,21 @@ struct VMDetailPanel: View {
                         in: Double(VMResourceLimits.minimumCPU)...Double(VMResourceLimits.maximumCPU),
                         step: 1
                     )
-                    Text("\(Int(model.pendingCPU)) 코어").frame(width: 60, alignment: .trailing).font(.body.monospaced())
+                    Text("\(Int(model.pendingCPU)) cores").frame(width: 60, alignment: .trailing).font(.body.monospaced())
                 }
                 HStack {
-                    Button(action: model.applyResources) { Label("적용 (VM 재시작)", systemImage: "checkmark.circle") }
+                    Button(action: model.applyResources) { Label("Apply and Restart", systemImage: "checkmark.circle") }
                         .disabled(model.busy || model.lifecycleBusy)
-                    Text("적용하면 VM이 재시작됩니다").font(.caption).foregroundColor(.secondary)
+                    Text("The VM restarts to apply these settings.").font(.caption).foregroundColor(.secondary)
                     Spacer()
                 }
                 }.padding(6)
             } else {
-                Label("이 엔진은 앱에서 CPU/RAM 변경을 지원하지 않습니다.", systemImage: "info.circle")
+                Label("CPU and memory settings are read-only for this engine.", systemImage: "info.circle")
                     .foregroundColor(.secondary)
                     .padding(6)
             }
-        } label: { Label("리소스 설정", systemImage: "slider.horizontal.3") }
+        } label: { Label("Resources", systemImage: "slider.horizontal.3") }
         .onAppear {
             model.pendingMemGiB = max(1, model.memGiB)
             model.pendingCPU = Double(max(1, model.cpu))
@@ -281,15 +286,15 @@ struct VMDetailPanel: View {
     private var softwareCard: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
-                Text("게스트에 소프트웨어 설치 (SSH · apt)").font(.callout)
+                Text("Install guest software with apt over SSH").font(.callout)
                 HStack {
-                    Button("브라우저 (Epiphany)") { model.installPackages(["epiphany-browser"], label: "Epiphany 브라우저") }
-                    Button("텍스트 에디터 (gedit)") { model.installPackages(["gedit"], label: "gedit") }
-                    Button("개발도구 (git)") { model.installPackages(["git", "build-essential"], label: "개발도구") }
+                    Button("Web browser (Epiphany)") { model.installPackages(["epiphany-browser"], label: "Epiphany browser") }
+                    Button("Text editor (gedit)") { model.installPackages(["gedit"], label: "gedit") }
+                    Button("Developer tools (Git)") { model.installPackages(["git", "build-essential"], label: "developer tools") }
                 }.disabled(model.busy || model.lifecycleBusy || !model.running)
                 if !model.softwareLog.isEmpty { logBox(model.softwareLog, height: 120) }
             }.padding(6)
-        } label: { Label("소프트웨어", systemImage: "shippingbox") }
+        } label: { Label("Software", systemImage: "shippingbox") }
     }
 
     private var terminalCard: some View {
@@ -298,13 +303,13 @@ struct VMDetailPanel: View {
                 logBox(model.terminalLog, height: 200)
                 HStack {
                     Text("dev@guest$").font(.body.monospaced()).foregroundColor(.secondary)
-                    TextField("명령 입력 후 Enter", text: $model.terminalInput, onCommit: model.runTerminalCommand)
+                    TextField("Enter a command and press Return", text: $model.terminalInput, onCommit: model.runTerminalCommand)
                         .textFieldStyle(.roundedBorder).font(.body.monospaced())
                         .disabled(model.busy || model.lifecycleBusy || !model.running)
-                    Button("실행", action: model.runTerminalCommand).disabled(model.busy || model.lifecycleBusy || !model.running)
+                    Button("Run", action: model.runTerminalCommand).disabled(model.busy || model.lifecycleBusy || !model.running)
                 }
             }.padding(6)
-        } label: { Label("게스트 터미널", systemImage: "terminal") }
+        } label: { Label("Guest terminal", systemImage: "terminal") }
     }
 
     private func logBox(_ text: String, height: CGFloat) -> some View {

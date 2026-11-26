@@ -204,24 +204,15 @@ extension ControlAppTermination.Presenter {
     static let alerts = Self(
         confirmQuit: { count in
             let alert = NSAlert()
-            alert.messageText = "Windows를 안전하게 종료한 뒤 BridgeVM을 끝낼까요?"
-            alert.informativeText = "실행 중인 VM \(count)개의 Windows에 종료를 요청하고, 모두 꺼지면 BridgeVM을 끝냅니다. "
-                + "저장하지 않은 앱이 있으면 Windows가 저장할 기회를 줍니다."
-            alert.addButton(withTitle: "Windows 종료 후 끝내기")
-            alert.addButton(withTitle: "취소")
+            alert.messageText = "Shut down Windows and quit BridgeVM?"
+            let target = count == 1 ? "the running VM" : "all \(count) running VMs"
+            alert.informativeText = "BridgeVM will ask Windows to shut down in \(target) and quit when shutdown is complete. Windows apps may ask you to save your work."
+            alert.addButton(withTitle: "Shut Down and Quit")
+            alert.addButton(withTitle: "Cancel")
             return alert.runModal() == .alertFirstButtonReturn
         },
         decideAtDeadline: { afterForce, stillRunning in
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = "Windows가 아직 종료되지 않았습니다."
-            alert.informativeText = afterForce
-                ? "강제 중단한 VM이 아직 멈추지 않았습니다. 그래도 끝내면 BridgeVM이 VM을 바로 멈춥니다(디스크와 UEFI 설정은 저장합니다)."
-                : "저장하지 않은 앱이 Windows 종료를 막고 있을 수 있습니다. 확인하려면 종료를 취소하고 VM 화면을 보세요. "
-                    + "강제 중단하면 Windows가 앱을 저장하지 않고 닫습니다."
-            alert.addButton(withTitle: afterForce ? "그래도 끝내기" : "강제 중단 후 끝내기")
-            alert.addButton(withTitle: "계속 기다리기")
-            alert.addButton(withTitle: "종료 취소")
+            let alert = shutdownDelayAlert(afterForce: afterForce)
             // Every run may still stop while the question is open: then the quit goes on by itself.
             let watcher = Timer(timeInterval: 0.25, repeats: true) { _ in
                 MainActor.assumeIsolated { if !stillRunning() { NSApp.abortModal() } }
@@ -229,28 +220,45 @@ extension ControlAppTermination.Presenter {
             RunLoop.main.add(watcher, forMode: .modalPanel)
             defer { watcher.invalidate() }
             switch alert.runModal() {
-            case .alertFirstButtonReturn: return afterForce ? .quitAnyway : .forceStop
+            case .alertSecondButtonReturn: return afterForce ? .quitAnyway : .forceStop
             case .alertThirdButtonReturn: return .cancelQuit
             default: return .keepWaiting
             }
         },
         confirmWithInstallations: { running, installs in
             let alert = NSAlert()
-            alert.messageText = "Windows 설치를 취소하고 BridgeVM을 끝낼까요?"
-            alert.informativeText = "설치 \(installs)개를 취소하고 정리가 끝날 때까지 기다리며, 이미 저장 중인 설치 결과는 완료될 때까지 기다립니다."
-                + (running > 0 ? " 실행 중인 VM \(running)개의 Windows도 안전하게 종료합니다." : "")
-            alert.addButton(withTitle: "설치 취소 후 끝내기")
-            alert.addButton(withTitle: "취소")
+            alert.messageText = "Cancel Windows installation and quit BridgeVM?"
+            let target = installs == 1 ? "the installation" : "all \(installs) installations"
+            alert.informativeText = "BridgeVM will cancel \(target) and wait for cleanup. Any installation already saving its result will finish first."
+            if running > 0 {
+                let machines = running == 1 ? "the running VM" : "all \(running) running VMs"
+                alert.informativeText += " Windows will also shut down in \(machines)."
+            }
+            alert.addButton(withTitle: "Cancel Installation and Quit")
+            alert.addButton(withTitle: "Keep Using BridgeVM").keyEquivalent = "\u{1b}"
             return alert.runModal() == .alertFirstButtonReturn
         },
         confirmAfterPreparation: {
             let alert = NSAlert()
-            alert.messageText = "VM 파일 준비를 마친 뒤 BridgeVM을 종료할까요?"
-            alert.informativeText = "파일을 준비하는 동안에는 진행 상태를 보거나 종료 요청을 취소할 수 있습니다."
-            alert.addButton(withTitle: "완료 후 종료")
-            alert.addButton(withTitle: "계속 사용")
+            alert.messageText = "Finish preparing VM files and quit BridgeVM?"
+            alert.informativeText = "You can follow progress or cancel the quit request while BridgeVM prepares the files."
+            alert.addButton(withTitle: "Finish Then Quit")
+            alert.addButton(withTitle: "Keep Using BridgeVM").keyEquivalent = "\u{1b}"
             return alert.runModal() == .alertFirstButtonReturn
         },
         revealLibrary: { ControlLibraryWindow.show() })
+
+    static func shutdownDelayAlert(afterForce: Bool) -> NSAlert {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = afterForce ? "The VM is still stopping." : "Windows is still shutting down."
+        alert.informativeText = afterForce
+            ? "Quitting now stops the VM immediately. Work that Windows has not saved may be lost."
+            : "A Windows app may be waiting for you to save. Choose Cancel Quit to return to the VM, or keep waiting for Windows to shut down. Forcing a stop may lose unsaved work."
+        alert.addButton(withTitle: "Keep Waiting")
+        alert.addButton(withTitle: afterForce ? "Quit Anyway" : "Force Stop and Quit").hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel Quit").keyEquivalent = "\u{1b}"
+        return alert
+    }
 }
 #endif

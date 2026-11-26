@@ -14,6 +14,15 @@ final class HvfOwnedStartCLITests: XCTestCase {
         do { fixture = try HvfOwnedStartCLIFixture(runner: runner) }
         catch { await runner.clean(); throw error }
         do {
+            var pending = runner.config
+            pending.installPending = true
+            XCTAssertTrue(VMLibrary.save(pending, rootURL: runner.libraryRoot))
+            let (refusalExit, refused) = try await fixture.command("start", pairedRust: pairedStart)
+            XCTAssertEqual(refusalExit, 1)
+            XCTAssertEqual(refused["unavailableReason"] as? String, "Finish installing Windows in BridgeVM before starting this VM.")
+            XCTAssertEqual(runner.effects.snapshot.launches, 0)
+
+            XCTAssertTrue(VMLibrary.save(runner.config, rootURL: runner.libraryRoot))
             let (exit, started) = try await fixture.command("start", pairedRust: pairedStart)
             XCTAssertEqual(exit, 0, "\(started)")
             XCTAssertEqual(started["schema"] as? String, "bridgevm.app-start.v2")

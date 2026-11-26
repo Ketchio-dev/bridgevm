@@ -9,14 +9,14 @@ struct RetainedRuntimeControlView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text(config.name).font(.title2.bold())
-                Text("등록 목록에서 사라졌을 때 보관한 기존 실행입니다.")
+                Text("This session is still available here after the VM left your library.")
                     .foregroundColor(.secondary)
                 Text(LibraryRetainedControlDescriptor.runtime(config: config, session: session).statusLabel)
                 RetainedRuntimeHeartbeatText(heartbeat: session.heartbeat)
                 if session.connectionState != .stopped {
                     RetainedRuntimeStopControl(session: session)
                 } else {
-                    Button("목록에서 닫기", action: dismiss)
+                    Button("Dismiss", action: dismiss)
                         .accessibilityIdentifier("bridgevm.retained.runtime.dismiss")
                 }
                 Text(session.events.suffix(30).map { String(describing: $0) }.joined(separator: "\n"))

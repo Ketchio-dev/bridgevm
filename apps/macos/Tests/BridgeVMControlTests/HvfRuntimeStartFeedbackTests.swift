@@ -4,20 +4,20 @@ import XCTest
 
 @MainActor
 final class HvfRuntimeStartFeedbackTests: XCTestCase {
-    private let configurationSentence = "VM 설정이 올바르지 않아 Windows를 시작하지 못했으니 VM 설정을 확인하거나 백업에서 복원하세요."
-    private let appSentence = "앱 실행 파일이 없거나 손상되어 Windows를 시작하지 못했으니 BridgeVM을 다시 설치하세요."
+    private let configurationSentence = "BridgeVM could not start Windows with these settings, so check the VM settings or restore them from a backup."
+    private let appSentence = "Reinstall BridgeVM to restore a missing or damaged app component."
 
     private var readinessSentences: [(String, String)] { [
-        ("target-disk-missing", "Windows 디스크를 찾을 수 없으니 저장 장치를 다시 연결하거나 디스크 파일을 원래 위치에 복원한 뒤 다시 시작하세요."),
-        ("target-disk-access", "Windows 디스크에 접근할 수 없어 시작하지 못했으니 Finder에서 디스크 파일의 읽기 및 쓰기 권한을 확인하세요."),
-        ("target-disk-empty", "Windows 디스크 파일이 비어 있으니 같은 위치에 원래 디스크의 백업을 복원한 뒤 다시 시작하세요."),
-        ("uefi-vars-missing", "부팅 설정 파일을 찾을 수 없어 Windows를 시작하지 못했으니 VM 폴더에서 파일을 확인하거나 백업에서 복원하세요."),
-        ("uefi-vars-access", "부팅 설정 파일에 접근할 수 없어 Windows를 시작하지 못했으니 Finder에서 해당 파일의 읽기 및 쓰기 권한을 확인하세요."),
-        ("uefi-vars-size", "부팅 설정 파일의 크기가 올바르지 않아 Windows를 시작하지 못했으니 백업에서 64 MiB 크기의 파일을 복원하세요."),
-        ("ram-range", "메모리 설정이 범위를 벗어나 Windows를 시작하지 못했으니 메모리를 1024~65536 MiB로 설정하세요."),
-        ("cpu-range", "CPU 개수 설정이 범위를 벗어나 Windows를 시작하지 못했으니 CPU를 1~64개로 설정하세요."),
-        ("share-invalid", "공유 폴더 설정이 올바르지 않아 Windows를 시작하지 못했으니 VM 설정에서 공유 폴더를 다시 선택하세요."),
-        ("share-incomplete", "공유 폴더 설정이 완전하지 않아 Windows를 시작하지 못했으니 VM 설정에서 공유 폴더를 다시 선택하세요."),
+        ("target-disk-missing", "To recover the missing Windows disk, reconnect its drive or restore the disk file to its original location."),
+        ("target-disk-access", "BridgeVM cannot access the Windows disk, so check its read and write permissions in Finder."),
+        ("target-disk-empty", "The Windows disk file is empty, so restore the original disk from a backup to the same location."),
+        ("uefi-vars-missing", "Look for the missing Windows boot settings file in the VM folder or restore it from a backup."),
+        ("uefi-vars-access", "BridgeVM cannot access the Windows boot settings, so check the file’s read and write permissions in Finder."),
+        ("uefi-vars-size", "The Windows boot settings file has the wrong size, so restore the 64 MiB file from a backup."),
+        ("ram-range", "Set the VM’s memory between 1024 and 65536 MiB, then start Windows again."),
+        ("cpu-range", "Choose 1 to 64 processors in VM settings, then start Windows again."),
+        ("share-invalid", "Choose the shared folder again in VM settings, then start Windows again."),
+        ("share-incomplete", "To complete the shared folder setup, choose the folder again in VM settings."),
         ("boot-wrapper-missing", appSentence), ("signed-runner-missing", appSentence),
         ("swtpm-missing", appSentence), ("swtpm-signature", appSentence),
         ("watchdog-range", configurationSentence), ("evidence-not-directory", configurationSentence),
@@ -70,7 +70,7 @@ final class HvfRuntimeStartFeedbackTests: XCTestCase {
             let text = try XCTUnwrap(session.guiStartFailureText)
             let selected = codes.first == "cpu-range" ? "cpu-range" : "ram-range"
             XCTAssertEqual(text, readinessSentences.first { $0.0 == selected }?.1)
-            XCTAssertTrue(text.contains(selected == "ram-range" ? "1024~65536 MiB" : "1~64개"))
+            XCTAssertTrue(text.contains(selected == "ram-range" ? "1024 and 65536 MiB" : "1 to 64 processors"))
             for code in codes { XCTAssertTrue(diagnostics.contains { $0.contains("[\(code)]") }) }
         }
     }
@@ -94,7 +94,7 @@ final class HvfRuntimeStartFeedbackTests: XCTestCase {
         let ticket = try f.start()
         try await f.wait { !ticket.workerPending }
         XCTAssertEqual(f.session.guiStartFailureText,
-            "로그인 키체인에 접근할 수 없어 Windows를 시작하지 못했으니 키체인 잠금을 해제하고 다시 시도하세요.")
+            "Unlock your login keychain and try starting Windows again.")
         XCTAssertFalse(f.session.guiStartFailureText?.contains("OSStatus") ?? true)
         XCTAssertTrue(f.session.events.contains { event in
             if case let .unknown(line) = event { return line.contains("keyAccess") && line.contains("-25308") }
@@ -110,7 +110,7 @@ final class HvfRuntimeStartFeedbackTests: XCTestCase {
         let ticket = try f.start()
         try await f.wait { !ticket.workerPending }
         XCTAssertEqual(f.session.guiStartFailureText,
-            "VM 작업 파일을 준비하지 못했으니 VM 폴더의 접근 권한과 저장 장치의 여유 공간을 확인하고 다시 시도하세요.")
+            "BridgeVM could not prepare the VM files, so check access to the VM folder and the available disk space.")
         XCTAssertFalse(f.session.guiStartFailureText?.contains("control path") ?? true)
         XCTAssertTrue(f.session.events.contains { event in
             if case let .unknown(line) = event { return line.contains("preparation") && line.contains("control path is not a regular file") }

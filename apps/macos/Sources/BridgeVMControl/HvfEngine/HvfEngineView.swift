@@ -76,35 +76,35 @@ struct HvfEngineView: View {
             readiness.request(configuration: currentConfig(), repoRoot: repoRoot)
         }
         .confirmationDialog(
-            "이 상태에 복구 키를 연결하시겠습니까?",
+            "Restore the recovery key for this TPM state?",
             isPresented: $confirmVTPMRestore,
             titleVisibility: .visible
         ) {
-            Button("검증 후 복원") { restoreVTPMRecovery() }
-            Button("취소", role: .cancel) { releaseVTPMReservation() }
+            Button("Verify and Restore") { restoreVTPMRecovery() }
+            Button("Cancel", role: .cancel) { releaseVTPMReservation() }
         } message: {
-            Text("패키지의 VM ID와 현재 암호화 상태 지문이 정확히 일치할 때만 Keychain 키를 교체합니다.")
+            Text("BridgeVM replaces the key in Keychain only when the package matches this VM’s ID and the fingerprint of its encrypted TPM state.")
         }
         .confirmationDialog(
-            "TPM ID를 재설정하시겠습니까?",
+            "Reset the TPM identity?",
             isPresented: $confirmVTPMReset,
             titleVisibility: .visible
         ) {
-            Button("기존 상태를 보관하고 재설정", role: .destructive) { resetVTPMIdentity() }
-            Button("취소", role: .cancel) { releaseVTPMReservation() }
+            Button("Archive State and Reset", role: .destructive) { resetVTPMIdentity() }
+            Button("Cancel", role: .cancel) { releaseVTPMReservation() }
         } message: {
-            Text("Windows의 BitLocker 및 PCR 봉인 비밀에는 복구 키가 필요할 수 있습니다. BridgeVM은 기존 암호화 상태와 장치 로컬 키를 보관한 뒤 새 TPM으로 시작합니다.")
+            Text("Windows may ask for a BitLocker recovery key, and secrets sealed to TPM measurements may require recovery. BridgeVM archives the encrypted state and device-local key before starting with a new TPM.")
         }
         .alert(
-            "vTPM 수명주기 작업 실패",
+            "vTPM operation failed",
             isPresented: Binding(
                 get: { vtpmLifecycleError != nil },
                 set: { if !$0 { vtpmLifecycleError = nil } }
             )
         ) {
-            Button("확인") { vtpmLifecycleError = nil }
+            Button("OK") { vtpmLifecycleError = nil }
         } message: {
-            Text(vtpmLifecycleError ?? "알 수 없는 오류")
+            Text(vtpmLifecycleError ?? "Unknown error")
         }
     }
 
@@ -115,29 +115,29 @@ struct HvfEngineView: View {
     private var configCard: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 12) {
-                pathRow("대상 디스크", text: $targetDiskPath, chooseDirectory: false)
-                pathRow("UEFI 변수", text: $uefiVarsPath, chooseDirectory: false)
+                pathRow("Target disk", text: $targetDiskPath, chooseDirectory: false)
+                pathRow("UEFI variables", text: $uefiVarsPath, chooseDirectory: false)
                 if session.config.allowsExperimental3D {
                     Toggle("Graphics Lab 3D", isOn: $virtioGpu3d)
                 }
             }
             .padding(6)
         } label: {
-            Label("부팅 구성", systemImage: "gearshape.2")
+            Label("Boot configuration", systemImage: "gearshape.2")
         }
     }
 
     private var keyboardCard: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Windows 창에서 입력할 위치를 먼저 선택하세요.")
+                Text("Click where you want to type in the Windows display first.")
                     .font(.callout).foregroundStyle(.secondary)
                 HvfRuntimeKeyboardInput(session: session, draft: $keyboardInput)
                 HvfRuntimeSpecialKeys(session: session)
             }
             .padding(6)
         } label: {
-            Label("Windows 키보드", systemImage: "keyboard")
+            Label("Windows keyboard", systemImage: "keyboard")
         }
     }
 
@@ -148,16 +148,12 @@ struct HvfEngineView: View {
     private var vtpmLifecycleCard: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
-                Text("같은 Mac에서 VM 번들을 옮길 때는 VM ID를 유지합니다. 다른 Mac으로 옮길 때는 암호화된 복구 패키지와 별도 복구 코드를 함께 사용합니다. 복제본은 원본 TPM을 공유하지 않고 재설정해야 합니다.")
+                Text("Keep the VM ID when moving a VM on this Mac. To move to another Mac, use the encrypted recovery package and its separate code. Reset the TPM identity for a duplicate VM.")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                HStack(spacing: 8) {
-                    Button("복구 패키지 내보내기", action: exportVTPMRecovery)
-                    Button("복구 패키지 선택", action: chooseVTPMRecoveryPackage)
-                    Button("검증 후 복원") { beginVTPMConfirmation(.vtpmRecoveryRestore) }
-                        .disabled(vtpmRecoveryPackagePath.isEmpty || vtpmRecoveryCodeInput.isEmpty)
-                    Spacer()
-                    Button("TPM ID 재설정", role: .destructive) { beginVTPMConfirmation(.vtpmReset) }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { vtpmRecoveryActions }
+                    VStack(alignment: .leading, spacing: 8) { vtpmRecoveryActions }
                 }
                 .disabled(!vtpmLifecycleAvailable)
                 if !vtpmRecoveryPackagePath.isEmpty {
@@ -165,12 +161,12 @@ struct HvfEngineView: View {
                         .font(.caption2.monospaced())
                         .textSelection(.enabled)
                 }
-                SecureField("복구 코드", text: $vtpmRecoveryCodeInput)
+                SecureField("Recovery code", text: $vtpmRecoveryCodeInput)
                     .textFieldStyle(.roundedBorder)
                     .font(.body.monospaced())
                 if !vtpmRecoveryCode.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("복구 코드 — 패키지와 분리해 안전하게 보관하세요")
+                        Text("Store this recovery code separately from the package.")
                             .font(.caption.bold())
                         Text(vtpmRecoveryCode)
                             .font(.caption.monospaced())
@@ -184,14 +180,27 @@ struct HvfEngineView: View {
                         .textSelection(.enabled)
                 }
                 if !vtpmLifecycleAvailable {
-                    Text("vTPM 상태 작업 전 VM을 완전히 정지하세요.")
+                    Text("Shut down the VM before changing its vTPM state.")
                         .font(.caption)
                         .foregroundColor(.orange)
                 }
             }
             .padding(6)
         } label: {
-            Label("vTPM 식별 정보와 복구", systemImage: "key.horizontal")
+            Label("vTPM identity and recovery", systemImage: "key.horizontal")
+        }
+    }
+
+    @ViewBuilder private var vtpmRecoveryActions: some View {
+        HStack(spacing: 8) {
+            Button("Export Package…", action: exportVTPMRecovery)
+            Button("Choose Package…", action: chooseVTPMRecoveryPackage)
+        }
+        HStack(spacing: 8) {
+            Button("Verify and Restore") { beginVTPMConfirmation(.vtpmRecoveryRestore) }
+                .disabled(vtpmRecoveryPackagePath.isEmpty || vtpmRecoveryCodeInput.isEmpty)
+            Spacer(minLength: 0)
+            Button("Reset TPM Identity…", role: .destructive) { beginVTPMConfirmation(.vtpmReset) }
         }
     }
 
@@ -207,8 +216,8 @@ struct HvfEngineView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("게스트 화면은 별도 창에서 열립니다.")
-                        Text("연결 상태: \(displayConnectionStateText)")
+                        Text("The Windows display opens in a separate window.")
+                        Text("Connection: \(displayConnectionStateText)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -216,16 +225,16 @@ struct HvfEngineView: View {
                     Button {
                         HvfDisplayWindowController.present(session: session, title: displayWindowTitle)
                     } label: {
-                        Label("화면 창 열기", systemImage: "macwindow")
+                        Label("Open Display", systemImage: "macwindow")
                     }.accessibilityIdentifier("bridgevm.runtime.display.open")
                 }
             }
             .padding(6)
             #else
-            Text("스크린샷에는 AppKit이 필요합니다.").foregroundColor(.secondary)
+            Text("Screenshots require AppKit.").foregroundColor(.secondary)
             #endif
         } label: {
-            Label("라이브 디스플레이", systemImage: "display")
+            Label("Live display", systemImage: "display")
         }
     }
 
@@ -246,7 +255,7 @@ struct HvfEngineView: View {
             .foregroundColor(Color(white: 0.9))
             .cornerRadius(6)
         } label: {
-            Label("게스트 에이전트 이벤트", systemImage: "list.bullet.rectangle")
+            Label("Guest agent events", systemImage: "list.bullet.rectangle")
         }
     }
 
@@ -272,11 +281,11 @@ struct HvfEngineView: View {
     private var displayConnectionStateText: String {
         if let pendingWorkText { return pendingWorkText }
         switch session.connectionState {
-        case .stopped: return "중지됨"
-        case .booting: return "부팅 중"
-        case let .connected(host): return "연결됨: \(host)"
-        case .stopping: return "종료 중"
-        case .timedOut: return "시간 초과"
+        case .stopped: return "Stopped"
+        case .booting: return "Booting Windows"
+        case let .connected(host): return "Connected to \(host)"
+        case .stopping: return "Shutting down"
+        case .timedOut: return "Connection timed out"
         }
     }
 
@@ -289,14 +298,14 @@ struct HvfEngineView: View {
     private func pathRow(_ label: String, text: Binding<String>, chooseDirectory: Bool, identifier: String = "", chooseIdentifier: String = "") -> some View {
         HStack {
             Text(label).frame(width: 92, alignment: .leading)
-            TextField("", text: text, prompt: Text("\(label) 경로"))
+            TextField("", text: text, prompt: Text("\(label) path"))
                 .labelsHidden()
                 .textFieldStyle(.roundedBorder)
                 .font(.body.monospaced())
                 .accessibilityIdentifier(identifier)
             Button { choosePath(text: text, directory: chooseDirectory) } label: { Image(systemName: "folder") }
             .accessibilityIdentifier(chooseIdentifier)
-            .help("\(label) 선택")
+            .help("Choose \(label)")
         }
     }
 
@@ -402,7 +411,7 @@ extension HvfEngineView {
                 destination: destination
             )
             vtpmRecoveryCode = result.recoveryCode
-            vtpmLifecycleMessage = "복구 패키지를 저장했습니다. 상태 지문: \(result.stateFingerprint)"
+            vtpmLifecycleMessage = "Saved the recovery package. State fingerprint: \(result.stateFingerprint)"
         } catch {
             vtpmLifecycleError = error.localizedDescription
         }
@@ -442,7 +451,7 @@ extension HvfEngineView {
                 recoveryCode: vtpmRecoveryCodeInput
             )
             vtpmRecoveryCodeInput = ""
-            vtpmLifecycleMessage = "VM ID와 상태 지문을 검증하고 vTPM 키를 Keychain에 복원했습니다."
+            vtpmLifecycleMessage = "Verified the VM ID and state fingerprint and restored the vTPM key to Keychain."
         } catch {
             vtpmLifecycleError = error.localizedDescription
         }
@@ -463,8 +472,8 @@ extension HvfEngineView {
                 stateDirectory: URL(fileURLWithPath: statePath, isDirectory: true)
             )
             vtpmLifecycleMessage = result.archivedStatePath.map {
-                "새 TPM ID로 전환했습니다. 이전 상태: \($0) · 영수증: \(result.receiptPath)"
-            } ?? "새 TPM ID로 전환했습니다. 영수증: \(result.receiptPath)"
+                "Reset the TPM identity. Archived state: \($0). Receipt: \(result.receiptPath)"
+            } ?? "Reset the TPM identity. Receipt: \(result.receiptPath)"
         } catch {
             vtpmLifecycleError = error.localizedDescription
         }

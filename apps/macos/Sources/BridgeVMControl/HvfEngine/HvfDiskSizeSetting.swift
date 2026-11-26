@@ -35,20 +35,20 @@ struct HvfDiskSizeSetting: View {
         if session.persistsLibraryPreferences, plan != nil {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 10) {
-                    Text("가상 디스크 용량")
+                    Text("Virtual disk size")
                     Text(currentBytes.map(Self.sizeText) ?? "—")
                     if let range {
                         Text("→")
-                        TextField("새 용량", text: $targetText)
+                        TextField("New size", text: $targetText)
                             .labelsHidden().frame(width: 52)
-                            .accessibilityLabel("새 가상 디스크 용량 (GiB)")
-                        Stepper("가상 디스크 용량", value: Binding(
+                            .accessibilityLabel("New virtual disk size in GiB")
+                        Stepper("Virtual disk size", value: Binding(
                             get: { validSize ?? range.lowerBound },
                             set: { targetText = $0.formatted(.number.locale(locale)) }
                         ), in: range).labelsHidden()
                             .fixedSize()
-                        Text("GiB (최대 \(range.upperBound) GiB)").font(.caption).foregroundColor(.secondary)
-                        Button("디스크 늘리기") { confirmationSize = validSize }
+                        Text("GiB (up to \(range.upperBound) GiB)").font(.caption).foregroundColor(.secondary)
+                        Button("Expand disk") { confirmationSize = validSize }
                             .disabled(validSize == nil)
                             .accessibilityIdentifier("bridgevm.runtime.disk-grow")
                     }
@@ -62,11 +62,11 @@ struct HvfDiskSizeSetting: View {
             .help(HvfDiskGrow.sparseHelp)
             .onAppear(perform: refresh)
             .onChange(of: stopped) { _, _ in refresh() }
-            .confirmationDialog(confirmationSize.map { "디스크를 \($0) GiB로 늘리시겠습니까?" } ?? "",
+            .confirmationDialog(confirmationSize.map { "Expand the virtual disk to \($0) GiB?" } ?? "",
                 isPresented: Binding(get: { confirmationSize != nil }, set: { if !$0 { confirmationSize = nil } }),
                 titleVisibility: .visible, presenting: confirmationSize) { size in
-                Button("디스크 늘리기") { grow(to: size) }
-                Button("취소", role: .cancel) {}
+                Button("Expand disk") { grow(to: size) }
+                Button("Cancel", role: .cancel) {}
             } message: { _ in
                 Text(HvfDiskGrow.sparseHelp)
             }
@@ -75,14 +75,14 @@ struct HvfDiskSizeSetting: View {
 
     /// The session's latest message: a grow's result until the guest's extend report replaces it.
     private var note: String {
-        if busy { return "디스크를 늘리는 중…" }
+        if busy { return "Expanding the disk…" }
         if stopped, let range, validSize == nil {
-            return "새 용량은 \(range.lowerBound.formatted(.number.locale(locale)))~\(range.upperBound.formatted(.number.locale(locale))) GiB 사이의 정수로 입력하세요."
+            return "Enter a whole number from \(range.lowerBound.formatted(.number.locale(locale))) to \(range.upperBound.formatted(.number.locale(locale))) GiB."
         }
         if let notice = session.diskGrowNotice { return notice }
         if !stopped { return HvfDiskGrow.stopFirst }
         if currentBytes != nil, range == nil {
-            return "Mac 볼륨에 여유 공간이 부족해 디스크를 늘릴 수 없습니다. 10 GiB 넘게 여유 공간을 확보하세요."
+            return "To expand the disk, free up more than 10 GiB on the Mac volume."
         }
         return HvfDiskGrow.sparseHelp
     }

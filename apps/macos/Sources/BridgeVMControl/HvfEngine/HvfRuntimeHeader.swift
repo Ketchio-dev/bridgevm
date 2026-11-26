@@ -13,7 +13,7 @@ struct HvfRuntimeHeader: View {
                 LibraryVMEmblem(engine: .hvfEngine)
                 VStack(alignment: .leading, spacing: 8) {
                     Text(title).font(.system(size: 28, weight: .bold)).textSelection(.enabled)
-                    Text("Engineering Preview · 3D 가속 없음").font(.callout.weight(.medium)).foregroundStyle(.secondary)
+                    Text("Engineering Preview · No 3D acceleration").font(.callout.weight(.medium)).foregroundStyle(.secondary)
                     Label {
                         Text(state).font(.callout.weight(.medium)).textSelection(.enabled)
                     } icon: {
@@ -27,8 +27,8 @@ struct HvfRuntimeHeader: View {
             }
             Divider()
             HStack(spacing: 32) {
-                LibraryMetadataLabel(title: "CPU 구성", value: "\(cpus) vCPU", symbol: "cpu")
-                LibraryMetadataLabel(title: "메모리 구성", value: memory, symbol: "memorychip")
+                LibraryMetadataLabel(title: "Processors", value: "\(cpus) vCPU", symbol: "cpu")
+                LibraryMetadataLabel(title: "Memory", value: memory, symbol: "memorychip")
                 Spacer(minLength: 0)
             }
         }

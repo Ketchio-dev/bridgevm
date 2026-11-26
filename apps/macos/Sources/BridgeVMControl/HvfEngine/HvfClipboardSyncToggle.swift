@@ -8,14 +8,14 @@ struct HvfClipboardSyncToggle: View {
     var isDisabled: Bool { session.persistsLibraryPreferences && !session.libraryPreferencesEditable }
 
     var body: some View {
-        Toggle("클립보드 공유", isOn: Binding(get: { isOn }, set: update))
+        Toggle("Share clipboard", isOn: Binding(get: { isOn }, set: update))
             .accessibilityIdentifier("bridgevm.runtime.clipboard")
             .disabled(isDisabled)
-            .help(session.persistsLibraryPreferences ? "VM이 중지된 동안 변경하면 이 VM의 모든 시작에 저장됩니다." : "")
-            .alert("클립보드 동기화 설정", isPresented: Binding(
+            .help(session.persistsLibraryPreferences ? "Changes made while the VM is stopped are saved for future starts." : "")
+            .alert("Clipboard sharing", isPresented: Binding(
                 get: { message != nil }, set: { if !$0 { message = nil } }
             )) {
-                Button("확인") { message = nil }
+                Button("OK") { message = nil }
             } message: {
                 Text(message ?? "")
             }

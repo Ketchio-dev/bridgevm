@@ -25,7 +25,7 @@ final class SupervisionForceStopRegressionTests: XCTestCase {
                 XCTAssertTrue(session.terminationStopAvailable, "Quit must still admit the user's Stop")
             }
             XCTAssertEqual(session.runtimeSupervisionFailureText,
-                "실행 중인 Windows와 연결이 끊겼으니 강제 중단으로 Windows를 멈추세요.")
+                "BridgeVM lost contact with Windows, so choose Force Stop to stop the VM.")
             let target = try XCTUnwrap(session.forceStopTarget, "Lost supervision must still offer Force Stop")
             let wrong = HvfForceStopTarget(identity: .init(token: UUID(), processID: f.process.processIdentifier),
                 operationID: target.operationID)
