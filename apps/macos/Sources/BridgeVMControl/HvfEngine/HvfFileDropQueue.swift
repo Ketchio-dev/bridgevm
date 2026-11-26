@@ -187,6 +187,7 @@ final class HvfFileDropQueue: ObservableObject {
     }
 
     private static func size(_ bytes: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        if bytes == 0 { return "0 B" }
+        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 }
