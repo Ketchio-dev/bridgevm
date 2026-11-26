@@ -295,10 +295,10 @@ final class HvfDisplayDriverInstallSessionTests: XCTestCase {
         }
         try await fixture.reply(to: Install.prepareCommand, with: "BVDRIVER ready", line: 1)
         try await fixture.reply(to: Install.launchCommand, with: "BVDRIVER started pid=7", line: 2)
-        try await fixture.reply(to: Install.pollCommand, with: "BVDRIVER result=staged detail=no 1AF4:1050 device yet", line: 3)
+        try await fixture.reply(to: Install.pollCommand, with: "BVDRIVER result=staged detail=Pilote préparé · 화면", line: 3)
         let deadline = Date().addingTimeInterval(10)
         while outcome == nil, Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
-        XCTAssertEqual(outcome, .init(status: .staged, detail: "no 1AF4:1050 device yet"))
+        XCTAssertEqual(outcome, .init(status: .staged, detail: "Pilote préparé · 화면"))
     }
 
     func testFailedOutcomeDoesNotReachOnInstalled() async {
