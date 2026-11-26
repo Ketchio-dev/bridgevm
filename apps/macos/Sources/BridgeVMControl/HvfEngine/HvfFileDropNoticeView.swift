@@ -6,15 +6,20 @@ struct HvfFileDropNoticeView: View {
 
     var body: some View {
         if let notice = drops.notice {
-            Label(notice.text, systemImage: notice.failed ? "exclamationmark.triangle" : "doc.on.doc")
-                .font(.callout)
-                .foregroundStyle(notice.failed ? Color.orange : Color.primary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(.regularMaterial, in: Capsule())
-                .padding(12)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("bridgevm.runtime.filedrop.notice")
+            Label {
+                Text(notice.text)
+            } icon: {
+                Image(systemName: notice.failed ? "exclamationmark.triangle" : "doc.on.doc")
+                    .foregroundStyle(notice.failed ? Color.orange : Color.primary)
+            }
+            .font(.callout)
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.regularMaterial, in: Capsule())
+            .padding(12)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("bridgevm.runtime.filedrop.notice")
         }
     }
 }

@@ -22,6 +22,7 @@ final class HvfFileDropQueue: ObservableObject {
         let staging: URL
         /// Open each item in Windows once copied (Finder's Open With, a drop on the Dock icon).
         let open: Bool
+        let itemName: String?
         var skipped = 0
         var sent = false
         var started = false
@@ -29,6 +30,7 @@ final class HvfFileDropQueue: ObservableObject {
         var bytes = (done: Int64(0), total: Int64(0))
     }
 
+    private var earlierIssue: (message: String, count: Int)?
     private var jobs: [Job] = []
 
     func isPending(_ id: String) -> Bool { jobs.contains { $0.id == id } }
@@ -39,11 +41,14 @@ final class HvfFileDropQueue: ObservableObject {
 
     /// A new job and its staging folder below `root`. With no other job in flight, whatever an
     /// earlier run left in `root` goes first.
-    func begin(in root: URL, open: Bool = false) -> (id: String, staging: URL) {
-        if jobs.isEmpty { try? FileManager.default.removeItem(at: root) }
+    func begin(in root: URL, open: Bool = false, itemName: String? = nil) -> (id: String, staging: URL) {
+        if jobs.isEmpty {
+            earlierIssue = nil
+            try? FileManager.default.removeItem(at: root)
+        }
         let id = UUID().uuidString
         let staging = root.appendingPathComponent(id, isDirectory: true)
-        jobs.append(Job(id: id, staging: staging, open: open))
+        jobs.append(Job(id: id, staging: staging, open: open, itemName: itemName))
         show()
         return (id, staging)
     }
@@ -122,6 +127,7 @@ final class HvfFileDropQueue: ObservableObject {
     func reset() {
         for job in jobs { try? FileManager.default.removeItem(at: job.staging) }
         jobs = []
+        earlierIssue = nil
         if notice != nil { notice = nil }
     }
 
@@ -147,10 +153,28 @@ final class HvfFileDropQueue: ObservableObject {
         notice = Notice(text: text, failed: true)
     }
 
-    private func finish(_ index: Int, _ final: Notice) {
-        try? FileManager.default.removeItem(at: jobs[index].staging)
-        jobs.remove(at: index)
-        guard jobs.isEmpty else { return show() }
+    private func finish(_ index: Int, _ result: Notice) {
+        let job = jobs.remove(at: index)
+        try? FileManager.default.removeItem(at: job.staging)
+        guard jobs.isEmpty else {
+            if result.failed {
+                if earlierIssue != nil {
+                    earlierIssue?.count += 1
+                } else {
+                    let context = job.itemName.map { "The earlier transfer of “\($0)” needs attention." }
+                        ?? "An earlier transfer needs attention."
+                    earlierIssue = ("\(context) \(result.text)", 1)
+                }
+            }
+            return show()
+        }
+
+        var final = result
+        if let issue = earlierIssue {
+            let others = issue.count > 1 ? " Review \(Self.quantity(issue.count - 1, "other transfer")) as well." : ""
+            final = Notice(text: "\(result.text)\n\(issue.message)\(others)", failed: true)
+            earlierIssue = nil
+        }
         notice = final
         guard !final.failed else { return }
         let seconds = finishedNoticeSeconds
