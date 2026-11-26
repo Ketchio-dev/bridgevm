@@ -9,7 +9,7 @@ enum WindowsFileFailureFeedback {
     static let recovery = "중단된 Windows 설치를 복구하지 못했으니 VM 파일을 보존하고 저장 장치의 연결과 접근 권한을 확인한 뒤 다시 시도하세요."
     static let importing = "Could not import the Windows files. Check access to the disk image and firmware files and make sure the destination has enough free space."
     static let publication = "Could not save the VM registration. Check that the library folder is writable and has enough free space."
-    static let unsynced = "BridgeVM kept the VM files but could not confirm the save. Check the VM in your library."
+    static let unsynced = "BridgeVM kept the VM files but could not confirm the save. Check your library for the saved VM before creating another."
     private static let importingOutOfSpace = "No space left on device. Free space on the destination volume and try again."
 
     static func diagnostic(_ stage: String, _ error: Error) -> String {
