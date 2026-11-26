@@ -44,7 +44,7 @@ final class HvfVMSettingsDraft: ObservableObject {
 
     func finish() -> Bool {
         let shareOK = commitShare()
-        let forwardsOK = commitForwards()
+        let forwardsOK = !session.config.virtioNet || commitForwards()
         return shareOK && forwardsOK
     }
 }
