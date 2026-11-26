@@ -5,6 +5,7 @@ struct CreateVMCreationFooter: View {
     let error: String
     let failureCode: String
     let canCreate: Bool
+    let needsName: Bool
     let cancel: () -> Void
     let create: () -> Void
     let recoveryAvailable: Bool
@@ -24,6 +25,9 @@ struct CreateVMCreationFooter: View {
                 if working {
                     ProgressView().controlSize(.small)
                     Text(workingLabel.isEmpty ? "VM 파일 준비 중…" : workingLabel).font(.caption).foregroundStyle(.secondary)
+                } else if needsName {
+                    Text("생성하려면 VM 이름을 입력하세요.").font(.caption)
+                        .accessibilityIdentifier("bridgevm.create.name.required")
                 }
                 Spacer()
                 Button("취소") { if !working { cancel() } }

@@ -63,13 +63,13 @@ struct CreateVMSheet: View {
             }
 
             HStack {
-                Text("이름").frame(width: 64, alignment: .leading)
-                TextField("Windows 11", text: $name)
+                Text("이름 (필수)").frame(width: 64, alignment: .leading)
+                TextField("예: Windows 11", text: $name)
                     .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("가상 머신 이름")
+                    .accessibilityLabel("가상 머신 이름 (필수)")
                     .accessibilityIdentifier("bridgevm.create.name")
             }
-            if !name.isEmpty, VMLibrary.normalizedVMName(name) == nil {
+            if !name.isEmpty, !needsName, VMLibrary.normalizedVMName(name) == nil {
                 Text("이름은 제어문자 없이 1~\(VMLibrary.maximumVMNameCharacters)자이며 파일 ID 제한 안이어야 합니다.")
                     .font(.caption)
                     .foregroundColor(.red)
@@ -182,14 +182,22 @@ struct CreateVMSheet: View {
         FileSelection.choose(directories: false, extensions: ["fd", "vars"]) { hvfVarsPath = $0.path }
     }
 
-    var canCreate: Bool {
-        guard !working, creationState.permitsCreation, VMLibrary.normalizedVMName(name) != nil else { return false }
+    private var mediaReady: Bool {
         switch mode {
         case .windowsHVF:
             return !hvfTargetPath.isEmpty
         case .windowsHVFInstall:
             return !isoPath.isEmpty && drivers.ready
         }
+    }
+
+    private var needsName: Bool {
+        !working && creationState.permitsCreation && error.isEmpty && mediaReady
+            && name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var canCreate: Bool {
+        !working && creationState.permitsCreation && mediaReady && VMLibrary.normalizedVMName(name) != nil
     }
 
     private func autofillWin11() {
@@ -206,7 +214,8 @@ struct CreateVMSheet: View {
 extension CreateVMSheet {
     var creationFooter: some View {
         CreateVMCreationFooter(working: working, error: error, failureCode: creationFailureCode,
-            canCreate: canCreate, cancel: { dismiss() }, create: create,
+            canCreate: canCreate, needsName: needsName,
+            cancel: { dismiss() }, create: create,
             recoveryAvailable: !creationState.permitsCreation, recover: recoverCreatedVM,
             workingLabel: conversion.map { $0.format.conversionLabel(percent: $0.percent) } ?? "")
     }
