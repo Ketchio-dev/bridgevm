@@ -26,6 +26,8 @@ final class A9KeyCleanupProofTests: XCTestCase {
         let fixture = try proofFixture()
         defer { try? FileManager.default.removeItem(at: fixture.allocation.parent) }
         XCTAssertTrue(A9ImportedKeyCleanup.run(request: fixture.request, fileManager: .default))
+        try stub("echo '\(A9KeyForgetCall.legacyMissingKeyLine)' >&2; exit 1", fixture)
+        XCTAssertTrue(A9ImportedKeyCleanup.run(request: fixture.request, fileManager: .default))
         try stub("echo 'ERROR: keychain read failed' >&2; exit 1", fixture)
         XCTAssertFalse(A9ImportedKeyCleanup.run(request: fixture.request, fileManager: .default))
     }

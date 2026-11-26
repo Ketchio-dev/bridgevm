@@ -58,10 +58,10 @@ final class HvfDiskGrowTests: XCTestCase {
                        .failed(detail: "Size Not Supported"))
         XCTAssertNil(HvfDiskGrow.outcome(reply: "HVF 게스트 명령 응답 시간 초과"))
         XCTAssertEqual(HvfDiskGrow.Outcome.extended(bytes: 72 * gib).notice,
-                       "C: 드라이브를 늘린 디스크에 맞게 확장했습니다 (72 GiB).")
+                       "Extended the C: drive to use the larger disk (72 GiB).")
         XCTAssertEqual(HvfDiskGrow.Outcome.failed(detail: "Size Not Supported").notice,
-                       "C: 드라이브를 자동으로 확장하지 못했습니다(Size Not Supported). Windows의 디스크 관리에서 C: 볼륨을 확장하세요.")
-        XCTAssertTrue(HvfDiskGrow.pendingNote.contains("디스크 관리"), "the fallback when no agent reports")
+                       "Couldn’t extend the C: drive automatically (Size Not Supported). Open Disk Management in Windows and extend the C: volume.")
+        XCTAssertTrue(HvfDiskGrow.pendingNote.contains("Disk Management"), "the fallback when no agent reports")
     }
 
     /// Every agent start of a VM the app grew runs the (idempotent) extend; the flag stays. A reply
@@ -137,11 +137,11 @@ final class HvfDiskGrowTests: XCTestCase {
         for _ in 1...2 {
             await session.extendGrownDisk(runner: failed)?.value
             XCTAssertEqual(session.diskGrowNotice,
-                           "C: 드라이브를 자동으로 확장하지 못했습니다(The disk is not ready). 다음 Windows 시작 때 다시 시도합니다.")
+                           "Couldn’t extend the C: drive automatically (The disk is not ready). BridgeVM will try again the next time Windows starts.")
         }
         await session.extendGrownDisk(runner: failed)?.value
         XCTAssertEqual(session.diskGrowNotice,
-                       "C: 드라이브를 자동으로 확장하지 못했습니다(The disk is not ready). Windows의 디스크 관리에서 C: 볼륨을 확장하세요.")
+                       "Couldn’t extend the C: drive automatically (The disk is not ready). Open Disk Management in Windows and extend the C: volume.")
         XCTAssertNil(session.extendGrownDisk(runner: failed), "no fourth attempt")
         XCTAssertEqual(sent, 3)
         XCTAssertTrue(FileManager.default.fileExists(atPath: flag.path), "the flag is never removed")
@@ -175,7 +175,7 @@ final class HvfDiskGrowTests: XCTestCase {
         let plan = try XCTUnwrap(HvfDiskGrow.plan(config: session.config, repoRoot: session.repoRoot))
 
         await session.growDisk(plan, toGiB: 72)?.value
-        let grew = "디스크를 72 GiB로 늘렸습니다. " + HvfDiskGrow.pendingNote
+        let grew = "Expanded the disk to 72 GiB. " + HvfDiskGrow.pendingNote
         XCTAssertEqual(session.diskGrowNotice, grew)
         XCTAssertNil(session.mutationReservation, "the reservation ends with the grow")
 

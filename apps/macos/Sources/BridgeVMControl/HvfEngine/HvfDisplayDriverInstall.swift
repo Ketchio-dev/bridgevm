@@ -34,9 +34,9 @@ enum HvfDisplayDriverInstall {
 
         var message: String {
             switch status {
-            case .installed: return "디스플레이 드라이버를 설치했습니다: \(detail)"
-            case .staged: return "디스플레이 드라이버를 Windows 드라이버 저장소에 추가했습니다. virtio-gpu 장치가 연결된 다음 부팅부터 적용됩니다."
-            case .failed: return "디스플레이 드라이버를 설치하지 못했습니다: \(detail)"
+            case .installed: return "Installed the display driver. \(detail)"
+            case .staged: return "Added the display driver to the Windows driver store. Windows will use it on the next start with a virtio-gpu device."
+            case .failed: return "Couldn’t install the display driver. \(detail)"
             }
         }
     }
@@ -51,7 +51,7 @@ enum HvfDisplayDriverInstall {
     }
 
     static let stillRunning = Outcome(status: .failed,
-        detail: "15분 안에 끝나지 않았습니다. 게스트에서 설치가 계속 진행 중일 수 있습니다. 다시 누르면 진행 중인 설치를 이어서 기다립니다.")
+        detail: "The installation hasn’t finished after 15 minutes. It may still be running in Windows. Click Install again to resume waiting.")
 
     /// install.ps1, the installer (Windows PowerShell 5.1, ASCII), in the locked
     /// `C:\ProgramData\BridgeVM\display-driver` with `launch.token` (the current launch's random
@@ -239,13 +239,13 @@ enum HvfDisplayDriverInstall {
         guard let line = lines.last(where: { $0.hasPrefix(prefix) }) else {
             let tail = lines.last(where: { !$0.isEmpty }) ?? ""
             return .finished(Outcome(status: .failed,
-                detail: "게스트가 BVDRIVER 결과를 보고하지 않았습니다(exit \(code))" + (tail.isEmpty ? "." : ": \(tail)")))
+                detail: "Windows didn’t report a BVDRIVER result (exit \(code))" + (tail.isEmpty ? "." : ": \(tail)")))
         }
         let rest = line.dropFirst(prefix.count)
         let token = String(rest.prefix { !$0.isWhitespace })
         if token == "ready" || token == "started" || token == "running" { return .running }
         guard token.hasPrefix("result="), let status = Status(rawValue: String(token.dropFirst("result=".count))) else {
-            return .finished(Outcome(status: .failed, detail: "알 수 없는 게스트 결과: \(line)"))
+            return .finished(Outcome(status: .failed, detail: "Unrecognized driver result from Windows: \(line)"))
         }
         var detail = rest.dropFirst(token.count).trimmingCharacters(in: .whitespaces)
         if detail.hasPrefix("detail=") { detail = String(detail.dropFirst("detail=".count)) }
@@ -258,8 +258,8 @@ enum HvfDisplayDriverInstall {
     }
 
     @MainActor static func unavailableReason(_ session: HvfEngineSession) -> String? {
-        guard case .connected = session.connectionState else { return "Windows를 시작하고 연결될 때까지 기다리세요." }
-        return session.serviceStarted ? nil : "Windows 도우미가 준비될 때까지 기다리세요."
+        guard case .connected = session.connectionState else { return "Start Windows and wait for it to connect." }
+        return session.serviceStarted ? nil : "Wait for the Windows helper to be ready."
     }
 
     /// Runs one agent command, waiting at most the given time for its reply.
@@ -316,15 +316,15 @@ enum HvfDisplayDriverInstall {
         let offset = ((try? FileManager.default.attributesOfItem(atPath: log.path))?[.size] as? NSNumber)?.uint64Value ?? 0
         let reader = HvfCommandReplyReader(command: normalized, offset: offset)
         guard session.sendCtl(normalized) else {
-            return ("HVF 제어 채널에 명령을 기록하지 못했습니다: \(session.config.ctlFilePath)", -1)
+            return ("Couldn’t write the command to the HVF control channel: \(session.config.ctlFilePath)", -1)
         }
         let deadline = session.guestNow().addingTimeInterval(timeout)
         while session.guestNow() < deadline {
             if let reply = reader.readReply(from: log) { return reply }
-            guard agentReady(session) else { return ("HVF 게스트 연결이 명령 실행 중 종료되었습니다.", -1) }
+            guard agentReady(session) else { return ("Windows disconnected while the command was running.", -1) }
             try? await Task.sleep(nanoseconds: 250_000_000)
         }
-        return ("HVF 게스트 명령 응답 시간 초과", -1)
+        return ("Timed out waiting for the Windows command.", -1)
     }
 }
 
@@ -354,7 +354,7 @@ enum HvfDisplayDriverFlag {
                               publish: @escaping HvfEngineSession.RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> String? {
         guard let slug = session.config.libraryContext?.config.slug, pendingVMs.contains(slug),
               session.libraryPreferencesEditable else { return nil }
-        let message = session.saveLibraryPreference("디스플레이 드라이버 설정", publish: publish) {
+        let message = session.saveLibraryPreference("Display driver", publish: publish) {
             $0.virtioDisplayDriverInstalled = true
         }
         if message == nil { pendingVMs.remove(slug) }
@@ -374,24 +374,24 @@ struct HvfDisplayDriverInstallButton: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Button(action: install) {
-                if compact { Text(installing ? "설치 중…" : "설치") }
-                else { Label("디스플레이 드라이버 설치 (Red Hat virtio-win, Microsoft 서명)", systemImage: "arrow.down.circle") }
+                if compact { Text(installing ? "Installing…" : "Install") }
+                else { Label("Install display driver", systemImage: "arrow.down.circle") }
             }
             .disabled(installing || !HvfDisplayDriverInstall.agentReady(session))
             .accessibilityIdentifier("bridgevm.runtime.display-driver.install")
-            .help("게스트가 Red Hat 공식 배포처에서 virtio-win 압축 파일(약 95 MB)을 직접 내려받아 크기와 SHA-256을 확인한 뒤 viogpudo 드라이버만 설치합니다.")
+            .help("Windows downloads the Red Hat virtio-win archive (about 95 MB), checks its size and SHA-256 hash, and installs the Microsoft-signed viogpudo driver.")
             if !installing, !compact, let reason = HvfDisplayDriverInstall.unavailableReason(session) {
                 Text(reason).font(.caption).foregroundColor(.secondary)
             }
             if installing && !compact {
-                Text("설치 중… 게스트가 드라이버 압축 파일(약 95 MB)을 내려받아 설치합니다. 그동안에도 VM을 계속 사용할 수 있습니다.")
+                Text("Windows is downloading and installing the display driver (about 95 MB). You can keep using the VM.")
                     .font(.caption).foregroundColor(.secondary)
             } else if let outcome, !compact || !outcome.leavesDriverInGuest {
                 Text(outcome.message)
                     .font(.caption).foregroundColor(outcome.leavesDriverInGuest ? .green : .orange)
                     .textSelection(.enabled)
                 if outcome.leavesDriverInGuest && session.persistsLibraryPreferences {
-                    Text("다음에 VM을 시작하면 새 디스플레이가 연결됩니다.")
+                    Text("The new display will be available the next time you start this VM.")
                         .font(.caption).foregroundColor(.secondary)
                 }
             }

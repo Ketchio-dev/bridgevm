@@ -13,17 +13,17 @@ enum VTPMIdentityLifecycleError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidRecoveryCode:
-            return "vTPM 복구 코드가 올바른 256비트 코드가 아닙니다."
+            return "Enter the 256-bit recovery code that belongs to this vTPM package."
         case .invalidRecoveryPackage:
-            return "vTPM 복구 패키지가 손상되었거나 코드와 일치하지 않습니다."
+            return "The vTPM recovery package is damaged or the recovery code does not match."
         case let .vmIdentityMismatch(expected, package):
-            return "복구 패키지의 VM ID(\(package))가 현재 VM ID(\(expected))와 다릅니다."
+            return "The recovery package belongs to VM \(package). The selected VM is \(expected)."
         case .stateFingerprintMismatch:
-            return "복구 패키지가 현재 vTPM 암호화 상태와 짝을 이루지 않습니다. 상태와 키를 함께 복원하세요."
+            return "The recovery package does not match the encrypted vTPM state. Restore the matching state and key together."
         case let .unsafeStateEntry(path):
-            return "vTPM 상태에 안전하지 않은 링크 또는 파일이 있습니다: \(path)"
+            return "The vTPM state contains an unsafe link or file at \(path)."
         case let .resetRollbackFailed(message):
-            return "vTPM 재설정 롤백에 실패했습니다: \(message)"
+            return "BridgeVM couldn’t roll back the vTPM reset. \(message)"
         }
     }
 }

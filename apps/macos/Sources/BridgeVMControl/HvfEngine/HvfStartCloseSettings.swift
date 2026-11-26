@@ -17,25 +17,25 @@ struct HvfStartCloseSettings: View {
                     Label(message, systemImage: "exclamationmark.triangle").font(.callout)
                 }
             }
-            Toggle("Windows 실행 중 Mac 잠자기 방지", isOn: Binding(
+            Toggle("Keep Mac awake while Windows is running", isOn: Binding(
                 get: { power.enabled }, set: { power.setEnabled($0) }))
-            Text("Windows가 실행되는 동안 Mac은 잠자지 않으며 화면은 꺼질 수 있습니다.")
+            Text("The Mac display can still turn off.")
                 .font(.caption).foregroundStyle(.secondary)
-            Picker("창을 닫을 때", selection: $closeChoice) {
-                Text("물어보기").tag("")
+            Picker("When the VM window closes", selection: $closeChoice) {
+                Text("Ask each time").tag("")
                 ForEach([ControlDisplayCloseChoice.background, .pause, .shutdown], id: \.rawValue) {
                     Text($0.title).tag($0.rawValue)
                 }
             }
             if session.persistsLibraryPreferences {
-                Toggle("BridgeVM을 열 때 자동 시작", isOn: Binding(
+                Toggle("Start this VM when BridgeVM opens", isOn: Binding(
                     get: { session.config.libraryContext?.config.startWithBridgeVM == true },
                     set: { value in
-                        message = session.saveLibraryPreference("자동 시작 설정",
+                        message = session.saveLibraryPreference("Automatic startup",
                             publish: { VMRegistrationWriter.commit($0, to: $1) }) { $0.startWithBridgeVM = value }
                     }))
                     .disabled(!session.libraryPreferencesEditable)
-                Text("BridgeVM을 열 때 Option 키를 누르고 있으면 자동 시작을 건너뜁니다.")
+                Text("Hold Option while opening BridgeVM to skip automatic startup.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let message { Text(message).foregroundStyle(.secondary) }

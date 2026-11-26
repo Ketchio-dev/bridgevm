@@ -74,7 +74,7 @@ final class HvfResourcePreferenceSaveTests: XCTestCase {
             session.connectionState = state
             XCTAssertTrue(setting.isDisabled, "\(state)")
             XCTAssertTrue(session.applyResources(memMiB: 8192, cpus: 6)
-                == (4096, 4, "VM을 완전히 중지한 뒤 메모리·CPU 설정을 변경하세요."), "\(state)")
+                == (4096, 4, "Shut down Windows before changing this setting."), "\(state)")
             XCTAssertEqual(try Data(contentsOf: url), original)
             XCTAssertEqual(try dashboardLaunch(library, saved).ramMiB, 4096)
             session.connectionState = .stopped

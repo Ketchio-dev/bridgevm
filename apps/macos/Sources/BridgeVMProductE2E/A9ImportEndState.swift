@@ -73,6 +73,10 @@ enum A9ImportEndState {
         ("VM 가져오기를 시작하지 않았습니다", "not-started"),
     ]
     private static let causes: [(text: String, token: String)] = [
+        ("The destination VM already has a vTPM key", "destination-key-exists"), ("Another Keychain operation", "keychain-busy"),
+        ("Keychain needs your confirmation", "keychain-interaction"), ("Couldn’t read the vTPM state key", "keychain-read"),
+        ("Couldn’t save the vTPM state key", "keychain-write"), ("The Keychain key for this vTPM is missing", "missing-key"),
+        ("The vTPM recovery package is damaged", "recovery-package"),
         ("대상 VM ID에 이미 vTPM 키가 있습니다", "destination-key-exists"), ("다른 Keychain 작업이 진행 중입니다", "keychain-busy"),
         ("사용자 확인이 필요합니다", "keychain-interaction"), ("Keychain에서 vTPM 상태 키를 읽지 못했습니다", "keychain-read"),
         ("Keychain에 vTPM 상태 키를 저장하지 못했습니다", "keychain-write"), ("기존 vTPM 상태의 Keychain 키가 없습니다", "missing-key"),

@@ -82,6 +82,50 @@ class VmBenchContract(unittest.TestCase):
                 mock.patch.object(vm_bench.os, "killpg") as self.killpg:
             return vm_bench.one_boot(engine, Path("boot-2"), types.SimpleNamespace(**BOOT_ARGS))
 
+    def test_guest_exit_status_controls_which_metrics_reach_the_summary(self):
+        engine = NeverOff()
+        # A command can print a valid metric before a later guest operation fails.
+        engine.run = mock.Mock(side_effect=[
+            (9, "BVBENCH disk-small-files-flushed 125.0 files/s"),
+            (0, "BVBENCH process-spawn 42.0 proc/s"),
+        ])
+        with mock.patch.dict(BOOT_ARGS, skip_suite=False, only="disk-small-files-flushed,process-spawn"):
+            record = self.boot(engine)
+        self.assertEqual(record["bench"], {"process-spawn": 42.0})
+        self.assertTrue(any("disk-small-files-flushed: exit=9" in error for error in record["errors"]))
+        self.assertEqual(record["bench_exit_codes"], {"disk-small-files-flushed": 9, "process-spawn": 0})
+
+        # Older results stored successful multi-metric replies as "no value" errors.
+        # Other error output, including from a failing guest command, cannot supply scores.
+        record["errors"] += [
+            "old: exit=0 no value: BVBENCH recovered 3.0 Hz",
+            "old: exit=9 no value: BVBENCH rejected 123.0 Hz",
+            "diagnostic failed\nBVBENCH unrelated 1.0 Hz",
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "results.json"
+            path.write_text(vm_bench.json.dumps({"identity": {"engine": "mock"}, "boots": [record]}))
+            scores = vm_bench.summary(str(path))["median"]
+        self.assertEqual(scores["process-spawn"], 42.0)
+        self.assertEqual(scores["recovered"], 3.0)
+        self.assertNotIn("disk-small-files-flushed", scores)
+        self.assertNotIn("rejected", scores)
+        self.assertNotIn("unrelated", scores)
+
+    def test_failed_display_workload_does_not_sample_unrelated_host_frames(self):
+        # The guest may fail before the three-second delay to start frame sampling.
+        engine = mock.Mock(spec=vm_bench.BridgeVM)
+        engine.run.return_value = (2, "BVBENCH display-present 60.0 Hz")
+        with tempfile.TemporaryDirectory() as tmp:
+            engine.display_fb = Path(tmp) / "display.fb"
+            engine.display_fb.touch()
+            record = {"errors": [], "bench": {}}
+            with mock.patch.object(vm_bench, "consume_display") as consume:
+                vm_bench.display_test(engine, record)
+        consume.assert_not_called()
+        self.assertEqual(record["bench"], {})
+        self.assertIn("display: exit=2", record["errors"][0])
+
     def test_a_shutdown_that_never_completes_is_an_error_and_no_shutdown_sample(self):
         record = self.boot(NeverOff())
         self.assertNotIn("shutdown_ms", record)

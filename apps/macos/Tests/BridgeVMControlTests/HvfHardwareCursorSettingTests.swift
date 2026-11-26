@@ -28,7 +28,7 @@ final class HvfHardwareCursorSettingTests: XCTestCase {
         XCTAssertTrue(session.guestHardwareCursorWanted, "an absent key is on")
 
         session.connectionState = .connected(host: "guest")
-        XCTAssertEqual(session.applyHardwareCursorToggle(false).message, "VM을 완전히 중지한 뒤 커서 설정을 변경하세요.")
+        XCTAssertEqual(session.applyHardwareCursorToggle(false).message, "Shut down Windows before changing this setting.")
         XCTAssertNil(library.latestConfiguration(for: saved).hardwareCursor)
 
         session.connectionState = .stopped

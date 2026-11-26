@@ -38,13 +38,13 @@ extension HvfEngineSession {
     func applyPortForwards(_ text: String,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (text: String, message: String?) {
         guard let forwards = HvfPortForwards.parse(text) else {
-            return (text, "포트 포워딩은 Mac포트:Windows포트 형식으로 쉼표로 구분해 입력하세요. 예: 8080:80, 3390:3389")
+            return (text, "Enter a Mac port and a Windows port for each rule, separated by a colon. Separate rules with commas, for example 8080:80, 3390:3389.")
         }
         guard persistsLibraryPreferences else {
             config.portForwards = forwards
             return (HvfPortForwards.text(forwards), nil)
         }
-        let message = saveLibraryPreference("포트 포워딩 설정", publish: publish) {
+        let message = saveLibraryPreference("Port forwarding", publish: publish) {
             $0.portForwards = forwards.isEmpty ? nil : HvfPortForwards.text(forwards)
         }
         return (HvfPortForwards.text(HvfPortForwards.saved(config.libraryContext?.config.portForwards)), message)
@@ -60,8 +60,8 @@ extension HvfEngineSession {
         let result = applyPortForwards(visible)
         guard result.message != nil else { return (result.text, nil) }
         let started = HvfPortForwards.text(HvfPortForwards.saved(config.libraryContext?.config.portForwards))
-        let using = started.isEmpty ? "포트 포워딩 없이" : "저장된 포트 포워딩(\(started))으로"
-        return (started, "입력한 포트 포워딩을 저장하지 못해 \(using) 시작합니다. \(result.message ?? "")")
+        let using = started.isEmpty ? "without port forwarding" : "with the saved port forwards (\(started))"
+        return (started, "Couldn’t save the new port forwards. Windows will start \(using). \(result.message ?? "")")
     }
 }
 
@@ -78,7 +78,7 @@ struct HvfPortForwardSetting: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("포트 전달").frame(width: 92, alignment: .leading)
+                Text("Port forwards").frame(width: 92, alignment: .leading)
                 TextField("", text: $text, prompt: Text("8080:80, 3390:3389"))
                     .labelsHidden()
                     .textFieldStyle(.roundedBorder)
@@ -86,16 +86,16 @@ struct HvfPortForwardSetting: View {
                     .focused($focused)
                     .onSubmit(commitDraft)
             }
-            Text("Mac 포트:Windows 포트 형식으로 쉼표로 구분해 입력합니다. 예: 8080:80")
+            Text("Enter Mac port:Windows port pairs, separated by commas. Example: 8080:80.")
                 .font(.caption).foregroundColor(.secondary)
         }
         .disabled(isDisabled)
         .onChange(of: focused) { _, active in if !active { commitDraft() } }
-        .help("Mac의 127.0.0.1:Mac포트 연결이 Windows의 TCP 포트로 전달됩니다. VM이 중지된 동안 변경하세요.")
-        .alert("포트 포워딩 설정", isPresented: Binding(
+        .help("Connect to 127.0.0.1 on the Mac port to reach the Windows TCP port. Shut down Windows before editing these rules.")
+        .alert("Port forwarding", isPresented: Binding(
             get: { message != nil }, set: { if !$0 { message = nil } }
         )) {
-            Button("확인") { message = nil }
+            Button("OK") { message = nil }
         } message: {
             Text(message ?? "")
         }

@@ -5,23 +5,23 @@ import XCTest
 final class HvfGuestResolutionPickerHelpTests: XCTestCase {
     func testAVirtioDisplayVMSaysTheDisplayFollowsTheWindow() {
         let text = HvfGuestResolutionPicker.helpText(followsWindow: true, persists: false)
-        XCTAssertTrue(text.contains("창 크기를 따라갑니다"), text)
-        XCTAssertFalse(text.contains("바뀌지 않습니다"), text)
-        XCTAssertFalse(text.contains("드라이버를 설치하세요"), text)
+        XCTAssertTrue(text.contains("Windows resizes to fit the window"), text)
+        XCTAssertFalse(text.contains("ignores window size"), text)
+        XCTAssertFalse(text.contains("install the display driver"), text)
     }
 
     func testARamfbVMPointsToTheDriverInstall() {
         let text = HvfGuestResolutionPicker.helpText(followsWindow: false, persists: false)
-        XCTAssertTrue(text.contains("디스플레이 드라이버를 설치하세요"), text)
-        XCTAssertFalse(text.contains("창 크기를 따라갑니다"), text)
+        XCTAssertTrue(text.contains("install the display driver"), text)
+        XCTAssertFalse(text.contains("Windows resizes to fit the window"), text)
     }
 
     func testTheLibraryNoteIsAppendedOnlyWhenSaved() {
         for follows in [false, true] {
             XCTAssertTrue(HvfGuestResolutionPicker.helpText(followsWindow: follows, persists: true)
-                .hasSuffix(" VM이 중지된 동안 변경하면 이 VM의 모든 시작에 저장됩니다."))
+                .hasSuffix(" Changes made while the VM is stopped are saved for future starts."))
             XCTAssertFalse(HvfGuestResolutionPicker.helpText(followsWindow: follows, persists: false)
-                .contains("저장됩니다"))
+                .contains("saved for future starts"))
         }
     }
 }
