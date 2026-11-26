@@ -28,7 +28,7 @@ struct HvfPauseControl<Content: View>: View {
         .onChange(of: session.pause) { _, _ in resultMessage = nil }
     }
 
-    static func title(paused: Bool) -> String { paused ? "재개" : "일시 정지" }
+    static func title(paused: Bool) -> String { paused ? "Resume" : "Pause" }
     static func symbol(paused: Bool) -> String { paused ? "play.fill" : "pause.fill" }
 }
 
@@ -58,7 +58,7 @@ struct LibraryVMRunState: View {
 
         var body: some View {
             if session.pause == .running { LibraryVMRunState.row(text, color, dot) }
-            else { LibraryVMRunState.row("일시 정지됨", .yellow, dot) }
+            else { LibraryVMRunState.row("Paused", .yellow, dot) }
         }
     }
 }
@@ -72,7 +72,7 @@ struct HvfPauseMenuItem: View {
         let paused = session.pause.showsResume
         if paused || session.pauseAvailable {
             Button { session.togglePause() } label: {
-                Label(paused ? "재개" : "VM 일시정지", systemImage: paused ? "play.fill" : "pause.fill")
+                Label(paused ? "Resume" : "Pause VM", systemImage: paused ? "play.fill" : "pause.fill")
             }
             .accessibilityIdentifier("bridgevm.library.vm.pause")
         }
@@ -91,7 +91,7 @@ struct HvfPausedDisplayOverlay: View {
                 Color.black.opacity(0.55)
                 VStack(spacing: 12) {
                     Button { _ = session.requestResume() } label: {
-                        Label("재개", systemImage: "play.fill").font(.title2)
+                        Label("Resume", systemImage: "play.fill").font(.title2)
                     }
                     .buttonStyle(.borderedProminent).controlSize(.large)
                     .disabled(!session.pause.showsResume)
@@ -111,9 +111,9 @@ struct HvfPausedDisplayOverlay: View {
 
     private var label: String {
         switch session.pause {
-        case .pausing: return "일시 정지하는 중…"
-        case .resuming: return "재개하는 중…"
-        case .paused, .running: return "일시 정지됨"
+        case .pausing: return "Pausing…"
+        case .resuming: return "Resuming…"
+        case .paused, .running: return "Paused"
         }
     }
 }

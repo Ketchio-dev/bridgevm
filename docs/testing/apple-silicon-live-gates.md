@@ -81,6 +81,12 @@ checks belong on GitHub-hosted Actions.
 | `d5-guest-input` | Guest input on a sealed installed pair | Development diagnostic; never promotes a criterion |
 | `d6-app-ui`, `d6-app-ui-host-v1`, `d6-app-ui-host-v2`, `d6-app-ui-install-cancel-v1` | One sealed app-only native window run, never a guest workload | Development diagnostics; never promote a criterion |
 
+Use `d6-app-ui-host-v2` for the rendered onboarding journey. Its signed external
+accessibility driver opens Create and Import, filters the seeded VM list and clears
+the search in the actual app window. The older `d6-app-ui` XCTest and
+`d6-app-ui-host-v1` read SwiftUI accessibility children in process. On macOS 27.0.1
+that read can return an empty tree even when the controls respond to the external driver.
+
 No faster tier may be used to lower a threshold, and a `d` tier receipt is
 never release evidence.
 

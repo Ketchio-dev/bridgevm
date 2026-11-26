@@ -1,6 +1,8 @@
 import Foundation
+import Observation
 
 @MainActor
+@Observable
 final class HvfRuntimeSessionStore {
     typealias Factory = @MainActor (HvfEngineConfig) -> HvfEngineSession
     private enum Key: Hashable { case experimental, libraryVM(String) }
@@ -9,6 +11,12 @@ final class HvfRuntimeSessionStore {
 
     init(makeSession: @escaping Factory) { self.makeSession = makeSession }
     func existingRecord(slug: String) -> HvfRuntimeSessionRecord? { entries[.libraryVM(slug)] }
+    func existingSession(for config: VMConfig) -> HvfEngineSession? {
+        guard let entry = existingRecord(slug: config.slug),
+              entry.sourceConfig == config || entry.session.hasActiveRuntimeWork else { return nil }
+        return entry.session
+    }
+
     var sessions: [HvfEngineSession] { entries.values.map(\.session) }
 
     func experimentalSession() -> HvfEngineSession {

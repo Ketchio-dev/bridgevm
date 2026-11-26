@@ -10,9 +10,9 @@ enum HvfRestartRequest: Equatable, Sendable {
     var message: String {
         switch self {
         case .windowsAsked:
-            return "Windows에 다시 시작을 요청했습니다. 앱이 다시 시작을 막고 있으면 VM 화면을 확인하세요."
+            return "BridgeVM asked Windows to restart. Check the VM display for apps blocking the restart."
         case .reset:
-            return "VM을 재설정하는 중입니다."
+            return "Resetting the VM."
         }
     }
 }
@@ -99,7 +99,7 @@ extension HvfEngineSession {
         guard vmmControlAvailable else { return .refused(Self.restartUnavailable) }
         if let pending = restartRequest, pending.kind == .reset { return .requested(.reset) }
         guard appendVMMControl(Self.resetLine) else {
-            return .refused("재설정 요청을 보내지 못했습니다. 다시 시도하거나 VM을 중지하세요.")
+            return .refused("Couldn’t send the reset request. Try again or stop the VM.")
         }
         restartRequest = HvfPendingRestart(kind: .reset, boot: guestBoot, sentAt: ownedStartNow())
         append(.unknown("VM reset requested"))
@@ -131,7 +131,7 @@ extension HvfEngineSession {
         guard let pending = restartRequest, pending.kind == .reset, !pending.acknowledged,
               ownedStartNow() - pending.sentAt >= Self.resetAcknowledgementTimeout else { return }
         restartRequest = nil
-        restartNotice = "VM이 재설정 요청을 받지 못했습니다. 다시 시작을 한 번 더 누르세요."
+        restartNotice = "The VM didn’t acknowledge the reset request. Choose Restart again."
         append(.unknown("VM reset request not taken; Restart is available again"))
     }
 
@@ -152,7 +152,7 @@ extension HvfEngineSession {
         return confirmation
     }
 
-    private static let restartUnavailable = "실행 중인 VM이 없어 다시 시작할 수 없습니다."
-    private static let agentUnavailable = "Windows 에이전트가 응답하지 않아 다시 시작을 요청하지 못했습니다."
-    private static let bootChanged = "그사이 Windows가 다시 시작되어 요청을 보내지 않았습니다."
+    private static let restartUnavailable = "Start the VM before requesting a restart."
+    private static let agentUnavailable = "Couldn’t request a restart because the Windows guest agent isn’t responding."
+    private static let bootChanged = "Windows already restarted. The request was canceled."
 }

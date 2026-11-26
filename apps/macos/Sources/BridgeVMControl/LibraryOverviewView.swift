@@ -8,9 +8,8 @@ struct FleetTableView: View {
 
 struct LibraryOverviewView: View {
     @ObservedObject var library: LibraryModel
-    var createIdentifier = "bridgevm.library.overview.create"
 
     var body: some View {
-        LibraryWorkspaceList(library: library, createIdentifier: createIdentifier)
+        LibraryWorkspaceList(library: library)
     }
 }

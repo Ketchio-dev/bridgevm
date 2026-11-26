@@ -5,7 +5,7 @@ struct RetainedControlsSidebarEntry: View {
 
     var body: some View {
         if !library.retainedControlRecords.isEmpty {
-            Section("진행 중이거나 종료된 작업") {
+            Section("Recent operations") {
                 ForEach(library.retainedControlRecords) { record in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(record.descriptor.config.name)
@@ -13,7 +13,7 @@ struct RetainedControlsSidebarEntry: View {
                             .font(.caption).foregroundColor(.secondary)
                     }
                     .tag(record.id)
-                    .help("등록 목록에서 사라졌을 때 보관한 기존 작업입니다.")
+                    .help("This operation was kept after the VM left the library.")
                 }
             }
         }
