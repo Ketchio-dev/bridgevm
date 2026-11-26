@@ -13,7 +13,7 @@ enum FirstRunImportWorker {
         if let error = FirstRunImport.validate(inputs) { return .failed(error.description) }
         do {
             progress(HvfImportedDiskFormat.detect(path: inputs.diskPath).map { .converting($0, percent: 0) } ?? .copying)
-            let prepared = try FirstRunImport.prepare(inputs, slug: VMConfig.slugify(inputs.displayName),
+            let prepared = try FirstRunImport.prepare(inputs, slug: VMLibrary.registrationSlug(for: inputs.displayName),
                 libraryRoot: libraryRoot, snapshotHelper: snapshotHelper,
                 converting: { progress(.converting($0, percent: $1)) })
             progress(.saving)
