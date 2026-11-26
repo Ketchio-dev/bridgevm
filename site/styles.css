@@ -766,3 +766,70 @@ footer {
     scroll-behavior: auto !important;
   }
 }
+
+.guide-mast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 72px;
+}
+
+.release-guide {
+  max-width: 46rem;
+  padding-block: clamp(2.5rem, 6vw, 5rem);
+}
+
+.release-guide h1 {
+  margin-bottom: 1rem;
+  font-size: clamp(2.25rem, 6vw, 4.25rem);
+  line-height: 1.04;
+  letter-spacing: -.055em;
+}
+
+.release-guide .lead {
+  max-width: 42rem;
+}
+
+.release-guide .path-panel {
+  margin-top: 1.6rem;
+  padding: clamp(1rem, 4vw, 2rem);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--white);
+}
+
+.release-guide h2 {
+  font-size: clamp(1.45rem, 3vw, 2rem);
+  letter-spacing: -.035em;
+}
+
+.release-guide ol {
+  margin: 1.25rem 0;
+  padding-inline-start: 1.65rem;
+}
+
+.release-guide li {
+  padding-inline-start: .25rem;
+  color: var(--body);
+}
+
+.release-guide li + li {
+  margin-top: 1rem;
+}
+
+.release-guide li::marker {
+  color: var(--blue);
+  font-weight: 650;
+}
+
+.release-guide li strong {
+  display: block;
+  color: var(--ink);
+}
+
+.release-guide [lang="ko"] {
+  color: var(--ink);
+  font-weight: 570;
+  word-break: keep-all;
+}
