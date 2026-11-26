@@ -3,9 +3,9 @@ import hashlib
 import re
 
 
-DESKTOP = "images/windows-desktop-20261116.webp"
+DESKTOP = "images/windows-desktop-20261126.webp"
 SETUP = "images/mac-setup-20261126.webp"
-ORIGINAL = "docs/media/windows-hvf-desktop-20261116.webp"
+ORIGINAL = "docs/media/windows-hvf-import-20261126.webp"
 
 
 def check_image(page, html, site, root):
@@ -22,19 +22,18 @@ def check_image(page, html, site, root):
         assert caption, f"missing caption for {src}"
         return image.get("alt", ""), caption.group(1)
 
-    alt, caption = capture(DESKTOP, 1440, 900)
-    assert all(term in alt for term in ("Windows 11 Arm", "Test Mode"))
+    alt, caption = capture(DESKTOP, 1280, 800)
+    assert all(term in alt for term in ("Windows 11 Arm", "desktop", "taskbar"))
     assert all(term in caption for term in (
-        "November 16, 2026", "M5 development Mac", "Test Mode", "experimental test-signed display driver",
+        "November 26, 2026", "installed-disk import", "M5 development Mac", "3D off",
         f'href="https://github.com/Ketchio-dev/bridgevm/blob/main/{ORIGINAL}"',
     )), "desktop capture provenance is incomplete"
     alt, caption = capture(SETUP, 810, 385)
     assert all(term in alt for term in ("ISO", "disk"))
     assert all(term in caption for term in ("macOS", "development build", "November 26, 2026"))
 
-    # Decode the public 2560×1600 lossless capture to PPM, then use cwebp
-    # -resize 1440 900 -q 92 -m 6 -sharp_yuv. The full frame retains the watermark.
-    assert hashlib.sha256((root / ORIGINAL).read_bytes()).hexdigest() == "9908656d2d261e4c26486e1d322788d4e0faa26db709b81a78f9679cb9384c6e"
-    assert hashlib.sha256((site / DESKTOP).read_bytes()).hexdigest() == "9d254be58516bdf2a7f87e5ef5f8cd6e520fa84890bf075dd71b31434e1c456e"
+    # Decode ORIGINAL to PNG, then encode the full 1280×800 frame with cwebp -q 86 -m 6 -sharp_yuv.
+    assert hashlib.sha256((root / ORIGINAL).read_bytes()).hexdigest() == "fb10906d31714b08152aedb90af59a69f76766df6e36c9afdf91e6a69bc4d907"
+    assert hashlib.sha256((site / DESKTOP).read_bytes()).hexdigest() == "823a5f7dbb9aa41a8feed9bd096177a60254917a430d2a9d5079e34e107af24e"
     # The English Welcome window from 36c07e38 was converted to sRGB, then cropped to its two source cards.
     assert hashlib.sha256((site / SETUP).read_bytes()).hexdigest() == "37714230466f0ba4a6264655132047382d8329c27ae84ccf8013e54b7d57a7de"
