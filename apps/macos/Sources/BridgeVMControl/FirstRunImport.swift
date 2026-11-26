@@ -23,6 +23,7 @@ enum FirstRunImport {
         case diskMissing(String)
         case diskNotAFile(String)
         case diskEmpty(String)
+        case unsupportedDiskFormat(String)
         case varsMissing(String)
         case varsWrongSize(path: String, bytes: UInt64)
         case vtpmNotADirectory(String), vtpmRecoveryMissing(String), vtpmRecoveryWithoutState
@@ -37,6 +38,8 @@ enum FirstRunImport {
             case .diskMissing(let p): return "디스크 이미지를 찾을 수 없습니다: \(p)"
             case .diskNotAFile(let p): return "디스크 경로가 파일이 아닙니다: \(p)"
             case .diskEmpty(let p): return "디스크 이미지가 비어 있습니다: \(p)"
+            case .unsupportedDiskFormat(let format):
+                return "\(format) 디스크는 직접 가져올 수 없으니 RAW, QCOW2 또는 VHDX로 변환한 뒤 다시 선택하세요."
             case .varsMissing(let p): return "UEFI vars 파일을 찾을 수 없습니다: \(p)"
             case .varsWrongSize(let p, let b):
                 return "UEFI vars 파일은 정확히 64 MiB여야 합니다 (\(p): \(b) bytes)."
@@ -74,6 +77,7 @@ enum FirstRunImport {
         let diskBytes = (try? fileManager.attributesOfItem(atPath:
             URL(fileURLWithPath: inputs.diskPath).resolvingSymlinksInPath().path)[.size] as? NSNumber)?.uint64Value ?? 0
         if diskBytes == 0 { return .diskEmpty(inputs.diskPath) }
+        if let error = HvfImportedDiskFormat.detect(path: inputs.diskPath)?.importError { return error }
 
         if !inputs.varsPath.isEmpty {
             var varsIsDir: ObjCBool = false
