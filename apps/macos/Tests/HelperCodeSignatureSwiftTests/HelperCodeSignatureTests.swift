@@ -43,6 +43,7 @@ struct HelperCodeSignatureTests {
             teamReader: { _ in nil }
         )
         #expect(rejection == .unsigned(executableFile()))
+        #expect(rejection?.message == "The helper at \(executableFile()) has no readable signing team.")
     }
 
     @Test("a missing helper is refused before any signature is read")
@@ -54,7 +55,9 @@ struct HelperCodeSignatureTests {
             teamReader: { _ in readerCalled = true; return "ABCDE12345" }
         )
         #expect(readerCalled == false)
-        if case .notAFile = rejection {} else {
+        if case let .notAFile(path) = rejection {
+            #expect(rejection?.message == "The helper at \(path) is missing or cannot run.")
+        } else {
             Issue.record("expected notAFile, got \(String(describing: rejection))")
         }
     }
@@ -118,8 +121,6 @@ struct HelperCodeSignatureTests {
             expected: "ABCDE12345",
             found: "ZZZZZ99999"
         ).message
-        #expect(message.contains("swtpm"))
-        #expect(message.contains("ABCDE12345"))
-        #expect(message.contains("ZZZZZ99999"))
+        #expect(message == "BridgeVM requires signing team ABCDE12345 for /Applications/X.app/Contents/Helpers/swtpm, but the helper reports ZZZZZ99999.")
     }
 }
