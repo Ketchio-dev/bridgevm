@@ -37,7 +37,7 @@ extension LibraryModel {
     func bindInstallAdmissions(_ session: HvfWindowsInstallSession, slug: String) {
         let admission: @MainActor (Bool, Bool) -> String? = { [weak self, weak session] continuing, report in
             guard let self, let session else {
-                return HvfWindowsInstallPreparation.ownerMessage
+                return LibraryModel.unavailableMessage
             }
             let candidate = self.windowsInstallSessions.cliOperations.records[slug]
             let operation = candidate?.session === session ? candidate : nil
