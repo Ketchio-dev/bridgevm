@@ -20,9 +20,9 @@ enum HvfAgentUpdate {
         let prefix = "BVAGENT UPDATE "
         guard line.hasPrefix(prefix) else { return nil }
         switch line.dropFirst(prefix.count).prefix(while: { $0 != " " }) {
-        case "ok": return "게스트 도구를 새 버전으로 업데이트했습니다."
-        case "failed": return "게스트 도구 업데이트에 실패해 이전 버전을 계속 사용합니다. 앱을 다시 시작하면 다시 시도합니다."
-        case "rolled-back": return "새 게스트 도구가 시작되지 않아 이전 버전으로 되돌렸습니다. 앱을 다시 시작하면 다시 시도합니다."
+        case "ok": return "Guest Tools updated successfully."
+        case "failed": return "Guest Tools couldn’t update. The previous version is still in use. Restart BridgeVM to try again."
+        case "rolled-back": return "The new Guest Tools couldn’t start, so BridgeVM restored the previous version. Restart BridgeVM to try again."
         default: return nil
         }
     }

@@ -36,10 +36,10 @@ final class HvfAgentUpdateTests: XCTestCase {
         let failed = HvfAgentUpdate.notice(for: "BVAGENT UPDATE failed reason=arm detail=parse t=1")
         let late = HvfAgentUpdate.notice(for: "BVAGENT UPDATE failed reason=no-ready t=1")
         let rolledBack = HvfAgentUpdate.notice(for: "BVAGENT UPDATE rolled-back to=none t=1")
-        XCTAssertEqual(ok, "게스트 도구를 새 버전으로 업데이트했습니다.")
-        XCTAssertEqual(failed, "게스트 도구 업데이트에 실패해 이전 버전을 계속 사용합니다. 앱을 다시 시작하면 다시 시도합니다.")
+        XCTAssertEqual(ok, "Guest Tools updated successfully.")
+        XCTAssertEqual(failed, "Guest Tools couldn’t update. The previous version is still in use. Restart BridgeVM to try again.")
         XCTAssertEqual(late, failed)
-        XCTAssertEqual(rolledBack, "새 게스트 도구가 시작되지 않아 이전 버전으로 되돌렸습니다. 앱을 다시 시작하면 다시 시도합니다.")
+        XCTAssertEqual(rolledBack, "The new Guest Tools couldn’t start, so BridgeVM restored the previous version. Restart BridgeVM to try again.")
         for text in [ok, failed, rolledBack] { XCTAssertFalse(text?.contains("\n") ?? true) }
         for quiet in ["BVAGENT UPDATE begin from=none to=0123456789abcdef t=1", "BVAGENT UPDATE armed to=0123456789abcdef t=2",
                       "BVAGENT UPDATE current agent=0123456789abcdef t=3", "BVAGENT UPDATE skipped reason=stop t=4",
@@ -59,7 +59,7 @@ final class HvfAgentUpdateTests: XCTestCase {
         for event in BvAgentEvent.parse(lines: ["BVAGENT UPDATE ok from=earlier to=0123456789abcdef t=3"]) {
             notice.consume(event)
         }
-        XCTAssertEqual(notice.text, "게스트 도구를 새 버전으로 업데이트했습니다.")
+        XCTAssertEqual(notice.text, "Guest Tools updated successfully.")
         notice.reset()
         XCTAssertNil(notice.text)
     }

@@ -278,7 +278,7 @@ final class HvfGuestPrintTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: session.printDirectory.path), [], "none kept")
     }
 
-    /// A printer Windows could not make, a job the probe refused, a job the panel cannot open: one Korean notice
+    /// A printer Windows could not make, a job the probe refused, a job the panel cannot open: one notice
     /// each, and the VM goes on.
     func testFailuresAreOneKoreanNoticeEach() async throws {
         let fixture = try HvfRuntimeSessionStoreFixture()
@@ -289,7 +289,7 @@ final class HvfGuestPrintTests: XCTestCase {
         session.handle(.commandOutput(label: "PRINTWATCH", body: "BVPRINT printer=failed detail=The spooler service is not reachable."))
         XCTAssertEqual(session.printNotice.shown, .printerFailed)
         let text = try XCTUnwrap(session.printNotice.text)
-        XCTAssertTrue(text.contains("Mac 프린터를 만들지 못했으니") && text.hasSuffix("다시 시작하세요."), text)
+        XCTAssertTrue(text.contains("Microsoft Print to PDF") && text.hasSuffix("Mac (BridgeVM) printer."), text)
         XCTAssertEqual(text.filter { $0 == "." }.count, 1, "one sentence")
         session.printNotice.show(nil)
         session.handle(.commandOutput(label: "PRINTWATCH", body: "BVPRINT printer=failed detail=again"))

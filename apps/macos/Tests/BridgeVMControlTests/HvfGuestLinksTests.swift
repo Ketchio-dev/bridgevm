@@ -200,7 +200,9 @@ final class HvfGuestLinksTests: XCTestCase {
         session.guestLinkReported(line("https://example.org/", at: now), now: now.addingTimeInterval(0.5))
         XCTAssertEqual(opener.opened.map(\.absoluteString), ["https://example.com/?token=secret"])
         XCTAssertEqual(session.guestLinkNotice.shown, .tooFrequent(host: "example.org"))
-        XCTAssertEqual(session.guestLinkNotice.text?.contains("token"), false, "the host only")
+        XCTAssertEqual(session.guestLinkNotice.text,
+            "BridgeVM opens one Windows link per second. Try the link to example.org again.",
+            "Show the host only, even when the link has a private query string.")
         session.guestLinkReported(line("https://example.org/", at: now), now: now.addingTimeInterval(1))
         XCTAssertEqual(opener.opened.count, 2)
         XCTAssertNil(session.guestLinkNotice.shown, "a link opened clears the notice")

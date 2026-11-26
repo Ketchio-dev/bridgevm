@@ -14,7 +14,7 @@ final class HvfGuestCommandTests: XCTestCase {
             XCTAssertEqual(HvfGuestCommand.normalizeShell("\(verb) x").failure, .protocolVerb(verb))
         }
         XCTAssertEqual(HvfGuestCommand.normalizeShell("\u{0B}PING 1.1.1.1").failure, .protocolVerb("PING"))
-        XCTAssertTrue(HvfGuestCommandError.protocolVerb("DEL").message.contains("소문자 'del'"))
+        XCTAssertTrue(HvfGuestCommandError.protocolVerb("DEL").message.contains("lowercase “del”"))
         for command in ["ping 8.8.8.8", "Del C:\\x", "echo PING", "PINGX", "RUN x", "PS x", "whoami"] {
             XCTAssertEqual(try? HvfGuestCommand.normalizeShell(command).get(), command)
         }
@@ -33,7 +33,7 @@ final class HvfGuestCommandTests: XCTestCase {
         for command in ["PING 8.8.8.8", "DEL C:\\x", "LS", "CLIPGET", "WINCLOSE 1", " GET\tx"] {
             let result = fixture.backend.runInGuest(command)
             XCTAssertEqual(result.code, -1, command)
-            XCTAssertTrue(result.output.contains("소문자"), "\(command): \(result.output)")
+            XCTAssertTrue(result.output.contains("lowercase"), "\(command): \(result.output)")
             XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.backend.ctlFilePath), command)
         }
     }
@@ -63,7 +63,7 @@ final class ControlModelGuestCommandsTests: XCTestCase {
         while model.busy, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
 
         XCTAssertFalse(model.busy)
-        XCTAssertTrue(model.terminalLog.contains("소문자"), model.terminalLog)
+        XCTAssertTrue(model.terminalLog.contains("lowercase"), model.terminalLog)
         XCTAssertTrue(model.terminalLog.contains("[exit -1]"), model.terminalLog)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.backend.ctlFilePath))
     }
