@@ -22,7 +22,7 @@ struct HvfWindowsInstallView: View {
                     Text("Install Windows").font(.title.bold())
                     Text(config.displayName).font(.headline).foregroundStyle(.secondary)
                 }
-                HvfWindowsInstallStatusCard(session: session)
+                HvfWindowsInstallStatusCard(session: session, installerForNewVM: installerForNewVM)
                 if case .failed = session.stage, !session.logLines.isEmpty {
                     logCard(showsLog ? "Hide error log" : "Show error log")
                     requestCard
@@ -37,6 +37,16 @@ struct HvfWindowsInstallView: View {
         }
         .background(LibraryAppearance.canvas)
         .accessibilityIdentifier("bridgevm.windows.install.view")
+    }
+
+    var installerForNewVM: URL? {
+        let request = session.plan.request
+        guard session.stage == .idle, request.isoSHA256 != nil,
+              request.isoPath == config.bundlePath + "/" + WindowsHVFProductPolicy.installerISO,
+              request.guestPayloadDirectory == nil, request.guestPayloadManifest == nil,
+              request.guestPayloadIdentity == nil,
+              !HvfWindowsInstallTransactionResidue.isPresent(config, rootURL: library.rootURL) else { return nil }
+        return URL(fileURLWithPath: request.isoPath)
     }
 
     private var requestCard: some View {

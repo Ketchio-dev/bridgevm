@@ -2,6 +2,7 @@ import XCTest
 @testable import BridgeVMControl
 
 final class NativeCreatePayloadGuidanceTests: XCTestCase {
+    @MainActor
     func testActualCLIRegistrationDoesNotSuggestUnfulfillableInstallStep() throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.resolvingSymlinksInPath()
@@ -29,6 +30,15 @@ final class NativeCreatePayloadGuidanceTests: XCTestCase {
         let plan = HvfWindowsInstallPlan(repoRoot: repository, libraryRoot: library,
             bundlePath: config.bundlePath, slug: config.slug, request: request)
         XCTAssertEqual(plan.validationError(), "Windows Setup needs the driver files stored with this VM.")
+        let model = LibraryModel(rootURL: library, migrateLegacy: false, startsModelsAutomatically: false)
+        let view = HvfWindowsInstallView(config: config, library: model, session: .init(plan: plan))
+        XCTAssertEqual(view.installerForNewVM?.path, request.isoPath)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(view.installerForNewVM)), try Data(contentsOf: iso))
+
+        let paths = HvfWindowsInstallFinalization.paths(slug: config.slug, libraryRoot: library,
+                                                        bundlePath: config.bundlePath)
+        try fm.createDirectory(at: paths.transaction, withIntermediateDirectories: false)
+        XCTAssertNil(view.installerForNewVM, "An interrupted install can recover without the original driver payload.")
         XCTAssertFalse(result.text.contains("Next: bridgevm app install"))
         XCTAssertTrue(result.text.contains("required signed ARM64 guest driver payload"))
         XCTAssertTrue(result.text.contains("Existing CLI entries cannot be completed"))

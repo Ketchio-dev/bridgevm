@@ -2,6 +2,8 @@ import SwiftUI
 
 struct HvfWindowsInstallStatusCard: View {
     @ObservedObject var session: HvfWindowsInstallSession
+    var installerForNewVM: URL? = nil
+    @Environment(\.libraryWindowPresentation) private var presentation
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -9,7 +11,7 @@ struct HvfWindowsInstallStatusCard: View {
                 if session.isRunning {
                     ProgressView().controlSize(.small)
                 }
-                Text(session.stage.label).font(.headline)
+                Text(installerForNewVM == nil ? session.stage.label : "Windows setup drivers required").font(.headline)
                     .accessibilityIdentifier("bridgevm.windows.install.stage")
                 Spacer(minLength: 4)
                 if let startedAt = session.startedAt, session.isRunning {
@@ -54,8 +56,16 @@ struct HvfWindowsInstallStatusCard: View {
                 }
                 .font(.callout)
             }
-            HvfWindowsInstallControls(session: session)
-                .controlSize(.large)
+            if let installerForNewVM {
+                Text("This VM was created without setup drivers. Create a new VM with this ISO, then choose Download Drivers or select your signed Arm64 driver folder and SHA-256 manifest.")
+                    .font(.callout).fixedSize(horizontal: false, vertical: true)
+                Button("New VM…") { presentation?.wrappedValue.sheet = .create(installer: installerForNewVM) }
+                    .buttonStyle(.borderedProminent).controlSize(.large)
+                    .accessibilityIdentifier("bridgevm.windows.install.new-vm")
+            } else {
+                HvfWindowsInstallControls(session: session)
+                    .controlSize(.large)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)

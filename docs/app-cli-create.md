@@ -23,8 +23,9 @@ failed download exits 1 before any library entry is created.
 **Without `--fetch-drivers`, installation is blocked for CLI-created entries:**
 the command does not stage the required signed ARM64 guest driver payload or its
 manifest. Neither the app
-nor CLI can add those inputs to an existing entry. For installation, create a new
-VM in the app with the ISO, signed payload and manifest described in
+nor CLI can add those inputs to an existing entry. Open the entry in the app
+and choose **New VM…** to reuse its ISO. In the new VM form, choose **Download
+Drivers** or select your signed Arm64 driver folder and SHA-256 manifest. See
 [installation prerequisites](install.md#what-you-need-after-installing).
 `bridgevm app install` controls entries that already have those sealed inputs;
 retrying it cannot complete a CLI-created entry.
