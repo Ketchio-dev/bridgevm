@@ -310,10 +310,7 @@ enum VTPMLifecycleCommand {
         private var keys: [String: Data] = [:]
 
         func stateKey(for stableVMID: String, allowCreation: Bool) throws -> Data {
-            let account = stableVMID.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !account.isEmpty, account.utf8.count <= 255 else {
-                throw VTPMStateSecurityError.invalidVMIdentifier
-            }
+            let account = try VTPMExistingKeyLookup.lengthCheckedAccount(stableVMID)
             if let key = keys[account] { return key }
             guard allowCreation else { throw VTPMStateSecurityError.missingKeyForExistingState }
             let keyLength = KeychainVTPMStateKeyStore.keyLength
