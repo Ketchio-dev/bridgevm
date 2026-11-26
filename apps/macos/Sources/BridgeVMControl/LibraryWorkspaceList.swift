@@ -3,7 +3,6 @@ import SwiftUI
 struct LibraryWorkspaceList: View {
     @Environment(\.libraryWindowPresentation) private var presentation
     @ObservedObject var library: LibraryModel
-    var createIdentifier = "bridgevm.library.overview.create"
     var focusesSearchOnAppear = false
     var didSelect: (() -> Void)?
     @State private var query = ""
@@ -82,7 +81,7 @@ struct LibraryWorkspaceList: View {
                     Label("새 VM", systemImage: "plus")
                 }
                 .buttonStyle(.borderedProminent).controlSize(.large)
-                .accessibilityIdentifier(createIdentifier)
+                .accessibilityIdentifier("bridgevm.library.overview.create")
             }
             if !library.libraryIssues.isEmpty {
                 LibraryIssuesSection(issues: library.libraryIssues, compact: true)
@@ -111,7 +110,7 @@ struct LibraryWorkspaceRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if let session = library.hvfRuntimeDetailSession(for: config) {
+            if let session = library.hvfRuntimeSessions.existingSession(for: config) {
                 LibraryObservedWorkspaceRow(session: session, row: self)
             } else { selectionButton }
             LibraryVMActionsMenu(library: library, config: config, size: CGSize(width: 30, height: 30))

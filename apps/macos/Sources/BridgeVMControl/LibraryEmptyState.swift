@@ -1,9 +1,8 @@
 import SwiftUI
 
 struct LibraryEmptyState: View {
-    @ObservedObject var library: LibraryModel
-
     var body: some View {
-        LibraryOverviewView(library: library, createIdentifier: "bridgevm.library.empty.create")
+        ContentUnavailableView("가상 머신을 선택하세요", systemImage: "desktopcomputer",
+            description: Text("목록에서 가상 머신을 선택하면 상태와 설정을 볼 수 있습니다."))
     }
 }

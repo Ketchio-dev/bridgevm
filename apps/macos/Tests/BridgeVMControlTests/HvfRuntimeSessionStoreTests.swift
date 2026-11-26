@@ -1,3 +1,4 @@
+import Observation
 import XCTest
 @testable import BridgeVMControl
 
@@ -24,6 +25,32 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
         XCTAssertTrue(values(HvfWindowsInstallView.self, in: body).isEmpty)
         XCTAssertTrue(values(HvfWindowsInstallPreparationView.self, in: body).isEmpty)
         return view
+    }
+
+    func testRenderingAStoppedRowObservesTheFirstSessionWithoutCreatingOne() async throws {
+        let fixture = try Fixture()
+        defer { fixture.clean() }
+        let config = fixture.config()
+        fixture.save(config)
+        let library = fixture.library()
+        let row = LibraryWorkspaceRow(library: library, config: config,
+            model: library.model(for: config), selected: false)
+        let inserted = expectation(description: "An existing row observes its first session")
+        withObservationTracking {
+            _ = row.body
+        } onChange: {
+            inserted.fulfill()
+        }
+        XCTAssertTrue(fixture.runtimeConfigs.isEmpty)
+
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: config))
+        await fulfillment(of: [inserted], timeout: 1)
+        XCTAssertTrue(library.hvfRuntimeSessions.existingSession(for: config) === session)
+        var replacement = config
+        replacement.bundlePath += "-replacement"
+        XCTAssertNil(library.hvfRuntimeSessions.existingSession(for: replacement))
+        session.connectionState = .booting
+        XCTAssertTrue(library.hvfRuntimeSessions.existingSession(for: replacement) === session)
     }
 
     func testActualDetailKeepsActiveSessionAcrossNavigationAndReload() throws {
