@@ -110,7 +110,7 @@ final class HvfGuestResetRecordTests: XCTestCase {
             model.poll()
             XCTAssertTrue(model.records.isEmpty, reset)
             XCTAssertFalse(model.isLoading, reset)
-            XCTAssertEqual(model.status, "Windows가 다시 시작되었습니다. 새로 고침을 누르세요.", reset)
+            XCTAssertEqual(model.status, "Windows restarted. Choose Refresh to reload the list.", reset)
             model.stop()
         }
     }
