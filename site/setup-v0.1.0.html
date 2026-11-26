@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="theme-color" content="#f7f8fc">
+    <meta name="description" content="Use the English setup steps for BridgeVM v0.1.0 to install Windows 11 Arm from an ISO or import your installed disk.">
+    <title>Set up Windows in v0.1.0 — BridgeVM</title>
+    <link rel="icon" href="icon.png" type="image/png">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to setup</a>
+    <header class="mast">
+      <div class="wrap guide-mast">
+        <span class="brand"><img class="brand-logo" src="icon.png" alt="" width="36" height="36">BridgeVM</span>
+        <a class="inline-link" href="index.html">Back to overview</a>
+      </div>
+    </header>
+    <main id="main" class="wrap release-guide">
+      <h1>Set up Windows in v0.1.0</h1>
+      <p class="lead">The Mac download opens in Korean. Once BridgeVM is open, follow the steps for your Windows 11 Arm media. The Korean labels match the buttons in the app.</p>
+
+      <fieldset class="media-choice">
+        <legend>My Windows media</legend>
+        <input class="visually-hidden" type="radio" id="iso" name="media" checked><label for="iso">Installer ISO</label>
+        <input class="visually-hidden" type="radio" id="disk" name="media"><label for="disk">Installed disk</label>
+
+        <section class="path-panel iso-panel">
+          <h2>Install from an ISO</h2>
+          <p>Have your licensed Windows 11 Arm ISO ready and allow about 64 GiB for the guest disk.</p>
+          <ol>
+            <li><strong>Choose the ISO.</strong> In the welcome window, choose New Windows VM (<span lang="ko">새 Windows VM 만들기</span>), then Choose ISO (<span lang="ko">ISO 선택…</span>). Select your Windows 11 Arm ISO.</li>
+            <li><strong>Name the VM and prepare its drivers.</strong> Type a name in <span lang="ko">이름</span>. In this version, “Windows 11” is placeholder text. Choose Download Drivers (<span lang="ko">드라이버 자동 준비</span>), or select your signed driver folder and its manifest.</li>
+            <li><strong>Start installation.</strong> Choose Create (<span lang="ko">생성</span>). In the new VM’s detail view, choose Start Installation (<span lang="ko">설치 시작</span>).</li>
+          </ol>
+          <a class="inline-link" href="https://github.com/Ketchio-dev/bridgevm/blob/main/docs/install.md#install-windows-from-an-iso">ISO and driver requirements</a>
+        </section>
+
+        <section class="path-panel disk-panel">
+          <h2>Import an installed disk</h2>
+          <p>BridgeVM copies the installed disk into its library. For a compressed QCOW2 disk, import a RAW copy with this release.</p>
+          <ol>
+            <li><strong>Open the import form.</strong> Choose Import an Existing VM (<span lang="ko">기존 VM 가져오기</span>). Keep the prefilled name “Windows 11” or enter your own.</li>
+            <li><strong>Choose the installed disk.</strong> Next to Windows disk (<span lang="ko">Windows 디스크</span>), choose <span lang="ko">선택…</span> and select your RAW, QCOW2 or VHDX file. If you have its matching UEFI variables file, select it in the separate optional field.</li>
+            <li><strong>Start Windows.</strong> Choose Import (<span lang="ko">가져오기</span>). Select the saved VM in the library, then choose Start (<span lang="ko">시작</span>).</li>
+          </ol>
+          <a class="inline-link" href="https://github.com/Ketchio-dev/bridgevm/blob/main/docs/install.md#import-an-installed-windows-disk">Supported disks and import requirements</a>
+        </section>
+      </fieldset>
+    </main>
+  </body>
+</html>
