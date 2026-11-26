@@ -52,6 +52,7 @@ final class HvfWindowsDriverPayloadFetchTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.subpathsOfDirectory(atPath: payload.path).sorted(), entries.sorted())
     }
 
+    @MainActor
     func testCLICreateWithFetchedDriversSealsThemForInstall() throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
@@ -67,6 +68,10 @@ final class HvfWindowsDriverPayloadFetchTests: XCTestCase {
         let request = try XCTUnwrap(HvfWindowsInstallRequest.load(bundlePath: config.bundlePath))
         XCTAssertEqual(request.guestPayloadDirectory, config.bundlePath + "/metadata/windows-guest-payload")
         XCTAssertNotNil(request.guestPayloadIdentity)
+        let plan = HvfWindowsInstallPlan(repoRoot: fixture.root, libraryRoot: library,
+            bundlePath: config.bundlePath, slug: config.slug, request: request)
+        let model = LibraryModel(rootURL: library, migrateLegacy: false, startsModelsAutomatically: false)
+        XCTAssertNil(HvfWindowsInstallView(config: config, library: model, session: .init(plan: plan)).installerForNewVM)
         XCTAssertTrue(result.guestDriversSealed)
         XCTAssertTrue(result.text.contains("Next: bridgevm app install \(result.id)"))
     }
