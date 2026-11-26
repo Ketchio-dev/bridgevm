@@ -12,6 +12,9 @@ authorize Windows test drivers. General Preview installs and imports Windows in 
 > the same source as the withdrawn `v1.1.1`; to replace an installed 1.1.1 app,
 > run the installer again. VMs and settings are unaffected.
 
+For the General Preview, [install the DMG](#dmg-from-the-releases-page) or
+[use the terminal installer](#terminal-installer).
+
 ## Build the current source
 
 Use this path when you want to inspect exactly what you run. Requirements are
@@ -147,8 +150,8 @@ quarantine.
 
 ## DMG from the Releases page
 
-Download the `.dmg`, `BridgeVM-release.json`, and `SHA256SUMS` from a release
-identified as **General Preview**. Verify
+Download the `.dmg`, `BridgeVM-release.json`, and `SHA256SUMS` from the
+[General Preview release](https://github.com/Ketchio-dev/bridgevm/releases/tag/v0.1.0). Verify
 the DMG, open it, and drag BridgeVM into Applications:
 
 ```sh
@@ -168,7 +171,15 @@ on current macOS, so the Settings route is the real one.
 
 ## What you need after installing
 
-To install Windows from an ISO:
+### Install Windows from an ISO
+
+1. In v0.1.0, choose **Install Windows** (**새 Windows VM 만들기**), then **Choose ISO…**
+   (**ISO 선택…**) and select your Windows 11 Arm ISO.
+2. Type a VM name in **Name** (**이름**). The displayed “Windows 11” is a
+   placeholder. Choose **Download Drivers** (**드라이버 자동 준비**) or select
+   your own driver folder and its manifest.
+3. Choose **Create** (**생성**). In the new VM’s detail view, choose
+   **Start Installation** (**설치 시작**) to begin Windows setup.
 
 - A Windows 11 ARM64 ISO, downloaded from Microsoft yourself. The app does not
   fetch Windows media; it asks you to choose the ISO file.
@@ -189,11 +200,20 @@ To install Windows from an ISO:
   and seals the payload and manifest in the VM bundle before installation.
 - About 64 GiB of free disk for the guest image.
 
-To import instead: an installed Windows 11 Arm disk (RAW, QCOW2 or Hyper-V
-VHDX), with its UEFI variables if you have them. Import copies or converts the
-disk into the library and leaves the source unchanged; it needs no driver
-payload. Builds from current source also accept fixed-size Hyper-V VHD. Convert
-a dynamic VHD to VHDX in Hyper-V before importing.
+### Import an installed Windows disk
+
+1. In v0.1.0, choose **Import an existing disk** (**기존 VM 가져오기**). Keep the
+   prefilled name “Windows 11” or enter a different name.
+2. Beside **Windows disk** (**Windows 디스크**), click **Choose…** (**선택…**)
+   and select the installed Windows 11 Arm disk. If you have its matching UEFI variables
+   file, select it in the separate optional UEFI field.
+3. Choose **Import** (**가져오기**). Select the saved VM in the library and
+   choose **Start** (**시작**) to boot it.
+
+The v0.1.0 download accepts RAW, QCOW2 and Hyper-V VHDX. BridgeVM copies or
+converts the disk into the library and leaves the source unchanged. Import
+needs no driver payload. Builds from current source also accept fixed-size
+Hyper-V VHD. Convert a dynamic VHD to VHDX in Hyper-V before importing.
 
 For compressed QCOW2 in the v0.1.0 download, import a RAW copy. Builds from
 current source support QEMU's default deflate compression. Use RAW for
@@ -205,6 +225,8 @@ qemu-img convert -O raw "Windows.qcow2" "Windows.raw"
 ```
 
 Choose `Windows.raw` in the import wizard.
+
+### Display drivers after setup
 
 The General Preview bundles no Windows driver and accepts no graphics-driver
 package at creation; Windows-HVF creation shows that 3D injection is

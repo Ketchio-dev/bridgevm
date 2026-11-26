@@ -47,7 +47,7 @@ final class LibraryNestedRelocationTests: XCTestCase {
         try f.assertReadable(nested, id: "child")
         let destination = f.root.appendingPathComponent("moved-owner")
 
-        XCTAssertTrue(VMRelocationReferences.failureMessage(for: owner, rootURL: f.library).contains("다른 VM"))
+        XCTAssertTrue(VMRelocationReferences.failureMessage(for: owner, rootURL: f.library).contains("Another VM"))
         XCTAssertNil(VMLibrary.moveWindowsHVFBundle(owner, to: destination, rootURL: f.library))
         try f.assertReadable(owner, id: "owner")
         try f.assertReadable(nested, id: "child")
@@ -143,8 +143,8 @@ final class LibraryNestedRelocationTests: XCTestCase {
         await job()
 
         let message = try XCTUnwrap(model.moveError)
-        XCTAssertTrue(message.contains("다른 VM"), message)
-        XCTAssertTrue(message.contains("등록 정보를 확인"), message)
+        XCTAssertTrue(message.contains("Another VM"), message)
+        XCTAssertTrue(message.contains("check its registration"), message)
         try f.assertReadable(owner, id: "owner")
         try f.assertReadable(nested, id: "child")
         XCTAssertFalse(f.fm.fileExists(atPath: destination.path))

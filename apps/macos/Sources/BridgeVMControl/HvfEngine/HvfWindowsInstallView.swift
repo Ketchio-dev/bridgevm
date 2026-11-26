@@ -19,16 +19,16 @@ struct HvfWindowsInstallView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Windows 설치").font(.title.bold())
+                    Text("Install Windows").font(.title.bold())
                     Text(config.displayName).font(.headline).foregroundStyle(.secondary)
                 }
                 HvfWindowsInstallStatusCard(session: session)
                 if case .failed = session.stage, !session.logLines.isEmpty {
-                    logCard(showsLog ? "설치 오류 로그 접기" : "설치 오류 로그 보기")
+                    logCard(showsLog ? "Hide error log" : "Show error log")
                     requestCard
                 } else {
                     requestCard
-                    if !session.logLines.isEmpty { logCard("설치 로그") }
+                    if !session.logLines.isEmpty { logCard("Installation log") }
                 }
             }
             .padding(20)
@@ -41,14 +41,14 @@ struct HvfWindowsInstallView: View {
 
     private var requestCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("설치 구성").font(.headline)
+            Text("Installation settings").font(.headline)
             row("ISO") { HvfWindowsInstallISOButton(path: session.plan.request.isoPath) }
-            row("디스크") { Text("\(session.plan.request.diskGiB) GiB") }
-            row("그래픽") {
-                Text(session.plan.request.injectViogpu3d ? "차단됨 — 3D 가속 미지원" : "기본 디스플레이 · 3D 제외")
+            row("Disk") { Text("\(session.plan.request.diskGiB) GiB") }
+            row("Graphics") {
+                Text(session.plan.request.injectViogpu3d ? "3D acceleration is unavailable" : "Standard display · 3D off")
             }
             if session.plan.sourceImageCacheCandidateExists {
-                row("설치 소스") { Text("저장된 소스 있음 · 시작 시 확인") }
+                row("Install media") { Text("Cached media available. BridgeVM verifies it at startup.") }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

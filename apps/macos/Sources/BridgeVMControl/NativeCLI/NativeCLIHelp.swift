@@ -4,13 +4,13 @@ extension NativeCLI {
 
     Usage: BridgeVMControl --cli <command> [--library ABSOLUTE_PATH] [--json]
       list          List saved VMs in the native app library.
-      inspect ID    Inspect one exact VM ID from list (including Korean IDs).
+      inspect ID    Inspect one exact VM ID from list (including IDs with non-English characters).
       readiness ID  Check saved own-HVF VM launch prerequisites without starting it.
 
     Examples:
       BridgeVMControl --cli list --json
-      BridgeVMControl --cli inspect 개발-vm
-      BridgeVMControl --cli readiness 개발-vm --json
+      BridgeVMControl --cli inspect dev-vm
+      BridgeVMControl --cli readiness dev-vm --json
 
     Uses the same vm.json configuration as the native app. Reads never repair,
     migrate, create or start a VM. Inventory runtime is unobserved. Recovery records
@@ -60,7 +60,7 @@ extension NativeCLI {
     static let statusHelp = """
     Runtime observation:
       status ID     Query the running native app's retained own-HVF session.
-      BridgeVMControl --cli status 개발-vm --json
+      BridgeVMControl --cli status dev-vm --json
 
     Status includes retained sessions even after a saved registration is removed.
     It distinguishes owned children, attached observations and observed child exits.
@@ -110,7 +110,7 @@ extension NativeCLI {
     static let stopHelp = """
     Owned runtime stop:
       stop ID       Ask the running app to stop its exact retained owned run.
-      BridgeVMControl --cli stop 개발-vm --json
+      BridgeVMControl --cli stop dev-vm --json
 
     Waits up to 210 seconds for supervisor cleanup and retained runner exit.
     Requests reuse the same target and operation; retries do not reset the stop
@@ -128,7 +128,7 @@ extension NativeCLI {
     static let startHelp = """
     Owned runtime start:
       start ID      Start one saved, installed own-HVF VM in the running app.
-      BridgeVMControl --cli start 개발-vm --json
+      BridgeVMControl --cli start dev-vm --json
 
     Observes startup for up to 30 seconds. Success requires the supervisor READY
     message and initial helper startup; it does not prove guest boot or display.

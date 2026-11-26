@@ -19,13 +19,13 @@ final class LibraryInstallRowStatusTests: XCTestCase {
         let observer = library.objectWillChange.sink { changes += 1 }
         defer { observer.cancel() }
         session.transition(to: .preparingSource)
-        XCTAssertEqual(row.status.text, HvfWindowsInstallStage.preparingSource.label)
+        XCTAssertEqual(row.status.text, "Preparing installation media")
         XCTAssertGreaterThan(changes, 0)
         let beforeOutput = changes
         session.appendLog("installer output")
         XCTAssertEqual(changes, beforeOutput)
         session.transition(to: .installing)
-        XCTAssertEqual(row.status.text, HvfWindowsInstallStage.installing.label)
+        XCTAssertEqual(row.status.text, "Installing Windows")
         session.finish(.failed("detailed diagnostic"))
         XCTAssertEqual(row.status.text, "Installation failed")
     }

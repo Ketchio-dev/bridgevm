@@ -10,13 +10,13 @@ final class LibraryDashboardNavigationTests: XCTestCase {
         defer { f.clean() }
         let model = try XCTUnwrap(f.library.selectedModel)
         XCTAssertEqual(f.values(LibraryDashboardDetail.self, in: LibraryDashboardRoute(library: f.library).body).count, 1)
-        try f.paletteCommand("Pro 모드 켜기").action()
+        try f.paletteCommand("Turn on Pro mode").action()
         XCTAssertTrue(f.library.proMode)
         let route = try f.detailRoute()
         XCTAssertEqual(f.values(FleetTableView.self, in: route.body).count, 1)
         XCTAssertEqual(f.library.selectedID, model.config.slug)
         XCTAssertTrue(f.library.selectedModel === model)
-        try f.paletteCommand("Pro 모드 끄기").action()
+        try f.paletteCommand("Turn off Pro mode").action()
         XCTAssertFalse(f.library.proMode)
         let restored = try XCTUnwrap(f.values(LibraryDashboardDetail.self,
             in: LibraryDashboardRoute(library: f.library).body).first)
@@ -93,7 +93,7 @@ final class LibraryDashboardNavigationTests: XCTestCase {
         f.library.selectedID = LibraryModel.firstRunImportSelectionID
         let operation = f.library.firstRunImport.begin()
         f.library.firstRunImport.advance(.copying, operation: operation)
-        try f.paletteCommand("Pro 모드 켜기").action()
+        try f.paletteCommand("Turn on Pro mode").action()
         let route = try f.detailRoute()
         XCTAssertEqual(f.values(FirstRunView.self, in: route.body).count, 1)
         XCTAssertTrue(f.values(FleetTableView.self, in: route.body).isEmpty)
@@ -109,7 +109,7 @@ final class LibraryDashboardNavigationTests: XCTestCase {
         model.running = true // An observed active control; no process is launched or adopted.
         f.library.reload() // The synthetic registration is absent, so its active handle is retained.
         let retained = try XCTUnwrap(f.library.selectedRetainedControl)
-        try f.paletteCommand("Pro 모드 켜기").action()
+        try f.paletteCommand("Turn on Pro mode").action()
         let route = try f.detailRoute()
         let view = try XCTUnwrap(f.values(RetainedControlDetailView.self, in: route.body).first)
         XCTAssertEqual(view.record.id, retained.id)

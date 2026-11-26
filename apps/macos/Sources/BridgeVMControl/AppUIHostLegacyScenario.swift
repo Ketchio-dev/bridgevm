@@ -27,7 +27,7 @@ enum AppUIHostLegacyScenario {
         }
         try capture.capture(sheetContent, name: "create-sheet")
         try capture.action("create_opened")
-        try AppUIHostAccessibility.pressButton(label: "취소", in: sheetContent)
+        try AppUIHostAccessibility.press("bridgevm.create.cancel", in: sheetContent)
         try await AppUIHostAccessibility.wait("creation sheet cancellation") {
             window.sheets.isEmpty
         }

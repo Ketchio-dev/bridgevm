@@ -14,7 +14,9 @@ final class T17SettingsSheetProductUI: T17UIControlling {
     private(set) var sheetOpen = false
     private var closingPolls: Int?
     private var restoreAsked = false
-    private var snapshotStatus = "VM을 종료한 뒤 디스크와 UEFI vars를 한 쌍으로 저장할 수 있습니다."
+    var snapshotCreated = "Snapshot created"
+    var snapshotRestored = "Snapshot restored"
+    private var snapshotStatus = "Shut down Windows to save a snapshot of its disk and boot settings."
 
     private static let sheetControls: Set<String> = [
         "bridgevm.runtime.settings", "bridgevm.runtime.settings.done",
@@ -45,9 +47,9 @@ final class T17SettingsSheetProductUI: T17UIControlling {
         case "bridgevm.dashboard.advanced": screen = .runtime
         case "bridgevm.runtime.settings.open": sheetOpen = true
         case "bridgevm.runtime.settings.done": closingPolls = 1
-        case "bridgevm.runtime.snapshot.create": snapshotStatus = "스냅샷 생성 완료"
+        case "bridgevm.runtime.snapshot.create": snapshotStatus = snapshotCreated
         case "bridgevm.runtime.snapshot.restore": restoreAsked = true
-        case "bridgevm.runtime.snapshot.confirm": restoreAsked = false; snapshotStatus = "스냅샷 복원 완료"
+        case "bridgevm.runtime.snapshot.confirm": restoreAsked = false; snapshotStatus = snapshotRestored
         default: break
         }
     }

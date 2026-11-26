@@ -64,7 +64,7 @@ class Fixture(BundleFixture):
             if operation == "readState":
                 reply["values"] = dict(installVisible=True, startVisible=True, startEnabled=index in (0, 3, 4),
                     cancelVisible=index in (1, 2), cancelEnabled=index == 1, stage=LABELS[index],
-                    title="설치 시작" if index < 3 else "다시 시도")
+                    title="Start Installation" if index < 3 else "Try Again")
                 if index == 4:
                     reply["values"]["failure"] = FAILURE
                 self.reads[sequence] = PHASES[index]

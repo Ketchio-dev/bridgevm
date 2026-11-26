@@ -14,6 +14,6 @@ extension LibraryModel {
               config.engineKind == .hvfEngine, config.installPending == true else {
             return HvfWindowsInstallPreparation.missingMessage
         }
-        return "이 VM의 저장된 Windows 설치 정보를 읽을 수 없습니다. 파일과 저장 장치를 확인한 뒤 다시 확인하세요."
+        return "Couldn’t read this VM’s installation settings. Check its files and storage, then choose Check Again."
     }
 }

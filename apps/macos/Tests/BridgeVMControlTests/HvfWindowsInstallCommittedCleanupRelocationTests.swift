@@ -64,7 +64,7 @@ final class HvfWindowsInstallCommittedCleanupRelocationTests: XCTestCase {
         XCTAssertTrue(library.movingSlugs.isEmpty)
         XCTAssertEqual(backend.calls, .init(), "refused before a liveness probe")
         let message = try XCTUnwrap(library.moveError)
-        XCTAssertTrue(message.contains("설치") && message.contains("transaction"), message)
+        XCTAssertTrue(message.contains("installation") && message.contains("transaction"), message)
         XCTAssertTrue(fm.fileExists(atPath: f.paths.journal.path))
 
         // A clone would copy the journal, which then fails validation at its new path.
@@ -73,6 +73,6 @@ final class HvfWindowsInstallCommittedCleanupRelocationTests: XCTestCase {
         XCTAssertTrue(library.cloningSlugs.isEmpty)
         XCTAssertEqual(backend.calls, .init(), "refused before a liveness probe")
         let cloneMessage = try XCTUnwrap(library.cloneError)
-        XCTAssertTrue(cloneMessage.contains("복제") && cloneMessage.contains("transaction"), cloneMessage)
+        XCTAssertTrue(cloneMessage.contains("duplicate") && cloneMessage.contains("transaction"), cloneMessage)
     }
 }
