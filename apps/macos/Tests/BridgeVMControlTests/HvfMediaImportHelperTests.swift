@@ -43,6 +43,31 @@ final class HvfMediaImportHelperTests: XCTestCase {
         XCTAssertEqual(percents.snapshot, [3, 40, 100])
     }
 
+    func testProgressArrivesBeforeTheHelperExits() throws {
+        let acknowledgement = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: acknowledgement) }
+        // Split the first UTF-8 character around the acknowledgement to exercise the next short read.
+        let script = #"""
+        printf 'progress 25\n\355\225'
+        for i in $(seq 1 50); do
+            if test -f "$1"; then
+                printf '\234글\nprogress 100\n'
+                exit 0
+            fi
+            sleep 0.05
+        done
+        exit 43
+        """#
+        let result = try HvfHelperProcess.run(URL(fileURLWithPath: "/bin/sh"),
+                                              ["-c", script, "helper", acknowledgement.path]) { percent in
+            if percent == 25 {
+                XCTAssertTrue(FileManager.default.createFile(atPath: acknowledgement.path, contents: nil))
+            }
+        }
+        XCTAssertTrue(result.succeeded, "The helper must receive the acknowledgement while it runs")
+        XCTAssertEqual(result.text, "한글\n")
+    }
+
     func testSmallFailuresKeepTheirMessageAndSignalsFail() throws {
         let refusal = try XCTUnwrap(try invokeStandIn("printf 'precise refusal\\n' >&2; exit 9"), Self.blocked)
         XCTAssertThrowsError(try refusal.get()) { error in
