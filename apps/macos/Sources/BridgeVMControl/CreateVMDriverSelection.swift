@@ -37,7 +37,7 @@ struct CreateVMDriverSelection {
             status = .prepared
         case .failure(let error):
             let message = (error as? HvfWindowsDriverPayloadFetch.Failure)?.message
-                ?? "드라이버를 준비하지 못했습니다. 다시 시도하세요."
+                ?? "Couldn’t prepare the drivers. Try again."
             status = .failed(message)
         }
     }

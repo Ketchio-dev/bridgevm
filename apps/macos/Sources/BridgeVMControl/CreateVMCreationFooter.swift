@@ -24,13 +24,13 @@ struct CreateVMCreationFooter: View {
             HStack(spacing: 10) {
                 if working {
                     ProgressView().controlSize(.small)
-                    Text(workingLabel.isEmpty ? "VM 파일 준비 중…" : workingLabel).font(.caption).foregroundStyle(.secondary)
+                    Text(workingLabel.isEmpty ? "Preparing VM files…" : workingLabel).font(.caption).foregroundStyle(.secondary)
                 } else if needsName {
-                    Text("생성하려면 VM 이름을 입력하세요.").font(.caption)
+                    Text("Enter a name to create this VM.").font(.caption)
                         .accessibilityIdentifier("bridgevm.create.name.required")
                 }
                 Spacer()
-                Button("취소") { if !working { cancel() } }
+                Button("Cancel") { if !working { cancel() } }
                     .keyboardShortcut(.cancelAction)
                     .disabled(working)
                     .accessibilityIdentifier("bridgevm.create.cancel")
@@ -43,7 +43,7 @@ struct CreateVMCreationFooter: View {
 
 extension CreateVMCreationFooter {
     var primaryAction: some View {
-        Button(recoveryAvailable ? "저장된 VM 불러오기" : (working ? "생성 중…" : "생성"),
+        Button(recoveryAvailable ? "Load Saved VM" : (working ? "Creating…" : "Create"),
                action: recoveryAvailable ? recover : create)
             .keyboardShortcut(.defaultAction)
             .disabled(recoveryAvailable ? working : !canCreate)

@@ -12,7 +12,7 @@ struct LibrarySidebar: View {
             Button { showOverview(in: presentation) } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "desktopcomputer").font(.title3)
-                    Text("가상 머신").font(.body.weight(.medium))
+                    Text("Virtual machines").font(.body.weight(.medium))
                     Spacer(minLength: 0)
                     Text("\(library.vms.count)").font(.caption.monospacedDigit())
                 }
@@ -34,11 +34,11 @@ struct LibrarySidebar: View {
         }
         .toolbar {
             ToolbarItem {
-                Button { showOverview(in: presentation) } label: { Label("모든 VM", systemImage: "square.grid.2x2") }
-                    .help("전체 VM 보기")
+                Button { showOverview(in: presentation) } label: { Label("All VMs", systemImage: "square.grid.2x2") }
+                    .help("Show all virtual machines")
             }
             ToolbarItem {
-                Button { presentation?.wrappedValue.sheet = .create(installer: nil) } label: { Label("새 VM", systemImage: "plus") }
+                Button { presentation?.wrappedValue.sheet = .create(installer: nil) } label: { Label("New VM", systemImage: "plus") }
                     .accessibilityIdentifier("bridgevm.library.toolbar.create")
             }
         }

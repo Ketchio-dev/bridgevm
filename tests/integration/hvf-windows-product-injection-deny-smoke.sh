@@ -6,8 +6,8 @@ CREATE_FLOW="$ROOT/apps/macos/Sources/BridgeVMControl/CreateVMSheetCreation.swif
 PRODUCT=("$CREATE" "$ROOT/apps/macos/Sources/BridgeVMControl/CreateVM.swift" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsImport.swift" "$CREATE_FLOW" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineConfig.swift" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfEngineSession.swift" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstall.swift" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallSession.swift" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBackend.swift" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallValidationWorker.swift" "$ROOT/apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsInstallProgress.swift")
 TESTS="$ROOT/apps/macos/Tests/BridgeVMControlTests"
 fail(){ echo "FAIL: $*" >&2; exit 1; }
-grep -Fq '이번 버전은 3D 가속을 지원하지 않습니다.' "$CREATE" || fail '3D-off UI message missing'
-grep -Fq '차단됨 — 3D 가속 미지원' "$VIEW" || fail 'legacy request blocker missing'
+grep -Fq 'The imported VM uses the standard display with 3D acceleration off.' "$CREATE" || fail '3D-off UI message missing'
+grep -Fq 'injectViogpu3d ? "3D acceleration is unavailable"' "$VIEW" || fail 'legacy request blocker missing'
 [[ $(grep -Fc 'injectViogpu3d: false' "$CREATE_FLOW") -eq 2 ]] || fail 'UI does not force both product flows 3D-off'
 ! grep -Eq 'Toggle\(".*3D|pickDriverDir|autofillDriverDir|hvfDriverDir|hvfInject' "$CREATE" "$ROOT/apps/macos/Sources/BridgeVMControl/CreateVM.swift" "$CREATE_FLOW" || fail 'injection control remains'
 ! grep -Ei 'viogpu3d-injector|hvf-inject|placeholder-nsid1|stageInjection|injectorBuild|bundleInjector|injectorImage|buildingInjector' "${PRODUCT[@]}" || fail 'product injection surface remains'
