@@ -26,7 +26,7 @@ enum AppUIHostDriverScenario {
         let creation = deadline()
         try await client.perform(.pressCreate, phase: .creation, deadline: creation)
         try await AppUIHostDriverClient.wait("creation sheet", deadline: creation) {
-            host.library.showingCreate && window.sheets.count == 1
+            window.sheets.count == 1
         }
         guard let sheet = window.sheets.first, let sheetContent = sheet.contentView,
               sheet.sheetParent === window else { throw AppUIHostError.refused("Actual creation sheet has no owned content") }
@@ -49,7 +49,7 @@ enum AppUIHostDriverScenario {
         let cancellation = deadline()
         try await client.perform(.cancelCreate, phase: .cancellation, deadline: cancellation)
         try await AppUIHostDriverClient.wait("creation sheet cancellation", deadline: cancellation) {
-            !host.library.showingCreate && window.sheets.isEmpty
+            window.sheets.isEmpty
         }
         try capture.action("create_cancelled")
 

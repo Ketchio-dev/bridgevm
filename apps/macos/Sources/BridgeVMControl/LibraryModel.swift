@@ -14,7 +14,6 @@ final class LibraryModel: ObservableObject {
     static let hvfEngineSelectionID = "__bridgevm_hvf_engine_experimental__"
     @Published var vms: [VMConfig] = []
     @Published var selectedID: String?
-    @Published var showingCreate = false
     @Published var proMode = false
     @Published var pendingDeletion: VMConfig?
     @Published var pendingWindowsClone: VMConfig?

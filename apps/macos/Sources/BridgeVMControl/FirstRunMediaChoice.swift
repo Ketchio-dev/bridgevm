@@ -1,25 +1,4 @@
-import SwiftUI
-
-struct FirstRunInstallerMedia: Identifiable {
-    let url: URL
-    var id: URL { url }
-}
-
-struct FirstRunWindowMedia {
-    var installer: FirstRunInstallerMedia?
-    var preparingDisk = false
-}
-
-private struct FirstRunWindowMediaKey: EnvironmentKey {
-    static let defaultValue: Binding<FirstRunWindowMedia>? = nil
-}
-
-extension EnvironmentValues {
-    var firstRunWindowMedia: Binding<FirstRunWindowMedia>? {
-        get { self[FirstRunWindowMediaKey.self] }
-        set { self[FirstRunWindowMediaKey.self] = newValue }
-    }
-}
+import Foundation
 
 enum FirstRunMediaChoice {
     case installer, disk

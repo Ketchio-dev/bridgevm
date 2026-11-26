@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import BridgeVMControl
 
@@ -28,15 +29,16 @@ final class FirstRunPresentationTests: XCTestCase {
         }
     }
 
-    func testWelcomeCreateActionOpensExistingCreationSheet() throws {
+    func testWelcomeCreateRequestsBlankFormInItsOwnWindow() throws {
         try withLibrary { library in
-            let welcome = try XCTUnwrap(values(FirstRunWelcomeView.self,
-                in: FirstRunView(library: library).body).first)
-            XCTAssertFalse(library.showingCreate)
+            var presentation = LibraryWindowPresentation()
+            let binding = Binding(get: { presentation }, set: { presentation = $0 })
+            let welcome = FirstRunView(library: library).welcome(in: binding, diskPath: .constant(""))
+            XCTAssertNil(presentation.sheet)
             welcome.createAction()
-            XCTAssertTrue(library.showingCreate)
+            XCTAssertEqual(presentation.sheet, .create(installer: nil))
             XCTAssertNil(library.selectedID)
-            XCTAssertFalse(library.firstRunImportBusy)
+            XCTAssertFalse(library.preparingNewVM)
         }
     }
 
@@ -48,7 +50,6 @@ final class FirstRunPresentationTests: XCTestCase {
             welcome.importAction()
             XCTAssertEqual(library.selectedID, LibraryModel.firstRunImportSelectionID)
             XCTAssertFalse(library.proMode)
-            XCTAssertFalse(library.showingCreate)
             assertImportPresentation(library, editable: true)
         }
     }

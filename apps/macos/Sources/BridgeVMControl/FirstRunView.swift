@@ -2,7 +2,7 @@ import SwiftUI
 /// First launch offers creation/import and keeps accepted import recovery controls visible.
 struct FirstRunView: View {
     @ObservedObject var library: LibraryModel
-    @Environment(\.firstRunWindowMedia) private var welcomeMedia
+    @Environment(\.libraryWindowPresentation) private var presentation
 
     @State private var displayName = "Windows 11"
     @State private var diskPath = ""; @State private var varsPath = ""; @State private var vtpmPath = ""
@@ -11,7 +11,7 @@ struct FirstRunView: View {
     @State private var cpuCount = 4
 
     private var showsImport: Bool {
-        welcomeMedia?.wrappedValue.preparingDisk == true || library.selectedID == LibraryModel.firstRunImportSelectionID
+        presentation?.wrappedValue.preparingDisk == true || library.selectedID == LibraryModel.firstRunImportSelectionID
             || library.firstRunImportBusy || library.firstRunImportError != nil
             || library.firstRunImport.publishedConfig != nil
     }
@@ -23,8 +23,8 @@ struct FirstRunView: View {
                     VStack(alignment: .leading, spacing: 24) {
                         let showsInputs = !library.firstRunImportBusy && library.firstRunImport.publishedConfig == nil
                         VStack(alignment: .leading, spacing: 8) {
-                            if let welcomeMedia, welcomeMedia.wrappedValue.preparingDisk {
-                                Button { welcomeMedia.wrappedValue.preparingDisk = false } label: {
+                            if let presentation, presentation.wrappedValue.preparingDisk {
+                                Button { presentation.wrappedValue.preparingDisk = false } label: {
                                     Label("시작 화면으로", systemImage: "chevron.backward")
                                 }
                                 .buttonStyle(.link)
@@ -48,22 +48,26 @@ struct FirstRunView: View {
                     .frame(maxWidth: .infinity)
                 }
             } else {
-                FirstRunWelcomeView(createAction: { library.showingCreate = true }, importAction: showImport,
-                                    dropAction: { choice, url in
-                    guard let welcomeMedia else { return false }
-                    switch choice {
-                    case .installer:
-                        welcomeMedia.wrappedValue.installer = FirstRunInstallerMedia(url: url)
-                    case .disk:
-                        diskPath = url.path
-                        welcomeMedia.wrappedValue.preparingDisk = true
-                    }
-                    return true
-                })
+                welcome(in: presentation, diskPath: $diskPath)
             }
         }
         .background(LibraryAppearance.canvas)
         .navigationTitle(showsImport ? "VM 가져오기" : "시작하기")
+    }
+
+    func welcome(in presentation: Binding<LibraryWindowPresentation>?, diskPath: Binding<String>) -> FirstRunWelcomeView {
+        FirstRunWelcomeView(createAction: { presentation?.wrappedValue.sheet = .create(installer: nil) },
+                            importAction: showImport, dropAction: { choice, url in
+            guard let presentation else { return false }
+            switch choice {
+            case .installer:
+                presentation.wrappedValue.sheet = .create(installer: url)
+            case .disk:
+                diskPath.wrappedValue = url.path
+                presentation.wrappedValue.preparingDisk = true
+            }
+            return true
+        })
     }
 
     private func showImport() {
@@ -80,9 +84,9 @@ struct FirstRunView: View {
 
     private func runImport() {
         guard !library.firstRunImportBusy else { return }
-        if let welcomeMedia, welcomeMedia.wrappedValue.preparingDisk {
+        if let presentation, presentation.wrappedValue.preparingDisk {
             showImport()
-            welcomeMedia.wrappedValue.preparingDisk = false
+            presentation.wrappedValue.preparingDisk = false
         }
         let state = FirstRunImportVTPMValidation.trimmed(vtpmPath)
         let inputs = FirstRunImport.Inputs(

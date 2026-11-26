@@ -22,7 +22,7 @@ enum HvfAppUIScenario {
             try capture.action("welcome_visible")
             try HvfAppUIAccessibility.press("bridgevm.first-run.create", in: content)
             try await HvfAppUIAccessibility.wait("creation sheet") {
-                fixture.library.showingCreate && fixture.window.sheets.count == 1
+                fixture.window.sheets.count == 1
             }
             guard let sheetContent = fixture.window.sheets.first?.contentView else {
                 throw HvfAppUIError.refused("Actual creation sheet has no owned content")
@@ -40,7 +40,7 @@ enum HvfAppUIScenario {
             try capture.action("create_opened")
             try HvfAppUIAccessibility.pressButton(label: "취소", in: sheetContent)
             try await HvfAppUIAccessibility.wait("creation sheet cancellation") {
-                !fixture.library.showingCreate && fixture.window.sheets.isEmpty
+                fixture.window.sheets.isEmpty
             }
             try capture.action("create_cancelled")
             try HvfAppUIAccessibility.press("bridgevm.first-run.import", in: content)
