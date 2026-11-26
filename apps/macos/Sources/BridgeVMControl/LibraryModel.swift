@@ -15,7 +15,6 @@ final class LibraryModel: ObservableObject {
     @Published var vms: [VMConfig] = []
     @Published var selectedID: String?
     @Published var proMode = false
-    @Published var pendingDeletion: VMConfig?
     @Published var deletionError: String?
     @Published var deletionWarning: String?
     @Published var cloneError: String?
@@ -90,7 +89,6 @@ final class LibraryModel: ObservableObject {
     }
 
     func confirmDeletion(_ cfg: VMConfig) {
-        pendingDeletion = nil
         let slug = cfg.slug
         guard admitLibraryAction(cfg, action: .deletion), !deletingSlugs.contains(slug) else { return }
         deletingSlugs.insert(slug)
@@ -211,9 +209,9 @@ extension LibraryModel {
 }
 
 extension LibraryModel {
-    func requestDeletion(_ cfg: VMConfig) {
-        guard admitLibraryAction(cfg, action: .deletion), !deletingSlugs.contains(cfg.slug) else { return }
-        pendingDeletion = cfg
+    func requestDeletion(_ cfg: VMConfig) -> VMConfig? {
+        guard admitLibraryAction(cfg, action: .deletion), !deletingSlugs.contains(cfg.slug) else { return nil }
+        return cfg
     }
 
     func requestWindowsClone(_ cfg: VMConfig) -> VMConfig? {

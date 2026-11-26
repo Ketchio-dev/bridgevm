@@ -25,7 +25,7 @@ struct LibraryVMContextMenu: View {
             }
             .disabled(library.movingSlugs.contains(config.slug))
         }
-        Button(role: .destructive) { library.requestDeletion(config) } label: {
+        Button(role: .destructive) { presentation?.wrappedValue.deletionTarget = library.requestDeletion(config) } label: {
             Label("삭제", systemImage: "trash")
         }
         .disabled(library.deletingSlugs.contains(config.slug)

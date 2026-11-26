@@ -95,7 +95,9 @@ the quit from the progress view or VM settings.
 The [installation guide](docs/install.md) covers both paths, required bundle
 resources and first-open trust. After Windows starts, install the signed guest
 display driver from the VM's settings and restart to enable window-following
-resolution.
+resolution. In current source builds, after Windows shuts down, choose
+**라이브러리 열기** (Open Library) in its display window to return to that VM,
+then choose **시작** (Start) to boot it again.
 
 Release and source builds are ad-hoc signed. Developer ID signing and Apple
 notarization remain unfinished. Standard preview packaging includes no Windows

@@ -24,53 +24,62 @@ struct HvfWindowsSnapshotCard: View {
     var body: some View {
         let listRequest = ListRequest(bundle: HvfDiskGrow.bundle(config: config), refreshID: model.listRevision)
         let entries = listedEntries ?? []
-        GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
-                if listedEntries == nil {
-                    ProgressView("스냅샷 불러오는 중…").controlSize(.small)
-                } else if entries.isEmpty {
-                    Text("스냅샷 없음")
-                }
-                ForEach(entries) { entry in
-                    HStack {
-                        Text(entry.label)
-                            .accessibilityIdentifier(identifier("date", entry, entries))
-                        Spacer()
-                        Button("복원") { request(.restore, entry) }
-                            .accessibilityIdentifier(identifier("restore", entry, entries))
-                        Button("삭제", role: .destructive) { request(.delete, entry) }
-                            .accessibilityIdentifier(identifier("delete", entry, entries))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                // In the grouped settings form a titled field turns into a row label with a borderless
+                // input; a hidden label with a prompt and a border reads as something to type into.
+                TextField("스냅샷 이름", text: $name, prompt: Text("스냅샷 이름 (선택 사항)"))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("bridgevm.runtime.snapshot.name")
+                Button("새 스냅샷") {
+                    let chosenName = name
+                    model.create { [session, config] operation in
+                        let notice = try await session.runSnapshot(operation, configuration: config, name: chosenName)
+                        name = ""
+                        return notice
                     }
-                    .disabled(session.hasActiveRuntimeWork || model.busy)
                 }
-                HStack(spacing: 8) {
-                    // In the grouped settings form a titled field turns into a row label with a borderless
-                    // input; a hidden label with a prompt and a border reads as something to type into.
-                    TextField("스냅샷 이름", text: $name, prompt: Text("스냅샷 이름 (선택 사항)"))
-                        .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityIdentifier("bridgevm.runtime.snapshot.name")
-                    Button("새 스냅샷") {
-                        let chosenName = name
-                        model.create { [session, config] operation in
-                            let notice = try await session.runSnapshot(operation, configuration: config, name: chosenName)
-                            name = ""
-                            return notice
+                .accessibilityIdentifier("bridgevm.runtime.snapshot.create")
+                if model.busy { ProgressView().controlSize(.small) }
+            }
+            .disabled(session.hasActiveRuntimeWork || model.busy)
+            Text(model.status)
+                .font(.caption)
+                .foregroundColor(model.failed ? .red : .secondary)
+                .accessibilityIdentifier("bridgevm.runtime.snapshot.status")
+            if listedEntries == nil {
+                ProgressView("스냅샷 불러오는 중…").controlSize(.small)
+            } else if entries.isEmpty {
+                Text("스냅샷 없음").font(.callout).foregroundStyle(.secondary)
+            }
+            if !entries.isEmpty { Divider() }
+            ForEach(entries) { entry in
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        if let name = entry.name {
+                            Text(name)
+                                .fontWeight(.medium)
+                                .lineLimit(2)
+                                .help(name)
                         }
+                        Text(HvfWindowsSnapshotModel.dateText(entry.date))
+                            .font(entry.name == nil ? .body : .caption)
+                            .foregroundStyle(entry.name == nil ? .primary : .secondary)
+                            .monospacedDigit()
                     }
-                    .accessibilityIdentifier("bridgevm.runtime.snapshot.create")
-                    if model.busy { ProgressView().controlSize(.small) }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier(identifier("date", entry, entries))
+                    Spacer()
+                    Button("복원") { request(.restore, entry) }
+                        .accessibilityIdentifier(identifier("restore", entry, entries))
+                    Button("삭제", role: .destructive) { request(.delete, entry) }
+                        .accessibilityIdentifier(identifier("delete", entry, entries))
                 }
                 .disabled(session.hasActiveRuntimeWork || model.busy)
-                Text(model.status)
-                    .font(.caption)
-                    .foregroundColor(model.failed ? .red : .secondary)
-                    .accessibilityIdentifier("bridgevm.runtime.snapshot.status")
             }
-            .padding(6)
-        } label: {
-            Label("종료 상태 스냅샷", systemImage: "clock.arrow.circlepath")
         }
+        .padding(.vertical, 4)
         .task(id: listRequest) {
             let entries = await Task.detached(priority: .userInitiated) { [listEntries] in
                 listRequest.bundle.map(listEntries) ?? []

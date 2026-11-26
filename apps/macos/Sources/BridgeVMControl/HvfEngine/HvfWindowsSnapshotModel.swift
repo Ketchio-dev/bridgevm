@@ -22,7 +22,7 @@ final class HvfWindowsSnapshotModel: ObservableObject {
         var action: String { operation == .restore ? "복원" : "삭제" }
     }
 
-    nonisolated static let idleText = "VM을 종료한 뒤 디스크와 UEFI vars를 한 쌍으로 저장할 수 있습니다."
+    nonisolated static let idleText = "Windows를 종료한 뒤 디스크와 부팅 설정을 함께 저장할 수 있습니다."
     @Published private(set) var busy = false
     @Published private(set) var status = idleText
     @Published private(set) var failed = false
@@ -66,12 +66,12 @@ final class HvfWindowsSnapshotModel: ObservableObject {
         }
     }
 
-    /// "2026년 11월 11일 오후 3:42"
+    /// "2026년 11월 11일 오후 3:42:08"
     nonisolated static func dateText(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "ko_KR")
         formatter.dateStyle = .long
-        formatter.timeStyle = .short
+        formatter.timeStyle = .medium
         return formatter.string(from: date)
     }
 

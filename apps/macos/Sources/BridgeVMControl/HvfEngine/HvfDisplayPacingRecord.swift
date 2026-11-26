@@ -57,6 +57,12 @@ struct HvfDisplayPacingRecord: Equatable {
     private var link: ObjectIdentifier?
     private var lastTick: Double?, lastPresent: Double?
 
+    /// A covered window deliberately stopped ticking. Its next tick and frame start a new interval.
+    mutating func breakContinuity() {
+        lastTick = nil
+        lastPresent = nil
+    }
+
     /// One tick of display link `link` at vsync `timestamp`, whose content shows at `target` (seconds on
     /// the CLOCK_UPTIME_RAW timebase); `work` is the tick's own duration in nanoseconds.
     mutating func note(_ tick: HvfDisplayTick, timestamp: Double, target: Double, link: ObjectIdentifier, work: UInt64) {

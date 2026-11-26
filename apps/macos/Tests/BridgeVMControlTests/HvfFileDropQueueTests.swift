@@ -35,7 +35,7 @@ final class HvfFileDropQueueTests: XCTestCase {
         XCTAssertEqual(queue.notice?.text, "끌어다 놓은 항목을 복사할 준비를 하고 있습니다…")
         queue.staged(job.id, summary(files: 2, bytes: 3000, skipped: 1), sent: true)
         queue.consume(.unknown("BVAGENT DROP start \(job.id) files=2 bytes=3000 t=10"))
-        XCTAssertEqual(queue.notice?.text.hasPrefix("Windows로 복사 중: 파일 0/2개 · "), true)
+        XCTAssertEqual(queue.notice?.text.hasPrefix("Windows로 복사 중: 파일 0/2개 · 0 B / "), true)
         queue.consume(.unknown("BVAGENT DROP progress \(job.id) files=1/2 bytes=2000/3000 t=20\r"))
         XCTAssertEqual(queue.notice?.text.hasPrefix("Windows로 복사 중: 파일 1/2개 · "), true)
         queue.consume(.unknown("BVAGENT DROP done \(job.id) files=2 bytes=3000 ms=5 chunks=2 chunk_avg_us=9 t=30"))
@@ -43,6 +43,17 @@ final class HvfFileDropQueueTests: XCTestCase {
         XCTAssertEqual(queue.notice?.text.hasPrefix("파일 2개("), true)
         XCTAssertEqual(queue.notice?.text.hasSuffix("바로가기와 특수 파일 1개는 건너뛰었습니다."), true)
         XCTAssertFalse(FileManager.default.fileExists(atPath: job.staging.path))
+    }
+
+    func testEmptyFileShowsZeroBytesDuringCopyAndAtCompletion() {
+        let queue = HvfFileDropQueue()
+        let job = queue.begin(in: scratch())
+        queue.staged(job.id, summary(files: 1, bytes: 0), sent: true)
+
+        queue.consume(.unknown("BVAGENT DROP start \(job.id) files=1 bytes=0 t=10"))
+        XCTAssertEqual(queue.notice?.text, "Windows로 복사 중: 파일 0/1개 · 0 B / 0 B")
+        queue.consume(.unknown("BVAGENT DROP done \(job.id) files=1 bytes=0 t=20"))
+        XCTAssertEqual(queue.notice?.text, "파일 1개(0 B)를 Windows 바탕 화면에 복사했습니다.")
     }
 
     func testASecondDropWaitsBehindTheFirstAndEachFailureSaysWhy() {

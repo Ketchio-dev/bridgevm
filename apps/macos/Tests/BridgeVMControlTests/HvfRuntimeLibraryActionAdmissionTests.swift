@@ -166,6 +166,29 @@ final class HvfRuntimeLibraryActionAdmissionTests: XCTestCase {
         }
     }
 
+    func testCancellingOneDeletionLeavesTheOtherWindowTargetIntact() throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let studio = fixture.config("studio"), offline = fixture.config("offline")
+        fixture.save(studio)
+        fixture.save(offline)
+        let library = fixture.library()
+        fixture.cacheFake(in: library, config: studio)
+        fixture.cacheFake(in: library, config: offline)
+
+        var first = LibraryWindowPresentation(), second = LibraryWindowPresentation()
+        first.deletionTarget = library.requestDeletion(studio)
+        second.deletionTarget = library.requestDeletion(offline)
+        XCTAssertEqual(second.deletionTarget, offline)
+        second.deletionTarget = nil
+        library.selectedID = offline.slug
+        library.confirmDeletion(try XCTUnwrap(first.deletionTarget))
+
+        XCTAssertEqual(library.deletingSlugs, [studio.slug])
+        XCTAssertEqual(fixture.queue.count, 1)
+        XCTAssertEqual(library.selectedID, offline.slug)
+    }
+
     func testCloneFormKeepsItsSourceWhenAnotherWindowChangesSelection() throws {
         let fixture = Fixture()
         defer { fixture.clean() }
@@ -213,7 +236,6 @@ final class HvfRuntimeLibraryActionAdmissionTests: XCTestCase {
 
                 fixture.assertRefused([final], config: original, library: library)
 
-                XCTAssertNil(library.pendingDeletion)
                 XCTAssertEqual(fixture.queue.count, 0)
                 XCTAssertEqual(try fixture.snapshot(), before)
             }

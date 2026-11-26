@@ -81,8 +81,8 @@ final class LibraryNestedBundleDeletionTests: XCTestCase {
         let library = LibraryModel(rootURL: f.library, migrateLegacy: false,
             actionScheduler: { jobs.pending.append($0) }, startsModelsAutomatically: false)
         let owner = try XCTUnwrap(library.vms.first { $0.slug == f.owner.slug })
-        library.requestDeletion(owner)
-        library.confirmDeletion(owner)
+        let target = try XCTUnwrap(library.requestDeletion(owner))
+        library.confirmDeletion(target)
         let job = try XCTUnwrap(jobs.pending.first)
         await job()
 

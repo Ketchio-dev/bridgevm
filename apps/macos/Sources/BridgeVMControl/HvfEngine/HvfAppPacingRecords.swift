@@ -32,6 +32,8 @@ final class HvfAppPacingRecords {
         display.note(tick, timestamp: timestamp, target: target, link: link, work: work)
     }
 
+    func displayWasCovered() { display.breakContinuity() }
+
     /// Counts `driver`'s admissions and stream updates while a session is open.
     func observe(_ driver: HvfSessionInputDriver) {
         driver.onAdmission = { [weak self] admission, held, depth in
