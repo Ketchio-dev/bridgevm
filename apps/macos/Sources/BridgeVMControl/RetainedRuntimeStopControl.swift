@@ -6,7 +6,7 @@ struct RetainedRuntimeStopControl: View {
 
     var body: some View {
         HvfForceStopControl(session: session, identifier: "bridgevm.retained.runtime", spacing: 6) {
-            Button("중지") {
+            Button("Stop") {
                 HvfRuntimeStopAction.perform(
                     session: session,
                     requestStop: { $0.stopOwned(expectedToken: $1.token) },

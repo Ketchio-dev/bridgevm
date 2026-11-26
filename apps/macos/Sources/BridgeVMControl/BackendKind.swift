@@ -9,9 +9,9 @@ enum BackendKind: String {
 
     init(savedKind: String) { self = BackendKind(rawValue: savedKind) == .hvfEngine ? .hvfEngine : .unsupported }
 
-    var shortLabel: String { self == .hvfEngine ? "HVF" : "지원 종료" }
-    var detailLabel: String { self == .hvfEngine ? "Native (HVF)" : "지원하지 않는 엔진" }
+    var shortLabel: String { self == .hvfEngine ? "HVF" : "Unsupported" }
+    var detailLabel: String { self == .hvfEngine ? "Native (HVF)" : "Unsupported engine" }
 
     /// Shown for a VM saved with a removed engine.
-    static let unsupportedNotice = "이 VM은 더 이상 지원하지 않는 엔진(Fast VZ 또는 QEMU)으로 만들어져 실행할 수 없으며, 파일은 그대로 남아 있습니다."
+    static let unsupportedNotice = "This VM uses an unsupported engine. BridgeVM can’t start it. Its files remain on disk."
 }
