@@ -152,7 +152,7 @@ enum HvfWindowsSnapshotCommand {
             do {
                 try name.write(to: HvfWindowsSnapshotStore.nameFile(plan.snapshot), atomically: true, encoding: .utf8)
             } catch {
-                return "스냅샷은 생성했지만 이름을 저장하지 못해 날짜만 표시합니다."
+                return "The snapshot was created and will appear under its date because its name couldn’t be saved."
             }
         }
         return nil

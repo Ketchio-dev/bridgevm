@@ -100,7 +100,7 @@ final class LibraryModel: ObservableObject {
                 self.deletingSlugs.remove(slug)
                 if result.outcome == .deleted { self.modelCache[slug] = nil; self.deletionWarning = result.warning ?? self.deletionWarning; self.reload(); return }
                 self.deletionError = result.outcome == .running
-                    ? "\(cfg.name)은(는) 실행 중이므로 삭제하지 않았습니다. 제어 화면에서 완전히 중지한 뒤 다시 시도하세요."
+                    ? "Shut down \(cfg.name) before deleting it."
                     : LibraryDeletionReferences.failureMessage(for: cfg, rootURL: root)
             }
         }
@@ -111,7 +111,7 @@ final class LibraryModel: ObservableObject {
         guard admitLibraryAction(cfg, action: .clone), !cloningSlugs.contains(cfg.slug) else { return }
         let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
         guard !backend.isRunning() else {
-            cloneError = "실행 중인 VM은 복제할 수 없습니다. 먼저 완전히 정지하세요."
+            cloneError = "Shut down the VM before duplicating it."
             return
         }
         cloningConfigurations[cfg.slug] = cfg
@@ -124,7 +124,7 @@ final class LibraryModel: ObservableObject {
                 if let clone {
                     self.reload(revealing: clone.slug, ifSelectionIs: selectionAtAdmission)
                 } else {
-                    self.cloneError = "Windows HVF 복제 완료를 확인하지 못했습니다. 원본 사용 여부와 대상 번들 상태를 확인하세요."
+                    self.cloneError = "BridgeVM could not confirm the duplicate was saved. Check whether the original is in use and inspect the destination bundle."
                 }
             }
         }
@@ -135,7 +135,7 @@ final class LibraryModel: ObservableObject {
         guard !movingSlugs.contains(cfg.slug) else { return }
         let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
         guard !backend.isRunning() else {
-            moveError = "실행 중인 VM은 이동할 수 없습니다. 먼저 완전히 정지하세요."
+            moveError = "Shut down the VM before moving it."
             return
         }
         movingSlugs.insert(cfg.slug)
@@ -352,7 +352,7 @@ extension LibraryModel {
             guard self.cloningConfigurations.values.contains(where: {
                 GenericRuntimeAssetReferences.overlaps($0, model.config)
             }) else { return nil }
-            let refusal = "이 VM의 파일을 사용하는 복제 작업이 진행 중입니다. 복제가 끝난 뒤 다시 시도하세요."
+            let refusal = "A duplicate is using this VM’s files. Try again when it finishes."
             if report { self.operationError = refusal }
             return refusal
         }
@@ -375,7 +375,7 @@ extension LibraryModel {
             }
             if HvfPendingDeletionReferences.references(config: control.config,
                                                         request: request, removedEntry: entry) {
-                return "다른 VM의 실행·설치 작업이 이 VM의 파일을 사용하고 있습니다. 해당 작업을 완료하거나 취소한 뒤 다시 시도하세요."
+                return "Another VM is using these files to run or install Windows. Finish or cancel that operation and try again."
             }
         }
         return nil
