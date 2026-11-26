@@ -58,8 +58,9 @@ also uses the clipboard for characters it cannot type. Both clipboard routes
 replace the previous Windows clipboard contents.
 
 Single-line drafts can use per-character input with some editors and older
-agents. For long passages in the v0.1.0 download or if that input loses text, enable
-**클립보드 공유** (Clipboard sharing) while the VM is stopped. After the Windows
+agents. For long passages in v0.1.0, or if typing loses text, enable clipboard
+sharing while the VM is stopped. The setting is **Share clipboard** in current
+source builds and **클립보드 공유** in the v0.1.0 download. After the Windows
 agent connects, copy the text on your Mac and press **Ctrl+V** in the Windows
 editor. Builds from current source show a notice when text is too large to
 share in either direction. Copy it in smaller sections or transfer it as a

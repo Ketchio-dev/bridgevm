@@ -79,11 +79,11 @@ final class HvfRetinaResolutionTests: XCTestCase {
 
     func testHelpTextIsKoreanAndMarkedExperimental() {
         let text = HvfRetinaResolutionToggle.helpText(persists: true)
-        for needle in ["실험적 기능", "픽셀 수", "200%", "CPU", "흐리게", "일반 해상도", "끈 뒤에도", "100%",
-                       "직접 바꾼 배율은 유지되지 않습니다", "VM이 중지된 동안"] {
+        for needle in ["Experimental", "native pixels", "200%", "CPU", "blurry", "standard resolution", "later turn it off", "100%",
+                       "overrides custom Windows scaling", "while the VM is stopped"] {
             XCTAssertTrue(text.contains(needle), needle)
         }
-        XCTAssertFalse(HvfRetinaResolutionToggle.helpText(persists: false).contains("VM이 중지된 동안"))
+        XCTAssertFalse(HvfRetinaResolutionToggle.helpText(persists: false).contains("while the VM is stopped"))
     }
 
     func testAFrameOfTheBackingSizeIsShownOneToOne() {
