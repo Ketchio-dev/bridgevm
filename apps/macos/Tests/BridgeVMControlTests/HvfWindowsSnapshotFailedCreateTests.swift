@@ -31,7 +31,7 @@ final class HvfWindowsSnapshotFailedCreateTests: XCTestCase {
         XCTAssertEqual(HvfWindowsSnapshotStore.list(bundle: bundle).count, 1)
         XCTAssertNil(HvfWindowsSnapshotStore.list(bundle: bundle).first?.name)
         XCTAssertEqual(try Data(contentsOf: kept), Data("keep".utf8))
-        XCTAssertEqual(model.status, "스냅샷은 생성했지만 이름을 저장하지 못해 날짜만 표시합니다.")
+        XCTAssertEqual(model.status, "The snapshot was created and will appear under its date because its name couldn’t be saved.")
     }
 
     func testFailedHelperLeavesPublishedListUnchanged() async throws {

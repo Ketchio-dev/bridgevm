@@ -44,7 +44,7 @@ struct ContentView: View {
             CloneWindowsHVFSheet(library: library, config: cfg)
         }
         .confirmationDialog(
-            "VM을 삭제하시겠습니까?",
+            "Remove this virtual machine?",
             isPresented: Binding(
                 get: { presentation.deletionTarget != nil },
                 set: { if !$0 { presentation.deletionTarget = nil } }
@@ -55,7 +55,7 @@ struct ContentView: View {
             Button(LibraryDeletionPrompt(config: config, rootURL: library.rootURL).confirmTitle, role: .destructive) {
                 library.confirmDeletion(config)
             }
-            Button("취소", role: .cancel) { }
+            Button("Cancel", role: .cancel) { }
         } message: { config in
             Text(LibraryDeletionPrompt(config: config, rootURL: library.rootURL).message)
         }
