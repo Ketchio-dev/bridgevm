@@ -1,6 +1,6 @@
 /// Records only fixed labels and counters from the production predicate lookup.
 final class T17FileChooserPredicateDiagnostics {
-    enum Scope: String { case notReached = "not_reached", application, goToSheet = "go_to_sheet" }
+    enum Scope: String { case notReached = "not_reached", openPanelChildren = "open_panel_children", goToSheet = "go_to_sheet" }
     enum State: String {
         case notReached = "not_reached", walking, matching, complete
         case treeError = "tree_error", metadataError = "metadata_error", matchError = "match_error"
@@ -41,7 +41,7 @@ final class T17FileChooserPredicateDiagnostics {
         }
         let lookup = Lookup()
         lookup.attempted = true
-        lookup.scope = id == "GoToWindow" ? .application : .goToSheet
+        lookup.scope = id == "GoToWindow" ? .openPanelChildren : .goToSheet
         lookup.state = .walking
         if id == "GoToWindow" { owner = lookup } else { field = lookup }
         do {

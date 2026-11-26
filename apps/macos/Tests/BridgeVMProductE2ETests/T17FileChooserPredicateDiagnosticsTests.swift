@@ -28,7 +28,7 @@ struct T17FileChooserPredicateDiagnosticsTests {
         #expect(observer.owner.roleMatches == 0)
         #expect(observer.owner.state == .matchError)
         #expect(observer.owner.nodes == 1 && observer.owner.visited == 1)
-        #expect(observer.owner.scope == .application)
+        #expect(observer.owner.scope == .openPanelChildren)
         #expect(!observer.field.attempted && observer.field.visited == nil)
         #expect(observer.field.scope == .notReached)
     }
@@ -148,7 +148,7 @@ struct T17FileChooserPredicateDiagnosticsTests {
         let context = observer.context(activation: false, key: key,
                                        timeout: String(repeating: "redacted", count: 200), tree: "AXSheet/none")
         #expect(context.count == 900)
-        #expect(context.hasPrefix("predicate{panel_cached=true;owner{scope=application"))
+        #expect(context.hasPrefix("predicate{panel_cached=true;owner{scope=open_panel_children"))
         #expect(context.contains(key) && context.contains("id_matches=0"))
         #expect(context.utf8.allSatisfy { $0 < 128 })
         #expect(!context.contains(secret))
