@@ -126,7 +126,6 @@ struct HvfVMSettingsSheet: View {
             }
             Section("Disk") {
                 HvfDurableDiskWritesToggle(session: session, isOn: binding(\.durableDiskWrites))
-                help("Windows waits until disk writes reach permanent storage before each flush completes. This can slow down writes.")
             }
             Section("Snapshots") {
                 HvfWindowsSnapshotCard(config: session.config, session: session)
