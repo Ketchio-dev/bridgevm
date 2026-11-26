@@ -4,11 +4,8 @@ struct FirstRunView: View {
     @ObservedObject var library: LibraryModel
     @Environment(\.libraryWindowPresentation) private var presentation
 
-    @State private var displayName = "Windows 11"
-    @State private var diskPath = ""; @State private var varsPath = ""; @State private var vtpmPath = ""
-    @State private var vtpmPackagePath = ""; @State private var vtpmCodePath = ""
-    @State private var memGiB = CreateVMMemoryOptions.current.recommendedMiB / 1024
-    @State private var cpuCount = 4
+    @Environment(\.firstRunFormDraft) private var windowDraft
+    @State private var standaloneDraft = FirstRunFormDraft()
 
     private var showsImport: Bool {
         presentation?.wrappedValue.showsImportDraft == true || library.selectedID == LibraryModel.firstRunImportSelectionID
@@ -17,6 +14,7 @@ struct FirstRunView: View {
     }
 
     var body: some View {
+        let draft = windowDraft ?? $standaloneDraft
         Group {
             if showsImport {
                 ScrollView {
@@ -37,20 +35,20 @@ struct FirstRunView: View {
                             }
                         }
                         if showsInputs {
-                            FirstRunImportFields(displayName: $displayName, diskPath: $diskPath, varsPath: $varsPath,
-                                vtpmPath: $vtpmPath, vtpmPackagePath: $vtpmPackagePath, vtpmCodePath: $vtpmCodePath,
-                                memGiB: $memGiB, cpuCount: $cpuCount)
+                            FirstRunImportFields(displayName: draft.displayName, diskPath: draft.diskPath, varsPath: draft.varsPath,
+                                vtpmPath: draft.vtpmPath, vtpmPackagePath: draft.vtpmPackagePath, vtpmCodePath: draft.vtpmCodePath,
+                                memGiB: draft.memGiB, cpuCount: draft.cpuCount)
                         }
                         FirstRunImportStatusView(library: library,
-                            canImport: FirstRunImportNameField.hasName(displayName) && !diskPath.isEmpty,
-                            recoveryIssue: recoveryIssue, importAction: runImport)
+                            canImport: FirstRunImportNameField.hasName(draft.wrappedValue.displayName) && !draft.wrappedValue.diskPath.isEmpty,
+                            recoveryIssue: recoveryIssue(draft.wrappedValue), importAction: { runImport(draft.wrappedValue) })
                     }
                     .padding(28)
                     .frame(maxWidth: 900, alignment: .leading)
                     .frame(maxWidth: .infinity)
                 }
             } else {
-                welcome(in: presentation, diskPath: $diskPath)
+                welcome(in: presentation, diskPath: draft.diskPath)
             }
         }
         .background(LibraryAppearance.canvas)
@@ -72,27 +70,26 @@ struct FirstRunView: View {
         })
     }
 
-    private var recoveryIssue: FirstRunImport.ValidationError? {
-        guard FirstRunImportVTPMValidation.trimmed(vtpmPath) != nil,
+    private func recoveryIssue(_ draft: FirstRunFormDraft) -> FirstRunImport.ValidationError? {
+        guard FirstRunImportVTPMValidation.trimmed(draft.vtpmPath) != nil,
               case .failure(let error) = FirstRunImportVTPMValidation.recoveryFiles(
-                package: vtpmPackagePath, code: vtpmCodePath) else { return nil }
+                package: draft.vtpmPackagePath, code: draft.vtpmCodePath) else { return nil }
         return error
     }
 
-    private func runImport() {
+    private func runImport(_ draft: FirstRunFormDraft) {
         guard !library.firstRunImportBusy else { return }
         if let presentation, presentation.wrappedValue.showsImportDraft {
             library.proMode = false
             library.selectedID = LibraryModel.firstRunImportSelectionID
             presentation.wrappedValue.showsImportDraft = false
         }
-        let state = FirstRunImportVTPMValidation.trimmed(vtpmPath)
+        let state = FirstRunImportVTPMValidation.trimmed(draft.vtpmPath)
         let inputs = FirstRunImport.Inputs(
-            displayName: displayName, diskPath: diskPath, varsPath: varsPath,
-            vtpmStateDir: state, vtpmRecoveryPackagePath: state == nil ? nil : vtpmPackagePath,
-            vtpmRecoveryCodePath: state == nil ? nil : vtpmCodePath,
-            memMiB: memGiB * 1024,
-            cpuCount: cpuCount)
+            displayName: draft.displayName, diskPath: draft.diskPath, varsPath: draft.varsPath,
+            vtpmStateDir: state, vtpmRecoveryPackagePath: state == nil ? nil : draft.vtpmPackagePath,
+            vtpmRecoveryCodePath: state == nil ? nil : draft.vtpmCodePath,
+            memMiB: draft.memGiB * 1024, cpuCount: draft.cpuCount)
         Task { await library.importExistingHvfVM(inputs) }
     }
 }

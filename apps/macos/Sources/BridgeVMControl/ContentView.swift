@@ -5,11 +5,29 @@ import AppKit
 struct ContentView: View {
     @ObservedObject var library: LibraryModel
     @State private var presentation = LibraryWindowPresentation()
+    @State private var importDraft = FirstRunFormDraft()
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     var body: some View {
         #if DEBUG && BRIDGEVM_APP_UI_HOST
         let _ = AppUIHost.prepared?.lifecycle.record(.contentBodyEvaluated)
         #endif
-        libraryNavigation
+        GeometryReader { geometry in
+            if geometry.size.width < 850 {
+                CompactLibraryNavigation(library: library)
+            } else {
+                let wide = geometry.size.width >= 1100
+                libraryNavigation
+                    .onChange(of: wide, initial: true) { _, wide in
+                        columnVisibility = wide ? .all : .doubleColumn
+                    }
+            }
+        }
+        .environment(\.firstRunFormDraft, $importDraft)
+        .onChange(of: library.selectedID) { _, selection in
+            if let selection, selection != LibraryModel.firstRunImportSelectionID {
+                importDraft = FirstRunFormDraft()
+            }
+        }
         .tint(LibraryAppearance.accent)
         .groupBoxStyle(LibraryGroupBoxStyle())
         .background(LibraryAppearance.canvas)
@@ -55,13 +73,13 @@ struct ContentView: View {
     @ViewBuilder
     private var libraryNavigation: some View {
         if library.vms.isEmpty && library.libraryIssues.isEmpty {
-            NavigationSplitView(columnVisibility: .constant(.all)) {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
                 sidebar
             } detail: {
                 LibraryDashboardRoute(library: library)
             }
         } else {
-            NavigationSplitView(columnVisibility: .constant(.all)) {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
                 sidebar
             } content: {
                 LibraryOverviewView(library: library)
