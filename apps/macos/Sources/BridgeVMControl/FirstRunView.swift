@@ -65,7 +65,7 @@ struct FirstRunView: View {
             }
         }
         .background(LibraryAppearance.canvas)
-        .navigationTitle(showsImport ? "VM 가져오기" : "시작하기")
+        .navigationTitle(showsImport ? "Import VM" : "Get Started")
     }
 
     func welcome(in presentation: Binding<LibraryWindowPresentation>?, diskPath: Binding<String>) -> FirstRunWelcomeView {

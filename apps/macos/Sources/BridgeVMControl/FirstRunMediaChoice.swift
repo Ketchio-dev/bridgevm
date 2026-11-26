@@ -13,8 +13,8 @@ enum FirstRunMediaChoice {
 
     var rejection: String {
         switch self {
-        case .installer: return "Windows 설치 ISO 파일 한 개를 놓으세요."
-        case .disk: return "Windows가 설치된 디스크 파일 한 개를 놓으세요. ISO는 ‘Windows 새로 설치’에 놓으세요."
+        case .installer: return "Drop one Windows installer ISO here."
+        case .disk: return "Drop one disk with Windows installed here. For an ISO, use Install Windows."
         }
     }
 }
