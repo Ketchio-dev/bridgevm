@@ -180,7 +180,7 @@
       "state": "OPEN",
       "release_blocking": true,
       "statement": "ISO installation and installed-disk import each complete a retained clean-machine app journey using the supported 3D-off configuration.",
-      "measured": "2026-11-24. A development Mac completed both supported 3D-off app journeys using the same development-signed build from a8a606b5. The [ISO retry](evidence/t17-a8a606b5-r112-development-20261124.json) created a VM, provisioned Secure Boot and installed Windows. The [installed-disk run](evidence/t19-a8a606b5-r111-development-20261124.json) imported and authenticated an existing Windows VM. Both passed guest keyboard and pointer, clipboard, shared folder, network, audio, powered-off snapshot restore, shutdown and worker cleanup. An [earlier ISO attempt](evidence/t17-a8a606b5-r110-development-20261124.json) reached Windows installation before the Mac accessibility reader failed during first startup. Its outer cleanup-failed result is retained. These development pilots had clean_machine=false and claim_eligible=false. A9 remains open pending both journeys on a clean Mac. [Earlier pilot history](https://github.com/Ketchio-dev/bridgevm/blob/df2723893c2f44f7c2dc18788895c1ae8957f5d8/capabilities/windows-hvf.json).",
+      "measured": "On 2026-11-26 a development Mac ran the same development-signed public main build, c6c938ca, through both supported 3D-off journeys. The [36-minute ISO run](evidence/t17-c6c938ca-development-20261126.json) created a VM, provisioned Secure Boot and installed Windows. The [21-minute installed-disk run](evidence/t19-c6c938ca-development-20261126.json) registered a separate authenticated Windows VM through the Mac app. Both runs passed guest keyboard and pointer, clipboard, shared folder, network, audio, shutdown, powered-off snapshot restore and worker cleanup. Both receipts record clean_machine=false and claim_eligible=false. A9 remains open pending both journeys on a clean Mac. The [earlier ISO failure](evidence/t17-a8a606b5-r110-development-20261124.json), [successful ISO retry](evidence/t17-a8a606b5-r112-development-20261124.json) and [earlier disk import](evidence/t19-a8a606b5-r111-development-20261124.json) remain available.",
       "evidence_paths": [
         "docs/windows-arm/evidence/app-install-to-3d-desktop-20260730.md",
         "docs/windows-arm/evidence/a9-product-e2e-pilot-failures-20260901.md",
@@ -246,7 +246,9 @@
         "docs/windows-arm/evidence/t17-5da403e7-fresh-selection-pilot-failure-20261004.json",
         "docs/windows-arm/evidence/t17-a8a606b5-r110-development-20261124.json",
         "docs/windows-arm/evidence/t19-a8a606b5-r111-development-20261124.json",
-        "docs/windows-arm/evidence/t17-a8a606b5-r112-development-20261124.json"
+        "docs/windows-arm/evidence/t17-a8a606b5-r112-development-20261124.json",
+        "docs/windows-arm/evidence/t17-c6c938ca-development-20261126.json",
+        "docs/windows-arm/evidence/t19-c6c938ca-development-20261126.json"
       ],
       "known_defect": "No retained clean-machine product-flow receipt yet proves either ISO installation or installed-disk import through the app. Both supported flows remain 3D-off. In the 3D-off configuration the app's live display window was choppy in recent hardware runs; its smoothness has not been measured since. Guest audio stuttered audibly: until 2026-11-03 every other 10 ms of Windows playback reached the host as silence, because the sound controller answered Windows' position reads at the 0x2084 alias with 0. Since that fix, 60-second live runs had 2-6 silent 10 ms blocks out of about 6,330, and under host load 0-8 blocks per run still repeated stale audio; at the v1.1.0 release head (2026-11-14) six such runs had 2-6 silent and 0-3 stale blocks out of about 6,400, and one of them had 2 host underrun callbacks. No listening check has confirmed the stutter is gone."
     },
