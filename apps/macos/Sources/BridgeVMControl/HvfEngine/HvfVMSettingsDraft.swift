@@ -47,4 +47,11 @@ final class HvfVMSettingsDraft: ObservableObject {
         let forwardsOK = !session.config.virtioNet || commitForwards()
         return shareOK && forwardsOK
     }
+
+    func didAppear() { session.openSettingsSheets.insert(ObjectIdentifier(self)) }
+
+    func didDisappear() {
+        _ = finish()
+        session.openSettingsSheets.remove(ObjectIdentifier(self))
+    }
 }

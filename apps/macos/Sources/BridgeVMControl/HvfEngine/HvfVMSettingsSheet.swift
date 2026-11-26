@@ -75,8 +75,8 @@ struct HvfVMSettingsSheet: View {
         // Without a container element the sheet's identifier replaces the 완료 button's own.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("bridgevm.runtime.settings")
-        .onAppear { session.settingsSheetOpen = true }
-        .onDisappear { _ = draft.finish(); session.settingsSheetOpen = false }
+        .onAppear(perform: draft.didAppear)
+        .onDisappear(perform: draft.didDisappear)
         .interactiveDismissDisabled()
     }
 

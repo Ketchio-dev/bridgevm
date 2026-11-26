@@ -4,7 +4,7 @@ extension HvfEngineSession {
     @discardableResult
     func requestGUIStart(configuration: HvfEngineConfig,
                          policy: HvfRuntimeStartPolicy = .attachOrStart) -> HvfGUIStartAdmission {
-        guard !settingsSheetOpen else {
+        guard openSettingsSheets.isEmpty else {
             return .refused("설정을 완료한 뒤 Windows를 시작하세요.")
         }
         // The pending flags matter only for a dead run: otherwise hasActiveRuntimeWork includes them.
