@@ -48,6 +48,7 @@ final class HvfAgentSilenceNoticeTests: XCTestCase {
         clock.value += 1
         try run(session)
         XCTAssertEqual(session.agentSilenceNotice.shown, .notConnected)
+        XCTAssertEqual(session.agentSilenceNotice.windowConnectionWarning, HvfAgentSilenceNotice.notConnectedText)
         XCTAssertEqual(session.agentSilenceNotice.text,
             "Clipboard sharing, shared folders, and automatic resizing are waiting for Windows to connect. If they stay unavailable after you sign in, restart Windows.")
         try run(session, ready)
@@ -116,6 +117,7 @@ final class HvfAgentSilenceNoticeTests: XCTestCase {
         try run(session)
         XCTAssertEqual(session.agentSilenceNotice.text,
             "Choose Install Guest Tools to enable clipboard sharing and shared folders.")
+        XCTAssertNil(session.agentSilenceNotice.windowConnectionWarning, "The install action already explains missing Guest Tools.")
         try FileManager.default.createDirectory(at: root.appendingPathComponent("metadata"), withIntermediateDirectories: true)
         for name in [HvfWindowsInstallRequest.fileName, HvfWindowsInstallRequest.doneFileName] {
             try Data().write(to: root.appendingPathComponent(name))
