@@ -88,11 +88,8 @@ final class FBLayerView: HvfFramebufferTextInput {
         pointerMoves.reset()
         guestCursor.reset()
 
-        if window != nil {
-            startDisplayLink()
-        } else {
-            stopDisplayLink()
-        }
+        stopDisplayLink()
+        if window != nil { startDisplayLink() }
         reportDisplaySize(settled: false)
     }
 
@@ -511,15 +508,30 @@ final class FBLayerView: HvfFramebufferTextInput {
 
 extension FBLayerView {
     func startDisplayLink() {
-        guard frameDisplayLink == nil else { return }
+        guard frameDisplayLink == nil, let window else { return }
         if #available(macOS 14.0, *) {
             let link = displayLink(target: self, selector: #selector(step(_:)))
             frameDisplayLink = link
+            NotificationCenter.default.addObserver(self, selector: #selector(displayVisibilityChanged(_:)),
+                name: NSWindow.didChangeOcclusionStateNotification, object: window)
+            displayVisibilityChanged()
             link.add(to: .main, forMode: .common)
         }
     }
 
+    // A view display link can keep firing through a fully opaque window. Keep the last frame on
+    // the layer and ask for new ones as soon as any part of this window is visible again.
+    @objc private func displayVisibilityChanged(_ notification: Notification? = nil) {
+        guard let link = frameDisplayLink else { return }
+        let covered = window?.occlusionState.contains(.visible) != true
+        guard link.isPaused != covered else { return }
+        pointerMoves.reset()
+        if covered { session?.appPacing.displayWasCovered() }
+        link.isPaused = covered
+    }
+
     func stopDisplayLink() {
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: nil)
         if #available(macOS 14.0, *) {
             frameDisplayLink?.invalidate()
             frameDisplayLink = nil

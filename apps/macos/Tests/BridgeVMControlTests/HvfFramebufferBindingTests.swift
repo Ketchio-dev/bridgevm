@@ -59,6 +59,49 @@ final class HvfFramebufferBindingTests: XCTestCase {
         }
     }
 
+    func testOcclusionPausesTheLinkAndRevealResumesTheSameDisplay() throws {
+        final class Window: NSWindow {
+            var showsContent = true
+            override var occlusionState: NSWindow.OcclusionState { showsContent ? [.visible] : [] }
+        }
+
+        try HvfFramebufferAvailabilityFixture.run { fixture, session, view, _ in
+            let window = Window(contentRect: view.bounds,
+                                styleMask: [], backing: .buffered, defer: true)
+            window.contentView = view
+            defer { window.contentView = nil }
+            let link = try XCTUnwrap(view.frameDisplayLink)
+            XCTAssertFalse(link.isPaused)
+            session.appPacing.begin()
+            defer { _ = session.appPacing.end(evidenceDir: "") }
+            let id = ObjectIdentifier(link)
+            session.appPacing.display(.presented(sequence: 2, previous: .max, published: 0),
+                                      timestamp: 1, target: 1.016, link: id, work: 0)
+
+            let before = try fixture.commands()
+            view.mouseMoved(with: try HvfFramebufferAvailabilityFixture.mouse(.mouseMoved))
+            window.showsContent = false
+            NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
+            XCTAssertTrue(link.isPaused)
+            view.mouseMoved(with: try HvfFramebufferAvailabilityFixture.mouse(.mouseMoved))
+            window.showsContent = true
+            NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
+            XCTAssertFalse(link.isPaused)
+            XCTAssertTrue(link === view.frameDisplayLink)
+            session.appPacing.display(.presented(sequence: 8, previous: 2, published: 0),
+                                      timestamp: 11, target: 11.016, link: id, work: 0)
+            XCTAssertEqual(session.appPacing.display.missedVsyncs, 0)
+            XCTAssertEqual(session.appPacing.display.firstFrames, 2)
+            XCTAssertEqual(session.appPacing.display.skipped, 0)
+
+            view.refreshFrame(at: 11)
+            XCTAssertEqual(try fixture.commands(), before, "A stale pointer position must not replay on reveal")
+            view.mouseMoved(with: try HvfFramebufferAvailabilityFixture.mouse(.mouseMoved))
+            view.refreshFrame(at: 12)
+            XCTAssertEqual(try fixture.commands().count, before.count + 1)
+        }
+    }
+
     private func makeSession() -> HvfEngineSession {
         let root = URL(fileURLWithPath: "/tmp/bridgevm-binding-" + UUID().uuidString)
         let config = HvfEngineConfig(
