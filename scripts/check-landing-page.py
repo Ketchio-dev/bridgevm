@@ -56,7 +56,7 @@ def main():
     assert registry["wording"]["product_state_label"] in html
     assert registry["product_state"] == "ENGINEERING_PREVIEW"
     assert "".join(page.summary) == registry["wording"]["engine_summary"]
-    for required in ("not notarized", "3D acceleration is excluded", "does not redistribute these drivers"):
+    for required in ("not notarized", "3D acceleration is excluded", "does not redistribute these drivers", "v0.1.0 download opens in Korean"):
         assert required in html, f"landing boundary absent: {required}"
     check_image(page, html, SITE, ROOT)
     assert "@import" not in css and "url(http" not in css
