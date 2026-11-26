@@ -48,6 +48,23 @@ final class HvfFileDropQueueTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: job.staging.path))
     }
 
+    func testSecondIdenticalCopyKeepsItsOwnCompletionNotice() async throws {
+        let queue = HvfFileDropQueue()
+        let root = scratch()
+        let expected = HvfFileDropQueue.Notice(text: "Copied to the Windows desktop (1 file, 0 B).", failed: false)
+
+        // Both drops finish on the main actor before the first dismissal runs.
+        for duration: TimeInterval in [0, 8] {
+            queue.finishedNoticeSeconds = duration
+            let job = queue.begin(in: root)
+            queue.staged(job.id, summary(files: 1, bytes: 0), sent: true)
+            queue.consume(.unknown("BVAGENT DROP done \(job.id) files=1 bytes=0"))
+            XCTAssertEqual(queue.notice, expected)
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(queue.notice, expected)
+    }
+
     func testEmptyFileShowsZeroBytesDuringCopyAndAtCompletion() {
         let queue = HvfFileDropQueue()
         let job = queue.begin(in: scratch())
