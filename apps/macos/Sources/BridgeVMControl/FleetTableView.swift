@@ -50,15 +50,15 @@ struct FleetTableView: View {
             }
             .width(min: 115, ideal: compact ? 142 : 240)
             TableColumn("Engine", value: \.engine)
-                .width(min: 48, ideal: compact ? 59 : 110)
+                .width(min: 64, ideal: compact ? 68 : 110)
             TableColumn("vCPUs", value: \.cpus) { vm in
                 Text(vm.config.cpuCount.map(String.init) ?? "Auto").monospacedDigit()
             }
-            .width(min: 45, ideal: compact ? 51 : 78)
+            .width(min: 62, ideal: compact ? 64 : 78)
             TableColumn("Memory", value: \.memory) { vm in
                 Text(vm.memoryLabel).monospacedDigit()
             }
-            .width(min: 58, ideal: compact ? 70 : 105)
+            .width(min: 70, ideal: compact ? 76 : 105)
         }
         .alternatingRowBackgrounds(.disabled)
         .contextMenu(forSelectionType: String.self) { ids in
