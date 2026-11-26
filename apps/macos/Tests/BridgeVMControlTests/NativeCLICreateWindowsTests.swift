@@ -29,15 +29,23 @@ final class NativeCLICreateWindowsTests: XCTestCase {
         XCTAssertTrue(result.text.contains("No installation or guest boot was run"))
     }
 
-    func testConcurrentNameReservationUsesDistinctCanonicalIDs() throws {
+    func testEquivalentNameSpellingsCreateDistinctIDsThatRoundTripThroughInventory() throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
-        let first = try NativeCLICreateWindows.create(fixture.request(name: "Same VM"), libraryRoot: fixture.library)
-        let second = try NativeCLICreateWindows.create(fixture.request(name: "Same VM"), libraryRoot: fixture.library)
-        XCTAssertEqual(first.id, "same-vm")
-        XCTAssertEqual(second.id, "same-vm-2")
-        XCTAssertNoThrow(try NativeLibraryReader.readConfig(rootURL: fixture.library, id: first.id))
-        XCTAssertNoThrow(try NativeLibraryReader.readConfig(rootURL: fixture.library, id: second.id))
+        let name = "Studio 한글"
+        let otherSpelling = name.decomposedStringWithCanonicalMapping
+        let first = try NativeCLICreateWindows.create(fixture.request(name: name), libraryRoot: fixture.library)
+        let second = try NativeCLICreateWindows.create(fixture.request(name: otherSpelling), libraryRoot: fixture.library)
+        XCTAssertEqual(Data(first.id.utf8), Data("studio-한글".utf8))
+        XCTAssertEqual(Data(second.id.utf8), Data("studio-한글-2".utf8))
+        XCTAssertEqual(Data(second.displayName.utf8), Data(otherSpelling.utf8))
+        let listed = try NativeLibraryReader.snapshot(rootURL: fixture.library)
+        XCTAssertEqual(listed.records.map { Data($0.id.utf8) }, [Data(first.id.utf8), Data(second.id.utf8)])
+        for created in [first, second] {
+            let alias = created.id.decomposedStringWithCanonicalMapping
+            let inspected = try NativeLibraryReader.snapshot(rootURL: fixture.library, id: alias)
+            XCTAssertEqual(inspected.records.map { Data($0.id.utf8) }, [Data(created.id.utf8)])
+        }
     }
 
     private struct Fixture {
