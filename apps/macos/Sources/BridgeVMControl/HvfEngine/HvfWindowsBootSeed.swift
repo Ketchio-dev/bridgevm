@@ -33,16 +33,16 @@ enum HvfWindowsBootSeed {
 
         var description: String {
             switch self {
-            case .gptUnreadable: return "설치 디스크의 GPT를 읽을 수 없습니다."
-            case .espNotFound: return "설치 디스크에서 EFI 시스템 파티션을 찾을 수 없습니다."
-            case .varstoreUnreadable: return "UEFI vars 저장소 형식을 해석할 수 없습니다."
-            case .varstoreFull: return "UEFI vars 저장소에 부팅 항목을 추가할 공간이 없습니다."
+            case .gptUnreadable: return "BridgeVM couldn’t read the installed disk’s GPT partition table."
+            case .espNotFound: return "The installed disk has no EFI System Partition."
+            case .varstoreUnreadable: return "BridgeVM couldn’t read the UEFI variable store."
+            case .varstoreFull: return "The UEFI variable store has no space for a boot entry."
             case .secureBootManifestMissing:
-                return "번들된 Secure Boot 정책을 찾을 수 없습니다."
+                return "The bundled Secure Boot policy is missing."
             case .secureBootManifestInvalid(let detail):
-                return "Secure Boot 정책 검증에 실패했습니다: \(detail)"
+                return "Secure Boot policy verification failed. \(detail)"
             case .secureBootConflict(let detail):
-                return "기존 Secure Boot 키를 안전하게 보존하기 위해 프로비저닝을 중단했습니다: \(detail)"
+                return "BridgeVM stopped Secure Boot setup to preserve the existing keys. \(detail)"
             }
         }
     }
