@@ -1,8 +1,8 @@
 extension HvfEngineSession {
     var runtimePendingWorkText: String? {
-        if hasPendingRuntimeMutation { return "작업 중" }
+        if hasPendingRuntimeMutation { return "VM operation in progress…" }
         if let start = guiStartOperation, start.workerPending {
-            return start.invalidationReason == nil ? "시작 준비 중" : "작업 정리 확인 중"
+            return start.invalidationReason == nil ? "Preparing to start Windows…" : "Waiting for startup cleanup…"
         }
         return nil
     }

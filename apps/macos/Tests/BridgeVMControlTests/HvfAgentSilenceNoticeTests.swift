@@ -49,7 +49,7 @@ final class HvfAgentSilenceNoticeTests: XCTestCase {
         try run(session)
         XCTAssertEqual(session.agentSilenceNotice.shown, .notConnected)
         XCTAssertEqual(session.agentSilenceNotice.text,
-            "Windows 에이전트가 아직 연결되지 않아 클립보드·공유 폴더·화면 크기 맞춤이 동작하지 않습니다. Windows에 로그인한 뒤에도 계속되면 Windows를 다시 시작하세요.")
+            "Clipboard sharing, shared folders, and automatic resizing are waiting for Windows to connect. If they stay unavailable after you sign in, restart Windows.")
         try run(session, ready)
         XCTAssertNil(session.agentSilenceNotice.shown, "the agent is there: the notice clears by itself")
     }
@@ -69,7 +69,7 @@ final class HvfAgentSilenceNoticeTests: XCTestCase {
         refresh(at: clock.value + 119)
         XCTAssertEqual(window.subtitle, "")
         refresh(at: clock.value + 120)
-        XCTAssertEqual(window.subtitle, "첫 연결 대기 중")
+        XCTAssertEqual(window.subtitle, "Waiting for Windows to connect")
         XCTAssertEqual(window.title, "Windows 11")
         XCTAssertEqual(window.contentLayoutRect, bounds)
 
@@ -115,7 +115,7 @@ final class HvfAgentSilenceNoticeTests: XCTestCase {
         clock.value += 121
         try run(session)
         XCTAssertEqual(session.agentSilenceNotice.text,
-            "게스트 도구가 설치되지 않아 클립보드와 공유 폴더를 사용할 수 없으니 ‘게스트 도구 설치’를 누르세요.")
+            "Choose Install Guest Tools to enable clipboard sharing and shared folders.")
         try FileManager.default.createDirectory(at: root.appendingPathComponent("metadata"), withIntermediateDirectories: true)
         for name in [HvfWindowsInstallRequest.fileName, HvfWindowsInstallRequest.doneFileName] {
             try Data().write(to: root.appendingPathComponent(name))
@@ -161,7 +161,7 @@ final class HvfAgentSilenceNoticeTests: XCTestCase {
         try run(session, ["BVAGENT SERVICE overdue clip-poll awaiting-reply=true t=50000"])
         XCTAssertEqual(session.agentSilenceNotice.shown, .notResponding)
         XCTAssertEqual(session.agentSilenceNotice.text,
-            "Windows 에이전트가 응답하지 않아 클립보드·공유 폴더·화면 크기 맞춤이 잠시 동작하지 않습니다. 계속되면 Windows를 다시 시작하세요.")
+            "Guest Tools stopped responding. If clipboard sharing, shared folders, or automatic resizing stay unavailable, restart Windows.")
         try run(session, ["BVAGENT SERVICE alive t=60000", "BVAGENT SERVICE overdue ping awaiting-reply=true t=70000",
                           "BVAGENT SERVICE alive t=90000"])
         XCTAssertEqual(session.agentSilenceNotice.shown, .notResponding, "still overdue")

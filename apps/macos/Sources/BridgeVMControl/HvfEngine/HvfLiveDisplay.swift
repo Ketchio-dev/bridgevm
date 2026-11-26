@@ -45,7 +45,7 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
         subtitleObservation = session.agentSilenceNotice.$shown
             .combineLatest(session.$connectionState)
             .map { notice, connection in
-                notice == .awaitingFirstConnection && connection == .booting ? "첫 연결 대기 중" : ""
+                notice == .awaitingFirstConnection && connection == .booting ? "Waiting for Windows to connect" : ""
             }
             .removeDuplicates()
             .assign(to: \.subtitle, on: window)
@@ -92,7 +92,7 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         window.orderFrontRegardless()
         window.makeKey()
-        window.makeMain() // the 가상 머신 menu acts on the main VM window
+        window.makeMain() // the Virtual Machine menu acts on the main VM window
     }
 
     func windowDidBecomeMain(_ notification: Notification) { HvfVirtualMachineMenuTarget.shared.became(state) }
