@@ -10,9 +10,11 @@ final class LibraryModelOwnedRuntimeStartTests: XCTestCase {
             var config = f.config(pending: pending)
             if !pending { config.backendKind = "fast-vz" }
             f.save(config); let model = f.library(); let before = try f.snapshot()
-            for id in [config.slug, "missing"] {
+            let expected = pending ? "Finish installing Windows in BridgeVM before starting this VM."
+                : "The start command supports Windows VMs that use the BridgeVM engine."
+            for (id, message) in [(config.slug, expected), ("missing", "No VM has the ID ‘missing’ in this library. Run `bridgevm app list` to find its ID.")] {
                 guard case let .refused(reason) = model.requestCLIStart(vmID: id) else { return XCTFail("\(id) was admitted") }
-                XCTAssertFalse(reason.isEmpty)
+                XCTAssertEqual(reason, message)
             }
             XCTAssertEqual(f.runtimeCreations, 0); XCTAssertEqual(f.access.keyRequests, 0)
             XCTAssertEqual(try f.snapshot(), before)

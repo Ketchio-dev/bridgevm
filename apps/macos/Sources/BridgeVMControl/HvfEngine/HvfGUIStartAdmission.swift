@@ -10,7 +10,7 @@ extension HvfEngineSession {
         // The pending flags matter only for a dead run: otherwise hasActiveRuntimeWork includes them.
         guard (!hasActiveRuntimeWork || runnerDiedWithoutCleanup), !hasPendingRuntimeStart,
               !hasPendingRuntimeMutation, !hasRetainedAttachment, !workAdmissionGate.isChecking else {
-            return .refused("VM 작업이 진행 중입니다. 완료 후 다시 시도하세요.")
+            return .refused("Another operation is in progress for this VM. Wait for it to finish, then try again.")
         }
         // A dead run remains a conflict for mutations; this retry reserves first so
         // checkReservedWork excludes only its own session, not another live owner.
@@ -23,7 +23,7 @@ extension HvfEngineSession {
         // Published configuration can synchronously call observers; the ticket already owns admission.
         config = configuration
         guard admitGUIStartEffect(ticket) else {
-            let reason = ticket.invalidationReason ?? "VM 시작 대상이 변경되었습니다. 다시 시도하세요."
+            let reason = ticket.invalidationReason ?? "The selected VM changed. Select it again and start Windows."
             ticket.finish(.refused(reason)); objectWillChange.send()
             return .refused(reason)
         }
@@ -39,7 +39,7 @@ extension HvfEngineSession {
         guard guiStartOperation === ticket, ticket.workerPending,
               ticket.invalidationReason == nil, ticket.effectAdmission.isValid else { return false }
         guard config == ticket.configuration, checkReservedWork(ticket.id) else {
-            ticket.invalidate("VM 설정이나 등록 정보가 변경되어 시작을 중단했습니다.")
+            ticket.invalidate("The saved VM changed before startup. Review its settings and start Windows again.")
             objectWillChange.send()
             return false
         }

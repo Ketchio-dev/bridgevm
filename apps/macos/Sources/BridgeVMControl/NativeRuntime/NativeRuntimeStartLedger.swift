@@ -74,7 +74,7 @@ final class NativeRuntimeStartLedger {
     private func reply(_ request: NativeRuntimeStartRequest, _ record: inout Record,
                        disposition: NativeRuntimeStartResponse.Disposition) -> NativeRuntimeStartResponse {
         guard let ticket = record.ticket else {
-            return refused(request, .refused, record.refusal ?? "Windows를 시작하지 못했습니다.")
+            return refused(request, .refused, record.refusal ?? "Windows could not start. Try again.")
         }
         let observation = Self.observe(ticket, record: &record, operationID: request.operationID)
         return response(request, disposition: disposition, observation: observation, refusal: nil, reason: nil)
@@ -89,7 +89,7 @@ final class NativeRuntimeStartLedger {
         }
         guard let outcome = ticket.outcome else { return make(.preparing) }
         guard case let .ownedLaunchAccepted(identity) = outcome else {
-            return make(.failed, failure: outcome.failureText ?? "Windows가 이미 실행 중입니다.")
+            return make(.failed, failure: outcome.failureText ?? "Windows is already running.")
         }
         target = .init(token: identity.token.uuidString, processID: identity.processID)
         if record.proof != nil { return make(.started) }
@@ -97,7 +97,7 @@ final class NativeRuntimeStartLedger {
         guard let controller = session?.ownedController, controller.identity == identity else {
             // A debug-only legacy launch has no supervisor to confirm startup; it is still running.
             if session?.ownedController == nil, session?.process?.isRunning == true { return make(.awaitingStartup) }
-            return make(.failed, failure: "Windows가 시작을 확인하기 전에 종료되었으니 잠시 후 다시 시작하세요.")
+            return make(.failed, failure: "Windows stopped before BridgeVM could confirm startup. Try starting it again.")
         }
         if controller.ledger.ready, let child = controller.ledger.initialHelper, let target {
             record.proof = .init(target: target, manifestSHA256: controller.ledger.manifestSHA256, helperPID: child.pid)
@@ -105,7 +105,7 @@ final class NativeRuntimeStartLedger {
         }
         if controller.failure != nil || controller.runnerExit != nil || controller.ledger.complete != nil {
             return make(.failed, failure: session?.guiStartFailureText
-                ?? "Windows가 시작을 확인하기 전에 종료되었으니 잠시 후 다시 시작하세요.")
+                ?? "Windows stopped before BridgeVM could confirm startup. Try starting it again.")
         }
         return make(.awaitingStartup)
     }
