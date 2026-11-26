@@ -7,12 +7,18 @@ struct ContentView: View {
     @State private var presentation = LibraryWindowPresentation()
     @State private var importDraft = FirstRunFormDraft()
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    private var allowsVMComparison: Bool {
+        library.selectedID != LibraryModel.firstRunImportSelectionID && library.selectedRetainedControl == nil
+    }
+
     var body: some View {
         #if DEBUG && BRIDGEVM_APP_UI_HOST
         let _ = AppUIHost.prepared?.lifecycle.record(.contentBodyEvaluated)
         #endif
         GeometryReader { geometry in
-            if geometry.size.width < 850 {
+            if library.proMode && allowsVMComparison {
+                FleetTableView(library: library)
+            } else if geometry.size.width < 850 {
                 CompactLibraryNavigation(library: library)
             } else {
                 let wide = geometry.size.width >= 1100
@@ -61,6 +67,15 @@ struct ContentView: View {
         }
         .modifier(LibraryOperationAlerts(library: library))
         .toolbar {
+            if allowsVMComparison && !library.proMode && library.vms.count > 1 {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { library.proMode = true } label: {
+                        Label("Compare VMs", systemImage: "tablecells")
+                    }
+                    .help("Compare VM configurations")
+                    .accessibilityIdentifier("bridgevm.library.toolbar.compare")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button { presentation.sheet = .palette } label: {
                     Label("Command Palette", systemImage: "magnifyingglass")
