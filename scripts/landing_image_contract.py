@@ -1,18 +1,40 @@
-"""Admit only the dated Windows Test Mode image, never an unqualified hero."""
+"""Keep the two development captures tied to their dated captions and reviewed pixels."""
 import hashlib
+import re
+
+
+DESKTOP = "images/windows-desktop-20261116.webp"
+SETUP = "images/mac-setup-20261126.webp"
+ORIGINAL = "docs/media/windows-hvf-desktop-20261116.webp"
 
 
 def check_image(page, html, site, root):
-    guests = [image for image in page.images if image.get("src", "").startswith("images/")]
-    assert len(guests) == 1
-    image = guests[0]
-    assert len(page.images) == 3 and all(item.get("src") == "icon.png" for item in page.images if item is not image)
-    assert image.get("src") == "images/windows-guest-20260813.webp"
-    assert image.get("width") == "1200" and image.get("height") == "900"
-    assert "Test Mode" in image.get("alt", "") and "not a current release" in image["alt"]
-    caption = html.split("<figcaption>", 1)[1].split("</figcaption>", 1)[0]
-    assert "August 2026 archive" in caption and "Windows Test Mode" in caption
-    assert "not a current release or app UI screenshot" in caption
-    assert "docs/media/windows-hvf-desktop.png" in caption
-    assert hashlib.sha256((site / image["src"]).read_bytes()).hexdigest() == "a584829b844c87d7ffe6571de35a3e6b3643d2ee3a9a5e935e414ade4a521b03"
-    assert hashlib.sha256((root / "docs/media/windows-hvf-desktop.png").read_bytes()).hexdigest() == "727cac7134cfd13538da4453b47b15f9f26d40d9c51610a6d2e58361d4587db8"
+    assert sorted(image.get("src", "") for image in page.images) == sorted(
+        [DESKTOP, SETUP, "icon.png", "icon.png"]
+    ), "expected both product captures and both brand marks"
+
+    def capture(src, width, height):
+        image = next(image for image in page.images if image["src"] == src)
+        assert (image.get("width"), image.get("height")) == (str(width), str(height)), src
+        figures = re.findall(r"<figure\b[^>]*>(.*?)</figure>", html, re.S)
+        figure, = [figure for figure in figures if f'src="{src}"' in figure]
+        caption = re.search(r"<figcaption\b[^>]*>(.*?)</figcaption>", figure, re.S)
+        assert caption, f"missing caption for {src}"
+        return image.get("alt", ""), caption.group(1)
+
+    alt, caption = capture(DESKTOP, 1440, 900)
+    assert all(term in alt for term in ("Windows 11 Arm", "Test Mode"))
+    assert all(term in caption for term in (
+        "November 16, 2026", "M5 development Mac", "Test Mode", "experimental test-signed display driver",
+        f'href="https://github.com/Ketchio-dev/bridgevm/blob/main/{ORIGINAL}"',
+    )), "desktop capture provenance is incomplete"
+    alt, caption = capture(SETUP, 810, 385)
+    assert all(term in alt for term in ("ISO", "disk"))
+    assert all(term in caption for term in ("macOS", "development build", "November 26, 2026"))
+
+    # Decode the public 2560×1600 lossless capture to PPM, then use cwebp
+    # -resize 1440 900 -q 92 -m 6 -sharp_yuv. The full frame retains the watermark.
+    assert hashlib.sha256((root / ORIGINAL).read_bytes()).hexdigest() == "9908656d2d261e4c26486e1d322788d4e0faa26db709b81a78f9679cb9384c6e"
+    assert hashlib.sha256((site / DESKTOP).read_bytes()).hexdigest() == "9d254be58516bdf2a7f87e5ef5f8cd6e520fa84890bf075dd71b31434e1c456e"
+    # The English Welcome window from 36c07e38 was converted to sRGB, then cropped to its two source cards.
+    assert hashlib.sha256((site / SETUP).read_bytes()).hexdigest() == "37714230466f0ba4a6264655132047382d8329c27ae84ccf8013e54b7d57a7de"
