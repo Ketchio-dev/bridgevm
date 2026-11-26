@@ -21,9 +21,9 @@ import time
 KEYCHAIN = Path(__file__).resolve().parents[2].parent / "fake-vtpm-keychain"
 OPTIONS = ("--stable-vm-id", "--state-dir", "--package", "--recovery-code-file")
 FORMAT = "bridgevm-vtpm-recovery-v1"
-MISSING_KEY = "기존 vTPM 상태의 Keychain 키가 없습니다. 상태를 덮어쓰지 않았습니다. 복구 키를 복원하거나 명시적으로 TPM을 재설정하세요."
+MISSING_KEY = "The Keychain key for this vTPM is missing. BridgeVM kept the encrypted state. Restore its matching recovery key, or reset the TPM identity to start with a new TPM."
 UNREADABLE = "Keychain에서 vTPM 상태 키를 읽지 못했습니다 (OSStatus -25293)."
-MISMATCH = "현재 vTPM 키가 선택한 복구 패키지와 일치하지 않습니다."
+MISMATCH = "The current vTPM key does not match the selected recovery package."
 INVALID_PACKAGE = "vTPM 복구 패키지가 손상되었거나 코드와 일치하지 않습니다."
 
 

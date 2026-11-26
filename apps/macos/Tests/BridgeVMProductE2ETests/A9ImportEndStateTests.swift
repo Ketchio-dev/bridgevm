@@ -12,6 +12,8 @@ final class A9ImportEndStateTests: XCTestCase {
     }
 
     func testErrorsMapToFixedTokensWithoutProductText() {
+        XCTAssertEqual(A9ImportEndState.errorToken("VM 번들을 만들지 못했습니다: The destination VM already has a vTPM key (owned fixture)."),
+                       "bundle-failed/destination-key-exists")
         XCTAssertEqual(A9ImportEndState.errorToken(keyExists), "bundle-failed/destination-key-exists")
         XCTAssertEqual(A9ImportEndState.errorToken("VM 번들을 만들지 못했습니다: Keychain에서 vTPM 상태 키를 읽지 못했습니다 (OSStatus -25293)."),
                        "bundle-failed/keychain-read/status-25293")

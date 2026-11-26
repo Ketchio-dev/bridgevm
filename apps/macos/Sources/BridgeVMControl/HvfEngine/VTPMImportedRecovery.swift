@@ -5,7 +5,7 @@ enum VTPMImportedRecoveryError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .destinationIdentityExists(let stableID):
-            return "대상 VM ID에 이미 vTPM 키가 있습니다: \(stableID)"
+            return "The destination VM already has a vTPM key (\(stableID))."
         }
     }
 }

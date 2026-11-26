@@ -172,6 +172,14 @@ class LaneKeyForgetTest(LaneKeyForgetCase):
         self.assertEqual([call[1] for call in calls], ["export", "export"])
         self.assertEqual([options(call)["--stable-vm-id"] for call in calls], [empty["vm_slug"], absent["vm_slug"]])
 
+    def test_previous_app_reports_an_absent_key_for_empty_state(self) -> None:
+        self.lane(1, state="empty", key=False)
+        old_line = load("t17_lane_key_forget", TOOL).LEGACY_MISSING_KEY
+        self.executable.write_text(f"#!/bin/sh\nprintf '%s\\n' '{old_line}' >&2\nexit 1\n")
+        self.seal("pilot")
+        result = self.forget()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_empty_state_export_failure_without_the_missing_key_message_fails_closed(self) -> None:
         request = self.lane(1, state="empty", key=False)
         self.key(request, "unreadable").touch()
