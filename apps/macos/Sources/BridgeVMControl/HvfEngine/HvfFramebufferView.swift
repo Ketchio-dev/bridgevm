@@ -43,6 +43,7 @@ final class FBLayerView: HvfFramebufferTextInput {
         return self.convert(window.mouseLocationOutsideOfEventStream, from: nil)
     }
     var frameDisplayLink: CADisplayLink?
+    private var windowSharingObservation: NSKeyValueObservation?
     private var pointerTrackingArea: NSTrackingArea?
 
     override var isFlipped: Bool { true }
@@ -88,11 +89,8 @@ final class FBLayerView: HvfFramebufferTextInput {
         pointerMoves.reset()
         guestCursor.reset()
 
-        if window != nil {
-            startDisplayLink()
-        } else {
-            stopDisplayLink()
-        }
+        stopDisplayLink()
+        if window != nil { startDisplayLink() }
         reportDisplaySize(settled: false)
     }
 
@@ -511,15 +509,34 @@ final class FBLayerView: HvfFramebufferTextInput {
 
 extension FBLayerView {
     func startDisplayLink() {
-        guard frameDisplayLink == nil else { return }
+        guard frameDisplayLink == nil, let window else { return }
         if #available(macOS 14.0, *) {
             let link = displayLink(target: self, selector: #selector(step(_:)))
             frameDisplayLink = link
+            NotificationCenter.default.addObserver(self, selector: #selector(displayVisibilityChanged(_:)),
+                name: NSWindow.didChangeOcclusionStateNotification, object: window)
+            windowSharingObservation = window.observe(\.hasActiveWindowSharingSession) { [weak self] _, _ in
+                Task { @MainActor in self?.displayVisibilityChanged() }
+            }
+            displayVisibilityChanged()
             link.add(to: .main, forMode: .common)
         }
     }
 
+    // A view display link can keep firing through a fully opaque window. Keep the last frame on
+    // the layer and resume when a viewer can see it on screen or via a window-sharing session.
+    @objc private func displayVisibilityChanged(_ notification: Notification? = nil) {
+        guard let link = frameDisplayLink, let window else { return }
+        let covered = !window.occlusionState.contains(.visible) && !window.hasActiveWindowSharingSession
+        guard link.isPaused != covered else { return }
+        pointerMoves.reset()
+        if covered { session?.appPacing.displayWasCovered() }
+        link.isPaused = covered
+    }
+
     func stopDisplayLink() {
+        windowSharingObservation = nil
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: nil)
         if #available(macOS 14.0, *) {
             frameDisplayLink?.invalidate()
             frameDisplayLink = nil
