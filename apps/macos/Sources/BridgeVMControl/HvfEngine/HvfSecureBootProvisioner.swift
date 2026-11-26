@@ -133,21 +133,21 @@ enum HvfSecureBootProvisioner {
             }
             guard sameName.count == 1 else {
                 throw HvfWindowsBootSeed.SeedError.secureBootConflict(
-                    "\(variable.manifest.name) 변수가 중복되어 있습니다.")
+                    "The \(variable.manifest.name) variable appears more than once.")
             }
             let record = sameName[0]
             guard record.guid == variable.guid,
                   record.attributes == variable.manifest.attributes,
                   record.data == variable.payload else {
                 throw HvfWindowsBootSeed.SeedError.secureBootConflict(
-                    "\(variable.manifest.name) 값이 고정 정책과 다릅니다.")
+                    "The \(variable.manifest.name) variable differs from the pinned policy.")
             }
             exactCount += 1
         }
 
         if exactCount > 0 && !missing.isEmpty {
             throw HvfWindowsBootSeed.SeedError.secureBootConflict(
-                "PK/KEK/db/dbx가 일부만 존재합니다; 명시적인 마이그레이션이 필요합니다.")
+                "Only some of PK, KEK, db and dbx are present. The existing keys require an explicit migration.")
         }
 
         var provisioned = original
@@ -180,7 +180,7 @@ enum HvfSecureBootProvisioner {
             }
             guard matches.count == 1 else {
                 throw HvfWindowsBootSeed.SeedError.secureBootManifestInvalid(
-                    "\(variable.manifest.name) 기록 후 검증 실패")
+                    "Couldn’t verify \(variable.manifest.name) after writing it.")
             }
         }
 
@@ -202,13 +202,13 @@ enum HvfSecureBootProvisioner {
               policy.firmware.sha256 == expectedFirmwareSha256,
               policy.firmware.edk2Commit == expectedEdk2Commit else {
             throw HvfWindowsBootSeed.SeedError.secureBootManifestInvalid(
-                "정책 또는 공급망 provenance가 고정값과 다릅니다.")
+                "The policy or its recorded source differs from the pinned values.")
         }
 
         let requiredOrder = ["dbx", "db", "KEK", "PK"]
         guard policy.variables.map(\.name) == requiredOrder else {
             throw HvfWindowsBootSeed.SeedError.secureBootManifestInvalid(
-                "키는 dbx, db, KEK, PK 순서여야 하며 PK를 마지막에 기록해야 합니다.")
+                "The Secure Boot variables must be ordered dbx, db, KEK, PK, with PK written last.")
         }
 
         return try policy.variables.map { variable in
@@ -224,7 +224,7 @@ enum HvfSecureBootProvisioner {
                   let payload = Data(base64Encoded: variable.payloadBase64),
                   sha256(payload) == variable.sha256 else {
                 throw HvfWindowsBootSeed.SeedError.secureBootManifestInvalid(
-                    "\(variable.name) GUID/속성/해시 검증 실패")
+                    "GUID, attributes or hash verification failed for \(variable.name).")
             }
             try validateSignatureLists(payload, name: variable.name)
             return DecodedVariable(manifest: variable, guid: expectedGuid, payload: payload)
@@ -236,7 +236,7 @@ enum HvfSecureBootProvisioner {
         var listCount = 0
         while offset < payload.count {
             guard payload.count - offset >= 28 else {
-                throw malformedESL(name, "잘린 EFI_SIGNATURE_LIST 헤더")
+                throw malformedESL(name, "truncated EFI_SIGNATURE_LIST header")
             }
             let listSize = Int(readUInt32(payload, at: offset + 16))
             let headerSize = Int(readUInt32(payload, at: offset + 20))
@@ -244,17 +244,17 @@ enum HvfSecureBootProvisioner {
             guard listSize >= 28 + headerSize,
                   signatureSize >= 16,
                   offset + listSize <= payload.count else {
-                throw malformedESL(name, "목록 크기가 범위를 벗어남")
+                throw malformedESL(name, "list size is out of bounds")
             }
             let signaturesSize = listSize - 28 - headerSize
             guard signaturesSize > 0, signaturesSize % signatureSize == 0 else {
-                throw malformedESL(name, "서명 항목 크기가 일치하지 않음")
+                throw malformedESL(name, "signature entry sizes do not match")
             }
             offset += listSize
             listCount += 1
         }
         guard offset == payload.count, listCount > 0 else {
-            throw malformedESL(name, "빈 목록 또는 후행 데이터")
+            throw malformedESL(name, "empty list or trailing data")
         }
     }
 

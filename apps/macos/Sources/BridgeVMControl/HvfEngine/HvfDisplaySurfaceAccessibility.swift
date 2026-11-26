@@ -9,7 +9,7 @@ enum HvfDisplaySurfaceAccessibility {
     static func configure(_ view: NSView) {
         view.setAccessibilityElement(true)
         view.setAccessibilityRole(.image)
-        view.setAccessibilityLabel("게스트 화면")
+        view.setAccessibilityLabel("Windows display")
         view.setAccessibilityIdentifier(identifier)
         update(view, guestSize: .zero)
     }

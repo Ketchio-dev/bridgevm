@@ -52,7 +52,7 @@ enum T17InstallTimeoutDiagnostic {
                     do {
                         let value = try stage()
                         probe.recordStage(value, at: now)
-                        if value == "실패" { terminalFailureObserved = true }
+                        if T17InstallMonitor.phaseToken(value) == "failed" { terminalFailureObserved = true }
                         return value
                     } catch {
                         probe.recordQueryFailure(error, stage: true)
@@ -84,7 +84,7 @@ private final class T17InstallTimeoutProbe {
 
     func recordStage(_ value: String, at now: TimeInterval) {
         stageOK = min(99_999, stageOK + 1)
-        let next = Self.phaseToken(value)
+        let next = T17InstallMonitor.phaseToken(value)
         if next != phase { phase = next; phaseAt = now }
     }
 
@@ -145,22 +145,6 @@ private final class T17InstallTimeoutProbe {
     private func age(since start: TimeInterval?, now: TimeInterval) -> String {
         guard let start, now.isFinite, start.isFinite else { return "na" }
         return String(Int(min(1_800, max(0, now - start))))
-    }
-
-    private static func phaseToken(_ value: String) -> String {
-        switch value {
-        case "대기": return "idle"
-        case "설치 입력 확인": return "validating"
-        case "설치 소스 준비": return "preparing-source"
-        case "Windows 무인 설치": return "installing"
-        case "VM에 반영": return "finalizing"
-        case "기존 설치 결과 복구": return "recovering"
-        case "취소 중…": return "cancelling"
-        case "취소됨": return "cancelled"
-        case "완료": return "done"
-        case "실패": return "failed"
-        default: return "unknown"
-        }
     }
 }
 

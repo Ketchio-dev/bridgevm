@@ -8,14 +8,14 @@ struct HvfNetworkToggle: View {
     var isDisabled: Bool { session.persistsLibraryPreferences && !session.libraryPreferencesEditable }
 
     var body: some View {
-        Toggle("네트워크 사용", isOn: Binding(get: { isOn }, set: update))
+        Toggle("Enable networking", isOn: Binding(get: { isOn }, set: update))
             .accessibilityIdentifier("bridgevm.runtime.network")
             .disabled(isDisabled)
-            .help(session.persistsLibraryPreferences ? "VM이 중지된 동안 변경하면 이 VM의 모든 시작에 저장됩니다." : "")
-            .alert("네트워크 설정", isPresented: Binding(
+            .help(session.persistsLibraryPreferences ? "Changes apply the next time this VM starts." : "")
+            .alert("Network settings", isPresented: Binding(
                 get: { message != nil }, set: { if !$0 { message = nil } }
             )) {
-                Button("확인") { message = nil }
+                Button("OK") { message = nil }
             } message: {
                 Text(message ?? "")
             }

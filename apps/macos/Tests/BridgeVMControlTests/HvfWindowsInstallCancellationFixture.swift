@@ -124,7 +124,7 @@ final class HvfWindowsInstallCancellationFixture {
         XCTAssertTrue(session.isRunning)
         XCTAssertNil(session.start(), "An unacknowledged cancellation must retain admission")
         XCTAssertEqual(process.cancellations, 1)
-        XCTAssertEqual(session.logLines.filter { $0 == "사용자가 설치를 취소했습니다." }.count, 1)
+        XCTAssertEqual(session.logLines.filter { $0 == "Installation cancelled by user." }.count, 1)
         XCTAssertTrue(queue.jobs.isEmpty)
     }
 

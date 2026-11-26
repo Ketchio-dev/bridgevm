@@ -56,7 +56,7 @@ enum AppUIInstallCancelValidation {
               (value.values == nil) == mutation else { throw AppUIDriverFailure.invalidReply }
         if let values = value.values {
             guard [values.stage, values.title].allSatisfy({ $0.utf8.count <= 1024 && !$0.contains("\0") }),
-                  values.failure == nil || values.failure == AppUIInstallCancelOperationPolicy.syntheticFailure else {
+                  values.failure == nil || values.failure.map(AppUIInstallCancelOperationPolicy.currentLabel) == AppUIInstallCancelOperationPolicy.syntheticFailure else {
                 throw AppUIDriverFailure.protocolLimit
             }
         }

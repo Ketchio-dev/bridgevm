@@ -29,8 +29,9 @@ enum LibraryDeletionKeyArchive {
         }
         let archive = VTPMIdentityLifecycle(keyStore: keyStore).archiveDeletedIdentity(stableVMID: config.slug)
         guard case let .failed(reason) = archive else { return LibraryDeletionResult(outcome: .deleted) }
-        return LibraryDeletionResult(outcome: .deleted, warning: "\(config.name)을(를) 삭제했지만 vTPM 키를 보관하지 못했습니다. "
-            + "기존 키가 VM ID '\(config.slug)'에 남아 있을 수 있어 같은 ID의 새 VM이 이 키를 다시 쓰거나 "
-            + "같은 ID로의 vTPM 복구 가져오기가 거부될 수 있습니다. 원인: \(reason)")
+        NSLog("Could not archive the deleted VM’s vTPM key: %@", reason)
+        return LibraryDeletionResult(outcome: .deleted, warning: "BridgeVM deleted \(config.name) but could not archive its vTPM key. "
+            + "The key may still be attached to VM ID '\(config.slug)'. Reusing that ID could reuse the key or "
+            + "prevent a vTPM recovery import. Choose a different VM ID until the old key is archived.")
     }
 }

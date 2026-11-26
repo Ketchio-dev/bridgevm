@@ -8,12 +8,12 @@ struct HvfGuestPrintToggle: View {
 
     var body: some View {
         if session.persistsLibraryPreferences {
-            Toggle("Mac으로 인쇄", isOn: Binding(get: { session.printToMacWanted }, set: update))
+            Toggle("Print to Mac", isOn: Binding(get: { session.printToMacWanted }, set: update))
                 .accessibilityIdentifier("bridgevm.runtime.print-to-mac")
                 .disabled(!session.libraryPreferencesEditable)
-                .help("켜면 Windows에 'Mac (BridgeVM)' 프린터가 생기고, 그 프린터로 인쇄한 문서가 Mac의 인쇄 창에서 열립니다. 다음 VM 시작부터 적용됩니다.")
-                .alert("인쇄 설정", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-                    Button("확인") { message = nil }
+                .help("On the next start, Windows adds a printer named Mac (BridgeVM). Print to it to open the Mac print dialog.")
+                .alert("Printing settings", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+                    Button("OK") { message = nil }
                 } message: {
                     Text(message ?? "")
                 }

@@ -58,8 +58,9 @@ also uses the clipboard for characters it cannot type. Both clipboard routes
 replace the previous Windows clipboard contents.
 
 Single-line drafts can use per-character input with some editors and older
-agents. For long passages in the v0.1.0 download or if that input loses text, enable
-**클립보드 공유** (Clipboard sharing) while the VM is stopped. After the Windows
+agents. For long passages in v0.1.0, or if typing loses text, enable clipboard
+sharing while the VM is stopped. The setting is **Share clipboard** in current
+source builds and **클립보드 공유** in the v0.1.0 download. After the Windows
 agent connects, copy the text on your Mac and press **Ctrl+V** in the Windows
 editor. Builds from current source show a notice when text is too large to
 share in either direction. Copy it in smaller sections or transfer it as a
@@ -86,8 +87,11 @@ installed disk from Finder onto the matching card to open its setup form.
 
 | Starting point | What you provide |
 | --- | --- |
-| **Install Windows** | Select your licensed Windows 11 Arm ISO. **드라이버 자동 준비** downloads the Microsoft-signed Red Hat virtio-win storage, serial and network drivers (about 95 MB) and checks their pinned SHA-256. You can also select your own signed ARM64 driver folder and manifest. Choose **생성** (Create), then **설치 시작** (Start installation) in the VM detail view. |
+| **Install Windows** | Choose your licensed Windows 11 Arm ISO. Use **Download Drivers** to fetch and verify the signed Red Hat storage, serial and network drivers (about 95 MB), or choose your own signed Arm64 driver folder and SHA-256 manifest. Choose **Create**, then **Start Installation** in the VM detail view. In the v0.1.0 download, these three buttons read **드라이버 자동 준비**, **생성** and **설치 시작**, respectively. |
 | **Import an existing disk** | Drop your installed Windows 11 Arm disk onto **파일 선택 또는 놓기** (Choose or drop file), or click that button to browse. The download accepts RAW, QCOW2 and Hyper-V VHDX. Builds from current source also accept fixed-size VHD. Choose **가져오기** (Import), then **시작** (Start) once the VM appears in your library. This path needs no driver payload. |
+
+To rename a saved Windows VM in a current source build, shut down Windows,
+open **Settings**, edit **VM name** under **General**, and click **Done**. The VM keeps its disk, snapshots and TPM identity.
 
 In current source builds, you can choose **Finish Then Quit**
 during a first-run import, while **Create VM** prepares files for an import or

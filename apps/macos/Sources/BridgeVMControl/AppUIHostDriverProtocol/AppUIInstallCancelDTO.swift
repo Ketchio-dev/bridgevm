@@ -1,6 +1,6 @@
 #if (DEBUG && BRIDGEVM_APP_UI_HOST) || BRIDGEVM_APP_UI_DRIVER
 import Foundation
-enum AppUIInstallCancelConstants { static let refusal = "합성 UI 검증 종료" }
+enum AppUIInstallCancelConstants { static let refusal = "Synthetic UI check complete" }
 
 enum AppUIInstallCancelOperation: String, Codable, CaseIterable { case readState, start, cancel, retry }
 enum AppUIInstallCancelPhase: String, Codable, CaseIterable {

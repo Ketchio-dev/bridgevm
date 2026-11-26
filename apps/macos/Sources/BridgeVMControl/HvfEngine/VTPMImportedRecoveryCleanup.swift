@@ -2,7 +2,7 @@ import Foundation
 
 enum VTPMImportedRecoveryCleanupError: LocalizedError {
     case keyMismatch
-    var errorDescription: String? { "현재 vTPM 키가 선택한 복구 패키지와 일치하지 않습니다." }
+    var errorDescription: String? { "The current vTPM key does not match the selected recovery package." }
 }
 
 extension VTPMIdentityLifecycle {

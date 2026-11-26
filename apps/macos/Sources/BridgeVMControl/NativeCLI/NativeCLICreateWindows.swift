@@ -39,7 +39,7 @@ extension NativeCLI {
             write("BridgeVM: preparing the pinned Red Hat virtio-win drivers (about 95 MB on first use)...\n", to: .standardError)
             do { request.guestPayload = try HvfWindowsDriverPayloadFetch.prepare() } catch {
                 throw NativeCLIError.unavailable((error as? HvfWindowsDriverPayloadFetch.Failure)?.message
-                    ?? "드라이버를 준비하지 못했습니다. 다시 시도하세요.")
+                    ?? "Couldn’t prepare the Windows drivers. Try again.")
             }
         }
         let result = try NativeCLICreateWindows.create(request, libraryRoot: options.libraryRoot)

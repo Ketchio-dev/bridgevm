@@ -59,7 +59,7 @@ extension HvfLibraryLaunchContext {
         var issues: [HvfWindowsReadinessIssue] = []
         if VMRelocationJournal.isPending(config, rootURL: rootURL) {
             issues.append(.init(code: "relocation-pending", scope: .launch,
-                summary: "VM 이동 복구가 끝나지 않았습니다. 시작하기 전에 두 번들과 등록 정보를 확인하세요."))
+                summary: "The move has not finished recovering. Check both bundles and the library entry before starting the VM."))
         }
         if HvfWindowsInstallTransactionResidue.isPresent(config, rootURL: rootURL) {
             issues.append(.init(code: "install-cleanup-pending", scope: .launch,

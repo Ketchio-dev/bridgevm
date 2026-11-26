@@ -8,7 +8,7 @@ extension CreateVMSheet {
         error = ""
         guard let normalizedName = VMLibrary.normalizedVMName(name) else {
             creationFailureCode = "invalid-vm-name"
-            error = "VM 이름은 제어문자 없이 1~\(VMLibrary.maximumVMNameCharacters)자이며 파일 ID 제한 안이어야 합니다."
+            error = "Use 1–\(VMLibrary.maximumVMNameCharacters) characters without control characters. If the name is long, shorten it to fit the file name limit."
             return
         }
         let selectedMode = mode

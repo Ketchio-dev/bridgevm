@@ -44,7 +44,7 @@ struct ContentView: View {
             CloneWindowsHVFSheet(library: library, config: cfg)
         }
         .confirmationDialog(
-            "VM을 삭제하시겠습니까?",
+            "Remove this virtual machine?",
             isPresented: Binding(
                 get: { presentation.deletionTarget != nil },
                 set: { if !$0 { presentation.deletionTarget = nil } }
@@ -55,16 +55,21 @@ struct ContentView: View {
             Button(LibraryDeletionPrompt(config: config, rootURL: library.rootURL).confirmTitle, role: .destructive) {
                 library.confirmDeletion(config)
             }
-            Button("취소", role: .cancel) { }
+            Button("Cancel", role: .cancel) { }
         } message: { config in
             Text(LibraryDeletionPrompt(config: config, rootURL: library.rootURL).message)
         }
         .modifier(LibraryOperationAlerts(library: library))
-        .background(
-            Button("") { presentation.sheet = .palette }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { presentation.sheet = .palette } label: {
+                    Label("Command Palette", systemImage: "magnifyingglass")
+                }
                 .keyboardShortcut("k", modifiers: .command)
-                .opacity(0)
-        )
+                .help("Search commands or VMs (⌘K)")
+                .accessibilityIdentifier("bridgevm.library.toolbar.palette")
+            }
+        }
     }
 
     @ViewBuilder

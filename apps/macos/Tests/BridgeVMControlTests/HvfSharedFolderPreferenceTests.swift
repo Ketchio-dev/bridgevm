@@ -20,6 +20,27 @@ final class HvfSharedFolderPreferenceTests: XCTestCase {
         XCTAssertTrue(warnings.isEmpty)
     }
 
+    func testExistingVMOpensItsOriginalDefaultShare() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        var saved = fixture.config()
+        let original = fixture.root.appendingPathComponent("BridgeVM 공유/Windows")
+        saved.sharedFolderHostPath = original.path
+        saved.sharedFolderGuestPath = "C:\\bridgevm-share"
+        saved.createSharedFolderOnStart = true
+        fixture.save(saved)
+        try FileManager.default.createDirectory(at: original, withIntermediateDirectories: true)
+        let note = original.appendingPathComponent("notes.txt")
+        try Data("saved Windows file".utf8).write(to: note)
+
+        let reopened = try XCTUnwrap(VMLibrary.scan(rootURL: fixture.root).configs.first)
+        let launch = try XCTUnwrap(HvfEngineConfig.libraryVM(reopened, rootURL: fixture.root))
+            .preparingSharedFolder { XCTFail($0) }
+        XCTAssertEqual(launch.shareHostDir, original.path)
+        XCTAssertEqual(try Data(contentsOf: note), Data("saved Windows file".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("BridgeVM Shared Folders").path))
+    }
+
     func testUnavailableShareDisablesOnlyLaunchAndShowsOneSentence() throws {
         let fixture = try HvfRuntimeSessionStoreFixture()
         defer { fixture.clean() }
@@ -163,10 +184,10 @@ final class HvfSharedFolderPreferenceTests: XCTestCase {
         XCTAssertEqual(value(after: "--agent-share-host", in: arguments), selection.hostPath)
         XCTAssertEqual(value(after: "--agent-share-guest", in: arguments), selection.guestPath)
 
-        let missing = "공유 폴더(chosen-share)를 찾을 수 없어 공유 없이 시작했습니다."
+        let missing = "The shared folder “chosen-share” was unavailable when Windows started."
         session.resetObservedRuntimeState(clearEvents: true) // what every start and attach does first
         XCTAssertEqual(session.shareRootNotice.displayed?.text, missing)
-        XCTAssertEqual(session.shareRootNotice.displayed?.help, "폴더를 다시 연결하면 자동으로 공유됩니다.")
+        XCTAssertEqual(session.shareRootNotice.displayed?.help, "Reconnect the folder to your Mac. Sharing will resume automatically.")
         session.append(.unknown("BVAGENT SHARE root-state blocked")) // the runtime reports the missing root at once
         XCTAssertEqual(session.shareRootNotice.displayed?.text, missing)
         try FileManager.default.createDirectory(atPath: selection.hostPath, withIntermediateDirectories: false)

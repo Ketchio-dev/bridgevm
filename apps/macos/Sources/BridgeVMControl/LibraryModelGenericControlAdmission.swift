@@ -12,14 +12,14 @@ extension LibraryModel {
         guard activeGenericControls.contains(where: {
             $0.0.slug == config.slug || GenericRuntimeAssetReferences.overlaps($0.0, config)
         }) else { return nil }
-        return "보관한 VM 제어가 이 항목의 파일을 사용 중입니다. 기존 실행과 작업이 완전히 끝난 뒤 다시 시도하세요."
+        return "A previous VM session is using these files. Wait for the session and its operations to finish."
     }
 
     func genericRetainedFileRefusal(for config: VMConfig, action: LibraryFileAction) -> String? {
         if action == .clone {
             if let refusal = genericRetainedWorkRefusal(for: config) { return refusal }
             if activeCachedGenericConfigurations.contains(where: { GenericRuntimeAssetReferences.overlaps($0, config) }) {
-                return "VM 제어가 이 항목의 파일을 사용 중입니다. 기존 실행과 작업이 완전히 끝난 뒤 다시 시도하세요."
+                return "A VM session is using these files. Wait for the session and its operations to finish."
             }
         }
         let affected = action == .deletion ? rootURL.appendingPathComponent(config.slug)
@@ -27,7 +27,7 @@ extension LibraryModel {
         guard activeGenericControls.contains(where: {
             $0.0.slug == config.slug || GenericRuntimeAssetReferences.mayAffect($0.0, path: affected)
         }) else { return nil }
-        return "보관한 VM 제어가 이 항목의 파일을 사용 중입니다. 기존 실행과 작업이 완전히 끝난 뒤 다시 시도하세요."
+        return "A previous VM session is using these files. Wait for the session and its operations to finish."
     }
 
     func legacyStopAdmission(for model: ControlModel) -> LibraryWorkAdmission? {

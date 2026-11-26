@@ -10,23 +10,23 @@ struct HvfHardwareCursorToggle: View {
     @State private var changed = false
     @State private var message: String?
 
-    static let note = "다음 VM 시작 때 Windows에 기록되고, 그다음 Windows 시작부터 적용됩니다."
+    static let note = "BridgeVM saves this in Windows on the next start. It takes effect after Windows restarts again."
 
     static func isShown(_ config: VMConfig?) -> Bool { config?.virtioDisplayDriverInstalled == true }
 
     var body: some View {
         if Self.isShown(session.config.libraryContext?.config) {
             VStack(alignment: .leading, spacing: 4) {
-                Toggle("Windows 커서를 Mac 커서로 표시", isOn: Binding(get: { session.guestHardwareCursorWanted }, set: update))
+                Toggle("Use Mac pointer for Windows", isOn: Binding(get: { session.guestHardwareCursorWanted }, set: update))
                     .accessibilityIdentifier("bridgevm.runtime.hardware-cursor")
                     .disabled(!session.libraryPreferencesEditable)
-                    .help("켜면(기본) Windows 포인터를 Mac 커서로 그려 마우스를 지연 없이 따라갑니다. 끄면 Windows가 포인터를 직접 그립니다. VM이 중지된 동안 변경하면 이 VM에 저장됩니다.")
+                    .help("By default, macOS draws the Windows pointer so it follows your mouse immediately. Turn this off to let Windows draw the pointer. Changes made while the VM is stopped are saved for future starts.")
                 if changed {
                     Text(Self.note).font(.caption).foregroundColor(.secondary)
                 }
             }
-            .alert("커서 설정", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-                Button("확인") { message = nil }
+            .alert("Pointer settings", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+                Button("OK") { message = nil }
             } message: {
                 Text(message ?? "")
             }
@@ -45,7 +45,7 @@ extension HvfEngineSession {
     /// removes the key, the registration of a VM that never changed it.
     func applyHardwareCursorToggle(_ enabled: Bool,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (isOn: Bool, message: String?) {
-        let message = saveLibraryPreference("커서 설정", publish: publish) {
+        let message = saveLibraryPreference("Pointer", publish: publish) {
             $0.hardwareCursor = enabled ? nil : false
         }
         return (guestHardwareCursorWanted, message)
