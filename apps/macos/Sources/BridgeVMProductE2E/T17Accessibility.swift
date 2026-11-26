@@ -71,15 +71,9 @@ final class T17Accessibility: T17UIControlling {
 
     func setToggle(_ enabled: Bool, identifier: String, timeout: TimeInterval = 10) throws {
         let target = try element(identifier, timeout: timeout)
-        if let current = attribute(target, kAXValueAttribute as CFString) as? NSNumber,
-           current.boolValue == enabled { return }
-        guard AXUIElementPerformAction(target, kAXPressAction as CFString) == .success else {
-            throw T17Blocker(code: "ui-element-missing", detail: "identified toggle cannot be changed")
-        }
-        guard let current = attribute(target, kAXValueAttribute as CFString) as? NSNumber,
-              current.boolValue == enabled else {
-            throw T17Blocker(code: "ui-element-missing", detail: "identified toggle did not reach the requested value")
-        }
+        try T17ToggleChange.set(enabled, identifier: identifier, value: {
+            (self.attribute(target, kAXValueAttribute as CFString) as? NSNumber)?.boolValue
+        }, press: { AXUIElementPerformAction(target, kAXPressAction as CFString) == .success })
     }
     func choose(path: String, from identifier: String, timeout: TimeInterval = 15) throws {
         try T17ChooserAdmission.choose(path: path, timeout: timeout, lookup: {
