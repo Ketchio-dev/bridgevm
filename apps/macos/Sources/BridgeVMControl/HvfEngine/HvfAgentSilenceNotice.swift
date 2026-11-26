@@ -8,7 +8,7 @@ import SwiftUI
 /// and it is off while the VM is paused, stopping or restarting (HvfEngineSessionAgentSilence).
 @MainActor
 final class HvfAgentSilenceNotice: ObservableObject {
-    enum Kind: Equatable { case notConnected, notResponding, missingTools }
+    enum Kind: Equatable { case notConnected, notResponding, missingTools, awaitingFirstConnection }
 
     /// The scoreboards measured READY 7-26 s after launch (vm_bench medians, T16-T42) on images that
     /// log on by themselves. A product VM starts its agent at the user's logon, and the agent's task
@@ -39,6 +39,7 @@ final class HvfAgentSilenceNotice: ObservableObject {
 
     var text: String? {
         switch shown {
+        case .awaitingFirstConnection: return "Windows 연결을 기다리고 있습니다. 초기 설정이나 로그인 안내가 보이면 VM 화면에서 진행하세요."
         case .missingTools: return HvfGuestTools.missing
         case .notConnected: return Self.notConnectedText
         case .notResponding: return Self.notRespondingText
@@ -67,7 +68,8 @@ final class HvfAgentSilenceNotice: ObservableObject {
 
     /// From every runtime poll. `running`: the VM runs, not paused, stopping or restarting.
     /// `agentInstalled` is asked once per boot, when the wait is over.
-    func refresh(now: TimeInterval, running: Bool, serviceStarted: Bool, offersTools: Bool = false, agentInstalled: () -> Bool) {
+    func refresh(now: TimeInterval, running: Bool, serviceStarted: Bool,
+                 firstConnection: () -> Kind?, agentInstalled: () -> Bool) {
         var kind: Kind?
         if !running {
             waitingSince = nil
@@ -80,7 +82,7 @@ final class HvfAgentSilenceNotice: ObservableObject {
             if now - since >= Self.readyTimeout {
                 if agentSeen == nil { agentSeen = agentInstalled() }
                 if agentSeen == true { kind = .notConnected }
-                else if offersTools { kind = .missingTools }
+                else { kind = firstConnection() }
             }
         }
         show(kind)
@@ -114,8 +116,9 @@ struct HvfAgentSilenceNoticeView: View {
 
     var body: some View {
         if let text = notice.text {
-            Label(text, systemImage: "exclamationmark.triangle")
-                .font(.callout).foregroundStyle(.orange)
+            let waiting = notice.shown == .awaitingFirstConnection
+            Label(text, systemImage: waiting ? "info.circle" : "exclamationmark.triangle")
+                .font(.callout).foregroundStyle(waiting ? Color.secondary : .orange)
                 .textSelection(.enabled)
                 .accessibilityIdentifier("bridgevm.runtime.agent-silence.notice")
         }
@@ -128,7 +131,7 @@ struct HvfAgentSilenceStrip: View {
     @ObservedObject var notice: HvfAgentSilenceNotice
 
     var body: some View {
-        if let text = notice.text, !notice.dismissedInWindow {
+        if let text = notice.text, notice.shown != .awaitingFirstConnection, !notice.dismissedInWindow {
             HvfNoticeStrip(identifier: "bridgevm.display.agent-silence", dismiss: { notice.dismissInWindow() }) {
                 Label {
                     Text(text).fixedSize(horizontal: false, vertical: true)
