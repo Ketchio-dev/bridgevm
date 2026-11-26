@@ -9,17 +9,17 @@ struct RetainedInstallControlView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text(config.name).font(.title2.bold())
-                Text("등록 목록에서 사라졌을 때 보관한 기존 설치입니다.")
+                Text("This installation is still available here after the VM left your library.")
                     .foregroundColor(.secondary)
                 Text(session.stage.label)
                 if case let .failed(message) = session.stage {
                     Text(message).foregroundColor(.secondary)
                 }
                 if session.isRunning {
-                    Button(session.stage == .cancelling ? "취소 중…" : "취소") { session.cancel() }
+                    Button(session.stage == .cancelling ? "Canceling…" : "Cancel") { session.cancel() }
                         .disabled(!session.canCancel).accessibilityIdentifier("bridgevm.retained.install.cancel")
                 } else {
-                    Button("목록에서 닫기", action: dismiss)
+                    Button("Dismiss", action: dismiss)
                         .accessibilityIdentifier("bridgevm.retained.install.dismiss")
                 }
                 Text(session.logLines.suffix(30).joined(separator: "\n"))
