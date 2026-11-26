@@ -78,7 +78,7 @@ final class HVFCreationPublicationFixture {
         XCTAssertEqual(try JSONDecoder().decode(VMConfig.self, from: Data(contentsOf: registration(config))), config)
         XCTAssertTrue(FileManager.default.fileExists(atPath: bundle(config).path))
         XCTAssertEqual(warning,
-            "VM 파일과 등록 정보는 보존했지만 저장 완료를 확인하지 못했습니다. 다시 만들지 말고 라이브러리를 다시 확인하세요.")
+            "BridgeVM kept the VM files but could not confirm the save. Check your library for the saved VM before creating another.")
         XCTAssertFalse(warning.contains(Self.privateFailureDetail))
         XCTAssertFalse(warning.contains(root.path))
     }
