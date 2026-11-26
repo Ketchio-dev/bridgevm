@@ -17,7 +17,7 @@ struct LibrarySearchTextField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> LibrarySearchNSTextField {
         let field = LibrarySearchNSTextField()
-        field.placeholderString = "Search by VM name or engine"
+        field.placeholderString = "Search by VM name, ID, or engine"
         field.isBordered = false
         field.isBezeled = false
         field.drawsBackground = false
