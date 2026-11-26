@@ -3,7 +3,7 @@ import Foundation
 /// Copy the native selector's current pair while it owns the source. Once the
 /// helper exits successfully, all remaining work uses only the verified copy.
 enum HvfMediaImport {
-    /// `converting` sees the format and the percent converted when the disk is QCOW2 or VHDX.
+    /// `converting` sees the format and the percent converted for a disk container.
     static func copy(
         disk: String, vars: String, toDisk: URL, toVars: URL,
         helper: URL, fileManager: FileManager = .default,
@@ -14,56 +14,51 @@ enum HvfMediaImport {
             appropriateFor: toDisk.deletingLastPathComponent(), create: true)
         defer { try? fileManager.removeItem(at: workspace) }
         try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: workspace.path)
-        let members: [(member: URL, target: URL)]
-        if vars.isEmpty {
-            let copiedDisk = workspace.appendingPathComponent("disk.raw")
-            let seededVars = workspace.appendingPathComponent("vars.fd")
-            if let format = HvfImportedDiskFormat.detect(path: disk) {
-                converting(format, 0)
-                try HvfMediaImportHelper.invoke(helper, arguments: ["convert-to-raw", disk, copiedDisk.path]) {
-                    converting(format, $0)
-                }
-            } else {
-                let selected = workspace.appendingPathComponent("selected.snapshot", isDirectory: true)
-                try HvfMediaImportHelper.invoke(helper, arguments: ["import-disk", disk, selected.path])
-                try fileManager.moveItem(at: selected.appendingPathComponent("disk.raw"), to: copiedDisk)
-                let pairedVars = selected.appendingPathComponent("vars.fd")
-                if fileManager.fileExists(atPath: pairedVars.path) {
-                    try fileManager.moveItem(at: pairedVars, to: seededVars)
-                }
-            }
-            // Managed disks bring their selected vars. Seed only an unmanaged private copy.
-            if !fileManager.fileExists(atPath: seededVars.path) {
-                try HvfWindowsBootSeed.writeBundledSeed(to: seededVars.path)
-                do {
-                    try HvfWindowsBootSeed.seedFile(varsPath: seededVars.path, diskPath: copiedDisk.path)
-                } catch HvfWindowsBootSeed.SeedError.gptUnreadable {
-                    try HvfWindowsImportNotice.write(nextTo: toVars)
-                } catch HvfWindowsBootSeed.SeedError.espNotFound {
-                    try HvfWindowsImportNotice.write(nextTo: toVars)
-                }
-            }
-            members = [(copiedDisk, toDisk), (seededVars, toVars)]
-        } else if let format = HvfImportedDiskFormat.detect(path: disk) {
-            // A BridgeVM pair's disk is always RAW, so a QCOW2 or VHDX source has no managed
-            // generation to select: the helper converts the chosen file and the vars are copied.
+        let copiedDisk = workspace.appendingPathComponent("disk.raw")
+        let copiedVars = workspace.appendingPathComponent("vars.fd")
+        func convert(_ format: HvfImportedDiskFormat, source: String) throws {
             converting(format, 0)
-            let converted = workspace.appendingPathComponent("disk.raw")
-            let copiedVars = workspace.appendingPathComponent("vars.fd")
-            try HvfMediaImportHelper.invoke(helper, arguments: ["convert-to-raw", disk, converted.path]) {
+            try HvfMediaImportHelper.invoke(helper, arguments: ["convert-to-raw", source, copiedDisk.path]) {
                 converting(format, $0)
             }
-            // Resolved first: copyItem copies a symlink as a link, which would leave the bundle
-            // sharing the source's vars.
-            try fileManager.copyItem(at: URL(fileURLWithPath: vars).resolvingSymlinksInPath(), to: copiedVars)
-            members = [(converted, toDisk), (copiedVars, toVars)]
-        } else {
-            let snapshot = workspace.appendingPathComponent("selected.snapshot", isDirectory: true)
-            // Create copies and hashes the selected pair; the manifest is not kept, so no verify.
-            try HvfMediaImportHelper.invoke(helper, arguments: ["create", disk, vars, snapshot.path, "import"])
-            members = [(snapshot.appendingPathComponent("disk.raw"), toDisk),
-                       (snapshot.appendingPathComponent("vars.fd"), toVars)]
         }
+
+        if let format = HvfImportedDiskFormat.detect(path: disk), format != .vhd {
+            try convert(format, source: disk)
+            if !vars.isEmpty {
+                // copyItem would preserve a symlink into the original VM.
+                try fileManager.copyItem(at: URL(fileURLWithPath: vars).resolvingSymlinksInPath(), to: copiedVars)
+            }
+        } else {
+            // Older BridgeVM imports saved a whole fixed VHD as the VM's RAW disk.
+            // A restore may have selected a newer disk and vars behind the original paths.
+            let selected = workspace.appendingPathComponent("selected.snapshot", isDirectory: true)
+            let arguments = vars.isEmpty ? ["import-disk", disk, selected.path]
+                : ["create", disk, vars, selected.path, "import"]
+            try HvfMediaImportHelper.invoke(helper, arguments: arguments)
+            let selectedDisk = selected.appendingPathComponent("disk.raw")
+            if let format = HvfImportedDiskFormat.detect(path: selectedDisk.path), format == .vhd || format == .nonFixedVHD {
+                try convert(format, source: selectedDisk.path)
+            } else {
+                try fileManager.moveItem(at: selectedDisk, to: copiedDisk)
+            }
+            let pairedVars = selected.appendingPathComponent("vars.fd")
+            if !vars.isEmpty || fileManager.fileExists(atPath: pairedVars.path) {
+                try fileManager.moveItem(at: pairedVars, to: copiedVars)
+            }
+        }
+        // Managed disks bring their selected vars. Seed only an unmanaged private copy.
+        if vars.isEmpty && !fileManager.fileExists(atPath: copiedVars.path) {
+            try HvfWindowsBootSeed.writeBundledSeed(to: copiedVars.path)
+            do {
+                try HvfWindowsBootSeed.seedFile(varsPath: copiedVars.path, diskPath: copiedDisk.path)
+            } catch HvfWindowsBootSeed.SeedError.gptUnreadable {
+                try HvfWindowsImportNotice.write(nextTo: toVars)
+            } catch HvfWindowsBootSeed.SeedError.espNotFound {
+                try HvfWindowsImportNotice.write(nextTo: toVars)
+            }
+        }
+        let members = [(copiedDisk, toDisk), (copiedVars, toVars)]
         // A clone keeps the source's mode (read-only media would block Start), so each member becomes
         // 0600 in the private workspace, never via the library path. Existing targets fail; the caller rolls back.
         for (member, target) in members {

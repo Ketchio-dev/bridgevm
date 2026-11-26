@@ -37,7 +37,7 @@ struct FirstRunWelcomeView: View {
                     choice: .installer, action: createAction, dropAction: dropAction)
                     .accessibilityIdentifier("bridgevm.first-run.create")
                 FirstRunChoiceCard(title: "기존 디스크 가져오기", symbol: "externaldrive",
-                    description: "Windows가 설치된 RAW, QCOW2 또는 VHDX 파일을 여기에 놓거나 클릭해 가져오세요.",
+                    description: "Windows가 설치된 RAW, QCOW2, 고정 크기 VHD 또는 VHDX 파일을 여기에 놓거나 클릭해 가져오세요.",
                     choice: .disk, action: importAction, dropAction: dropAction)
                     .accessibilityIdentifier("bridgevm.first-run.import")
             }

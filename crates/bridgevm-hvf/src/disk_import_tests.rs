@@ -73,6 +73,32 @@ fn sample_qcow2(version: u32, cluster_bits: u32) -> (Vec<u8>, Vec<u8>) {
 }
 
 #[test]
+fn fixed_vhd_requires_a_matching_footer_before_it_publishes_the_raw_sectors() {
+    let s = Scratch::new("fixed-vhd");
+    let raw = pattern(4096, 11);
+    let mut footer = [0u8; 512];
+    footer[..8].copy_from_slice(b"conectix");
+    patch_be(&mut footer, 8, 2, 4);
+    patch_be(&mut footer, 12, 0x0001_0000, 4);
+    patch_be(&mut footer, 16, u64::MAX, 8);
+    patch_be(&mut footer, 40, raw.len() as u64, 8);
+    patch_be(&mut footer, 48, raw.len() as u64, 8);
+    patch_be(&mut footer, 60, 2, 4);
+    let sum: u32 = footer.iter().map(|&byte| u32::from(byte)).sum();
+    patch_be(&mut footer, 64, u64::from(!sum), 4);
+    let mut image = raw.clone();
+    image.extend_from_slice(&footer);
+    assert_eq!(convert(&s, &image).unwrap(), raw);
+
+    assert_eq!(
+        refusal(&s, &image[512..]),
+        Refusal::Damaged("fixed VHD size")
+    );
+    *image.last_mut().unwrap() ^= 1;
+    assert_eq!(refusal(&s, &image), Refusal::Damaged("VHD footer checksum"));
+}
+
+#[test]
 fn qcow2_v2_and_v3_convert_to_the_raw_disk_they_describe() {
     for version in [2, 3] {
         for bits in [9, 16, 21] {

@@ -2,7 +2,7 @@ import Foundation
 
 enum FirstRunImportStage: Equatable, Sendable {
     case validating, copying
-    /// A QCOW2 or VHDX disk becoming the bundle's RAW disk, with the percent converted.
+    /// A container disk becoming the bundle's RAW disk, with the percent converted.
     case converting(HvfImportedDiskFormat, percent: Int)
     case saving, readingLibrary, complete
 
