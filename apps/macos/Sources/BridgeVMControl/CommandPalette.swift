@@ -21,6 +21,11 @@ struct CommandPaletteView: View {
         var c = library.selectedPaletteCommands { dismiss() }
         c.append(.init(id: "create", title: "New Windows VM", subtitle: "Create a Windows 11 virtual machine", systemImage: "plus", action: createAction))
         c.append(.init(id: "pro-mode", title: library.proMode ? "Turn off Pro mode" : "Turn on Pro mode", subtitle: library.proMode ? "Return to the standard library" : "Show all virtual machines in a table", systemImage: "tablecells") { library.proMode.toggle(); dismiss() })
+        c.append(.init(id: "reload-library", title: "Reload Library", subtitle: "Refresh saved VMs from disk",
+                       systemImage: "arrow.clockwise") {
+            library.reload()
+            dismiss()
+        })
         let named = Dictionary(grouping: library.vms, by: \.name)
         for vm in library.vms {
             let subtitle = named[vm.name]?.count == 1 ? "Select this VM" : "Select this VM · \(vm.slug)"

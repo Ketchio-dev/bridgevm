@@ -87,6 +87,21 @@ final class LibraryDashboardNavigationTests: XCTestCase {
         XCTAssertEqual(f.library.selectedID, "owned")
     }
 
+    func testReloadLibraryReadsExternalChangesAndKeepsTheSelectedVM() throws {
+        let f = try LibraryDashboardNavigationFixture()
+        defer { f.clean() }
+        var record = try XCTUnwrap(f.library.vms.first)
+        record.name = "外部 변경"
+        XCTAssertTrue(VMLibrary.save(record, rootURL: f.root))
+        XCTAssertNotEqual(f.library.selectedDetail?.config.name, record.name)
+
+        try f.paletteCommand("Reload Library").action()
+
+        XCTAssertEqual(f.library.selectedID, record.slug)
+        XCTAssertEqual(f.library.selectedDetail?.config.name, record.name)
+        XCTAssertFalse(try XCTUnwrap(f.library.selectedModel).hasActiveRuntimeWork)
+    }
+
     func testExplicitImportSelectionKeepsFirstRunAheadOfFleet() throws {
         let f = try LibraryDashboardNavigationFixture()
         defer { f.clean() }
