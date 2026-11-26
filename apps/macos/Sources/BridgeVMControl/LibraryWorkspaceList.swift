@@ -111,7 +111,7 @@ struct LibraryWorkspaceRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if let session = library.hvfRuntimeDetailSession(for: config) {
+            if let session = library.hvfRuntimeSessions.existingSession(for: config) {
                 LibraryObservedWorkspaceRow(session: session, row: self)
             } else { selectionButton }
             LibraryVMActionsMenu(library: library, config: config, size: CGSize(width: 30, height: 30))
