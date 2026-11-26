@@ -39,7 +39,7 @@ extension HvfEngineSession {
         guard guiStartOperation === ticket, ticket.workerPending,
               ticket.invalidationReason == nil, ticket.effectAdmission.isValid else { return false }
         guard config == ticket.configuration, checkReservedWork(ticket.id) else {
-            ticket.invalidate("The saved VM changed before startup. Review its settings and start Windows again.")
+            ticket.invalidate()
             objectWillChange.send()
             return false
         }

@@ -12,7 +12,7 @@ final class HvfGUIStartOperation {
 
     init(configuration: HvfEngineConfig) { self.configuration = configuration }
 
-    func invalidate(_ reason: String) {
+    func invalidate(_ reason: String = "The saved VM changed before startup. Review its settings and start Windows again.") {
         guard workerPending else { return }
         if invalidationReason == nil { invalidationReason = reason }
         effectAdmission.invalidate()
