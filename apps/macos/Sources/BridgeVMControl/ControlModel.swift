@@ -204,7 +204,7 @@ extension ControlModel {
         guard workAdmission?(true) == nil else { return }
         invalidateRefreshes()
         setLifecycleBusy(true)
-        statusNote = "VM 시작 중…"
+        statusNote = "Starting VM…"
         startConfirmationDeadline = Date().addingTimeInterval(10)
         running = true                 // optimistic: the click registers instantly
         let backend = self.backend
@@ -219,7 +219,7 @@ extension ControlModel {
                     self.startConfirmationDeadline = nil
                     self.running = false
                     self.ip = "—"
-                    self.statusNote = "VM 시작 실패"
+                    self.statusNote = backend is UnsupportedEngineBackend ? BackendKind.unsupportedNotice : "Couldn’t start the VM."
                 }
                 self.scheduleRefreshBurst()
             }

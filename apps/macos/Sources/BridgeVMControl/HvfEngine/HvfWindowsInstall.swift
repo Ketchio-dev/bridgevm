@@ -131,26 +131,26 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
         let fm = FileManager.default
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
-            return "viogpu3d 드라이버 패키지 폴더를 찾을 수 없습니다."
+            return "Choose the folder containing the viogpu3d driver package."
         }
         guard whitespaceFree(directory) else {
-            return "드라이버 패키지 경로에 공백이 있으면 인젝터를 만들 수 없습니다."
+            return "Choose a driver package folder with no spaces in its path."
         }
         let entries = (try? fm.contentsOfDirectory(atPath: directory)) ?? []
         let lowered = entries.map { $0.lowercased() }
         guard lowered.contains(where: { $0.hasSuffix(".inf") }) else {
-            return "드라이버 패키지 폴더에 .inf 파일이 없습니다."
+            return "The driver package folder is missing an .inf file."
         }
         guard lowered.contains(where: { $0.hasSuffix(".sys") }) else {
-            return "드라이버 패키지 폴더에 .sys 파일이 없습니다."
+            return "The driver package folder is missing a .sys file."
         }
         return HvfWindowsDriverPreflight.inspect(packageDirectory: directory).userMessage
     }
 
     private var isoRecoveryHint: String {
         let relativePath = WindowsHVFProductPolicy.installerISO
-        let location = request.isoPath == bundlePath + "/" + relativePath ? "VM 번들의 \(relativePath)" : "원래 위치"
-        return "VM 생성에 사용한 원본 ISO를 \(location)에 복원한 뒤 다시 시도하세요."
+        let location = request.isoPath == bundlePath + "/" + relativePath ? "\(relativePath) in the VM bundle" : "its original location"
+        return "Restore the ISO used to create this VM to \(location), then retry."
     }
 
     func validationError() -> String? {
@@ -159,36 +159,36 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
         }
         let fm = FileManager.default
         guard fm.isReadableFile(atPath: request.isoPath) else {
-            return "Windows 설치 ISO를 읽을 수 없습니다. \(isoRecoveryHint)"
+            return "BridgeVM can’t read the Windows installation ISO. \(isoRecoveryHint)"
         }
         guard HvfWindowsInstallCacheIdentity.sha256File(request.isoPath) == sealedISOSHA256 else {
-            return "Windows 설치 ISO가 VM 생성 때와 다릅니다. \(isoRecoveryHint)"
+            return "The Windows installation ISO has changed since this VM was created. \(isoRecoveryHint)"
         }
         guard HvfWindowsInstallCacheIdentity.key(
                 isoSHA256: sealedISOSHA256,
                 guestPayloadIdentity: sealedGuestPayloadIdentity,
                 unattendedIdentity: sealedUnattendedIdentity,
                 repoRoot: repoRoot)
-                == sourceCacheKey else { return "Windows 설치 레시피 또는 wimlib가 변경되었습니다." }
+                == sourceCacheKey else { return "The Windows installation tools changed. Reopen BridgeVM and retry." }
         let requiredResources = Self.installResourcePaths
         if let missing = requiredResources.first(where: {
             !fm.isReadableFile(atPath: repoRoot.appendingPathComponent($0).path)
         }) {
-            return "앱 설치 리소스가 없습니다: \(missing)"
+            return "BridgeVM is missing an installation resource (\(missing)). Reinstall the app and retry."
         }
         if let error = Self.diskSizeError(request.diskGiB) { return error }
         let expectedPayloadDirectory = "\(bundlePath)/metadata/windows-guest-payload"
         let expectedPayloadManifest = "\(bundlePath)/metadata/windows-guest-payload.tsv"
         guard request.guestPayloadDirectory == expectedPayloadDirectory,
               request.guestPayloadManifest == expectedPayloadManifest else {
-            return "게스트 드라이버 payload는 VM 번들에 봉인된 경로만 사용할 수 있습니다."
+            return "Windows Setup needs the driver files stored with this VM."
         }
         let payload = HvfWindowsGuestPayloadIdentity.inspect(
             payloadDirectory: request.guestPayloadDirectory,
             manifestPath: request.guestPayloadManifest)
         if let error = payload.error { return error }
         guard payload.digest == sealedGuestPayloadIdentity else {
-            return "VM 생성 후 게스트 드라이버 payload 또는 manifest가 변경되었습니다."
+            return "The Windows driver files or their manifest have changed since this VM was created. Restore the original files and retry."
         }
         if request.unattendedPath != nil || request.unattendedIdentity != nil {
             let expected = "\(bundlePath)/metadata/windows-install-unattend.xml"
@@ -196,21 +196,21 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
                   request.unattendedIdentity == sealedUnattendedIdentity,
                   HvfWindowsInstallCacheIdentity.sha256File(expected)
                     == sealedUnattendedIdentity else {
-                return "설치 응답 파일이 VM 번들에 봉인되지 않았거나 변경되었습니다."
+                return "The unattended setup file is missing from its saved location or has changed. Restore the original file and retry."
             }
         }
         guard wimlibPath != nil else {
-            return "앱에 서명·봉인된 wimlib-imagex helper가 없습니다. 앱을 다시 설치하세요."
+            return "Reinstall BridgeVM to restore the verified wimlib-imagex installation tool."
         }
         guard catalogVerifierPath != nil else {
-            return "앱에 서명·봉인된 Windows catalog verifier가 없습니다. 앱을 다시 설치하세요."
+            return "Reinstall BridgeVM to restore the verified Windows driver catalog tool."
         }
         return nil
     }
 }
 
 extension HvfWindowsInstallPlan {
-    static let unrepresentableDiskSizeMessage = "설치 디스크 크기를 파일 크기로 표현할 수 없습니다."
+    static let unrepresentableDiskSizeMessage = "The requested Windows disk size exceeds the supported file size."
 
     /// FileHandle truncation ultimately uses signed off_t, not the full UInt64 range.
     /// This is a representation boundary, not a capacity or workload-fit guarantee.
@@ -225,7 +225,7 @@ extension HvfWindowsInstallPlan {
 
     static func diskSizeError(_ diskGiB: Int) -> String? {
         guard diskGiB >= minimumDiskGiB else {
-            return "디스크 크기는 최소 \(minimumDiskGiB) GiB여야 합니다."
+            return "Choose a Windows disk size of at least \(minimumDiskGiB) GiB."
         }
         return targetSizeBytes(diskGiB: diskGiB) == nil ? unrepresentableDiskSizeMessage : nil
     }

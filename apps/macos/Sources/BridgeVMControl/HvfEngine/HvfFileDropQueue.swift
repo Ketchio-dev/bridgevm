@@ -30,6 +30,7 @@ final class HvfFileDropQueue: ObservableObject {
     }
 
     private var jobs: [Job] = []
+    private var noticeDismissal: Task<Void, Never>?
 
     func isPending(_ id: String) -> Bool { jobs.contains { $0.id == id } }
 
@@ -152,11 +153,12 @@ final class HvfFileDropQueue: ObservableObject {
         jobs.remove(at: index)
         guard jobs.isEmpty else { return show() }
         notice = final
+        noticeDismissal?.cancel()
         guard !final.failed else { return }
         let seconds = finishedNoticeSeconds
-        Task { [weak self] in
+        noticeDismissal = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-            guard let self, self.jobs.isEmpty, self.notice == final else { return }
+            guard !Task.isCancelled, let self, self.jobs.isEmpty, self.notice == final else { return }
             self.notice = nil
         }
     }

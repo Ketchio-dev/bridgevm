@@ -12,7 +12,7 @@ struct FirstRunImportNameField: View {
     var body: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 8) {
-                TextField("VM 이름", text: $displayName)
+                TextField("VM name", text: $displayName)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("bridgevm.first-run.name")
                 if !Self.hasName(displayName) {
@@ -22,7 +22,7 @@ struct FirstRunImportNameField: View {
                 }
             }
         } label: {
-            Label("라이브러리에 표시할 이름", systemImage: "tag")
+            Label("Name in library", systemImage: "tag")
         }
     }
 }

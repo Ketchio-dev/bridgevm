@@ -33,10 +33,12 @@
             <h1>Windows 11<br><em>on your Mac.</em></h1>
             <p class="lead">Run Windows 11 Arm alongside macOS. BridgeVM is an open-source Mac app with its own virtualization engine for Apple silicon.</p>
             <div class="actions">
-              <a class="button primary" href="https://github.com/Ketchio-dev/bridgevm/releases/download/v0.1.0/BridgeVM-v0.1.0.dmg">Download for Mac</a>
+              <a class="button primary" aria-describedby="download-details" href="https://github.com/Ketchio-dev/bridgevm/releases/download/v0.1.0/BridgeVM-v0.1.0.dmg">Download for Mac</a>
               <a class="button secondary" href="https://github.com/Ketchio-dev/bridgevm/blob/main/docs/install.md#dmg-from-the-releases-page">Installation guide</a>
             </div>
-            <p class="download-facts">Apple silicon · macOS 15+ · 19.1 MiB DMG</p>
+            <p class="download-facts" id="download-details">Apple silicon · macOS 15+ · 19.1 MiB DMG<br>
+              The v0.1.0 download opens in Korean. <a class="inline-link" href="setup-v0.1.0.html">English setup steps</a>
+            </p>
           </div>
           <figure class="desktop">
             <div class="screen-stage">
@@ -96,7 +98,7 @@
           <div class="native-stage">
             <img src="images/mac-setup-20261126.webp" width="810" height="385" loading="lazy" alt="BridgeVM’s Welcome window offers two choices: install Windows from an ISO or import an installed disk.">
           </div>
-          <figcaption>BridgeVM for macOS · November 26, 2026 development build with English setup and fixed-size VHD import. The v0.1.0 download opens in Korean.</figcaption>
+          <figcaption>BridgeVM for macOS · November 26, 2026 development build with English setup and fixed-size VHD import.</figcaption>
         </figure>
       </section>
       <section class="integration" id="features">

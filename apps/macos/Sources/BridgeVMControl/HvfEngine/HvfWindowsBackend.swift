@@ -184,12 +184,12 @@ final class HvfWindowsBackend: VMBackend {
         defer { guestCommandLock.unlock() }
         guard isRunning() else { return (HvfAgentServiceGate.vmNotRunningMessage, -1) }
         guard ensureDirectories() else {
-            return ("HVF 런타임 디렉터리를 준비하지 못했습니다: \(config.bundlePath)", -1)
+            return ("BridgeVM couldn’t prepare the runtime folders in \(config.bundlePath).", -1)
         }
         if let refusal = HvfAgentServiceGate.guestCommandRefusal(waiting: agentServiceWait, started: serviceHasStarted, running: isRunning) { return (refusal, -1) }
         let offset = fileSize(at: runLogPath)
         guard appendCtl(normalized) else {
-            return ("HVF 제어 채널에 명령을 기록하지 못했습니다: \(ctlFilePath)", -1)
+            return ("BridgeVM couldn’t write the command to \(ctlFilePath).", -1)
         }
         // The guest dispatcher is deliberately lockstep. Driver/tool installs
         // can take minutes, and returning a false timeout while their reply is
@@ -300,11 +300,11 @@ final class HvfWindowsBackend: VMBackend {
                 return reply
             }
             if !isRunning() {
-                return ("HVF 게스트 연결이 명령 실행 중 종료되었습니다: \(command)", -1)
+                return ("Windows disconnected before reporting the result of “\(command)”.", -1)
             }
             usleep(100_000)
         }
-        return ("HVF 게스트 명령 응답 시간 초과: \(command)", -1)
+        return ("Timed out waiting for Windows to report the result of “\(command)”.", -1)
     }
 
     private func fileSize(at path: String) -> UInt64 {

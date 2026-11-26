@@ -200,6 +200,12 @@ on current macOS, so the Settings route is the real one.
   and seals the payload and manifest in the VM bundle before installation.
 - About 64 GiB of free disk for the guest image.
 
+Current source builds copy the selected ISO into the VM bundle. If the installer
+reports a missing or changed ISO, click the ISO filename in the VM detail view
+to open its location in Finder. Restore the ISO used to create that VM as
+`disks/installer.iso` in its bundle, then click **Try Again**. BridgeVM checks the
+restored file against its original SHA-256 before preparing Windows.
+
 ### Import an installed Windows disk
 
 1. In v0.1.0, choose **Import an existing disk** (**기존 VM 가져오기**). Keep the

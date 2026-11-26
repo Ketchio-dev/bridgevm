@@ -24,8 +24,8 @@ final class LibraryDashboardRuntimeOwnershipTests: XCTestCase {
             requestStart: { _ in XCTFail("started duplicate"); return .refused("duplicate") },
             attach: { _ in false }, present: { _ in XCTFail("presented") },
             report: { messages.append($0) })
-        XCTAssertEqual(messages, ["VM 런타임 세션을 준비하지 못했습니다.",
-                                  "실행 중인 VM 화면에 연결하지 못했습니다."])
+        XCTAssertEqual(messages, ["Couldn’t prepare the VM session.",
+                                  "Couldn’t open the display for the running VM."])
     }
 
     func testStopTargetsExactOwnedIdentityAndRefreshes() throws {
@@ -36,7 +36,7 @@ final class LibraryDashboardRuntimeOwnershipTests: XCTestCase {
         LibraryDashboardPrimaryAction.stop(session: session,
             requestStop: { _, target in requested = target; return .requested(deadline: nil) },
             report: { messages.append($0) }, refresh: { refreshes += 1 })
-        XCTAssertEqual(requested, identity); XCTAssertEqual(messages, ["VM 정지 요청을 보냈습니다."])
+        XCTAssertEqual(requested, identity); XCTAssertEqual(messages, ["Stop requested."])
         XCTAssertEqual(refreshes, 1)
     }
 
@@ -46,7 +46,7 @@ final class LibraryDashboardRuntimeOwnershipTests: XCTestCase {
         LibraryDashboardPrimaryAction.stop(session: session,
             requestStop: { _, _ in XCTFail("stopped external runtime"); return .notOwned },
             report: { messages.append($0) }, refresh: { refreshes += 1 })
-        XCTAssertEqual(messages, ["다른 실행 경로에서 시작된 VM은 이 앱이 안전하게 정지할 수 없습니다."])
+        XCTAssertEqual(messages, ["Stop the VM from the app or tool that started it."])
         XCTAssertEqual(refreshes, 0)
     }
 

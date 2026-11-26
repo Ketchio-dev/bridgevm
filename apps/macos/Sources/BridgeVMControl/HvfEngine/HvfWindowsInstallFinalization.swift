@@ -67,7 +67,7 @@ enum HvfWindowsInstallFinalization {
             try? persistConfig(config, to: paths.config)
             return ReconcileResult(
                 config: config,
-                issue: "Windows 설치 완료 transaction을 복구하지 못해 실행을 차단했습니다: \(error.localizedDescription)")
+                issue: "Windows can’t start until setup recovers the interrupted installation. \(error.localizedDescription)")
         }
     }
 
@@ -82,7 +82,7 @@ extension HvfWindowsInstallFinalization {
             try HvfWindowsInstallDurability.durableCloneOrCopy(from: paths.stagedConfig, to: paths.config)
             let committed = try loadConfig(paths.config)
             guard committed.installPending == false else {
-                throw HvfWindowsInstallFinalizationError.invalidState("설치 완료 설정을 공개하지 못했습니다.")
+                throw HvfWindowsInstallFinalizationError.invalidState("Couldn’t publish the saved Windows installation settings.")
             }
             try advance(&journal, to: .configPublished, boundary: .configPublished,
                         paths: paths, faultInjector: faultInjector)
@@ -114,11 +114,11 @@ extension HvfWindowsInstallFinalization {
                 == HvfWindowsInstallDurability.canonical(paths.bundle),
               config.installPending == true else {
             throw HvfWindowsInstallFinalizationError.invalidState(
-                "설치 대기 중인 동일 VM 설정을 찾을 수 없습니다.")
+                "Couldn’t find the matching VM with a pending installation.")
         }
         let requestSnapshot = try HvfWindowsInstallRequestSnapshot.load(paths.pendingRequest)
         guard requestSnapshot.request == plan.request else {
-            throw HvfWindowsInstallFinalizationError.invalidState("저장된 설치 요청이 실행 계획과 다릅니다.")
+            throw HvfWindowsInstallFinalizationError.invalidState("The saved installation request differs from the installation plan.")
         }
         let sourceDisk = paths.stagingDisk
         let sourceVars = paths.stagingVars
@@ -187,7 +187,7 @@ extension HvfWindowsInstallFinalization {
                 paths.stagedProvisionedVars)
             guard provisioned.bytes == journal.varsBytes else {
                 throw HvfWindowsInstallFinalizationError.invalidState(
-                    "Secure Boot 적용 중 vars 크기가 변경되었습니다.")
+                    "The firmware settings file changed size while applying Secure Boot settings.")
             }
             journal.provisionedVarsSHA256 = provisioned.sha256
             try HvfWindowsInstallDurability.durableWrite(receipt, to: paths.stagedReceipt)

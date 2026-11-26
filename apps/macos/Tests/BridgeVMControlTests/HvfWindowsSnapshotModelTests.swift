@@ -21,7 +21,7 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         await Task.yield()
         XCTAssertEqual(model.listRevision, 0)
         XCTAssertFalse(model.busy)
-        XCTAssertEqual(model.status, HvfWindowsSnapshotModel.idleText)
+        XCTAssertNil(model.status)
 
         await model.confirm(asked)?.value
         XCTAssertEqual(ran, [.restore])

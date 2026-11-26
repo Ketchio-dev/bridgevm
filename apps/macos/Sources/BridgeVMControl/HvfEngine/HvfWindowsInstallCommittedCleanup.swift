@@ -5,7 +5,7 @@ import Foundation
 struct HvfWindowsInstallCommittedCleanupFailure: LocalizedError {
     let config: VMConfig
     var errorDescription: String? {
-        "Windows 설치 결과는 저장했지만 임시 transaction 정리를 확인하지 못했습니다. 설치를 다시 실행하지 말고 라이브러리를 다시 확인하세요."
+        "Windows is installed. Refresh the library to finish cleaning up temporary files. Keep the VM files and avoid running the installer again."
     }
 }
 
@@ -36,7 +36,7 @@ extension HvfWindowsInstallFinalization {
         let config = try loadConfig(paths.config)
         try validateConfig(config, pending: false, paths: paths)
         guard !FileManager.default.fileExists(atPath: paths.pendingRequest.path) else {
-            throw HvfWindowsInstallFinalizationError.invalidState("설치 완료 후 대기 요청이 남아 있습니다.")
+            throw HvfWindowsInstallFinalizationError.invalidState("A pending request remains after the Windows installation was saved.")
         }
         try? HvfWindowsInstallStaging.discard(paths)
         do { try removeTransaction(paths.transaction) }

@@ -28,7 +28,7 @@ final class NativeCreatePayloadGuidanceTests: XCTestCase {
         }
         let plan = HvfWindowsInstallPlan(repoRoot: repository, libraryRoot: library,
             bundlePath: config.bundlePath, slug: config.slug, request: request)
-        XCTAssertEqual(plan.validationError(), "게스트 드라이버 payload는 VM 번들에 봉인된 경로만 사용할 수 있습니다.")
+        XCTAssertEqual(plan.validationError(), "Windows Setup needs the driver files stored with this VM.")
         XCTAssertFalse(result.text.contains("Next: bridgevm app install"))
         XCTAssertTrue(result.text.contains("required signed ARM64 guest driver payload"))
         XCTAssertTrue(result.text.contains("Existing CLI entries cannot be completed"))

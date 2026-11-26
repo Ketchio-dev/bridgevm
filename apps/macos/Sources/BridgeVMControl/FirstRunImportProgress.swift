@@ -25,12 +25,12 @@ enum FirstRunImportStage: Equatable, Sendable {
 
     var label: String {
         switch self {
-        case .validating: return "입력 파일 확인 중…"
-        case .copying: return "VM 파일 복사 중…"
+        case .validating: return "Checking input files…"
+        case .copying: return "Copying VM files…"
         case .converting(let format, let percent): return format.conversionLabel(percent: percent)
-        case .saving: return "등록 정보 저장 중…"
-        case .readingLibrary: return "라이브러리 확인 중…"
-        case .complete: return "라이브러리에서 VM을 확인했습니다."
+        case .saving: return "Saving the VM to your library…"
+        case .readingLibrary: return "Checking your library…"
+        case .complete: return "The VM is ready in your library."
         }
     }
 }

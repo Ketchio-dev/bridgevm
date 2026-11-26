@@ -9,23 +9,23 @@ enum HvfRuntimeStopAction {
         report: (String) -> Void,
         refresh: () -> Void
     ) -> Bool {
-        guard let session else { report("VM 런타임 세션을 찾지 못했습니다."); return false }
+        guard let session else { report("Couldn’t find the VM session."); return false }
         guard let identity = session.ownedProcessIdentity else {
             if session.hasRetainedAttachment {
-                report("다른 실행 경로에서 시작된 VM은 이 앱이 안전하게 정지할 수 없습니다.")
+                report("Stop the VM from the app or tool that started it.")
             } else if session.hasPendingRuntimeStart {
-                report("VM 시작 준비가 끝난 뒤 다시 정지하세요.")
+                report("Wait for startup to finish, then stop the VM.")
             } else {
-                report("이 앱이 소유한 실행 프로세스를 찾지 못했습니다.")
+                report("Couldn’t find a running VM started by this app.")
             }
             return false
         }
         let accepted: Bool
         switch requestStop(session, identity) {
-        case .requested: report("VM 정지 요청을 보냈습니다."); accepted = true
-        case .alreadyStopping: report("VM 정지가 이미 진행 중입니다."); accepted = true
-        case .alreadyStopped: report("VM이 이미 정지되었습니다."); accepted = true
-        case .notOwned: report("실행 프로세스 소유권이 변경되어 정지를 중단했습니다."); accepted = false
+        case .requested: report("Stop requested."); accepted = true
+        case .alreadyStopping: report("The VM is already stopping."); accepted = true
+        case .alreadyStopped: report("The VM has already stopped."); accepted = true
+        case .notOwned: report("The running process changed. Check its status before trying to stop it again."); accepted = false
         }
         refresh()
         return accepted

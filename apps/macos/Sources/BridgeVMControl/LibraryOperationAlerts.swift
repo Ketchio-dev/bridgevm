@@ -38,6 +38,11 @@ struct LibraryOperationAlerts: ViewModifier {
         } message: {
             Text(library.moveError ?? "The operation could not be completed.")
         }
+        .alert("VM Settings Reloaded", isPresented: $library.showsSettingsReloadNotice) {
+            Button("OK") { }
+        } message: {
+            Text("Your change was saved. The VM’s registration also changed. Reapply any other unsaved edits.")
+        }
         .alert(
             "VM Action Unavailable",
             isPresented: Binding(

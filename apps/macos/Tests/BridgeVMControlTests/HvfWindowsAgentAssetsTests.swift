@@ -5,7 +5,7 @@ import XCTest
 final class HvfWindowsAgentAssetsTests: XCTestCase {
     private let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
     private let originalBytes = Data("required-agent-asset-v1\n".utf8)
-    private let changedRecipe = "Windows 설치 레시피 또는 wimlib가 변경되었습니다."
+    private let changedRecipe = "The Windows installation tools changed. Reopen BridgeVM and retry."
 
     func testRequiredAgentPathsAreExactUniqueAndRequiredByPreflight() {
         let expected = [
@@ -58,7 +58,7 @@ final class HvfWindowsAgentAssetsTests: XCTestCase {
                 try FileManager.default.removeItem(at: asset)
                 let capturedWithoutAsset = plan(root: root, iso: iso)
                 XCTAssertEqual(capturedWithoutAsset.validationError(),
-                               "앱 설치 리소스가 없습니다: \(relative)", relative)
+                               "BridgeVM is missing an installation resource (\(relative)). Reinstall the app and retry.", relative)
                 try write(originalBytes, to: asset)
             }
         }

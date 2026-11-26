@@ -34,7 +34,7 @@ final class HvfRuntimeWorkAdmissionFixture {
     static let reservationReason = "This VM is being deleted, duplicated or moved. Try again when the operation finishes."
     static let ownerReason = "The selected VM changed. Refresh the library and reopen its window."
     static let missingReason = "This VM’s registration changed. Refresh the library and try again."
-    static let expiredReason = "VM 라이브러리를 사용할 수 없습니다. 라이브러리 화면에서 다시 시도하세요."
+    static let expiredReason = "The VM library is unavailable. Return to the library and try again."
     static let runtimeReason = "The VM is running, starting or shutting down. Wait until it is fully stopped, then try again."
     static let installReason = "Windows is being installed. Finish or cancel installation before trying again."
     static let controlReason = "A VM control operation is in progress. Try again when it finishes."

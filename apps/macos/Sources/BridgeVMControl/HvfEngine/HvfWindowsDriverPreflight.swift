@@ -37,8 +37,7 @@ struct HvfWindowsDriverPreflight: Equatable {
     }
 
     static func message(for blocker: String) -> String {
-        "3D 드라이버 사전 점검 차단 [\(blocker)]: Windows-HVF 3D 주입에는 검증된 서명 " +
-        "provenance가 필요합니다. 검증기는 아직 구현되지 않았습니다. 3D 주입을 끄고 다시 생성하세요."
+        "BridgeVM can’t verify the signing provenance of the Windows 3D driver. Turn off 3D driver injection and create the VM again. [\(blocker)]"
     }
 
     var userMessage: String? { blocker.map(Self.message) }

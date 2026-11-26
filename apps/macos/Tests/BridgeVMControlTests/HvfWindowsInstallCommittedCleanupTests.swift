@@ -61,7 +61,7 @@ final class HvfWindowsInstallCommittedCleanupTests: XCTestCase {
                 XCTFail("corrupt publication must not be cleaned as success")
             })
         XCTAssertEqual(result.config.installPending, true)
-        XCTAssertTrue(result.issue?.contains("실행을 차단") == true)
+        XCTAssertTrue(result.issue?.contains("Windows can’t start until setup recovers") == true)
         XCTAssertTrue(FileManager.default.fileExists(atPath: f.paths.journal.path))
         XCTAssertNotEqual(try? HvfWindowsInstallRecovery.inspect(plan: f.plan), .fresh)
     }

@@ -11,9 +11,9 @@ extension LibraryModel {
         },
         adopt: ((VMConfig) -> Bool)? = nil
     ) async -> String? {
-        guard !firstRunImportBusy else { return "VM 가져오기가 이미 진행 중입니다." }
+        guard !firstRunImportBusy else { return "An import is already in progress." }
         guard firstRunImport.publishedConfig == nil else { return firstRunImportError }
-        guard !Task.isCancelled else { return "VM 가져오기를 시작하지 않았습니다." }
+        guard !Task.isCancelled else { return "The import did not start." }
         let operation = firstRunImport.begin(displayName: inputs.displayName)
         let root = rootURL
         let result = await Task.detached(priority: .userInitiated) {

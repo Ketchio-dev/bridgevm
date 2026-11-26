@@ -20,11 +20,11 @@ enum HelperCodeSignature {
         var message: String {
             switch self {
             case let .notAFile(path):
-                return "헬퍼 실행 파일이 없습니다: \(path)"
+                return "The helper at \(path) is missing or cannot run."
             case let .unsigned(path):
-                return "헬퍼에 코드 서명이 없습니다: \(path)"
+                return "The helper at \(path) has no readable signing team."
             case let .teamMismatch(helper, expected, found):
-                return "헬퍼의 서명 팀이 앱과 다릅니다: \(helper) (앱 \(expected), 헬퍼 \(found ?? "없음"))"
+                return "BridgeVM requires signing team \(expected) for \(helper), but the helper reports \(found ?? "no team")."
             }
         }
     }

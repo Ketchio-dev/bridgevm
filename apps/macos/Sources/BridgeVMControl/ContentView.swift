@@ -5,15 +5,23 @@ import AppKit
 struct ContentView: View {
     @ObservedObject var library: LibraryModel
     @State private var presentation = LibraryWindowPresentation()
+    @State private var libraryQuery = ""
+    @State private var showingCompactList = false
     @State private var importDraft = FirstRunFormDraft()
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    private var allowsVMComparison: Bool {
+        library.selectedID != LibraryModel.firstRunImportSelectionID && library.selectedRetainedControl == nil
+    }
+
     var body: some View {
         #if DEBUG && BRIDGEVM_APP_UI_HOST
         let _ = AppUIHost.prepared?.lifecycle.record(.contentBodyEvaluated)
         #endif
         GeometryReader { geometry in
-            if geometry.size.width < 850 {
-                CompactLibraryNavigation(library: library)
+            if library.proMode && allowsVMComparison {
+                FleetTableView(library: library) { showingCompactList = false }
+            } else if geometry.size.width < 850 {
+                CompactLibraryNavigation(library: library, query: $libraryQuery, showingList: $showingCompactList)
             } else {
                 let wide = geometry.size.width >= 1100
                 libraryNavigation
@@ -24,6 +32,7 @@ struct ContentView: View {
         }
         .environment(\.firstRunFormDraft, $importDraft)
         .onChange(of: library.selectedID) { _, selection in
+            if selection != nil { showingCompactList = false }
             if let selection, selection != LibraryModel.firstRunImportSelectionID {
                 importDraft = FirstRunFormDraft()
             }
@@ -61,6 +70,15 @@ struct ContentView: View {
         }
         .modifier(LibraryOperationAlerts(library: library))
         .toolbar {
+            if allowsVMComparison && !library.proMode && library.vms.count > 1 {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { library.proMode = true } label: {
+                        Label("Compare VMs", systemImage: "tablecells")
+                    }
+                    .help("Compare VM configurations")
+                    .accessibilityIdentifier("bridgevm.library.toolbar.compare")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button { presentation.sheet = .palette } label: {
                     Label("Command Palette", systemImage: "magnifyingglass")
@@ -84,7 +102,7 @@ struct ContentView: View {
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 sidebar
             } content: {
-                LibraryOverviewView(library: library)
+                LibraryOverviewView(library: library, query: $libraryQuery)
                     .navigationSplitViewColumnWidth(min: 390, ideal: 480, max: 580)
             } detail: {
                 LibraryDashboardRoute(library: library)

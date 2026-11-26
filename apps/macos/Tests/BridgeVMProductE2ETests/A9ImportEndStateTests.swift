@@ -5,6 +5,8 @@ final class A9ImportEndStateTests: XCTestCase {
     private let keyExists = "VM 번들을 만들지 못했습니다: 대상 VM ID에 이미 vTPM 키가 있습니다: windows-11"
 
     func testStageLabelsMapToFixedTokens() {
+        XCTAssertEqual(A9ImportEndState.stageToken("Copying VM files…"), "copying")
+        XCTAssertEqual(A9ImportEndState.stageToken("Checking your library…"), "reading-library")
         XCTAssertEqual(A9ImportEndState.stageToken("VM 파일 복사 중…"), "copying")
         XCTAssertEqual(A9ImportEndState.stageToken("라이브러리 확인 중…"), "reading-library")
         XCTAssertEqual(A9ImportEndState.stageToken("새 단계"), "other")
@@ -12,7 +14,11 @@ final class A9ImportEndStateTests: XCTestCase {
     }
 
     func testErrorsMapToFixedTokensWithoutProductText() {
+        XCTAssertEqual(A9ImportEndState.errorToken("Disk image not found at /Volumes/private/disk.raw"), "validation")
+        XCTAssertEqual(A9ImportEndState.errorToken("The saved VM could not be opened. Check the library folder and choose Open Saved VM again."), "recovery-failed")
         XCTAssertEqual(A9ImportEndState.errorToken("VM 번들을 만들지 못했습니다: The destination VM already has a vTPM key (owned fixture)."),
+                       "bundle-failed/destination-key-exists")
+        XCTAssertEqual(A9ImportEndState.errorToken("Could not import the Windows files. The destination VM already has a vTPM key (owned fixture)."),
                        "bundle-failed/destination-key-exists")
         XCTAssertEqual(A9ImportEndState.errorToken(keyExists), "bundle-failed/destination-key-exists")
         XCTAssertEqual(A9ImportEndState.errorToken("VM 번들을 만들지 못했습니다: Keychain에서 vTPM 상태 키를 읽지 못했습니다 (OSStatus -25293)."),

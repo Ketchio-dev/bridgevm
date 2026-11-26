@@ -47,7 +47,7 @@ final class ControlDisplayCloseTests: XCTestCase {
         session.attachedToExistingProcess = true
         var message: String?
         XCTAssertFalse(ControlDisplayClose.apply(.shutdown, session: session, report: { message = $0 }))
-        XCTAssertEqual(message, "다른 실행 경로에서 시작된 VM은 이 앱이 안전하게 정지할 수 없습니다.")
+        XCTAssertEqual(message, "Stop the VM from the app or tool that started it.")
     }
     func testRenderCloseAlertOffscreen() throws {
         guard let path = ProcessInfo.processInfo.environment["BV_START_CLOSE_RENDER"] else { throw XCTSkip("Opt-in offscreen render") }

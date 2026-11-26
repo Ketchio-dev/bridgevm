@@ -1225,7 +1225,7 @@ final class HvfWindowsBackendTests: XCTestCase {
 
         let result = backend.runInGuest("foo")
 
-        XCTAssertEqual(result.output, "HVF VM이 실행 중이 아닙니다.")
+        XCTAssertEqual(result.output, "Start the VM before sending a command.")
         XCTAssertEqual(result.code, -1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: backend.ctlFilePath))
     }
@@ -1259,7 +1259,7 @@ final class HvfWindowsBackendTests: XCTestCase {
 
         XCTAssertLessThan(Date().timeIntervalSince(started), 1)
         XCTAssertEqual(result.code, -1)
-        XCTAssertEqual(result.output, "HVF 제어 채널에 명령을 기록하지 못했습니다: \(backend.ctlFilePath)")
+        XCTAssertEqual(result.output, "BridgeVM couldn’t write the command to \(backend.ctlFilePath).")
     }
 
     func testRunInGuestReturnsImmediatelyWhenRuntimeDirectoriesCannotBeCreated() throws {
@@ -1277,7 +1277,7 @@ final class HvfWindowsBackendTests: XCTestCase {
 
         XCTAssertLessThan(Date().timeIntervalSince(started), 1)
         XCTAssertEqual(result.code, -1)
-        XCTAssertEqual(result.output, "HVF 런타임 디렉터리를 준비하지 못했습니다: \(cfg.bundlePath)")
+        XCTAssertEqual(result.output, "BridgeVM couldn’t prepare the runtime folders in \(cfg.bundlePath).")
     }
 
     func testRunInGuestReturnsImmediatelyWhenVMExitsWhileWaiting() throws {
@@ -1298,7 +1298,7 @@ final class HvfWindowsBackendTests: XCTestCase {
         let result = backend.runInGuest("foo")
 
         XCTAssertLessThan(Date().timeIntervalSince(started), 1)
-        XCTAssertEqual(result.output, "HVF 게스트 연결이 명령 실행 중 종료되었습니다: foo")
+        XCTAssertEqual(result.output, "Windows disconnected before reporting the result of “foo”.")
         XCTAssertEqual(result.code, -1)
         XCTAssertEqual(try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8), "foo\n")
     }
@@ -1524,7 +1524,7 @@ final class HvfCommandReplyReaderTests: XCTestCase {
         let reply = try XCTUnwrap(reader.readReply(from: log))
 
         XCTAssertEqual(reply.code, 0)
-        XCTAssertTrue(reply.output.hasPrefix("[출력 일부 생략]\n"))
+        XCTAssertTrue(reply.output.hasPrefix("[Some output omitted]\n"))
         XCTAssertTrue(reply.output.contains("line-99-"))
         XCTAssertFalse(reply.output.contains("line-0-"))
         XCTAssertLessThan(reply.output.utf8.count, 200)

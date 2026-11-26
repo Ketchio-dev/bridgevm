@@ -21,6 +21,13 @@ struct HvfWindowsSnapshotCard: View {
         let refreshID: Int
     }
 
+    var statusText: String {
+        if let status = model.status { return status }
+        return session.hasActiveRuntimeWork
+            ? "Snapshots are available when Windows is shut down and other VM operations have finished."
+            : "Create a snapshot to save the Windows disk and boot settings."
+    }
+
     var body: some View {
         let listRequest = ListRequest(bundle: HvfDiskGrow.bundle(config: config), refreshID: model.listRevision)
         let entries = listedEntries ?? []
@@ -44,7 +51,7 @@ struct HvfWindowsSnapshotCard: View {
                 if model.busy { ProgressView().controlSize(.small) }
             }
             .disabled(session.hasActiveRuntimeWork || model.busy)
-            Text(model.status)
+            Text(statusText)
                 .font(.caption)
                 .foregroundColor(model.failed ? .red : .secondary)
                 .accessibilityIdentifier("bridgevm.runtime.snapshot.status")

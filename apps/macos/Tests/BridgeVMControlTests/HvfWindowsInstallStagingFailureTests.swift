@@ -39,8 +39,8 @@ final class HvfWindowsInstallStagingFailureTests: XCTestCase {
             guard case let .failed(message) = result.stage else { return XCTFail("\(directory.path): stage=\(result.stage)") }
             XCTAssertEqual(installer.mediaPresentAtRun, [], directory.path)
             XCTAssertEqual(message, WindowsFileFailureFeedback.preparation)
-            XCTAssertTrue(result.log.contains { $0.contains("현재 사용자만 쓸 수 있는 디렉터리가 아니어서 거부했습니다: \(directory.path)") }, "permission cause must remain in diagnostics")
-            XCTAssertFalse(message.contains("심볼릭 링크"), message)
+            XCTAssertTrue(result.log.contains { $0.contains("The installation folder must be owned by the current user and writable only by that user: \(directory.path)") }, "permission cause must remain in diagnostics")
+            XCTAssertFalse(message.contains("symbolic link"), message)
         }
     }
 

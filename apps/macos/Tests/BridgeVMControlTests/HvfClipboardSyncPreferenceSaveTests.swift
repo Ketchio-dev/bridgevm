@@ -103,7 +103,8 @@ final class HvfClipboardSyncPreferenceSaveTests: XCTestCase {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             return VMRegistrationWriter.commit((try? encoder.encode(raced)) ?? data, to: url)
         }))
-        XCTAssertNotNil(library.operationError)
+        XCTAssertTrue(library.showsSettingsReloadNotice)
+        XCTAssertNil(library.operationError)
         let current = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
         XCTAssertFalse(current === session)
         XCTAssertFalse(current.config.clipboardSync)

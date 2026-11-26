@@ -70,7 +70,7 @@ final class FirstRunImportRecoveryTests: XCTestCase {
         let failure = await model.recoverPublishedFirstRunImport()
 
         XCTAssertTrue(try XCTUnwrap(failure).contains(warning))
-        XCTAssertTrue(try XCTUnwrap(failure).contains("저장된 VM 불러오기"))
+        XCTAssertTrue(try XCTUnwrap(failure).contains("Open Saved VM"))
         XCTAssertEqual(model.firstRunImport.publishedConfig?.slug, "imported")
         XCTAssertFalse(model.firstRunImportBusy)
         XCTAssertEqual(try Data(contentsOf: fixture.entry.appendingPathComponent("bundle/disks/hvf-target.raw")),
