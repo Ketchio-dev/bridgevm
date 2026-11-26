@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LibraryWindowPresentation {
     var sheet: Sheet?
+    var cloneSource: VMConfig?
     var showsImportDraft = false
 
     enum Sheet: Hashable, Identifiable {
