@@ -8,12 +8,12 @@ struct HvfGuestLinksToggle: View {
 
     var body: some View {
         if session.persistsLibraryPreferences {
-            Toggle("Windows 링크를 Mac에서 열기", isOn: Binding(get: { session.guestLinksWanted }, set: update))
+            Toggle("Open Windows links on Mac", isOn: Binding(get: { session.guestLinksWanted }, set: update))
                 .accessibilityIdentifier("bridgevm.runtime.guest-links")
                 .disabled(!session.libraryPreferencesEditable)
-                .help("켜면 Windows에서 연 http/https 링크가 Mac의 기본 브라우저에서 열립니다. 다음 VM 시작부터 적용되며, Windows 설정 > 앱 > 기본 앱에서 BridgeVM을 브라우저로 한 번 선택해야 합니다.")
-                .alert("링크 설정", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-                    Button("확인") { message = nil }
+                .help("Starting next time, Windows web links can open in your default Mac browser. In Windows Settings, go to Apps > Default apps and choose BridgeVM as your browser.")
+                .alert("Windows link settings", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+                    Button("OK") { message = nil }
                 } message: {
                     Text(message ?? "")
                 }

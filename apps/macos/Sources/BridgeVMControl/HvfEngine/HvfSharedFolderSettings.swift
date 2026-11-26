@@ -20,13 +20,13 @@ struct HvfSharedFolderSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Toggle("공유 폴더", isOn: Binding(get: { enabled }, set: setEnabled))
+            Toggle("Share a folder", isOn: Binding(get: { enabled }, set: setEnabled))
                 .accessibilityIdentifier("bridgevm.runtime.share.enabled")
-                .help(session.persistsLibraryPreferences ? "VM이 중지된 동안 선택한 폴더는 이 VM의 모든 시작에 저장됩니다." : "")
+                .help(session.persistsLibraryPreferences ? "The folder you choose while the VM is stopped is saved for future starts." : "")
             if enabled {
                 HStack {
-                    Text("Mac 폴더").frame(width: 92, alignment: .leading)
-                    TextField("Mac 폴더", text: $hostDir)
+                    Text("Mac folder").frame(width: 92, alignment: .leading)
+                    TextField("Mac folder", text: $hostDir)
                         .textFieldStyle(.roundedBorder)
                         .font(.body.monospaced())
                         .accessibilityIdentifier("bridgevm.runtime.share.host")
@@ -34,10 +34,11 @@ struct HvfSharedFolderSettings: View {
                         .onSubmit(commitDraft)
                     Button(action: chooseHost) { Image(systemName: "folder") }
                         .accessibilityIdentifier("bridgevm.runtime.share.host.choose")
-                        .help("공유할 Mac 폴더 선택")
+                        .accessibilityLabel("Choose Mac folder")
+                        .help("Choose a Mac folder to share")
                 }
                 HStack {
-                    Text("Windows 폴더").frame(width: 92, alignment: .leading)
+                    Text("Windows folder").frame(width: 92, alignment: .leading)
                     TextField("C:\\bridgevm-share", text: $guestDir)
                         .textFieldStyle(.roundedBorder)
                         .font(.body.monospaced()).accessibilityIdentifier("bridgevm.runtime.share.guest")
@@ -48,10 +49,10 @@ struct HvfSharedFolderSettings: View {
         }
         .disabled(isDisabled)
         .onChange(of: focusedField) { old, _ in if old != nil { commitDraft() } }
-        .alert("공유 폴더 설정", isPresented: Binding(
+        .alert("Shared folder settings", isPresented: Binding(
             get: { message != nil }, set: { if !$0 { message = nil } }
         )) {
-            Button("확인") { message = nil }
+            Button("OK") { message = nil }
         } message: {
             Text(message ?? "")
         }

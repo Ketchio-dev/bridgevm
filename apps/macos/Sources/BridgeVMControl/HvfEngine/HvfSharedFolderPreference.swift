@@ -47,7 +47,7 @@ extension VMConfig {
 }
 
 extension HvfEngineConfig {
-    static let shareUnavailableMessage = "공유 폴더를 사용할 수 없어 이번 시작에는 공유를 껐으니 설정에서 공유 폴더를 다시 선택하세요."
+    static let shareUnavailableMessage = "Folder sharing is off for this start because the shared folder is unavailable. Choose the folder again in Settings."
 
     /// A launch-only copy: never clears or rewrites the saved preference.
     func preparingSharedFolder(diagnostic: (String) -> Void) -> HvfEngineConfig {
@@ -105,7 +105,7 @@ extension HvfEngineSession {
                   FileManager.default.fileExists(atPath: selection.hostPath, isDirectory: &isDirectory),
                   isDirectory.boolValue,
                   !selection.guestPath.trimmingCharacters(in: .whitespaces).isEmpty else {
-                return "공유 폴더를 저장하려면 존재하는 호스트 디렉터리의 절대 경로와 게스트 경로가 모두 필요합니다."
+                return "Enter the full path to an existing Mac folder and a destination path in Windows."
             }
         }
         return saveLibraryPreference("Shared folder", publish: publish) {
@@ -123,7 +123,7 @@ extension HvfEngineSession {
                 || visible?.guestPath != saved.sharedFolderGuestPath else { return nil }
         let result = applySharedFolderSelection(visible)
         guard result.selection == visible else {
-            return result.message ?? "공유 폴더 설정을 저장하지 못했습니다. 설정을 확인한 뒤 다시 시작하세요."
+            return result.message ?? "Couldn’t save the shared folder. Check the folder settings and try starting again."
         }
         return result.message
     }
