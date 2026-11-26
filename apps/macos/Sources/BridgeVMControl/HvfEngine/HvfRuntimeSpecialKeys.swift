@@ -26,8 +26,12 @@ struct HvfRuntimeSpecialKeys: View {
                 }
             }
             if inputRefused {
-                Label("키 입력이 거부되었습니다. 이벤트 기록을 확인하세요.", systemImage: "exclamationmark.circle")
-                    .font(.callout).foregroundStyle(.orange)
+                Label {
+                    Text("Couldn’t send the key to Windows. Check the event log.")
+                } icon: {
+                    Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
+                }
+                    .font(.callout)
                     .accessibilityIdentifier("bridgevm.runtime.specialkeys.refusal")
             }
         }
@@ -46,10 +50,10 @@ struct HvfRuntimeSpecialKeys: View {
 
     private var navigationKeys: some View {
         HStack(spacing: 4) {
-            Button("←") { send("left") }.accessibilityLabel("왼쪽 화살표")
-            Button("↑") { send("up") }.accessibilityLabel("위쪽 화살표")
-            Button("↓") { send("down") }.accessibilityLabel("아래쪽 화살표")
-            Button("→") { send("right") }.accessibilityLabel("오른쪽 화살표")
+            Button("←") { send("left") }.accessibilityLabel("Left Arrow")
+            Button("↑") { send("up") }.accessibilityLabel("Up Arrow")
+            Button("↓") { send("down") }.accessibilityLabel("Down Arrow")
+            Button("→") { send("right") }.accessibilityLabel("Right Arrow")
             Button("Home") { send("home") }
             Button("End") { send("end") }
         }
@@ -57,9 +61,9 @@ struct HvfRuntimeSpecialKeys: View {
 
     private var systemKeys: some View {
         HStack(spacing: 4) {
-            Button("Win") { send("win") }.help("Windows 키 (시작 메뉴)")
+            Button("Win") { send("win") }.accessibilityLabel("Windows key").help("Open the Windows Start menu")
                 .accessibilityIdentifier("bridgevm.runtime.specialkeys.windows")
-            Button("Ctrl-Alt-Delete") { send("ctrl+alt+delete") }
+            Button("Ctrl+Alt+Delete") { send("ctrl+alt+delete") }
         }
     }
 
