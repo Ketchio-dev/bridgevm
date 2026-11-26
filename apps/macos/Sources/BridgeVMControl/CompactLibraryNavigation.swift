@@ -13,7 +13,7 @@ struct CompactLibraryNavigation: View {
             HStack {
                 if hasLibrary && (!showsOverview || library.selectedID != nil) {
                     Button { showingList = !showsOverview } label: {
-                        Label(showsOverview ? "상세 보기" : "가상 머신 목록",
+                        Label(showsOverview ? "VM details" : "Virtual machines",
                               systemImage: showsOverview ? "chevron.forward" : "chevron.backward")
                     }
                     .keyboardShortcut(showsOverview ? "]" : "[", modifiers: .command)
@@ -23,7 +23,7 @@ struct CompactLibraryNavigation: View {
                 Button { showingSidebar.toggle() } label: {
                     Image(systemName: "sidebar.leading")
                 }
-                .accessibilityLabel("사이드바")
+                .accessibilityLabel("Sidebar")
                 .popover(isPresented: $showingSidebar) {
                     LibrarySidebar(library: library, didShowOverview: {
                         showingSidebar = false
@@ -43,7 +43,7 @@ struct CompactLibraryNavigation: View {
                 LibraryDashboardRoute(library: library)
                     .background {
                         if !library.vms.isEmpty {
-                            Button("VM 검색") { showingList = true }
+                            Button("Search VMs") { showingList = true }
                                 .keyboardShortcut("f", modifiers: .command)
                                 .focusable(false).accessibilityHidden(true).opacity(0)
                         }
