@@ -18,14 +18,14 @@ struct HvfWindowsInstallPreparationView: View {
         case .preparing:
             VStack(spacing: 12) {
                 ProgressView()
-                Text("설치 준비 정보를 확인하는 중…")
+                Text("Checking the installation settings…")
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityIdentifier("bridgevm.windows.install.preparing")
         case let .failed(message):
             VStack(spacing: 12) {
                 Text(message).foregroundColor(.secondary)
-                Button("다시 확인") { preparation.retry() }
+                Button("Check Again") { preparation.retry() }
             }
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
