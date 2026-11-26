@@ -37,6 +37,24 @@ final class HvfWindowsSnapshotStoreTests: XCTestCase {
         XCTAssertEqual(Store.list(bundle: bundle).first?.url.path, first.standardizedFileURL.path)
     }
 
+    @MainActor
+    func testSnapshotsInTheSameMinuteHaveDistinctRestoreTargets() throws {
+        let bundle = temporaryBundle()
+        defer { try? FileManager.default.removeItem(at: bundle) }
+        for filename in ["20261126-120008.snapshot", "20261126-120034.snapshot"] {
+            let snapshot = try entry(bundle, filename, date: 0)
+            try "업데이트 전".write(to: Store.nameFile(snapshot), atomically: true, encoding: .utf8)
+        }
+        let entries = Store.list(bundle: bundle)
+        XCTAssertEqual(entries.count, 2)
+        XCTAssertEqual(Set(entries.map(\.label)).count, 2)
+        let model = HvfWindowsSnapshotModel()
+        let questions = try entries.map { entry in
+            try XCTUnwrap(model.confirmation(for: .restore, snapshotDate: entry.date, label: entry.label) { _ in nil }).title
+        }
+        XCTAssertEqual(Set(questions).count, 2)
+    }
+
     func testDeleteRefusesSymlinkOutsideEntryAndSymlinkedParentWithoutTouchingData() throws {
         let bundle = temporaryBundle(); defer { try? FileManager.default.removeItem(at: bundle) }
         let safe = try entry(bundle, "latest.snapshot", date: 100)
