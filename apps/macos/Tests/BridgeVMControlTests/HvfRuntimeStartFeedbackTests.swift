@@ -8,9 +8,9 @@ final class HvfRuntimeStartFeedbackTests: XCTestCase {
     private let appSentence = "앱 실행 파일이 없거나 손상되어 Windows를 시작하지 못했으니 BridgeVM을 다시 설치하세요."
 
     private var readinessSentences: [(String, String)] { [
-        ("target-disk-missing", "Windows 디스크를 찾을 수 없어 시작하지 못했으니 VM 설정에서 디스크를 다시 선택하세요."),
+        ("target-disk-missing", "Windows 디스크를 찾을 수 없으니 저장 장치를 다시 연결하거나 디스크 파일을 원래 위치에 복원한 뒤 다시 시작하세요."),
         ("target-disk-access", "Windows 디스크에 접근할 수 없어 시작하지 못했으니 Finder에서 디스크 파일의 읽기 및 쓰기 권한을 확인하세요."),
-        ("target-disk-empty", "Windows 디스크가 비어 있어 시작하지 못했으니 VM 설정에서 Windows가 설치된 디스크를 선택하세요."),
+        ("target-disk-empty", "Windows 디스크 파일이 비어 있으니 같은 위치에 원래 디스크의 백업을 복원한 뒤 다시 시작하세요."),
         ("uefi-vars-missing", "부팅 설정 파일을 찾을 수 없어 Windows를 시작하지 못했으니 VM 폴더에서 파일을 확인하거나 백업에서 복원하세요."),
         ("uefi-vars-access", "부팅 설정 파일에 접근할 수 없어 Windows를 시작하지 못했으니 Finder에서 해당 파일의 읽기 및 쓰기 권한을 확인하세요."),
         ("uefi-vars-size", "부팅 설정 파일의 크기가 올바르지 않아 Windows를 시작하지 못했으니 백업에서 64 MiB 크기의 파일을 복원하세요."),
