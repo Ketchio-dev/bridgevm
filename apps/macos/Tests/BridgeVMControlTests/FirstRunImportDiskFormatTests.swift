@@ -56,6 +56,7 @@ final class FirstRunImportDiskFormatTests: XCTestCase {
         var footer = Data(count: 512)
         footer.replaceSubrange(0..<8, with: "conectix".utf8)
         footer.replaceSubrange(12..<16, with: [0, 1, 0, 0])
+        footer[63] = 2
         try (raw + footer).write(to: fixture.disk)
         XCTAssertEqual(HvfImportedDiskFormat.detect(path: fixture.disk.path), .vhd)
     }

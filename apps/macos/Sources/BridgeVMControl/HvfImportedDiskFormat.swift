@@ -5,13 +5,14 @@ enum HvfImportedDiskFormat: String {
     case qcow2 = "QCOW2"
     case vhdx = "VHDX"
     case vhd = "VHD"
+    case nonFixedVHD = "Hyper-V VHD"
     case vdi = "VDI"
     case vmdk = "VMDK"
 
     var importError: FirstRunImport.ValidationError? {
         switch self {
         case .vdi, .vmdk: return .unsupportedDiskFormat(rawValue)
-        case .qcow2, .vhdx, .vhd: return nil
+        case .qcow2, .vhdx, .vhd, .nonFixedVHD: return nil
         }
     }
 
@@ -32,8 +33,8 @@ enum HvfImportedDiskFormat: String {
         // independently of the filename; the native converter checks its checksum and layout.
         guard let end = try? handle.seekToEnd(), end >= 512,
               (try? handle.seek(toOffset: end - 512)) != nil,
-              let footer = try? handle.read(upToCount: 16), footer.count == 16,
-              footer.starts(with: "conectix".utf8), footer.suffix(4).elementsEqual([0, 1, 0, 0]) else { return nil }
-        return .vhd
+              let footer = try? handle.read(upToCount: 64), footer.count == 64,
+              footer.starts(with: "conectix".utf8), footer[12..<16].elementsEqual([0, 1, 0, 0]) else { return nil }
+        return footer[60..<64].elementsEqual([0, 0, 0, 2]) ? .vhd : .nonFixedVHD
     }
 }
