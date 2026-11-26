@@ -46,7 +46,8 @@ impl VirtioGpu {
         let Some(wake) = self.vblank_wake.as_ref() else {
             return;
         };
-        let parked = !self.vblank_interval.is_zero() && !self.pending_vblank.is_empty();
+        let parked = !self.vblank_interval.is_zero()
+            && (self.refresh_interrupt_enabled || !self.pending_vblank.is_empty());
         let deadline = self.last_vblank.map(|last| last + self.vblank_interval);
         wake.publish(parked, deadline);
     }
@@ -56,7 +57,9 @@ impl VirtioGpu {
     }
 
     pub(crate) fn drain_host_vblank_at(&mut self, mem: &mut dyn GuestMemoryMut, now: Instant) {
-        if self.vblank_interval.is_zero() || self.pending_vblank.is_empty() {
+        if self.vblank_interval.is_zero()
+            || (!self.refresh_interrupt_enabled && self.pending_vblank.is_empty())
+        {
             return;
         }
         if self
@@ -66,18 +69,29 @@ impl VirtioGpu {
             return;
         }
 
-        // Retire exactly one response. Even if the vCPU did not exit for several
-        // intervals, do not catch up in a burst.
-        let pending_response = self.pending_vblank.pop_front().expect("nonempty");
-        let used_len =
-            Self::scatter_write(mem, &pending_response.descs, &pending_response.response);
-        Self::write_used(
-            mem,
-            &pending_response.queue,
-            pending_response.head,
-            used_len,
-        );
-        self.pci.mark_queue_interrupt(pending_response.queue_index);
+        // Retire at most one response per retrace, even after a long gap.
+        let used_len = if let Some(pending_response) = self.pending_vblank.pop_front() {
+            let used_len =
+                Self::scatter_write(mem, &pending_response.descs, &pending_response.response);
+            Self::write_used(
+                mem,
+                &pending_response.queue,
+                pending_response.head,
+                used_len,
+            );
+            self.pci.mark_queue_interrupt(pending_response.queue_index);
+            self.recycle_parked_response_buffers(pending_response.descs, pending_response.response);
+            used_len
+        } else {
+            0
+        };
+        if self.refresh_interrupt_enabled {
+            // A dedicated config event identifies an actual virtual retrace.
+            // Ordinary control/cursor completions must never count as vsync.
+            self.events_read |= 1 << 31;
+            self.pci.interrupt_status |= 2;
+            self.pending_config_change = true;
+        }
         // Anchor the next deadline on the absolute schedule, not the (late)
         // retire time, so wake/drain latency does not accumulate into a lower
         // long-run rate. Re-anchor at `now` only after a gap of more than one
@@ -103,6 +117,5 @@ impl VirtioGpu {
                 ",\"vblank_paced_count\":{count},\"interval_ns\":{interval_ns},\"used_len\":{used_len},\"pending\":{pending}"
             );
         });
-        self.recycle_parked_response_buffers(pending_response.descs, pending_response.response);
     }
 }

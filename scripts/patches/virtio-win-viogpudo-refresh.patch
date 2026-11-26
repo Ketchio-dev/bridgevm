@@ -1,0 +1,535 @@
+diff --git a/viogpu/viogpudo/bridgevm_refresh.h b/viogpu/viogpudo/bridgevm_refresh.h
+new file mode 100644
+index 0000000..5f11099
+--- /dev/null
++++ b/viogpu/viogpudo/bridgevm_refresh.h
+@@ -0,0 +1,14 @@
++#pragma once
++
++// Integer-Hz virtual raster. A retrace interrupt marks the START of blanking,
++// so phase zero is line activeLines, not the first visible scan line.
++inline unsigned int BridgeVmRefreshRasterLine(unsigned long long elapsedTicks,
++                                              unsigned long long ticksPerSecond,
++                                              unsigned int hz,
++                                              unsigned int activeLines)
++{
++    const unsigned long long phase = ((elapsedTicks % ticksPerSecond) * hz) % ticksPerSecond;
++    const unsigned int totalLines = activeLines + 20;
++    const unsigned int linesAfterRetrace = static_cast<unsigned int>(phase * totalLines / ticksPerSecond);
++    return (activeLines + linesAfterRetrace) % totalLines;
++}
+diff --git a/viogpu/viogpudo/driver.cpp b/viogpu/viogpudo/driver.cpp
+index 33f18c7..25c462e 100644
+--- a/viogpu/viogpudo/driver.cpp
++++ b/viogpu/viogpudo/driver.cpp
+@@ -88,6 +88,8 @@ extern "C" NTSTATUS DriverEntry(_In_ DRIVER_OBJECT *pDriverObject, _In_ UNICODE_
+     InitialData.DxgkDdiDispatchIoRequest = VioGpuDodDispatchIoRequest;
+     InitialData.DxgkDdiInterruptRoutine = VioGpuDodInterruptRoutine;
+     InitialData.DxgkDdiDpcRoutine = VioGpuDodDpcRoutine;
++    InitialData.DxgkDdiControlInterrupt = VioGpuDodControlInterrupt;
++    InitialData.DxgkDdiGetScanLine = VioGpuDodGetScanLine;
+     InitialData.DxgkDdiQueryChildRelations = VioGpuDodQueryChildRelations;
+     InitialData.DxgkDdiQueryChildStatus = VioGpuDodQueryChildStatus;
+     InitialData.DxgkDdiQueryDeviceDescriptor = VioGpuDodQueryDeviceDescriptor;
+@@ -549,6 +551,18 @@ VioGpuDodQueryVidPnHWCapability(_In_ CONST HANDLE hAdapter, _Inout_ DXGKARG_QUER
+     return pVioGpuDod->QueryVidPnHWCapability(pVidPnHWCaps);
+ }
+
++NTSTATUS APIENTRY VioGpuDodControlInterrupt(CONST HANDLE hAdapter, CONST DXGK_INTERRUPT_TYPE InterruptType, BOOLEAN EnableInterrupt)
++{
++    PAGED_CODE();
++    return reinterpret_cast<VioGpuDod *>(hAdapter)->ControlInterrupt(InterruptType, EnableInterrupt);
++}
++
++NTSTATUS APIENTRY VioGpuDodGetScanLine(CONST HANDLE hAdapter, DXGKARG_GETSCANLINE *pGetScanLine)
++{
++    PAGED_CODE();
++    return reinterpret_cast<VioGpuDod *>(hAdapter)->GetScanLine(pGetScanLine);
++}
++
+ // END: Paged Code
+ #pragma code_seg(pop)
+
+diff --git a/viogpu/viogpudo/driver.h b/viogpu/viogpudo/driver.h
+index 361f476..baad45d 100644
+--- a/viogpu/viogpudo/driver.h
++++ b/viogpu/viogpudo/driver.h
+@@ -82,6 +82,8 @@ BOOLEAN
+ VioGpuDodInterruptRoutine(_In_ VOID *pDeviceContext, _In_ ULONG MessageNumber);
+
+ VOID VioGpuDodDpcRoutine(_In_ VOID *pDeviceContext);
++NTSTATUS APIENTRY VioGpuDodControlInterrupt(CONST HANDLE hAdapter, CONST DXGK_INTERRUPT_TYPE InterruptType, BOOLEAN EnableInterrupt);
++NTSTATUS APIENTRY VioGpuDodGetScanLine(CONST HANDLE hAdapter, DXGKARG_GETSCANLINE *pGetScanLine);
+
+ NTSTATUS
+ APIENTRY
+diff --git a/viogpu/viogpudo/viogpudo.cpp b/viogpu/viogpudo/viogpudo.cpp
+index f950814..4c19bf3 100644
+--- a/viogpu/viogpudo/viogpudo.cpp
++++ b/viogpu/viogpudo/viogpudo.cpp
+@@ -34,12 +34,18 @@
+ #include "bitops.h"
+ #include "viogpum.h"
+ #include "edid.h"
++#include "bridgevm_refresh.h"
+
+ #if !DBG
+ #include "viogpudo.tmh"
+ #endif
+
+ static UINT g_InstanceId = 0;
++// BridgeVM private config extension v1, following the standard GPU_CONFIG.
++static const ULONG BVM_REFRESH_MAGIC = 0x31525642; // little endian "BVR1"
++static const ULONG BVM_VSYNC_EVENT = 0x80000000;
++static const ULONG g_BridgeRefreshRates[] = {120, 30, 60, 75, 90, 144, 165, 180, 240, 360, 480, 540, 600, 720};
++static const UINT g_BridgeRefreshRateCount = RTL_NUMBER_OF(g_BridgeRefreshRates);
+
+ PAGED_CODE_SEG_BEGIN
+ VioGpuDod::VioGpuDod(_In_ DEVICE_OBJECT *pPhysicalDeviceObject)
+@@ -240,6 +246,7 @@ NTSTATUS VioGpuDod::StopDevice(VOID)
+ {
+     PAGED_CODE();
+
++    if (m_pHWDevice) { m_pHWDevice->ControlVsync(FALSE); }
+     m_Flags.DriverStarted = FALSE;
+     return STATUS_SUCCESS;
+ }
+@@ -888,14 +895,18 @@ VOID VioGpuDod::BuildVideoSignalInfo(D3DKMDT_VIDEO_SIGNAL_INFO *pVideoSignalInfo
+     PAGED_CODE();
+
+     pVideoSignalInfo->VideoStandard = D3DKMDT_VSS_OTHER;
+-    pVideoSignalInfo->TotalSize.cx = pModeInfo->VisScreenWidth;
+-    pVideoSignalInfo->TotalSize.cy = pModeInfo->VisScreenHeight;
+-
+-    pVideoSignalInfo->VSyncFreq.Numerator = D3DKMDT_FREQUENCY_NOTSPECIFIED;
+-    pVideoSignalInfo->VSyncFreq.Denominator = D3DKMDT_FREQUENCY_NOTSPECIFIED;
+-    pVideoSignalInfo->HSyncFreq.Numerator = D3DKMDT_FREQUENCY_NOTSPECIFIED;
+-    pVideoSignalInfo->HSyncFreq.Denominator = D3DKMDT_FREQUENCY_NOTSPECIFIED;
+-    pVideoSignalInfo->PixelRate = D3DKMDT_FREQUENCY_NOTSPECIFIED;
++    // A virtual raster with an explicit 20-line blank interval. This is a
++    // virtual timing contract, not an EDID claim about the host's physical panel.
++    const ULONG hz = pModeInfo->Frequency ? pModeInfo->Frequency : 120;
++    pVideoSignalInfo->ActiveSize.cx = pModeInfo->VisScreenWidth;
++    pVideoSignalInfo->ActiveSize.cy = pModeInfo->VisScreenHeight;
++    pVideoSignalInfo->TotalSize.cx = pModeInfo->VisScreenWidth + 80;
++    pVideoSignalInfo->TotalSize.cy = pModeInfo->VisScreenHeight + 20;
++    pVideoSignalInfo->VSyncFreq.Numerator = hz;
++    pVideoSignalInfo->VSyncFreq.Denominator = 1;
++    pVideoSignalInfo->HSyncFreq.Numerator = hz * pVideoSignalInfo->TotalSize.cy;
++    pVideoSignalInfo->HSyncFreq.Denominator = 1;
++    pVideoSignalInfo->PixelRate = UINT64(hz) * pVideoSignalInfo->TotalSize.cx * pVideoSignalInfo->TotalSize.cy;
+     pVideoSignalInfo->ScanLineOrdering = D3DDDI_VSSLO_PROGRESSIVE;
+ }
+
+@@ -907,14 +918,23 @@ NTSTATUS VioGpuDod::AddSingleTargetMode(_In_ CONST DXGK_VIDPNTARGETMODESET_INTER
+     PAGED_CODE();
+
+     DbgPrint(TRACE_LEVEL_VERBOSE, ("---> %s\n", __FUNCTION__));
+-    UNREFERENCED_PARAMETER(pVidPnPinnedSourceModeInfo);
+
+     D3DKMDT_VIDPN_TARGET_MODE *pVidPnTargetModeInfo = NULL;
+     NTSTATUS Status = STATUS_SUCCESS;
+
+-    for (UINT ModeIndex = 0; ModeIndex < m_pHWDevice->GetModeCount(); ++ModeIndex)
+-    {
+-        PVIDEO_MODE_INFORMATION pModeInfo = m_pHWDevice->GetModeInfo(SourceId);
++    UNREFERENCED_PARAMETER(SourceId);
++    for (UINT ModeIndex = 0; ModeIndex < m_pHWDevice->GetModeCount() * g_BridgeRefreshRateCount; ++ModeIndex)
++    {
++        VIDEO_MODE_INFORMATION mode = *m_pHWDevice->GetModeInfo(ModeIndex / g_BridgeRefreshRateCount);
++        mode.Frequency = g_BridgeRefreshRates[ModeIndex % g_BridgeRefreshRateCount];
++        PVIDEO_MODE_INFORMATION pModeInfo = &mode;
++        if (pVidPnPinnedSourceModeInfo &&
++            (mode.VisScreenWidth != pVidPnPinnedSourceModeInfo->Format.Graphics.VisibleRegionSize.cx ||
++             mode.VisScreenHeight != pVidPnPinnedSourceModeInfo->Format.Graphics.VisibleRegionSize.cy))
++        {
++            // Identity scanout targets must be cofunctional with the pinned source.
++            continue;
++        }
+         pVidPnTargetModeInfo = NULL;
+         Status = pVidPnTargetModeSetInterface->pfnCreateNewModeInfo(hVidPnTargetModeSet, &pVidPnTargetModeInfo);
+         if (!NT_SUCCESS(Status))
+@@ -925,10 +945,9 @@ NTSTATUS VioGpuDod::AddSingleTargetMode(_In_ CONST DXGK_VIDPNTARGETMODESET_INTER
+                       LONG_PTR(hVidPnTargetModeSet)));
+             return Status;
+         }
+-        pVidPnTargetModeInfo->VideoSignalInfo.ActiveSize = pVidPnTargetModeInfo->VideoSignalInfo.TotalSize;
+         BuildVideoSignalInfo(&pVidPnTargetModeInfo->VideoSignalInfo, pModeInfo);
+
+-        if (pModeInfo->VisScreenWidth == NOM_WIDTH_SIZE && pModeInfo->VisScreenHeight == NOM_HEIGHT_SIZE)
++        if (pModeInfo->VisScreenWidth == NOM_WIDTH_SIZE && pModeInfo->VisScreenHeight == NOM_HEIGHT_SIZE && pModeInfo->Frequency == 120)
+         {
+             pVidPnTargetModeInfo->Preference = D3DKMDT_MP_PREFERRED;
+         }
+@@ -950,8 +969,10 @@ NTSTATUS VioGpuDod::AddSingleTargetMode(_In_ CONST DXGK_VIDPNTARGETMODESET_INTER
+                           pVidPnTargetModeInfo));
+             }
+
++            const NTSTATUS AddStatus = Status;
+             Status = pVidPnTargetModeSetInterface->pfnReleaseModeInfo(hVidPnTargetModeSet, pVidPnTargetModeInfo);
+             NT_ASSERT(NT_SUCCESS(Status));
++            if (AddStatus != STATUS_GRAPHICS_MODE_ALREADY_IN_MODESET) { return AddStatus; }
+         }
+     }
+     DbgPrint(TRACE_LEVEL_VERBOSE, ("<--- %s\n", __FUNCTION__));
+@@ -1013,12 +1034,15 @@ NTSTATUS VioGpuDod::AddSingleMonitorMode(_In_ CONST DXGKARG_RECOMMENDMONITORMODE
+                                                                                                          pMonitorSourceMode);
+         UNREFERENCED_PARAMETER(TempStatus);
+         NT_ASSERT(NT_SUCCESS(TempStatus));
+-        return Status;
++        // A repeated current mode must not suppress newly published host sizes.
++        if (!NT_SUCCESS(Status)) { return Status; }
+     }
+
+-    for (UINT Idx = 0; Idx < m_pHWDevice->GetModeCount(); ++Idx)
++    for (UINT Idx = 0; Idx < m_pHWDevice->GetModeCount() * g_BridgeRefreshRateCount; ++Idx)
+     {
+-        pVbeModeInfo = m_pHWDevice->GetModeInfo(Idx);
++        VIDEO_MODE_INFORMATION mode = *m_pHWDevice->GetModeInfo(Idx / g_BridgeRefreshRateCount);
++        mode.Frequency = g_BridgeRefreshRates[Idx % g_BridgeRefreshRateCount];
++        pVbeModeInfo = &mode;
+
+         Status = pRecommendMonitorModes->pMonitorSourceModeSetInterface->pfnCreateNewModeInfo(pRecommendMonitorModes->hMonitorSourceModeSet,
+                                                                                               &pMonitorSourceMode);
+@@ -1045,7 +1069,7 @@ NTSTATUS VioGpuDod::AddSingleMonitorMode(_In_ CONST DXGKARG_RECOMMENDMONITORMODE
+         pMonitorSourceMode->ColorCoeffDynamicRanges.SecondChannel = 8;
+         pMonitorSourceMode->ColorCoeffDynamicRanges.ThirdChannel = 8;
+         pMonitorSourceMode->ColorCoeffDynamicRanges.FourthChannel = 8;
+-        if (pVbeModeInfo->VisScreenWidth == NOM_WIDTH_SIZE && pVbeModeInfo->VisScreenHeight == NOM_HEIGHT_SIZE)
++        if (pVbeModeInfo->VisScreenWidth == NOM_WIDTH_SIZE && pVbeModeInfo->VisScreenHeight == NOM_HEIGHT_SIZE && pVbeModeInfo->Frequency == 120)
+         {
+             pMonitorSourceMode->Preference = D3DKMDT_MP_PREFERRED;
+         }
+@@ -1068,9 +1092,11 @@ NTSTATUS VioGpuDod::AddSingleMonitorMode(_In_ CONST DXGKARG_RECOMMENDMONITORMODE
+                           pMonitorSourceMode));
+             }
+
++            const NTSTATUS AddStatus = Status;
+             Status = pRecommendMonitorModes->pMonitorSourceModeSetInterface->pfnReleaseModeInfo(pRecommendMonitorModes->hMonitorSourceModeSet,
+                                                                                                 pMonitorSourceMode);
+             NT_ASSERT(NT_SUCCESS(Status));
++            if (AddStatus != STATUS_GRAPHICS_MODE_ALREADY_IN_MODESET) { return AddStatus; }
+         }
+     }
+
+@@ -1689,9 +1715,23 @@ NTSTATUS VioGpuDod::CommitVidPn(_In_ CONST DXGKARG_COMMITVIDPN *CONST pCommitVid
+         }
+
+         Status = SetSourceModeAndPath(pPinnedVidPnSourceModeInfo, pVidPnPresentPath);
+-        if (!NT_SUCCESS(Status))
++        if (!NT_SUCCESS(Status)) { goto CommitVidPnExit; }
+         {
+-            goto CommitVidPnExit;
++            D3DKMDT_HVIDPNTARGETMODESET targetSet = 0;
++            const DXGK_VIDPNTARGETMODESET_INTERFACE *targetInterface = NULL;
++            const D3DKMDT_VIDPN_TARGET_MODE *targetMode = NULL;
++            Status = pVidPnInterface->pfnAcquireTargetModeSet(pCommitVidPn->hFunctionalVidPn, TargetId, &targetSet, &targetInterface);
++            if (NT_SUCCESS(Status))
++            {
++                Status = targetInterface->pfnAcquirePinnedModeInfo(targetSet, &targetMode);
++                if (NT_SUCCESS(Status) && targetMode)
++                {
++                    Status = m_pHWDevice->SetRefreshTiming(targetMode->VideoSignalInfo);
++                    targetInterface->pfnReleaseModeInfo(targetSet, targetMode);
++                }
++                pVidPnInterface->pfnReleaseTargetModeSet(pCommitVidPn->hFunctionalVidPn, targetSet);
++            }
++            if (!NT_SUCCESS(Status)) { goto CommitVidPnExit; }
+         }
+
+         Status = pVidPnTopologyInterface->pfnReleasePathInfo(hVidPnTopology, pVidPnPresentPath);
+@@ -2316,6 +2356,11 @@ VioGpuAdapter::VioGpuAdapter(_In_ VioGpuDod *pVioGpuDod)
+     m_pFrameBuf = NULL;
+     m_pCursorBuf = NULL;
+     KeInitializeGuardedMutex(&m_CursorMutex);
++    KeInitializeGuardedMutex(&m_RefreshMutex);
++    m_VsyncEnabled = 0;
++    m_RefreshHz = 120;
++    m_ActiveLines = 800;
++    m_LastVsyncQpc = KeQueryPerformanceCounter(NULL).QuadPart;
+     // No sprite is attached until the first shape is set.
+     m_bCursorHidden = TRUE;
+     m_CursorHotX = 0;
+@@ -2402,6 +2447,15 @@ NTSTATUS VioGpuAdapter::VioGpuAdapterInit(DXGK_DISPLAY_INFORMATION *pDispInfo)
+         return status;
+     }
+
++    ULONG timingMagic = 0;
++    virtio_get_config(&m_VioDev, 16, &timingMagic, sizeof(timingMagic));
++    if (timingMagic != BVM_REFRESH_MAGIC)
++    {
++        // This build registers vsync DDIs, so it must not bind to a device
++        // that cannot deliver a real virtual retrace interrupt.
++        virtio_device_shutdown(&m_VioDev);
++        return STATUS_NOT_SUPPORTED;
++    }
+     m_u64HostFeatures = virtio_get_features(&m_VioDev);
+     m_u64GuestFeatures = 0;
+     do
+@@ -2450,6 +2504,7 @@ NTSTATUS VioGpuAdapter::VioGpuAdapterInit(DXGK_DISPLAY_INFORMATION *pDispInfo)
+     {
+         virtio_device_ready(&m_VioDev);
+         m_pVioGpuDod->SetHardwareInit(TRUE);
++        ApplyVsync();
+     }
+     else
+     {
+@@ -2697,6 +2752,9 @@ NTSTATUS VioGpuAdapter::HWInit(PCM_RESOURCE_LIST pResList, DXGK_DISPLAY_INFORMAT
+     }
+
+     req_size = max(req_size, (max_res_size * 4));
++    // WDDM can pad a Retina primary surface beyond its visible geometry.
++    // Reserve 64 MiB so 3600x2260 can be selected after a smaller boot mode.
++    req_size = max(req_size, 64U * 1024U * 1024U);
+
+     if (fb_pa.QuadPart != 0LL)
+     {
+@@ -2745,13 +2803,13 @@ NTSTATUS VioGpuAdapter::HWClose(void)
+     m_bStopWorkThread = TRUE;
+     KeSetEvent(&m_ConfigUpdateEvent, IO_NO_INCREMENT, FALSE);
+
+-    if (KeWaitForSingleObject(m_pWorkThread, Executive, KernelMode, FALSE, &timeout) == STATUS_TIMEOUT)
++    if (m_pWorkThread && KeWaitForSingleObject(m_pWorkThread, Executive, KernelMode, FALSE, &timeout) == STATUS_TIMEOUT)
+     {
+         DbgPrint(TRACE_LEVEL_FATAL, ("---> Failed to exit the worker thread\n"));
+         VioGpuDbgBreak();
+     }
+
+-    ObDereferenceObject(m_pWorkThread);
++    if (m_pWorkThread) { ObDereferenceObject(m_pWorkThread); m_pWorkThread = NULL; }
+
+     m_FrameSegment.Close();
+     m_CursorSegment.Close();
+@@ -3524,6 +3582,7 @@ void VioGpuAdapter::SetVideoModeInfo(UINT Idx, PVIOGPU_DISP_MODE pModeInfo)
+     pMode = &m_ModeInfo[Idx];
+     pMode->Length = sizeof(VIDEO_MODE_INFORMATION);
+     pMode->ModeIndex = Idx;
++    pMode->Frequency = 120;
+     pMode->VisScreenWidth = pModeInfo->XResolution;
+     pMode->VisScreenHeight = pModeInfo->YResolution;
+     pMode->ScreenStride = (pModeInfo->XResolution * 4 + 3) & ~0x3;
+@@ -3649,8 +3708,82 @@ NTSTATUS VioGpuAdapter::BuildModeList(DXGK_DISPLAY_INFORMATION *pDispInfo)
+     DbgPrint(TRACE_LEVEL_VERBOSE, ("<--- %s\n", __FUNCTION__));
+     return Status;
+ }
++NTSTATUS VioGpuDod::ControlInterrupt(DXGK_INTERRUPT_TYPE type, BOOLEAN enabled)
++{
++    PAGED_CODE();
++    if (type != DXGK_INTERRUPT_DISPLAYONLY_VSYNC && type != DXGK_INTERRUPT_CRTC_VSYNC) { return STATUS_NOT_IMPLEMENTED; }
++    return m_pHWDevice ? m_pHWDevice->ControlVsync(enabled) : STATUS_DEVICE_NOT_READY;
++}
++
++NTSTATUS VioGpuDod::GetScanLine(DXGKARG_GETSCANLINE *line)
++{
++    PAGED_CODE();
++    return m_pHWDevice ? m_pHWDevice->GetScanLine(line) : STATUS_DEVICE_NOT_READY;
++}
++
++NTSTATUS VioGpuAdapter::ControlVsync(BOOLEAN enabled)
++{
++    PAGED_CODE();
++    KeAcquireGuardedMutex(&m_RefreshMutex);
++    InterlockedExchange(&m_VsyncEnabled, enabled ? 1 : 0);
++    InterlockedExchange64(&m_LastVsyncQpc, KeQueryPerformanceCounter(NULL).QuadPart);
++    ApplyVsync();
++    KeReleaseGuardedMutex(&m_RefreshMutex);
++    return STATUS_SUCCESS;
++}
++
++NTSTATUS VioGpuAdapter::SetRefreshTiming(const D3DKMDT_VIDEO_SIGNAL_INFO &signal)
++{
++    PAGED_CODE();
++    // Only advertise and commit the same preset set. No silent rounding of a
++    // pinned mode into another rate, and no zero/overflow in raster arithmetic.
++    const ULONG hz = signal.VSyncFreq.Numerator;
++    BOOLEAN supported = FALSE;
++    for (UINT i = 0; i < g_BridgeRefreshRateCount; ++i)
++    {
++        supported |= g_BridgeRefreshRates[i] == hz;
++    }
++    if (!supported || signal.VSyncFreq.Denominator != 1 || signal.ActiveSize.cy == 0 || signal.ActiveSize.cy > 16384)
++    {
++        return STATUS_GRAPHICS_INVALID_VIDPN_TARGETMODESET;
++    }
++    KeAcquireGuardedMutex(&m_RefreshMutex);
++    InterlockedExchange(&m_RefreshHz, LONG(hz));
++    InterlockedExchange(&m_ActiveLines, LONG(signal.ActiveSize.cy));
++    InterlockedExchange64(&m_LastVsyncQpc, KeQueryPerformanceCounter(NULL).QuadPart);
++    ApplyVsync();
++    KeReleaseGuardedMutex(&m_RefreshMutex);
++    return STATUS_SUCCESS;
++}
++
++NTSTATUS VioGpuAdapter::GetScanLine(DXGKARG_GETSCANLINE *line)
++{
++    PAGED_CODE();
++    if (line->VidPnTargetId != 0) { return STATUS_INVALID_PARAMETER; }
++    if (!m_pVioGpuDod->IsHardwareInit()) { return STATUS_DEVICE_NOT_READY; }
++    LARGE_INTEGER frequency;
++    const LONGLONG now = KeQueryPerformanceCounter(&frequency).QuadPart;
++    const LONGLONG last = InterlockedCompareExchange64(&m_LastVsyncQpc, 0, 0);
++    const ULONGLONG elapsed = now >= last ? ULONGLONG(now - last) : 0;
++    const ULONG hz = InterlockedCompareExchange(&m_RefreshHz, 0, 0);
++    const ULONG active = InterlockedCompareExchange(&m_ActiveLines, 0, 0);
++    const ULONG raster = BridgeVmRefreshRasterLine(elapsed, frequency.QuadPart, hz, active);
++    line->InVerticalBlank = raster >= active;
++    line->ScanLine = line->InVerticalBlank ? 0 : raster;
++    return STATUS_SUCCESS;
++}
++
+ PAGED_CODE_SEG_END
+
++void VioGpuAdapter::ApplyVsync()
++{
++    if (!m_pVioGpuDod->IsHardwareInit()) { return; }
++    ULONG hz = InterlockedCompareExchange(&m_RefreshHz, 0, 0);
++    ULONG enabled = InterlockedCompareExchange(&m_VsyncEnabled, 0, 0);
++    virtio_set_config(&m_VioDev, 20, &hz, sizeof(hz));
++    virtio_set_config(&m_VioDev, 24, &enabled, sizeof(enabled));
++}
++
+ BOOLEAN VioGpuAdapter::ResetToVgaMode(void)
+ {
+     DestroyFrameBufferObj(TRUE, TRUE);
+@@ -3694,6 +3827,8 @@ void VioGpuAdapter::VioGpuAdapterClose()
+
+     if (m_pVioGpuDod->IsHardwareInit())
+     {
++        ULONG disabled = 0;
++        virtio_set_config(&m_VioDev, 24, &disabled, sizeof(disabled));
+         m_pVioGpuDod->SetHardwareInit(FALSE);
+         m_CtrlQueue.DisableInterrupt();
+         m_CursorQueue.DisableInterrupt();
+@@ -3740,21 +3875,32 @@ BOOLEAN VioGpuAdapter::InterruptRoutine(_In_ PDXGKRNL_INTERFACE pDxgkInterface,
+         UNREFERENCED_PARAMETER(MessageNumber);
+         UCHAR isrstat = virtio_read_isr_status(&m_VioDev);
+
+-        switch (isrstat)
+-        {
+-            case 1:
+-                intReason = (ISR_REASON_DISPLAY | ISR_REASON_CURSOR);
+-                break;
+-            case 3:
+-                intReason = ISR_REASON_CHANGE;
+-                break;
+-            default:
+-                serviced = FALSE;
+-        }
++        intReason = ((isrstat & 1) ? (ISR_REASON_DISPLAY | ISR_REASON_CURSOR) : 0)
++                  | ((isrstat & 2) ? ISR_REASON_CHANGE : 0);
++        serviced = intReason != 0;
+     }
+
+     if (serviced)
+     {
++        if (intReason & ISR_REASON_CHANGE)
++        {
++            ULONG events = 0;
++            virtio_get_config(&m_VioDev, FIELD_OFFSET(GPU_CONFIG, events_read), &events, sizeof(events));
++            if (events & BVM_VSYNC_EVENT)
++            {
++                ULONG clear = BVM_VSYNC_EVENT;
++                virtio_set_config(&m_VioDev, FIELD_OFFSET(GPU_CONFIG, events_clear), &clear, sizeof(clear));
++                InterlockedExchange64(&m_LastVsyncQpc, KeQueryPerformanceCounter(NULL).QuadPart);
++                if (InterlockedCompareExchange(&m_VsyncEnabled, 0, 0))
++                {
++                    DXGKARGCB_NOTIFY_INTERRUPT_DATA retrace = {};
++                    retrace.InterruptType = DXGK_INTERRUPT_DISPLAYONLY_VSYNC;
++                    retrace.DisplayOnlyVsync.VidPnTargetId = 0;
++                    pDxgkInterface->DxgkCbNotifyInterrupt(pDxgkInterface->DeviceHandle, &retrace);
++                }
++            }
++            if (!(events & VIRTIO_GPU_EVENT_DISPLAY)) { intReason &= ~ISR_REASON_CHANGE; }
++        }
+         if (m_pVioGpuDod->IsUsePresentProgress() && (intReason & ISR_REASON_DISPLAY) == ISR_REASON_DISPLAY)
+         {
+             DXGKARGCB_NOTIFY_INTERRUPT_DATA NotifyInterrupt = {};
+@@ -4059,7 +4205,11 @@ BOOLEAN VioGpuAdapter::GpuObjectAttach(UINT res_id, VioGpuObj *obj)
+     PSCATTER_GATHER_LIST sgl = NULL;
+     UINT size = 0;
+     sgl = obj->GetSGList();
+-    size = sizeof(GPU_MEM_ENTRY) * sgl->NumberOfElements;
++    // The segment reserves Retina headroom; attach only this resource's pages.
++    // Sending all 64 MiB needs 66 direct descriptors and overflows a 64-entry
++    // control queue, so the backing command never reaches the host.
++    const UINT nents = min(sgl->NumberOfElements, UINT(BYTES_TO_PAGES(obj->GetSize())));
++    size = sizeof(GPU_MEM_ENTRY) * nents;
+     ents = reinterpret_cast<PGPU_MEM_ENTRY>(new (NonPagedPoolNx) BYTE[size]);
+
+     if (!ents)
+@@ -4068,20 +4218,20 @@ BOOLEAN VioGpuAdapter::GpuObjectAttach(UINT res_id, VioGpuObj *obj)
+                  ("<--- %s cannot allocate memory %x bytes numberofentries = %d\n",
+                   __FUNCTION__,
+                   size,
+-                  sgl->NumberOfElements));
++                  nents));
+         return FALSE;
+     }
+     // FIXME
+     RtlZeroMemory(ents, size);
+
+-    for (UINT i = 0; i < sgl->NumberOfElements; i++)
++    for (UINT i = 0; i < nents; i++)
+     {
+         ents[i].addr = sgl->Elements[i].Address.QuadPart;
+         ents[i].length = sgl->Elements[i].Length;
+         ents[i].padding = 0;
+     }
+
+-    m_CtrlQueue.AttachBacking(res_id, ents, sgl->NumberOfElements);
++    m_CtrlQueue.AttachBacking(res_id, ents, nents);
+     obj->SetId(res_id);
+     DbgPrint(TRACE_LEVEL_VERBOSE, ("<--- %s\n", __FUNCTION__));
+     return TRUE;
+diff --git a/viogpu/viogpudo/viogpudo.h b/viogpu/viogpudo/viogpudo.h
+index 41533c7..7e20b2b 100644
+--- a/viogpu/viogpudo/viogpudo.h
++++ b/viogpu/viogpudo/viogpudo.h
+@@ -87,6 +87,10 @@ class VioGpuAdapter : IVioGpuPCI
+                            CURRENT_MODE *pCurrentMode);
+     NTSTATUS HWInit(PCM_RESOURCE_LIST pResList, DXGK_DISPLAY_INFORMATION *pDispInfo);
+     NTSTATUS HWClose(void);
++    NTSTATUS ControlVsync(BOOLEAN enabled);
++    NTSTATUS GetScanLine(DXGKARG_GETSCANLINE *line);
++    NTSTATUS SetRefreshTiming(const D3DKMDT_VIDEO_SIGNAL_INFO &signal);
++    void ApplyVsync();
+     NTSTATUS ExecutePresentDisplayOnly(_In_ BYTE *DstAddr,
+                                        _In_ UINT DstBitPerPixel,
+                                        _In_ BYTE *SrcAddr,
+@@ -218,6 +222,12 @@ class VioGpuAdapter : IVioGpuPCI
+     UINT m_CursorHotY;
+     VioGpuMemSegment m_CursorSegment;
+     VioGpuMemSegment m_FrameSegment;
++    // The host produces a dedicated retrace event; queue IRQs are unrelated.
++    KGUARDED_MUTEX m_RefreshMutex;
++    volatile LONG m_VsyncEnabled;
++    volatile LONG m_RefreshHz;
++    volatile LONG m_ActiveLines;
++    DECLSPEC_ALIGN(8) volatile LONG64 m_LastVsyncQpc;
+     volatile ULONG m_PendingWorks;
+     KEVENT m_ConfigUpdateEvent;
+     PETHREAD m_pWorkThread;
+@@ -252,6 +262,8 @@ class VioGpuDod
+     ~VioGpuDod(void);
+ #pragma code_seg(push)
+ #pragma code_seg()
++    NTSTATUS ControlInterrupt(DXGK_INTERRUPT_TYPE type, BOOLEAN enabled);
++    NTSTATUS GetScanLine(DXGKARG_GETSCANLINE *line);
+     BOOLEAN IsDriverActive() const
+     {
+         return m_Flags.DriverStarted;
+diff --git a/viogpu/viogpudo/viogpudo.inx b/viogpu/viogpudo/viogpudo.inx
+index 3b0b996..19c6fa3 100755
+--- a/viogpu/viogpudo/viogpudo.inx
++++ b/viogpu/viogpudo/viogpudo.inx
+@@ -85,8 +85,8 @@ HKR, "Interrupt Management\Affinity Policy", DevicePriority, 0x00010001, 3
+
+ ;  *******Localizable Strings*******
+ diskId1 = "INX_PREFIX_VENDORVirtIO GPU controller Installation Disk"
+-VioGpuDod.DeviceDesc = "INX_PREFIX_VENDORVirtIO GPU DOD controller"
+-VENDOR = "INX_COMPANY"
++VioGpuDod.DeviceDesc = "BridgeVM Virtual Display (experimental)"
++VENDOR = "BridgeVM Experimental"
+
+ ;  *******Non Localizable Strings*******
+ SERVICE_BOOT_START = 0x0

@@ -55,35 +55,27 @@ pub(crate) fn build_edid(width: u32, height: u32) -> [u8; 256] {
 
     // The pixel clock field is 16 bits of 10 kHz (655.35 MHz): 120 Hz fits up
     // to about 2560x1600, larger sizes get 60 Hz rather than a clamped clock.
-    let refresh_hz = if required_pixel_clock_10khz(width, height, 120) <= u64::from(u16::MAX) {
+    let blank = blanking(width, height);
+    let refresh_hz = if required_pixel_clock_10khz(width, height, 120, blank) <= u64::from(u16::MAX)
+    {
         120
     } else {
         60
     };
-    let dtd = detailed_timing_descriptor(width, height, refresh_hz);
-    let pixel_clock_10khz = u16::from_le_bytes([dtd[0], dtd[1]]);
-    let max_pixel_clock_10mhz = pixel_clock_10khz.div_ceil(1_000) as u8;
-    edid[54..72].copy_from_slice(&dtd);
-    edid[72..90].copy_from_slice(&monitor_descriptor(
-        0xfd,
-        &[
-            48,
-            144,
-            30,
-            160,
-            max_pixel_clock_10mhz,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-        ],
+    edid[54..72].copy_from_slice(&detailed_timing_descriptor(
+        width, height, refresh_hz, blank,
     ));
-    edid[90..108].copy_from_slice(&monitor_descriptor_text(0xfc, b"BridgeVM GPU"));
-    edid[108..126].copy_from_slice(&monitor_descriptor_text(0xfe, b"virtio-gpu"));
+    edid[72..90].copy_from_slice(&range_limits());
+    // Windows takes the monitor's modes once, when it arrives. A later host size
+    // it did not list then is offered only at rates where a detailed timing
+    // here, at least as wide and as tall, runs at least as fast (live on
+    // Windows 11 26100, 2026-11-21: 2560x1656 got 30-90 Hz under a 119.999 Hz
+    // 2560x1700 timing, 120 Hz once the clock rounded up, and nothing when no
+    // timing was as large). These two cover any later size up to 2880x1800 at
+    // 120 Hz and up to 4000x2600 at 60 Hz; the descriptor fields stop at 4095
+    // pixels and 655.35 MHz. They take the slots of the two name strings.
+    edid[90..108].copy_from_slice(&detailed_timing_descriptor(2880, 1800, 120, COVER_BLANK));
+    edid[108..126].copy_from_slice(&detailed_timing_descriptor(4000, 2600, 60, COVER_BLANK));
     edid[126] = 1; // extension blocks
     edid[127] = checksum(&edid[..127]);
     edid[128..].copy_from_slice(&cta_extension());
@@ -138,27 +130,48 @@ fn standard_timing(width: u32, height: u32) -> [u8; 2] {
     [encoded_width as u8, aspect << 6]
 }
 
+/// Small blanking for the covering timings, so they fit the 16-bit clock field.
+const COVER_BLANK: (u32, u32) = (80, 30);
+
+/// Display range limits wide enough for every mode the guest can pick: 24-510
+/// Hz vertical and 1-510 kHz horizontal (EDID 1.4 +255 offsets on the maxima),
+/// pixel clock up to 2550 MHz. Windows checks unlisted modes against these
+/// too; the old 48 Hz minimum hid 30 Hz. The virtual panel has no limit to
+/// protect.
+fn range_limits() -> [u8; 18] {
+    let mut range = monitor_descriptor(0xfd, &[24, 255, 1, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0]);
+    range[4] = 0b1010; // +255 on the horizontal and vertical maxima
+    range
+}
+
 fn blanking(width: u32, height: u32) -> (u32, u32) {
     (160u32.max(width / 8), 45u32.max(height / 20))
 }
 
-/// The detailed timing's pixel clock in 10 kHz units, before any clamp.
-fn required_pixel_clock_10khz(width: u32, height: u32, refresh_hz: u32) -> u64 {
-    let (h_blank, v_blank) = blanking(width, height);
+/// The detailed timing's pixel clock in 10 kHz units, before any clamp. Rounded
+/// up, so the timing never runs below `refresh_hz`: Windows compares rates
+/// exactly, and 119.999 Hz does not allow 120.
+fn required_pixel_clock_10khz(width: u32, height: u32, refresh_hz: u32, blank: (u32, u32)) -> u64 {
+    let (h_blank, v_blank) = blank;
     ((u64::from(width) + u64::from(h_blank))
         * (u64::from(height) + u64::from(v_blank))
-        * u64::from(refresh_hz)
-        / 10_000)
-        .max(1)
+        * u64::from(refresh_hz))
+    .div_ceil(10_000)
+    .max(1)
 }
 
-pub(crate) fn detailed_timing_descriptor(width: u32, height: u32, refresh_hz: u32) -> [u8; 18] {
-    let (h_blank, v_blank) = blanking(width, height);
+pub(crate) fn detailed_timing_descriptor(
+    width: u32,
+    height: u32,
+    refresh_hz: u32,
+    blank: (u32, u32),
+) -> [u8; 18] {
+    let (h_blank, v_blank) = blank;
     let h_sync_offset = 48u32.min(h_blank / 3);
     let h_sync_width = 32u32.min(h_blank.saturating_sub(h_sync_offset).max(1));
     let v_sync_offset = 3u32;
     let v_sync_width = 5u32;
-    let requested_pixel_clock_10khz = required_pixel_clock_10khz(width, height, refresh_hz);
+    let requested_pixel_clock_10khz = required_pixel_clock_10khz(width, height, refresh_hz, blank);
     let pixel_clock_10khz = requested_pixel_clock_10khz.min(u64::from(u16::MAX));
     if requested_pixel_clock_10khz > u64::from(u16::MAX) {
         eprintln!(
@@ -197,14 +210,6 @@ pub(crate) fn monitor_descriptor(tag: u8, payload: &[u8]) -> [u8; 18] {
     let n = payload.len().min(13);
     desc[5..5 + n].copy_from_slice(&payload[..n]);
     desc
-}
-
-pub(crate) fn monitor_descriptor_text(tag: u8, text: &[u8]) -> [u8; 18] {
-    let mut payload = [b' '; 13];
-    let n = text.len().min(12);
-    payload[..n].copy_from_slice(&text[..n]);
-    payload[n] = b'\n';
-    monitor_descriptor(tag, &payload)
 }
 
 pub(crate) fn encode_manufacturer(value: &str) -> [u8; 2] {

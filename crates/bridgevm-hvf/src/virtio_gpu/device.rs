@@ -143,6 +143,8 @@ pub struct VirtioGpu {
     pub(crate) trace_fence_complete_count: u64,
     pub(crate) trace_fence_deliver_count: u64,
     pub(crate) vblank_interval: Duration,
+    pub(crate) refresh_hz: u32,
+    pub(crate) refresh_interrupt_enabled: bool,
     pub(crate) last_vblank: Option<Instant>,
     pub(crate) vblank_paced_count: u64,
     pub(crate) vblank_wake: Option<Arc<VblankWakeState>>,
@@ -237,6 +239,8 @@ impl VirtioGpu {
             trace_fence_complete_count: 0,
             trace_fence_deliver_count: 0,
             vblank_interval: Duration::ZERO,
+            refresh_hz: 120,
+            refresh_interrupt_enabled: false,
             last_vblank: None,
             vblank_paced_count: 0,
             vblank_wake: None,
@@ -304,6 +308,7 @@ impl VirtioGpu {
         self.pci.reset();
         self.events_read = 0;
         self.events_clear = 0;
+        self.refresh_interrupt_enabled = false;
         self.pending_config_change = false;
         self.resources.clear();
         self.cursor.reset();

@@ -96,8 +96,10 @@ pub(crate) fn configure_virtio_gpu_vblank(gpu: &mut VirtioPciGpu) {
     let value = std::env::var("BRIDGEVM_VBLANK_HZ").ok();
     let interval = virtio_gpu_vblank_interval_from_value(value.as_deref());
     gpu.set_vblank_interval(interval);
+    // The DOD may enable its timing interrupt after device initialization.
+    // Keep a wake signal even when the legacy SUBMIT_3D pacer starts disabled.
+    gpu.set_vblank_wake(Arc::new(VblankWakeState::new()));
     if !interval.is_zero() {
-        gpu.set_vblank_wake(Arc::new(VblankWakeState::new()));
         eprintln!(
             "virtio-gpu: host vblank pacing interval={}ns",
             interval.as_nanos()
