@@ -37,7 +37,7 @@ final class LibraryWarningNavigationTests: XCTestCase {
         let library = LibraryModel(rootURL: root, migrateLegacy: false, startsModelsAutomatically: false)
         XCTAssertEqual(library.vms.count, includeRegisteredVM ? 1 : 0)
         XCTAssertEqual(Set(library.libraryIssues.map(\.path)), issuePaths)
-        let overview = LibraryOverviewView(library: library).body
+        let overview = LibraryOverviewView(library: library, query: .constant("")).body
         let workspace = try XCTUnwrap(values(LibraryWorkspaceList.self, in: overview).first)
         let disclosure = values(LibraryIssuesSection.self, in: workspace.body)
         XCTAssertEqual(disclosure.count, issueCount == 0 ? 0 : 1, "Current overview must expose the issue detail control, not only a count")

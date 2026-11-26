@@ -2,6 +2,7 @@ import SwiftUI
 
 struct FleetTableView: View {
     @ObservedObject var library: LibraryModel
+    var didShowVM: () -> Void = {}
     @State private var selection: String?
     @State private var order = [KeyPathComparator(\FleetVM.name, comparator: .localizedStandard)]
 
@@ -19,7 +20,9 @@ struct FleetTableView: View {
                                        description: Text("Create or import a VM to see its configuration."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                table
+                GeometryReader { size in
+                    table(compact: size.size.width < 600)
+                }
                 HStack {
                     Text(library.vms.count == 1 ? "1 VM" : "\(library.vms.count) VMs")
                         .foregroundStyle(.secondary)
@@ -34,7 +37,7 @@ struct FleetTableView: View {
         .onAppear { selection = library.selectedID }
     }
 
-    private var table: some View {
+    private func table(compact: Bool) -> some View {
         let sortOrder = order + [KeyPathComparator(\FleetVM.id, comparator: .localizedStandard)]
         let rows = library.vms.map(FleetVM.init).sorted(using: sortOrder)
         return Table(rows, selection: $selection, sortOrder: $order) {
@@ -45,18 +48,19 @@ struct FleetTableView: View {
                 }
                 .help("\(vm.name) · \(vm.id)")
             }
-            .width(min: 130, ideal: 240)
+            .width(min: 115, ideal: compact ? 142 : 240)
             TableColumn("Engine", value: \.engine)
-                .width(min: 66, ideal: 110)
+                .width(min: 48, ideal: compact ? 59 : 110)
             TableColumn("vCPUs", value: \.cpus) { vm in
                 Text(vm.config.cpuCount.map(String.init) ?? "Auto").monospacedDigit()
             }
-            .width(min: 50, ideal: 78)
+            .width(min: 45, ideal: compact ? 51 : 78)
             TableColumn("Memory", value: \.memory) { vm in
                 Text(vm.memoryLabel).monospacedDigit()
             }
-            .width(min: 70, ideal: 105)
+            .width(min: 58, ideal: compact ? 70 : 105)
         }
+        .alternatingRowBackgrounds(.disabled)
         .contextMenu(forSelectionType: String.self) { ids in
             if let id = ids.first { Button("Show VM") { show(id) } }
         } primaryAction: { ids in show(ids.first) }
@@ -65,6 +69,7 @@ struct FleetTableView: View {
 
     private func show(_ id: String?) {
         guard let id, library.vms.contains(where: { $0.slug == id }) else { return }
+        didShowVM()
         library.selectedID = id
         library.proMode = false
     }

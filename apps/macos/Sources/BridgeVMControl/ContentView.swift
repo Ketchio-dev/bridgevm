@@ -5,6 +5,8 @@ import AppKit
 struct ContentView: View {
     @ObservedObject var library: LibraryModel
     @State private var presentation = LibraryWindowPresentation()
+    @State private var libraryQuery = ""
+    @State private var showingCompactList = false
     @State private var importDraft = FirstRunFormDraft()
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     private var allowsVMComparison: Bool {
@@ -17,9 +19,9 @@ struct ContentView: View {
         #endif
         GeometryReader { geometry in
             if library.proMode && allowsVMComparison {
-                FleetTableView(library: library)
+                FleetTableView(library: library) { showingCompactList = false }
             } else if geometry.size.width < 850 {
-                CompactLibraryNavigation(library: library)
+                CompactLibraryNavigation(library: library, query: $libraryQuery, showingList: $showingCompactList)
             } else {
                 let wide = geometry.size.width >= 1100
                 libraryNavigation
@@ -30,6 +32,7 @@ struct ContentView: View {
         }
         .environment(\.firstRunFormDraft, $importDraft)
         .onChange(of: library.selectedID) { _, selection in
+            if selection != nil { showingCompactList = false }
             if let selection, selection != LibraryModel.firstRunImportSelectionID {
                 importDraft = FirstRunFormDraft()
             }
@@ -99,7 +102,7 @@ struct ContentView: View {
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 sidebar
             } content: {
-                LibraryOverviewView(library: library)
+                LibraryOverviewView(library: library, query: $libraryQuery)
                     .navigationSplitViewColumnWidth(min: 390, ideal: 480, max: 580)
             } detail: {
                 LibraryDashboardRoute(library: library)

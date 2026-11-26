@@ -3,9 +3,9 @@ import SwiftUI
 struct LibraryWorkspaceList: View {
     @Environment(\.libraryWindowPresentation) private var presentation
     @ObservedObject var library: LibraryModel
+    @Binding var query: String
     var focusesSearchOnAppear = false
     var didSelect: (() -> Void)?
-    @State private var query = ""
 
     private var matchingVMs: [VMConfig] {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
