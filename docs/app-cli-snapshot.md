@@ -1,9 +1,9 @@
 # Create, restore and export a powered-off snapshot from the CLI
 
 ```sh
-bridgevm app snapshot-create 개발-vm
-bridgevm app snapshot-restore 개발-vm
-bridgevm app snapshot-export 개발-vm /Volumes/Backup/개발-vm.snapshot --json
+bridgevm app snapshot-create dev-vm
+bridgevm app snapshot-restore dev-vm
+bridgevm app snapshot-export dev-vm /Volumes/Backup/dev-vm.snapshot --json
 ```
 
 Use the exact ID from `bridgevm app list`. These commands operate only on a
