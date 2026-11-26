@@ -11,8 +11,10 @@ BridgeVM runs Windows alongside macOS using its own
 app's only engine.
 
 **Current access: [General Preview v0.1.0](https://github.com/Ketchio-dev/bridgevm/releases/tag/v0.1.0) · Engineering Preview · 3D-off.**
-Install it with the terminal installer or the DMG. The app is ad-hoc signed,
-not notarized.
+The terminal installer and DMG both install v0.1.0, which opens in Korean.
+The [English setup guide](docs/install.md#what-you-need-after-installing) matches
+the buttons in that download. After opening BridgeVM, choose your Windows 11
+Arm installer ISO or import an installed disk. The app is ad-hoc signed and has no Apple notarization.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash
@@ -44,29 +46,6 @@ These are preview capabilities. ISO installation and installed-disk import on
 a clean Mac remain the open release criterion. The
 [capability matrix](docs/windows-arm/capability-matrix.md) records the evidence
 for each feature.
-
-To send a draft, first click where you want to type in Windows. In the Mac
-library, select the running VM and click **고급** (Advanced). Find **Windows
-키보드** in current source builds or **부팅 구성** in v0.1.0. Enter the draft
-in **Windows에 입력할 텍스트** and click **입력**.
-Current source builds keep the draft in the field while awaiting an input
-receipt or a clipboard paste. Editors such as Notepad and WinForms RichTextBox
-support queued text dispatch. If the Windows agent lacks this feature or the
-editor declines it, BridgeVM sends a multiline draft by verifying the text on
-the Windows clipboard and pressing **Ctrl+V** once. The legacy keyboard route
-also uses the clipboard for characters it cannot type. Both clipboard routes
-replace the previous Windows clipboard contents.
-
-Single-line drafts can use per-character input with some editors and older
-agents. For long passages in v0.1.0, or if typing loses text, enable clipboard
-sharing while the VM is stopped. The setting is **Share clipboard** in current
-source builds and **클립보드 공유** in the v0.1.0 download. After the Windows
-agent connects, copy the text on your Mac and press **Ctrl+V** in the Windows
-editor. Builds from current source show a notice when text is too large to
-share in either direction. Copy it in smaller sections or transfer it as a
-file through a shared folder.
-The application readback, saved-file and Undo checks for WPF and Edge are
-recorded in [#665](https://github.com/Ketchio-dev/bridgevm/issues/665).
 
 ## Try BridgeVM
 
@@ -103,12 +82,39 @@ The [installation guide](docs/install.md) covers both paths, required bundle
 resources and first-open trust. After Windows starts, install the signed guest
 display driver from the VM's settings and restart to enable window-following
 resolution. In current source builds, after Windows shuts down, choose
-**라이브러리 열기** (Open Library) in its display window to return to that VM,
-then choose **시작** (Start) to boot it again.
+**Open Library** in its display window to return to that VM and start it again.
 
 Release and source builds are ad-hoc signed. Developer ID signing and Apple
 notarization remain unfinished. Standard preview packaging includes no Windows
 test driver and requires no TESTSIGNING setup.
+
+## Send text to Windows
+
+Click where you want the text to appear in Windows. In the Mac library,
+select the running VM and open its advanced controls. In a current source
+build, open **Windows keyboard**, enter your draft in **Text to send to
+Windows**, and click **Send**. In v0.1.0, choose **고급** (Advanced),
+then **부팅 구성** (Boot configuration). Type in **Windows에 입력할 텍스트**
+(Text to send to Windows) and click **입력** (Send).
+
+Current source builds keep the draft in the field while awaiting an input
+receipt or a clipboard paste. Editors such as Notepad and WinForms RichTextBox
+support queued text dispatch. If the Windows agent lacks this feature or the
+editor declines it, BridgeVM sends a multiline draft by verifying the text on
+the Windows clipboard and pressing **Ctrl+V** once. The legacy keyboard route
+also uses the clipboard for characters it cannot type. Both clipboard routes
+replace the previous Windows clipboard contents.
+
+Single-line drafts can use per-character input with some editors and older
+agents. For long passages in v0.1.0, or if typing loses text, enable clipboard
+sharing while the VM is stopped. The setting is **Share clipboard** in current
+source builds and **클립보드 공유** in the v0.1.0 download. After the Windows
+agent connects, copy the text on your Mac and press **Ctrl+V** in the Windows
+editor. Builds from current source show a notice when text is too large to
+share in either direction. Copy it in smaller sections or transfer it as a
+file through a shared folder.
+The application readback, saved-file and Undo checks for WPF and Edge are
+recorded in [#665](https://github.com/Ketchio-dev/bridgevm/issues/665).
 
 ## Engineering Preview
 
