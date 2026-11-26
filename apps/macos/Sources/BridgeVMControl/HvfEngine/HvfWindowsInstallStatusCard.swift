@@ -39,6 +39,11 @@ struct HvfWindowsInstallStatusCard: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("전체 \(HvfWindowsInstallStage.steps.count)단계 중 \(current + 1)단계")
             }
+            if session.stage == .preparingSource, let activity = session.sourceActivity {
+                Text(activity)
+                    .font(.callout).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("bridgevm.windows.install.source-activity")
+            }
             if case let .failed(message) = session.stage {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")

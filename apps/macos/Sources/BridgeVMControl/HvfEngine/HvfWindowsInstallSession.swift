@@ -3,8 +3,12 @@ import Combine
 
 @MainActor
 final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSession {
-    @Published private(set) var stage: HvfWindowsInstallStage = .idle
+    @Published private(set) var stage: HvfWindowsInstallStage = .idle {
+        didSet { if stage != oldValue { onStageChange?() } }
+    }
+    var onStageChange: (() -> Void)?
     @Published private(set) var logLines: [String] = []
+    @Published private(set) var sourceActivity: String?
     @Published private(set) var startedAt: Date?
 
     let plan: HvfWindowsInstallPlan
@@ -58,6 +62,7 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
     func prepareAttemptPresentation() {
         startedAt = Date()
         logLines = []
+        sourceActivity = nil
         stage = cancelled ? .cancelling : .validating
     }
 
@@ -101,6 +106,9 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
     }
 
     func appendLog(_ line: String) {
+        if stage == .preparingSource, let activity = HvfWindowsInstallStage.sourceActivity(for: line) {
+            sourceActivity = activity
+        }
         logLines.append(line)
         if logLines.count > 400 { logLines.removeFirst(logLines.count - 400) }
     }

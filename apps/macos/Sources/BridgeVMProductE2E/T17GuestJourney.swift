@@ -77,13 +77,17 @@ struct T17GuestJourney {
     private func control(_ command: String, requires marker: String, operation: StaticString) throws {
         let before = (try? Data(contentsOf: runLog).count) ?? 0
         try T17RuntimeControlInput.enter(command, ui: ui)
+        var reply = T17ControlReply.Outcome.pending
         guard wait(timeout: 120, predicate: {
             guard let data = try? Data(contentsOf: self.runLog), data.count > before else { return false }
             let tail = String(decoding: data.suffix(from: before), as: UTF8.self)
-                .replacingOccurrences(of: "\r\n", with: "\n")
-            return T17ControlReply.succeeded(tail: tail, command: command, marker: marker)
+            reply = T17ControlReply.outcome(tail: tail, command: command, marker: marker)
+            return reply != .pending
         }) else {
             throw T17Blocker(code: "guest-evidence-missing", detail: "no matching guest control reply for \(operation)")
+        }
+        if reply == .rejected {
+            throw T17Blocker(code: "guest-evidence-missing", detail: "guest reported failure for \(operation)")
         }
     }
 

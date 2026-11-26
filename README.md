@@ -47,16 +47,16 @@ for each feature.
 
 To send a draft to the focused Windows editor, open the running VM's **HVF
 Engine** view, enter the text in **Windows에 입력할 텍스트**, and select **입력**.
-Builds from current source keep the draft while the app waits for an input
-receipt or a clipboard paste. If the editor declines queued dispatch for a
-multiline draft, the app checks the text on the Windows clipboard and sends
-one paste. The legacy keyboard route also uses the clipboard for characters
-it cannot type. Either clipboard route replaces the previous Windows clipboard
-copy.
+Current source builds keep the draft in the field while awaiting an input
+receipt or a clipboard paste. Editors such as Notepad and WinForms RichTextBox
+support queued text dispatch. If the Windows agent lacks this feature or the
+editor declines it, BridgeVM sends a multiline draft by verifying the text on
+the Windows clipboard and pressing **Ctrl+V** once. The legacy keyboard route
+also uses the clipboard for characters it cannot type. Both clipboard routes
+replace the previous Windows clipboard contents.
 
-Compatible Windows editors such as Notepad and WinForms RichTextBox use queued
-text dispatch. Some editors and older agents use per-character input. For long
-passages in the v0.1.0 download or when per-character input loses text, enable
+Single-line drafts can use per-character input with some editors and older
+agents. For long passages in the v0.1.0 download or if that input loses text, enable
 **클립보드 공유** (Clipboard sharing) while the VM is stopped. After the Windows
 agent connects, copy the text on your Mac and press **Ctrl+V** in the Windows
 editor.
@@ -80,7 +80,7 @@ button labels below are from current source builds.
 | Starting point | What you provide |
 | --- | --- |
 | **Windows 새로 설치** (Install Windows) | Select your licensed Windows 11 Arm ISO. **드라이버 자동 준비** downloads the Microsoft-signed Red Hat virtio-win storage, serial and network drivers (about 95 MB) and checks their pinned SHA-256. You can also select your own signed ARM64 driver folder and manifest. Choose **생성** (Create), then **설치 시작** (Start installation) in the VM detail view. |
-| **기존 디스크 가져오기** (Import an existing disk) | Select an installed Windows 11 Arm disk in RAW, QCOW2 or Hyper-V VHDX format. Choose **가져오기** (Import), then **시작** (Start) once the VM appears in your library. This path needs no driver payload. |
+| **기존 디스크 가져오기** (Import an existing disk) | Drop your installed Windows 11 Arm disk onto **파일 선택 또는 놓기** (Choose or drop file), or click that button to browse. Supported formats are RAW, QCOW2 and Hyper-V VHDX. Choose **가져오기** (Import), then **시작** (Start) once the VM appears in your library. This path needs no driver payload. |
 
 In current source builds, you can choose **Finish Then Quit** (`완료 후 종료`)
 during a first-run import, while **Create VM** prepares files for an import or

@@ -23,7 +23,7 @@ final class HvfWindowsSnapshotFailedCreateTests: XCTestCase {
         let plan = HvfWindowsSnapshotCommand.Plan(executable: HvfMediaImportTestSupport.helper,
             disk: disk, vars: vars, snapshot: snapshot, vmID: "test", name: "이름")
         let model = HvfWindowsSnapshotModel()
-        await model.request(.create, snapshotDate: nil) { _ in
+        await model.create { _ in
             return try await HvfWindowsSnapshotCommand.run(.create, plan: plan)
         }?.value
         XCTAssertFalse(model.failed, "verified snapshot creation is successful even if naming fails")

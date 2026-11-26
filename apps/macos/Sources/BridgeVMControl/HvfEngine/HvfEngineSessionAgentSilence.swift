@@ -7,9 +7,20 @@ extension HvfEngineSession {
     /// From poll(): the agent notice for this moment (HvfAgentSilenceNotice).
     func refreshAgentSilence() {
         agentSilenceNotice.refresh(now: ownedStartNow(), running: agentSilenceWatched, serviceStarted: serviceStarted,
-            offersTools: HvfGuestTools.eligible(config)) {
+            firstConnection: { firstConnectionNotice }) {
             FileManager.default.fileExists(atPath: agentSeenMarker.path)
         }
+    }
+
+    private var firstConnectionNotice: HvfAgentSilenceNotice.Kind? {
+        guard let vm = config.libraryContext?.config, vm.installPending != true else { return nil }
+        let bundle = URL(fileURLWithPath: vm.bundlePath)
+        let committed = bundle.appendingPathComponent(HvfWindowsInstallRequest.doneFileName)
+        if FileManager.default.fileExists(atPath: committed.path) {
+            return .awaitingFirstConnection
+        }
+        let pending = bundle.appendingPathComponent(HvfWindowsInstallRequest.fileName)
+        return FileManager.default.fileExists(atPath: pending.path) ? nil : .missingTools
     }
 
     func noteAgentServiceStarted() {

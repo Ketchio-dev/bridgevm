@@ -222,6 +222,9 @@ impl AgentConsoleHarness {
         }
         self.overdue_beats = 0;
         let hold_images = self.agent_update_holds_images();
+        let switching_agent = self.agent_update.as_ref().is_some_and(|update| {
+            matches!(update.phase, UpdatePhase::Armed { late: false, .. })
+        });
         // During a large copy only its own steps go out of the shared-folder requests.
         let hold_share = self.big_share_active();
         // The agent has one large PUT: a shared-folder file's and a clipboard copy's take turns.
@@ -231,7 +234,8 @@ impl AgentConsoleHarness {
             Some(BigTransfer::Put(_))
         );
         let Some(req) = super::service_queue::pop_next_request(&mut self.queue, |req| {
-            (hold_images && super::agent_update::is_clip_image_req(req))
+            (switching_agent && super::agent_update::waits_for_replacement_agent(req))
+                || (hold_images && super::agent_update::is_clip_image_req(req))
                 || (hold_share
                     && is_share_req(req)
                     && !matches!(req, ServiceReq::ShareRange { .. } | ServiceReq::ShareBigPut(_)))

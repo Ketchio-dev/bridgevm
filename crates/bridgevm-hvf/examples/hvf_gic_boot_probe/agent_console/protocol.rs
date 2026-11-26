@@ -122,8 +122,7 @@ pub(super) fn command_wire_line(command: &str) -> String {
 }
 
 pub(super) fn write_command_wire_line_into(command: &str, out: &mut String) {
-    let first = command.split_whitespace().next().unwrap_or("");
-    if is_raw_verb(first) || unicode_input::is_command(command) {
+    if is_direct_agent_command(command) {
         out.push_str(if super::window_protocol::window_request_id(command).is_some() { "WINLIST" } else { command });
         out.push('\n');
     } else {
@@ -131,6 +130,11 @@ pub(super) fn write_command_wire_line_into(command: &str, out: &mut String) {
         base64_encode_into(command.as_bytes(), out);
         out.push('\n');
     }
+}
+
+pub(super) fn is_direct_agent_command(command: &str) -> bool {
+    let verb = command.split_whitespace().next().unwrap_or("");
+    is_raw_verb(verb) || unicode_input::is_command(command)
 }
 
 pub(super) fn parse_out_line(line: &str) -> Option<(i32, &str)> {

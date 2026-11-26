@@ -360,9 +360,15 @@ fn set_scanout_blob_guest_split_backing_row_falls_back_to_pixel_reads() {
 fn set_scanout_blob_host3d_flush_presents_pixels_from_mock_mapping() {
     let (mut dev, backend) = dev_with_mock();
     let mut mem = TestMem::new(0x4000_0000, 0x30000);
-    let mut host_pixels = vec![0u8; 32];
-    host_pixels[0..4].copy_from_slice(&[0x11, 0x22, 0x33, 0xff]);
-    host_pixels[4..8].copy_from_slice(&[0x44, 0x55, 0x66, 0xee]);
+    let (width, height, stride, offset) = (12, 3, 52, 5);
+    let size = offset + (height - 1) * stride + width * 4;
+    let mut host_pixels = vec![0xa5; size as usize];
+    for y in 0..height {
+        for x in 0..width {
+            let src = (offset + y * stride + x * 4) as usize;
+            host_pixels[src..src + 4].copy_from_slice(&[0x11, x as u8, y as u8, 0xff]);
+        }
+    }
     backend.lock().unwrap().mapped.insert(
         9,
         virtio_gpu_3d::MappedBlob {
@@ -372,12 +378,12 @@ fn set_scanout_blob_host3d_flush_presents_pixels_from_mock_mapping() {
         },
     );
 
-    let create = create_blob_req(9, VIRTIO_GPU_BLOB_MEM_HOST3D, 32, &[]);
+    let create = create_blob_req(9, VIRTIO_GPU_BLOB_MEM_HOST3D, u64::from(size), &[]);
     assert_eq!(
         read_le_u32(&submit_control(&mut dev, &mut mem, &create, 24), 0),
         Some(VIRTIO_GPU_RESP_OK_NODATA)
     );
-    let set_scanout = set_scanout_blob_req(9, 2, 1, FORMAT_B8G8R8A8_UNORM, 8, 0);
+    let set_scanout = set_scanout_blob_req(9, width, height, FORMAT_B8G8R8A8_UNORM, stride, offset);
     assert_eq!(
         read_le_u32(&submit_control(&mut dev, &mut mem, &set_scanout, 24), 0),
         Some(VIRTIO_GPU_RESP_OK_NODATA)
@@ -385,10 +391,10 @@ fn set_scanout_blob_host3d_flush_presents_pixels_from_mock_mapping() {
     let flush = flush_req(
         9,
         Rect {
-            x: 0,
-            y: 0,
-            width: 2,
-            height: 1,
+            x: 1,
+            y: 1,
+            width: 9,
+            height: 2,
         },
     );
     assert_eq!(
@@ -396,10 +402,18 @@ fn set_scanout_blob_host3d_flush_presents_pixels_from_mock_mapping() {
         Some(VIRTIO_GPU_RESP_OK_NODATA)
     );
 
-    assert_eq!(
-        &dev.scanout().unwrap().bytes[0..8],
-        &[0x11, 0x22, 0x33, 0, 0x44, 0x55, 0x66, 0]
-    );
+    let scanout = dev.scanout().unwrap();
+    for y in 0..height {
+        for x in 0..width {
+            let dst = (y * scanout.stride + x * 4) as usize;
+            let expected = if y >= 1 && (1..10).contains(&x) {
+                [0x11, x as u8, y as u8, 0]
+            } else {
+                [0; 4]
+            };
+            assert_eq!(&scanout.bytes[dst..dst + 4], &expected);
+        }
+    }
     assert!(backend.lock().unwrap().unmapped.is_empty());
 }
 

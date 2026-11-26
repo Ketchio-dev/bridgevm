@@ -123,13 +123,14 @@ struct LibraryWorkspaceRow: View {
     }
 
     fileprivate var selectionButton: some View {
-        Button(action: select) {
+        let status = self.status
+        return Button(action: select) {
             HStack(spacing: 16) {
                 LibraryVMEmblem(engine: config.engineKind)
                 VStack(alignment: .leading, spacing: 7) {
                     Text(config.name).font(.title3.weight(.semibold)).lineLimit(1)
                     HStack(spacing: 7) {
-                        LibraryVMRunState(text: stateText, color: stateColor,
+                        LibraryVMRunState(text: status.text, color: status.color,
                             session: library.hvfRuntimeSessions.existingRecord(slug: config.slug)?.session, dot: 8)
                     }
                     .font(.callout.weight(.medium))
@@ -141,7 +142,7 @@ struct LibraryWorkspaceRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(config.name), \(stateText), \(resourceText)")
+        .accessibilityLabel("\(config.name), \(status.text), \(resourceText)")
         .accessibilityHint("VM 상세 정보 보기")
     }
 
@@ -150,14 +151,20 @@ struct LibraryWorkspaceRow: View {
         library.selectedID = config.slug
     }
 
-    private var stateText: String {
-        if config.installPending == true { return "설치 필요" }
-        return runtimeState?.title ?? (model.running ? "실행 중" : "정지됨")
-    }
-
-    private var stateColor: Color {
-        if config.installPending == true { return .orange }
-        return runtimeState?.color ?? (model.running ? .green : .secondary)
+    var status: (text: String, color: Color) {
+        if let entry = library.windowsInstallSessions.record(for: config.slug),
+           entry.session.isRunning || (config.installPending == true && entry.sourceConfig == config) {
+            switch entry.session.stage {
+            case .idle: break
+            case .failed: return ("설치 실패", .red)
+            case .cancelled: return ("설치 취소됨", .secondary)
+            case .done: return ("설치 완료", .green)
+            default: return (entry.session.stage.label, .blue)
+            }
+        }
+        if config.installPending == true { return ("설치 필요", .orange) }
+        if let runtimeState { return (runtimeState.title, runtimeState.color) }
+        return model.running ? ("실행 중", .green) : ("정지됨", .secondary)
     }
 
     private var resourceText: String {
