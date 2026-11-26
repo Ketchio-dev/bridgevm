@@ -1,7 +1,7 @@
 #if canImport(AppKit)
 import SwiftUI
 
-/// The guest's window list, opened from the 가상 머신 menu's Windows 창 목록… item.
+/// The guest's window list, opened from the Virtual Machine menu's Show Guest Windows… item.
 @MainActor
 struct HvfWindowInventoryPanel: View {
     @StateObject private var model: HvfWindowInventoryController
@@ -12,10 +12,10 @@ struct HvfWindowInventoryPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Windows 창 목록").font(.headline)
+                Text("Guest Windows").font(.headline)
                 Spacer()
-                Button("새로 고침") { model.refresh() }.disabled(model.isLoading)
-                Button("닫기") { dismiss() }
+                Button("Refresh") { model.refresh() }.disabled(model.isLoading)
+                Button("Close") { dismiss() }
             }
             Text(model.status).accessibilityIdentifier("runtime.windows.status")
             List(model.records) { record in
@@ -25,7 +25,7 @@ struct HvfWindowInventoryPanel: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Text("읽기 전용 목록입니다. Windows 창을 Mac 창으로 따로 여는 기능은 아직 없습니다.")
+            Text("This list is read-only. Use the VM display to interact with these windows.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding().frame(minWidth: 440, minHeight: 320)

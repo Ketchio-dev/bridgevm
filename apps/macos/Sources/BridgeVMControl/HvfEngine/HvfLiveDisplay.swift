@@ -9,6 +9,7 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
 
     private let sessionIdentifier: ObjectIdentifier
     private let state: HvfDisplayWindowState
+    private let titleObservation: AnyCancellable
     private let subtitleObservation: AnyCancellable
     private var closeQuestionOpen = false
     let placement: HvfDisplayWindowPlacement
@@ -42,6 +43,11 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
 
         sessionIdentifier = ObjectIdentifier(session)
         self.state = state
+        titleObservation = session.$config
+            .compactMap { $0.libraryContext?.config.name }
+            .removeDuplicates()
+            .dropFirst()
+            .assign(to: \.title, on: window)
         subtitleObservation = session.agentSilenceNotice.$shown
             .combineLatest(session.$connectionState)
             .map { notice, connection in

@@ -1,7 +1,7 @@
 #if canImport(AppKit)
 import SwiftUI
 
-/// Every Windows app the guest listed, opened from 가상 머신 > Windows 앱 > 모든 앱…: a search field and the list;
+/// Every Windows app the guest listed, opened from Virtual Machine > Windows Apps > All Apps…: a search field and the list;
 /// choosing an app opens it in Windows and closes the sheet.
 @MainActor
 struct HvfGuestStartAppsPanel: View {
@@ -14,12 +14,12 @@ struct HvfGuestStartAppsPanel: View {
         let shown = search.isEmpty ? apps.apps : apps.apps.filter { $0.name.localizedCaseInsensitiveContains(search) }
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Windows 앱").font(.headline)
+                Text("Windows Apps").font(.headline)
                 Spacer()
-                Button("새로 고침") { apps.refresh() }.disabled(apps.status == .loading || apps.unavailableReason != nil)
-                Button("닫기") { dismiss() }
+                Button("Refresh") { apps.refresh() }.disabled(apps.status == .loading || apps.unavailableReason != nil)
+                Button("Close") { dismiss() }
             }
-            TextField("검색", text: $search).textFieldStyle(.roundedBorder)
+            TextField("Search apps", text: $search).textFieldStyle(.roundedBorder)
             if let reason = apps.unavailableReason ?? (apps.apps.isEmpty ? apps.statusText : nil) {
                 Text(reason).foregroundStyle(.secondary).accessibilityIdentifier("runtime.windowsApps.status")
             }
