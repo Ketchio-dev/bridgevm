@@ -25,16 +25,16 @@ final class HvfClipboardImageNoticeTests: XCTestCase {
     }
 
     @MainActor
-    func testTooLargeLinesShowTheirDirectionInKorean() {
+    func testOversizedImagesNameTheSourceAndDestination() {
         let session = session()
         XCTAssertNil(session.clipboardImageNotice.displayed)
         feed(session, [macTooLarge + "\r"])
         XCTAssertEqual(session.clipboardImageNotice.shown, .macImageTooLarge)
-        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Mac에서 복사한 이미지가 너무 커서 Windows로 보내지 않았습니다.")
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "The image copied on your Mac is too large to send to Windows.")
         feed(session, [windowsTooLarge])
         XCTAssertEqual(session.clipboardImageNotice.shown, .windowsImageTooLarge)
-        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Windows에서 복사한 이미지가 너무 커서 Mac으로 가져오지 않았습니다.")
-        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("32MB"), true)
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "The image copied in Windows is too large to send to your Mac.")
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("32 MiB, with each side up to 16,384 pixels"), true)
     }
 
     /// A file copy over the limits, either way (agent_console/clip_files.rs): the Mac copy's
@@ -46,13 +46,13 @@ final class HvfClipboardImageNoticeTests: XCTestCase {
         let session = session()
         feed(session, [mac, "BVAGENT CLIPSYNC host->guest bytes=40 copy=3 t=501"])
         XCTAssertEqual(session.clipboardImageNotice.shown, .macFilesTooLarge)
-        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Mac에서 복사한 파일이 너무 많거나 커서 Windows에는 파일 이름만 보냈습니다.")
-        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("64MB"), true)
-        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("끌어다 놓으면"), true, "what to do instead")
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "The selection exceeds the clipboard limits. Only the file names were sent to Windows.")
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("64 MiB"), true)
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("Drag the selection onto the VM window"), true, "what to do instead")
         feed(session, [windows])
         XCTAssertEqual(session.clipboardImageNotice.shown, .windowsFilesTooLarge)
-        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Windows에서 복사한 파일이 너무 많거나 커서 Mac으로 가져오지 않았습니다.")
-        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("공유 폴더"), true, "what to do instead")
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "The Windows selection exceeds the clipboard limits for copying files to your Mac.")
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("shared folder"), true, "what to do instead")
         feed(session, ["BVAGENT CLIPSYNC guest->host files=1 bytes=5 copy=5 t=700"])
         XCTAssertNil(session.clipboardImageNotice.shown, "a later copy clears it")
         feed(session, ["BVAGENT CLIPSYNC refused guest-files unsafe-path files=1 bytes=5 copy=6 t=800"])
@@ -60,7 +60,7 @@ final class HvfClipboardImageNoticeTests: XCTestCase {
         feed(session, ["BVAGENT CLIPSYNC skip host-files unreadable files=2 bytes=0 copy=7 t=900",
                        "BVAGENT CLIPSYNC host->guest bytes=6 copy=7 t=901"])
         XCTAssertEqual(session.clipboardImageNotice.shown, .macFilesUnreadable)
-        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Mac에서 복사한 파일 중 읽을 수 없는 것이 있어 Windows에는 파일 이름만 보냈습니다.")
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Your Mac couldn’t read the full selection. Only the file names were sent to Windows.")
     }
 
     /// The limits a too-large line names depend on the guest agent; a large copy the receiving
@@ -70,17 +70,17 @@ final class HvfClipboardImageNoticeTests: XCTestCase {
         let session = session()
         feed(session, ["BVAGENT CLIPSYNC refused guest-files too-large files=4097 bytes=0 limit-files=4096 limit-bytes=17179869184 copy=3 t=5"])
         XCTAssertEqual(session.clipboardImageNotice.shown, .windowsFilesTooLarge)
-        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("한 번에 4096개, 모두 합쳐 16GB까지"), true)
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("up to 4096 items and 16 GiB in total"), true)
         feed(session, ["BVAGENT CLIPSYNC skip host-files too-large files=300 bytes=0 limit-files=256 limit-bytes=67108864 copy=4 t=6"])
         XCTAssertEqual(session.clipboardImageNotice.shown, .macFilesTooLarge)
-        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("한 번에 256개, 모두 합쳐 64MB까지"), true)
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("up to 256 items and 64 MiB in total"), true)
         feed(session, ["BVAGENT CLIPSYNC refused guest-files low-space files=1 bytes=9000000000 copy=5 t=7"])
         XCTAssertEqual(session.clipboardImageNotice.shown, .windowsFilesLowSpace)
-        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Mac의 저장 공간이 부족해 Windows에서 복사한 파일을 가져오지 않았습니다.")
-        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("2GB"), true)
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Your Mac doesn’t have enough space for the files copied in Windows.")
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("2 GiB"), true)
         feed(session, ["BVAGENT CLIPSYNC skip host-files guest-full files=1 bytes=9000000000 copy=6 t=8"])
         XCTAssertEqual(session.clipboardImageNotice.shown, .macFilesGuestFull)
-        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Windows 디스크 공간이 부족해 Mac에서 복사한 파일을 보내지 않았습니다.")
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "Windows doesn’t have enough space for the files copied on your Mac.")
         feed(session, ["BVAGENT CLIPSYNC guest->host files=1 bytes=5 copy=7 t=9"])
         XCTAssertNil(session.clipboardImageNotice.shown, "a later copy clears it")
     }
@@ -161,7 +161,7 @@ final class HvfClipboardImageNoticeTests: XCTestCase {
             XCTAssertNil(session.clipboardImageNotice.shown)
             feed(session, [line])
             XCTAssertEqual(session.clipboardImageNotice.shown, kind)
-            XCTAssertTrue(session.clipboardImageNotice.displayed?.help.contains("공유 폴더") == true)
+            XCTAssertTrue(session.clipboardImageNotice.displayed?.help.contains("shared folder") == true)
             feed(session, ["BVAGENT CLIPSYNC host->guest bytes=6 copy=3 t=2010"])
             XCTAssertNil(session.clipboardImageNotice.shown)
         }
