@@ -47,7 +47,7 @@ struct HvfForceStopControl<Content: View>: View {
             .accessibilityIdentifier(identifier + ".confirm-force-stop")
             Button("Cancel", role: .cancel) { capturedTarget = nil }
         } message: { _ in
-            Text("Windows will close apps immediately. You may lose unsaved work.")
+            Text("The VM will stop even if Windows is still closing apps. You may lose unsaved work.")
         }
     }
 }
