@@ -18,9 +18,6 @@ struct HvfRuntimeKeyboardInput: View {
                     .disabled(draft.isEmpty || draftPending)
                     .accessibilityIdentifier("bridgevm.runtime.keyboard.send")
                     .help("클립보드로 입력하면 Windows에서 마지막으로 복사한 내용이 바뀝니다.")
-                Button("Tab") { submissionRefused = !session.sendToolbarKey("tab") }
-                Button("Enter") { submissionRefused = !session.sendToolbarKey("enter") }
-                Button("Space") { submissionRefused = !session.sendToolbarKey("space") }
             }
             if draftPending {
                 Label("Windows의 입력 확인을 기다리고 있습니다.", systemImage: "clock")

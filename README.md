@@ -45,8 +45,10 @@ a clean Mac remain the open release criterion. The
 [capability matrix](docs/windows-arm/capability-matrix.md) records the evidence
 for each feature.
 
-To send a draft to the focused Windows editor, open the running VM's **HVF
-Engine** view, enter the text in **Windows에 입력할 텍스트**, and select **입력**.
+To send a draft, first click where you want to type in Windows. In the Mac
+library, select the running VM and click **고급** (Advanced). Find **Windows
+키보드** in current source builds or **부팅 구성** in v0.1.0. Enter the draft
+in **Windows에 입력할 텍스트** and click **입력**.
 Current source builds keep the draft in the field while awaiting an input
 receipt or a clipboard paste. Editors such as Notepad and WinForms RichTextBox
 support queued text dispatch. If the Windows agent lacks this feature or the
@@ -59,7 +61,9 @@ Single-line drafts can use per-character input with some editors and older
 agents. For long passages in the v0.1.0 download or if that input loses text, enable
 **클립보드 공유** (Clipboard sharing) while the VM is stopped. After the Windows
 agent connects, copy the text on your Mac and press **Ctrl+V** in the Windows
-editor.
+editor. Builds from current source show a notice when text is too large to
+share in either direction. Copy it in smaller sections or transfer it as a
+file through a shared folder.
 The application readback, saved-file and Undo checks for WPF and Edge are
 recorded in [#665](https://github.com/Ketchio-dev/bridgevm/issues/665).
 
@@ -74,8 +78,9 @@ complete [build and packaging guide](docs/install.md#build-the-current-source),
 because `cargo build` and `swift build` alone do not prepare a
 Windows-installation app.
 
-On first launch, choose the setup path that matches your Windows media. The
-button labels below are from current source builds.
+On first launch, choose the setup path that matches your Windows media.
+In current source builds, you can also drop a Windows installer ISO or an
+installed disk from Finder onto the matching card to open its setup form.
 
 | Starting point | What you provide |
 | --- | --- |

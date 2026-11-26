@@ -2,12 +2,13 @@ import SwiftUI
 /// First launch offers creation/import and keeps accepted import recovery controls visible.
 struct FirstRunView: View {
     @ObservedObject var library: LibraryModel
+    @Environment(\.libraryWindowPresentation) private var presentation
 
     @Environment(\.firstRunFormDraft) private var windowDraft
     @State private var standaloneDraft = FirstRunFormDraft()
 
     private var showsImport: Bool {
-        library.selectedID == LibraryModel.firstRunImportSelectionID
+        presentation?.wrappedValue.showsImportDraft == true || library.selectedID == LibraryModel.firstRunImportSelectionID
             || library.firstRunImportBusy || library.firstRunImportError != nil
             || library.firstRunImport.publishedConfig != nil
     }
@@ -20,6 +21,14 @@ struct FirstRunView: View {
                     VStack(alignment: .leading, spacing: 24) {
                         let showsInputs = !library.firstRunImportBusy && library.firstRunImport.publishedConfig == nil
                         VStack(alignment: .leading, spacing: 8) {
+                            if let presentation, presentation.wrappedValue.showsImportDraft {
+                                Button { presentation.wrappedValue.showsImportDraft = false } label: {
+                                    Label("시작 화면으로", systemImage: "chevron.backward")
+                                }
+                                .buttonStyle(.link)
+                                .keyboardShortcut(.cancelAction)
+                                .accessibilityIdentifier("bridgevm.first-run.back")
+                            }
                             Text("기존 Windows VM 가져오기").font(.system(size: 28, weight: .bold))
                             if showsInputs {
                                 Text("파일을 선택해 등록한 뒤 VM 상세 화면에서 시작하세요.").foregroundStyle(.secondary)
@@ -39,14 +48,26 @@ struct FirstRunView: View {
                     .frame(maxWidth: .infinity)
                 }
             } else {
-                FirstRunWelcomeView(createAction: { library.showingCreate = true }, importAction: {
-                    library.proMode = false
-                    library.selectedID = LibraryModel.firstRunImportSelectionID
-                })
+                welcome(in: presentation, diskPath: draft.diskPath)
             }
         }
         .background(LibraryAppearance.canvas)
         .navigationTitle(showsImport ? "VM 가져오기" : "시작하기")
+    }
+
+    func welcome(in presentation: Binding<LibraryWindowPresentation>?, diskPath: Binding<String>) -> FirstRunWelcomeView {
+        FirstRunWelcomeView(createAction: { presentation?.wrappedValue.sheet = .create(installer: nil) },
+                            importAction: { presentation?.wrappedValue.showsImportDraft = true }, dropAction: { choice, url in
+            guard let presentation else { return false }
+            switch choice {
+            case .installer:
+                presentation.wrappedValue.sheet = .create(installer: url)
+            case .disk:
+                diskPath.wrappedValue = url.path
+                presentation.wrappedValue.showsImportDraft = true
+            }
+            return true
+        })
     }
 
     private func recoveryIssue(_ draft: FirstRunFormDraft) -> FirstRunImport.ValidationError? {
@@ -58,6 +79,11 @@ struct FirstRunView: View {
 
     private func runImport(_ draft: FirstRunFormDraft) {
         guard !library.firstRunImportBusy else { return }
+        if let presentation, presentation.wrappedValue.showsImportDraft {
+            library.proMode = false
+            library.selectedID = LibraryModel.firstRunImportSelectionID
+            presentation.wrappedValue.showsImportDraft = false
+        }
         let state = FirstRunImportVTPMValidation.trimmed(draft.vtpmPath)
         let inputs = FirstRunImport.Inputs(
             displayName: draft.displayName, diskPath: draft.diskPath, varsPath: draft.varsPath,

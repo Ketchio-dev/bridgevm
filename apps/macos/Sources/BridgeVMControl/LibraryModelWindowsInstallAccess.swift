@@ -22,7 +22,12 @@ extension LibraryModel {
     }
 
     func bindWindowsInstallSession(_ session: HvfWindowsInstallSession, slug: String) -> HvfWindowsInstallSession {
-        session.onStageChange = { [weak self] in self?.objectWillChange.send() }
+        let identity = LibraryRetainedControlIdentity.install(ObjectIdentifier(session))
+        session.onStageChange = { [weak self] in
+            // A retained control already forwards this session's stage publisher.
+            guard let self, !retainedControlRecords.contains(where: { $0.descriptor.identity == identity }) else { return }
+            objectWillChange.send()
+        }
         bindInstallAdmissions(session, slug: slug)
         return session
     }

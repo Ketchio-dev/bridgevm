@@ -3,14 +3,34 @@ import SwiftUI
 struct HvfWindowsSnapshotCard: View {
     let config: HvfEngineConfig
     @ObservedObject var session: HvfEngineSession
-    @StateObject private var model = HvfWindowsSnapshotModel()
+    var listEntries: @Sendable (URL) -> [HvfWindowsSnapshotStore.Entry] = { HvfWindowsSnapshotStore.list(bundle: $0) }
+    @Environment(\.controlActiveState) private var controlActiveState
+    @State private var listedEntries: [HvfWindowsSnapshotStore.Entry]?
+    @ObservedObject private var model: HvfWindowsSnapshotModel
+    @State private var confirmation: HvfWindowsSnapshotModel.Confirmation?
     @State private var name = ""
 
+    init(config: HvfEngineConfig, session: HvfEngineSession) {
+        self.config = config
+        self.session = session
+        model = session.snapshotModel
+    }
+
+    private struct ListRequest: Equatable {
+        let bundle: URL?
+        let refreshID: Int
+    }
+
     var body: some View {
-        let entries = HvfDiskGrow.bundle(config: config).map { HvfWindowsSnapshotStore.list(bundle: $0) } ?? []
+        let listRequest = ListRequest(bundle: HvfDiskGrow.bundle(config: config), refreshID: model.listRevision)
+        let entries = listedEntries ?? []
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
-                if entries.isEmpty { Text("스냅샷 없음") }
+                if listedEntries == nil {
+                    ProgressView("스냅샷 불러오는 중…").controlSize(.small)
+                } else if entries.isEmpty {
+                    Text("스냅샷 없음")
+                }
                 ForEach(entries) { entry in
                     HStack {
                         Text(entry.label)
@@ -32,7 +52,7 @@ struct HvfWindowsSnapshotCard: View {
                         .accessibilityIdentifier("bridgevm.runtime.snapshot.name")
                     Button("새 스냅샷") {
                         let chosenName = name
-                        model.request(.create, snapshotDate: nil) { [session, config] operation in
+                        model.create { [session, config] operation in
                             let notice = try await session.runSnapshot(operation, configuration: config, name: chosenName)
                             name = ""
                             return notice
@@ -51,12 +71,21 @@ struct HvfWindowsSnapshotCard: View {
         } label: {
             Label("종료 상태 스냅샷", systemImage: "clock.arrow.circlepath")
         }
-        .confirmationDialog(model.confirmation?.title ?? "", isPresented: Binding(
-            get: { model.confirmation != nil }, set: { if !$0 { model.cancel() } }
-        ), titleVisibility: .visible, presenting: model.confirmation) { confirmation in
+        .task(id: listRequest) {
+            let entries = await Task.detached(priority: .userInitiated) { [listEntries] in
+                listRequest.bundle.map(listEntries) ?? []
+            }.value
+            if !Task.isCancelled { listedEntries = entries }
+        }
+        .onChange(of: controlActiveState) { _, state in
+            if state == .key { model.requestListRefresh() }
+        }
+        .confirmationDialog(confirmation?.title ?? "", isPresented: Binding(
+            get: { confirmation != nil }, set: { if !$0 { confirmation = nil } }
+        ), titleVisibility: .visible, presenting: confirmation) { confirmation in
             Button(confirmation.action, role: .destructive) { model.confirm(confirmation) }
                 .accessibilityIdentifier("bridgevm.runtime.snapshot.confirm")
-            Button("취소", role: .cancel) { model.cancel() }
+            Button("취소", role: .cancel) {}
         } message: { confirmation in
             Text(confirmation.message)
         }
@@ -68,7 +97,7 @@ struct HvfWindowsSnapshotCard: View {
     }
 
     private func request(_ operation: HvfWindowsSnapshotCommand.Operation, _ entry: HvfWindowsSnapshotStore.Entry) {
-        model.request(operation, snapshotDate: entry.date, label: entry.label) { [session, config] operation in
+        confirmation = model.confirmation(for: operation, snapshotDate: entry.date, label: entry.label) { [session, config] operation in
             try await session.runSnapshot(operation, configuration: config, target: entry.url)
         }
     }

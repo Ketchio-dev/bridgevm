@@ -1,8 +1,25 @@
+import SwiftUI
 import XCTest
 @testable import BridgeVMControl
 
 @MainActor
 final class FirstRunPresentationTests: XCTestCase {
+    func testWelcomeCardsAcceptOneInstallerISOOrInstalledDisk() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let installer = root.appendingPathComponent("Windows ARM64.ISO")
+        let disk = root.appendingPathComponent("installed Windows")
+        for file in [installer, disk] { try Data([0]).write(to: file) }
+
+        XCTAssertEqual(FirstRunMediaChoice.installer.droppedFile([installer]), installer)
+        XCTAssertEqual(FirstRunMediaChoice.disk.droppedFile([disk]), disk)
+        XCTAssertNil(FirstRunMediaChoice.disk.droppedFile([installer]))
+        XCTAssertNil(FirstRunMediaChoice.installer.droppedFile([disk]))
+        XCTAssertNil(FirstRunMediaChoice.disk.droppedFile([root]))
+        XCTAssertNil(FirstRunMediaChoice.disk.droppedFile([disk, disk]))
+    }
+
     func testEmptyLibraryOffersWelcomeWithoutImportFieldsOrStatus() throws {
         try withLibrary { library in
             let body = FirstRunView(library: library).body
@@ -12,28 +29,29 @@ final class FirstRunPresentationTests: XCTestCase {
         }
     }
 
-    func testWelcomeCreateActionOpensExistingCreationSheet() throws {
+    func testWelcomeCreateRequestsBlankFormInItsOwnWindow() throws {
         try withLibrary { library in
-            let welcome = try XCTUnwrap(values(FirstRunWelcomeView.self,
-                in: FirstRunView(library: library).body).first)
-            XCTAssertFalse(library.showingCreate)
+            var presentation = LibraryWindowPresentation()
+            let binding = Binding(get: { presentation }, set: { presentation = $0 })
+            let welcome = FirstRunView(library: library).welcome(in: binding, diskPath: .constant(""))
+            XCTAssertNil(presentation.sheet)
             welcome.createAction()
-            XCTAssertTrue(library.showingCreate)
+            XCTAssertEqual(presentation.sheet, .create(installer: nil))
             XCTAssertNil(library.selectedID)
-            XCTAssertFalse(library.firstRunImportBusy)
+            XCTAssertFalse(library.preparingNewVM)
         }
     }
 
-    func testWelcomeImportActionLeavesProModeAndSelectsImportFields() throws {
+    func testWelcomeImportOpensAnUnsubmittedWindowDraft() throws {
         try withLibrary { library in
-            library.proMode = true
-            let welcome = try XCTUnwrap(values(FirstRunWelcomeView.self,
-                in: FirstRunView(library: library).body).first)
+            var presentation = LibraryWindowPresentation()
+            let binding = Binding(get: { presentation }, set: { presentation = $0 })
+            let welcome = FirstRunView(library: library).welcome(in: binding, diskPath: .constant(""))
             welcome.importAction()
-            XCTAssertEqual(library.selectedID, LibraryModel.firstRunImportSelectionID)
-            XCTAssertFalse(library.proMode)
-            XCTAssertFalse(library.showingCreate)
-            assertImportPresentation(library, editable: true)
+            XCTAssertTrue(presentation.showsImportDraft)
+            XCTAssertNil(library.selectedID)
+            XCTAssertFalse(library.firstRunImportBusy)
+            XCTAssertNil(presentation.sheet)
         }
     }
 

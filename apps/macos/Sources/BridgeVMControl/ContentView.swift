@@ -4,7 +4,7 @@ import AppKit
 #endif
 struct ContentView: View {
     @ObservedObject var library: LibraryModel
-    @State private var showPalette = false
+    @State private var presentation = LibraryWindowPresentation()
     @State private var importDraft = FirstRunFormDraft()
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     var body: some View {
@@ -31,13 +31,16 @@ struct ContentView: View {
         .tint(LibraryAppearance.accent)
         .groupBoxStyle(LibraryGroupBoxStyle())
         .background(LibraryAppearance.canvas)
-        .sheet(isPresented: $library.showingCreate) {
-            CreateVMSheet(library: library)
+        .environment(\.libraryWindowPresentation, $presentation)
+        .sheet(item: $presentation.sheet) { sheet in
+            switch sheet {
+            case .palette:
+                CommandPaletteView(library: library) { presentation.sheet = .create(installer: nil) }
+            case .create(let installer):
+                CreateVMSheet(library: library, isoPath: installer?.path ?? "")
+            }
         }
-        .sheet(isPresented: $showPalette) {
-            CommandPaletteView(library: library)
-        }
-        .sheet(item: $library.pendingWindowsClone) { cfg in
+        .sheet(item: $presentation.cloneSource) { cfg in
             CloneWindowsHVFSheet(library: library, config: cfg)
         }
         .confirmationDialog(
@@ -61,7 +64,7 @@ struct ContentView: View {
         }
         .modifier(LibraryOperationAlerts(library: library))
         .background(
-            Button("") { showPalette = true }
+            Button("") { presentation.sheet = .palette }
                 .keyboardShortcut("k", modifiers: .command)
                 .opacity(0)
         )

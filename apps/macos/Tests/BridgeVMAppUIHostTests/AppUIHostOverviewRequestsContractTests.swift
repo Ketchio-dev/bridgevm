@@ -64,7 +64,6 @@ final class AppUIHostOverviewRequestsContractTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: base) }
         let capture = try AppUIHostCapture(output: output)
         let library = AppUIHost.makeLibrary(root: root, capture: capture)
-        library.selectedID = LibraryModel.firstRunImportSelectionID
         let seed = { AppUIHost.seedOverview(library, root: root, work: capture.work) }
         return (library, deferred ? { _ = Task { @MainActor in seed() } } : seed)
     }

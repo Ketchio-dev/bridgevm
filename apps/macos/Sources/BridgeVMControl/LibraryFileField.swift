@@ -52,8 +52,7 @@ struct LibraryFileField: View {
     }
 
     static func selectDrop(_ urls: [URL], directory: Bool, path: Binding<String>) -> Bool {
-        guard urls.count == 1, let url = urls.first, url.isFileURL else { return false }
-        if let host = url.host, !host.isEmpty, host.lowercased() != "localhost" { return false }
+        guard let url = FileSelection.singleLocalURL(urls) else { return false }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
               isDirectory.boolValue == directory else { return false }

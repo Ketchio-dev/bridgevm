@@ -22,8 +22,7 @@ final class HvfCloneVarsTests: XCTestCase {
         _ = library.model(for: f.config)
         let registration = f.libraryRoot.appendingPathComponent("source/vm.json")
         let originalRegistration = try Data(contentsOf: registration)
-        library.requestWindowsClone(f.config)
-        XCTAssertEqual(library.pendingWindowsClone != nil, allowed)
+        XCTAssertEqual(library.requestWindowsClone(f.config) != nil, allowed)
         library.cloneWindowsHVF(f.config, name: "UI copy", operation: { _, _, _ in
             XCTFail("The captured UI job must never run in this test")
             return nil

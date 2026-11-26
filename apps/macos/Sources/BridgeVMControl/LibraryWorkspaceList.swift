@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct LibraryWorkspaceList: View {
+    @Environment(\.libraryWindowPresentation) private var presentation
     @ObservedObject var library: LibraryModel
     var createIdentifier = "bridgevm.library.overview.create"
     var focusesSearchOnAppear = false
@@ -77,7 +78,7 @@ struct LibraryWorkspaceList: View {
                 .help("기존 VM 가져오기")
                 .accessibilityLabel("가져오기")
                 .accessibilityIdentifier("bridgevm.library.overview.import")
-                Button { library.showingCreate = true } label: {
+                Button { presentation?.wrappedValue.sheet = .create(installer: nil) } label: {
                     Label("새 VM", systemImage: "plus")
                 }
                 .buttonStyle(.borderedProminent).controlSize(.large)

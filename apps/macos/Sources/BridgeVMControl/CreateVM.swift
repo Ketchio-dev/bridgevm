@@ -29,6 +29,7 @@ extension VMLibrary {
         }
         let targetBytes = ((try? fm.attributesOfItem(atPath: targetURL.path)[.size] as? NSNumber)?.uint64Value) ?? 0
         guard targetBytes > 0 else { return "Windows RAW 디스크가 비어 있습니다." }
+        if let error = HvfImportedDiskFormat.detect(path: targetURL.path)?.importError { return error.description }
         if varsPath.isEmpty { return nil }
         guard isReadableRegularFile(varsURL.path) else {
             return "이 VM과 함께 사용한 UEFI vars 파일을 찾을 수 없습니다."

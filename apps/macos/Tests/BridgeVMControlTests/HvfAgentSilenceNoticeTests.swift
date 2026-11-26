@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import XCTest
 @testable import BridgeVMControl
 
@@ -54,6 +54,36 @@ final class HvfAgentSilenceNoticeTests: XCTestCase {
         XCTAssertNil(session.agentSilenceNotice.shown, "the agent is there: the notice clears by itself")
     }
 
+    func testGuestWindowSubtitleWaitsForFirstConnectionAndClearsAtReadyOrStop() throws {
+        let clock = Clock()
+        let session = try session(clock, agentSeen: false)
+        let controller = HvfDisplayWindowController(session: session, title: "Windows 11")
+        let window = try XCTUnwrap(controller.window)
+        let bounds = window.contentLayoutRect
+        func refresh(at time: TimeInterval) {
+            session.agentSilenceNotice.refresh(now: time, running: true, serviceStarted: false,
+                firstConnection: { .awaitingFirstConnection }, agentInstalled: { false })
+        }
+
+        refresh(at: clock.value)
+        refresh(at: clock.value + 119)
+        XCTAssertEqual(window.subtitle, "")
+        refresh(at: clock.value + 120)
+        XCTAssertEqual(window.subtitle, "첫 연결 대기 중")
+        XCTAssertEqual(window.title, "Windows 11")
+        XCTAssertEqual(window.contentLayoutRect, bounds)
+
+        session.handle(.ready(host: "BRIDGEVM", tMs: 337_000))
+        XCTAssertEqual(window.subtitle, "", "READY already established the connection before SERVICE")
+        session.agentSilenceNotice.reset()
+        session.connectionState = .booting
+        refresh(at: clock.value + 400)
+        refresh(at: clock.value + 520)
+        XCTAssertFalse(window.subtitle.isEmpty)
+        session.connectionState = .stopped
+        XCTAssertEqual(window.subtitle, "")
+    }
+
     /// A VM whose agent never started (Windows setup's first logon still ahead, or a disk imported
     /// without the agent) stays quiet; once the agent has started, a later boot without it is noticed.
     func testAVMWhoseAgentNeverStartedStaysQuiet() throws {
@@ -72,8 +102,7 @@ final class HvfAgentSilenceNoticeTests: XCTestCase {
         XCTAssertEqual(session.agentSilenceNotice.shown, .notConnected, "the next boot's agent did not come back")
     }
 
-    /// The probe repeats the overdue line every 20 s while a request waits; once the probe has run on
-    /// 30 s without one, or the agent says READY again, the notice clears.
+    /// The ISO installer stages the agent; an imported disk may still need the tools drive.
     func testAnOldImportedVMWithoutAnAgentOffersToolsButISOFirstLogonDoesNot() throws {
         let clock = Clock()
         let session = try session(clock, agentSeen: false)
@@ -94,13 +123,18 @@ final class HvfAgentSilenceNoticeTests: XCTestCase {
             try run(session)
             clock.value += 121
             try run(session)
-            XCTAssertNil(session.agentSilenceNotice.text, "our own ISO install stays quiet through first logon")
+            if name == HvfWindowsInstallRequest.doneFileName {
+                XCTAssertEqual(session.agentSilenceNotice.shown, .awaitingFirstConnection)
+            } else {
+                XCTAssertNil(session.agentSilenceNotice.shown, "an unfinished ISO install has no bootable Windows")
+            }
             try FileManager.default.removeItem(at: root.appendingPathComponent(name))
         }
         var pending = vm
         pending.installPending = true
         session.config.libraryContext = HvfLibraryLaunchContext(config: pending, rootURL: root)
-        XCTAssertFalse(HvfGuestTools.eligible(session.config))
+        try run(session)
+        XCTAssertNil(session.agentSilenceNotice.shown)
         session.config.libraryContext = HvfLibraryLaunchContext(config: vm, rootURL: root)
         let image = try XCTUnwrap(HvfGuestTools.image(session.config))
         try Data(repeating: 0, count: 512).write(to: image)

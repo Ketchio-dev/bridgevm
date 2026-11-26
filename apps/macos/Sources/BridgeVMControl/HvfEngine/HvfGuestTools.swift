@@ -11,13 +11,6 @@ enum HvfGuestTools {
         config.libraryContext.map { URL(fileURLWithPath: $0.config.bundlePath).appendingPathComponent("metadata/guest-tools.raw") }
     }
 
-    static func eligible(_ config: HvfEngineConfig) -> Bool {
-        guard let vm = config.libraryContext?.config, vm.installPending != true else { return false }
-        return ![HvfWindowsInstallRequest.fileName, HvfWindowsInstallRequest.doneFileName].contains {
-            FileManager.default.fileExists(atPath: vm.bundlePath + "/" + $0)
-        }
-    }
-
     static func attachment(_ config: HvfEngineConfig) -> String? {
         guard let image = image(config), FileManager.default.fileExists(atPath: image.path),
               !FileManager.default.fileExists(atPath: config.evidenceDir + "/guest-agent-seen") else { return nil }

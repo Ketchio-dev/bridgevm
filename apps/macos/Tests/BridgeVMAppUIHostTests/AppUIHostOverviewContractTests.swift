@@ -1,5 +1,5 @@
 #if DEBUG && BRIDGEVM_APP_UI_HOST
-import Foundation
+import SwiftUI
 import XCTest
 @testable import BridgeVMControl
 
@@ -13,9 +13,11 @@ final class AppUIHostOverviewContractTests: XCTestCase {
         let library = AppUIHost.makeLibrary(root: root, capture: capture)
         XCTAssertEqual(try report(output)["model_creations"] as? [String: Int], counts(0, 0, 0))
         // Through import, the real first-run action only selects the import form: no row, no model.
-        let welcome = try XCTUnwrap(values(FirstRunWelcomeView.self, in: FirstRunView(library: library).body).first)
-        welcome.importAction()
-        XCTAssertEqual(library.selectedID, LibraryModel.firstRunImportSelectionID)
+        var window = LibraryWindowPresentation()
+        let binding = Binding(get: { window }, set: { window = $0 })
+        FirstRunView(library: library).welcome(in: binding, diskPath: .constant("")).importAction()
+        XCTAssertTrue(window.showsImportDraft)
+        XCTAssertNil(library.selectedID)
         XCTAssertTrue(library.cachedControlModels.isEmpty)
         try capture.save()
         XCTAssertEqual(try report(output)["model_creations"] as? [String: Int], counts(0, 0, 0))
@@ -76,13 +78,6 @@ final class AppUIHostOverviewContractTests: XCTestCase {
     private func report(_ output: URL) throws -> [String: Any] {
         let data = try Data(contentsOf: output.appendingPathComponent("ui-observations.json"))
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-    }
-
-    func values<T>(_ type: T.Type, in value: Any) -> [T] {
-        if let typed = value as? T { return [typed] }
-        let mirror = Mirror(reflecting: value)
-        guard mirror.displayStyle != .class else { return [] }
-        return mirror.children.flatMap { values(type, in: $0.value) }
     }
 }
 #endif

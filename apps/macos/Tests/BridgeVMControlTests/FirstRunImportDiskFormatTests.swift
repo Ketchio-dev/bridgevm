@@ -79,6 +79,38 @@ final class FirstRunImportDiskFormatTests: XCTestCase {
         try fixture.assertPersisted()
     }
 
+    func testVDIAndSparseVMDKAreRefusedByBothWindowsImportForms() throws {
+        let qemuImg = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":")
+            .map { URL(fileURLWithPath: String($0)).appendingPathComponent("qemu-img") }
+            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+        guard let qemuImg else { throw XCTSkip("qemu-img creates the two ordinary test fixtures") }
+        let fixture = try FirstRunImportTransactionFixture()
+        defer { fixture.remove() }
+        try Data(repeating: 0x42, count: 1_048_576).write(to: fixture.disk)
+        let image = fixture.root.appendingPathComponent("export.raw")
+        for format in ["vdi", "vmdk"] {
+            let converter = Process()
+            converter.executableURL = qemuImg
+            converter.arguments = ["convert", "-f", "raw", "-O", format, fixture.disk.path, image.path]
+            try converter.run()
+            converter.waitUntilExit()
+            XCTAssertEqual(converter.terminationStatus, 0)
+            var inputs = fixture.inputs()
+            inputs.diskPath = image.path
+            let result = FirstRunImportWorker.run(inputs, libraryRoot: fixture.library,
+                                                 snapshotHelper: HvfMediaImportTestSupport.helper)
+            guard case let .failed(message) = result else { return XCTFail("registered a \(format) container as RAW") }
+            XCTAssertTrue(message.contains(format.uppercased()))
+            XCTAssertTrue(message.contains("RAW, QCOW2 또는 VHDX"))
+            XCTAssertEqual(VMLibrary.windowsHVFImportError(targetDiskPath: image.path, varsPath: fixture.vars.path), message)
+            XCTAssertNil(VMLibrary.createWindowsHVF(name: "imported", targetDiskPath: image.path,
+                varsPath: fixture.vars.path, storageDir: fixture.root, libraryRoot: fixture.library,
+                snapshotHelper: HvfMediaImportTestSupport.helper))
+            XCTAssertTrue(VMLibrary.list(rootURL: fixture.library).isEmpty)
+            try FileManager.default.removeItem(at: image)
+        }
+    }
+
     private func assertRefused(
         _ sourceDisk: Data, sentence: String, file: StaticString = #filePath, line: UInt = #line
     ) throws {
