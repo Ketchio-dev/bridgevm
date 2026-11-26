@@ -16,7 +16,8 @@ struct LibrarySearchField: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
-                .accessibilityLabel("검색 지우기")
+                .accessibilityLabel("Clear search")
+                .accessibilityIdentifier("bridgevm.library.search.clear")
             }
         }
         .onAppear {
@@ -28,7 +29,7 @@ struct LibrarySearchField: View {
         .padding(12)
         .background(LibraryAppearance.inset, in: RoundedRectangle(cornerRadius: 10))
         .background {
-            Button("VM 검색") { focusRequests += 1 }
+            Button("Search VMs") { focusRequests += 1 }
                 .keyboardShortcut("f", modifiers: .command)
                 .focusable(false)
                 .accessibilityHidden(true)

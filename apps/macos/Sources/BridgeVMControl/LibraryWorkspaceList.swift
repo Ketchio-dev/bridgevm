@@ -44,9 +44,9 @@ struct LibraryWorkspaceList: View {
                 .overlay {
                     if results.isEmpty {
                         ContentUnavailableView {
-                            Label("검색 결과 없음", systemImage: "magnifyingglass")
+                            Label("No results", systemImage: "magnifyingglass")
                         } description: {
-                            Text("다른 VM 이름이나 엔진으로 검색해 보세요.")
+                            Text("Try a different VM name or engine.")
                         }
                         .accessibilityIdentifier("bridgevm.library.search.no-results")
                     }
@@ -54,15 +54,15 @@ struct LibraryWorkspaceList: View {
             }
         }
         .background(LibraryAppearance.canvas)
-        .navigationTitle("가상 머신")
+        .navigationTitle("Virtual machines")
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("가상 머신").font(.system(size: 28, weight: .bold))
-                    Text("\(library.vms.count)개의 VM")
+                    Text("Virtual machines").font(.system(size: 28, weight: .bold))
+                    Text(library.vms.count == 1 ? "1 VM" : "\(library.vms.count) VMs")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
@@ -74,11 +74,11 @@ struct LibraryWorkspaceList: View {
                     Image(systemName: "square.and.arrow.down")
                 }
                 .controlSize(.large)
-                .help("기존 VM 가져오기")
-                .accessibilityLabel("가져오기")
+                .help("Import an existing VM")
+                .accessibilityLabel("Import VM")
                 .accessibilityIdentifier("bridgevm.library.overview.import")
                 Button { presentation?.wrappedValue.sheet = .create(installer: nil) } label: {
-                    Label("새 VM", systemImage: "plus")
+                    Label("New VM", systemImage: "plus")
                 }
                 .buttonStyle(.borderedProminent).controlSize(.large)
                 .accessibilityIdentifier("bridgevm.library.overview.create")
@@ -92,9 +92,9 @@ struct LibraryWorkspaceList: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("등록된 VM이 없습니다", systemImage: "desktopcomputer")
+            Label("No virtual machines yet", systemImage: "desktopcomputer")
         } description: {
-            Text("새 VM을 만들거나 기존 VM을 가져오세요.")
+            Text("Create a VM or import an existing one.")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -148,7 +148,7 @@ struct LibraryWorkspaceRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(config.name), \(status.text), \(resourceText)")
-        .accessibilityHint("VM 상세 정보 보기")
+        .accessibilityHint("Show VM details")
     }
 
     private func select() {
@@ -162,20 +162,20 @@ struct LibraryWorkspaceRow: View {
            entry.session.isRunning || (config.installPending == true && entry.sourceConfig == config) {
             switch entry.session.stage {
             case .idle: break
-            case .failed: return ("설치 실패", .red)
-            case .cancelled: return ("설치 취소됨", .secondary)
-            case .done: return ("설치 완료", .green)
+            case .failed: return ("Installation failed", .red)
+            case .cancelled: return ("Installation canceled", .secondary)
+            case .done: return ("Installation complete", .green)
             default: return (entry.session.stage.label, .blue)
             }
         }
-        if config.installPending == true { return ("설치 필요", .orange) }
+        if config.installPending == true { return ("Installation required", .orange) }
         if let runtimeState { return (runtimeState.title, runtimeState.color) }
-        return model.running ? ("실행 중", .green) : ("정지됨", .secondary)
+        return model.running ? ("Running", .green) : ("Stopped", .secondary)
     }
 
     private var resourceText: String {
-        let cpu = config.cpuCount.map { "\($0) vCPU" } ?? "CPU 자동"
-        let memory = config.memMiB.map { $0.isMultiple(of: 1024) ? "\($0 / 1024) GiB RAM" : "\($0) MiB RAM" } ?? "메모리 자동"
+        let cpu = config.cpuCount.map { "\($0) vCPU" } ?? "CPU: Automatic"
+        let memory = config.memMiB.map { $0.isMultiple(of: 1024) ? "\($0 / 1024) GiB RAM" : "\($0) MiB RAM" } ?? "Memory: Automatic"
         return "\(cpu)  ·  \(memory)  ·  \(config.engineShortLabel)"
     }
 }

@@ -11,7 +11,7 @@ final class LibraryInstallRowStatusTests: XCTestCase {
         try fixture.save(config)
         let library = fixture.library()
         let row = LibraryWorkspaceRow(library: library, config: config, model: library.model(for: config), selected: true)
-        XCTAssertEqual(row.status.text, "설치 필요")
+        XCTAssertEqual(row.status.text, "Installation required")
         XCTAssertNil(library.windowsInstallSessions.record(for: config.slug))
 
         let session = library.windowsInstallSession(for: config)
@@ -27,6 +27,6 @@ final class LibraryInstallRowStatusTests: XCTestCase {
         session.transition(to: .installing)
         XCTAssertEqual(row.status.text, "Installing Windows")
         session.finish(.failed("detailed diagnostic"))
-        XCTAssertEqual(row.status.text, "설치 실패")
+        XCTAssertEqual(row.status.text, "Installation failed")
     }
 }

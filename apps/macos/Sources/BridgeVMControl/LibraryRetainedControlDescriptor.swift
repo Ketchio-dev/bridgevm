@@ -55,8 +55,8 @@ struct LibraryRetainedControlRecord: Identifiable {
 extension LibraryRetainedControlDescriptor {
     var kindLabel: String {
         switch self {
-        case .runtime, .generic: return "실행"
-        case .install: return "설치"
+        case .runtime, .generic: return "Runtime"
+        case .install: return "Installation"
         }
     }
 
@@ -73,14 +73,14 @@ extension LibraryRetainedControlDescriptor {
     var statusLabel: String {
         switch self {
         case let .install(_, session): return session.stage.label
-        case let .generic(_, model): return model.statusNote.isEmpty ? (model.running ? "실행 관찰됨" : "중지됨") : model.statusNote
+        case let .generic(_, model): return model.statusNote.isEmpty ? (model.running ? "Running" : "Stopped") : model.statusNote
         case let .runtime(_, session):
             switch session.connectionState {
-            case .stopped: return "중지됨"
-            case .booting: return "시작 중"
-            case .connected: return "연결됨"
-            case .stopping: return "중지 중"
-            case .timedOut: return "응답 확인 필요"
+            case .stopped: return "Stopped"
+            case .booting: return "Starting"
+            case .connected: return "Connected"
+            case .stopping: return "Stopping"
+            case .timedOut: return "Check the connection"
             }
         }
     }
