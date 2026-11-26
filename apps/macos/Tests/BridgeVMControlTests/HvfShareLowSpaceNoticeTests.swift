@@ -17,14 +17,14 @@ final class HvfShareLowSpaceNoticeTests: XCTestCase {
         notice.consume(.unknown("BVAGENT SHARE skip 휴가 영상.mov low-space 5000000000\r"))
         XCTAssertEqual(notice.lowSpace?.count, 1)
         XCTAssertEqual(notice.lowSpace?.last, "휴가 영상.mov")
-        XCTAssertEqual(notice.displayed?.text, "Mac 디스크 공간이 부족해 '휴가 영상.mov'을(를) 공유 폴더로 가져오지 않았습니다.")
-        XCTAssertEqual(notice.displayed?.help, "공간을 확보하면 다시 가져옵니다.")
+        XCTAssertEqual(notice.displayed?.text, "Your Mac needs more space to receive “휴가 영상.mov” from Windows.")
+        XCTAssertEqual(notice.displayed?.help, "Free up space on your Mac. Sync will retry automatically.")
         notice.consume(.unknown("BVAGENT SHARE skip big/disk.iso low-space 9000000000"))
-        XCTAssertEqual(notice.displayed?.text, "Mac 디스크 공간이 부족해 'big/disk.iso' 외 1개를 공유 폴더로 가져오지 않았습니다.")
+        XCTAssertEqual(notice.displayed?.text, "Your Mac needs more space to receive “big/disk.iso” and 1 other file from Windows.")
         // It outranks a too-large skip, which needs nothing from the user.
         notice.consume(.unknown("BVAGENT SHARE skip a.bin too-large 99999999999"))
         XCTAssertEqual(notice.lowSpace?.count, 2)
-        XCTAssertTrue(notice.displayed?.text.hasPrefix("Mac 디스크 공간이 부족해") == true)
+        XCTAssertTrue(notice.displayed?.text.hasPrefix("Your Mac needs more space") == true)
     }
 
     @MainActor
@@ -49,7 +49,7 @@ final class HvfShareLowSpaceNoticeTests: XCTestCase {
         let notice = HvfShareRootNotice()
         notice.consume(.unknown("BVAGENT SHARE skip a.bin low-space 99999999999"))
         notice.consume(.unknown("BVAGENT SHARE root-state blocked"))
-        XCTAssertEqual(notice.displayed?.text, "공유 폴더를 확인할 수 없어 일부 동기화를 기다리고 있습니다.")
+        XCTAssertEqual(notice.displayed?.text, "Some changes are waiting because BridgeVM can’t verify the shared folder.")
         notice.consume(.unknown("BVAGENT SHARE root-state ready"))
         XCTAssertNotNil(notice.lowSpace)
         notice.consume(.unknown(HvfGuestResetRecord.processRecreation))
@@ -65,7 +65,7 @@ final class HvfShareLowSpaceNoticeTests: XCTestCase {
                       "BVAGENT SHARE skip a.txt low-space 7"])
         XCTAssertEqual(notice.lowSpace?.count, 2)
         XCTAssertEqual(notice.lowSpace?.last, "a.txt")
-        XCTAssertEqual(notice.displayed?.text, "Mac 디스크 공간이 부족해 'a.txt' 외 1개를 공유 폴더로 가져오지 않았습니다.")
+        XCTAssertEqual(notice.displayed?.text, "Your Mac needs more space to receive “a.txt” and 1 other file from Windows.")
     }
 
     @MainActor
@@ -81,7 +81,7 @@ final class HvfShareLowSpaceNoticeTests: XCTestCase {
         // A large file, by its done line alone.
         feed(notice, ["BVAGENT SHARE transfer-done guest->host big/disk.iso bytes=9000000000 ms=90000 mbps=100.0 t=50"])
         XCTAssertEqual(notice.lowSpace?.count, 1)
-        XCTAssertEqual(notice.displayed?.text, "Mac 디스크 공간이 부족해 '휴가 영상.mov'을(를) 공유 폴더로 가져오지 않았습니다.")
+        XCTAssertEqual(notice.displayed?.text, "Your Mac needs more space to receive “휴가 영상.mov” from Windows.")
         // A large file logs both lines; the name holds spaces.
         feed(notice, ["BVAGENT SHARE guest->host 휴가 영상.mov bytes=5000000000 t=60",
                       "BVAGENT SHARE transfer-done guest->host 휴가 영상.mov bytes=5000000000 ms=50000 mbps=100.0 t=60"])
