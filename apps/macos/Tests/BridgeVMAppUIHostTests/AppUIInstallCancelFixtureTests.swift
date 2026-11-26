@@ -45,7 +45,7 @@ final class AppUIInstallCancelFixtureTests: XCTestCase {
 
             let retry = try XCTUnwrap(session.start())
             await retry.value
-            XCTAssertEqual(session.stage, .failed("합성 UI 검증 종료"))
+            XCTAssertEqual(session.stage, .failed(AppUIInstallCancelConstants.refusal))
             XCTAssertFalse(session.isRunning); XCTAssertFalse(session.canCancel)
             XCTAssertTrue(try fixture.matches(.retryFailed))
             self.assertCounters(fixture, calls: 2, finished: 2, resets: 2, cancels: 1)
