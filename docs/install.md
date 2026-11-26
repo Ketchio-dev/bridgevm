@@ -216,6 +216,9 @@ restored file against its original SHA-256 before preparing Windows.
 3. Choose **Import** (**가져오기**). Select the saved VM in the library and
    choose **Start** (**시작**) to boot it.
 
+See the [Windows desktop after an installed-disk import](media/windows-hvf-import-20261126.webp)
+from a development build running with 3D off.
+
 The v0.1.0 download accepts RAW, QCOW2 and Hyper-V VHDX. BridgeVM copies or
 converts the disk into the library and leaves the source unchanged. Import
 needs no driver payload. Builds from current source also accept fixed-size
