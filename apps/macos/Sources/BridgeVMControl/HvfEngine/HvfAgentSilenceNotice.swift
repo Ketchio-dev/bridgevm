@@ -25,8 +25,8 @@ final class HvfAgentSilenceNotice: ObservableObject {
     /// quick keepalive requests answer within 20 s from a healthy agent (req_kind, agent_console/share.rs).
     static let quickKinds: Set<String> = ["ping", "clip-poll", "clip-caps"]
 
-    static let notConnectedText = "Windows 에이전트가 아직 연결되지 않아 클립보드·공유 폴더·화면 크기 맞춤이 동작하지 않습니다. Windows에 로그인한 뒤에도 계속되면 Windows를 다시 시작하세요."
-    static let notRespondingText = "Windows 에이전트가 응답하지 않아 클립보드·공유 폴더·화면 크기 맞춤이 잠시 동작하지 않습니다. 계속되면 Windows를 다시 시작하세요."
+    static let notConnectedText = "Clipboard sharing, shared folders, and automatic resizing are waiting for Windows to connect. If they stay unavailable after you sign in, restart Windows."
+    static let notRespondingText = "Guest Tools stopped responding. If clipboard sharing, shared folders, or automatic resizing stay unavailable, restart Windows."
 
     @Published private(set) var shown: Kind?
     /// The user closed the strip over the display; it comes back with the next notice.
@@ -39,7 +39,7 @@ final class HvfAgentSilenceNotice: ObservableObject {
 
     var text: String? {
         switch shown {
-        case .awaitingFirstConnection: return "Windows 연결을 기다리고 있습니다. 초기 설정이나 로그인 안내가 보이면 VM 화면에서 진행하세요."
+        case .awaitingFirstConnection: return "Waiting for Windows to connect. Complete any setup or sign-in steps in the VM window."
         case .missingTools: return HvfGuestTools.missing
         case .notConnected: return Self.notConnectedText
         case .notResponding: return Self.notRespondingText
@@ -154,8 +154,8 @@ struct HvfNoticeStrip<Content: View>: View {
             content()
             Button(action: dismiss) { Image(systemName: "xmark") }
                 .buttonStyle(.plain)
-                .help("닫기")
-                .accessibilityLabel("닫기")
+                .help("Dismiss notice")
+                .accessibilityLabel("Dismiss notice")
                 .accessibilityIdentifier(identifier + ".close")
         }
             .font(.callout)

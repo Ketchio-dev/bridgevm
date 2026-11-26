@@ -1,15 +1,15 @@
 # Control a saved Windows installation from the CLI
 
 ```sh
-bridgevm app install 개발-vm
-bridgevm app install-status 개발-vm --json
-bridgevm app install 개발-vm # only after failed/cancelled becomes terminal
-bridgevm app readiness 개발-vm
+bridgevm app install dev-vm
+bridgevm app install-status dev-vm --json
+bridgevm app install dev-vm # only after failed/cancelled becomes terminal
+bridgevm app readiness dev-vm
 # After starting and shutting down the new VM once in the app:
-bridgevm app start 개발-vm
-bridgevm app status 개발-vm
-bridgevm app stop 개발-vm
-bridgevm app install-cancel 개발-vm
+bridgevm app start dev-vm
+bridgevm app status dev-vm
+bridgevm app stop dev-vm
+bridgevm app install-cancel dev-vm
 ```
 
 Use the exact ID from `bridgevm app list`; retry only after terminal failure or cancellation.

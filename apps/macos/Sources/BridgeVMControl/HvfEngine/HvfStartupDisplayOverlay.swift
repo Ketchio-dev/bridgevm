@@ -11,18 +11,18 @@ struct HvfStartupDisplayOverlay: View {
             VStack(spacing: 16) {
                 if session.hasPendingRuntimeStart {
                     ProgressView()
-                    Text(session.runtimePendingWorkText ?? "Windows 시작 준비 중")
+                    Text(session.runtimePendingWorkText ?? "Preparing to start Windows…")
                 } else {
                     Image(systemName: session.guiStartFailureText == nil ? "power" : "exclamationmark.triangle")
                         .font(.largeTitle)
-                    Text(session.guiStartFailureText ?? "Windows가 종료되었습니다.")
+                    Text(session.guiStartFailureText ?? "Windows has shut down.")
                         .multilineTextAlignment(.center).textSelection(.enabled)
                     HStack {
-                        Button("창 닫기") { window.window?.performClose(nil) }
+                        Button("Close Window") { window.window?.performClose(nil) }
                             .keyboardShortcut(.cancelAction)
                         if session.guiStartFailureText == nil, let library = session.library,
                            let vm = session.config.libraryContext?.config {
-                            Button("라이브러리 열기") { ControlLibraryWindow.show(vm, in: library) }
+                            Button("Open Library") { ControlLibraryWindow.show(vm, in: library) }
                                 .buttonStyle(.borderedProminent)
                                 .accessibilityIdentifier("bridgevm.display.stopped.open-library")
                         }

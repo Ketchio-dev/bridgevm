@@ -30,7 +30,7 @@ final class GenericControlRetentionTests: XCTestCase {
                 let model = library.model(for: config)
                 model.running = true // Existing observed process; no launch, lookup, or stop.
                 accepted = model
-                XCTAssertTrue(library.selectedPaletteCommands(dismiss: {}).contains { $0.title == "정지: active" })
+                XCTAssertTrue(library.selectedPaletteCommands(dismiss: {}).contains { $0.id == "stop.active" })
             }
             let registration = root.appendingPathComponent("active/vm.json")
             if missing { try FileManager.default.removeItem(at: registration) }
