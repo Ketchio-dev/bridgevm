@@ -20,16 +20,16 @@ struct LibraryHostSummary: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("이 Mac의 용량", systemImage: "desktopcomputer")
+            Label("Mac hardware", systemImage: "desktopcomputer")
                 .font(.callout.weight(.semibold))
             HStack(spacing: 18) {
-                LibraryMetadataLabel(title: "메모리", value: "\(Int(library.hostMemGiB.rounded())) GiB", symbol: "memorychip")
-                LibraryMetadataLabel(title: "CPU", value: "\(library.hostCPU) 코어", symbol: "cpu")
+                LibraryMetadataLabel(title: "Memory", value: "\(Int(library.hostMemGiB.rounded())) GiB", symbol: "memorychip")
+                LibraryMetadataLabel(title: "CPU", value: "\(library.hostCPU) cores", symbol: "cpu")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .modifier(LibraryCardSurface())
-        .help("호스트의 전체 메모리와 사용 가능한 프로세서 수입니다. 실시간 사용률이 아닙니다.")
+        .help("Total memory and processor cores available on this Mac.")
     }
 }

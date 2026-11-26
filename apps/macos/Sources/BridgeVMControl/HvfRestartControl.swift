@@ -31,12 +31,12 @@ struct HvfRestartControl<Content: View>: View {
         .confirmationDialog(title, isPresented: confirming, titleVisibility: .visible,
                             presenting: session.resetConfirmation) { confirmation in
             if confirmation.prompt == .windowsHasNotRestarted {
-                Button("다시 요청") { resultMessage = session.requestWindowsRestart().message }
+                Button("Request Restart Again") { resultMessage = session.requestWindowsRestart().message }
                     .accessibilityIdentifier(identifier + ".restart-again")
             }
-            Button("재설정", role: .destructive) { resultMessage = session.requestReset().message }
+            Button("Reset", role: .destructive) { resultMessage = session.requestReset().message }
                 .accessibilityIdentifier(identifier + ".confirm-reset")
-            Button("취소", role: .cancel) { session.cancelResetConfirmation() }
+            Button("Cancel", role: .cancel) { session.cancelResetConfirmation() }
         } message: { confirmation in
             Text(Self.message(confirmation.prompt))
         }
@@ -45,7 +45,7 @@ struct HvfRestartControl<Content: View>: View {
     private var title: String { Self.title(session.resetConfirmation?.prompt ?? .agentUnavailable) }
 
     static func title(_ prompt: HvfResetPrompt) -> String {
-        prompt == .windowsHasNotRestarted ? "Windows가 아직 다시 시작하지 않았습니다" : "VM을 재설정할까요?"
+        prompt == .windowsHasNotRestarted ? "Windows hasn’t restarted yet" : "Reset this VM?"
     }
 
     private var confirming: Binding<Bool> {
@@ -60,12 +60,12 @@ struct HvfRestartControl<Content: View>: View {
     }
 
     static func message(_ prompt: HvfResetPrompt) -> String {
-        let reset = "재설정하면 전원을 껐다 켠 것처럼 VM이 바로 다시 시작되고, 저장하지 않은 작업은 사라집니다."
+        let reset = "Resetting immediately power cycles the VM. You will lose any unsaved work."
         switch prompt {
         case .agentUnavailable:
-            return "Windows 에이전트가 준비되지 않아 Windows에 다시 시작을 요청할 수 없습니다. " + reset
+            return "The Windows guest agent isn’t ready to handle a restart request. " + reset
         case .windowsHasNotRestarted:
-            return "앱이 다시 시작을 막고 있으면 VM 화면에서 확인하세요. " + reset
+            return "Check the VM display for apps blocking the restart. " + reset
         }
     }
 }

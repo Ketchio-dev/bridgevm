@@ -2,11 +2,21 @@ import SwiftUI
 
 struct HvfStartCloseSettings: View {
     @ObservedObject var session: HvfEngineSession
+    @ObservedObject var draft: HvfVMSettingsDraft
     @ObservedObject var power = ControlAppPower.shared
     @AppStorage(ControlDisplayClose.preferenceKey) private var closeChoice = ""
     @State private var message: String?
     var body: some View {
-        Section("Startup and window behavior") {
+        Section("General") {
+            if session.persistsLibraryPreferences {
+                TextField("VM name", text: $draft.name)
+                    .onSubmit { draft.commitName() }
+                    .disabled(!session.libraryPreferencesEditable)
+                    .accessibilityIdentifier("bridgevm.runtime.settings.vm-name")
+                if let message = draft.nameMessage {
+                    Label(message, systemImage: "exclamationmark.triangle").font(.callout)
+                }
+            }
             Toggle("Keep Mac awake while Windows is running", isOn: Binding(
                 get: { power.enabled }, set: { power.setEnabled($0) }))
             Text("The Mac display can still turn off.")
