@@ -120,7 +120,7 @@ final class HvfVMSettingsDraftTests: XCTestCase {
         guard case let .refused(message) = session.requestGUIStart(configuration: session.config) else {
             return XCTFail("Start must not admit a visible settings draft")
         }
-        XCTAssertEqual(message, "설정을 완료한 뒤 Windows를 시작하세요.")
+        XCTAssertEqual(message, "Close Settings before starting Windows.")
         display.didDisappear()
         XCTAssertTrue(session.openSettingsSheets.isEmpty)
     }
