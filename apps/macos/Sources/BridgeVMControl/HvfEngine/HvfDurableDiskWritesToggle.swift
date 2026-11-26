@@ -8,11 +8,17 @@ struct HvfDurableDiskWritesToggle: View {
 
     var isDisabled: Bool { session.persistsLibraryPreferences && !session.libraryPreferencesEditable }
 
+    var explanation: String {
+        isOn
+            ? "Each Windows disk flush waits for the writes to reach permanent storage. This can slow down writes."
+            : "Writes stay in order. If your Mac loses power, you may lose about the last second of writes Windows has flushed."
+    }
+
     var body: some View {
         Toggle("Wait for durable disk flushes", isOn: Binding(get: { isOn }, set: update))
             .accessibilityIdentifier("bridgevm.runtime.durable-disk-writes")
             .disabled(isDisabled)
-            .help("By default, disk writes stay ordered, but a sudden loss of power can lose about the last second of writes. Turn this on to wait for permanent storage before acknowledging each Windows disk flush. Writes can be slower on the internal SSD."
+            .help(explanation
                 + (session.persistsLibraryPreferences ? " Changes made while the VM is stopped are saved for future starts." : ""))
             .alert("Disk write settings", isPresented: Binding(
                 get: { message != nil }, set: { if !$0 { message = nil } }
@@ -21,6 +27,9 @@ struct HvfDurableDiskWritesToggle: View {
             } message: {
                 Text(message ?? "")
             }
+        Text(explanation)
+            .font(.caption)
+            .foregroundStyle(.secondary)
     }
 
     private func update(_ enabled: Bool) {

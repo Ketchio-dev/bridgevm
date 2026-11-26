@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import BridgeVMControl
 
@@ -14,11 +15,17 @@ final class HvfDurableDiskWritesTests: XCTestCase {
         let saved = fixture.config(); fixture.save(saved)
         let library = fixture.library(probe: probe)
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+        let toggle = HvfDurableDiskWritesToggle(session: session, isOn: Binding(
+            get: { session.config.durableDiskWrites }, set: { session.config.durableDiskWrites = $0 }))
+        let ordered = "Writes stay in order. If your Mac loses power, you may lose about the last second of writes Windows has flushed."
+        let durable = "Each Windows disk flush waits for the writes to reach permanent storage. This can slow down writes."
         XCTAssertFalse(session.config.durableDiskWrites, "An absent key keeps ordered flushes")
+        XCTAssertEqual(toggle.explanation, ordered)
         XCTAssertFalse(ownedArguments(session.config).contains("--nvme-durable-flush"))
         XCTAssertFalse(session.config.wrapperArguments().contains("--nvme-durable-flush"))
 
         XCTAssertTrue(session.applyDurableDiskWritesToggle(true) == (true, nil))
+        XCTAssertEqual(toggle.explanation, durable)
         let latest = library.latestConfiguration(for: saved)
         XCTAssertEqual(latest.durableDiskWritesEnabled, true)
         let launch = try XCTUnwrap(HvfEngineConfig.libraryVM(latest, rootURL: library.rootURL,
@@ -26,8 +33,17 @@ final class HvfDurableDiskWritesTests: XCTestCase {
         XCTAssertTrue(ownedArguments(launch).contains("--nvme-durable-flush"))
         XCTAssertTrue(launch.wrapperArguments().contains("--nvme-durable-flush"))
 
+        session.connectionState = .booting
+        XCTAssertTrue(toggle.isDisabled)
+        let refused = session.applyDurableDiskWritesToggle(false)
+        XCTAssertTrue(refused.isOn)
+        XCTAssertNotNil(refused.message)
+        XCTAssertEqual(toggle.explanation, durable)
+        session.connectionState = .stopped
+
         // Turning it off again restores the never-touched registration.
         XCTAssertTrue(session.applyDurableDiskWritesToggle(false) == (false, nil))
+        XCTAssertEqual(toggle.explanation, ordered)
         XCTAssertNil(library.latestConfiguration(for: saved).durableDiskWritesEnabled)
     }
 }
