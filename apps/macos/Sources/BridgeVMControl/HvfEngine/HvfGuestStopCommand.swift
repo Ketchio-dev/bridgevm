@@ -23,11 +23,11 @@ enum HvfGuestStopWait: Equatable, Sendable {
     var message: String {
         switch self {
         case .waitingForGuestAgent:
-            return "Windows 에이전트가 준비되면 종료를 요청합니다. 기다리지 않으려면 강제 중단하세요."
+            return "Waiting for the Windows agent to accept the shutdown request. To stop waiting, use Force Stop."
         case .windowsClosingApps:
-            return "Windows가 앱을 닫고 종료하는 중입니다. 저장하지 않은 작업이 있으면 VM 화면에서 저장하거나 닫으세요. 기다리지 않으려면 강제 중단하세요."
+            return "Windows is closing apps. Save any open work in the VM window, or use Force Stop to shut down now."
         case .windowsStillRunning:
-            return "Windows가 아직 종료되지 않았습니다. 앱이 종료를 막고 있을 수 있으니 VM 화면을 확인하거나 강제 중단하세요."
+            return "Windows is still running. Check the VM window for an app blocking shutdown, or use Force Stop."
         }
     }
 }

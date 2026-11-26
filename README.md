@@ -38,7 +38,7 @@ curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.s
 | Windows desktop | Windows 11 Arm on BridgeVM's native HVF engine; create a VM from an ISO or import an installed disk. |
 | Display and input | A native Mac window, keyboard and mouse, local text composition, and configurable Command-key mapping. Window-following resolution needs the guest display driver and a restart. |
 | Mac integration | Clipboard sharing, shared folders, networking and audio output. Display smoothness and audio continuity still need broader validation. |
-| VM lifecycle | Start, shut down and restart; persistent storage and TPM/Secure Boot workflows; [powered-off snapshots](docs/windows-arm/snapshot-scope-v1.md). Running-state suspend is outside v1. |
+| VM lifecycle | Start, shut down and restart. In current source builds, **Stop** waits for Windows to close its apps. **Force Stop** asks for confirmation because unsaved work may be lost. Persistent storage, TPM/Secure Boot workflows and [powered-off snapshots](docs/windows-arm/snapshot-scope-v1.md) are available. Running-state suspend is outside v1. |
 
 These are preview capabilities. ISO installation and installed-disk import on
 a clean Mac remain the open release criterion. The
