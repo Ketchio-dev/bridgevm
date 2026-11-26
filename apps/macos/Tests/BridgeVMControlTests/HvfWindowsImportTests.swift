@@ -121,7 +121,7 @@ final class HvfWindowsImportTests: XCTestCase {
             name: "Overlay", targetDiskPath: disk.path, varsPath: vars.path,
             storageDir: storage, persist: false, snapshotHelper: HvfMediaImportTestSupport.helper
         ) else { return XCTFail("a QCOW2 with a backing file must be refused with a sentence") }
-        XCTAssertEqual(message, "이 디스크는 다른 디스크를 기반으로 하니 원래 VM 앱에서 하나의 디스크로 합친 뒤 다시 가져오세요.")
+        XCTAssertEqual(message, "This disk depends on a backing file. Export a standalone disk from the original VM app and import the copy.")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: storage.path), [])
     }
 
@@ -138,7 +138,7 @@ final class HvfWindowsImportTests: XCTestCase {
 
         let error = VMLibrary.windowsHVFImportError(targetDiskPath: shared.path, varsPath: alias.path)
 
-        XCTAssertTrue(error?.contains("서로 다른 파일") == true)
+        XCTAssertTrue(error?.contains("separate files") == true)
     }
 
     func testRejectsFIFOMediaWithoutAttemptingToReadIt() throws {
@@ -154,7 +154,7 @@ final class HvfWindowsImportTests: XCTestCase {
 
         let error = VMLibrary.windowsHVFImportError(targetDiskPath: fifo.path, varsPath: vars.path)
 
-        XCTAssertTrue(error?.contains("RAW 디스크 파일") == true)
+        XCTAssertTrue(error?.contains("readable disk file") == true)
     }
 
     func testRejectsMissingImportMediaWithoutCreatingVMDirectory() throws {

@@ -15,7 +15,7 @@ extension LibraryModel {
             }
             let adopted = adopt?(config) ?? add(config)
             if adopted { proMode = false }
-            error = adopted ? HvfWindowsImportNotice.read(bundlePath: config.bundlePath) : "VM은 저장했지만 라이브러리에서 찾지 못했습니다. 저장된 파일은 보존했습니다."
+            error = adopted ? HvfWindowsImportNotice.read(bundlePath: config.bundlePath) : "The VM was saved, but it did not appear in the library. Its files are safe."
             if adopted, error != nil {
                 savedWithNotice = true
                 selectedID = Self.firstRunImportSelectionID
@@ -42,7 +42,7 @@ extension LibraryModel {
             }
         }
     ) async -> String? {
-        guard !firstRunImportBusy else { return "라이브러리를 확인하고 있습니다." }
+        guard !firstRunImportBusy else { return "Checking the library…" }
         guard let expected = firstRunImport.publishedConfig else { return firstRunImportError }
         guard !Task.isCancelled else { return firstRunImportError }
         firstRunImport.beginRecovery()
@@ -53,7 +53,7 @@ extension LibraryModel {
         }.value
         guard let persisted, add(persisted) else {
             firstRunImport.recoveryFailed(
-                "저장된 VM을 아직 불러올 수 없습니다. 라이브러리 폴더를 확인한 뒤 ‘저장된 VM 불러오기’를 다시 누르세요.")
+                "The saved VM could not be opened. Check the library folder and choose Open Saved VM again.")
             return firstRunImportError
         }
         proMode = false

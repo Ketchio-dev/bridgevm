@@ -39,7 +39,7 @@ final class HvfWindowsInstallFailureFeedbackTests: XCTestCase {
     func testImportFailurePresentationKeepsRawDetailOnlyInDiagnostics() {
         let error = HvfWindowsBootSeed.SeedError.secureBootManifestMissing
         let text = WindowsFileFailureFeedback.report("import", error, sentence: WindowsFileFailureFeedback.importing)
-        XCTAssertEqual(text, "Windows 파일을 가져오지 못했으니 디스크와 부팅 설정 파일의 접근 권한과 저장 장치의 여유 공간을 확인하고 다시 시도하세요.")
+        XCTAssertEqual(text, "Could not import the Windows files. Check access to the disk image and firmware files and make sure the destination has enough free space.")
         XCTAssertFalse(text.contains("SeedError"))
         XCTAssertFalse(text.contains("error 4"))
         XCTAssertTrue(WindowsFileFailureFeedback.diagnostic("import", error).contains(String(reflecting: error)))
@@ -47,9 +47,9 @@ final class HvfWindowsInstallFailureFeedbackTests: XCTestCase {
 
     func testImportShowsFixedVHDXGuidanceWithoutPublishingDiagnosticDetails() {
         let guidance = [
-            "이 VHDX는 4K 논리 섹터 디스크라 BridgeVM에서 부팅할 수 없으니 512바이트 논리 섹터 디스크에 설치한 Windows를 가져오세요.",
-            "이 디스크는 다른 디스크를 기반으로 하는 차이 디스크이니 Hyper-V에서 부모 디스크와 병합한 뒤 다시 가져오세요.",
-            "이 VHDX에는 반영되지 않은 변경 기록이 남아 있으니 Windows에서 이 VHDX를 한 번 연결했다가 분리한 뒤 다시 시도하세요."
+            "This VHDX uses 4 KB logical sectors. Import Windows from a disk that uses 512-byte logical sectors.",
+            "This differencing disk depends on a parent disk. Merge the chain in Hyper-V, then import the merged disk.",
+            "This VHDX has pending changes. Attach it in Windows, detach it cleanly, then try again."
         ]
         for detail in guidance {
             let error = NSError(domain: "BridgeVM.MediaImport", code: 1, userInfo: [NSLocalizedDescriptionKey: detail])
@@ -67,11 +67,12 @@ final class HvfWindowsInstallFailureFeedbackTests: XCTestCase {
         let cocoa = CocoaError(.fileWriteOutOfSpace)
         let helperMessage = "No space left on device. Free space on the destination volume and try again."
         let helper = NSError(domain: "BridgeVM.MediaImport", code: 1, userInfo: [NSLocalizedDescriptionKey: helperMessage])
-        let guidance = "대상 볼륨의 공간이 부족해 디스크를 가져오지 못했습니다. 공간을 확보한 뒤 다시 시도하세요."
-        let errors: [Error] = [cocoa, helper]
+        let legacyConverter = NSError(domain: "BridgeVM.MediaImport", code: 1, userInfo: [NSLocalizedDescriptionKey:
+            "대상 볼륨의 공간이 부족해 디스크를 가져오지 못했습니다. 공간을 확보한 뒤 다시 시도하세요."])
+        let errors: [Error] = [cocoa, helper, legacyConverter]
         for error in errors {
             XCTAssertTrue(WindowsFileFailureFeedback.isImportOutOfSpace(error))
-            XCTAssertEqual(WindowsFileFailureFeedback.reportImport("import", error), guidance)
+            XCTAssertEqual(WindowsFileFailureFeedback.reportImport("import", error), helperMessage)
         }
         let unrelated = NSError(domain: "BridgeVM.MediaImport", code: 1,
                                 userInfo: [NSLocalizedDescriptionKey: helperMessage + "\n/private/test/vars.fd"])

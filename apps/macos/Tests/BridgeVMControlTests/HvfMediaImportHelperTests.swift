@@ -75,7 +75,7 @@ final class HvfMediaImportHelperTests: XCTestCase {
         }
         let silent = try XCTUnwrap(try invokeStandIn("exit 7"), Self.blocked)
         XCTAssertThrowsError(try silent.get()) { error in
-            XCTAssertEqual(error.localizedDescription, "디스크와 부팅 설정을 가져오지 못했습니다.")
+            XCTAssertEqual(error.localizedDescription, "The disk and firmware settings could not be imported.")
         }
         let killed = try XCTUnwrap(try invokeStandIn("printf 'format_version 1\\n'; kill -KILL $$"), Self.blocked)
         XCTAssertThrowsError(try killed.get())

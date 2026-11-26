@@ -63,7 +63,7 @@ final class FirstRunImportProgressTests: XCTestCase {
         state.advance(.converting(.qcow2, percent: 40), operation: operation)
         state.advance(.converting(.qcow2, percent: 12), operation: operation)
         XCTAssertEqual(state.stage, .converting(.qcow2, percent: 40))
-        XCTAssertEqual(state.stage?.label, "QCOW2 디스크를 변환하는 중… 40%")
+        XCTAssertEqual(state.stage?.label, "Converting QCOW2 disk… 40%")
         XCTAssertEqual(state.stage?.conversionFraction, 0.4)
         state.advance(.saving, operation: operation)
         state.advance(.converting(.qcow2, percent: 100), operation: operation)

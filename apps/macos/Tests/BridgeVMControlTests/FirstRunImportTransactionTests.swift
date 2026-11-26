@@ -49,7 +49,7 @@ final class FirstRunImportTransactionTests: XCTestCase {
         let fixture = try FirstRunImportTransactionFixture()
         defer { fixture.remove() }
         let tool = fixture.root.appendingPathComponent("missing-tool")
-        let guidance = "디스크 가져오기 도구를 실행할 수 없으니 BridgeVM 앱을 다시 설치하거나 소스에서 만든 앱이라면 패키지를 다시 빌드하세요."
+        let guidance = "The disk import tool could not start. Reinstall BridgeVM or rebuild the app if you built it from source."
 
         let firstRun = FirstRunImportWorker.run(fixture.inputs(), libraryRoot: fixture.library, snapshotHelper: tool)
         if case .failed(let message) = firstRun { XCTAssertEqual(message, guidance) }

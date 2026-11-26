@@ -88,7 +88,7 @@ installed disk from Finder onto the matching card to open its setup form.
 | Starting point | What you provide |
 | --- | --- |
 | **Install Windows** | Choose your licensed Windows 11 Arm ISO. Use **Download Drivers** to fetch and verify the signed Red Hat storage, serial and network drivers (about 95 MB), or choose your own signed Arm64 driver folder and SHA-256 manifest. Choose **Create**, then **Start Installation** in the VM detail view. In the v0.1.0 download, these three buttons read **드라이버 자동 준비**, **생성** and **설치 시작**, respectively. |
-| **Import an existing disk** | Drop your installed Windows 11 Arm disk onto **파일 선택 또는 놓기** (Choose or drop file), or click that button to browse. The download accepts RAW, QCOW2 and Hyper-V VHDX. Builds from current source also accept fixed-size VHD. Choose **가져오기** (Import), then **시작** (Start) once the VM appears in your library. This path needs no driver payload. |
+| **Import an existing disk** | Choose your installed Windows 11 Arm disk, select **Import**, then choose **Start** in the library. In v0.1.0, the file picker and these two actions read **선택…**, **가져오기** and **시작**. The download accepts RAW, QCOW2 and Hyper-V VHDX. Current source also supports fixed-size VHD and lets you drop a file on the disk field. Disk import needs no driver payload. |
 
 To rename a saved Windows VM in a current source build, shut down Windows,
 open **Settings**, edit **VM name** under **General**, and click **Done**. The VM keeps its disk, snapshots and TPM identity.

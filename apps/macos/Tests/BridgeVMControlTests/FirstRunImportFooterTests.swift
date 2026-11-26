@@ -26,7 +26,7 @@ final class FirstRunImportFooterTests: XCTestCase {
 
         let scroll = try XCTUnwrap(fileField.enclosingScrollView)
         let document = try XCTUnwrap(scroll.documentView)
-        let buttonHeight = NSButton(title: "가져오기", target: nil, action: nil).fittingSize.height
+        let buttonHeight = NSButton(title: "Import", target: nil, action: nil).fittingSize.height
         func footerHeight() -> CGFloat {
             scroll.convert(scroll.bounds, to: nil).minY - window.contentLayoutRect.minY
         }

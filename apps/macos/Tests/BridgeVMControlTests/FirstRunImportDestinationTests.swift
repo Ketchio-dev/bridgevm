@@ -39,7 +39,7 @@ final class FirstRunImportDestinationTests: XCTestCase {
         guard case .failed(let message) = FirstRunImportWorker.run(inputs, libraryRoot: fixture.library) else {
             return XCTFail("An occupied VM name must be refused before copying")
         }
-        XCTAssertEqual(message, "라이브러리에서 이미 사용 중인 VM 이름입니다. 다른 이름을 입력한 뒤 다시 가져오세요.")
+        XCTAssertEqual(message, "That name is already in your library. Enter a different name and import again.")
         XCTAssertEqual(try Data(contentsOf: existing.diskURL), Data([1, 2, 3, 4]))
         XCTAssertEqual(try Data(contentsOf: existing.varsURL), Data([5, 6, 7, 8]))
     }
