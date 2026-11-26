@@ -62,6 +62,7 @@ struct HvfWindowsSnapshotCard: View {
             }
             if !entries.isEmpty { Divider() }
             ForEach(entries) { entry in
+                let label = entry.label
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
                         if let name = entry.name {
@@ -79,8 +80,10 @@ struct HvfWindowsSnapshotCard: View {
                     .accessibilityIdentifier(identifier("date", entry, entries))
                     Spacer()
                     Button("Restore") { request(.restore, entry) }
+                        .accessibilityLabel("Restore \(label)")
                         .accessibilityIdentifier(identifier("restore", entry, entries))
                     Button("Delete", role: .destructive) { request(.delete, entry) }
+                        .accessibilityLabel("Delete \(label)")
                         .accessibilityIdentifier(identifier("delete", entry, entries))
                 }
                 .disabled(session.hasActiveRuntimeWork || model.busy)
