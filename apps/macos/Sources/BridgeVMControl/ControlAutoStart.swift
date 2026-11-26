@@ -45,7 +45,7 @@ enum ControlAutoStart {
                 model.start()
                 while model.lifecycleBusy { try await Task.sleep(nanoseconds: 50_000_000) }
             }
-        }, failed: { config, _ in library.model(for: config).statusNote = "Windows를 시작하지 못했으니 다시 시작해 보세요." })
+        }, failed: { config, _ in library.model(for: config).statusNote = "Couldn’t start the VM automatically. Try starting it from your library." })
     }
 }
 
@@ -63,7 +63,7 @@ extension LibraryModel {
         guard canSetStartWithBridgeVM(for: saved) else { return }
         if saved.engineKind == .hvfEngine {
             guard let session = hvfRuntimeDetailSession(for: saved) else { return }
-            if let message = session.saveLibraryPreference("자동 시작 설정",
+            if let message = session.saveLibraryPreference("Start when BridgeVM opens",
                 publish: { VMRegistrationWriter.commit($0, to: $1) },
                 change: { $0.startWithBridgeVM = enabled }) {
                 operationError = message
@@ -72,7 +72,7 @@ extension LibraryModel {
         }
         saved.startWithBridgeVM = enabled
         guard VMLibrary.save(saved, rootURL: rootURL) else {
-            operationError = "자동 시작 설정을 저장하지 못했으니 다시 시도하세요."
+            operationError = "Couldn’t save the automatic startup setting. Try again."
             return
         }
         reload()
