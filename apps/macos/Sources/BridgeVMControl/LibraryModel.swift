@@ -332,7 +332,7 @@ extension LibraryModel {
     func mismatchedCachedControlRefusal(for cfg: VMConfig) -> String {
         guard let cached = cachedControlModels[cfg.slug], cached.isRetained,
               retainedControlRecords.contains(where: { $0.descriptor.identity == .generic(ObjectIdentifier(cached)) })
-        else { return "The VM’s registration changed. Once the original VM has stopped, reload the library and try again." }
+        else { return "The VM’s registration changed. When the original VM stops, press Command-K and choose Reload Library. Then try again." }
         return "An operation from the previous registration is still listed. Open it under Recent operations in the sidebar. Once it finishes, choose Dismiss and try again."
     }
 }
