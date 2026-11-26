@@ -28,7 +28,7 @@ struct LibraryDetailView: View {
         } else if library.vms.isEmpty {
             FirstRunView(library: library)
         } else {
-            LibraryEmptyState(library: library)
+            LibraryEmptyState()
         }
     }
 }
