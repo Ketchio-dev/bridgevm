@@ -1,15 +1,12 @@
 import Combine
 import SwiftUI
 
-/// One plain notice when a copied image, or a file copy, stayed where it was copied because it
-/// is over the clipboard limits or the receiving side lacks the room. It follows the probe's exact
-/// skip and refusal lines
-/// (agent_console/clip_image.rs, clip_files.rs) and is keyed to the copy they number (` copy=N`): that
-/// copy's own text sync keeps it; a line about a later copy, a guest reset or a session
-/// reset clears it.
+/// Shows why a clipboard transfer stopped. Numbered relay records keep the notice
+/// with its copy until a later copy or a guest/session reset clears it.
 @MainActor
 final class HvfClipboardImageNotice: ObservableObject {
     enum Kind: Equatable {
+        case macTextTooLarge, windowsTextTooLarge
         case macImageTooLarge, windowsImageTooLarge, macFilesTooLarge, windowsFilesTooLarge, macFilesUnreadable
         case windowsFilesLowSpace, macFilesGuestFull
     }
@@ -41,6 +38,10 @@ final class HvfClipboardImageNotice: ObservableObject {
             let line = raw.hasSuffix("\r") ? String(raw.dropLast()) : raw
             if HvfGuestResetRecord.matches(line) {
                 reset()
+            } else if line.hasPrefix("BVAGENT CLIPSYNC skip bytes="), line.contains(" too-large ") {
+                show(.macTextTooLarge, copy: Self.copy(in: line))
+            } else if line.hasPrefix("BVAGENT CLIPSYNC refused guest-text too-large ") {
+                show(.windowsTextTooLarge, copy: Self.copy(in: line))
             } else if line.hasPrefix(Self.macTooLargePrefix) {
                 show(.macImageTooLarge, copy: Self.copy(in: line))
             } else if line.hasPrefix(Self.windowsTooLargePrefix) {
@@ -79,12 +80,17 @@ final class HvfClipboardImageNotice: ObservableObject {
 
     var displayed: (text: String, help: String, symbol: String)? {
         let help = "클립보드 이미지는 32MB, 16384×16384 픽셀까지 주고받습니다. 복사한 쪽의 클립보드는 그대로입니다."
+        let textHelp = "텍스트를 나누어 복사하거나 파일로 저장해 공유 폴더로 옮기세요."
         let limits = "한 번에 \(fileLimits.files)개, 모두 합쳐 \(Self.size(fileLimits.bytes))까지"
         // The shared folder carries files up to 16 GB each (HvfEngineConfig.shareMaxKiB), any number of them.
         let windowsFilesHelp = "파일 복사는 \(limits) 가져옵니다. 더 큰 파일은 공유 폴더를 켜고 그 안에 넣으면 Mac으로 옮겨집니다."
         // Finder drops have no size limit (file_drop.rs streams them to the guest Desktop).
         let macFilesHelp = "파일 복사는 \(limits) 보냅니다. 더 큰 파일은 VM 창으로 끌어다 놓으면 Windows 바탕 화면에 복사됩니다."
         switch shown {
+        case .macTextTooLarge:
+            return ("Mac에서 복사한 텍스트가 너무 커서 Windows로 보내지 못했습니다.", textHelp, "doc.plaintext")
+        case .windowsTextTooLarge:
+            return ("Windows에서 복사한 텍스트가 너무 커서 Mac으로 가져오지 못했습니다.", textHelp, "doc.plaintext")
         case .macImageTooLarge: return ("Mac에서 복사한 이미지가 너무 커서 Windows로 보내지 않았습니다.", help, "photo")
         case .windowsImageTooLarge: return ("Windows에서 복사한 이미지가 너무 커서 Mac으로 가져오지 않았습니다.", help, "photo")
         case .macFilesTooLarge:
@@ -136,8 +142,12 @@ struct HvfClipboardImageNoticeView: View {
     var body: some View {
         if let shown = notice.displayed {
             VStack(alignment: .leading, spacing: 4) {
-                Label(shown.text, systemImage: shown.symbol)
-                    .font(.callout).foregroundStyle(.orange)
+                Label {
+                    Text(shown.text)
+                } icon: {
+                    Image(systemName: shown.symbol).foregroundStyle(.orange)
+                }
+                .font(.callout)
                 Text(shown.help)
                     .font(.caption).foregroundStyle(.secondary)
             }

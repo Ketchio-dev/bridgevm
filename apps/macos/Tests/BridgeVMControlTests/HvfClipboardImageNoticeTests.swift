@@ -114,8 +114,10 @@ final class HvfClipboardImageNoticeTests: XCTestCase {
             ("startup: a Windows image refused with its text",
              [windows.replacingOccurrences(of: "copy=5", with: "copy=1"), "BVAGENT CLIPSYNC guest->host bytes=4 copy=1 t=914"], .windowsImageTooLarge),
             ("other clipboard lines",
-             [windows, "BVAGENT CLIPSYNC images on t=7", "BVAGENT CLIPSYNC skip bytes=9000 too-large t=8",
+             [windows, "BVAGENT CLIPSYNC images on t=7",
               "BVAGENT CLIPSYNC test pasteboard (not the user's clipboard)"], .windowsImageTooLarge),
+            ("a later text refusal from a probe without copy numbers",
+             [windows, "BVAGENT CLIPSYNC skip bytes=9000 too-large t=8"], .macTextTooLarge),
             ("the same image under a new caption is refused again",
              [windows, "BVAGENT CLIPSYNC guest->host bytes=1 copy=5 t=914",
               windows.replacingOccurrences(of: "copy=5", with: "copy=6"), "BVAGENT CLIPSYNC guest->host bytes=1 copy=6 t=990"],
@@ -148,9 +150,27 @@ final class HvfClipboardImageNoticeTests: XCTestCase {
     }
 
     @MainActor
+    func testOversizedTextExplainsTheTransferDirectionUntilTheNextCopy() {
+        let session = session()
+        let cases: [(String, HvfClipboardImageNotice.Kind)] = [
+            ("BVAGENT CLIPSYNC skip bytes=8193 too-large copy=2 t=2001", .macTextTooLarge),
+            ("BVAGENT CLIPSYNC refused guest-text too-large bytes=8388609 limit=8388608 refusals=1 t=2000", .windowsTextTooLarge)
+        ]
+        for (line, kind) in cases {
+            feed(session, ["BVAGENT CMD example exit=0", line, "BVAGENT END example"])
+            XCTAssertNil(session.clipboardImageNotice.shown)
+            feed(session, [line])
+            XCTAssertEqual(session.clipboardImageNotice.shown, kind)
+            XCTAssertTrue(session.clipboardImageNotice.displayed?.help.contains("공유 폴더") == true)
+            feed(session, ["BVAGENT CLIPSYNC host->guest bytes=6 copy=3 t=2010"])
+            XCTAssertNil(session.clipboardImageNotice.shown)
+        }
+    }
+
+    @MainActor
     func testOtherClipboardLinesAndCommandOutputLeaveTheNoticeAlone() {
         let session = session()
-        feed(session, ["BVAGENT CLIPSYNC skip bytes=9000 too-large t=5",
+        feed(session, ["BVAGENT CLIPSYNC skip html too-large bytes=4200000 limit=4194304 copy=2 t=5",
                        "BVAGENT CLIPSYNC refused guest-image unexpected-path bytes=33 width=3 height=2 limit-bytes=33554432 limit-side=16384 t=6",
                        "BVAGENT CLIPSYNC images on t=7",
                        "BVAGENT CMD type notes.txt exit=0", macTooLarge, "BVAGENT END type notes.txt"])
