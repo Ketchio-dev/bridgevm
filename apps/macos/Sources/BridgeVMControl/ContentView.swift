@@ -28,21 +28,18 @@ struct ContentView: View {
         .confirmationDialog(
             "VM을 삭제하시겠습니까?",
             isPresented: Binding(
-                get: { library.pendingDeletion != nil },
-                set: { if !$0 { library.pendingDeletion = nil } }
+                get: { presentation.deletionTarget != nil },
+                set: { if !$0 { presentation.deletionTarget = nil } }
             ),
-            titleVisibility: .visible
-        ) {
-            if let cfg = library.pendingDeletion {
-                Button(LibraryDeletionPrompt(config: cfg, rootURL: library.rootURL).confirmTitle, role: .destructive) {
-                    library.confirmDeletion(cfg)
-                }
+            titleVisibility: .visible,
+            presenting: presentation.deletionTarget
+        ) { config in
+            Button(LibraryDeletionPrompt(config: config, rootURL: library.rootURL).confirmTitle, role: .destructive) {
+                library.confirmDeletion(config)
             }
-            Button("취소", role: .cancel) { library.pendingDeletion = nil }
-        } message: {
-            if let cfg = library.pendingDeletion {
-                Text(LibraryDeletionPrompt(config: cfg, rootURL: library.rootURL).message)
-            }
+            Button("취소", role: .cancel) { }
+        } message: { config in
+            Text(LibraryDeletionPrompt(config: config, rootURL: library.rootURL).message)
         }
         .modifier(LibraryOperationAlerts(library: library))
         .background(
@@ -79,6 +76,7 @@ struct ContentView: View {
 }
 
 struct VMDetailPanel: View {
+    @Environment(\.libraryWindowPresentation) private var presentation
     @ObservedObject var model: ControlModel
     @ObservedObject var library: LibraryModel
 
@@ -163,7 +161,7 @@ struct VMDetailPanel: View {
                           ? "SSH · \(model.config.sshUser)@\(model.ip)"
                           : (model.backend.supportsGuestCommands ? "BVAGENT · virtio-console" : "없음"))
                 Divider()
-                Button(role: .destructive) { library.requestDeletion(model.config) } label: {
+                Button(role: .destructive) { presentation?.wrappedValue.deletionTarget = library.requestDeletion(model.config) } label: {
                     Label("이 VM 삭제", systemImage: "trash")
                 }
                 .disabled(model.running || library.deletingSlugs.contains(model.config.slug))

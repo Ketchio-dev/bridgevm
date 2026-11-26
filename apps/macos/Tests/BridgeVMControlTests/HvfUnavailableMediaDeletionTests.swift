@@ -29,8 +29,7 @@ final class HvfUnavailableMediaDeletionTests: XCTestCase {
         let library = LibraryModel(rootURL: f.library, migrateLegacy: false,
                                    actionScheduler: { jobs.pending.append($0) }, startsModelsAutomatically: false)
         let listed = try XCTUnwrap(library.vms.first { $0.slug == f.config.slug })
-        library.requestDeletion(listed)
-        XCTAssertEqual(library.pendingDeletion, listed)
+        XCTAssertEqual(library.requestDeletion(listed), listed)
         XCTAssertEqual(library.deletionImpact(for: listed), .registrationOnly)
         library.confirmDeletion(listed)
         let restore = try useRealHelper(f)
