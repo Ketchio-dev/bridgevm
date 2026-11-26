@@ -20,7 +20,7 @@ final class ControlModel: ObservableObject {
 
     // Terminal
     @Published var terminalInput = ""
-    @Published var terminalLog = "BridgeVM Control — 게스트 터미널\n준비되면 명령을 입력하세요 (예: uname -a, df -h).\n\n"
+    @Published var terminalLog = "BridgeVM Control — Guest terminal\nEnter a command when the guest is ready.\n\n"
 
     // Software install output
     @Published var softwareLog = ""
@@ -425,7 +425,7 @@ extension ControlModel {
             if running {
                 self.running = true
                 startConfirmationDeadline = nil
-                statusNote = "실행 중"
+                statusNote = "Running"
             } else if Date() >= deadline {
                 self.running = false
                 startConfirmationDeadline = nil
@@ -441,9 +441,9 @@ extension ControlModel {
         self.ip = ip ?? "—"
         guard wasRunning != running, !lifecycleBusy else { return }
         if running {
-            statusNote = "실행 중"
+            statusNote = "Running"
         } else {
-            statusNote = "VM이 종료됨"
+            statusNote = "VM exited"
         }
     }
 }

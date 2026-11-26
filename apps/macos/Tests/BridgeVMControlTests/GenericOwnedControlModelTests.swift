@@ -23,7 +23,7 @@ final class GenericOwnedControlModelTests: XCTestCase {
         await f.wait { model.ownedRuntime?.snapshot.primaryRunning == true && !model.lifecycleBusy }
         let owner = try XCTUnwrap(model.ownedRuntime), backend = try XCTUnwrap(f.backends.first)
         model.refreshStatus()
-        await f.wait { model.statusNote == "실행 중" }
+        await f.wait { model.statusNote == "Running" }
         backend.setExternalRunning(false)
         XCTAssertNotNil(library.libraryActionRefusal(for: config), "Owned activity protects files independently of path lookup")
         backend.setExternalRunning(true)
@@ -80,7 +80,7 @@ final class GenericOwnedControlModelTests: XCTestCase {
         model.start()
         await f.wait { !model.lifecycleBusy && model.ownedRuntime?.snapshot.primaryRunning == true }
         model.refreshStatus()
-        await f.wait { model.statusNote == "실행 중" && !model.hasAcceptedOperation }
+        await f.wait { model.statusNote == "Running" && !model.hasAcceptedOperation }
         let old = try XCTUnwrap(model.ownedRuntime), backend = try XCTUnwrap(f.backends.first)
         let gate = DispatchSemaphore(value: 0)
         backend.resourceGate = gate

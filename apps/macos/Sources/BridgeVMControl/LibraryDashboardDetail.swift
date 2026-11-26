@@ -164,7 +164,7 @@ struct LibraryDashboardDetail: View {
         return runtimeState?.title ?? (model.running ? "Running" : "Stopped")
     }
 
-    private var visibleStatusNote: String? {
+    var visibleStatusNote: String? {
         if let runtimeState { return runtimeState.note(model.statusNote) }
         return model.statusNote.isEmpty ? nil : model.statusNote
     }

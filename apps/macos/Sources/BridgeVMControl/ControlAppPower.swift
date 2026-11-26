@@ -40,7 +40,7 @@ final class ControlAppPower: ObservableObject {
     private var runtimes = Set<UUID>()
     private(set) var held = false
     @Published var enabled: Bool { didSet { reconcile() } }
-    var failure: (() -> Void)?
+    var failure: ((String) -> Void)?
     private var failureReported = false
 
     init(api: any ControlPowerAsserting, enabled: Bool = true) {
@@ -58,7 +58,10 @@ final class ControlAppPower: ObservableObject {
         let needed = enabled && !runtimes.isEmpty
         if needed && !held {
             held = api.acquire()
-            if !held && !failureReported { failureReported = true; failure?() }
+            if !held && !failureReported {
+                failureReported = true
+                failure?("BridgeVM couldn’t keep your Mac awake. Check your Mac’s sleep settings before leaving Windows running unattended.")
+            }
         } else if !needed && held { api.release(); held = false }
     }
     func shutdown() {
