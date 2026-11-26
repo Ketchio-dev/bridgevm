@@ -37,7 +37,7 @@ final class HvfWindowsInstallRejectedRequestTests: XCTestCase {
             XCTAssertTrue(host.preparation === preparation)
             XCTAssertTrue(values(HvfEngineView.self, in: body).isEmpty)
             if case let .failed(message) = host.preparation.state {
-                XCTAssertTrue(message.contains("설치 정보"))
+                XCTAssertTrue(message.contains("installation settings"))
             } else {
                 XCTFail("Rejected metadata must show preparation failure: \(kind)")
             }

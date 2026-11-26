@@ -27,7 +27,7 @@ enum T17OwnedApplicationCleanup {
             // A missing/failed query cannot be replaced by the app's later exit.
             installationStopped = wait(30) {
                 guard let stage = try? installStage() else { return false }
-                return ["취소됨", "실패", "완료"].contains(stage)
+                return ["cancelled", "failed", "done"].contains(T17InstallMonitor.phaseToken(stage))
             }
         } else {
             try? press("bridgevm.windows.runtime.stop", 2)

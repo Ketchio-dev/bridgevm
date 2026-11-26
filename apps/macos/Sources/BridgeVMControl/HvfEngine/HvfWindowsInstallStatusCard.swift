@@ -19,7 +19,7 @@ struct HvfWindowsInstallStatusCard: View {
                     }
                     .font(.caption).foregroundStyle(.secondary)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("경과 시간")
+                    .accessibilityLabel("Elapsed time")
                     .accessibilityValue(Text(startedAt, style: .timer))
                 }
             }
@@ -37,7 +37,7 @@ struct HvfWindowsInstallStatusCard: View {
                     }
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("전체 \(HvfWindowsInstallStage.steps.count)단계 중 \(current + 1)단계")
+                .accessibilityLabel("Step \(current + 1) of \(HvfWindowsInstallStage.steps.count)")
             }
             if session.stage == .preparingSource, let activity = session.sourceActivity {
                 Text(activity)

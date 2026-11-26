@@ -23,9 +23,9 @@ enum AppUIInstallCancelAXContracts {
     static func main() throws {
         var presses: [Int] = []
         let actions: [(AppUIInstallCancelOperation, String, String, Int)] = [
-            (.start, "대기", "설치 시작", F.start),
-            (.cancel, "설치 입력 확인", "설치 중…", F.cancel),
-            (.retry, "취소됨", "다시 시도", F.start)]
+            (.start, "Ready to install", "Start Installation", F.start),
+            (.cancel, "Checking installation files", "Installing…", F.cancel),
+            (.retry, "Cancelled", "Try Again", F.start)]
         for (operation, stage, title, button) in actions {
             let fixture = F.make(stage: stage, title: title, cancelVisible: operation == .cancel, cancelEnabled: true)
             let result = try AppUIInstallCancelAXOperations(access: fixture).perform(operation)
@@ -41,11 +41,11 @@ enum AppUIInstallCancelAXContracts {
 
     private static func reads() throws {
         let cases: [(String, String, Bool, Bool, Bool, String?)] = [
-            ("대기", "설치 시작", true, false, false, nil),
-            ("설치 입력 확인", "설치 중…", false, true, true, nil),
-            ("취소 중…", "설치 중…", false, true, false, nil),
-            ("취소됨", "다시 시도", true, false, false, nil),
-            ("실패", "다시 시도", true, false, false, "합성 UI 검증 종료")]
+            ("Ready to install", "Start Installation", true, false, false, nil),
+            ("Checking installation files", "Installing…", false, true, true, nil),
+            ("Cancelling…", "Installing…", false, true, false, nil),
+            ("Cancelled", "Try Again", true, false, false, nil),
+            ("Failed", "Try Again", true, false, false, "Synthetic UI check complete")]
         for (stage, title, startEnabled, cancelVisible, cancelEnabled, failure) in cases {
             let fixture = F.make(stage: stage, title: title, startEnabled: startEnabled,
                 cancelVisible: cancelVisible, cancelEnabled: cancelEnabled, failure: failure)
@@ -67,8 +67,8 @@ enum AppUIInstallCancelAXContracts {
         check(observed?.stage == " 대기\n" && observed?.title == " 설치 시작\n", "raw strings are not trimmed or normalized")
         let fallback = F.make()
         fallback.nodes[F.start]!.strings[A.title] = nil
-        fallback.nodes[F.start]!.strings[A.description] = "설치 시작"
-        try check(AppUIInstallCancelAXOperations(access: fallback).perform(.readState).values?.title == "설치 시작",
+        fallback.nodes[F.start]!.strings[A.description] = "Start Installation"
+        try check(AppUIInstallCancelAXOperations(access: fallback).perform(.readState).values?.title == "Start Installation",
             "button description fallback remains observed text")
     }
 }

@@ -51,12 +51,12 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
         guard isRunning, !cancelled else { return }
         cancelled = true
         if commitStarted {
-            appendLog("설치 결과를 반영하고 있습니다. 파일을 보존하고 완료 결과를 기다립니다.")
+            appendLog("Finishing the installation. Your files will stay in place until it completes.")
             return
         }
         stage = .cancelling
         execution.process.cancel()
-        appendLog("사용자가 설치를 취소했습니다.")
+        appendLog("Installation cancelled by user.")
     }
 
     func prepareAttemptPresentation() {
@@ -74,7 +74,7 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
     }
 
     func completeInstallation() {
-        appendLog("Windows 설치가 완료되었습니다.")
+        appendLog("Windows installation complete.")
         finish(.done)
         onCompleted?()
     }
@@ -93,7 +93,7 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
     private func cleanupTemporaryMedia() {
         // A journal, ambiguous path or failed inspection owns these inputs until recovery.
         guard (try? HvfWindowsInstallRecovery.inspect(plan: plan)) == .fresh else {
-            appendLog("중단된 설치 복구에 필요한 임시 파일을 보존했습니다.")
+            appendLog("Temporary files were kept to recover the interrupted installation.")
             return
         }
         try? HvfWindowsInstallStaging.discardMedia(plan)
@@ -136,12 +136,12 @@ extension HvfWindowsInstallSession {
             guard await runProcess(arguments: build.arguments, extraEnvironment: build.environment,
                                    progressLog: nil) else {
                 try? FileManager.default.removeItem(atPath: plan.sourceImagePath)
-                failUnlessCancelled("Windows ISO에서 설치에 필요한 파일을 준비하지 못했습니다.")
+                failUnlessCancelled("Couldn’t prepare the setup files from the Windows ISO.")
                 return
             }
             guard !acknowledgeCancellation(cleanup: true) else { return }
         } else {
-            appendLog("설치 소스 캐시 재사용: \(plan.sourceImagePath)")
+            appendLog("Reusing cached installation media at \(plan.sourceImagePath).")
         }
 
         transition(to: .installing)
@@ -164,7 +164,7 @@ extension HvfWindowsInstallSession {
         let installLog = URL(fileURLWithPath: plan.stagingEvidenceDir).appendingPathComponent("run.log")
         guard await runProcess(arguments: plan.installCommand(), extraEnvironment: [:],
                                progressLog: installLog) else {
-            failUnlessCancelled("Windows 무인 설치가 실패했습니다. 로그: \(plan.stagingEvidenceDir)/run.log")
+            failUnlessCancelled("Windows installation failed. See \(plan.stagingEvidenceDir)/run.log for details.")
             return
         }
         guard !acknowledgeCancellation(cleanup: true) else { return }
@@ -175,7 +175,7 @@ extension HvfWindowsInstallSession {
         transition(to: .finalizing)
         do {
             try await execution.finalize(plan)
-            appendLog("UEFI 부팅 항목과 Microsoft-only Secure Boot 키를 검증·시드했습니다.")
+            appendLog("Verified and seeded the UEFI boot entry and Microsoft-only Secure Boot keys.")
         } catch {
             appendLog(WindowsFileFailureFeedback.diagnostic("finalization", error))
             finish(.failed(WindowsFileFailureFeedback.finalization))
@@ -251,7 +251,7 @@ extension HvfWindowsInstallSession {
         guard !acknowledgeCancellation() else { return }
         commitStarted = true
         transition(to: .recovering)
-        appendLog("기존 Windows 설치 결과를 복구하고 있습니다.")
+        appendLog("Recovering the previous Windows installation.")
         do {
             _ = try await recovery.resume(plan: plan, ticket: ticket)
             completeInstallation()
