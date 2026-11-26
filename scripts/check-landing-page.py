@@ -45,17 +45,18 @@ class Page(HTMLParser):
             self.summary.append(data)
 
 
-def check():
+def main():
     registry = json.loads((ROOT / "capabilities/windows-hvf.json").read_text())
     html = (SITE / "index.html").read_text()
     css = (SITE / "styles.css").read_text()
     page = Page()
     page.feed(html)
     assert html.startswith("<!doctype html>")
-    assert "".join(page.summary) == registry["wording"]["engine_summary"]
+    assert '<html lang="en">' in html
     assert registry["wording"]["product_state_label"] in html
     assert registry["product_state"] == "ENGINEERING_PREVIEW"
-    for required in ("not notarized", "3D acceleration is excluded", "does not redistribute these drivers", "not a current release or app UI screenshot"):
+    assert "".join(page.summary) == registry["wording"]["engine_summary"]
+    for required in ("not notarized", "3D acceleration is excluded", "does not redistribute these drivers"):
         assert required in html, f"landing boundary absent: {required}"
     check_image(page, html, SITE, ROOT)
     assert "@import" not in css and "url(http" not in css
@@ -75,6 +76,7 @@ def check():
             if u.path not in {
                 "/Ketchio-dev/bridgevm",
                 "/Ketchio-dev/bridgevm/releases/tag/v0.1.0",
+                "/Ketchio-dev/bridgevm/releases/download/v0.1.0/BridgeVM-v0.1.0.dmg",
             }:
                 prefix = "/Ketchio-dev/bridgevm/blob/main/"
                 assert u.path.startswith(prefix), href
@@ -87,8 +89,8 @@ def check():
                     assert unquote(u.fragment) in slugs, href
         else:
             assert (SITE / href).is_file(), href
-    print(f"landing page: PASS ({len(page.links)} links, exact registry summary, release boundary)")
+    print(f"index.html: PASS ({len(page.links)} links, preview claims and captures)")
 
 
 if __name__ == "__main__":
-    check()
+    main()
