@@ -42,11 +42,11 @@ final class HvfGuestLinkNotice: ObservableObject {
     var text: String? {
         switch shown {
         case nil: return nil
-        case let .refused(host?): return "Windows 링크(\(Self.short(host)))를 열지 않았습니다: http/https 주소가 아니거나 사용자 이름이 들어 있습니다."
-        case .refused(nil): return "Windows에서 받은 링크가 올바르지 않아 열지 않았습니다."
-        case let .loopback(host): return "Windows 링크(\(Self.short(host)))를 열지 않았습니다: Mac 자신을 가리키는 주소입니다."
-        case let .tooFrequent(host): return "Windows 링크(\(Self.short(host)))를 열지 않았습니다: 링크는 1초에 하나까지 엽니다."
-        case let .failed(host): return "Windows 링크(\(Self.short(host)))를 Mac에서 열지 못했습니다."
+        case let .refused(host?): return "Use an HTTP or HTTPS link to \(Self.short(host)) without a username or password."
+        case .refused(nil): return "Windows sent an invalid link."
+        case let .loopback(host): return "Open the link to \(Self.short(host)) in Windows. On your Mac, that address points back to the Mac itself."
+        case let .tooFrequent(host): return "BridgeVM opens one Windows link per second. Try the link to \(Self.short(host)) again."
+        case let .failed(host): return "Your Mac couldn’t open the Windows link to \(Self.short(host))."
         }
     }
 

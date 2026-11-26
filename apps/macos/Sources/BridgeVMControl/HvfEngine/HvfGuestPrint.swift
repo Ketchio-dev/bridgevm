@@ -142,10 +142,10 @@ final class HvfGuestPrintNotice: ObservableObject {
     var text: String? {
         switch shown {
         case nil: return nil
-        case .printerFailed: return "Windows에 Mac 프린터를 만들지 못했으니 Windows 기능에서 'Microsoft Print to PDF'를 켠 뒤 VM을 다시 시작하세요."
-        case .tooLarge: return "Windows 인쇄 작업이 256MB보다 커서 Mac으로 가져오지 않았습니다."
-        case .notReceived: return "Windows 인쇄 작업을 Mac으로 가져오지 못했으니 다시 인쇄해 보세요."
-        case .notOpened: return "Windows 인쇄 작업을 Mac에서 열지 못했으니 다시 인쇄해 보세요."
+        case .printerFailed: return "Turn on Microsoft Print to PDF in Windows Features and restart the VM to create the Mac (BridgeVM) printer."
+        case .tooLarge: return "The Windows print job exceeds the 256 MiB limit, so try printing fewer pages at a time."
+        case .notReceived: return "The print job from Windows didn’t reach your Mac, so try printing again."
+        case .notOpened: return "Your Mac couldn’t open the print job from Windows, so try printing again."
         }
     }
 }
