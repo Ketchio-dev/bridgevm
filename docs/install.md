@@ -12,6 +12,9 @@ authorize Windows test drivers. General Preview installs and imports Windows in 
 > the same source as the withdrawn `v1.1.1`; to replace an installed 1.1.1 app,
 > run the installer again. VMs and settings are unaffected.
 
+For the General Preview, [install the DMG](#dmg-from-the-releases-page) or
+[use the terminal installer](#terminal-installer).
+
 ## Build the current source
 
 Use this path when you want to inspect exactly what you run. Requirements are
@@ -147,8 +150,8 @@ quarantine.
 
 ## DMG from the Releases page
 
-Download the `.dmg`, `BridgeVM-release.json`, and `SHA256SUMS` from a release
-identified as **General Preview**. Verify
+Download the `.dmg`, `BridgeVM-release.json`, and `SHA256SUMS` from the
+[General Preview release](https://github.com/Ketchio-dev/bridgevm/releases/tag/v0.1.0). Verify
 the DMG, open it, and drag BridgeVM into Applications:
 
 ```sh
@@ -168,7 +171,7 @@ on current macOS, so the Settings route is the real one.
 
 ## What you need after installing
 
-To install Windows from an ISO:
+### Install Windows from an ISO
 
 - A Windows 11 ARM64 ISO, downloaded from Microsoft yourself. The app does not
   fetch Windows media; it asks you to choose the ISO file.
@@ -195,9 +198,11 @@ to open its location in Finder. Restore the ISO used to create that VM as
 `disks/installer.iso` in its bundle, then click **Try Again**. BridgeVM checks the
 restored file against its original SHA-256 before preparing Windows.
 
-To import instead: an installed Windows 11 Arm disk (RAW, QCOW2 or Hyper-V
-VHDX), with its UEFI variables if you have them. Import copies or converts the
-disk into the library and leaves the source unchanged; it needs no driver
+### Import an installed Windows disk
+
+Choose an installed Windows 11 Arm disk (RAW, QCOW2 or Hyper-V VHDX) and its
+matching UEFI variables if you have them. BridgeVM copies or converts the disk
+into the library and leaves the source unchanged. Import needs no driver
 payload. Builds from current source also accept fixed-size Hyper-V VHD. Convert
 a dynamic VHD to VHDX in Hyper-V before importing.
 
@@ -211,6 +216,8 @@ qemu-img convert -O raw "Windows.qcow2" "Windows.raw"
 ```
 
 Choose `Windows.raw` in the import wizard.
+
+### Display drivers after setup
 
 The General Preview bundles no Windows driver and accepts no graphics-driver
 package at creation; Windows-HVF creation shows that 3D injection is

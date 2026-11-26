@@ -87,8 +87,8 @@ final class LibraryNestedBundleDeletionTests: XCTestCase {
         await job()
 
         let message = try XCTUnwrap(library.deletionError)
-        XCTAssertTrue(message.contains("다른 VM"), message)
-        XCTAssertTrue(message.contains("다른 위치로 옮기거나 등록 정보를 확인"), message)
+        XCTAssertTrue(message.contains("Another VM"), message)
+        XCTAssertTrue(message.contains("Move that VM or check its registration"), message)
         XCTAssertTrue(FileManager.default.fileExists(atPath: f.ownerBundle.path))
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: XCTUnwrap(moved.diskPath))), f.diskContents)
 

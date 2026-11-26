@@ -36,7 +36,7 @@ struct CreateVMSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Windows VM 만들기").font(.title2.bold()).accessibilityAddTraits(.isHeader).padding(20)
+            Text("Create a Windows VM").font(.title2.bold()).accessibilityAddTraits(.isHeader).padding(20)
             Divider()
             ScrollView { fields.padding(20).disabled(working || !creationState.permitsCreation) }
             Divider()
@@ -53,46 +53,46 @@ struct CreateVMSheet: View {
     private var fields: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
-                CreateVMMethodChoiceTile(title: "ISO에서 설치", selected: mode == .windowsHVFInstall) {
+                CreateVMMethodChoiceTile(title: "Install from ISO", selected: mode == .windowsHVFInstall) {
                     mode = .windowsHVFInstall; autofillWin11()
                 }
                 .accessibilityIdentifier("bridgevm.create.windows.install")
-                CreateVMMethodChoiceTile(title: "설치된 디스크 가져오기", selected: mode == .windowsHVF) {
+                CreateVMMethodChoiceTile(title: "Import an installed disk", selected: mode == .windowsHVF) {
                     mode = .windowsHVF
                 }
             }
 
             HStack {
-                Text("이름 (필수)").frame(width: 64, alignment: .leading)
-                TextField("예: Windows 11", text: $name)
+                Text("Name (required)").fixedSize()
+                TextField("e.g. Windows 11", text: $name)
                     .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("가상 머신 이름 (필수)")
+                    .accessibilityLabel("Virtual machine name (required)")
                     .accessibilityIdentifier("bridgevm.create.name")
             }
             if !name.isEmpty, !needsName, VMLibrary.normalizedVMName(name) == nil {
-                Text("이름은 제어문자 없이 1~\(VMLibrary.maximumVMNameCharacters)자이며 파일 ID 제한 안이어야 합니다.")
+                Text("Use 1–\(VMLibrary.maximumVMNameCharacters) characters without control characters. If the name is long, shorten it to fit the file name limit.")
                     .font(.caption)
                     .foregroundColor(.red)
             }
 
             if mode == .windowsHVF {
-                Text("Windows ARM이 설치된 RAW, QCOW2, 고정 크기 VHD 또는 VHDX를 가져옵니다. 라이브러리에 RAW 사본을 만들고, UEFI vars가 없으면 기본 부팅 설정을 만듭니다.")
+                Text("Choose a RAW, QCOW2, fixed-size VHD or VHDX disk with Windows Arm installed. BridgeVM creates a RAW copy in your library. If you omit the UEFI variables file, BridgeVM creates default boot settings.")
                     .font(.callout).foregroundColor(.secondary)
                 HStack {
-                    Button("설치된 디스크 선택…") { pickHVFTarget() }
-                    Text(hvfTargetPath.isEmpty ? "선택된 디스크 없음" : (hvfTargetPath as NSString).lastPathComponent)
+                    Button("Choose Disk…") { pickHVFTarget() }
+                    Text(hvfTargetPath.isEmpty ? "No disk selected" : (hvfTargetPath as NSString).lastPathComponent)
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
                 }
                 HStack {
-                    Button("UEFI vars 선택… (선택 사항)") { pickHVFVars() }
-                    Text(hvfVarsPath.isEmpty ? "선택된 vars 없음" : (hvfVarsPath as NSString).lastPathComponent)
+                    Button("Choose UEFI Variables… (optional)") { pickHVFVars() }
+                    Text(hvfVarsPath.isEmpty ? "No file selected" : (hvfVarsPath as NSString).lastPathComponent)
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
                 }
                 Text(HvfWindowsImportNotice.varsHelp)
                     .font(.caption).foregroundColor(.secondary)
                 Text(HvfWindowsImportNotice.bitLockerHelp)
                     .font(.caption).foregroundColor(.secondary)
-                Text("이번 버전은 3D 가속을 지원하지 않습니다. 기본 디스플레이 구성으로 가져옵니다.")
+                Text("The imported VM uses the standard display with 3D acceleration off.")
                     .font(.caption).foregroundColor(.secondary)
             } else {
                 CreateWindowsInstallFields(isoPath: isoPath, drivers: drivers, pickISO: pickISO,
@@ -100,17 +100,17 @@ struct CreateVMSheet: View {
                     fetchDrivers: fetchGuestDrivers)
             }
 
-            DisclosureGroup("고급 설정", isExpanded: $showAdvanced) {
+            DisclosureGroup("Advanced settings", isExpanded: $showAdvanced) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Text("저장 위치").frame(width: 64, alignment: .leading)
-                        Button("폴더 선택…") { pickStorage() }
-                        Text(storageDir?.path ?? "기본 (라이브러리)")
+                        Text("Location").frame(width: 64, alignment: .leading)
+                        Button("Choose Folder…") { pickStorage() }
+                        Text(storageDir?.path ?? "VM library (default)")
                             .font(.caption).foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
                         if storageDir != nil {
                             Button { storageDir = nil } label: { Image(systemName: "xmark.circle.fill") }
                                 .buttonStyle(.plain)
-                                .accessibilityLabel("저장 위치를 기본 라이브러리로 재설정")
+                                .accessibilityLabel("Reset storage location to the VM library")
                         }
                     }
 
@@ -118,29 +118,29 @@ struct CreateVMSheet: View {
                                           selection: $resIndex, resolutions: resolutions)
 
                     HStack {
-                        Text("메모리").frame(width: 64, alignment: .leading)
-                        Picker("메모리", selection: $ramMiB) {
+                        Text("Memory").frame(width: 64, alignment: .leading)
+                        Picker("Memory", selection: $ramMiB) {
                             ForEach(CreateVMMemoryOptions.current.choicesMiB, id: \.self) { Text("\($0 / 1024) GiB").tag($0) }
                         }.labelsHidden().frame(width: 150)
                         Spacer()
                     }
                     HStack {
                         Text("CPU").frame(width: 64, alignment: .leading)
-                        Stepper("\(cpuCount) 코어", value: $cpuCount, in: 1...maxCPU)
+                        Stepper(cpuCount == 1 ? "1 CPU core" : "\(cpuCount) CPU cores", value: $cpuCount, in: 1...maxCPU)
                             .frame(width: 150)
                         Spacer()
                     }
                     if createsFreshDisk {
                         HStack {
-                            Text("디스크").frame(width: 64, alignment: .leading)
-                            Picker("디스크", selection: $diskGiB) {
+                            Text("Disk").frame(width: 64, alignment: .leading)
+                            Picker("Disk", selection: $diskGiB) {
                                 ForEach(diskOptions, id: \.self) { Text("\($0) GiB").tag($0) }
                             }.labelsHidden().frame(width: 150)
                             Spacer()
                         }
                     }
-                    Toggle("공유 네트워크 (NAT)", isOn: $hvfNetwork).font(.callout)
-                    Text("호스트: \(String(format: "%.0f", library.hostMemGiB)) GiB · \(library.hostCPU) 코어")
+                    Toggle("Shared network (NAT)", isOn: $hvfNetwork).font(.callout)
+                    Text("This Mac has \(String(format: "%.0f", library.hostMemGiB)) GiB of memory and \(library.hostCPU) CPU cores.")
                         .font(.caption).foregroundColor(.secondary)
                 }
                 .padding(.top, 8)

@@ -6,7 +6,7 @@ import Foundation
 enum HvfWindowsInstallTransactionResidue {
     /// Clone copies the journal too, and the copy fails validation at its new path.
     static func refusal(_ verb: String) -> String {
-        "BridgeVM couldn’t \(verb) this VM because Windows installation cleanup is incomplete. Refresh the library and retry. If it’s still blocked, check the saved installation record. Keep the VM files and avoid running the installer again."
+        "To \(verb) this VM, let Windows installation cleanup finish and refresh the library. If cleanup is still pending, check the saved installation transaction before starting another installation."
     }
 
     /// Any residual entry or failed lookup counts. A missing journal inside a
