@@ -41,7 +41,8 @@ from stop_signals import stoppable  # noqa: E402
 from t17_lane_request import Refusal, bounded_json, lane_request, lane_state  # noqa: E402
 
 # VTPMStateSecurityError.missingKeyForExistingState as VTPMLifecycleCommand prints it.
-MISSING_KEY = ("ERROR: 기존 vTPM 상태의 Keychain 키가 없습니다. 상태를 덮어쓰지 않았습니다. "
+MISSING_KEY = "ERROR: The Keychain key for this vTPM is missing. BridgeVM kept the encrypted state. Restore its matching recovery key, or reset the TPM identity to start with a new TPM."
+LEGACY_MISSING_KEY = ("ERROR: 기존 vTPM 상태의 Keychain 키가 없습니다. 상태를 덮어쓰지 않았습니다. "
                "복구 키를 복원하거나 명시적으로 TPM을 재설정하세요.")
 FORGOT = "forgot_imported_key="
 PACKAGE, CODE, SCRATCH = "vtpm-recovery.json", "vtpm-recovery-code.txt", "empty-state"
@@ -129,7 +130,8 @@ def forget(executable: Path, digest: str, request: dict, ordinal: int, state: Pa
         identity = ["--stable-vm-id", slug, "--state-dir", str(state), "--package", str(package), "--recovery-code-file", str(code)]
         exported = run(executable, digest, ["export", *identity])
         if exported.returncode != 0:
-            missing = exported.returncode == 1 and MISSING_KEY in exported.stderr.decode("utf-8", "replace").splitlines()
+            error_lines = exported.stderr.decode("utf-8", "replace").splitlines()
+            missing = exported.returncode == 1 and (MISSING_KEY in error_lines or LEGACY_MISSING_KEY in error_lines)
             if holds_data or not missing or os.path.lexists(package) or os.path.lexists(code):
                 raise Refusal("key was not exported" + (" although its vTPM state holds data" if holds_data
                               else " and the product did not report it missing"))

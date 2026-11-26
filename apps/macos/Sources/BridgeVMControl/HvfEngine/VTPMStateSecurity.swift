@@ -13,17 +13,17 @@ enum VTPMStateSecurityError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .invalidVMIdentifier:
-            return "vTPM 키에 사용할 안정적인 VM ID가 없습니다."
+            return "A stable VM ID is required for the vTPM key."
         case let .invalidKeyLength(length):
-            return "vTPM 상태 키 길이가 32바이트가 아닙니다 (현재 \(length)바이트)."
+            return "The vTPM state key must be 32 bytes. Its length is \(length) bytes."
         case .missingKeyForExistingState:
-            return "기존 vTPM 상태의 Keychain 키가 없습니다. 상태를 덮어쓰지 않았습니다. 복구 키를 복원하거나 명시적으로 TPM을 재설정하세요."
+            return "The Keychain key for this vTPM is missing. BridgeVM kept the encrypted state. Restore its matching recovery key, or reset the TPM identity to start with a new TPM."
         case let .randomGeneration(status):
-            return "vTPM 상태 키 난수 생성에 실패했습니다 (OSStatus \(status))."
+            return "Couldn’t generate the vTPM state key (OSStatus \(status))."
         case let .keychainRead(status):
-            return "Keychain에서 vTPM 상태 키를 읽지 못했습니다 (OSStatus \(status))."
+            return "Couldn’t read the vTPM state key from Keychain (OSStatus \(status))."
         case let .keychainWrite(status):
-            return "Keychain에 vTPM 상태 키를 저장하지 못했습니다 (OSStatus \(status))."
+            return "Couldn’t save the vTPM state key in Keychain (OSStatus \(status))."
         }
     }
 }

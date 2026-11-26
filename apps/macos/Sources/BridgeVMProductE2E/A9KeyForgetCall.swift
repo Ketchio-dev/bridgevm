@@ -7,7 +7,8 @@ enum A9KeyForgetCall {
     enum Outcome: Equatable { case forgotten, absent, failed }
 
     /// VTPMStateSecurityError.missingKeyForExistingState as VTPMImportCleanupCommand prints it.
-    static let missingKeyLine = "ERROR: 기존 vTPM 상태의 Keychain 키가 없습니다. 상태를 덮어쓰지 않았습니다. "
+    static let missingKeyLine = "ERROR: The Keychain key for this vTPM is missing. BridgeVM kept the encrypted state. Restore its matching recovery key, or reset the TPM identity to start with a new TPM."
+    static let legacyMissingKeyLine = "ERROR: 기존 vTPM 상태의 Keychain 키가 없습니다. 상태를 덮어쓰지 않았습니다. "
         + "복구 키를 복원하거나 명시적으로 TPM을 재설정하세요."
     static let outputLimit = 65_536
 
@@ -24,7 +25,7 @@ enum A9KeyForgetCall {
         guard process.terminationReason == .exit else { return .failed }
         let proofs = lines(output).filter { $0.hasPrefix("forgot_imported_key=") }
         if process.terminationStatus == 0, proofs == ["forgot_imported_key=\(slug)"] { return .forgotten }
-        if process.terminationStatus == 1, proofs.isEmpty, lines(errors).contains(missingKeyLine) { return .absent }
+        if process.terminationStatus == 1, proofs.isEmpty, lines(errors).contains(where: { $0 == missingKeyLine || $0 == legacyMissingKeyLine }) { return .absent }
         return .failed
     }
 

@@ -42,14 +42,14 @@ enum VTPMExistingKeyError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .busy: return "다른 Keychain 작업이 진행 중입니다. 잠시 후 다시 시도하세요."
-        case .serviceUnavailable: return "Keychain 상호작용 정책 복원이 확인되지 않아 추가 키 작업을 중단했습니다."
-        case .backendInspectionFailed: return "앱의 Keychain 저장소 권한을 읽지 못했습니다."
-        case let .malformedEntitlement(name): return "앱의 Keychain 권한 형식이 올바르지 않습니다 (\(name))."
-        case let .missingKey(backend): return "선택한 Keychain 저장소(\(backend.rawValue))에 기존 vTPM 키가 없습니다. 다른 저장소를 조회하거나 키를 생성하지 않았습니다."
-        case let .interactionRequired(status): return "vTPM 키 접근에 사용자 확인이 필요합니다. 앱에서 확인하세요 (OSStatus \(status))."
-        case let .interactionPolicy(operation, status): return "Keychain 상호작용 정책을 설정하지 못했습니다 (\(operation), OSStatus \(status))."
-        case let .interactionRestore(primary, restore): return "Keychain 상호작용 정책을 복원하지 못했습니다 (조회 OSStatus \(primary), 복원 OSStatus \(restore))."
+        case .busy: return "Another Keychain operation is in progress. Try again in a moment."
+        case .serviceUnavailable: return "BridgeVM stopped key operations because it couldn’t confirm that Keychain interaction settings were restored."
+        case .backendInspectionFailed: return "BridgeVM couldn’t read its Keychain entitlements."
+        case let .malformedEntitlement(name): return "The app has an invalid Keychain entitlement (\(name))."
+        case let .missingKey(backend): return "The selected Keychain backend (\(backend.rawValue)) has no existing vTPM key. BridgeVM checked only that backend and left it unchanged."
+        case let .interactionRequired(status): return "Keychain needs your confirmation to access the vTPM key. Open BridgeVM to confirm (OSStatus \(status))."
+        case let .interactionPolicy(operation, status): return "Couldn’t set the Keychain interaction policy (\(operation), OSStatus \(status))."
+        case let .interactionRestore(primary, restore): return "Couldn’t restore the Keychain interaction policy (lookup OSStatus \(primary), restore OSStatus \(restore))."
         }
     }
 }
