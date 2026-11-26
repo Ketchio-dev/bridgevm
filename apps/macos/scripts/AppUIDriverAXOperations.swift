@@ -38,7 +38,7 @@ struct AppUIDriverAXOperations<Access: AppUIDriverAXAccess> {
                 importVisible: try identified("bridgevm.first-run.import", nodes) != nil))
         case .pressCreate: return try button(identified("bridgevm.first-run.create", nodes))
         case .createForm: return .observed(try createForm(nodes))
-        case .cancelCreate: return try button(labelled("취소", nodes))
+        case .cancelCreate: return try button(identified("bridgevm.create.cancel", nodes))
         case .pressImport: return try button(identified("bridgevm.first-run.import", nodes))
         case .importForm:
             return .observed(AppUIDriverValues(nameVisible: try identified("bridgevm.first-run.name", nodes) != nil))

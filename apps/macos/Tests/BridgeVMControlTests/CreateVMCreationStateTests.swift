@@ -17,7 +17,7 @@ final class CreateVMCreationStateTests: XCTestCase {
         XCTAssertFalse(state.recover { _ in adoptions += 1; return false })
         let failure = state.recoveryFailureMessage
         XCTAssertTrue(failure.contains("retained, sync unconfirmed"))
-        XCTAssertTrue(failure.contains("불러오지 못했습니다"))
+        XCTAssertTrue(failure.contains("Load Saved VM"))
         XCTAssertEqual(state.recoveryFailureMessage, failure)
         XCTAssertFalse(state.permitsCreation)
         XCTAssertEqual(state.published, config)
