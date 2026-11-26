@@ -47,7 +47,7 @@ extension HvfEngineSession {
     func applyRetinaResolutionToggle(_ enabled: Bool, current: Bool? = nil,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (setting: Bool?, message: String?) {
         guard persistsLibraryPreferences else { return (HvfRetinaResolutionToggle.saved(current, enabled: enabled), nil) }
-        let message = saveLibraryPreference("Retina 해상도 설정", publish: publish) {
+        let message = saveLibraryPreference("Retina resolution", publish: publish) {
             $0.retinaResolution = HvfRetinaResolutionToggle.saved($0.retinaResolution, enabled: enabled)
         }
         return (config.libraryContext?.config.retinaResolution, message)

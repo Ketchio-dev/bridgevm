@@ -356,7 +356,7 @@ final class HvfGuestPrintTests: XCTestCase {
         agentStarts()
         XCTAssertEqual(sent().last, "PRINTWATCH")
         session.connectionState = .connected(host: "guest")
-        XCTAssertEqual(session.applyPrintToggle(false).message, "VM을 완전히 중지한 뒤 인쇄 설정을 변경하세요.")
+        XCTAssertEqual(session.applyPrintToggle(false).message, "Shut down Windows before changing this setting.")
         XCTAssertNil(library.operationError)
     }
 }

@@ -35,7 +35,7 @@ extension HvfEngineSession {
     func applyDurableDiskWritesToggle(_ enabled: Bool,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (isOn: Bool, message: String?) {
         guard persistsLibraryPreferences else { return (enabled, nil) }
-        let message = saveLibraryPreference("디스크 쓰기 설정", publish: publish) {
+        let message = saveLibraryPreference("Disk writes", publish: publish) {
             $0.durableDiskWritesEnabled = enabled ? true : nil
         }
         return (config.libraryContext?.config.durableDiskWritesEnabled ?? false, message)

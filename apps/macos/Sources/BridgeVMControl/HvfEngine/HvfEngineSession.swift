@@ -706,7 +706,7 @@ extension HvfEngineSession {
     /// `true` is saved as an absent key so re-enabled VMs match never-touched ones.
     func saveClipboardSyncPreference(_ enabled: Bool,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> String? {
-        saveLibraryPreference("클립보드 동기화 설정", publish: publish) { $0.clipboardSyncEnabled = enabled ? nil : false }
+        saveLibraryPreference("Share clipboard", publish: publish) { $0.clipboardSyncEnabled = enabled ? nil : false }
     }
 }
 
@@ -745,7 +745,7 @@ extension HvfEngineSession {
     /// so turning a created VM's network back on restores its original bytes.
     func saveNetworkPreference(_ enabled: Bool,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> String? {
-        saveLibraryPreference("네트워크 설정", publish: publish) {
+        saveLibraryPreference("Enable networking", publish: publish) {
             if ($0.networkEnabled ?? true) != enabled { $0.networkEnabled = enabled }
         }
     }

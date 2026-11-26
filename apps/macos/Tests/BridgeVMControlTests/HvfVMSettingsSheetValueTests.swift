@@ -126,7 +126,7 @@ final class HvfVMSettingsSheetValueTests: XCTestCase {
         session.connectionState = .booting
         defer { session.connectionState = .stopped }
         let running = sheet.settingsForm
-        XCTAssertEqual(sheet.runningNoticeText, "일부 설정은 Windows를 종료한 뒤 바꿀 수 있습니다.")
+        XCTAssertEqual(sheet.runningNoticeText, "Shut down Windows to change settings that are currently unavailable.")
         XCTAssertTrue(try XCTUnwrap(values(HvfResourceSetting.self, in: running).first).isDisabled)
         XCTAssertTrue(try XCTUnwrap(values(HvfNetworkToggle.self, in: running).first).isDisabled)
         XCTAssertTrue(try XCTUnwrap(values(HvfClipboardSyncToggle.self, in: running).first).isDisabled)

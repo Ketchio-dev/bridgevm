@@ -258,7 +258,7 @@ extension HvfEngineSession {
     /// agent start removes the printer; on again goes back to the default.
     func applyPrintToggle(_ enabled: Bool,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (isOn: Bool, message: String?) {
-        let message = saveLibraryPreference("인쇄 설정", publish: publish) {
+        let message = saveLibraryPreference("Printing", publish: publish) {
             $0.printToMac = enabled ? ($0.printToMac == nil ? nil : true) : false
         }
         return (printToMacWanted, message)
