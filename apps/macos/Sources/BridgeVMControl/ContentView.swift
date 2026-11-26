@@ -4,22 +4,43 @@ import AppKit
 #endif
 struct ContentView: View {
     @ObservedObject var library: LibraryModel
-    @State private var showPalette = false
+    @State private var presentation = LibraryWindowPresentation()
+    @State private var importDraft = FirstRunFormDraft()
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     var body: some View {
         #if DEBUG && BRIDGEVM_APP_UI_HOST
         let _ = AppUIHost.prepared?.lifecycle.record(.contentBodyEvaluated)
         #endif
-        libraryNavigation
+        GeometryReader { geometry in
+            if geometry.size.width < 850 {
+                CompactLibraryNavigation(library: library)
+            } else {
+                let wide = geometry.size.width >= 1100
+                libraryNavigation
+                    .onChange(of: wide, initial: true) { _, wide in
+                        columnVisibility = wide ? .all : .doubleColumn
+                    }
+            }
+        }
+        .environment(\.firstRunFormDraft, $importDraft)
+        .onChange(of: library.selectedID) { _, selection in
+            if let selection, selection != LibraryModel.firstRunImportSelectionID {
+                importDraft = FirstRunFormDraft()
+            }
+        }
         .tint(LibraryAppearance.accent)
         .groupBoxStyle(LibraryGroupBoxStyle())
         .background(LibraryAppearance.canvas)
-        .sheet(isPresented: $library.showingCreate) {
-            CreateVMSheet(library: library)
+        .environment(\.libraryWindowPresentation, $presentation)
+        .sheet(item: $presentation.sheet) { sheet in
+            switch sheet {
+            case .palette:
+                CommandPaletteView(library: library) { presentation.sheet = .create(installer: nil) }
+            case .create(let installer):
+                CreateVMSheet(library: library, isoPath: installer?.path ?? "")
+            }
         }
-        .sheet(isPresented: $showPalette) {
-            CommandPaletteView(library: library)
-        }
-        .sheet(item: $library.pendingWindowsClone) { cfg in
+        .sheet(item: $presentation.cloneSource) { cfg in
             CloneWindowsHVFSheet(library: library, config: cfg)
         }
         .confirmationDialog(
@@ -43,7 +64,7 @@ struct ContentView: View {
         }
         .modifier(LibraryOperationAlerts(library: library))
         .background(
-            Button("") { showPalette = true }
+            Button("") { presentation.sheet = .palette }
                 .keyboardShortcut("k", modifiers: .command)
                 .opacity(0)
         )
@@ -52,13 +73,13 @@ struct ContentView: View {
     @ViewBuilder
     private var libraryNavigation: some View {
         if library.vms.isEmpty && library.libraryIssues.isEmpty {
-            NavigationSplitView(columnVisibility: .constant(.all)) {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
                 sidebar
             } detail: {
                 LibraryDashboardRoute(library: library)
             }
         } else {
-            NavigationSplitView(columnVisibility: .constant(.all)) {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
                 sidebar
             } content: {
                 LibraryOverviewView(library: library)

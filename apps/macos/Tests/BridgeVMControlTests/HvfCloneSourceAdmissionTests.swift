@@ -27,8 +27,7 @@ final class HvfCloneSourceAdmissionTests: XCTestCase {
         let calls = backend.calls
         let registration = libraryRoot.appendingPathComponent("source/vm.json")
         let saved = try Data(contentsOf: registration)
-        library.requestWindowsClone(source)
-        XCTAssertNil(library.pendingWindowsClone)
+        XCTAssertNil(library.requestWindowsClone(source))
         XCTAssertTrue(library.cloneError?.contains("가져온") == true)
         library.cloneError = nil
         library.cloneWindowsHVF(source, name: "Copy", operation: { _, _, _ in

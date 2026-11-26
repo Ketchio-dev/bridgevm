@@ -18,7 +18,7 @@ final class LibraryDashboardNavigationFixture {
     }
 
     func paletteCommand(_ title: String) throws -> PaletteCommand {
-        try XCTUnwrap(values(PaletteCommand.self, in: CommandPaletteView(library: library).body)
+        try XCTUnwrap(values(PaletteCommand.self, in: CommandPaletteView(library: library, createAction: { XCTFail("Unexpected creation request") }).body)
             .first { $0.title == title }, "The actual palette must expose the requested navigation action")
     }
 

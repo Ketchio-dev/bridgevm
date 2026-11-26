@@ -11,7 +11,7 @@ enum AppUIHostLegacyScenario {
         try capture.action("welcome_visible")
         try AppUIHostAccessibility.press("bridgevm.first-run.create", in: content)
         try await AppUIHostAccessibility.wait("creation sheet") {
-            host.library.showingCreate && window.sheets.count == 1
+            window.sheets.count == 1
         }
         guard let sheetContent = window.sheets.first?.contentView else {
             throw AppUIHostError.refused("Actual creation sheet has no owned content")
@@ -29,12 +29,12 @@ enum AppUIHostLegacyScenario {
         try capture.action("create_opened")
         try AppUIHostAccessibility.pressButton(label: "취소", in: sheetContent)
         try await AppUIHostAccessibility.wait("creation sheet cancellation") {
-            !host.library.showingCreate && window.sheets.isEmpty
+            window.sheets.isEmpty
         }
         try capture.action("create_cancelled")
         try AppUIHostAccessibility.press("bridgevm.first-run.import", in: content)
         try await AppUIHostAccessibility.wait("import form") {
-            try host.library.selectedID == LibraryModel.firstRunImportSelectionID
+            try host.library.selectedID == nil
                 && AppUIHostAccessibility.find("bridgevm.first-run.name", in: content) != nil
         }
         try capture.capture(content, name: "import-form")

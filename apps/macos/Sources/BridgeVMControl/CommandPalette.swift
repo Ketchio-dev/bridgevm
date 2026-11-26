@@ -11,6 +11,7 @@ struct PaletteCommand: Identifiable {
 /// ⌘K command palette — invoke any VM action by name (Pro power surface).
 struct CommandPaletteView: View {
     @ObservedObject var library: LibraryModel
+    let createAction: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var selectedID: String?
@@ -18,7 +19,7 @@ struct CommandPaletteView: View {
 
     private var commands: [PaletteCommand] {
         var c = library.selectedPaletteCommands { dismiss() }
-        c.append(.init(id: "create", title: "새 VM 만들기", subtitle: "Windows 11", systemImage: "plus") { library.showingCreate = true; dismiss() })
+        c.append(.init(id: "create", title: "새 VM 만들기", subtitle: "Windows 11", systemImage: "plus", action: createAction))
         c.append(.init(id: "pro-mode", title: library.proMode ? "Pro 모드 끄기" : "Pro 모드 켜기", subtitle: "전체 VM 테이블", systemImage: "tablecells") { library.proMode.toggle(); dismiss() })
         let named = Dictionary(grouping: library.vms, by: \.name)
         for vm in library.vms {

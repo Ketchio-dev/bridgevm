@@ -1,5 +1,6 @@
 #if canImport(AppKit)
 import AppKit
+import Combine
 import SwiftUI
 
 @MainActor
@@ -8,6 +9,7 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
 
     private let sessionIdentifier: ObjectIdentifier
     private let state: HvfDisplayWindowState
+    private let subtitleObservation: AnyCancellable
     private var closeQuestionOpen = false
     let placement: HvfDisplayWindowPlacement
 
@@ -40,6 +42,13 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
 
         sessionIdentifier = ObjectIdentifier(session)
         self.state = state
+        subtitleObservation = session.agentSilenceNotice.$shown
+            .combineLatest(session.$connectionState)
+            .map { notice, connection in
+                notice == .awaitingFirstConnection && connection == .booting ? "첫 연결 대기 중" : ""
+            }
+            .removeDuplicates()
+            .assign(to: \.subtitle, on: window)
         super.init(window: window)
         window.delegate = self
     }

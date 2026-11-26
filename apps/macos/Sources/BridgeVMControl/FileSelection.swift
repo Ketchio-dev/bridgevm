@@ -15,6 +15,12 @@ extension NSOpenPanel: FileSelectionPanel {}
 
 @MainActor
 enum FileSelection {
+    static func singleLocalURL(_ urls: [URL]) -> URL? {
+        guard urls.count == 1, let url = urls.first, url.isFileURL else { return nil }
+        if let host = url.host, !host.isEmpty, host.lowercased() != "localhost" { return nil }
+        return url
+    }
+
     static func choose(directories: Bool, extensions: [String]? = nil,
                        selection: @escaping (URL) -> Void) {
         present(NSOpenPanel(), directories: directories, extensions: extensions, selection: selection)

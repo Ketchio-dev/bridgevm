@@ -14,10 +14,8 @@ final class LibraryModel: ObservableObject {
     static let hvfEngineSelectionID = "__bridgevm_hvf_engine_experimental__"
     @Published var vms: [VMConfig] = []
     @Published var selectedID: String?
-    @Published var showingCreate = false
     @Published var proMode = false
     @Published var pendingDeletion: VMConfig?
-    @Published var pendingWindowsClone: VMConfig?
     @Published var deletionError: String?
     @Published var deletionWarning: String?
     @Published var cloneError: String?
@@ -112,7 +110,6 @@ final class LibraryModel: ObservableObject {
 
     func cloneWindowsHVF(_ cfg: VMConfig, name: String,
                          operation: @escaping LibraryCloneOperation = { HvfProtectedTransfers.clone(name: $0, template: $1, libraryRoot: $2) }) {
-        pendingWindowsClone = nil
         guard admitLibraryAction(cfg, action: .clone), !cloningSlugs.contains(cfg.slug) else { return }
         let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
         guard !backend.isRunning() else {
@@ -219,11 +216,11 @@ extension LibraryModel {
         pendingDeletion = cfg
     }
 
-    func requestWindowsClone(_ cfg: VMConfig) {
+    func requestWindowsClone(_ cfg: VMConfig) -> VMConfig? {
         guard cfg.engineKind == .hvfEngine,
               cfg.installPending != true,
-              admitLibraryAction(cfg, action: .clone), !cloningSlugs.contains(cfg.slug) else { return }
-        pendingWindowsClone = cfg
+              admitLibraryAction(cfg, action: .clone), !cloningSlugs.contains(cfg.slug) else { return nil }
+        return cfg
     }
 }
 

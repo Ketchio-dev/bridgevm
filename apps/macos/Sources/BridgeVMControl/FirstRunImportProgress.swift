@@ -50,6 +50,7 @@ struct FirstRunImportProgress {
     private(set) var stage: FirstRunImportStage?
     private(set) var error: String?
     private(set) var publishedConfig: VMConfig?
+    private(set) var savedWithNotice = false
     private var publicationWarning: String?
     var isBusy: Bool { operationID != nil }
 
@@ -74,16 +75,18 @@ struct FirstRunImportProgress {
         stage = next
     }
 
-    mutating func finish(error: String?, publishedConfig: VMConfig? = nil) {
+    mutating func finish(error: String?, publishedConfig: VMConfig? = nil, savedWithNotice: Bool = false) {
         operationID = nil
         self.error = error
         self.publishedConfig = publishedConfig
+        self.savedWithNotice = savedWithNotice
         publicationWarning = publishedConfig == nil ? nil : error
-        if error == nil { stage = .complete }
+        if error == nil || savedWithNotice { stage = .complete }
     }
 
     mutating func recoveryFailed(_ message: String) {
         operationID = nil
+        savedWithNotice = false
         error = [publicationWarning, message].compactMap { $0 }.joined(separator: "\n")
     }
 

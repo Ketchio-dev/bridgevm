@@ -39,6 +39,25 @@ struct FirstRunImportStatusView: View {
                 Label(recoveryIssue.description, systemImage: "exclamationmark.circle")
                     .font(.caption).foregroundStyle(.red)
                     .accessibilityIdentifier("bridgevm.first-run.vtpm.required")
+            } else if library.firstRunImport.savedWithNotice, let saved = library.firstRunImport.publishedConfig,
+                      let notice = library.firstRunImportError {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("라이브러리에 저장됨", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.secondary).font(.subheadline.weight(.semibold))
+                        .accessibilityIdentifier("bridgevm.first-run.import.saved")
+                    Text(saved.displayName).font(.title3.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    Divider()
+                    Label {
+                        Text(notice).font(.callout)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    }
+                    .accessibilityIdentifier("bridgevm.first-run.import.error")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .modifier(LibraryCardSurface())
             } else if let error = library.firstRunImportError {
                 Text(error).foregroundStyle(.red).font(.callout).accessibilityIdentifier("bridgevm.first-run.import.error")
             }
@@ -51,6 +70,7 @@ struct FirstRunImportStatusView: View {
                     Button("저장된 VM 불러오기") {
                         Task { await library.recoverPublishedFirstRunImport() }
                     }
+                    .keyboardShortcut(.defaultAction)
                     .disabled(library.firstRunImportBusy).accessibilityIdentifier("bridgevm.first-run.import.recover")
                 } else if !library.firstRunImportBusy {
                     Button("가져오기", action: importAction)
@@ -58,7 +78,7 @@ struct FirstRunImportStatusView: View {
                         .disabled(!canImport || recoveryIssue != nil)
                 }
             }
-            if library.firstRunImport.publishedConfig != nil {
+            if library.firstRunImport.publishedConfig != nil, !library.firstRunImport.savedWithNotice {
                 Text("저장된 VM은 다시 복사하지 않고 불러옵니다. 다른 VM을 가져와도 기존 파일은 남습니다. 새 VM은 다른 이름으로 가져오세요.")
                     .font(.caption).foregroundStyle(.secondary)
             }

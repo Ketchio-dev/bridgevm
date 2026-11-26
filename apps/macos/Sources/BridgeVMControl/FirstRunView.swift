@@ -2,41 +2,47 @@ import SwiftUI
 /// First launch offers creation/import and keeps accepted import recovery controls visible.
 struct FirstRunView: View {
     @ObservedObject var library: LibraryModel
+    @Environment(\.libraryWindowPresentation) private var presentation
 
-    @State private var displayName = "Windows 11"
-    @State private var diskPath = ""; @State private var varsPath = ""; @State private var vtpmPath = ""
-    @State private var vtpmPackagePath = ""; @State private var vtpmCodePath = ""
-    @State private var memGiB = CreateVMMemoryOptions.current.recommendedMiB / 1024
-    @State private var cpuCount = 4
+    @Environment(\.firstRunFormDraft) private var windowDraft
+    @State private var standaloneDraft = FirstRunFormDraft()
 
     private var showsImport: Bool {
-        library.selectedID == LibraryModel.firstRunImportSelectionID
+        presentation?.wrappedValue.showsImportDraft == true || library.selectedID == LibraryModel.firstRunImportSelectionID
             || library.firstRunImportBusy || library.firstRunImportError != nil
             || library.firstRunImport.publishedConfig != nil
     }
 
     var body: some View {
+        let draft = windowDraft ?? $standaloneDraft
         Group {
             if showsImport {
                 let showsInputs = !library.firstRunImportBusy && library.firstRunImport.publishedConfig == nil
                 let status = FirstRunImportStatusView(library: library,
-                    canImport: FirstRunImportNameField.hasName(displayName) && !diskPath.isEmpty,
-                    recoveryIssue: recoveryIssue, importAction: runImport)
+                    canImport: FirstRunImportNameField.hasName(draft.wrappedValue.displayName) && !draft.wrappedValue.diskPath.isEmpty,
+                    recoveryIssue: recoveryIssue(draft.wrappedValue), importAction: { runImport(draft.wrappedValue) })
                 VStack(spacing: 0) {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 24) {
                             VStack(alignment: .leading, spacing: 8) {
+                                if let presentation, presentation.wrappedValue.showsImportDraft {
+                                    Button { presentation.wrappedValue.showsImportDraft = false } label: {
+                                        Label("시작 화면으로", systemImage: "chevron.backward")
+                                    }
+                                    .buttonStyle(.link)
+                                    .keyboardShortcut(.cancelAction)
+                                    .accessibilityIdentifier("bridgevm.first-run.back")
+                                }
                                 Text("기존 Windows VM 가져오기").font(.system(size: 28, weight: .bold))
                                 if showsInputs {
                                     Text("파일을 선택해 등록한 뒤 VM 상세 화면에서 시작하세요.").foregroundStyle(.secondary)
                                 }
                             }
                             if showsInputs {
-                                FirstRunImportFields(displayName: $displayName, diskPath: $diskPath, varsPath: $varsPath,
-                                    vtpmPath: $vtpmPath, vtpmPackagePath: $vtpmPackagePath, vtpmCodePath: $vtpmCodePath,
-                                    memGiB: $memGiB, cpuCount: $cpuCount)
-                            }
-                            if !showsInputs {
+                                FirstRunImportFields(displayName: draft.displayName, diskPath: draft.diskPath, varsPath: draft.varsPath,
+                                    vtpmPath: draft.vtpmPath, vtpmPackagePath: draft.vtpmPackagePath, vtpmCodePath: draft.vtpmCodePath,
+                                    memGiB: draft.memGiB, cpuCount: draft.cpuCount)
+                            } else {
                                 status.frame(maxWidth: 620)
                             }
                         }
@@ -55,32 +61,48 @@ struct FirstRunView: View {
                     }
                 }
             } else {
-                FirstRunWelcomeView(createAction: { library.showingCreate = true }, importAction: {
-                    library.proMode = false
-                    library.selectedID = LibraryModel.firstRunImportSelectionID
-                })
+                welcome(in: presentation, diskPath: draft.diskPath)
             }
         }
         .background(LibraryAppearance.canvas)
         .navigationTitle(showsImport ? "VM 가져오기" : "시작하기")
     }
 
-    private var recoveryIssue: FirstRunImport.ValidationError? {
-        guard FirstRunImportVTPMValidation.trimmed(vtpmPath) != nil,
+    func welcome(in presentation: Binding<LibraryWindowPresentation>?, diskPath: Binding<String>) -> FirstRunWelcomeView {
+        FirstRunWelcomeView(createAction: { presentation?.wrappedValue.sheet = .create(installer: nil) },
+                            importAction: { presentation?.wrappedValue.showsImportDraft = true }, dropAction: { choice, url in
+            guard let presentation else { return false }
+            switch choice {
+            case .installer:
+                presentation.wrappedValue.sheet = .create(installer: url)
+            case .disk:
+                diskPath.wrappedValue = url.path
+                presentation.wrappedValue.showsImportDraft = true
+            }
+            return true
+        })
+    }
+
+    private func recoveryIssue(_ draft: FirstRunFormDraft) -> FirstRunImport.ValidationError? {
+        guard FirstRunImportVTPMValidation.trimmed(draft.vtpmPath) != nil,
               case .failure(let error) = FirstRunImportVTPMValidation.recoveryFiles(
-                package: vtpmPackagePath, code: vtpmCodePath) else { return nil }
+                package: draft.vtpmPackagePath, code: draft.vtpmCodePath) else { return nil }
         return error
     }
 
-    private func runImport() {
+    private func runImport(_ draft: FirstRunFormDraft) {
         guard !library.firstRunImportBusy else { return }
-        let state = FirstRunImportVTPMValidation.trimmed(vtpmPath)
+        if let presentation, presentation.wrappedValue.showsImportDraft {
+            library.proMode = false
+            library.selectedID = LibraryModel.firstRunImportSelectionID
+            presentation.wrappedValue.showsImportDraft = false
+        }
+        let state = FirstRunImportVTPMValidation.trimmed(draft.vtpmPath)
         let inputs = FirstRunImport.Inputs(
-            displayName: displayName, diskPath: diskPath, varsPath: varsPath,
-            vtpmStateDir: state, vtpmRecoveryPackagePath: state == nil ? nil : vtpmPackagePath,
-            vtpmRecoveryCodePath: state == nil ? nil : vtpmCodePath,
-            memMiB: memGiB * 1024,
-            cpuCount: cpuCount)
+            displayName: draft.displayName, diskPath: draft.diskPath, varsPath: draft.varsPath,
+            vtpmStateDir: state, vtpmRecoveryPackagePath: state == nil ? nil : draft.vtpmPackagePath,
+            vtpmRecoveryCodePath: state == nil ? nil : draft.vtpmCodePath,
+            memMiB: draft.memGiB * 1024, cpuCount: draft.cpuCount)
         Task { await library.importExistingHvfVM(inputs) }
     }
 }

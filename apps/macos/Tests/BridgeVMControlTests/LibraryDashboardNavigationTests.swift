@@ -36,7 +36,7 @@ final class LibraryDashboardNavigationTests: XCTestCase {
         duplicate.id = "seoul-b"
         f.library.vms.append(duplicate)
         f.library.selectedID = nil
-        let host = NSHostingView(rootView: CommandPaletteView(library: f.library))
+        let host = NSHostingView(rootView: CommandPaletteView(library: f.library) { XCTFail("Unexpected Create action") })
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 400),
             styleMask: [.titled], backing: .buffered, defer: true)
         window.contentView = host
@@ -57,7 +57,6 @@ final class LibraryDashboardNavigationTests: XCTestCase {
         // A blank search lists several actions, including Create.
         window.sendEvent(enter)
         XCTAssertNil(f.library.selectedID)
-        XCTAssertFalse(f.library.showingCreate)
         XCTAssertTrue(window.makeFirstResponder(field))
         let searchEditor = try XCTUnwrap(field.currentEditor() as? NSTextView)
         searchEditor.insertText("Owned", replacementRange: NSRange(location: 0, length: 0))

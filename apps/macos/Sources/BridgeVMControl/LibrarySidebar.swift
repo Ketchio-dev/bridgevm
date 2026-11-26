@@ -1,12 +1,15 @@
 import SwiftUI
 
 struct LibrarySidebar: View {
+    @Environment(\.libraryWindowPresentation) private var presentation
     @ObservedObject var library: LibraryModel
+    var didShowOverview: (() -> Void)?
+    var didShowRetained: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
             LibraryBrand()
-            Button(action: showOverview) {
+            Button { showOverview(in: presentation) } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "desktopcomputer").font(.title3)
                     Text("가상 머신").font(.body.weight(.medium))
@@ -23,7 +26,7 @@ struct LibrarySidebar: View {
             .accessibilityIdentifier("bridgevm.library.overview")
             .accessibilityAddTraits(.isSelected)
             .padding(.horizontal, 12).padding(.bottom, 8)
-            LibraryRetainedControlsNavigation(library: library)
+            LibraryRetainedControlsNavigation(library: library, didSelect: didShowRetained)
             VStack(spacing: 16) {
                 LibraryHostSummary(library: library)
             }
@@ -31,17 +34,21 @@ struct LibrarySidebar: View {
         }
         .toolbar {
             ToolbarItem {
-                Button(action: showOverview) { Label("모든 VM", systemImage: "square.grid.2x2") }
+                Button { showOverview(in: presentation) } label: { Label("모든 VM", systemImage: "square.grid.2x2") }
                     .help("전체 VM 보기")
             }
             ToolbarItem {
-                Button { library.showingCreate = true } label: { Label("새 VM", systemImage: "plus") }
+                Button { presentation?.wrappedValue.sheet = .create(installer: nil) } label: { Label("새 VM", systemImage: "plus") }
                     .accessibilityIdentifier("bridgevm.library.toolbar.create")
             }
         }
     }
 
-    private func showOverview() {
+    func showOverview(in presentation: Binding<LibraryWindowPresentation>?) {
+        if let presentation, presentation.wrappedValue.showsImportDraft {
+            presentation.wrappedValue.showsImportDraft = false
+            return
+        }
         library.proMode = false
         if library.vms.isEmpty, library.selectedID == LibraryModel.firstRunImportSelectionID,
            !library.firstRunImportBusy, library.firstRunImportError == nil,
@@ -50,5 +57,6 @@ struct LibrarySidebar: View {
         } else if library.selectedID == nil {
             library.selectedID = library.vms.first?.slug
         }
+        didShowOverview?()
     }
 }

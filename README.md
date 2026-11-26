@@ -45,8 +45,10 @@ a clean Mac remain the open release criterion. The
 [capability matrix](docs/windows-arm/capability-matrix.md) records the evidence
 for each feature.
 
-To send a draft to the focused Windows editor, open the running VM's **HVF
-Engine** view, enter the text in **Windows에 입력할 텍스트**, and select **입력**.
+To send a draft, first click where you want to type in Windows. In the Mac
+library, select the running VM and click **고급** (Advanced). Find **Windows
+키보드** in current source builds or **부팅 구성** in v0.1.0. Enter the draft
+in **Windows에 입력할 텍스트** and click **입력**.
 Current source builds keep the draft in the field while awaiting an input
 receipt or a clipboard paste. Editors such as Notepad and WinForms RichTextBox
 support queued text dispatch. If the Windows agent lacks this feature or the
@@ -76,8 +78,9 @@ complete [build and packaging guide](docs/install.md#build-the-current-source),
 because `cargo build` and `swift build` alone do not prepare a
 Windows-installation app.
 
-On first launch, choose the setup path that matches your Windows media. The
-button labels below are from current source builds.
+On first launch, choose the setup path that matches your Windows media.
+In current source builds, you can also drop a Windows installer ISO or an
+installed disk from Finder onto the matching card to open its setup form.
 
 | Starting point | What you provide |
 | --- | --- |

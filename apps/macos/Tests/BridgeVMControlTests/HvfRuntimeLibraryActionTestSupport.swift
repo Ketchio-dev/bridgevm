@@ -62,20 +62,24 @@ final class HvfRuntimeLibraryActionBackend: VMBackend {
 enum HvfRuntimeLibraryActionEntry: CaseIterable {
     case requestDeletion, requestClone, deletion, clone, move
 
-    func invoke(_ config: VMConfig, library: LibraryModel, destination: URL) {
+    @discardableResult
+    func invoke(_ config: VMConfig, library: LibraryModel, destination: URL) -> VMConfig? {
         switch self {
-        case .requestDeletion: library.requestDeletion(config)
-        case .requestClone: library.requestWindowsClone(config)
+        case .requestDeletion:
+            library.requestDeletion(config)
+            return library.pendingDeletion
+        case .requestClone: return library.requestWindowsClone(config)
         case .deletion: library.confirmDeletion(config)
         case .clone: library.cloneWindowsHVF(config, name: "captured-copy")
         case .move: library.moveWindowsHVFBundle(config, to: destination)
         }
+        return nil
     }
 
     func clearResponse(in library: LibraryModel) {
         switch self {
         case .requestDeletion: library.pendingDeletion = nil; library.deletionError = nil
-        case .requestClone: library.pendingWindowsClone = nil; library.cloneError = nil
+        case .requestClone: library.cloneError = nil
         case .deletion: library.deletionError = nil
         case .clone: library.cloneError = nil
         case .move: library.moveError = nil
@@ -183,14 +187,13 @@ final class HvfRuntimeLibraryActionFixture {
             entry.clearResponse(in: library)
             let calls = backend(for: config).calls
             let jobs = queue.count, owners = creations, reserved = reservations(in: library)
-            entry.invoke(config, library: library, destination: destination)
+            let confirmation = entry.invoke(config, library: library, destination: destination)
             XCTAssertEqual(backend(for: config).calls, calls, "\(entry) must refuse before a backend probe")
             XCTAssertEqual(queue.count, jobs, "\(entry) must not schedule work")
             XCTAssertEqual(creations, owners)
             XCTAssertEqual(reservations(in: library), reserved)
             XCTAssertFalse(entry.error(in: library)?.isEmpty ?? true, "\(entry) must surface its refusal")
-            if entry == .requestDeletion { XCTAssertNil(library.pendingDeletion) }
-            if entry == .requestClone { XCTAssertNil(library.pendingWindowsClone) }
+            XCTAssertNil(confirmation)
         }
     }
 

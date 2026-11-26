@@ -1,5 +1,5 @@
 #if DEBUG && BRIDGEVM_APP_UI_HOST
-import AppKit
+import SwiftUI
 import XCTest
 @testable import BridgeVMControl
 
@@ -19,45 +19,43 @@ final class AppUIHostOverviewStateContractTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: base) }
         let capture = try AppUIHostCapture(output: output)
         let library = AppUIHost.makeLibrary(root: root, capture: capture)
-        let welcome = try XCTUnwrap(values(FirstRunWelcomeView.self, in: FirstRunView(library: library).body).first)
-        let overview = overviewButtonContents(in: LibrarySidebar(library: library).body).flatMap { closures(in: $0) }
+        var window = LibraryWindowPresentation()
+        let binding = Binding(get: { window }, set: { window = $0 })
+        let welcome = FirstRunView(library: library).welcome(in: binding, diskPath: .constant(""))
+        let sidebar = LibrarySidebar(library: library)
+        let overview = overviewButtonContents(in: sidebar.body).flatMap { closures(in: $0) }
         XCTAssertEqual(overview.count, 1, "exactly one bridgevm.library.overview button action")
         welcome.importAction()
-        overview.forEach { $0() }
-        XCTAssertNil(library.selectedID, "leave an unsubmitted import in an empty library")
-        welcome.importAction()
-        _ = library.firstRunImport.begin()
-        overview.forEach { $0() }
-        XCTAssertEqual(library.selectedID, LibraryModel.firstRunImportSelectionID, "keep import progress visible")
-        library.firstRunImport.returnToInputs()
-        AppUIHost.seedOverview(library, root: root, work: capture.work)
-        overview.forEach { $0() }
-        XCTAssertTrue(AppUIHostOverviewState.reached(library), "the scenario's state after import, seeding and overview")
-        XCTAssertFalse(library.proMode || library.selectedID == nil, "the d1f17b2d wait (Pro mode, no selection) is unmet")
+        XCTAssertTrue(window.showsImportDraft)
+        XCTAssertNil(library.selectedID)
+        sidebar.showOverview(in: binding)
+        XCTAssertFalse(window.showsImportDraft)
+        XCTAssertNil(library.selectedID)
 
+        welcome.importAction()
+        AppUIHost.seedOverview(library, root: root, work: capture.work)
+        sidebar.showOverview(in: binding)
+        XCTAssertTrue(AppUIHostOverviewState.reached(library))
+        XCTAssertFalse(window.showsImportDraft)
         let detail = try XCTUnwrap(values(LibraryDetailView.self, in: LibraryDashboardRoute(library: library).body).first)
-        XCTAssertEqual(values(FirstRunView.self, in: detail.body).count, 1, "the detail pane keeps the import form")
-        XCTAssertTrue(values(FleetTableView.self, in: detail.body).isEmpty, "no second workspace list")
+        XCTAssertEqual(values(LibraryEmptyState.self, in: detail.body).count, 1)
         XCTAssertEqual(values(LibraryWorkspaceList.self, in: LibraryOverviewView(library: library).body).count, 1)
-        library.proMode = true
-        library.selectedID = nil
-        let stale = try XCTUnwrap(values(LibraryDetailView.self, in: LibraryDashboardRoute(library: library).body).first)
-        XCTAssertEqual(values(FleetTableView.self, in: stale.body).count, 1, "the old expectation renders a second list")
-        let refused: [(Bool, String?)] = [(true, nil), (false, nil), (false, "ui-amber"),
-                                          (true, LibraryModel.firstRunImportSelectionID)]
+        XCTAssertEqual(capture.work.modelCreations["after_seeding"], 0, "leaving a draft must not activate a VM")
+
+        let refused: [(Bool, String?)] = [(true, nil), (false, "ui-amber"), (false, LibraryModel.firstRunImportSelectionID)]
         for (proMode, selection) in refused {
             library.proMode = proMode
             library.selectedID = selection
             XCTAssertFalse(AppUIHostOverviewState.reached(library))
         }
-        XCTAssertEqual(capture.work.modelCreations["after_seeding"], 0, "routing alone requests no row model")
-        library.proMode = true
         library.selectedID = LibraryModel.firstRunImportSelectionID
+        _ = library.firstRunImport.begin()
         overview.forEach { $0() }
-        XCTAssertTrue(AppUIHostOverviewState.reached(library), "the button leaves Pro mode and keeps the import selection")
+        XCTAssertEqual(library.selectedID, LibraryModel.firstRunImportSelectionID, "keep active import progress visible")
+        library.firstRunImport.returnToInputs()
         library.selectedID = nil
         overview.forEach { $0() }
-        XCTAssertEqual(library.selectedID, "ui-amber", "with seeded rows the button never leaves nothing selected")
+        XCTAssertEqual(library.selectedID, "ui-amber", "normal overview outside a draft still selects the first VM")
 
         let content = NSView()
         func element(_ label: String, role: NSAccessibility.Role = .button) -> NSAccessibilityElement {

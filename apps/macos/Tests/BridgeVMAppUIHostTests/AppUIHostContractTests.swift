@@ -71,7 +71,7 @@ final class AppUIHostContractTests: XCTestCase {
         let library = AppUIHost.makeLibrary(root: libraryRoot, capture: capture)
         XCTAssertTrue(library.vms.isEmpty)
         XCTAssertNil(library.selectedID)
-        XCTAssertFalse(library.showingCreate)
+        XCTAssertFalse(library.preparingNewVM)
         XCTAssertEqual(library.rootURL, libraryRoot)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: libraryRoot.path), [])
         let report = try object(fixture.output, "ui-observations.json")
