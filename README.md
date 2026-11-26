@@ -80,7 +80,7 @@ Windows-installation app.
 
 On first launch, choose the setup path that matches your Windows media.
 The current source uses English card labels. In the v0.1.0 download, the
-cards are labeled **Windows 새로 설치** and **기존 디스크 가져오기**, respectively.
+cards are labeled **새 Windows VM 만들기** and **기존 VM 가져오기**, respectively.
 In current source builds, you can also drop a Windows installer ISO or an
 installed disk from Finder onto the matching card to open its setup form.
 
