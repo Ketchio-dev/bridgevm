@@ -332,7 +332,7 @@ extension LibraryModel {
         guard let cached = cachedControlModels[cfg.slug], cached.isRetained,
               retainedControlRecords.contains(where: { $0.descriptor.identity == .generic(ObjectIdentifier(cached)) })
         else { return "VM 제어 정보가 최신 등록 정보와 다릅니다. 기존 VM을 완전히 중지하고 목록을 새로고침한 뒤 다시 시도하세요." }
-        return "이전 등록 정보로 보관한 제어가 남아 있습니다. 사이드바 '진행 중이거나 종료된 작업'에서 그 항목을 열어, 실행이 끝났으면 '목록에서 닫기'를 누른 뒤 다시 시도하세요."
+        return "An operation from the previous registration is still listed. Open it under Recent operations in the sidebar. Once it finishes, choose Dismiss and try again."
     }
 }
 

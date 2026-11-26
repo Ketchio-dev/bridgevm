@@ -167,7 +167,7 @@ extension ControlModel {
 
     func refuseRetainedMutation() -> Bool {
         guard isRetained else { return false }
-        statusNote = "보관한 제어에서는 새 작업을 시작할 수 없습니다. 실행이 끝난 뒤 사이드바 '진행 중이거나 종료된 작업'에서 이 항목을 '목록에서 닫기'로 닫고 다시 시도하세요."
+        statusNote = "Wait for this session to finish, then open it under Recent operations in the sidebar, choose Dismiss, and try again."
         return true
     }
 

@@ -14,10 +14,12 @@ final class RetainedTerminalGuidanceTests: XCTestCase {
             XCTAssertFalse(f.library.admitLibraryAction(current, action: action))
         }
         for refusal in [f.library.deletionError, f.library.cloneError, f.library.moveError] {
-            XCTAssertTrue(refusal?.contains("'목록에서 닫기'") == true, refusal ?? "no refusal")
+            XCTAssertTrue(refusal?.contains("Recent operations") == true, refusal ?? "no refusal")
+            XCTAssertTrue(refusal?.contains("Dismiss") == true, refusal ?? "no refusal")
         }
         f.accepted.start()
-        XCTAssertTrue(f.accepted.statusNote.contains("'목록에서 닫기'"), f.accepted.statusNote)
+        XCTAssertTrue(f.accepted.statusNote.contains("Recent operations"), f.accepted.statusNote)
+        XCTAssertTrue(f.accepted.statusNote.contains("Dismiss"), f.accepted.statusNote)
         XCTAssertFalse(f.accepted.lifecycleBusy)
     }
 
