@@ -3,6 +3,7 @@ import SwiftUI
 extension CreateVMSheet {
     func create() {
         guard !working, creationState.permitsCreation else { return }
+        guard mode != .windowsHVFInstall || drivers.status != .preparing else { return }
         creationFailureCode = ""
         error = ""
         guard let normalizedName = VMLibrary.normalizedVMName(name) else {
@@ -12,8 +13,8 @@ extension CreateVMSheet {
         }
         let selectedMode = mode
         let selectedISO = isoPath
-        let selectedPayload = guestPayloadPath
-        let selectedManifest = guestPayloadManifestPath
+        let selectedPayload = drivers.payloadPath
+        let selectedManifest = drivers.manifestPath
         let e2eUnattendedPath = library.e2eUnattendedPath
         let target = hvfTargetPath
         let vars = hvfVarsPath
