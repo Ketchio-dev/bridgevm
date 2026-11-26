@@ -22,7 +22,7 @@ struct ContentView: View {
                 CreateVMSheet(library: library, isoPath: installer?.path ?? "")
             }
         }
-        .sheet(item: $library.pendingWindowsClone) { cfg in
+        .sheet(item: $presentation.cloneSource) { cfg in
             CloneWindowsHVFSheet(library: library, config: cfg)
         }
         .confirmationDialog(

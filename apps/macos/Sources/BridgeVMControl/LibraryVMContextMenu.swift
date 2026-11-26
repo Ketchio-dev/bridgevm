@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 
 struct LibraryVMContextMenu: View {
+    @Environment(\.libraryWindowPresentation) private var presentation
     @ObservedObject var library: LibraryModel
     let config: VMConfig
 
@@ -15,7 +16,7 @@ struct LibraryVMContextMenu: View {
             HvfPauseMenuItem(session: session)
         }
         if config.engineKind == .hvfEngine, config.installPending != true {
-            Button { library.requestWindowsClone(config) } label: {
+            Button { presentation?.wrappedValue.cloneSource = library.requestWindowsClone(config) } label: {
                 Label("새 TPM ID로 복제", systemImage: "plus.square.on.square")
             }
             .disabled(library.cloningSlugs.contains(config.slug))

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct LibraryDashboardRuntimeControls: View {
+    @Environment(\.libraryWindowPresentation) private var presentation
     let config: VMConfig
     @ObservedObject var model: ControlModel
     @ObservedObject var library: LibraryModel
@@ -13,7 +14,7 @@ struct LibraryDashboardRuntimeControls: View {
             LibraryDashboardActionBar(runtimeActive: runtimeActive, lifecycleBusy: lifecycleBusy,
                 open: { LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library) },
                 showAdvanced: showAdvanced, showSettings: showSettings, refresh: model.refresh,
-                clone: { library.requestWindowsClone(config) },
+                clone: { presentation?.wrappedValue.cloneSource = library.requestWindowsClone(config) },
                 cloneDisabled: runtimeActive || library.cloningSlugs.contains(config.slug))
             HStack(alignment: .top, spacing: 8) {
                 LibraryDashboardRuntimeStopControl(config: config, model: model, library: library,

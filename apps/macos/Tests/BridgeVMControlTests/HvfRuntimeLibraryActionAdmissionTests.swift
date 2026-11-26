@@ -166,6 +166,27 @@ final class HvfRuntimeLibraryActionAdmissionTests: XCTestCase {
         }
     }
 
+    func testCloneFormKeepsItsSourceWhenAnotherWindowChangesSelection() throws {
+        let fixture = Fixture()
+        defer { fixture.clean() }
+        let studio = fixture.config("studio"), offline = fixture.config("offline")
+        fixture.save(studio)
+        fixture.save(offline)
+        let library = fixture.library()
+        fixture.cacheFake(in: library, config: studio)
+        fixture.cacheFake(in: library, config: offline)
+
+        var window = LibraryWindowPresentation()
+        window.cloneSource = library.requestWindowsClone(studio)
+        library.selectedID = offline.slug
+        let confirmed = try XCTUnwrap(window.cloneSource)
+        XCTAssertEqual(confirmed, studio)
+        library.cloneWindowsHVF(confirmed, name: "studio-copy")
+        XCTAssertEqual(library.cloningSlugs, [studio.slug])
+        XCTAssertEqual(fixture.queue.count, 1)
+        XCTAssertEqual(library.selectedID, offline.slug)
+    }
+
     func testFinalActionsRecheckAFormerlyValidRequest() throws {
         for final in [Entry.deletion, .clone] {
             for changedRegistration in [false, true] {
@@ -176,8 +197,7 @@ final class HvfRuntimeLibraryActionAdmissionTests: XCTestCase {
                 let library = fixture.library()
                 fixture.cacheFake(in: library, config: original)
                 let request: Entry = final == .deletion ? .requestDeletion : .requestClone
-                request.invoke(original, library: library, destination: fixture.destination)
-                XCTAssertEqual(final == .deletion ? library.pendingDeletion : library.pendingWindowsClone, original)
+                XCTAssertEqual(request.invoke(original, library: library, destination: fixture.destination), original)
                 XCTAssertNil(request.error(in: library))
                 if changedRegistration {
                     var changed = original
@@ -193,7 +213,7 @@ final class HvfRuntimeLibraryActionAdmissionTests: XCTestCase {
 
                 fixture.assertRefused([final], config: original, library: library)
 
-                XCTAssertNil(final == .deletion ? library.pendingDeletion : library.pendingWindowsClone)
+                XCTAssertNil(library.pendingDeletion)
                 XCTAssertEqual(fixture.queue.count, 0)
                 XCTAssertEqual(try fixture.snapshot(), before)
             }
