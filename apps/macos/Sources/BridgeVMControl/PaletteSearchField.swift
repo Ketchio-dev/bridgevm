@@ -17,8 +17,9 @@ struct PaletteSearchField: NSViewRepresentable {
         field.cell?.usesSingleLineMode = true
         field.focusRingType = .none
         field.font = .preferredFont(forTextStyle: .title3)
-        field.placeholderString = "명령 또는 VM 검색"
-        field.setAccessibilityLabel("명령 또는 VM 검색")
+        field.placeholderString = "Search commands or VMs"
+        field.setAccessibilityLabel("Search commands or VMs")
+        field.setAccessibilityIdentifier("bridgevm.palette.search")
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         field.delegate = context.coordinator
         return field

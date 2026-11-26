@@ -60,11 +60,16 @@ struct ContentView: View {
             Text(LibraryDeletionPrompt(config: config, rootURL: library.rootURL).message)
         }
         .modifier(LibraryOperationAlerts(library: library))
-        .background(
-            Button("") { presentation.sheet = .palette }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { presentation.sheet = .palette } label: {
+                    Label("Command Palette", systemImage: "magnifyingglass")
+                }
                 .keyboardShortcut("k", modifiers: .command)
-                .opacity(0)
-        )
+                .help("Search commands or VMs (⌘K)")
+                .accessibilityIdentifier("bridgevm.library.toolbar.palette")
+            }
+        }
     }
 
     @ViewBuilder
