@@ -1,7 +1,7 @@
 import Foundation
 
 /// Restore and delete capture the selected snapshot in their confirmation; create never replaces one.
-/// Failures read as one Korean sentence, with technical detail in the session event feed.
+/// Failures read as one plain sentence, with technical detail in the session event feed.
 @MainActor
 final class HvfWindowsSnapshotModel: ObservableObject {
     typealias Operation = HvfWindowsSnapshotCommand.Operation
@@ -14,15 +14,15 @@ final class HvfWindowsSnapshotModel: ObservableObject {
         let run: Run
 
         var title: String {
-            operation == .restore ? "‘\(label)’ 스냅샷으로 되돌릴까요?" : "‘\(label)’ 스냅샷을 삭제할까요?"
+            operation == .restore ? "Restore “\(label)”?" : "Delete “\(label)”?"
         }
         var message: String {
-            operation == .restore ? "‘\(label)’ 스냅샷으로 복원하면 그 뒤에 바뀐 디스크 내용은 모두 사라집니다." : "‘\(label)’ 스냅샷만 영구 삭제하며 현재 VM 디스크는 바뀌지 않습니다."
+            operation == .restore ? "Restoring “\(label)” discards all disk changes made since this snapshot." : "This permanently deletes the snapshot “\(label)” and preserves the current VM disk."
         }
-        var action: String { operation == .restore ? "복원" : "삭제" }
+        var action: String { operation == .restore ? "Restore" : "Delete" }
     }
 
-    nonisolated static let idleText = "Windows를 종료한 뒤 디스크와 부팅 설정을 함께 저장할 수 있습니다."
+    nonisolated static let idleText = "Shut down Windows to save a snapshot of its disk and boot settings."
     @Published private(set) var busy = false
     @Published private(set) var status = idleText
     @Published private(set) var failed = false
@@ -53,11 +53,11 @@ final class HvfWindowsSnapshotModel: ObservableObject {
     private func start(_ operation: Operation, _ run: @escaping Run) -> Task<Void, Never>? {
         guard !busy else { return nil }
         busy = true; failed = false
-        status = operation == .create ? "스냅샷 생성 중…" : operation == .restore ? "스냅샷 복원 중…" : "스냅샷 삭제 중…"
+        status = operation == .create ? "Creating snapshot…" : operation == .restore ? "Restoring snapshot…" : "Deleting snapshot…"
         return Task {
             do {
                 let notice = try await run(operation)
-                status = notice ?? (operation == .create ? "스냅샷 생성 완료" : operation == .restore ? "스냅샷 복원 완료" : "스냅샷 삭제 완료")
+                status = notice ?? (operation == .create ? "Snapshot created" : operation == .restore ? "Snapshot restored" : "Snapshot deleted")
             } catch {
                 status = Self.message(for: error, operation: operation); failed = true
             }
@@ -66,23 +66,22 @@ final class HvfWindowsSnapshotModel: ObservableObject {
         }
     }
 
-    /// "2026년 11월 11일 오후 3:42:08"
+    /// Use the Mac’s regional date and time preferences, including seconds for nearby snapshots.
     nonisolated static func dateText(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ko_KR")
         formatter.dateStyle = .long
         formatter.timeStyle = .medium
         return formatter.string(from: date)
     }
 
-    nonisolated static let noSnapshot = "되돌릴 스냅샷이 없으니 먼저 스냅샷을 만드세요."
+    nonisolated static let noSnapshot = "Create a snapshot before trying to restore one."
 
-    /// One Korean sentence: what happened and what to do. The helper's English (the Rust
+    /// One plain sentence: what happened and what to do. The helper's English (the Rust
     /// SnapshotError and io::Error texts) is matched for the failures that happen in practice;
     /// anything else gets the operation's general sentence.
     nonisolated static func message(for error: Error, operation: Operation) -> String {
         let error = error as NSError
-        let failed = operation == .create ? "스냅샷을 만들지 못했으니" : operation == .restore ? "스냅샷으로 되돌리지 못했으니" : "스냅샷을 삭제하지 못했으니"
+        let action = operation == .create ? "creating a snapshot" : operation == .restore ? "restoring the snapshot" : "deleting the snapshot"
         let text = error.localizedDescription
         var failure: HvfWindowsSnapshotCommand.Failure?
         switch error.domain {
@@ -93,15 +92,15 @@ final class HvfWindowsSnapshotModel: ObservableObject {
         if text.contains("media is in use") { failure = .notStopped } // the helper's writer-lease refusal
         switch failure {
         case .notStopped?:
-            return "VM이 실행 중이거나 다른 작업 중이라 \(failed) VM을 완전히 종료한 뒤 다시 시도하세요."
+            return "Shut down the VM and wait for other operations to finish before \(action)."
         case .settingsUnsaved?:
-            return "이 화면에서 바꾼 설정이 아직 적용되지 않아 \(failed) 바꾼 내용을 되돌리거나 VM을 한 번 시작해 적용한 뒤 다시 시도하세요."
+            return "Undo the pending settings changes or start the VM once to apply them before \(action)."
         case .notLibraryVM?:
-            return "스냅샷은 BridgeVM 라이브러리에 있는 VM에서만 쓸 수 있으니 라이브러리에서 VM을 열어 다시 시도하세요."
+            return "Open the VM from the BridgeVM library to use snapshots."
         case .helperMissing?:
-            return "스냅샷 도우미 프로그램을 찾지 못해 \(failed) BridgeVM을 다시 설치하세요."
+            return "Reinstall BridgeVM to restore the missing snapshot helper before \(action)."
         case .unsafeFolder?:
-            return "VM 번들 안의 스냅샷 폴더를 안전하게 쓸 수 없어 \(failed) 그 폴더가 심볼릭 링크가 아닌 일반 폴더인지 확인하세요."
+            return "Check that the snapshots folder in the VM bundle is a regular directory before \(action)."
         case .noSnapshot?:
             return noSnapshot
         case .helper?, nil:
@@ -109,13 +108,13 @@ final class HvfWindowsSnapshotModel: ObservableObject {
         }
         if text.contains("No space left on device")
             || (error.domain == NSCocoaErrorDomain && error.code == NSFileWriteOutOfSpaceError) {
-            return "VM이 저장된 드라이브에 공간이 부족해 \(failed) 공간을 확보한 뒤 다시 시도하세요."
+            return "Free up space on the drive that holds the VM before \(action)."
         }
         if text.contains("does not match the hash") || text.contains("unusable snapshot manifest") {
             return operation == .create
-                ? "새 스냅샷이 검증을 통과하지 못했으니 스냅샷을 다시 만드세요."
-                : "스냅샷이 손상되어 되돌리지 못했으니 새 스냅샷을 만드세요."
+                ? "The new snapshot failed verification, so create it again."
+                : "This snapshot is damaged, so create a new snapshot."
         }
-        return "\(failed) 다시 시도하고, 계속 실패하면 아래 이벤트 피드에서 자세한 내용을 확인하세요."
+        return "Try \(action) again and check the event feed for details if the problem continues."
     }
 }

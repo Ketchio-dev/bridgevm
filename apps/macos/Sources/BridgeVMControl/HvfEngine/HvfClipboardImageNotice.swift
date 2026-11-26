@@ -79,33 +79,33 @@ final class HvfClipboardImageNotice: ObservableObject {
     }
 
     var displayed: (text: String, help: String, symbol: String)? {
-        let help = "클립보드 이미지는 32MB, 16384×16384 픽셀까지 주고받습니다. 복사한 쪽의 클립보드는 그대로입니다."
-        let textHelp = "텍스트를 나누어 복사하거나 파일로 저장해 공유 폴더로 옮기세요."
-        let limits = "한 번에 \(fileLimits.files)개, 모두 합쳐 \(Self.size(fileLimits.bytes))까지"
-        // The shared folder carries files up to 16 GB each (HvfEngineConfig.shareMaxKiB), any number of them.
-        let windowsFilesHelp = "파일 복사는 \(limits) 가져옵니다. 더 큰 파일은 공유 폴더를 켜고 그 안에 넣으면 Mac으로 옮겨집니다."
-        // Finder drops have no size limit (file_drop.rs streams them to the guest Desktop).
-        let macFilesHelp = "파일 복사는 \(limits) 보냅니다. 더 큰 파일은 VM 창으로 끌어다 놓으면 Windows 바탕 화면에 복사됩니다."
+        let imageHelp = "Clipboard PNGs can be up to 32 MiB, with each side up to 16,384 pixels. You can still paste the original where you copied it."
+        let textHelp = "Copy the text in smaller sections, or save it as a file and move it through a shared folder."
+        let limits = "Each copy can contain up to \(fileLimits.files) items and \(Self.size(fileLimits.bytes)) in total."
+        let windowsFilesHelp = "\(limits) Use a shared folder for larger selections, up to 16 GiB per file."
+        let macFilesHelp = "\(limits) Drag the selection onto the VM window to copy it to the Windows desktop."
         switch shown {
         case .macTextTooLarge:
-            return ("Mac에서 복사한 텍스트가 너무 커서 Windows로 보내지 못했습니다.", textHelp, "doc.plaintext")
+            return ("The text copied on your Mac is too large to send to Windows.", textHelp, "doc.plaintext")
         case .windowsTextTooLarge:
-            return ("Windows에서 복사한 텍스트가 너무 커서 Mac으로 가져오지 못했습니다.", textHelp, "doc.plaintext")
-        case .macImageTooLarge: return ("Mac에서 복사한 이미지가 너무 커서 Windows로 보내지 않았습니다.", help, "photo")
-        case .windowsImageTooLarge: return ("Windows에서 복사한 이미지가 너무 커서 Mac으로 가져오지 않았습니다.", help, "photo")
+            return ("The text copied in Windows is too large to send to your Mac.", textHelp, "doc.plaintext")
+        case .macImageTooLarge:
+            return ("The image copied on your Mac is too large to send to Windows.", imageHelp, "photo")
+        case .windowsImageTooLarge:
+            return ("The image copied in Windows is too large to send to your Mac.", imageHelp, "photo")
         case .macFilesTooLarge:
-            return ("Mac에서 복사한 파일이 너무 많거나 커서 Windows에는 파일 이름만 보냈습니다.", macFilesHelp, "doc.on.doc")
+            return ("The selection exceeds the clipboard limits. Only the file names were sent to Windows.", macFilesHelp, "doc.on.doc")
         case .windowsFilesTooLarge:
-            return ("Windows에서 복사한 파일이 너무 많거나 커서 Mac으로 가져오지 않았습니다.", windowsFilesHelp, "doc.on.doc")
+            return ("The Windows selection exceeds the clipboard limits for copying files to your Mac.", windowsFilesHelp, "doc.on.doc")
         case .macFilesUnreadable:
-            return ("Mac에서 복사한 파일 중 읽을 수 없는 것이 있어 Windows에는 파일 이름만 보냈습니다.",
-                    "읽기 권한이 없는 파일이나 폴더가 있는지 확인한 뒤 다시 복사하세요.", "doc.on.doc")
+            return ("Your Mac couldn’t read the full selection. Only the file names were sent to Windows.",
+                    "Check that you can read each file and folder, then copy them again.", "doc.on.doc")
         case .windowsFilesLowSpace:
-            return ("Mac의 저장 공간이 부족해 Windows에서 복사한 파일을 가져오지 않았습니다.",
-                    "복사한 파일 크기에 2GB를 더한 만큼 Mac에 빈 공간이 있어야 합니다. 공간을 비운 뒤 다시 복사하세요.", "doc.on.doc")
+            return ("Your Mac doesn’t have enough space for the files copied in Windows.",
+                    "Free up enough space on your Mac for the files plus 2 GiB, then copy them again.", "doc.on.doc")
         case .macFilesGuestFull:
-            return ("Windows 디스크 공간이 부족해 Mac에서 복사한 파일을 보내지 않았습니다.",
-                    "Windows에서 공간을 비운 뒤 다시 복사하세요.", "doc.on.doc")
+            return ("Windows doesn’t have enough space for the files copied on your Mac.",
+                    "Free up space in Windows, then copy the files again.", "doc.on.doc")
         case nil: return nil
         }
     }
@@ -130,9 +130,10 @@ final class HvfClipboardImageNotice: ObservableObject {
         return (files, number(" limit-bytes=", in: line) ?? Int64(64 << 20))
     }
 
-    /// 64MB, 16GB: whole GB where they are whole, else MB.
     private static func size(_ bytes: Int64) -> String {
-        bytes >= 1 << 30 && bytes % (1 << 30) == 0 ? "\(bytes >> 30)GB" : "\(bytes >> 20)MB"
+        if bytes > 0 && bytes % (1 << 30) == 0 { return "\(bytes >> 30) GiB" }
+        if bytes > 0 && bytes % (1 << 20) == 0 { return "\(bytes >> 20) MiB" }
+        return bytes == 1 ? "1 byte" : "\(bytes) bytes"
     }
 }
 

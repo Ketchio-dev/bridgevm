@@ -71,12 +71,12 @@ final class HvfRuntimePaletteTests: XCTestCase {
         var dismissals = 0
         XCTAssertEqual(library.selectedID, slug)
         let commands = library.selectedPaletteCommands(dismiss: { dismissals += 1 })
-        let title = "VM 제어 화면 열기: \(name)"
+        let title = "Open controls for \(name)"
         XCTAssertEqual(commands.map(\.title), [title])
         XCTAssertEqual(fixture.creations, before, "Listing a retained control surface must not create another owner")
         // The baseline exposes generic actions: never invoke one even when the assertion above fails.
         guard commands.count == 1, let command = commands.first, command.title == title else { return }
-        XCTAssertEqual(command.subtitle, "시작·중지와 설치 상태 확인")
+        XCTAssertEqual(command.subtitle, "View startup, shutdown and installation controls")
         XCTAssertEqual(command.systemImage, "desktopcomputer")
         library.selectedID = "a-different-selection"
         library.proMode = true
@@ -213,7 +213,7 @@ final class HvfRuntimePaletteTests: XCTestCase {
             for running in [false, true] {
                 model.running = running
                 let commands = library.selectedPaletteCommands(dismiss: {})
-                XCTAssertEqual(commands.map(\.title), ["\(running ? "정지" : "시작"): \(config.name)", "새로고침: \(config.name)"])
+                XCTAssertEqual(commands.map(\.title), ["\(running ? "Stop" : "Start") \(config.name)", "Refresh \(config.name)"])
                 XCTAssertEqual(fixture.creations, [1, 0, 0])
                 XCTAssertEqual(fixture.backend.calls, 0)
                 // Generic command actions are deliberately never invoked.

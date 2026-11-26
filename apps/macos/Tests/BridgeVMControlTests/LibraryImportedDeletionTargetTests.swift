@@ -37,7 +37,7 @@ final class LibraryImportedDeletionTargetTests: XCTestCase {
         let prompt = LibraryDeletionPrompt(config: cfg, rootURL: f.root)
         XCTAssertTrue(prompt.message.contains(f.bundle.path))
         XCTAssertFalse(prompt.message.contains(cfg.bundlePath))
-        XCTAssertEqual(prompt.confirmTitle, "Imported 및 가상 디스크 삭제")
+        XCTAssertEqual(prompt.confirmTitle, "Delete Imported and Its Disk")
         // The registration-only escape hatch must still refuse this owned disk.
         XCTAssertNotEqual(HvfUnavailableMediaDeletion.delete(cfg, rootURL: f.root), true)
         XCTAssertEqual(try Data(contentsOf: f.layout.diskURL), Data("synthetic disk".utf8))

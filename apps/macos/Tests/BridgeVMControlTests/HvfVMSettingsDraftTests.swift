@@ -3,6 +3,71 @@ import XCTest
 
 @MainActor
 final class HvfVMSettingsDraftTests: XCTestCase {
+    func testRenamePersistsOnTheExistingRegistrationAndPreservesLaunchIdentity() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        let original = fixture.config("windows-work"), other = fixture.config("windows-personal")
+        fixture.save(original)
+        fixture.save(other)
+        let library = fixture.library(probe: HvfClipboardSyncProbe())
+        library.selectedID = original.slug
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: original))
+        let before = session.config
+        let display = HvfDisplayWindowController(session: session, title: original.name)
+        defer { display.window?.close() }
+        let draft = HvfVMSettingsDraft(session: session)
+        let untouchedDraft = HvfVMSettingsDraft(session: session)
+        let editedDraft = HvfVMSettingsDraft(session: session)
+        editedDraft.name = other.name
+        // This is a display label. It can exceed the byte budget for a new directory name.
+        let newName = String(repeating: "한", count: 75)
+        draft.name = "  \(newName)  "
+        XCTAssertTrue(draft.finish())
+        XCTAssertTrue(untouchedDraft.finish(), "Closing another window must not revert the name")
+        var expected = original
+        expected.name = newName
+        expected.displayName = newName
+        let reopened = try NativeLibraryReader.readConfig(rootURL: fixture.root, id: original.slug)
+        XCTAssertEqual(reopened, expected)
+        XCTAssertEqual(library.latestConfiguration(for: original), expected)
+        XCTAssertEqual(library.selectedID, original.slug)
+        XCTAssertTrue(library.hvfRuntimeSessions.owns(session, for: expected))
+        XCTAssertEqual(session.config.libraryContext?.config, expected)
+        XCTAssertEqual(display.window?.title, newName)
+        XCTAssertEqual(session.config.vtpmKeyID, before.vtpmKeyID)
+        XCTAssertEqual(session.config.vtpmStateDir, before.vtpmStateDir)
+        XCTAssertEqual(session.config.targetDiskPath, before.targetDiskPath)
+        XCTAssertEqual(session.config.uefiVarsPath, before.uefiVarsPath)
+        XCTAssertEqual(try NativeLibraryReader.readConfig(rootURL: fixture.root, id: other.slug), other)
+        XCTAssertEqual(untouchedDraft.name, newName)
+        XCTAssertFalse(editedDraft.finish(), "Closing a stale draft must not overwrite the other window")
+        XCTAssertEqual(editedDraft.nameMessage, "Another window saved the name “\(newName)”. Click Done again to use your edit.")
+        XCTAssertEqual(editedDraft.name, other.name)
+        XCTAssertEqual(try NativeLibraryReader.readConfig(rootURL: fixture.root, id: original.slug), expected)
+        XCTAssertTrue(editedDraft.finish(), "The user can explicitly use the same name as another VM")
+        XCTAssertEqual(try NativeLibraryReader.readConfig(rootURL: fixture.root, id: original.slug).name, other.name)
+        XCTAssertEqual(try NativeLibraryReader.readConfig(rootURL: fixture.root, id: other.slug), other)
+    }
+
+    func testInvalidAndBusyRenameKeepTheSavedName() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        let original = fixture.config()
+        fixture.save(original)
+        let library = fixture.library(probe: HvfClipboardSyncProbe())
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: original))
+        let draft = HvfVMSettingsDraft(session: session)
+        draft.name = " "
+        XCTAssertFalse(draft.finish())
+        XCTAssertEqual(draft.nameMessage, "Enter a VM name with 1 to 128 characters and no control characters.")
+        session.connectionState = .booting
+        defer { session.connectionState = .stopped }
+        draft.name = "새 이름"
+        XCTAssertFalse(draft.finish())
+        XCTAssertNotNil(draft.nameMessage)
+        XCTAssertEqual(try NativeLibraryReader.readConfig(rootURL: fixture.root, id: original.slug), original)
+    }
+
     func testDoneSavesTypedPathsAndClearedForwardsWithoutReturn() throws {
         let f = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
         defer { f.clean() }

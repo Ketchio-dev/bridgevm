@@ -23,38 +23,38 @@ enum HvfWindowsInstallStage: Equatable {
 extension HvfWindowsInstallStage {
     var label: String {
         switch self {
-        case .idle: return "대기"
-        case .validating: return "설치 입력 확인"
-        case .preparingSource: return "설치 소스 준비"
-        case .installing: return "Windows 무인 설치"
-        case .finalizing: return "VM에 반영"
-        case .recovering: return "기존 설치 결과 복구"
-        case .cancelling: return "취소 중…"
-        case .cancelled: return "취소됨"
-        case .done: return "완료"
-        case .failed: return "실패"
+        case .idle: return "Ready to install"
+        case .validating: return "Checking installation files"
+        case .preparingSource: return "Preparing installation media"
+        case .installing: return "Installing Windows"
+        case .finalizing: return "Saving the VM"
+        case .recovering: return "Recovering the installation"
+        case .cancelling: return "Cancelling…"
+        case .cancelled: return "Cancelled"
+        case .done: return "Complete"
+        case .failed: return "Failed"
         }
     }
 
     var primaryActionTitle: String {
         switch self {
-        case .failed, .cancelled: return "다시 시도"
-        case .done: return "설치 완료"
-        default: return "설치 시작"
+        case .failed, .cancelled: return "Try Again"
+        case .done: return "Installation Complete"
+        default: return "Start Installation"
         }
     }
 }
 
 extension HvfWindowsInstallStage {
-    static let steps = ["파일 확인", "이미지 준비", "Windows 설치", "VM 저장"]
+    static let steps = ["Check files", "Prepare media", "Install Windows", "Save VM"]
 
     /// Builder log lines can include private paths. Only show the known operation.
     static func sourceActivity(for line: String) -> String? {
-        if line == "[build-src] attaching ISO" { return "설치 디스크를 연결하는 중…" }
-        if line.hasPrefix("[build-src] copying ISO tree") { return "ISO에서 설치 파일을 복사하는 중…" }
-        if line.hasPrefix("[build-src] splitting install.wim") { return "Windows 설치 이미지를 분할하는 중…" }
-        if line.hasPrefix("[build-src] injecting bvinstall payload") { return "Windows 부팅 파일을 준비하는 중…" }
-        if line == "[build-src] verifying payload + boot files" { return "설치 파일을 확인하는 중…" }
+        if line == "[build-src] attaching ISO" { return "Mounting the installer…" }
+        if line.hasPrefix("[build-src] copying ISO tree") { return "Copying setup files from the ISO…" }
+        if line.hasPrefix("[build-src] splitting install.wim") { return "Splitting the Windows installation image…" }
+        if line.hasPrefix("[build-src] injecting bvinstall payload") { return "Preparing Windows boot files…" }
+        if line == "[build-src] verifying payload + boot files" { return "Verifying installation files…" }
         return nil
     }
 

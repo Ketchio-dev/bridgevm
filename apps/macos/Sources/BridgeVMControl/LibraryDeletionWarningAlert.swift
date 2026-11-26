@@ -7,13 +7,13 @@ struct LibraryDeletionWarningAlert: ViewModifier {
 
     func body(content: Content) -> some View {
         content.alert(
-            "VM을 삭제했지만 vTPM 키를 보관하지 못했습니다",
+            "VM Deleted with a TPM Key Warning",
             isPresented: Binding(
                 get: { library.deletionWarning != nil },
                 set: { if !$0 { library.deletionWarning = nil } }
             )
         ) {
-            Button("확인") { library.deletionWarning = nil }
+            Button("OK") { library.deletionWarning = nil }
         } message: {
             Text(library.deletionWarning ?? "")
         }

@@ -116,7 +116,7 @@ final class HvfRuntimeWorkAdmissionOwnershipTests: XCTestCase {
         installer.cancel()
         XCTAssertTrue(installer.isRunning)
         XCTAssertEqual(installer.stage, .cancelling)
-        XCTAssertTrue(installer.logLines.contains("사용자가 설치를 취소했습니다."))
+        XCTAssertTrue(installer.logLines.contains("Installation cancelled by user."))
         f.assertRuntimeRefused(runtime, library: library, reason: HvfRuntimeWorkAdmissionFixture.installReason,
             entries: [.automaticAttach, .silentAttach])
         XCTAssertEqual(f.installJobCount, 1)

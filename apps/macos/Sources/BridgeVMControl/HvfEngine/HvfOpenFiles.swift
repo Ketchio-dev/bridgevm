@@ -5,8 +5,8 @@ import Foundation
 /// copied each one opens there with its default Windows app (file_drop.rs, `BVDROP ... open`).
 @MainActor
 enum HvfOpenFiles {
-    static let noWindowsText = "Windows가 실행 중일 때 파일을 열 수 있습니다."
-    static let whichWindowsText = "Windows가 여러 개 실행 중이니 파일을 열 VM의 창을 앞에 두고 다시 여세요."
+    static let noWindowsText = "Start a Windows VM, then open the selection again."
+    static let whichWindowsText = "Bring the Windows VM you want to the front, then open the selection again."
 
     /// The only running VM, else the running one whose display window is frontmost.
     static func target(sessions: [HvfEngineSession], frontToBack: [HvfEngineSession]) -> HvfEngineSession? {

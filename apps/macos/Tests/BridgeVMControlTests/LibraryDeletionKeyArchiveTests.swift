@@ -74,7 +74,7 @@ final class LibraryDeletionKeyArchiveTests: XCTestCase {
         let result = delete(installed, in: f, store: store)
         XCTAssertEqual(result.outcome, .deleted)
         let warning = try XCTUnwrap(result.warning)
-        XCTAssertTrue(warning.contains("vTPM 키를 보관하지 못했습니다"), warning)
+        XCTAssertTrue(warning.contains("could not archive its vTPM key"), warning)
         XCTAssertTrue(warning.contains("'\(installed.slug)'"), warning)
         XCTAssertFalse(f.fm.fileExists(atPath: f.entry.path))
         XCTAssertEqual(store.keys, [installed.slug: key])
