@@ -26,7 +26,7 @@ struct HvfForceStopControl<Content: View>: View {
                     .accessibilityIdentifier(identifier + ".stop-wait")
             }
             if session.forceStopTarget != nil {
-                Button("강제 중단", role: .destructive) {
+                Button("Force Stop", role: .destructive) {
                     guard let target = session.forceStopTarget else { return }
                     capturedTarget = target; confirming = true
                 }
@@ -38,16 +38,16 @@ struct HvfForceStopControl<Content: View>: View {
             if state != .stopping { resultMessage = nil }
         }
         .onChange(of: session.ownedProcessIdentity) { _, _ in resultMessage = nil }
-        .confirmationDialog("Windows 종료를 기다리지 않고 강제 중단할까요?", isPresented: $confirming,
+        .confirmationDialog("Force Windows to shut down now?", isPresented: $confirming,
                             titleVisibility: .visible, presenting: capturedTarget) { target in
-            Button("강제 중단", role: .destructive) {
+            Button("Force Stop", role: .destructive) {
                 resultMessage = session.requestForceStop(target).message
                 capturedTarget = nil
             }
             .accessibilityIdentifier(identifier + ".confirm-force-stop")
-            Button("취소", role: .cancel) { capturedTarget = nil }
+            Button("Cancel", role: .cancel) { capturedTarget = nil }
         } message: { _ in
-            Text("Windows가 앱을 저장하지 않고 닫은 뒤 바로 꺼집니다. 저장하지 않은 작업은 사라질 수 있습니다.")
+            Text("Windows will close apps immediately. You may lose unsaved work.")
         }
     }
 }

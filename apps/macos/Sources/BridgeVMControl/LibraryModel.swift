@@ -527,7 +527,7 @@ extension LibraryModel {
         session.workAdmission = boundWorkAdmission(slug: configuration.slug, owns: owns)
         session.reservedWorkAdmission = { [weak self, weak session] token, reportRefusal in
             guard let self, let session, session.matchesRuntimeReservation(token) else {
-                return "VM 작업 예약이 변경되었습니다. 다시 시도하세요."
+                return "The operation on this VM changed. Check its status and try again."
             }
             let refusal = self.libraryWorkRefusal(slug: configuration.slug,
                 excluding: (session, token), owns: owns)
@@ -719,7 +719,7 @@ extension LibraryModel {
             case let .accepted(operation):
                 guard libraryWorkRefusal(slug: saved.slug, excludingInstall: operation,
                     owns: { _, current in current == saved }) == nil else {
-                    operation.fail("이 VM의 다른 작업이 진행 중입니다.")
+                    operation.fail("Another operation is using this VM. Try again when it finishes.")
                     throw NativeInstallControlRefusal.busy
                 }
                 beginOwnedInstallPreparation(saved: saved, library: library,
