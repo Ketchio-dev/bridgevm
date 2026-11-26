@@ -18,7 +18,7 @@ extension VMConfig {
         home: URL = FileManager.default.homeDirectoryForCurrentUser) {
         let cleaned = name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
         let safeName = cleaned == "." || cleaned == ".." ? slug : cleaned
-        let parent = home.appendingPathComponent("BridgeVM 공유", isDirectory: true)
+        let parent = home.appendingPathComponent("BridgeVM Shared Folders", isDirectory: true)
         let occupied = Set(otherRegistrations.compactMap(\.sharedFolderHostPath).map(Self.sharePathKey))
         var component = safeName
         var suffix = 2

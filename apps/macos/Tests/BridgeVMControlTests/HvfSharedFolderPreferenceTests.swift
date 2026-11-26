@@ -20,6 +20,27 @@ final class HvfSharedFolderPreferenceTests: XCTestCase {
         XCTAssertTrue(warnings.isEmpty)
     }
 
+    func testExistingVMOpensItsOriginalDefaultShare() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        var saved = fixture.config()
+        let original = fixture.root.appendingPathComponent("BridgeVM 공유/Windows")
+        saved.sharedFolderHostPath = original.path
+        saved.sharedFolderGuestPath = "C:\\bridgevm-share"
+        saved.createSharedFolderOnStart = true
+        fixture.save(saved)
+        try FileManager.default.createDirectory(at: original, withIntermediateDirectories: true)
+        let note = original.appendingPathComponent("notes.txt")
+        try Data("saved Windows file".utf8).write(to: note)
+
+        let reopened = try XCTUnwrap(VMLibrary.scan(rootURL: fixture.root).configs.first)
+        let launch = try XCTUnwrap(HvfEngineConfig.libraryVM(reopened, rootURL: fixture.root))
+            .preparingSharedFolder { XCTFail($0) }
+        XCTAssertEqual(launch.shareHostDir, original.path)
+        XCTAssertEqual(try Data(contentsOf: note), Data("saved Windows file".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("BridgeVM Shared Folders").path))
+    }
+
     func testUnavailableShareDisablesOnlyLaunchAndShowsOneSentence() throws {
         let fixture = try HvfRuntimeSessionStoreFixture()
         defer { fixture.clean() }

@@ -115,8 +115,7 @@ anything else. The installer then fails closed at every step:
 Install and update replace only the app bundle. Your VMs (disks, UEFI
 variables and vTPM state, by default under
 `~/Library/Application Support/BridgeVM/vms` or in the storage folder you
-chose), their shared folders under `~/BridgeVM 공유` and app settings are never
-touched.
+chose), their shared folders and app settings are preserved.
 
 Useful options (forwarded through the one-liner with `bash -s --`):
 
@@ -239,8 +238,10 @@ coverage is tracked in [the release criteria](../STATUS.md).
 - **Uninstall**: delete `/Applications/BridgeVM.app`. That removes the app
   only. Your VMs live under `~/Library/Application Support/BridgeVM/vms` (or
   the storage folder you chose); delete them only if you also want to destroy
-  their disks and vTPM state. Each VM's shared folder `~/BridgeVM 공유/<VM name>`
-  holds your own files and is not removed. vTPM keys stay in the Keychain
+  their disks and vTPM state. New VMs in source builds use
+  `~/BridgeVM Shared Folders/<VM name>` by default. VMs created by v0.1.0
+  keep their saved path, normally `~/BridgeVM 공유/<VM name>`. Uninstalling
+  preserves those folders and their files. vTPM keys stay in the Keychain
   (`com.bridgevm.vtpm-state-key.v1`).
 
 ## Known limits of the unsigned distribution
