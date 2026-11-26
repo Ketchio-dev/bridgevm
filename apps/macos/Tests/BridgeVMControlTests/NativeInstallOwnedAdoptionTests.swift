@@ -80,7 +80,8 @@ final class NativeInstallOwnedAdoptionTests: XCTestCase {
         let accepted = try library.requestOwnedInstall(fixture.request(.install, operationID: UUID()), validateOwner: {})
         await fixture.waitForAcknowledgment()
         XCTAssertEqual(try accepted.operation.observation().phase, .failed)
-        XCTAssertNotNil(try accepted.operation.observation().failure)
+        XCTAssertEqual(try accepted.operation.observation().failure,
+            "Windows installation couldn’t start. Check the VM in the library and try again.")
         XCTAssertFalse(accepted.operation.reservesWork)
         XCTAssertEqual(fixture.process.resets, 0)
         XCTAssertTrue(fixture.queue.jobs.isEmpty)
