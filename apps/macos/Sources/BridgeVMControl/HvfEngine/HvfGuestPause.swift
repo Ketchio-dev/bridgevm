@@ -16,7 +16,7 @@ enum HvfPauseState: Equatable {
 
     /// Guest input is ignored from the press of Pause until the guest runs again.
     var holdsInput: Bool { self != .running }
-    /// The display shows "▶ 재개" and Resume is offered.
+    /// The display shows "▶ Resume" and Resume is offered.
     var showsResume: Bool {
         switch self {
         case .pausing, .paused: return true
@@ -61,7 +61,7 @@ extension HvfEngineSession {
     /// The probe parks every vCPU within 2 s (`PARK_TIMEOUT`) or refuses; one it never answers (a
     /// helper without Pause, or one that ended) is dropped after this long.
     static let pauseAnswerTimeout: TimeInterval = 5
-    static let diskFullNotice = "Mac 디스크 공간이 가득 차서 Windows를 일시 정지했습니다. Mac에서 공간을 확보한 뒤 재개하세요."
+    static let diskFullNotice = "Windows is paused because your Mac’s disk is full. Free up space on your Mac, then choose Resume."
 
     /// The clock for the app's deadlines on guest answers (HvfGuestRunClock).
     func guestNow() -> Date { guestRunClock.now(host: hostNow()) }
@@ -77,12 +77,12 @@ extension HvfEngineSession {
     }
 
     func requestPause() -> HvfPauseOutcome {
-        guard pause == .running else { return .refused("VM이 이미 일시 정지 중입니다.") }
-        guard pauseAvailable else { return .refused("실행 중인 VM만 일시 정지할 수 있습니다.") }
+        guard pause == .running else { return .refused("The VM is already pausing or paused.") }
+        guard pauseAvailable else { return .refused("Only a running VM can be paused.") }
         // Held keys and buttons go up first, as when the window loses focus.
         cancelOrderedInputTarget()
         guard appendVMMControl(Self.pauseCommand) else {
-            return .refused("일시 정지 요청을 VM에 보내지 못했습니다.")
+            return .refused("Couldn’t send the pause request to the VM.")
         }
         pause = .pausing(sentAt: ownedStartNow())
         pauseNotice = nil
@@ -92,11 +92,11 @@ extension HvfEngineSession {
 
     func requestResume() -> HvfPauseOutcome {
         switch pause {
-        case .running: return .refused("VM이 일시 정지되어 있지 않습니다.")
+        case .running: return .refused("The VM is already running.")
         case .resuming: return .requested
         case .pausing, .paused:
             guard appendRunControl(Self.resumeCommand) else {
-                return .refused("재개 요청을 VM에 보내지 못했습니다.")
+                return .refused("Couldn’t send the resume request to the VM.")
             }
             pause = .resuming(sentAt: ownedStartNow())
             pauseNotice = nil
@@ -136,7 +136,7 @@ extension HvfEngineSession {
         case "refused:":
             diskFullReported = false
             pause = .running
-            pauseNotice = "VM을 일시 정지하지 못해 계속 실행합니다."
+            pauseNotice = "The VM couldn’t pause and is still running."
         default:
             return
         }
@@ -159,10 +159,10 @@ extension HvfEngineSession {
         switch pause {
         case let .pausing(sentAt) where ownedStartNow() - sentAt >= Self.pauseAnswerTimeout:
             pause = .running
-            pauseNotice = "VM이 일시 정지 요청에 응답하지 않아 계속 실행합니다."
+            pauseNotice = "The VM didn’t respond to the pause request and is still running."
         case let .resuming(sentAt) where ownedStartNow() - sentAt >= Self.pauseAnswerTimeout:
             pause = .paused
-            pauseNotice = "VM이 재개 요청에 응답하지 않았습니다. 다시 재개해 보세요."
+            pauseNotice = "The VM didn’t respond to the resume request. Try Resume again."
         default:
             break
         }
