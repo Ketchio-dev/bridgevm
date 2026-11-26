@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import XCTest
 @testable import BridgeVMControl
 
@@ -52,6 +52,36 @@ final class HvfAgentSilenceNoticeTests: XCTestCase {
             "Windows 에이전트가 아직 연결되지 않아 클립보드·공유 폴더·화면 크기 맞춤이 동작하지 않습니다. Windows에 로그인한 뒤에도 계속되면 Windows를 다시 시작하세요.")
         try run(session, ready)
         XCTAssertNil(session.agentSilenceNotice.shown, "the agent is there: the notice clears by itself")
+    }
+
+    func testGuestWindowSubtitleWaitsForFirstConnectionAndClearsAtReadyOrStop() throws {
+        let clock = Clock()
+        let session = try session(clock, agentSeen: false)
+        let controller = HvfDisplayWindowController(session: session, title: "Windows 11")
+        let window = try XCTUnwrap(controller.window)
+        let bounds = window.contentLayoutRect
+        func refresh(at time: TimeInterval) {
+            session.agentSilenceNotice.refresh(now: time, running: true, serviceStarted: false,
+                firstConnection: { .awaitingFirstConnection }, agentInstalled: { false })
+        }
+
+        refresh(at: clock.value)
+        refresh(at: clock.value + 119)
+        XCTAssertEqual(window.subtitle, "")
+        refresh(at: clock.value + 120)
+        XCTAssertEqual(window.subtitle, "첫 연결 대기 중")
+        XCTAssertEqual(window.title, "Windows 11")
+        XCTAssertEqual(window.contentLayoutRect, bounds)
+
+        session.handle(.ready(host: "BRIDGEVM", tMs: 337_000))
+        XCTAssertEqual(window.subtitle, "", "READY already established the connection before SERVICE")
+        session.agentSilenceNotice.reset()
+        session.connectionState = .booting
+        refresh(at: clock.value + 400)
+        refresh(at: clock.value + 520)
+        XCTAssertFalse(window.subtitle.isEmpty)
+        session.connectionState = .stopped
+        XCTAssertEqual(window.subtitle, "")
     }
 
     /// A VM whose agent never started (Windows setup's first logon still ahead, or a disk imported
