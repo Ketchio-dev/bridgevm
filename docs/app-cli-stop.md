@@ -1,8 +1,8 @@
 # Stop an app-owned native VM
 
 ```sh
-bridgevm app stop 개발-vm
-bridgevm app stop 개발-vm --json --library "/absolute/path/to/native-library"
+bridgevm app stop dev-vm
+bridgevm app stop dev-vm --json --library "/absolute/path/to/native-library"
 ```
 
 Use the exact VM ID from `bridgevm app list`. The app must already manage the

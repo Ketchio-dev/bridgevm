@@ -12,7 +12,7 @@ final class GenericRetainedControlSafetyTests: XCTestCase {
         model.start()
         await f.wait { !model.lifecycleBusy && model.ownedRuntime?.snapshot.primaryRunning == true }
         let owner = try XCTUnwrap(model.ownedRuntime)
-        let stop = try XCTUnwrap(library.selectedPaletteCommands(dismiss: {}).first { $0.title == "정지: active" })
+        let stop = try XCTUnwrap(library.selectedPaletteCommands(dismiss: {}).first { $0.id == "stop.active" })
         var replacement = original; replacement.name = "replacement"
         f.save(replacement); library.reload()
         let record = try XCTUnwrap(library.retainedControlRecords.first)
@@ -39,7 +39,7 @@ final class GenericRetainedControlSafetyTests: XCTestCase {
         let original = try f.config("active"); f.save(original)
         let library = f.library(), model = library.model(for: original)
         library.selectedID = original.slug; model.running = true
-        let stop = try XCTUnwrap(library.selectedPaletteCommands(dismiss: {}).first { $0.title == "정지: active" })
+        let stop = try XCTUnwrap(library.selectedPaletteCommands(dismiss: {}).first { $0.id == "stop.active" })
         var changed = original; changed.name = "changed"
         f.save(changed); library.reload()
         stop.action()

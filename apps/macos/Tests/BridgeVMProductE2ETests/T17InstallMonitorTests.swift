@@ -12,11 +12,12 @@ final class T17InstallMonitorTests: XCTestCase {
                                    stage: stage, failure: failure)
     }
     func testCompletedStageOrRuntimeTransitionReturns() {
+        XCTAssertNoThrow(try run(stage: { "Complete" }))
         XCTAssertNoThrow(try run(stage: { "완료" }))
         XCTAssertNoThrow(try run(installed: { true }, stage: { nil }))
     }
     func testFailedStageRetainsBoundedMessage() {
-        XCTAssertThrowsError(try run(stage: { "실패" }, failure: { " measured failure " })) { error in
+        XCTAssertThrowsError(try run(stage: { "Failed" }, failure: { " measured failure " })) { error in
             XCTAssertEqual(error as? T17Blocker,
                            T17Blocker(code: "installer-failed", detail: "measured failure"))
         }

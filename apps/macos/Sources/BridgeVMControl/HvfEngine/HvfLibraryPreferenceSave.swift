@@ -60,10 +60,11 @@ extension HvfEngineSession {
 }
 
 extension VMConfig {
-    /// This registration with `other`'s runtime-view preference keys: equal to `other`
-    /// exactly when only those keys differ.
+    /// Copy the settings editable in the runtime view, including its library name.
     func keepingRuntimePreferences(of other: VMConfig) -> VMConfig {
         var copy = self
+        copy.name = other.name
+        copy.displayName = other.displayName
         copy.startWithBridgeVM = other.startWithBridgeVM
         copy.memMiB = other.memMiB
         copy.cpuCount = other.cpuCount

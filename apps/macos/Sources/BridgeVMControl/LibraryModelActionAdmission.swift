@@ -6,11 +6,11 @@ typealias LibraryActionScheduler = @MainActor (@escaping LibraryActionJob) -> Vo
 enum LibraryFileAction { case deletion, clone, move }
 
 private enum LibraryBusy {
-    static let unregistered = "VM 등록 정보가 변경되었거나 제거되었습니다. 목록을 새로고침한 뒤 다시 시도하세요."
-    static let fileAction = "이 VM의 삭제·복제·이동 작업이 진행 중입니다. 완료 후 다시 시도하세요."
-    static let install = "Windows 설치가 진행 중입니다. 설치를 완료하거나 취소한 뒤 다시 시도하세요."
-    static let runtime = "VM이 실행 중이거나 시작·중지 처리 중입니다. 제어 화면에서 완전히 중지한 뒤 다시 시도하세요."
-    static let control = "이 VM의 제어 작업이 진행 중입니다. 완료 후 다시 시도하세요."
+    static let unregistered = "This VM’s registration changed. Refresh the library and try again."
+    static let fileAction = "This VM is being deleted, duplicated or moved. Try again when the operation finishes."
+    static let install = "Windows is being installed. Finish or cancel installation before trying again."
+    static let runtime = "The VM is running, starting or shutting down. Wait until it is fully stopped, then try again."
+    static let control = "A VM control operation is in progress. Try again when it finishes."
 }
 
 extension LibraryModel {
@@ -49,7 +49,7 @@ extension LibraryModel {
     ) -> String? {
         guard let config = vms.first(where: { $0.slug == slug }) else { return LibraryBusy.unregistered }
         guard owns(self, config) else {
-            return "VM 제어 대상이 변경되었습니다. 목록을 새로고침하고 VM 화면을 다시 여세요."
+            return "The selected VM changed. Refresh the library and reopen its window."
         }
         return genericRetainedWorkRefusal(for: config) ?? busyReason(slug: slug, excluding: reservation,
             excludingInstall: excludingInstall, excludingWindowsInstall: excludingWindowsInstall)

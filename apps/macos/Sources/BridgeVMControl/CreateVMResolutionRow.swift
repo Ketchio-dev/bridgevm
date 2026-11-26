@@ -7,12 +7,12 @@ struct CreateVMResolutionRow: View {
 
     var body: some View {
         HStack {
-            Text("해상도").frame(width: 64, alignment: .leading)
+            Text("Resolution").frame(width: 64, alignment: .leading)
             if usesGuestScreen {
-                Text("게스트 화면 크기를 사용합니다.")
+                Text("Uses the Windows display size.")
                     .font(.callout).foregroundColor(.secondary)
             } else {
-                Picker("해상도", selection: $selection) {
+                Picker("Resolution", selection: $selection) {
                     ForEach(0..<resolutions.count, id: \.self) { i in
                         Text("\(resolutions[i].0)×\(resolutions[i].1)").tag(i)
                     }

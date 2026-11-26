@@ -86,8 +86,11 @@ installed disk from Finder onto the matching card to open its setup form.
 
 | Starting point | What you provide |
 | --- | --- |
-| **Install Windows** | Select your licensed Windows 11 Arm ISO. **드라이버 자동 준비** downloads the Microsoft-signed Red Hat virtio-win storage, serial and network drivers (about 95 MB) and checks their pinned SHA-256. You can also select your own signed ARM64 driver folder and manifest. Choose **생성** (Create), then **설치 시작** (Start installation) in the VM detail view. |
-| **Import an existing disk** | Choose the disk with Windows 11 Arm installed, then select **Import**. In v0.1.0 the file picker and Import buttons read **선택…** and **가져오기**. The download accepts RAW, QCOW2 and Hyper-V VHDX. Current source also accepts fixed-size VHD and lets you drop the file on the disk field. Start the saved VM from your library. Disk import needs no driver payload. |
+| **Install Windows** | Choose your licensed Windows 11 Arm ISO. Use **Download Drivers** to fetch and verify the signed Red Hat storage, serial and network drivers (about 95 MB), or choose your own signed Arm64 driver folder and SHA-256 manifest. Choose **Create**, then **Start Installation** in the VM detail view. In the v0.1.0 download, these three buttons read **드라이버 자동 준비**, **생성** and **설치 시작**, respectively. |
+| **Import an existing disk** | Choose your installed Windows 11 Arm disk, select **Import**, then choose **Start** in the library. In v0.1.0, the file picker and these two actions read **선택…**, **가져오기** and **시작**. The download accepts RAW, QCOW2 and Hyper-V VHDX. Current source also supports fixed-size VHD and lets you drop a file on the disk field. Disk import needs no driver payload. |
+
+To rename a saved Windows VM in a current source build, shut down Windows,
+open **Settings**, edit **VM name** under **General**, and click **Done**. The VM keeps its disk, snapshots and TPM identity.
 
 In current source builds, you can choose **Finish Then Quit** (`완료 후 종료`)
 during a first-run import, while **Create VM** prepares files for an import or

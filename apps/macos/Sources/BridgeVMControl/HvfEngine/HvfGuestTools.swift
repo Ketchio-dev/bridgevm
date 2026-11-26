@@ -2,10 +2,10 @@ import Foundation
 import SwiftUI
 
 enum HvfGuestTools {
-    static let missing = "게스트 도구가 설치되지 않아 클립보드와 공유 폴더를 사용할 수 없으니 ‘게스트 도구 설치’를 누르세요."
-    static let nextStart = "Windows를 종료했다가 다시 시작한 뒤 새로 보이는 드라이브에서 install.cmd를 실행하세요."
-    static let attached = "Windows의 새 드라이브에서 install.cmd를 실행하고 관리자 권한을 허용하세요."
-    static let failed = "게스트 도구 드라이브를 준비하지 못했으니 Mac의 저장 공간을 확인하고 다시 누르세요."
+    static let missing = "Choose Install Guest Tools to enable clipboard sharing and shared folders."
+    static let nextStart = "Shut down Windows, start it again, then run install.cmd from the new drive."
+    static let attached = "Run install.cmd from the new drive in Windows and approve the administrator prompt."
+    static let failed = "Check the free space on your Mac, then choose Install Guest Tools again."
 
     static func image(_ config: HvfEngineConfig) -> URL? {
         config.libraryContext.map { URL(fileURLWithPath: $0.config.bundlePath).appendingPathComponent("metadata/guest-tools.raw") }
@@ -56,11 +56,21 @@ struct HvfGuestToolsStrip: View {
     }
 
     var body: some View {
-        if !dismissed, !session.serviceStarted,
-           notice.shown == .missingTools || session.guestToolsMessage != nil {
-            HvfNoticeStrip(identifier: "bridgevm.display.guest-tools", dismiss: { dismissed = true }) {
-                HvfGuestToolsAction(session: session)
+        let needsTools = !session.serviceStarted && (notice.shown == .missingTools || session.guestToolsMessage != nil)
+        Group {
+            if needsTools && !dismissed {
+                HvfNoticeStrip(identifier: "bridgevm.display.guest-tools", dismiss: { dismissed = true }) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if session.guestToolsMessage == nil {
+                            Text(HvfGuestTools.missing).fixedSize(horizontal: false, vertical: true)
+                        }
+                        HvfGuestToolsAction(session: session)
+                    }
+                }
             }
+        }
+        .onChange(of: needsTools) { _, needed in
+            if !needed { dismissed = false }
         }
     }
 }
@@ -78,7 +88,7 @@ struct HvfGuestToolsAction: View {
         if !session.serviceStarted, notice.shown == .missingTools || session.guestToolsMessage != nil {
             VStack(alignment: .leading, spacing: 6) {
                 if let text = session.guestToolsMessage { Text(text).font(.callout) }
-                Button("게스트 도구 설치", action: session.prepareGuestTools)
+                Button("Install Guest Tools", action: session.prepareGuestTools)
                     .disabled(session.guestToolsPreparing)
                     .accessibilityIdentifier("bridgevm.runtime.guest-tools.install")
             }

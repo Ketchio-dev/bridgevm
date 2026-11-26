@@ -53,6 +53,10 @@ operator's own data, images or VMs.
 
 ## 4. Honest product claims
 
+- Use English as the base language for the interface, accessibility labels,
+  website and product documentation. Preserve user-entered text in its
+  original language.
+
 - Treat the README as the product's front door: explain its purpose, current
   availability and the first-use path before engineering detail. Keep it current
   when user-facing behavior changes, and clearly label experimental work.
