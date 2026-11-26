@@ -27,10 +27,11 @@ INF, including companion executables when the selected package references them.
 
 Staging only `netkvm.inf`, `netkvm.sys`, and `netkvm.cat` is not sufficient for
 packages whose INF also references `netkvmp.exe` or `netkvmco.exe`; DISM/PnP can
-otherwise fail with a missing-file error. In the pinned Red Hat virtio-win
-0.1-299 archive that the app's "드라이버 자동 준비" and `create-windows
---fetch-drivers` use, `Win11/ARM64/netkvm.inf` copies `netkvmp.exe` (not
-`netkvmco`), so that payload's network role is `netkvm.sys` plus `netkvmp.exe`.
+otherwise fail with a missing-file error. The app’s **Download Drivers** button
+(**드라이버 자동 준비** in v0.1.0) and `create-windows --fetch-drivers` use the
+pinned Red Hat virtio-win 0.1-299 archive. Its `Win11/ARM64/netkvm.inf` copies
+`netkvmp.exe` (not `netkvmco`), so that payload's network role is `netkvm.sys`
+plus `netkvmp.exe`.
 
 ## Experimental 3D display driver
 
