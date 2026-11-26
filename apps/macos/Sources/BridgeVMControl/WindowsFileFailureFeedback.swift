@@ -31,8 +31,15 @@ enum WindowsFileFailureFeedback {
         }
     }
 
+    static func importRemedy(for error: Error) -> String? {
+        if let error = error as? CocoaError, error.code == .executableNotLoadable {
+            return "디스크 가져오기 도구를 실행할 수 없으니 BridgeVM 앱을 다시 설치하거나 소스에서 만든 앱이라면 패키지를 다시 빌드하세요."
+        }
+        return isImportOutOfSpace(error) ? importingOutOfSpace : nil
+    }
+
     static func reportImport(_ stage: String, _ error: Error) -> String {
-        report(stage, error, sentence: isImportOutOfSpace(error) ? importingOutOfSpace : importing)
+        report(stage, error, sentence: importRemedy(for: error) ?? importing)
     }
 
     static func report(_ stage: String, _ error: Error, sentence: String) -> String {

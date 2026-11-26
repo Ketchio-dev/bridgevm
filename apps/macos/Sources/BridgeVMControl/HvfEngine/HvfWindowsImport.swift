@@ -40,7 +40,7 @@ extension VMLibrary {
             toDisk: URL(fileURLWithPath: disk), toVars: URL(fileURLWithPath: vars), helper: snapshotHelper,
             converting: converting)
         } catch {
-            guard WindowsFileFailureFeedback.isImportOutOfSpace(error)
+            guard WindowsFileFailureFeedback.importRemedy(for: error) != nil
                 || HvfImportedDiskFormat.detect(path: sourceDisk.path) != nil else { return nil }
             return .refused(WindowsFileFailureFeedback.reportImport("media-import", error))
         }

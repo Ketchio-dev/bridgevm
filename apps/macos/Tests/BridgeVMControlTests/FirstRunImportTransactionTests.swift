@@ -45,6 +45,25 @@ struct FirstRunImportTransactionFixture: Sendable {
 }
 
 final class FirstRunImportTransactionTests: XCTestCase {
+    func testMissingImportToolOffersAppRepairInBothForms() throws {
+        let fixture = try FirstRunImportTransactionFixture()
+        defer { fixture.remove() }
+        let tool = fixture.root.appendingPathComponent("missing-tool")
+        let guidance = "디스크 가져오기 도구를 실행할 수 없으니 BridgeVM 앱을 다시 설치하거나 소스에서 만든 앱이라면 패키지를 다시 빌드하세요."
+
+        let firstRun = FirstRunImportWorker.run(fixture.inputs(), libraryRoot: fixture.library, snapshotHelper: tool)
+        if case .failed(let message) = firstRun { XCTAssertEqual(message, guidance) }
+        else { XCTFail("The first-run form must explain the missing tool") }
+
+        let create = VMLibrary.createWindowsHVF(name: "imported", targetDiskPath: fixture.disk.path,
+            varsPath: fixture.vars.path, libraryRoot: fixture.library, snapshotHelper: tool)
+        if case .refused(let message) = create { XCTAssertEqual(message, guidance) }
+        else { XCTFail("The Create form must explain the missing tool") }
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.entry.path))
+        XCTAssertEqual(try Data(contentsOf: fixture.disk), Data([1, 2, 3, 4]))
+    }
+
     func testConfigWriteRefusalRemovesPreparedBundle() throws {
         let fixture = try FirstRunImportTransactionFixture()
         defer { fixture.remove() }
