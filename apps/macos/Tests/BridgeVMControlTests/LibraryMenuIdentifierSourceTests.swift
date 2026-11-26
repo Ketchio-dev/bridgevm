@@ -1,7 +1,7 @@
 import XCTest
 
 /// Window menus need an identifier for AXIdentifier reads on their AXMenuButtons.
-/// The Windows 앱 submenu in the menu bar also exposes its own identifier.
+/// The Windows Apps submenu in the menu bar also exposes its own identifier.
 final class LibraryMenuIdentifierSourceTests: XCTestCase {
     func testEveryDeclaredMenuHasAnAccessibilityIdentifier() throws {
         let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -22,8 +22,8 @@ final class LibraryMenuIdentifierSourceTests: XCTestCase {
                        ["HvfVirtualMachineMenu.swift", "LibraryDashboardActionBar.swift", "LibraryVMActionsMenu.swift"],
                        "check the identifier for every declared Menu; found \(declared.sorted())")
         let bar = try String(contentsOf: sources.appendingPathComponent("HvfVirtualMachineMenu.swift"), encoding: .utf8)
-        XCTAssertTrue(bar.contains("Menu(\"Windows 앱\")") && bar.contains(".accessibilityIdentifier(\"runtime.windowsApps\")"),
-                      "the menu bar's Windows 앱 submenu sets its identifier")
+        XCTAssertTrue(bar.contains("Menu(\"Windows Apps\")") && bar.contains(".accessibilityIdentifier(\"runtime.windowsApps\")"),
+                      "the menu bar's Windows Apps submenu sets its identifier")
         let dashboard = try String(contentsOf: sources.appendingPathComponent("LibraryDashboardActionBar.swift"), encoding: .utf8)
         XCTAssertTrue(dashboard.contains(".accessibilityIdentifier(\"bridgevm.dashboard.actions\")"),
                       "the dashboard's 추가 작업 menu sets its identifier")
