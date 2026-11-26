@@ -28,7 +28,7 @@ struct HvfGuestStartApp: Equatable, Hashable, Identifiable {
     }
 }
 
-/// 가상 머신 > Windows 앱: the guest's Start menu apps, launched in Windows. An agent whose READY carries `startapps`
+/// Virtual Machine > Windows Apps: the guest's Start menu apps, launched in Windows. An agent whose READY carries `startapps`
 /// answers `STARTAPPS <id>` with the list and `STARTAPP <b64(AppID)>` by starting the app through the user's shell
 /// (bvagent.ps1); an older agent is never asked.
 enum HvfGuestStartApps {
@@ -37,20 +37,20 @@ enum HvfGuestStartApps {
     static let maximumApps = 2000
     static let maximumBytes = 1024 * 1024
     static let maximumRowBytes = 8192
-    /// The menu shows this many; 모든 앱… lists them all.
+    /// The menu shows this many; All Apps… lists them all.
     static let menuLimit = 40
 
-    static let notRunning = "VM이 실행 중일 때 사용할 수 있습니다."
-    static let notReady = "Windows가 준비되면 사용할 수 있습니다."
-    static let paused = "VM을 재개하면 사용할 수 있습니다."
-    static let agentTooOld = "이 VM의 BridgeVM 게스트 도구가 업데이트되면 사용할 수 있습니다."
-    static let notLoaded = "목록을 불러오려면 ‘목록 새로 고침’을 선택하세요."
-    static let loading = "불러오는 중…"
-    static let empty = "Windows 시작 메뉴에 앱이 없습니다."
-    static let listUnavailable = "Windows가 시작 메뉴의 앱 목록을 알려 주지 않았습니다. 잠시 뒤 다시 시도하세요."
-    static let noAnswer = "Windows가 앱 목록 요청에 답하지 않았습니다. 잠시 뒤 다시 시도하세요."
-    static let notSent = "Windows에 요청을 보내지 못했습니다. 잠시 뒤 다시 시도하세요."
-    static func launchFailed(_ name: String) -> String { "Windows에서 ‘\(name)’을(를) 열지 못했습니다." }
+    static let notRunning = "Start the VM to see its Windows apps."
+    static let notReady = "Windows apps will appear when Windows is ready."
+    static let paused = "Resume the VM to see its Windows apps."
+    static let agentTooOld = "Windows apps will be available after BridgeVM Guest Tools is updated."
+    static let notLoaded = "Choose Refresh List to load Windows apps."
+    static let loading = "Loading…"
+    static let empty = "The Windows Start menu has no apps."
+    static let listUnavailable = "Windows couldn’t provide its Start menu apps. Try again in a moment."
+    static let noAnswer = "Windows didn’t respond to the app list request. Try again in a moment."
+    static let notSent = "Couldn’t send the request to Windows. Try again in a moment."
+    static func launchFailed(_ name: String) -> String { "Windows couldn’t open “\(name)”." }
 
     /// Whether a READY line's text (`<host> v3-share2 ... startapps agent=<id>`) has the marker.
     static func advertised(_ ready: String) -> Bool {
