@@ -375,11 +375,14 @@ final class FBLayerView: HvfFramebufferTextInput {
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         showDropTarget(false)
+        return acceptFileDrop(from: sender.draggingPasteboard)
+    }
+
+    func acceptFileDrop(from pasteboard: NSPasteboard) -> Bool {
         guard let session,
-              let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: Self.fileURLsOnly) as? [URL],
+              let items = pasteboard.readObjects(forClasses: [NSURL.self], options: Self.fileURLsOnly) as? [URL],
               !items.isEmpty else { return false }
-        session.copyDroppedFiles(items)
-        return true
+        return session.copyDroppedFiles(items) != nil
     }
 
     private func showDropTarget(_ shown: Bool) {
