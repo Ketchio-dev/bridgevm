@@ -14,7 +14,7 @@ final class HvfWindowsBackendServiceGateTests: XCTestCase {
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.backend.ctlFilePath),
                        "a guest command was appended before the agent service started")
-        XCTAssertEqual(result?.output, "HVF 게스트 에이전트 서비스가 아직 시작되지 않아 명령을 보내지 않았습니다. 부팅이 끝난 뒤 다시 시도하세요.")
+        XCTAssertEqual(result?.output, "Wait for Guest Tools to start in Windows, then try the command again.")
         XCTAssertEqual(result?.code, -1)
         XCTAssertLessThan(Date().timeIntervalSince(started), 15)
     }
@@ -28,10 +28,10 @@ final class HvfWindowsBackendServiceGateTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.backend.ctlFilePath))
         try fixture.appendLog(HvfAgentServiceStartFixture.marker)
         XCTAssertEqual(fixture.waitForControlFile(), "whoami\n")
-        try fixture.appendLog("BVAGENT CMD whoami exit=0\nwin\\dev\nBVAGENT END whoami\n")
+        try fixture.appendLog("BVAGENT CMD whoami exit=0\nwin\\Renée 서울\nBVAGENT END whoami\n")
 
         let result = pending.wait(within: 5)
-        XCTAssertEqual(result?.output, "win\\dev")
+        XCTAssertEqual(result?.output, "win\\Renée 서울")
         XCTAssertEqual(result?.code, 0)
     }
 
@@ -46,7 +46,7 @@ final class HvfWindowsBackendServiceGateTests: XCTestCase {
         let result = pending.wait(within: 5)
 
         XCTAssertLessThan(Date().timeIntervalSince(started), 5)
-        XCTAssertEqual(result?.output, "HVF VM이 실행 중이 아닙니다.")
+        XCTAssertEqual(result?.output, "Start the VM before sending a command.")
         XCTAssertEqual(result?.code, -1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.backend.ctlFilePath))
     }

@@ -65,7 +65,7 @@ final class HvfRuntimeWorkAdmissionOperation {
         let succeeds = (model.backend as? HvfRuntimeWorkAdmissionBackend)?.startSucceeds == true
         let terminal = operation == .resources
             ? "리소스 적용 실패 — VM은 재시작하지 않았습니다."
-            : succeeds ? "VM 부팅 중…" : "VM 시작 실패"
+            : succeeds ? "VM 부팅 중…" : "Couldn’t start the VM."
         subscription = model.$statusNote.dropFirst().sink { [completed] note in
             if note == terminal { completed.signal() }
         }

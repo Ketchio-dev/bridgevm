@@ -745,6 +745,9 @@ footer {
 }
 
 @media (max-width: 390px) {
+  .hero h1 {
+    font-size: clamp(2.5rem, 16vw, 4rem);
+  }
   .wrap {
     width: calc(100% - 2rem);
   }

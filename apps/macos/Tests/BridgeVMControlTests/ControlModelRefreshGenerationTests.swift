@@ -11,14 +11,24 @@ final class ControlModelRefreshGenerationTests: XCTestCase {
         XCTAssertEqual(backend.firstQueryEntered.wait(timeout: .now() + 1), .success)
         model.start()
         await waitUntil { !model.lifecycleBusy }
-        XCTAssertEqual(model.statusNote, "VM 시작 실패")
+        XCTAssertEqual(model.statusNote, "Couldn’t start the VM.")
 
         backend.releaseFirstQuery.signal()
         try? await Task.sleep(nanoseconds: 100_000_000)
 
         XCTAssertFalse(model.running)
         XCTAssertEqual(model.ip, "—")
-        XCTAssertEqual(model.statusNote, "VM 시작 실패")
+        XCTAssertEqual(model.statusNote, "Couldn’t start the VM.")
+    }
+
+    func testRemovedEngineStartReportsTheSavedRegistrationNotice() async {
+        var config = makeConfig()
+        config.backendKind = "fast-vz"
+        let model = ControlModel(config: config, backend: config.makeBackend(), startsAutomatically: false)
+        model.start()
+        await waitUntil { !model.lifecycleBusy }
+        XCTAssertFalse(model.running)
+        XCTAssertEqual(model.statusNote, BackendKind.unsupportedNotice)
     }
 
     func testNewestRefreshWinsWhenQueriesCompleteOutOfOrder() async {

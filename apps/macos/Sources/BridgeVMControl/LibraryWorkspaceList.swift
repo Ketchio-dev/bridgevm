@@ -14,6 +14,7 @@ struct LibraryWorkspaceList: View {
             $0.name.localizedStandardContains(term)
                 || $0.displayName.localizedStandardContains(term)
                 || $0.engineShortLabel.localizedStandardContains(term)
+                || $0.slug.localizedStandardContains(term)
         }
     }
 
@@ -27,6 +28,7 @@ struct LibraryWorkspaceList: View {
                 LibrarySearchField(query: $query, focusesOnAppear: focusesSearchOnAppear)
                     .padding(.horizontal, 22).padding(.vertical, 16)
                 let results = matchingVMs
+                let nameCounts = library.vms.reduce(into: [String: Int]()) { $0[$1.name, default: 0] += 1 }
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         ForEach(results) { config in
@@ -35,7 +37,8 @@ struct LibraryWorkspaceList: View {
                                 config: config,
                                 model: library.model(for: config),
                                 selected: library.selectedID == config.slug && !library.proMode,
-                                didSelect: didSelect
+                                didSelect: didSelect,
+                                registrationID: nameCounts[config.name, default: 0] > 1 ? config.slug : nil
                             )
                         }
                     }
@@ -46,7 +49,7 @@ struct LibraryWorkspaceList: View {
                         ContentUnavailableView {
                             Label("No results", systemImage: "magnifyingglass")
                         } description: {
-                            Text("Try a different VM name or engine.")
+                            Text("Try a different VM name, ID, or engine.")
                         }
                         .accessibilityIdentifier("bridgevm.library.search.no-results")
                     }
@@ -107,13 +110,19 @@ struct LibraryWorkspaceRow: View {
     let selected: Bool
     var didSelect: (() -> Void)?
     var runtimeState: LibraryDashboardRuntimeState? = nil
+    var registrationID: String? = nil
+
+    private var accessibleName: String {
+        registrationID.map { "\(config.name), VM ID \($0)" } ?? config.name
+    }
 
     var body: some View {
         HStack(spacing: 8) {
             if let session = library.hvfRuntimeSessions.existingSession(for: config) {
                 LibraryObservedWorkspaceRow(session: session, row: self)
             } else { selectionButton }
-            LibraryVMActionsMenu(library: library, config: config, size: CGSize(width: 30, height: 30))
+            LibraryVMActionsMenu(library: library, config: config, size: CGSize(width: 30, height: 30),
+                                 accessibleName: accessibleName)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -134,6 +143,12 @@ struct LibraryWorkspaceRow: View {
                 LibraryVMEmblem(engine: config.engineKind)
                 VStack(alignment: .leading, spacing: 7) {
                     Text(config.name).font(.title3.weight(.semibold)).lineLimit(1)
+                    if let registrationID {
+                        Text("VM ID: \(registrationID)")
+                            .font(.caption.monospaced()).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.middle)
+                            .help(registrationID)
+                    }
                     HStack(spacing: 7) {
                         LibraryVMRunState(text: status.text, color: status.color,
                             session: library.hvfRuntimeSessions.existingRecord(slug: config.slug)?.session, dot: 8)
@@ -147,7 +162,7 @@ struct LibraryWorkspaceRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(config.name), \(status.text), \(resourceText)")
+        .accessibilityLabel("\(accessibleName), \(status.text), \(resourceText)")
         .accessibilityHint("Show VM details")
     }
 

@@ -60,7 +60,7 @@ final class HvfCommandReplyReader {
         if collecting {
             if line == "BVAGENT END \(command)" {
                 let output = body.joined(separator: "\n")
-                return (outputTruncated ? "[출력 일부 생략]\n" + output : output, exitCode)
+                return (outputTruncated ? "[Some output omitted]\n" + output : output, exitCode)
             }
             appendBody(line)
             return nil
