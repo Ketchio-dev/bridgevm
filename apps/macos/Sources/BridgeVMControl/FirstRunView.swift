@@ -17,35 +17,48 @@ struct FirstRunView: View {
         let draft = windowDraft ?? $standaloneDraft
         Group {
             if showsImport {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        let showsInputs = !library.firstRunImportBusy && library.firstRunImport.publishedConfig == nil
-                        VStack(alignment: .leading, spacing: 8) {
-                            if let presentation, presentation.wrappedValue.showsImportDraft {
-                                Button { presentation.wrappedValue.showsImportDraft = false } label: {
-                                    Label("시작 화면으로", systemImage: "chevron.backward")
+                let showsInputs = !library.firstRunImportBusy && library.firstRunImport.publishedConfig == nil
+                let status = FirstRunImportStatusView(library: library,
+                    canImport: FirstRunImportNameField.hasName(draft.wrappedValue.displayName) && !draft.wrappedValue.diskPath.isEmpty,
+                    recoveryIssue: recoveryIssue(draft.wrappedValue), importAction: { runImport(draft.wrappedValue) })
+                VStack(spacing: 0) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 24) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                if let presentation, presentation.wrappedValue.showsImportDraft {
+                                    Button { presentation.wrappedValue.showsImportDraft = false } label: {
+                                        Label("시작 화면으로", systemImage: "chevron.backward")
+                                    }
+                                    .buttonStyle(.link)
+                                    .keyboardShortcut(.cancelAction)
+                                    .accessibilityIdentifier("bridgevm.first-run.back")
                                 }
-                                .buttonStyle(.link)
-                                .keyboardShortcut(.cancelAction)
-                                .accessibilityIdentifier("bridgevm.first-run.back")
+                                Text("기존 Windows VM 가져오기").font(.system(size: 28, weight: .bold))
+                                if showsInputs {
+                                    Text("파일을 선택해 등록한 뒤 VM 상세 화면에서 시작하세요.").foregroundStyle(.secondary)
+                                }
                             }
-                            Text("기존 Windows VM 가져오기").font(.system(size: 28, weight: .bold))
                             if showsInputs {
-                                Text("파일을 선택해 등록한 뒤 VM 상세 화면에서 시작하세요.").foregroundStyle(.secondary)
+                                FirstRunImportFields(displayName: draft.displayName, diskPath: draft.diskPath, varsPath: draft.varsPath,
+                                    vtpmPath: draft.vtpmPath, vtpmPackagePath: draft.vtpmPackagePath, vtpmCodePath: draft.vtpmCodePath,
+                                    memGiB: draft.memGiB, cpuCount: draft.cpuCount)
+                            } else {
+                                status.frame(maxWidth: 620)
                             }
                         }
-                        if showsInputs {
-                            FirstRunImportFields(displayName: draft.displayName, diskPath: draft.diskPath, varsPath: draft.varsPath,
-                                vtpmPath: draft.vtpmPath, vtpmPackagePath: draft.vtpmPackagePath, vtpmCodePath: draft.vtpmCodePath,
-                                memGiB: draft.memGiB, cpuCount: draft.cpuCount)
-                        }
-                        FirstRunImportStatusView(library: library,
-                            canImport: FirstRunImportNameField.hasName(draft.wrappedValue.displayName) && !draft.wrappedValue.diskPath.isEmpty,
-                            recoveryIssue: recoveryIssue(draft.wrappedValue), importAction: { runImport(draft.wrappedValue) })
+                        .padding(28)
+                        .frame(maxWidth: 900, alignment: .leading)
+                        .frame(maxWidth: .infinity)
                     }
-                    .padding(28)
-                    .frame(maxWidth: 900, alignment: .leading)
-                    .frame(maxWidth: .infinity)
+                    if showsInputs {
+                        Divider()
+                        status
+                            .padding(.horizontal, 28)
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: 900)
+                            .frame(maxWidth: .infinity)
+                            .background(.bar)
+                    }
                 }
             } else {
                 welcome(in: presentation, diskPath: draft.diskPath)
