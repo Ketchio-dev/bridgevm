@@ -63,7 +63,6 @@ struct FirstRunImportStatusView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
-        .frame(maxWidth: 620)
     }
 }
 
