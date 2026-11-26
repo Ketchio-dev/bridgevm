@@ -89,10 +89,11 @@ installed disk from Finder onto the matching card to open its setup form.
 | **Install Windows** | Select your licensed Windows 11 Arm ISO. **드라이버 자동 준비** downloads the Microsoft-signed Red Hat virtio-win storage, serial and network drivers (about 95 MB) and checks their pinned SHA-256. You can also select your own signed ARM64 driver folder and manifest. Choose **생성** (Create), then **설치 시작** (Start installation) in the VM detail view. |
 | **Import an existing disk** | Drop your installed Windows 11 Arm disk onto **파일 선택 또는 놓기** (Choose or drop file), or click that button to browse. The download accepts RAW, QCOW2 and Hyper-V VHDX. Builds from current source also accept fixed-size VHD. Choose **가져오기** (Import), then **시작** (Start) once the VM appears in your library. This path needs no driver payload. |
 
-In current source builds, you can choose **Finish Then Quit** (`완료 후 종료`)
+In current source builds, you can choose **Finish Then Quit**
 during a first-run import, while **Create VM** prepares files for an import or
 ISO installation, or during a powered-off snapshot operation. You can cancel
-the quit from the progress view or VM settings.
+the quit from the progress view or VM settings. If Windows takes longer to shut
+down, press Return to keep waiting or choose **Cancel Quit** to check the VM.
 
 The [installation guide](docs/install.md) covers both paths, required bundle
 resources and first-open trust. After Windows starts, install the signed guest
