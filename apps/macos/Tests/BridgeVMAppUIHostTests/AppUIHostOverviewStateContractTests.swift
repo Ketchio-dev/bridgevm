@@ -41,7 +41,7 @@ final class AppUIHostOverviewStateContractTests: XCTestCase {
         let emptyDetail = try XCTUnwrap(values(LibraryEmptyState.self, in: detail.body).first)
         XCTAssertTrue(values(LibraryOverviewView.self, in: emptyDetail.body).isEmpty,
                       "the detail must not repeat the adjacent searchable VM list")
-        XCTAssertEqual(values(LibraryWorkspaceList.self, in: LibraryOverviewView(library: library).body).count, 1)
+        XCTAssertEqual(values(LibraryWorkspaceList.self, in: LibraryOverviewView(library: library, query: .constant("")).body).count, 1)
         XCTAssertEqual(capture.work.modelCreations["after_seeding"], 0, "leaving a draft must not activate a VM")
 
         let refused: [(Bool, String?)] = [(true, nil), (false, "ui-amber"), (false, LibraryModel.firstRunImportSelectionID)]

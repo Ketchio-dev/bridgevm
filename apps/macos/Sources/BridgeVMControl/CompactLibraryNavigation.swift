@@ -3,7 +3,8 @@ import SwiftUI
 /// Small windows show one destination at a time so the dashboard's controls fit beside their labels.
 struct CompactLibraryNavigation: View {
     @ObservedObject var library: LibraryModel
-    @State private var showingList = false
+    @Binding var query: String
+    @Binding var showingList: Bool
     @State private var showingSidebar = false
 
     var body: some View {
@@ -38,7 +39,7 @@ struct CompactLibraryNavigation: View {
             .padding(.horizontal, 18).padding(.vertical, 8)
             Divider()
             if showsOverview {
-                LibraryWorkspaceList(library: library, focusesSearchOnAppear: true, didSelect: { showingList = false })
+                LibraryWorkspaceList(library: library, query: $query, focusesSearchOnAppear: true, didSelect: { showingList = false })
             } else {
                 LibraryDashboardRoute(library: library)
                     .background {
@@ -51,10 +52,7 @@ struct CompactLibraryNavigation: View {
             }
         }
         .onChange(of: library.selectedID) { _, id in
-            if id != nil {
-                showingList = false
-                showingSidebar = false
-            }
+            if id != nil { showingSidebar = false }
         }
     }
 }

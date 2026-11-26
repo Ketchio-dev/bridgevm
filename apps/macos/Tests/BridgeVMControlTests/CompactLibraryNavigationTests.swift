@@ -49,6 +49,12 @@ final class CompactLibraryNavigationTests: XCTestCase {
         let cell = try XCTUnwrap(field.cell)
         cell.setAccessibilityValue("No matching VM")
         XCTAssertEqual((field.currentEditor() as? NSTextView)?.string, "No matching VM")
+        try fixture.paletteCommand("Turn on Pro mode").action()
+        let comparing = await waitFor { search(in: host.view) == nil }
+        XCTAssertTrue(comparing)
+        try fixture.paletteCommand("Turn off Pro mode").action()
+        let listRestored = await waitFor { search(in: host.view)?.stringValue == "No matching VM" }
+        XCTAssertTrue(listRestored, "Leaving comparison returns to the same filtered library")
         try command("]", code: 30)
         let returned = await waitFor { search(in: host.view) == nil }
         XCTAssertTrue(returned, "Forward returns to the chosen VM even with an empty filtered list")
