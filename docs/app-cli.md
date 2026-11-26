@@ -5,18 +5,18 @@ Open the app, then create a VM with `--fetch-drivers` to include the signed ARM6
 
 ```sh
 bridgevm app list
-bridgevm app create-windows "개발 VM" --iso "/absolute/path/Windows 11 ARM.iso" --fetch-drivers
-bridgevm app inspect 개발-vm
-bridgevm app install 개발-vm
-bridgevm app install-status 개발-vm --json
-bridgevm app readiness 개발-vm --json
+bridgevm app create-windows "Dev VM" --iso "/absolute/path/Windows 11 ARM.iso" --fetch-drivers
+bridgevm app inspect dev-vm
+bridgevm app install dev-vm
+bridgevm app install-status dev-vm --json
+bridgevm app readiness dev-vm --json
 # After starting and shutting down the new VM once in the app:
-bridgevm app start 개발-vm --json
-bridgevm app status 개발-vm --json
-bridgevm app stop 개발-vm --json
+bridgevm app start dev-vm --json
+bridgevm app status dev-vm --json
+bridgevm app stop dev-vm --json
 ```
 
-Use the exact ID returned by `list`, including Korean IDs. `--library` accepts an
+Use the exact ID returned by `list`, including IDs with non-English characters. `--library` accepts an
 absolute path without `..`; omitting it uses the native app's default library.
 `status` and `stop` also accept the exact ID of a removed registration whose session the
 running app still retains.

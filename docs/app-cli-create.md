@@ -4,13 +4,13 @@
 `windows-hvf` registration. It does not install Windows or start a VM.
 
 ```sh
-bridgevm app create-windows "개발 VM" \
+bridgevm app create-windows "Dev VM" \
   --iso "/absolute/path/Windows 11 ARM.iso"
 ```
 
 The canonical ID may differ from the name or gain a collision suffix. Inspect it:
 ```sh
-bridgevm app inspect 개발-vm
+bridgevm app inspect dev-vm
 ```
 
 **Add `--fetch-drivers` to make the entry installable:** the command then
