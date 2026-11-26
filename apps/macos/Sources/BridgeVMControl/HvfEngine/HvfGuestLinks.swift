@@ -235,7 +235,7 @@ extension HvfEngineSession {
     /// the next agent start removes the registration; never turned on stays absent.
     func applyGuestLinksToggle(_ enabled: Bool,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (isOn: Bool, message: String?) {
-        let message = saveLibraryPreference("링크 설정", publish: publish) {
+        let message = saveLibraryPreference("Open Windows links on Mac", publish: publish) {
             $0.openGuestLinksOnMac = enabled ? true : ($0.openGuestLinksOnMac == nil ? nil : false)
         }
         return (guestLinksWanted, message)

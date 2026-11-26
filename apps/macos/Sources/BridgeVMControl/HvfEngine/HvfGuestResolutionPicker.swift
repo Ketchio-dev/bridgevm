@@ -80,7 +80,7 @@ extension HvfEngineSession {
     func applyGuestResolution(_ value: String?,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (value: String?, message: String?) {
         guard persistsLibraryPreferences else { return (value, nil) }
-        let message = saveLibraryPreference("화면 해상도 설정", publish: publish) {
+        let message = saveLibraryPreference("Display resolution", publish: publish) {
             $0.guestResolution = value
         }
         return (config.libraryContext?.config.guestResolution, message)

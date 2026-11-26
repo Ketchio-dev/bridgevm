@@ -354,7 +354,7 @@ enum HvfDisplayDriverFlag {
                               publish: @escaping HvfEngineSession.RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> String? {
         guard let slug = session.config.libraryContext?.config.slug, pendingVMs.contains(slug),
               session.libraryPreferencesEditable else { return nil }
-        let message = session.saveLibraryPreference("디스플레이 드라이버 설정", publish: publish) {
+        let message = session.saveLibraryPreference("Display driver", publish: publish) {
             $0.virtioDisplayDriverInstalled = true
         }
         if message == nil { pendingVMs.remove(slug) }

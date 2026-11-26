@@ -99,7 +99,7 @@ extension HvfEngineSession {
         notify: @escaping @MainActor (String) -> Void) -> (isOn: Bool, message: String?) {
         var isOn = enabled, message: String?
         if persistsLibraryPreferences {
-            message = saveLibraryPreference("마이크 설정", publish: publish) {
+            message = saveLibraryPreference("Microphone", publish: publish) {
                 $0.microphoneEnabled = enabled ? true : nil
             }
             isOn = config.libraryContext?.config.microphoneEnabled ?? false

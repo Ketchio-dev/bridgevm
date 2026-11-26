@@ -26,9 +26,9 @@ final class ControlDisplayCloseTests: XCTestCase {
     }
     func testAlertHasOnlyAvailableActionsAndRememberCheckbox() {
         let alert = ControlDisplayClose.alert(choices: [.background, .shutdown, .cancel])
-        XCTAssertEqual(alert.buttons.map(\.title), ["백그라운드에서 계속 실행", "Windows 종료", "취소"])
+        XCTAssertEqual(alert.buttons.map(\.title), ["Keep running in the background", "Shut down Windows", "Cancel"])
         XCTAssertEqual(alert.buttons.last?.keyEquivalent, "\u{1b}")
-        XCTAssertEqual(alert.suppressionButton?.title, "다시 묻지 않음")
+        XCTAssertEqual(alert.suppressionButton?.title, "Remember my choice")
     }
     func testCancelChangesNothingAndRememberedShutdownCanBeReset() throws {
         let suite = "start-close-" + UUID().uuidString

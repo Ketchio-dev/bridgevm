@@ -25,7 +25,7 @@ struct HvfResourceSetting: View {
 
     var body: some View {
         HStack(spacing: 24) {
-            Stepper("메모리 \(Self.memoryText(ramMiB))", value: Binding(get: { ramMiB }, set: { update(memMiB: $0, cpus: cpus) }),
+            Stepper("Memory \(Self.memoryText(ramMiB))", value: Binding(get: { ramMiB }, set: { update(memMiB: $0, cpus: cpus) }),
                     in: ramRange, step: 1024)
                 .accessibilityIdentifier("bridgevm.runtime.ram")
             Stepper("CPU \(cpus)", value: Binding(get: { cpus }, set: { update(memMiB: ramMiB, cpus: $0) }),
@@ -33,11 +33,11 @@ struct HvfResourceSetting: View {
                 .accessibilityIdentifier("bridgevm.runtime.cpu")
         }
         .disabled(isDisabled)
-        .help(session.persistsLibraryPreferences ? "VM이 중지된 동안 변경하면 이 VM의 모든 시작에 저장됩니다." : "")
-        .alert("메모리·CPU 설정", isPresented: Binding(
+        .help(session.persistsLibraryPreferences ? "Changes apply the next time this VM starts." : "")
+        .alert("Memory and CPU", isPresented: Binding(
             get: { message != nil }, set: { if !$0 { message = nil } }
         )) {
-            Button("확인") { message = nil }
+            Button("OK") { message = nil }
         } message: {
             Text(message ?? "")
         }
@@ -52,7 +52,7 @@ struct HvfResourceSetting: View {
 }
 
 extension HvfEngineSession {
-    static let resourceLimitsMessage = "메모리는 \(VMResourceLimits.minimumMemoryMiB / 1024)-\(VMResourceLimits.maximumMemoryMiB / 1024) GiB, CPU는 \(VMResourceLimits.minimumCPU)-\(VMResourceLimits.maximumCPU)개까지 설정할 수 있습니다."
+    static let resourceLimitsMessage = "Choose \(VMResourceLimits.minimumMemoryMiB / 1024)–\(VMResourceLimits.maximumMemoryMiB / 1024) GiB of memory and \(VMResourceLimits.minimumCPU)–\(VMResourceLimits.maximumCPU) CPUs."
 
     /// What the steppers show afterwards: vm.json's values for a library VM, plus any message. Only a
     /// value that changes is checked against the limits and written.
@@ -65,7 +65,7 @@ extension HvfEngineSession {
             || (cpuChanges && !(VMResourceLimits.minimumCPU...VMResourceLimits.maximumCPU).contains(cpus)) {
             message = Self.resourceLimitsMessage
         } else {
-            message = saveLibraryPreference("메모리·CPU 설정", publish: publish) {
+            message = saveLibraryPreference("Memory and CPU", publish: publish) {
                 if memoryChanges { $0.memMiB = memMiB }
                 if cpuChanges { $0.cpuCount = cpus }
             }

@@ -40,7 +40,7 @@ extension HvfEngineSession {
     func applyCommandKeyMode(_ mode: HvfCommandKeyMode,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (mode: HvfCommandKeyMode, message: String?) {
         guard persistsLibraryPreferences else { return (mode, nil) }
-        let message = saveLibraryPreference("Command 키 설정", publish: publish) {
+        let message = saveLibraryPreference("Command key", publish: publish) {
             $0.commandKeyMode = mode == .mac ? nil : mode.rawValue
         }
         return (HvfCommandKeyMode(saved: config.libraryContext?.config.commandKeyMode), message)

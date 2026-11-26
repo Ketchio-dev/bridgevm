@@ -71,7 +71,7 @@ final class HvfRetinaResolutionTests: XCTestCase {
         session.connectionState = .connected(host: "fixture")
         XCTAssertTrue(toggle.isDisabled)
         XCTAssertTrue(session.applyRetinaResolutionToggle(true)
-            == (nil, "VM을 완전히 중지한 뒤 Retina 해상도 설정을 변경하세요."))
+            == (nil, "Shut down Windows before changing this setting."))
         XCTAssertEqual(try Data(contentsOf: url), original)
         XCTAssertFalse(session.config.requestsRetinaResolution)
         session.connectionState = .stopped

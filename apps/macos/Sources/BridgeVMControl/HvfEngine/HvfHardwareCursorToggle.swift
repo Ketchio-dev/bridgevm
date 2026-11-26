@@ -45,7 +45,7 @@ extension HvfEngineSession {
     /// removes the key, the registration of a VM that never changed it.
     func applyHardwareCursorToggle(_ enabled: Bool,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (isOn: Bool, message: String?) {
-        let message = saveLibraryPreference("커서 설정", publish: publish) {
+        let message = saveLibraryPreference("Pointer", publish: publish) {
             $0.hardwareCursor = enabled ? nil : false
         }
         return (guestHardwareCursorWanted, message)

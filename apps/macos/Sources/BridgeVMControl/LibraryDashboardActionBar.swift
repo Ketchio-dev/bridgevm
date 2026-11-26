@@ -20,7 +20,7 @@ struct LibraryDashboardActionBar: View {
                 .disabled(lifecycleBusy)
             Spacer(minLength: 4)
             if let showSettings {
-                Button("설정", systemImage: "slider.horizontal.3", action: showSettings)
+                Button("Settings", systemImage: "slider.horizontal.3", action: showSettings)
                     .accessibilityIdentifier("bridgevm.runtime.settings.open")
             }
             Button("고급", systemImage: "gearshape", action: showAdvanced)

@@ -108,7 +108,7 @@ extension HvfEngineSession {
                 return "공유 폴더를 저장하려면 존재하는 호스트 디렉터리의 절대 경로와 게스트 경로가 모두 필요합니다."
             }
         }
-        return saveLibraryPreference("공유 폴더 설정", publish: publish) {
+        return saveLibraryPreference("Shared folder", publish: publish) {
             $0.sharedFolderHostPath = selection?.hostPath
             $0.sharedFolderGuestPath = selection?.guestPath
             $0.createSharedFolderOnStart = nil
