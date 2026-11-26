@@ -31,13 +31,13 @@ enum HvfRuntimeWorkAdmissionEntry: CaseIterable {
 
 @MainActor
 final class HvfRuntimeWorkAdmissionFixture {
-    static let reservationReason = "이 VM의 삭제·복제·이동 작업이 진행 중입니다. 완료 후 다시 시도하세요."
-    static let ownerReason = "VM 제어 대상이 변경되었습니다. 목록을 새로고침하고 VM 화면을 다시 여세요."
-    static let missingReason = "VM 등록 정보가 변경되었거나 제거되었습니다. 목록을 새로고침한 뒤 다시 시도하세요."
+    static let reservationReason = "This VM is being deleted, duplicated or moved. Try again when the operation finishes."
+    static let ownerReason = "The selected VM changed. Refresh the library and reopen its window."
+    static let missingReason = "This VM’s registration changed. Refresh the library and try again."
     static let expiredReason = "VM 라이브러리를 사용할 수 없습니다. 라이브러리 화면에서 다시 시도하세요."
-    static let runtimeReason = "VM이 실행 중이거나 시작·중지 처리 중입니다. 제어 화면에서 완전히 중지한 뒤 다시 시도하세요."
-    static let installReason = "Windows 설치가 진행 중입니다. 설치를 완료하거나 취소한 뒤 다시 시도하세요."
-    static let controlReason = "이 VM의 제어 작업이 진행 중입니다. 완료 후 다시 시도하세요."
+    static let runtimeReason = "The VM is running, starting or shutting down. Wait until it is fully stopped, then try again."
+    static let installReason = "Windows is being installed. Finish or cancel installation before trying again."
+    static let controlReason = "A VM control operation is in progress. Try again when it finishes."
     static let states: [HvfConnectionState] = [.booting, .connected(host: "fixture"), .stopping, .timedOut]
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("work-admission-" + UUID().uuidString)
     let queue = HvfRuntimeLibraryActionQueue()
