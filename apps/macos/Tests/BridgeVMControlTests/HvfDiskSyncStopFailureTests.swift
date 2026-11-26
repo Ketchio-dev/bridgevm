@@ -35,7 +35,7 @@ final class HvfDiskSyncStopFailureTests: XCTestCase {
         session.guiStartOperation = nil
         for event in BvAgentEvent.parse(lines: ["BVSTORAGE final-save-failed"]) { session.handle(event) }
         XCTAssertEqual(session.runtimeSupervisionFailureText,
-            "Windows를 종료하면서 디스크를 Mac에 안전하게 저장하지 못했으니 Mac의 저장 공간과 디스크 연결을 확인하세요.")
+            "BridgeVM couldn’t finish saving the Windows disk at shutdown. Check your Mac’s free space and drive connection.")
         session.guiStartOperation = start
         XCTAssertNil(session.runtimeSupervisionFailureText, "even a storage event cannot mask a specific startup error")
         session.guiStartOperation = nil
