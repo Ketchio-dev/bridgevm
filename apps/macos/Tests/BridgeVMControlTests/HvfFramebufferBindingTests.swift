@@ -62,6 +62,8 @@ final class HvfFramebufferBindingTests: XCTestCase {
     func testOcclusionPausesTheLinkAndRevealResumesTheSameDisplay() throws {
         final class Window: NSWindow {
             var showsContent = true
+            var shared = false
+            override var hasActiveWindowSharingSession: Bool { shared }
             override var occlusionState: NSWindow.OcclusionState { showsContent ? [.visible] : [] }
         }
 
@@ -99,6 +101,11 @@ final class HvfFramebufferBindingTests: XCTestCase {
             view.mouseMoved(with: try HvfFramebufferAvailabilityFixture.mouse(.mouseMoved))
             view.refreshFrame(at: 12)
             XCTAssertEqual(try fixture.commands().count, before.count + 1)
+
+            window.shared = true
+            window.showsContent = false
+            NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
+            XCTAssertFalse(link.isPaused, "A covered window stays live for its active sharing session")
         }
     }
 

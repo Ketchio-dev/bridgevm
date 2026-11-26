@@ -43,6 +43,7 @@ final class FBLayerView: HvfFramebufferTextInput {
         return self.convert(window.mouseLocationOutsideOfEventStream, from: nil)
     }
     var frameDisplayLink: CADisplayLink?
+    private var windowSharingObservation: NSKeyValueObservation?
     private var pointerTrackingArea: NSTrackingArea?
 
     override var isFlipped: Bool { true }
@@ -514,16 +515,19 @@ extension FBLayerView {
             frameDisplayLink = link
             NotificationCenter.default.addObserver(self, selector: #selector(displayVisibilityChanged(_:)),
                 name: NSWindow.didChangeOcclusionStateNotification, object: window)
+            windowSharingObservation = window.observe(\.hasActiveWindowSharingSession) { [weak self] _, _ in
+                Task { @MainActor in self?.displayVisibilityChanged() }
+            }
             displayVisibilityChanged()
             link.add(to: .main, forMode: .common)
         }
     }
 
     // A view display link can keep firing through a fully opaque window. Keep the last frame on
-    // the layer and ask for new ones as soon as any part of this window is visible again.
+    // the layer and resume when a viewer can see it on screen or via a window-sharing session.
     @objc private func displayVisibilityChanged(_ notification: Notification? = nil) {
-        guard let link = frameDisplayLink else { return }
-        let covered = window?.occlusionState.contains(.visible) != true
+        guard let link = frameDisplayLink, let window else { return }
+        let covered = !window.occlusionState.contains(.visible) && !window.hasActiveWindowSharingSession
         guard link.isPaused != covered else { return }
         pointerMoves.reset()
         if covered { session?.appPacing.displayWasCovered() }
@@ -531,6 +535,7 @@ extension FBLayerView {
     }
 
     func stopDisplayLink() {
+        windowSharingObservation = nil
         NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: nil)
         if #available(macOS 14.0, *) {
             frameDisplayLink?.invalidate()
