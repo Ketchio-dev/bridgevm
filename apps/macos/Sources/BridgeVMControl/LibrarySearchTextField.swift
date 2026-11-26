@@ -17,7 +17,7 @@ struct LibrarySearchTextField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> LibrarySearchNSTextField {
         let field = LibrarySearchNSTextField()
-        field.placeholderString = "VM 이름 또는 엔진 검색"
+        field.placeholderString = "Search by VM name or engine"
         field.isBordered = false
         field.isBezeled = false
         field.drawsBackground = false
@@ -26,7 +26,7 @@ struct LibrarySearchTextField: NSViewRepresentable {
         field.cell?.isScrollable = true
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         field.cell?.setAccessibilityIdentifier(Self.identifier) // the cell is the element; only it carries the identifier
-        field.toolTip = "가상 머신 검색 (⌘F)"
+        field.toolTip = "Search virtual machines (⌘F)"
         field.stringValue = query
         field.delegate = context.coordinator
         (field.cell as? LibrarySearchFieldCell)?.report = { [weak coordinator = context.coordinator] in

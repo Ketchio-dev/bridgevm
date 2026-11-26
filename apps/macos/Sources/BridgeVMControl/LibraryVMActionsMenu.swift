@@ -16,7 +16,7 @@ struct LibraryVMActionsMenu: View {
             Image(systemName: "ellipsis").frame(width: size.width, height: size.height)
         }
         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-        .accessibilityLabel("\(config.name) 작업")
+        .accessibilityLabel("Actions for \(config.name)")
         .accessibilityIdentifier(Self.identifier)
     }
 }

@@ -15,6 +15,8 @@ final class LibraryDashboardRuntimeStateTests: XCTestCase {
         session.connectionState = .stopped
         let stopped = LibraryDashboardRuntimeState(session: session, observedRunning: true)
         XCTAssertEqual(stopped, .stopped)
+        XCTAssertNil(stopped.note("Starting VM…"))
+        XCTAssertNil(stopped.note("Stop requested."))
         XCTAssertNil(stopped.note("VM 시작 중…"))
         XCTAssertEqual(stopped.note("디스크에 접근할 수 없습니다."), "디스크에 접근할 수 없습니다.")
     }

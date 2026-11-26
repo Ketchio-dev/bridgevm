@@ -55,7 +55,7 @@ enum AppUIHostLegacyScenario {
         }
         try capture.capture(content, name: "overview-search")
         try capture.action("search_filtered")
-        try AppUIHostAccessibility.pressButton(label: "검색 지우기", in: content)
+        try AppUIHostAccessibility.press("bridgevm.library.search.clear", in: content)
         try await AppUIHostAccessibility.wait("cleared search") {
             try AppUIHostAccessibility.hasRow(AppUIDriverOverviewRows.amber, in: content)
                 && AppUIHostAccessibility.hasRow(AppUIDriverOverviewRows.indigo, in: content)

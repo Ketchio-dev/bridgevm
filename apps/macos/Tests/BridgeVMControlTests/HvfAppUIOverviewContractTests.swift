@@ -7,8 +7,8 @@ import XCTest
 @MainActor
 final class HvfAppUIOverviewContractTests: XCTestCase {
     func testOverviewSpecFindsEachCurrentRowOnceInTheImportFormOverview() throws {
-        XCTAssertEqual(HvfAppUIOverview.amber, "Amber, 정지됨, 4 vCPU  ·  4 GiB RAM  ·  HVF")
-        XCTAssertEqual(HvfAppUIOverview.indigo, "Indigo, 정지됨, 4 vCPU  ·  8 GiB RAM  ·  HVF")
+        XCTAssertEqual(HvfAppUIOverview.amber, "Amber, Stopped, 4 vCPU  ·  4 GiB RAM  ·  HVF")
+        XCTAssertEqual(HvfAppUIOverview.indigo, "Indigo, Stopped, 4 vCPU  ·  8 GiB RAM  ·  HVF")
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }

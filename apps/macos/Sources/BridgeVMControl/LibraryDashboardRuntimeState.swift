@@ -35,14 +35,14 @@ enum LibraryDashboardRuntimeState: Equatable {
 
     var title: String {
         switch self {
-        case .stopped: "정지됨"
-        case .starting: "시작 준비 중"
-        case .booting: "Windows 부팅 중"
-        case .running: "실행 중"
-        case .paused: "일시 정지됨"
-        case .stopping: "종료 중"
-        case .working: "작업 중"
-        case .failed: "확인 필요"
+        case .stopped: "Stopped"
+        case .starting: "Preparing to start"
+        case .booting: "Booting Windows"
+        case .running: "Running"
+        case .paused: "Paused"
+        case .stopping: "Shutting down"
+        case .working: "Working"
+        case .failed: "Needs attention"
         }
     }
 
@@ -62,7 +62,7 @@ enum LibraryDashboardRuntimeState: Equatable {
 
     // These action acknowledgements are superseded by the observed state above.
     static let transientNotes: Set<String> = [
-        "VM 시작 중…", "VM 부팅 중…", "VM 정지 중…", "VM 정지 요청을 보냈습니다.",
+        "Starting VM…", "Stop requested.", "VM 시작 중…", "VM 부팅 중…", "VM 정지 중…", "VM 정지 요청을 보냈습니다.",
         "실행 중", "정지됨", "VM이 종료됨"
     ]
 }

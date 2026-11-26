@@ -9,7 +9,7 @@ struct LibraryIssuesSection: View {
         Group {
             if compact {
                 Button { showingAll = true } label: {
-                    Label("확인이 필요한 라이브러리 항목 \(issues.count)개 · 자세히 보기", systemImage: "exclamationmark.triangle")
+                    Label("Library items needing attention: \(issues.count) · View details", systemImage: "exclamationmark.triangle")
                 }
                 .buttonStyle(.plain).font(.caption).foregroundStyle(.orange)
                 .accessibilityIdentifier("bridgevm.library.issues.show-all")
@@ -23,8 +23,8 @@ struct LibraryIssuesSection: View {
     }
 
     private var section: some View {
-        Section("라이브러리 경고") {
-            Label("읽지 못한 VM 설정 \(issues.count)개", systemImage: "exclamationmark.triangle.fill")
+        Section("Library warnings") {
+            Label("Unreadable VM configurations: \(issues.count)", systemImage: "exclamationmark.triangle.fill")
                 .foregroundColor(.orange)
             ForEach(Array(issues.prefix(3))) { issue in
                 VStack(alignment: .leading, spacing: 2) {
@@ -34,7 +34,7 @@ struct LibraryIssuesSection: View {
                 }
                 .help(issue.path)
             }
-            Button("모든 경고 보기…") { showingAll = true }
+            Button("Show all warnings…") { showingAll = true }
                 .accessibilityIdentifier("bridgevm.library.issues.show-all")
         }
     }

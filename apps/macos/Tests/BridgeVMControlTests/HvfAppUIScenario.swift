@@ -72,7 +72,7 @@ enum HvfAppUIScenario {
                     && !HvfAppUIAccessibility.hasRow(HvfAppUIOverview.indigo, in: content)
                     && !HvfAppUIAccessibility.hasRow(HvfAppUIOverview.amber, in: content)
             }
-            try HvfAppUIAccessibility.pressButton(label: "검색 지우기", in: content)
+            try HvfAppUIAccessibility.press("bridgevm.library.search.clear", in: content)
             try await HvfAppUIAccessibility.wait("cleared search") {
                 try HvfAppUIAccessibility.hasRow(HvfAppUIOverview.amber, in: content)
                     && HvfAppUIAccessibility.hasRow(HvfAppUIOverview.indigo, in: content)
