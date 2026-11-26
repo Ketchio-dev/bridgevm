@@ -202,12 +202,26 @@ enum NativeCLICreateWindowsParser {
             return .init(command: .createWindows(placeholder), libraryRoot: library ?? defaultLibrary,
                          json: json, showHelp: true)
         }
-        guard let name, VMLibrary.normalizedVMName(name) == name,
-              let iso, absolute(iso), readableRegularFileWithoutSymlink(iso),
-              NativeCLICreateWindowsOptions.diskChoices.contains(disk),
-              NativeCLICreateWindowsOptions.memoryChoices.contains(memory),
-              (1...max(1, hostCPU - 1)).contains(cpus) else {
-            throw NativeCLIError.invalid("Invalid create-windows name, ISO, or resource value.")
+        guard let name, VMLibrary.normalizedVMName(name) == name else {
+            throw NativeCLIError.invalid("Enter a short VM name without surrounding whitespace or control characters.")
+        }
+        guard let iso, absolute(iso) else {
+            throw NativeCLIError.invalid("--iso requires an absolute path to the Windows installer ISO without '..'.")
+        }
+        guard readableRegularFileWithoutSymlink(iso) else {
+            throw NativeCLIError.invalid("--iso must point directly to a readable Windows installer ISO file.")
+        }
+        guard NativeCLICreateWindowsOptions.diskChoices.contains(disk) else {
+            let choices = NativeCLICreateWindowsOptions.diskChoices.map(String.init).joined(separator: ", ")
+            throw NativeCLIError.invalid("Choose a supported --disk-gib value (\(choices)).")
+        }
+        guard NativeCLICreateWindowsOptions.memoryChoices.contains(memory) else {
+            let choices = NativeCLICreateWindowsOptions.memoryChoices.map(String.init).joined(separator: ", ")
+            throw NativeCLIError.invalid("Choose a supported --memory-mib value (\(choices)).")
+        }
+        let maximumCPUs = max(1, hostCPU - 1)
+        guard (1...maximumCPUs).contains(cpus) else {
+            throw NativeCLIError.invalid("--cpus must be between 1 and \(maximumCPUs) on this Mac.")
         }
         let request = NativeCLICreateWindowsOptions(name: name, isoPath: iso, diskGiB: disk,
             memoryMiB: memory, cpuCount: cpus, resolution: resolution, networkEnabled: network,
