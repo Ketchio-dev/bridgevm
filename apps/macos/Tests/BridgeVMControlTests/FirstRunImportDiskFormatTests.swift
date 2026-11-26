@@ -41,8 +41,8 @@ final class FirstRunImportDiskFormatTests: XCTestCase {
         XCTAssertEqual(seen.dropFirst().first, .converting(.qcow2, percent: 0))
         XCTAssertTrue(seen.contains(.converting(.qcow2, percent: 100)), "\(seen)")
         XCTAssertEqual(seen.last, .saving)
-        XCTAssertEqual(FirstRunImportStage.converting(.qcow2, percent: 0).label, "QCOW2 디스크를 변환하는 중…")
-        XCTAssertEqual(FirstRunImportStage.converting(.vhdx, percent: 42).label, "VHDX 디스크를 변환하는 중… 42%")
+        XCTAssertEqual(FirstRunImportStage.converting(.qcow2, percent: 0).label, "Converting QCOW2 disk…")
+        XCTAssertEqual(FirstRunImportStage.converting(.vhdx, percent: 42).label, "Converting VHDX disk… 42%")
     }
 
     func testClassicVHDFooterIsRecognizedIndependentlyOfPathExtension() throws {
@@ -63,12 +63,12 @@ final class FirstRunImportDiskFormatTests: XCTestCase {
 
     func testABackingFileIsRefusedWithTheConvertersSentence() throws {
         try assertRefused(HvfQCOW2TestImage.make(backingFile: true).image,
-                          sentence: "이 디스크는 다른 디스크를 기반으로 하니 원래 VM 앱에서 하나의 디스크로 합친 뒤 다시 가져오세요.")
+                          sentence: "This disk depends on a backing file. Export a standalone disk from the original VM app and import the copy.")
     }
 
     func testDamagedQCOW2AndVHDXHeadersAreRefusedByTheConverter() throws {
-        for (header, sentence) in [(Data([0x51, 0x46, 0x49, 0xfb]), "지원하지 않는 디스크 형식이므로 원래 VM 앱에서 디스크를 변환한 뒤 다시 가져오세요."),
-                                   (Data("vhdxfile".utf8), "디스크 이미지가 손상되었거나 구조가 올바르지 않으니")] {
+        for (header, sentence) in [(Data([0x51, 0x46, 0x49, 0xfb]), "This disk uses an unsupported feature. Export it as RAW from the original VM app and import the copy."),
+                                   (Data("vhdxfile".utf8), "The disk image is damaged.")] {
             var sourceDisk = header
             sourceDisk.count = 4096
             try assertRefused(sourceDisk, sentence: sentence)
@@ -117,7 +117,7 @@ final class FirstRunImportDiskFormatTests: XCTestCase {
                                                  snapshotHelper: HvfMediaImportTestSupport.helper)
             guard case let .failed(message) = result else { return XCTFail("registered a \(format) container as RAW") }
             XCTAssertTrue(message.contains(format.uppercased()))
-            XCTAssertTrue(message.contains("RAW, QCOW2 또는 VHDX"))
+            XCTAssertTrue(message.contains("RAW, QCOW2, fixed-size VHD, or VHDX"))
             XCTAssertEqual(VMLibrary.windowsHVFImportError(targetDiskPath: image.path, varsPath: fixture.vars.path), message)
             XCTAssertNil(VMLibrary.createWindowsHVF(name: "imported", targetDiskPath: image.path,
                 varsPath: fixture.vars.path, storageDir: fixture.root, libraryRoot: fixture.library,

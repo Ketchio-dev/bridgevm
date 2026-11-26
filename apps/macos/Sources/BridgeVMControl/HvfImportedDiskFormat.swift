@@ -17,7 +17,7 @@ enum HvfImportedDiskFormat: String {
     }
 
     func conversionLabel(percent: Int) -> String {
-        "\(rawValue) 디스크를 변환하는 중…" + (percent > 0 ? " \(percent)%" : "")
+        "Converting \(rawValue) disk…" + (percent > 0 ? " \(percent)%" : "")
     }
 
     static func detect(path: String) -> Self? {

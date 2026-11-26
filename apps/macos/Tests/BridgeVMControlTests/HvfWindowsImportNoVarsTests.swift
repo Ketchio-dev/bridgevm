@@ -15,7 +15,19 @@ final class HvfWindowsImportNoVarsTests: XCTestCase {
         try checkImport(hasGPT: true, suppliedVars: true)
     }
 
-    private let noESP = "이 디스크에는 UEFI 부팅 파티션이 없어 시작되지 않을 수 있습니다."
+    private let noESP = "This disk has no UEFI boot partition. Windows may fail to start."
+
+    func testLegacyMissingPartitionNoticeDisplaysInEnglishAfterReopening() throws {
+        let bundle = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let metadata = bundle.appendingPathComponent("metadata")
+        try FileManager.default.createDirectory(at: metadata, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: bundle) }
+        let file = metadata.appendingPathComponent("hvf-import-notice.txt")
+        let original = Data("이 디스크에는 UEFI 부팅 파티션이 없어 시작되지 않을 수 있습니다.".utf8)
+        try original.write(to: file)
+        XCTAssertEqual(HvfWindowsImportNotice.read(bundlePath: bundle.path), noESP)
+        XCTAssertEqual(try Data(contentsOf: file), original)
+    }
 
     private func notice(bundlePath: String) -> String? {
         try? String(contentsOfFile: bundlePath + "/metadata/hvf-import-notice.txt", encoding: .utf8)

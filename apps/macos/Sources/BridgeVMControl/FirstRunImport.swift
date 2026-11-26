@@ -34,22 +34,22 @@ enum FirstRunImport {
 
         var description: String {
             switch self {
-            case .emptyName: return "VM 이름을 입력하세요."
-            case .diskMissing(let p): return "디스크 이미지를 찾을 수 없습니다: \(p)"
-            case .diskNotAFile(let p): return "디스크 경로가 파일이 아닙니다: \(p)"
-            case .diskEmpty(let p): return "디스크 이미지가 비어 있습니다: \(p)"
+            case .emptyName: return "Enter a name for the VM."
+            case .diskMissing(let p): return "Disk image not found at \(p)"
+            case .diskNotAFile(let p): return "Choose a disk image file instead of the folder at \(p)"
+            case .diskEmpty(let p): return "The disk image at \(p) is empty."
             case .unsupportedDiskFormat(let format):
-                return "\(format) 디스크는 직접 가져올 수 없으니 RAW, QCOW2 또는 VHDX로 변환한 뒤 다시 선택하세요."
-            case .varsMissing(let p): return "UEFI vars 파일을 찾을 수 없습니다: \(p)"
+                return "To import a \(format) disk, convert it to RAW, QCOW2, fixed-size VHD, or VHDX and choose the converted file."
+            case .varsMissing(let p): return "UEFI variables file not found at \(p)"
             case .varsWrongSize(let p, let b):
-                return "UEFI vars 파일은 정확히 64 MiB여야 합니다 (\(p): \(b) bytes)."
-            case .vtpmNotADirectory(let p): return "vTPM 상태 경로가 디렉터리가 아닙니다: \(p)"
-            case .vtpmRecoveryMissing(let p): return "vTPM 복구 파일을 찾을 수 없습니다: \(p)"
-            case .vtpmRecoveryPackageRequired: return "vTPM 복구 패키지를 선택하세요."
-            case .vtpmRecoveryCodeRequired: return "vTPM 복구 코드 파일을 선택하세요."
-            case .vtpmRecoveryWithoutState: return "vTPM 복구 파일을 사용하려면 상태 폴더도 선택하세요."
+                return "The UEFI variables file must be exactly 64 MiB. The file at \(p) contains \(b) bytes."
+            case .vtpmNotADirectory(let p): return "Choose the vTPM state folder. Check the path \(p)"
+            case .vtpmRecoveryMissing(let p): return "The vTPM recovery file is unavailable at \(p)"
+            case .vtpmRecoveryPackageRequired: return "Choose the vTPM recovery package."
+            case .vtpmRecoveryCodeRequired: return "Choose the vTPM recovery code file."
+            case .vtpmRecoveryWithoutState: return "Choose the vTPM state folder to use these recovery files."
             case .badResources(let mem, let cpu):
-                return "RAM은 2048 MiB 이상, CPU는 1~64개여야 합니다 (RAM \(mem) MiB, CPU \(cpu))."
+                return "Choose at least 2048 MiB of memory and 1 to 64 CPUs. The current settings are \(mem) MiB and \(cpu) CPUs."
             }
         }
     }

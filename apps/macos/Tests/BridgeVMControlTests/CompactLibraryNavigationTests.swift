@@ -67,7 +67,7 @@ final class CompactLibraryNavigationTests: XCTestCase {
         window.setContentSize(NSSize(width: 640, height: 720))
         defer { window.contentViewController = nil }
         func nameField(_ view: NSView) -> NSTextField? {
-            if let field = view as? NSTextField, field.isEditable, field.placeholderString == "VM 이름" {
+            if let field = view as? NSTextField, field.isEditable, field.placeholderString == "VM name" {
                 return field
             }
             return view.subviews.lazy.compactMap(nameField).first

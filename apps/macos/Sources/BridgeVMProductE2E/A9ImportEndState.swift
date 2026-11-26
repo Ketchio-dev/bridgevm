@@ -53,10 +53,20 @@ enum A9ImportEndState {
     }
 
     private static let stages = [
+        "Checking input files…": "validating", "Copying VM files…": "copying",
+        "Saving the VM to your library…": "saving", "Checking your library…": "reading-library",
+        "The VM is ready in your library.": "complete",
+        // Keep diagnostics for packages built before the import flow moved to English.
         "입력 파일 확인 중…": "validating", "VM 파일 복사 중…": "copying", "등록 정보 저장 중…": "saving",
         "라이브러리 확인 중…": "reading-library", "라이브러리에서 VM을 확인했습니다.": "complete",
     ]
     private static let outcomes: [(prefix: String, token: String)] = [
+        ("Could not save the VM registration.", "registration-not-saved"),
+        ("BridgeVM kept the VM files but could not confirm the save.", "published-unsynced"),
+        ("The VM was saved, but it did not appear in the library.", "saved-not-listed"),
+        ("The saved VM could not be opened.", "recovery-failed"),
+        ("An import is already in progress.", "already-running"), ("The import did not start.", "not-started"),
+        ("Could not import the Windows files.", "bundle-failed"),
         ("VM 번들을 만들지 못했습니다:", "bundle-failed"), ("VM 등록 정보를 저장하지 못했습니다:", "registration-not-saved"),
         ("VM 파일과 등록 정보는 보존했지만", "published-unsynced"), ("VM은 저장했지만 라이브러리에서 찾지 못했습니다", "saved-not-listed"),
         ("저장된 VM을 아직 불러올 수 없습니다", "recovery-failed"), ("VM 가져오기가 이미 진행 중입니다", "already-running"),
@@ -74,6 +84,10 @@ enum A9ImportEndState {
         ("가져오기에 필요한 엔진 도구가 없거나 안전하지 않습니다", "engine-tool"),
     ]
     private static let validation = [
+        "Enter a name for the VM.", "Disk image not found at ", "Choose a disk image file instead of the folder at ",
+        "The disk image at ", "To import a ", "UEFI variables file not found at ", "The UEFI variables file must be exactly ",
+        "Choose the vTPM ", "The vTPM recovery file is unavailable at ", "Choose at least 2048 MiB of memory ",
+        "That name is already in your library.",
         "VM 이름을 입력하세요.", "디스크 이미지를 찾을 수 없습니다:", "디스크 경로가 파일이 아닙니다:", "디스크 이미지가 비어 있습니다:",
         "UEFI vars 파일", "vTPM 상태 경로가 디렉터리가 아닙니다:", "vTPM 복구 파일을 찾을 수 없습니다:", "vTPM 복구 파일을 사용하려면",
         "vTPM 복구 패키지를 선택하세요.", "vTPM 복구 코드 파일을 선택하세요.", "RAM은 2048 MiB 이상",
