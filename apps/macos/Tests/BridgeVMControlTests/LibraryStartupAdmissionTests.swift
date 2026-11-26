@@ -32,7 +32,8 @@ final class LibraryStartupAdmissionTests: XCTestCase {
         let statusRequest = NativeRuntimeRequest(schema: NativeRuntimeCodec.requestSchema, operation: "status",
             requestID: UUID().uuidString, library: identity, vmID: "missing",
             savedConfiguration: .init(state: .missing, digest: nil))
-        XCTAssertEqual(try starts.handle(startRequest).reason?.contains("라이브러리"), true)
+        let refusalWhileLoading = try starts.handle(startRequest).reason
+        XCTAssertEqual(refusalWhileLoading, "Open the VM library in BridgeVM, then try again.")
         XCTAssertEqual(try stops.handle(stopRequest).reason, NativeRuntimeStopRefused.modelUnavailable.reason)
         XCTAssertEqual(try installs.handle(installRequest).refusal, .modelUnavailable)
         XCTAssertThrowsError(try NativeRuntimeAppObservation.response(statusRequest, library: identity,
@@ -41,7 +42,7 @@ final class LibraryStartupAdmissionTests: XCTestCase {
         probe.release(); await load.value
         XCTAssertNotNil(startup.model); XCTAssertEqual(fixture.publications, 1)
         // Existing protocol semantics: a refused start ID stays refused; stop/install are re-evaluated.
-        XCTAssertEqual(try starts.handle(startRequest).reason?.contains("라이브러리"), true)
+        XCTAssertEqual(try starts.handle(startRequest).reason, refusalWhileLoading)
         XCTAssertEqual(try starts.handle(start()).reason?.contains("missing"), true)
         XCTAssertEqual(try stops.handle(stopRequest).reason, NativeRuntimeStopRefused.targetUnavailable.reason)
         XCTAssertEqual(try installs.handle(installRequest).refusal, .targetUnavailable)
