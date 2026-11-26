@@ -71,15 +71,15 @@ struct HvfDisplayDriverNoticeView: View {
                 else { session.displayDriverNoticeDismissed = true }
             }) {
                 Text(notice == .unbound
-                     ? "Windows에서 virtio 디스플레이 어댑터를 찾지 못했습니다. 해상도가 창 크기에 맞지 않으면 장치 관리자를 확인하세요."
-                     : notice == .install ? "디스플레이 드라이버를 설치하면 창 크기에 맞춰 Windows 해상도를 자동으로 조정할 수 있습니다."
-                     : "다시 시작하면 적용됩니다")
+                     ? "Windows couldn’t find the virtio display adapter. If its resolution doesn’t follow the window size, check Device Manager."
+                     : notice == .install ? "Install the display driver to resize the Windows desktop when you resize this window."
+                     : "Restart the VM to use the new display driver.")
                 if notice == .install {
                     HvfDisplayDriverInstallButton(session: session, onInstalled: { _ in
                         HvfDisplayDriverFlag.record(session)
                     }, compact: true)
                 } else if notice == .restart {
-                    Button("지금 다시 시작") { session.restartForDisplayDriver() }
+                    Button("Restart Now") { session.restartForDisplayDriver() }
                         .disabled(session.displayDriverRestarting || !session.terminationStopAvailable)
                         .accessibilityIdentifier("bridgevm.display.display-driver.restart")
                 }
