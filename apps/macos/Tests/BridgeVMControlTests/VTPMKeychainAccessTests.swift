@@ -44,6 +44,27 @@ final class VTPMKeychainAccessTests: XCTestCase {
         XCTAssertEqual(VTPMExistingKeyLookup.forms("win11-typed"), ["win11-typed"])
     }
 
+    @MainActor
+    func testRuntimeReadsTheExistingKeyForALongKoreanLibraryID() throws {
+        let library = try HvfRuntimeSessionStoreFixture()
+        defer { library.clean() }
+        let name = String(repeating: "한", count: 60)
+        XCTAssertEqual(VMLibrary.normalizedVMName(name), name)
+        // A filesystem enumeration can return this same VM's ID in decomposed form.
+        let saved = library.config(name.decomposedStringWithCanonicalMapping)
+        let runtime = try XCTUnwrap(HvfEngineConfig.libraryVM(saved, rootURL: library.root))
+        XCTAssertGreaterThan(try XCTUnwrap(runtime.vtpmKeyID).utf8.count, 255)
+        let keychain = VTPMKeychainFixture()
+        let expected = Data(repeating: 0x5a, count: KeychainVTPMStateKeyStore.keyLength)
+        try VTPMExistingRuntimeKey.withExistingKey(for: runtime, provider: keychain.store) { key in
+            XCTAssertEqual(key, expected)
+        }
+        let account = try XCTUnwrap(keychain.queries.first?[kSecAttrAccount as String] as? String)
+        XCTAssertEqual(Array(account.utf8), Array(name.utf8))
+        XCTAssertFalse(keychain.calls.contains("add"))
+        XCTAssertThrowsError(try VTPMExistingKeyLookup.account(String(repeating: "한", count: 86)))
+    }
+
     func testLegacyRestoresBothInitialPolicyStatesOnReadFailure() {
         for allowed in [false, true] {
             let fixture = VTPMKeychainFixture(); fixture.allowed = allowed; fixture.read = (nil, errSecAuthFailed)

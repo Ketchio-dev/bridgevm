@@ -56,10 +56,22 @@ enum VTPMExistingKeyError: LocalizedError, Equatable {
 
 enum VTPMExistingKeyLookup {
     static func account(_ stableVMID: String) throws -> String {
-        let account = stableVMID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !account.isEmpty, account.utf8.count <= 255,
-              !account.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
-        else { throw VTPMStateSecurityError.invalidVMIdentifier }
+        let account = try lengthCheckedAccount(stableVMID)
+        guard !account.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
+            throw VTPMStateSecurityError.invalidVMIdentifier
+        }
+        return account
+    }
+
+    static func lengthCheckedAccount(_ stableVMID: String) throws -> String {
+        let trimmed = stableVMID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let maximumBytes = 255
+        // Preserve the existing byte spelling when it fits. A directory scan can expand a valid
+        // Korean ID beyond the limit even though its composed Keychain account still fits.
+        let account = trimmed.utf8.count <= maximumBytes ? trimmed : trimmed.precomposedStringWithCanonicalMapping
+        guard !account.isEmpty, account.utf8.count <= maximumBytes else {
+            throw VTPMStateSecurityError.invalidVMIdentifier
+        }
         return account
     }
 
