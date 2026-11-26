@@ -31,7 +31,7 @@ final class HvfWindowsInstallCommittedCleanupRelocationTests: XCTestCase {
         let current = try XCTUnwrap(scan.configs.first { $0.slug == installed.slug })
         XCTAssertEqual(current.installPending, false, "an installed VM must not be demoted")
         XCTAssertEqual(try HvfWindowsInstallFinalization.loadConfig(f.paths.config).installPending, false)
-        XCTAssertFalse(scan.issues.contains { $0.message.contains("실행을 차단") }, "\(scan.issues)")
+        XCTAssertFalse(scan.issues.contains { $0.message.contains("Windows can’t start until setup recovers") }, "\(scan.issues)")
         XCTAssertEqual(current.bundlePath, installed.bundlePath)
         XCTAssertFalse(FileManager.default.fileExists(atPath: parent.appendingPathComponent("bundle").path))
         // Left in place, the next reconciliation completes the committed cleanup.
@@ -64,7 +64,7 @@ final class HvfWindowsInstallCommittedCleanupRelocationTests: XCTestCase {
         XCTAssertTrue(library.movingSlugs.isEmpty)
         XCTAssertEqual(backend.calls, .init(), "refused before a liveness probe")
         let message = try XCTUnwrap(library.moveError)
-        XCTAssertTrue(message.contains("설치") && message.contains("transaction"), message)
+        XCTAssertTrue(message.contains("move") && message.contains("installation cleanup"), message)
         XCTAssertTrue(fm.fileExists(atPath: f.paths.journal.path))
 
         // A clone would copy the journal, which then fails validation at its new path.
@@ -73,6 +73,6 @@ final class HvfWindowsInstallCommittedCleanupRelocationTests: XCTestCase {
         XCTAssertTrue(library.cloningSlugs.isEmpty)
         XCTAssertEqual(backend.calls, .init(), "refused before a liveness probe")
         let cloneMessage = try XCTUnwrap(library.cloneError)
-        XCTAssertTrue(cloneMessage.contains("복제") && cloneMessage.contains("transaction"), cloneMessage)
+        XCTAssertTrue(cloneMessage.contains("duplicate") && cloneMessage.contains("installation cleanup"), cloneMessage)
     }
 }

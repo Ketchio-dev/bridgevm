@@ -61,10 +61,10 @@ enum HvfWindowsInstallFinalizationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case let .invalidState(message): return message
-        case .unsupportedJournal: return "지원하지 않거나 손상된 Windows 설치 journal입니다."
-        case let .unsafePath(path): return "심볼릭 링크 또는 범위 밖 경로를 거부했습니다: \(path)"
-        case let .missingArtifact(path): return "Windows 설치 transaction 산출물이 없습니다: \(path)"
-        case .transactionBusy: return "다른 Windows 설치 완료 transaction이 실행 중입니다."
+        case .unsupportedJournal: return "The Windows installation recovery record is damaged or unsupported."
+        case let .unsafePath(path): return "Rejected a symbolic link or a path outside the installation folder: \(path)"
+        case let .missingArtifact(path): return "A file needed to recover the Windows installation is missing: \(path)"
+        case .transactionBusy: return "Another task is finishing this Windows installation."
         }
     }
 }

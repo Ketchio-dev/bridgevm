@@ -26,7 +26,7 @@ final class WindowsHVFProductPolicyTests: XCTestCase {
                                          slug: config.slug, request: request)
         try FileManager.default.removeItem(atPath: request.isoPath)
         XCTAssertEqual(plan.validationError(),
-                       "Windows 설치 ISO를 읽을 수 없습니다. VM 생성에 사용한 원본 ISO를 VM 번들의 disks/installer.iso에 복원한 뒤 다시 시도하세요.")
+                       "BridgeVM can’t read the Windows installation ISO. Restore the ISO used to create this VM to disks/installer.iso in the VM bundle, then retry.")
     }
 
     func testReadyInstallAndImportStayThreeDOff() throws {
@@ -87,7 +87,7 @@ final class WindowsHVFProductPolicyTests: XCTestCase {
             repoRoot: temp, bundlePath: "/tmp/bundle", slug: "sealed", request: request)
         try Data("changed".utf8).write(to: iso)
         XCTAssertEqual(first.validationError(),
-                       "Windows 설치 ISO가 VM 생성 때와 다릅니다. VM 생성에 사용한 원본 ISO를 원래 위치에 복원한 뒤 다시 시도하세요.")
+                       "The Windows installation ISO has changed since this VM was created. Restore the ISO used to create this VM to its original location, then retry.")
 
         let script = temp.appendingPathComponent("scripts/build-hvf-windows-scripted-source.sh")
         try FileManager.default.createDirectory(at: script.deletingLastPathComponent(),

@@ -37,7 +37,7 @@ extension LibraryModel {
     func bindInstallAdmissions(_ session: HvfWindowsInstallSession, slug: String) {
         let admission: @MainActor (Bool, Bool) -> String? = { [weak self, weak session] continuing, report in
             guard let self, let session else {
-                return "VM 라이브러리를 사용할 수 없습니다. 라이브러리 화면에서 다시 시도하세요."
+                return HvfWindowsInstallPreparation.ownerMessage
             }
             let candidate = self.windowsInstallSessions.cliOperations.records[slug]
             let operation = candidate?.session === session ? candidate : nil

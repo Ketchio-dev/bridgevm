@@ -23,7 +23,7 @@ final class HvfWindowsInstallCommittedValidationTests: XCTestCase {
                 removeTransaction: { _ in XCTFail("must not clean corrupt final member: \(member)") })
             XCTAssertEqual(result.config.installPending, true)
             XCTAssertEqual(try HvfWindowsInstallFinalization.loadConfig(f.paths.config).installPending, true)
-            XCTAssertTrue(result.issue?.contains("실행을 차단") == true)
+            XCTAssertTrue(result.issue?.contains("Windows can’t start until setup recovers") == true)
             XCTAssertTrue(FileManager.default.fileExists(atPath: f.paths.journal.path))
             XCTAssertNotEqual(try? HvfWindowsInstallRecovery.inspect(plan: f.plan), .fresh)
         }

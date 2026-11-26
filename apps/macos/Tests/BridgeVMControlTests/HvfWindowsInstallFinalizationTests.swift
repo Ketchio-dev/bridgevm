@@ -65,7 +65,7 @@ final class HvfWindowsInstallFinalizationTests: XCTestCase {
 
         XCTAssertEqual(scan.configs.first?.installPending, true)
         XCTAssertEqual(try readConfig(fixture.configURL).installPending, true)
-        XCTAssertTrue(scan.issues.contains { $0.message.contains("실행을 차단") })
+        XCTAssertTrue(scan.issues.contains { $0.message.contains("Windows can’t start until setup recovers") })
     }
 
     func testMismatchedJournalRootFailsClosed() throws {
@@ -83,7 +83,7 @@ final class HvfWindowsInstallFinalizationTests: XCTestCase {
         let scan = VMLibrary.scan(rootURL: fixture.libraryRoot)
 
         XCTAssertEqual(scan.configs.first?.installPending, true)
-        XCTAssertTrue(scan.issues.contains { $0.message.contains("실행을 차단") })
+        XCTAssertTrue(scan.issues.contains { $0.message.contains("Windows can’t start until setup recovers") })
     }
 
     func testMissingSourceAfterPreparedJournalRemainsPending() throws {
@@ -121,7 +121,7 @@ final class HvfWindowsInstallFinalizationTests: XCTestCase {
             secureBootSeeder: syntheticSeeder)
 
         XCTAssertEqual(result.config.installPending, true)
-        XCTAssertTrue(result.issue?.contains("실행을 차단") == true)
+        XCTAssertTrue(result.issue?.contains("Windows can’t start until setup recovers") == true)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.doneRequest.path))
     }
 
@@ -158,7 +158,7 @@ final class HvfWindowsInstallFinalizationTests: XCTestCase {
         XCTAssertEqual(scan.configs.first?.installPending, true)
         XCTAssertNotNil(HvfWindowsInstallRequest.load(bundlePath: fixture.bundle.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.doneRequest.path))
-        XCTAssertTrue(scan.issues.contains { $0.message.contains("재시도 가능한") })
+        XCTAssertTrue(scan.issues.contains { $0.message.contains("You can retry the installation") })
     }
 
     func testLegacyCompletedConfigWithoutJournalIsUnchanged() throws {

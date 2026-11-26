@@ -17,7 +17,7 @@ final class HvfWindowsInstallPrivateDirectory {
         guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFDIR,
               !privateToOwner || (info.st_uid == geteuid() && info.st_mode & 0o022 == 0) else {
             close(descriptor)
-            throw HvfWindowsInstallFinalizationError.invalidState("현재 사용자만 쓸 수 있는 디렉터리가 아니어서 거부했습니다: \(url.path)")
+            throw HvfWindowsInstallFinalizationError.invalidState("The installation folder must be owned by the current user and writable only by that user: \(url.path)")
         }
         self.descriptor = descriptor
         self.url = url

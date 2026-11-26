@@ -49,7 +49,7 @@ final class HvfWindowsInstallFinalizationRemovalTests: XCTestCase {
             })
 
         XCTAssertEqual(syncAttempts, 1)
-        XCTAssertTrue(first.issue?.contains("설치를 다시 실행하지 말고") == true)
+        XCTAssertTrue(first.issue?.contains("avoid running the installer again") == true)
         XCTAssertFalse(first.issue?.contains("injected") == true)
         XCTAssertEqual(first.config.installPending, false,
                        "A cleanup sync error must not demote an already published installation")

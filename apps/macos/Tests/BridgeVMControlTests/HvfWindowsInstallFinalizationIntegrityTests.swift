@@ -38,7 +38,7 @@ final class HvfWindowsInstallFinalizationIntegrityTests: XCTestCase {
         let result = try reconcile(fixture)
 
         XCTAssertEqual(result.config.installPending, true)
-        XCTAssertTrue(result.issue?.contains("실행을 차단") == true)
+        XCTAssertTrue(result.issue?.contains("Windows can’t start until setup recovers") == true)
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.journal.path))
     }
 

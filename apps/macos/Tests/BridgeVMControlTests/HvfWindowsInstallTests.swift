@@ -96,7 +96,7 @@ final class HvfWindowsInstallTests: XCTestCase {
         let plan = try makePlan(slug: "missing-resource")
         XCTAssertEqual(
             plan.validationError(),
-            "앱 설치 리소스가 없습니다: scripts/build-hvf-windows-scripted-source.sh")
+            "BridgeVM is missing an installation resource (scripts/build-hvf-windows-scripted-source.sh). Reinstall the app and retry.")
     }
 
     func testValidationRejectsMissingIsoAndDriverPackage() throws {

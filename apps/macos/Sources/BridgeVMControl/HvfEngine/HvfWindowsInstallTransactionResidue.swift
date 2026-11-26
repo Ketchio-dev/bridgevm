@@ -6,7 +6,7 @@ import Foundation
 enum HvfWindowsInstallTransactionResidue {
     /// Clone copies the journal too, and the copy fails validation at its new path.
     static func refusal(_ verb: String) -> String {
-        "Windows 설치 transaction 정리가 끝나지 않아 VM을 \(verb)하지 않았습니다. 설치를 다시 실행하지 말고 라이브러리를 새로고침한 뒤 다시 시도하세요. 계속 차단되면 보존된 transaction을 확인하세요."
+        "BridgeVM couldn’t \(verb) this VM because Windows installation cleanup is incomplete. Refresh the library and retry. If it’s still blocked, check the saved installation record. Keep the VM files and avoid running the installer again."
     }
 
     /// Any residual entry or failed lookup counts. A missing journal inside a
@@ -22,6 +22,6 @@ enum HvfWindowsInstallTransactionResidue {
 extension LibraryModel {
     func transactionResidueRefusal(for cfg: VMConfig, action: LibraryFileAction) -> String? {
         guard action != .deletion, HvfWindowsInstallTransactionResidue.isPresent(cfg, rootURL: rootURL) else { return nil }
-        return HvfWindowsInstallTransactionResidue.refusal(action == .move ? "이동" : "복제")
+        return HvfWindowsInstallTransactionResidue.refusal(action == .move ? "move" : "duplicate")
     }
 }

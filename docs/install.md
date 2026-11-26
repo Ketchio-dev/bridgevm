@@ -189,6 +189,12 @@ To install Windows from an ISO:
   and seals the payload and manifest in the VM bundle before installation.
 - About 64 GiB of free disk for the guest image.
 
+Current source builds copy the selected ISO into the VM bundle. If the installer
+reports a missing or changed ISO, click the ISO filename in the VM detail view
+to open its location in Finder. Restore the ISO used to create that VM as
+`disks/installer.iso` in its bundle, then click **Try Again**. BridgeVM checks the
+restored file against its original SHA-256 before preparing Windows.
+
 To import instead: an installed Windows 11 Arm disk (RAW, QCOW2 or Hyper-V
 VHDX), with its UEFI variables if you have them. Import copies or converts the
 disk into the library and leaves the source unchanged; it needs no driver
