@@ -3,6 +3,22 @@ import XCTest
 
 @MainActor
 final class FirstRunPresentationTests: XCTestCase {
+    func testWelcomeCardsAcceptOneInstallerISOOrInstalledDisk() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let installer = root.appendingPathComponent("Windows ARM64.ISO")
+        let disk = root.appendingPathComponent("installed Windows")
+        for file in [installer, disk] { try Data([0]).write(to: file) }
+
+        XCTAssertEqual(FirstRunMediaChoice.installer.droppedFile([installer]), installer)
+        XCTAssertEqual(FirstRunMediaChoice.disk.droppedFile([disk]), disk)
+        XCTAssertNil(FirstRunMediaChoice.disk.droppedFile([installer]))
+        XCTAssertNil(FirstRunMediaChoice.installer.droppedFile([disk]))
+        XCTAssertNil(FirstRunMediaChoice.disk.droppedFile([root]))
+        XCTAssertNil(FirstRunMediaChoice.disk.droppedFile([disk, disk]))
+    }
+
     func testEmptyLibraryOffersWelcomeWithoutImportFieldsOrStatus() throws {
         try withLibrary { library in
             let body = FirstRunView(library: library).body
