@@ -5,7 +5,7 @@ import BridgeVMWindowProtocol
 @MainActor
 final class HvfWindowInventoryController: ObservableObject {
     @Published private(set) var records: [GuestWindowRecord] = []
-    @Published private(set) var status = "아직 조회하지 않았습니다"
+    @Published private(set) var status = "Guest windows haven’t been loaded yet."
     @Published private(set) var isLoading = false
     private weak var session: HvfEngineSession?
     private let logURL: URL
@@ -41,17 +41,17 @@ final class HvfWindowInventoryController: ObservableObject {
         poll()
         guard pending == nil, let session, case .connected = session.connectionState else { return false }
         let request = HvfWindowInventoryRequest(now: session.guestNow())
-        guard session.sendCtl(request.command) else { invalidate("Windows 게스트 서비스에 연결되지 않았습니다"); return false }
+        guard session.sendCtl(request.command) else { invalidate("The Windows guest service is disconnected."); return false }
         pending = request
         isLoading = true
-        status = "불러오는 중…"
+        status = "Loading…"
         return true
     }
 
     func poll() {
         session?.poll()
         guard let session, case .connected = session.connectionState else {
-            invalidate("연결되지 않음")
+            invalidate("Disconnected")
             return
         }
         let lines = reader.readNewLines(from: logURL)
@@ -59,7 +59,7 @@ final class HvfWindowInventoryController: ObservableObject {
             $0.hasPrefix("BVAGENT READY ") || $0.hasPrefix("BVAGENT re-READY ")
                 || $0.hasPrefix("BVAGENT SERVICE start") || HvfGuestResetRecord.matches($0)
         }) {
-            invalidate("Windows가 다시 시작되었습니다. 새로 고침을 누르세요.")
+            invalidate("Windows restarted. Choose Refresh to reload the list.")
             return
         }
         guard let result = pending?.consume(lines: lines, now: session.guestNow()) else { return }
@@ -68,9 +68,9 @@ final class HvfWindowInventoryController: ObservableObject {
         switch result {
         case let .success(windows):
             records = windows
-            status = windows.isEmpty ? "열린 Windows 창이 없습니다" : "Windows 창 \(windows.count)개"
+            status = windows.isEmpty ? "No guest windows are open." : "Open guest windows: \(windows.count)"
         case let .failure(error):
-            invalidate("조회하지 못했습니다: \(error)")
+            invalidate("Couldn’t load guest windows: \(error)")
         }
     }
 
