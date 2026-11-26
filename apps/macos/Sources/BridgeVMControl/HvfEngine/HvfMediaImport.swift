@@ -3,7 +3,7 @@ import Foundation
 /// Copy the native selector's current pair while it owns the source. Once the
 /// helper exits successfully, all remaining work uses only the verified copy.
 enum HvfMediaImport {
-    /// `converting` sees the format and the percent converted when the disk is QCOW2 or VHDX.
+    /// `converting` sees the format and the percent converted for a disk container.
     static func copy(
         disk: String, vars: String, toDisk: URL, toVars: URL,
         helper: URL, fileManager: FileManager = .default,
@@ -45,7 +45,7 @@ enum HvfMediaImport {
             }
             members = [(copiedDisk, toDisk), (seededVars, toVars)]
         } else if let format = HvfImportedDiskFormat.detect(path: disk) {
-            // A BridgeVM pair's disk is always RAW, so a QCOW2 or VHDX source has no managed
+            // A BridgeVM pair's disk is always RAW, so a container source has no managed
             // generation to select: the helper converts the chosen file and the vars are copied.
             converting(format, 0)
             let converted = workspace.appendingPathComponent("disk.raw")

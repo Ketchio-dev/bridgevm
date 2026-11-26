@@ -83,7 +83,7 @@ fn assert_converts_like_qemu(s: &Scratch, qemu_img: &Path, image: &Path, format:
 }
 
 #[test]
-fn qemu_made_qcow2_and_vhdx_convert_byte_identical_to_qemu_img() {
+fn qemu_made_disks_convert_byte_identical_to_qemu_img() {
     let (Some(qemu_img), Some(qemu_io)) = (qemu_tool("qemu-img"), qemu_tool("qemu-io")) else {
         eprintln!("qemu-img not installed: the hand-built fixtures cover the formats");
         return;
@@ -96,6 +96,7 @@ fn qemu_made_qcow2_and_vhdx_convert_byte_identical_to_qemu_img() {
         ("v3.qcow2", "qcow2", "compat=1.1"),
         ("v3-512.qcow2", "qcow2", "compat=1.1,cluster_size=512"),
         ("v3-2m.qcow2", "qcow2", "compat=1.1,cluster_size=2M"),
+        ("fixed.vhd", "vpc", "subformat=fixed,force_size=on"),
         ("dynamic.vhdx", "vhdx", "subformat=dynamic"),
         ("dynamic-1m.vhdx", "vhdx", "subformat=dynamic,block_size=1M"),
         ("fixed.vhdx", "vhdx", "subformat=fixed"),
@@ -231,7 +232,12 @@ fn qemu_made_images_the_converter_refuses() {
             "16M",
         ],
     );
+    run(
+        &qemu_img,
+        &["create", "-f", "vpc", &at("dynamic.vhd"), "16M"],
+    );
     for (name, expected) in [
+        ("dynamic.vhd", Refusal::DynamicVhd),
         ("overlay.qcow2", Refusal::BackingFile),
         ("subclusters.qcow2", Refusal::ExtendedL2),
         ("external.qcow2", Refusal::ExternalDataFile),

@@ -1,4 +1,4 @@
-//! Import a QCOW2 (QEMU) or VHDX (Hyper-V) disk as the sparse raw image
+//! Import QCOW2, fixed Hyper-V VHD and VHDX disks as the sparse raw image
 //! the runtime boots: `snapshot_pair_cli convert-to-raw <src> <dst>`.
 //!
 //! The source file is untrusted. Its metadata is walked completely before
@@ -20,6 +20,8 @@ use std::process::ExitCode;
 mod output;
 #[path = "disk_import_qcow2.rs"]
 mod qcow2;
+#[path = "disk_import_vhd.rs"]
+mod vhd;
 #[path = "disk_import_vhdx.rs"]
 mod vhdx;
 
@@ -30,7 +32,7 @@ const CHUNK_BYTES: usize = 8 << 20;
 /// Zero detection granularity: the APFS block size, and qemu-img's default `-S`.
 const ZERO_BLOCK: usize = 4096;
 
-/// Container formats the import converts.
+/// Container formats identifiable by their leading signature. Fixed VHD has only a footer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
     Qcow2,
@@ -63,6 +65,7 @@ pub enum Refusal {
     Dirty,
     Corrupt,
     VhdxLog,
+    DynamicVhd,
     Differencing,
     /// The runtime's disks have 512-byte logical sectors; a 4 KiB-sector GPT would not be found.
     Sector4K,
@@ -77,7 +80,7 @@ pub enum Refusal {
 impl fmt::Display for Refusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Refusal::NotAnImage => write!(f, "QCOW2나 VHDX 디스크가 아니니 디스크 파일을 다시 선택하세요."),
+            Refusal::NotAnImage => write!(f, "변환할 수 있는 QCOW2, 고정 크기 VHD 또는 VHDX 디스크를 선택하세요."),
             Refusal::Compressed => write!(f, "이 QCOW2 압축 형식을 지원하지 않으니 원래 VM 앱에서 RAW로 변환한 뒤 다시 가져오세요."),
             Refusal::Encrypted => write!(f, "암호화된 QCOW2 디스크는 가져올 수 없으니 qemu-img로 암호화를 푼 디스크로 변환한 뒤 다시 가져오세요."),
             Refusal::BackingFile => write!(f, "이 디스크는 다른 디스크를 기반으로 하니 qemu-img로 하나의 디스크로 합친 뒤 다시 가져오세요."),
@@ -86,6 +89,7 @@ impl fmt::Display for Refusal {
             Refusal::Dirty => write!(f, "이 QCOW2 디스크는 사용 중이거나 제대로 닫히지 않았으니 이 디스크를 쓰던 VM을 완전히 종료한 뒤 다시 가져오세요."),
             Refusal::Corrupt => write!(f, "이 QCOW2 디스크에는 손상 표시가 있으니 qemu-img check -r all로 고친 뒤 다시 가져오세요."),
             Refusal::VhdxLog => write!(f, "이 VHDX에는 반영되지 않은 변경 기록이 남아 있으니 Windows에서 이 VHDX를 한 번 연결했다가 분리한 뒤 다시 시도하세요."),
+            Refusal::DynamicVhd => write!(f, "동적 VHD는 Hyper-V에서 고정 크기 VHD 또는 VHDX로 변환한 뒤 다시 가져오세요."),
             Refusal::Differencing => write!(f, "이 디스크는 다른 디스크를 기반으로 하는 차이 디스크이니 Hyper-V에서 부모 디스크와 병합한 뒤 다시 가져오세요."),
             Refusal::Sector4K => write!(f, "이 VHDX는 4K 논리 섹터 디스크라 BridgeVM에서 부팅할 수 없으니 512바이트 논리 섹터 디스크에 설치한 Windows를 가져오세요."),
             Refusal::TooLarge => write!(f, "가상 크기가 16 TiB를 넘는 디스크는 가져올 수 없습니다."),
@@ -149,6 +153,7 @@ struct Run {
 enum Image {
     Qcow2(qcow2::Qcow2),
     Vhdx(vhdx::Vhdx),
+    FixedVhd(u64),
 }
 
 impl Image {
@@ -162,7 +167,7 @@ impl Image {
         match Format::detect(&head) {
             Some(Format::Qcow2) => Ok(Image::Qcow2(qcow2::Qcow2::open(file, file_len)?)),
             Some(Format::Vhdx) => Ok(Image::Vhdx(vhdx::Vhdx::open(file, file_len)?)),
-            None => Err(Refusal::NotAnImage.into()),
+            None => Ok(Image::FixedVhd(vhd::fixed_size(file, file_len)?)),
         }
     }
 
@@ -170,6 +175,7 @@ impl Image {
         match self {
             Image::Qcow2(image) => image.size,
             Image::Vhdx(image) => image.size,
+            Image::FixedVhd(size) => *size,
         }
     }
 
@@ -177,6 +183,11 @@ impl Image {
         match self {
             Image::Qcow2(image) => image.walk(file, sink),
             Image::Vhdx(image) => image.walk(file, sink),
+            Image::FixedVhd(size) => sink(Run {
+                virt: 0,
+                len: *size,
+                source: RunSource::Data(0),
+            }),
         }
     }
 }

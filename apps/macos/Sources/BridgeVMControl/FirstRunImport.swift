@@ -106,7 +106,7 @@ enum FirstRunImport {
 
     /// Materialize the bundle for `slug` under `libraryRoot` and place the
     /// selected inputs into it. Disk and vars are independent copies so guest
-    /// writes cannot modify the source or another imported VM; a QCOW2 or VHDX
+    /// writes cannot modify the source or another imported VM; a container
     /// disk becomes a RAW copy.
     /// Returns the configuration for the caller to persist.
     static func register(

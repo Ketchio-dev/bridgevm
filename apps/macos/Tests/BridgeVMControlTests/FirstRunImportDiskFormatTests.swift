@@ -45,6 +45,21 @@ final class FirstRunImportDiskFormatTests: XCTestCase {
         XCTAssertEqual(FirstRunImportStage.converting(.vhdx, percent: 42).label, "VHDX 디스크를 변환하는 중… 42%")
     }
 
+    func testClassicVHDFooterIsRecognizedIndependentlyOfPathExtension() throws {
+        let fixture = try FirstRunImportTransactionFixture()
+        defer { fixture.remove() }
+        let disk = fixture.root.appendingPathComponent("installed.vhd")
+        let raw = Data(repeating: 0x42, count: 4096)
+        try raw.write(to: disk)
+        XCTAssertNil(HvfImportedDiskFormat.detect(path: disk.path))
+
+        var footer = Data(count: 512)
+        footer.replaceSubrange(0..<8, with: "conectix".utf8)
+        footer.replaceSubrange(12..<16, with: [0, 1, 0, 0])
+        try (raw + footer).write(to: fixture.disk)
+        XCTAssertEqual(HvfImportedDiskFormat.detect(path: fixture.disk.path), .vhd)
+    }
+
     func testABackingFileIsRefusedWithTheConvertersSentence() throws {
         try assertRefused(HvfQCOW2TestImage.make(backingFile: true).image,
                           sentence: "이 디스크는 다른 디스크를 기반으로 하니 원래 VM 앱에서 하나의 디스크로 합친 뒤 다시 가져오세요.")
