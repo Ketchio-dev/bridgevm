@@ -75,13 +75,9 @@ struct HvfVMSettingsSheet: View {
         // Without a container element the sheet's identifier replaces the Done button's own.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("bridgevm.runtime.settings")
-        .onAppear { session.settingsSheetOpen = true }
+        .onAppear(perform: draft.didAppear)
         .onChange(of: session.config.libraryContext?.config.name) { draft.refreshName() }
-        .onDisappear {
-            draft.commitShare()
-            draft.commitForwards()
-            session.settingsSheetOpen = false
-        }
+        .onDisappear(perform: draft.didDisappear)
         .interactiveDismissDisabled()
     }
 
