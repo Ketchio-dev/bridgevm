@@ -324,6 +324,20 @@ def circle(count: int, hz: float, start: float):
             for i in range(count)]
 
 
+def record_guest_metrics(record: dict, name: str, code: int, text: str) -> bool:
+    """A completed guest command contributes its metric lines only when it succeeded."""
+    record.setdefault("bench_exit_codes", {})[name] = code
+    if code:
+        record["errors"].append(f"{name}: exit={code}: {text.strip()[:300]}")
+        return False
+    values = parse_bvbench(text)
+    if not values:
+        record["errors"].append(f"{name}: exit=0 no value: {text.strip()[:300]}")
+        return False
+    record["bench"].update({metric: value for metric, (value, _) in values.items()})
+    return True
+
+
 def pointer_test(engine: Engine, record: dict) -> None:
     """Device route: 120 Hz absolute moves for 5 s while a guest logger counts cursor changes.
     Agent route: sequential trivial RUN round trips for 5 s (one command in flight, like the app's
@@ -339,17 +353,17 @@ def pointer_test(engine: Engine, record: dict) -> None:
         if engine.display_cursor.exists():
             cursor_watcher = threading.Timer(2.5, lambda: states.extend(watch_cursor(engine.display_cursor, 3.0)))
             cursor_watcher.start()
-    _, text = engine.run(command_line(cursor_logger(8000)), time.monotonic() + 120)
+    code, text = engine.run(command_line(cursor_logger(8000)), time.monotonic() + 120)
     injector.join()
     for timer in (watcher, cursor_watcher):
         if timer is not None:
             timer.join()  # a Timer's join waits for its function too
-    record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
-    record["bench"].update({"pointer-" + k: v for k, v in seen.items()})
-    if states:
-        with open(engine.display_fb, "rb") as handle:  # the guest frame's size, for the moves' pixels
-            width, height = struct.unpack_from("<2I", handle.read(16), 8)
-        record["bench"].update(cursor_metrics(states, engine.sent_moves, width, height))
+    if record_guest_metrics(record, "pointer", code, text):
+        record["bench"].update({"pointer-" + k: v for k, v in seen.items()})
+        if states:
+            with open(engine.display_fb, "rb") as handle:  # the guest frame's size, for the moves' pixels
+                width, height = struct.unpack_from("<2I", handle.read(16), 8)
+            record["bench"].update(cursor_metrics(states, engine.sent_moves, width, height))
     rtts, stop = [], time.monotonic() + 5
     echo = "echo bv"  # both engines wrap a plain command line into RUN
     while time.monotonic() < stop:
@@ -493,13 +507,16 @@ def display_test(engine: Engine, record: dict) -> None:
     host = {}
     consumer = None
     if isinstance(engine, BridgeVM) and engine.display_fb.exists():
-        consumer = threading.Thread(target=lambda: host.update(consume_display(engine.display_fb, 6.0)))
-        threading.Timer(3.0, consumer.start).start()  # the window is up and animating by then
-    _, text = engine.run(command_line(display_animation(10000)), time.monotonic() + 120)
-    if consumer is not None:
-        consumer.join()
-    record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
-    record["bench"].update(host)
+        consumer = threading.Timer(3.0, lambda: host.update(consume_display(engine.display_fb, 6.0)))
+        consumer.start()  # allow the guest window to start animating
+    try:
+        code, text = engine.run(command_line(display_animation(10000)), time.monotonic() + 120)
+    finally:
+        if consumer is not None:
+            consumer.cancel()  # an early failure need not start a new sampling window
+            consumer.join()
+    if record_guest_metrics(record, "display", code, text):
+        record["bench"].update(host)
 
 
 def guard_pids(engine: Engine):
@@ -609,9 +626,9 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
                     record["errors"].append(f"pointer: {type(error).__name__}: {error}")
             if args.desktop_mode:
                 try:
-                    _, text = engine.run(command_line(desktop_mode(args.desktop_mode == "native")), time.monotonic() + 60)
-                    record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
-                    if isinstance(engine, BridgeVM) and engine.display_fb.exists():
+                    code, text = engine.run(command_line(desktop_mode(args.desktop_mode == "native")), time.monotonic() + 60)
+                    measured = record_guest_metrics(record, "desktop-mode", code, text)
+                    if measured and isinstance(engine, BridgeVM) and engine.display_fb.exists():
                         save_display_frame(engine.display_fb, boot_dir / "desktop.pnm")
                 except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
                     record["errors"].append(f"desktop-mode: {type(error).__name__}: {error}")
@@ -644,14 +661,14 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
                     record["errors"].append(f"shutdown-diag: {type(error).__name__}: {error}")
             if args.stall_idle:
                 try:
-                    _, text = engine.run(command_line(stall_idle(8000)), time.monotonic() + 120)
-                    record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
+                    code, text = engine.run(command_line(stall_idle(8000)), time.monotonic() + 120)
+                    record_guest_metrics(record, "stall-idle", code, text)
                 except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
                     record["errors"].append(f"stall-idle: {type(error).__name__}: {error}")
             if args.stall:
                 try:
-                    _, text = engine.run(command_line(stall_under_flush(8000)), time.monotonic() + 120)
-                    record["bench"].update({k: v for k, (v, _) in parse_bvbench(text).items()})
+                    code, text = engine.run(command_line(stall_under_flush(8000)), time.monotonic() + 120)
+                    record_guest_metrics(record, "stall", code, text)
                 except (TimeoutError, RuntimeError, ConnectionError, OSError) as error:
                     record["errors"].append(f"stall: {type(error).__name__}: {error}")
             suite = SUITE + ([("net-download", net_download(args.blob_url, hashlib.sha256(_Blob.payload).hexdigest()))]
@@ -665,10 +682,7 @@ def one_boot(engine: Engine, boot_dir: Path, args) -> dict:
                 started = time.monotonic()
                 try:
                     code, text = engine.run(command_line(script), time.monotonic() + 600)
-                    values = parse_bvbench(text)
-                    record["bench"].update({metric: value for metric, (value, _) in values.items()})
-                    if not values:
-                        record["errors"].append(f"{name}: exit={code} no value: {text.strip()[:300]}")
+                    record_guest_metrics(record, name, code, text)
                 except (TimeoutError, RuntimeError, ConnectionError) as error:
                     record["errors"].append(f"{name}: {error}")
                     break
@@ -808,7 +822,9 @@ def summary(path: str) -> dict:
     boots = [b for b in measured if "invalid" not in b]  # --overlap-guard marked it
     for boot in boots:  # results written before multi-metric scripts were recorded
         for error in boot["errors"]:
-            boot["bench"].update({k: v for k, (v, _) in parse_bvbench(error.split("no value: ", 1)[-1]).items()})
+            legacy = re.match(r"^[\w-]+: exit=0 no value: (.*)", error, re.S)
+            if legacy:
+                boot["bench"].update({k: v for k, (v, _) in parse_bvbench(legacy[1]).items()})
     keys = ["ready_wall_ms", "boot_timer_desktop_ms", "idle_cpu_pct", "rss_mib", "guest_off_ms", "shutdown_ms"]
     table = {k: [b[k] for b in boots if k in b] for k in keys}
     for name in sorted({n for b in boots for n in b["bench"]}):
