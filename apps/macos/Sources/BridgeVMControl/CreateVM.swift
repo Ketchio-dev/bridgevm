@@ -11,12 +11,18 @@ extension VMLibrary {
     static let maximumVMNameCharacters = 128
     static let maximumVMSlugBytes = 200
 
+    static func registrationSlug(for name: String) -> String {
+        let slug = VMConfig.slugify(name)
+        // Keep accepted ID spellings. A decomposed name may exceed the byte limit only in that form.
+        return slug.utf8.count <= maximumVMSlugBytes ? slug : slug.precomposedStringWithCanonicalMapping
+    }
+
     static func normalizedVMName(_ rawName: String) -> String? {
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty,
               name.count <= maximumVMNameCharacters,
               !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
-              VMConfig.slugify(name).utf8.count <= maximumVMSlugBytes else { return nil }
+              registrationSlug(for: name).utf8.count <= maximumVMSlugBytes else { return nil }
         return name
     }
 
@@ -49,7 +55,7 @@ extension VMLibrary {
         storageBase: URL,
         libraryRoot: URL = root
     ) -> (slug: String, root: URL)? {
-        let baseSlug = VMConfig.slugify(base)
+        let baseSlug = registrationSlug(for: base)
         let fm = FileManager.default
         do {
             try fm.createDirectory(at: libraryRoot, withIntermediateDirectories: true)

@@ -11,6 +11,23 @@ final class VMCreationSafetyTests: XCTestCase {
         XCTAssertNil(VMLibrary.normalizedVMName(String(repeating: "한", count: 100)))
     }
 
+    func testRegistrationNamesPreserveDisplaySpellingAndFitDecomposedSlugs() throws {
+        let composed = String(repeating: "한", count: 45)
+        let decomposed = composed.decomposedStringWithCanonicalMapping
+        let short = "한".decomposedStringWithCanonicalMapping
+        let root = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let displayName = try XCTUnwrap(VMLibrary.normalizedVMName(decomposed))
+        XCTAssertEqual(Array(displayName.utf8), Array(decomposed.utf8))
+        let first = try XCTUnwrap(VMLibrary.reserveDestination(displayName, storageBase: root, libraryRoot: root))
+        XCTAssertEqual(Array(first.slug.utf8), Array(composed.utf8))
+        let duplicate = try XCTUnwrap(VMLibrary.reserveDestination(composed, storageBase: root, libraryRoot: root))
+        XCTAssertEqual(duplicate.slug, composed + "-2")
+        let accepted = try XCTUnwrap(VMLibrary.reserveDestination(short, storageBase: root, libraryRoot: root))
+        XCTAssertEqual(Array(accepted.slug.utf8), Array(short.utf8))
+    }
+
     func testPathContainmentUsesComponentsInsteadOfStringPrefixes() throws {
         let temp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: temp) }
