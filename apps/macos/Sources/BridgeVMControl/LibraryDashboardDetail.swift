@@ -36,8 +36,12 @@ struct LibraryDashboardDetail: View {
             }
         }
         .focusedSceneValue(\.hvfVMSettings, settingsSession == nil ? nil : { showingSettings = true })
-        .sheet(isPresented: $showingSettings) {
-            if let session = settingsSession { HvfVMSettingsSheet(session: session) }
+        .sheet(isPresented: $showingSettings) { settingsSheet }
+    }
+
+    @ViewBuilder var settingsSheet: some View {
+        if let session = settingsSession {
+            HvfVMSettingsSheet(session: session).id(ObjectIdentifier(session))
         }
     }
 
