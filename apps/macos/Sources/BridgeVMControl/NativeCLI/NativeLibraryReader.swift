@@ -90,13 +90,15 @@ struct NativeLibraryRecord: Codable, Equatable {
     let recoveryObservations: [String]
 
     init(config: VMConfig, rootURL: URL) {
-        id = config.slug
+        let directoryID = config.slug
+        // Use a stable spelling for JSON consumers and retain the directory spelling for paths.
+        id = directoryID.precomposedStringWithCanonicalMapping
         displayName = config.displayName
         backendKind = config.backendKind
         cpuCount = config.cpuCount
         memoryMiB = config.memMiB
         installPending = config.installPending
-        configPath = rootURL.appendingPathComponent(id).appendingPathComponent("vm.json").path
+        configPath = rootURL.appendingPathComponent(directoryID).appendingPathComponent("vm.json").path
         bundlePath = config.bundlePath
         runtimeState = "unobserved"
         var observations: [String] = []
@@ -104,7 +106,7 @@ struct NativeLibraryRecord: Codable, Equatable {
             observations.append("relocation-record-present-or-unreadable")
         }
         let journal = HvfWindowsInstallFinalizationPaths(
-            libraryRoot: rootURL, bundle: URL(fileURLWithPath: config.bundlePath), slug: id).journal
+            libraryRoot: rootURL, bundle: URL(fileURLWithPath: config.bundlePath), slug: directoryID).journal
         if NativeLibraryReader.entryMayExist(journal) {
             observations.append("install-finalization-record-present-or-unreadable")
         }

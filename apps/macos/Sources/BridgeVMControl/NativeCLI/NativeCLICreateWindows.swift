@@ -20,7 +20,7 @@ enum NativeCLICreateWindows {
               (request.guestPayload == nil) == (pending.guestPayloadIdentity == nil) else {
             throw NativeCLIError.unavailable("Saved VM registration did not match the accepted creation request.")
         }
-        return NativeCLICreateWindowsOutput(id: saved.slug, displayName: saved.displayName,
+        return NativeCLICreateWindowsOutput(id: saved.slug.precomposedStringWithCanonicalMapping, displayName: saved.displayName,
             backendKind: saved.backendKind, bootMode: saved.bootMode ?? "", installPending: true,
             cpuCount: request.cpuCount, memoryMiB: request.memoryMiB, diskGiB: request.diskGiB,
             resolution: request.resolution.text, networkEnabled: request.networkEnabled,

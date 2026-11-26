@@ -45,16 +45,18 @@ final class NativeLibraryReaderTests: XCTestCase {
 
     func testNativeUnicodeDirectoryOverridesStalePersistedIdentityWithoutWrites() throws {
         let root = try directory()
-        let file = try writeConfig(root: root, id: "개발-vm", displayName: "개발 Windows",
+        let directoryID = "개발-vm".decomposedStringWithCanonicalMapping
+        let file = try writeConfig(root: root, id: directoryID, displayName: "개발 Windows",
                                    savedID: "../../stale-name", installPending: true)
         let bytes = try Data(contentsOf: file)
         let before = try FileManager.default.contentsOfDirectory(atPath: file.deletingLastPathComponent().path)
-        let snapshot = try NativeLibraryReader.snapshot(rootURL: root, id: "개발-vm")
+        let snapshot = try NativeLibraryReader.snapshot(rootURL: root, id: directoryID)
         let record = try XCTUnwrap(snapshot.records.first)
         XCTAssertEqual(snapshot.records.count, 1)
         XCTAssertTrue(snapshot.complete)
         XCTAssertTrue(snapshot.issues.isEmpty)
-        XCTAssertEqual(record.id, "개발-vm")
+        XCTAssertEqual(Data(record.id.utf8), Data("개발-vm".utf8))
+        XCTAssertEqual(Data(record.configPath.utf8), Data(file.path.utf8))
         XCTAssertEqual(record.displayName, "개발 Windows")
         XCTAssertEqual(record.backendKind, "hvf-engine")
         XCTAssertEqual(record.runtimeState, "unobserved")
