@@ -6,48 +6,48 @@ struct LibraryOperationAlerts: ViewModifier {
     func body(content: Content) -> some View {
         content.modifier(LibraryDeletionWarningAlert(library: library))
         .alert(
-            "VM 삭제 실패",
+            "Couldn’t Delete VM",
             isPresented: Binding(
                 get: { library.deletionError != nil },
                 set: { if !$0 { library.deletionError = nil } }
             )
         ) {
-            Button("확인") { library.deletionError = nil }
+            Button("OK") { library.deletionError = nil }
         } message: {
-            Text(library.deletionError ?? "알 수 없는 오류")
+            Text(library.deletionError ?? "The operation could not be completed.")
         }
         .alert(
-            "VM 복제 실패",
+            "Couldn’t Duplicate VM",
             isPresented: Binding(
                 get: { library.cloneError != nil },
                 set: { if !$0 { library.cloneError = nil } }
             )
         ) {
-            Button("확인") { library.cloneError = nil }
+            Button("OK") { library.cloneError = nil }
         } message: {
-            Text(library.cloneError ?? "알 수 없는 오류")
+            Text(library.cloneError ?? "The operation could not be completed.")
         }
         .alert(
-            "VM 이동 실패",
+            "Couldn’t Move VM",
             isPresented: Binding(
                 get: { library.moveError != nil },
                 set: { if !$0 { library.moveError = nil } }
             )
         ) {
-            Button("확인") { library.moveError = nil }
+            Button("OK") { library.moveError = nil }
         } message: {
-            Text(library.moveError ?? "알 수 없는 오류")
+            Text(library.moveError ?? "The operation could not be completed.")
         }
         .alert(
-            "VM 작업을 진행할 수 없습니다",
+            "VM Action Unavailable",
             isPresented: Binding(
                 get: { library.operationError != nil },
                 set: { if !$0 { library.operationError = nil } }
             )
         ) {
-            Button("확인") { library.operationError = nil }
+            Button("OK") { library.operationError = nil }
         } message: {
-            Text(library.operationError ?? "알 수 없는 오류")
+            Text(library.operationError ?? "The operation could not be completed.")
         }
     }
 }
