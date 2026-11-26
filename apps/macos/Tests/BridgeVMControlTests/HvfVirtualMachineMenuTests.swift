@@ -4,11 +4,28 @@ import SwiftUI
 import XCTest
 @testable import BridgeVMControl
 
-/// The menu bar's 가상 머신 menu replaces the Guest windows button that sat over the top-right corner
+/// The menu bar's Virtual Machine menu replaces the Guest windows button that sat over the top-right corner
 /// of the Windows display, where a maximized Windows app has its close button.
 @MainActor
 final class HvfVirtualMachineMenuTests: XCTestCase {
     private typealias Owned = HvfOwnedRuntimeControllerTests.Fixture
+
+    func testNativeMenuShowsEnglishActionsAndTheStoppedGuestExplanation() throws {
+        guard #available(macOS 14.4, *) else { throw XCTSkip("Native SwiftUI menu hosting requires macOS 14.4") }
+        let menu = NSHostingMenu(rootView: HvfVirtualMachineMenuContent())
+        menu.update()
+        XCTAssertEqual(menu.items.filter { !$0.isSeparatorItem }.map(\.title), [
+            "Settings…", "Send Ctrl+Alt+Delete", "Open Snipping Tool", "Pause", "Restart", "Stop",
+            "Windows Apps", "Show Guest Windows…"
+        ])
+        let settings = try XCTUnwrap(menu.items.first)
+        XCTAssertEqual(settings.keyEquivalent, ",")
+        XCTAssertEqual(settings.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask), .command)
+        let apps = try XCTUnwrap(menu.items.first { $0.title == "Windows Apps" }?.submenu)
+        apps.update()
+        XCTAssertEqual(apps.items.map(\.title), ["Start the VM to see its Windows apps."])
+        XCTAssertFalse(try XCTUnwrap(apps.items.first).isEnabled)
+    }
 
     /// Only the framebuffer, the notices and the paused overlay are over Windows; the Guest windows
     /// sheet hangs off the display, opened from the menu.
@@ -44,7 +61,7 @@ final class HvfVirtualMachineMenuTests: XCTestCase {
 
         session.pause = .paused
         state = HvfVirtualMachineMenuState(session: session)
-        XCTAssertTrue(state.pauses && state.paused, "재개")
+        XCTAssertTrue(state.pauses && state.paused, "Resume")
         XCTAssertFalse(state.sendsKeys || state.listsWindows, "a paused guest takes no input")
         session.pause = .running
 
@@ -68,11 +85,11 @@ final class HvfVirtualMachineMenuTests: XCTestCase {
         XCTAssertNil(target.display, "the library window is in front")
 
         a.perform(.windows)
-        XCTAssertTrue(a.showsWindowInventory, "Windows 창 목록… opens the window's sheet")
+        XCTAssertTrue(a.showsWindowInventory, "Show Guest Windows… opens the window's sheet")
         XCTAssertFalse(b.showsWindowInventory)
     }
 
-    /// 화면 캡처 (Snipping Tool) sends Windows+Shift+S, the capture bar's own chord, in both Command key
+    /// Open Snipping Tool sends Windows+Shift+S, the capture bar's own chord, in both Command key
     /// settings: a Mac keyboard has no PrtSc key and ⌘⇧S is Ctrl+Shift+S in the default one.
     func testScreenCaptureSendsWindowsShiftSInBothCommandKeyModes() throws {
         for mode in [HvfCommandKeyMode.mac, .windows] {

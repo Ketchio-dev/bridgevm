@@ -2,7 +2,7 @@ import Foundation
 import Combine
 
 /// One VM window's Windows apps: the list the guest last gave, asked again when the menu bar opens and the list is
-/// older than `staleAfter` (or on 목록 새로 고침), and the launches waiting for the guest's answer. run.log is read
+/// older than `staleAfter` (or on Refresh List), and the launches waiting for the guest's answer. run.log is read
 /// only while something waits, from where it ended when the question went out.
 @MainActor
 final class HvfGuestStartAppsController: ObservableObject {
