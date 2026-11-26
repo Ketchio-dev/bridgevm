@@ -22,9 +22,8 @@ final class HvfWindowsSnapshotModel: ObservableObject {
         var action: String { operation == .restore ? "Restore" : "Delete" }
     }
 
-    nonisolated static let idleText = "Shut down Windows to save a snapshot of its disk and boot settings."
     @Published private(set) var busy = false
-    @Published private(set) var status = idleText
+    @Published private(set) var status: String?
     @Published private(set) var failed = false
     @Published private(set) var listRevision = 0
 

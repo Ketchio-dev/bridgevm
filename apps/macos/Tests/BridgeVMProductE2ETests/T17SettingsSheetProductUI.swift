@@ -16,7 +16,7 @@ final class T17SettingsSheetProductUI: T17UIControlling {
     private var restoreAsked = false
     var snapshotCreated = "Snapshot created"
     var snapshotRestored = "Snapshot restored"
-    private var snapshotStatus = "Shut down Windows to save a snapshot of its disk and boot settings."
+    private var snapshotStatus = "Create a snapshot to save the Windows disk and boot settings."
 
     private static let sheetControls: Set<String> = [
         "bridgevm.runtime.settings", "bridgevm.runtime.settings.done",
