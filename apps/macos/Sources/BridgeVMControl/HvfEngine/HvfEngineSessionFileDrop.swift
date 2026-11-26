@@ -14,7 +14,8 @@ extension HvfEngineSession {
         }
         let root = URL(fileURLWithPath: (config.ctlFilePath as NSString).deletingLastPathComponent)
             .appendingPathComponent("drops", isDirectory: true)
-        let (id, staging) = fileDrops.begin(in: root, open: open)
+        let itemName = items.count == 1 ? items[0].lastPathComponent : nil
+        let (id, staging) = fileDrops.begin(in: root, open: open, itemName: itemName)
         return Task { [weak self] in
             let outcome = await Task.detached(priority: .userInitiated) {
                 Result(catching: { try HvfFileDropStaging.stage(items, into: staging) })

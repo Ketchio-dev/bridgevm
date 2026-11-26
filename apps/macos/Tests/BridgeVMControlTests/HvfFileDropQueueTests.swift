@@ -90,7 +90,43 @@ final class HvfFileDropQueueTests: XCTestCase {
         queue.consume(.unknown("BVAGENT DROP failed \(first.id) agent-too-old files=0/1 bytes=0/10 t=3"))
         XCTAssertEqual(queue.notice?.text.hasPrefix("Copying to Windows · 0 of 1 file"), true)
         queue.consume(.unknown("BVAGENT DROP failed \(second.id) guest-error bad-name files=0/1 bytes=0/10 t=4"))
-        XCTAssertEqual(queue.notice, .init(text: HvfFileDropQueue.failureText("guest-error"), failed: true))
+        let failure = HvfFileDropQueue.failureText("guest-error")
+            + "\nAn earlier transfer needs attention. " + HvfFileDropQueue.failureText("agent-too-old")
+        XCTAssertEqual(queue.notice, .init(text: failure, failed: true))
+    }
+
+    func testQueuedSuccessReportsEarlierFailedFileAndNextCopyStartsFresh() async throws {
+        let root = scratch()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let session = session(root: root)
+        session.serviceStarted = true
+        session.connectionState = .connected(host: "WIN")
+        func submit(_ name: String) async throws -> String {
+            let item = root.appendingPathComponent(name)
+            try Data().write(to: item)
+            let staging = try XCTUnwrap(session.copyDroppedFiles([item]))
+            await staging.value
+            let ctl = try String(contentsOfFile: session.config.ctlFilePath, encoding: .utf8)
+            let line = try XCTUnwrap(ctl.split(separator: "\n").last)
+            let fields = line.split(separator: " ")
+            XCTAssertEqual(fields.first, "BVDROP")
+            return String(try XCTUnwrap(fields.dropFirst().first))
+        }
+
+        let first = try await submit("보고서.txt")
+        let second = try await submit("notes.txt")
+        session.append(.unknown("BVAGENT DROP failed \(first) guest-error files=0/1 bytes=0/0"))
+        session.append(.unknown("BVAGENT DROP start \(second) files=1 bytes=0"))
+        XCTAssertEqual(session.fileDrops.notice?.text, "Copying to Windows · 0 of 1 file · 0 B / 0 B")
+        session.append(.unknown("BVAGENT DROP done \(second) files=1 bytes=0"))
+        let copied = "Copied to the Windows desktop (1 file, 0 B)."
+        let earlier = "The earlier transfer of “보고서.txt” needs attention. " + HvfFileDropQueue.failureText("guest-error")
+        XCTAssertEqual(session.fileDrops.notice, .init(text: copied + "\n" + earlier, failed: true))
+
+        let independent = try await submit("next.txt")
+        session.append(.unknown("BVAGENT DROP done \(independent) files=1 bytes=0"))
+        XCTAssertEqual(session.fileDrops.notice, .init(text: copied, failed: false))
     }
 
     func testAGuestRestartAbandonsDropsInFlightButNotOneStillStaging() {
