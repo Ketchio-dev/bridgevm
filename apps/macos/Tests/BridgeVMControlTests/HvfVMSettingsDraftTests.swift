@@ -83,7 +83,7 @@ final class HvfVMSettingsDraftTests: XCTestCase {
         XCTAssertNil(file.portForwards)
     }
 
-    func testInvalidTextStaysVisibleAndDoneRefusesDismissal() throws {
+    func testInvalidPortForwardKeepsSettingsOpenOnlyWhileNetworkingIsOn() throws {
         let f = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
         defer { f.clean() }
         var saved = f.config(); saved.portForwards = "8080:80"; f.save(saved)
@@ -94,8 +94,13 @@ final class HvfVMSettingsDraftTests: XCTestCase {
         XCTAssertFalse(draft.finish())
         XCTAssertEqual(draft.forwards, "not-a-port")
         XCTAssertNotNil(draft.forwardsMessage)
+        XCTAssertNil(session.applyNetworkToggle(false).message)
+        XCTAssertTrue(draft.finish(), "Offline settings can close with the port field hidden")
         let file = try JSONDecoder().decode(VMConfig.self, from: Data(contentsOf: f.registration(saved)))
+        XCTAssertEqual(file.networkEnabled, false)
         XCTAssertEqual(file.portForwards, "8080:80")
+        let reopened = HvfVMSettingsDraft(session: session)
+        XCTAssertEqual(reopened.forwards, "8080:80")
     }
 
     func testStartIsRefusedWhileSettingsSheetIsOpen() throws {
