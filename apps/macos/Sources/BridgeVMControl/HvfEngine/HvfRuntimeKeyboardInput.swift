@@ -11,24 +11,28 @@ struct HvfRuntimeKeyboardInput: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                TextField("Windows에 입력할 텍스트", text: $draft, onCommit: submit)
+                TextField("Text to send to Windows", text: $draft, onCommit: submit)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("bridgevm.runtime.keyboard.input")
-                Button("입력", action: submit)
+                Button("Send", action: submit)
                     .disabled(draft.isEmpty || draftPending)
+                    .accessibilityLabel("Send text to Windows")
                     .accessibilityIdentifier("bridgevm.runtime.keyboard.send")
-                    .help("클립보드로 입력하면 Windows에서 마지막으로 복사한 내용이 바뀝니다.")
+                    .help("When BridgeVM uses paste to send text, it replaces the contents of the Windows clipboard.")
             }
             if draftPending {
-                Label("Windows의 입력 확인을 기다리고 있습니다.", systemImage: "clock")
+                Label("Waiting for Windows to confirm input…", systemImage: "clock")
                     .font(.callout).foregroundStyle(.secondary)
                     .accessibilityIdentifier("bridgevm.runtime.keyboard.pending")
             } else if unconfirmedDraft != nil || submissionRefused {
-                Label(unconfirmedDraft != nil
-                      ? "입력 결과를 확인하지 못했습니다. 다시 보내기 전에 Windows에서 입력된 내용을 확인하세요."
-                      : "입력을 접수하지 못했습니다. 작성한 내용은 유지됩니다. 연결 상태와 로그를 확인하세요.",
-                      systemImage: "exclamationmark.circle")
-                    .font(.callout).foregroundStyle(.orange)
+                Label {
+                    Text(unconfirmedDraft != nil
+                         ? "Check what appeared in Windows before sending this text again."
+                         : "Couldn’t send the text. Check the VM connection and try again. Your draft is still here.")
+                } icon: {
+                    Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
+                }
+                    .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier(unconfirmedDraft != nil ? "bridgevm.runtime.keyboard.unconfirmed"
                                              : "bridgevm.runtime.keyboard.refusal")
