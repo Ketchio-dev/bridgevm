@@ -7,6 +7,20 @@ import XCTest
 final class FirstRunOptionalRecoveryTests: XCTestCase {
     private typealias UI = FirstRunOptionalRecoveryFixture
 
+    func testEscapeLeavesAnUnsubmittedDraftWithoutChangingTheLibrary() async throws {
+        try await UI.run { fixture, library, host in
+            let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                timestamp: 0, windowNumber: 0, context: nil, characters: "\u{1b}",
+                charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+            XCTAssertTrue(host.performKeyEquivalent(with: escape))
+            await UI.settle(host)
+            XCTAssertTrue(UI.fields(host).isEmpty)
+            XCTAssertNil(library.selectedID)
+            XCTAssertNil(library.firstRunImport.stage)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.entry.path))
+        }
+    }
+
     func testClearingStateOmitsHiddenRecoveryDraftsFromActualImport() async throws {
         try await UI.run { fixture, library, host in
             _ = try await self.selectRecoveryDrafts(fixture, host: host)
@@ -18,6 +32,7 @@ final class FirstRunOptionalRecoveryTests: XCTestCase {
                 "Hidden recovery drafts must not block importing without optional vTPM state")
             guard library.firstRunImportError == nil else { return }
             try fixture.assertPersisted()
+            XCTAssertEqual(library.selectedID, library.vms.first?.slug)
         }
     }
 

@@ -11,7 +11,7 @@ struct FirstRunView: View {
     @State private var cpuCount = 4
 
     private var showsImport: Bool {
-        presentation?.wrappedValue.preparingDisk == true || library.selectedID == LibraryModel.firstRunImportSelectionID
+        presentation?.wrappedValue.showsImportDraft == true || library.selectedID == LibraryModel.firstRunImportSelectionID
             || library.firstRunImportBusy || library.firstRunImportError != nil
             || library.firstRunImport.publishedConfig != nil
     }
@@ -22,11 +22,13 @@ struct FirstRunView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         VStack(alignment: .leading, spacing: 8) {
-                            if let presentation, presentation.wrappedValue.preparingDisk {
-                                Button { presentation.wrappedValue.preparingDisk = false } label: {
+                            if let presentation, presentation.wrappedValue.showsImportDraft {
+                                Button { presentation.wrappedValue.showsImportDraft = false } label: {
                                     Label("시작 화면으로", systemImage: "chevron.backward")
                                 }
                                 .buttonStyle(.link)
+                                .keyboardShortcut(.cancelAction)
+                                .accessibilityIdentifier("bridgevm.first-run.back")
                             }
                             Text("기존 Windows VM 가져오기").font(.system(size: 28, weight: .bold))
                             Text("파일을 선택해 등록한 뒤 VM 상세 화면에서 시작하세요.").foregroundStyle(.secondary)
@@ -54,22 +56,17 @@ struct FirstRunView: View {
 
     func welcome(in presentation: Binding<LibraryWindowPresentation>?, diskPath: Binding<String>) -> FirstRunWelcomeView {
         FirstRunWelcomeView(createAction: { presentation?.wrappedValue.sheet = .create(installer: nil) },
-                            importAction: showImport, dropAction: { choice, url in
+                            importAction: { presentation?.wrappedValue.showsImportDraft = true }, dropAction: { choice, url in
             guard let presentation else { return false }
             switch choice {
             case .installer:
                 presentation.wrappedValue.sheet = .create(installer: url)
             case .disk:
                 diskPath.wrappedValue = url.path
-                presentation.wrappedValue.preparingDisk = true
+                presentation.wrappedValue.showsImportDraft = true
             }
             return true
         })
-    }
-
-    private func showImport() {
-        library.proMode = false
-        library.selectedID = LibraryModel.firstRunImportSelectionID
     }
 
     private var recoveryIssue: FirstRunImport.ValidationError? {
@@ -81,9 +78,10 @@ struct FirstRunView: View {
 
     private func runImport() {
         guard !library.firstRunImportBusy else { return }
-        if let presentation, presentation.wrappedValue.preparingDisk {
-            showImport()
-            presentation.wrappedValue.preparingDisk = false
+        if let presentation, presentation.wrappedValue.showsImportDraft {
+            library.proMode = false
+            library.selectedID = LibraryModel.firstRunImportSelectionID
+            presentation.wrappedValue.showsImportDraft = false
         }
         let state = FirstRunImportVTPMValidation.trimmed(vtpmPath)
         let inputs = FirstRunImport.Inputs(

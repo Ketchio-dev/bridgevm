@@ -3,7 +3,7 @@ import SwiftUI
 struct LibraryWindowPresentation {
     var sheet: Sheet?
     var cloneSource: VMConfig?
-    var preparingDisk = false
+    var showsImportDraft = false
 
     enum Sheet: Hashable, Identifiable {
         case palette

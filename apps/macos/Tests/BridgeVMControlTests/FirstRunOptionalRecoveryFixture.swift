@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 enum FirstRunOptionalRecoveryFixture {
     static func run(_ body: (FirstRunImportTransactionFixture, LibraryModel,
-        NSHostingView<FirstRunView>) async throws -> Void) async throws {
+        NSView) async throws -> Void) async throws {
         let fixture = try FirstRunImportTransactionFixture()
         let library = LibraryModel(rootURL: fixture.library, migrateLegacy: false)
         defer { if !library.firstRunImportBusy { fixture.remove() } }
@@ -28,8 +28,7 @@ enum FirstRunOptionalRecoveryFixture {
             else { unsetenv("BRIDGEVM_REPO_ROOT") }
         }
         XCTAssertEqual(HvfMediaImportHelper.bundled.path, helper.resolvingSymlinksInPath().path)
-        library.selectedID = LibraryModel.firstRunImportSelectionID
-        let host = NSHostingView(rootView: FirstRunView(library: library))
+        let host = NSHostingView(rootView: WindowDraft(library: library))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 850),
             styleMask: [], backing: .buffered, defer: true)
         window.contentView = host
@@ -43,6 +42,15 @@ enum FirstRunOptionalRecoveryFixture {
         edit(initial[2], to: fixture.vars.path)
         await settle(host)
         try await body(fixture, library, host)
+    }
+
+    private struct WindowDraft: View {
+        let library: LibraryModel
+        @State private var presentation = LibraryWindowPresentation(showsImportDraft: true)
+
+        var body: some View {
+            FirstRunView(library: library).environment(\.libraryWindowPresentation, $presentation)
+        }
     }
 
     static func pressReturn(_ host: NSView) throws -> Bool {
