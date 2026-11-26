@@ -11,7 +11,7 @@ extension HvfEngineSession {
         // A failed lifecycle receipt alone says nothing about storage, and must not hide
         // a specific startup error or the runner-death sentence.
         if guiStartFailureText == nil, diskSyncNotice.finalSaveFailed {
-            return "Windows를 종료하면서 디스크를 Mac에 안전하게 저장하지 못했으니 Mac의 저장 공간과 디스크 연결을 확인하세요."
+            return "BridgeVM couldn’t finish saving the Windows disk at shutdown. Check your Mac’s free space and drive connection."
         }
         guard !runnerDiedWithoutCleanup, ownedController?.supervisionLost == true else { return nil }
         return "BridgeVM lost contact with Windows, so choose Force Stop to stop the VM."

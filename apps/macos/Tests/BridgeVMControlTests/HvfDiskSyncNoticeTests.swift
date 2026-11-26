@@ -18,6 +18,8 @@ final class HvfDiskSyncNoticeTests: XCTestCase {
             notice.consume(event)
         }
         XCTAssertTrue(notice.isVisible)
+        XCTAssertEqual(HvfDiskSyncNotice.text,
+            "BridgeVM couldn’t finish saving the Windows disk. Check your Mac’s free space and drive connection, then shut down Windows and start it again.")
         XCTAssertTrue(notice.finalSaveFailed)
     }
 
