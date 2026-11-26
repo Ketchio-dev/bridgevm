@@ -17,7 +17,7 @@ For the General Preview, [install the DMG](#dmg-from-the-releases-page) or
 
 ## Build the current source
 
-Use this path when you want to inspect exactly what you run. Requirements are
+Building the current source gives you the English Mac interface. Requirements are
 Apple silicon, macOS 15+, Xcode/Swift, and Rust 1.85+. Follow the
 [development setup](../CONTRIBUTING.md#set-up-a-development-checkout) for toolchains.
 The app is built by the same

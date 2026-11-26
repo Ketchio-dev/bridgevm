@@ -263,6 +263,12 @@ nav a, .source-link {
   font-size: .85rem;
 }
 
+.download-guides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .15rem 1rem;
+}
+
 .desktop {
   min-width: 0;
 }
