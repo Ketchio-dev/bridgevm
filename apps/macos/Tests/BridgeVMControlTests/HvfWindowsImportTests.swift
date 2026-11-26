@@ -32,7 +32,7 @@ final class HvfWindowsImportTests: XCTestCase {
         XCTAssertEqual(config.backendKind, "hvf-engine")
         XCTAssertEqual(config.bootMode, "windows-hvf")
         let decoded = try JSONDecoder().decode(VMConfig.self, from: JSONEncoder().encode(config))
-        XCTAssertEqual(decoded.sharedFolderHostPath, FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("BridgeVM 공유/\(config.name)").path)
+        XCTAssertEqual(decoded.sharedFolderHostPath, FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("BridgeVM Shared Folders/\(config.name)").path)
         XCTAssertEqual(decoded.sharedFolderGuestPath, "C:\\bridgevm-share")
         XCTAssertEqual(decoded.createSharedFolderOnStart, true)
         XCTAssertFalse(FileManager.default.fileExists(atPath: try XCTUnwrap(decoded.sharedFolderHostPath)))

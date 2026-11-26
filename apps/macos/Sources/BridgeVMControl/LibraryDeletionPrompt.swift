@@ -7,13 +7,13 @@ struct LibraryDeletionPrompt: Equatable {
     let message: String
 
     init(config: VMConfig, rootURL: URL) {
-        let guidance = "실행 중인 VM은 삭제할 수 없습니다. 제어 화면에서 완전히 중지한 뒤 진행하세요."
+        let guidance = "Shut down the VM before continuing."
         if let target = VMLibrary.deletionTarget(for: config, rootURL: rootURL) {
-            confirmTitle = "\(config.name) 및 가상 디스크 삭제"
-            message = "\(guidance) VM 설정과 \(target.path)에 있는 가상 디스크 데이터가 모두 영구 삭제되며 되돌릴 수 없습니다."
+            confirmTitle = "Delete \(config.name) and Its Disk"
+            message = "\(guidance) This permanently deletes the VM settings and the virtual disk at \(target.path)."
         } else {
-            confirmTitle = "\(config.name) 등록 제거"
-            message = "\(guidance) BridgeVM 라이브러리 등록만 제거하며 외부 번들 \(config.bundlePath)의 가상 디스크 데이터는 유지됩니다."
+            confirmTitle = "Remove \(config.name) from Library"
+            message = "\(guidance) This removes the VM from your library. Its virtual disk stays in the external bundle at \(config.bundlePath)."
         }
     }
 }

@@ -32,7 +32,7 @@ final class AppUIDriverAXFixture: AppUIDriverAXAccess {
         add(12, role: "AXStaticText", identifier: "bridgevm.create.windows.iso.selection", value: "")
         add(13, role: "AXStaticText", identifier: "bridgevm.create.windows.guest-payload.selection", value: "")
         add(14, role: "AXStaticText", identifier: "bridgevm.create.windows.guest-manifest.selection", value: "")
-        add(15, role: "AXButton", title: "취소")
+        add(15, role: "AXButton", identifier: "bridgevm.create.cancel", title: "Cancel")
     }
     func add(_ id: Int, role: String, identifier: String? = nil, title: String? = nil, value: String? = nil, description: String? = nil) {
         var strings = [A.role: role]

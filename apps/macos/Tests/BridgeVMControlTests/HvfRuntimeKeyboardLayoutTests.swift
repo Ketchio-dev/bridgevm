@@ -23,6 +23,7 @@ final class HvfRuntimeKeyboardLayoutTests: XCTestCase {
         }
         let field = try XCTUnwrap(editableField(in: host))
         let prompt = try XCTUnwrap(field.placeholderString)
+        XCTAssertEqual(prompt, "Text to send to Windows")
         let font = try XCTUnwrap(field.font)
         let promptWidth = (prompt as NSString).size(withAttributes: [.font: font]).width
         XCTAssertGreaterThanOrEqual(field.bounds.width, promptWidth)

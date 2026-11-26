@@ -9,19 +9,19 @@ struct RetainedGenericControlView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text(config.name).font(.title2.bold())
-                Text("등록 정보가 사라지거나 변경되었을 때 보관한 기존 제어입니다.")
+                Text("This VM’s registration changed or was removed. Its previous session is shown here.")
                     .foregroundColor(.secondary)
                 Text(LibraryRetainedControlDescriptor.generic(config: config, model: model).statusLabel)
                 if model.hasActiveRuntimeWork {
-                    Button("정지") { model.stop() }
+                    Button("Stop") { model.stop() }
                         .disabled(!model.retainedStopAvailable)
                         .accessibilityIdentifier("bridgevm.retained.generic.stop")
                     if model.ownedRuntime == nil {
-                        Text("이 앱에서 보관한 프로세스 소유권이 없어 안전한 정지를 요청할 수 없습니다. 기존 VM 창에서 종료하세요.")
+                        Text("Shut down from the original VM window. BridgeVM no longer controls that process.")
                             .font(.caption).foregroundColor(.secondary)
                     }
                 } else {
-                    Button("목록에서 닫기", action: dismiss)
+                    Button("Dismiss", action: dismiss)
                         .accessibilityIdentifier("bridgevm.retained.generic.dismiss")
                 }
             }.padding(20)

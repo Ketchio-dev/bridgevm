@@ -64,7 +64,7 @@ final class NativeCLIStartTests: XCTestCase {
 
     /// The start path's own sentence (with the real error text) is what the CLI prints.
     func testFailureAndRefusalPrintTheAppSentence() {
-        let text = "Windows를 시작하지 못했으니 아래 오류 내용을 확인하고 다시 시도하세요.\nThe file “hvf-runner” couldn’t be opened."
+        let text = "Windows could not start, so review the error below and try again.\nThe file “hvf-runner” couldn’t be opened."
         for refused in [false, true] {
             var time = 0.0
             let result = NativeCLIStartWaiter.wait(request: Fixture.request(), now: { time }, pause: { time += $0 }) { request in

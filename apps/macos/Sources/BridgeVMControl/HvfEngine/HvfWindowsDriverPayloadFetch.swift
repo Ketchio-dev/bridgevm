@@ -44,7 +44,7 @@ enum HvfWindowsDriverPayloadFetch {
         let fm = FileManager.default
         let folder = root.appendingPathComponent(source.name, isDirectory: true)
         do { try fm.createDirectory(at: folder, withIntermediateDirectories: true) } catch {
-            throw Failure(message: "드라이버를 저장할 폴더를 만들 수 없습니다: \(folder.path)")
+            throw Failure(message: "Couldn’t create the driver folder at \(folder.path).")
         }
         let archive = folder.appendingPathComponent("archive.zip")
         if !matchesPins(archive, source) { try download(source, to: archive) }
@@ -58,7 +58,7 @@ enum HvfWindowsDriverPayloadFetch {
         for driver in drivers {
             let directory = stagedPayload.appendingPathComponent(driver.role, isDirectory: true)
             do { try fm.createDirectory(at: directory, withIntermediateDirectories: true) } catch {
-                throw Failure(message: "드라이버 폴더를 만들 수 없습니다: \(directory.path)")
+                throw Failure(message: "Couldn’t create the driver folder at \(directory.path).")
             }
             for file in driver.files {
                 try extract(source.folder + file, from: archive, to: directory.appendingPathComponent(file))
@@ -70,7 +70,7 @@ enum HvfWindowsDriverPayloadFetch {
         }
         for path in paths.sorted() {
             guard let digest = HvfWindowsInstallCacheIdentity.sha256File(stagedPayload.appendingPathComponent(path).path) else {
-                throw Failure(message: "꺼낸 드라이버 파일을 읽을 수 없습니다: \(path)")
+                throw Failure(message: "Couldn’t read the extracted driver file at \(path).")
             }
             lines.append("file\t\(path)\t\(digest)")
         }
@@ -81,7 +81,7 @@ enum HvfWindowsDriverPayloadFetch {
             try place(stagedPayload, at: payload)
             try place(stagedManifest, at: manifest)
         } catch {
-            throw Failure(message: "드라이버 묶음을 저장하지 못했습니다: \(folder.path)")
+            throw Failure(message: "Couldn’t save the drivers to \(folder.path).")
         }
         return Prepared(payloadDirectory: payload.path, manifestPath: manifest.path)
     }
@@ -100,26 +100,26 @@ enum HvfWindowsDriverPayloadFetch {
             "--connect-timeout", "30", "--speed-limit", "1024", "--speed-time", "60", "--max-time", "1800",
             "-o", partial.path, source.url])
         guard status == 0 else {
-            throw Failure(message: "드라이버를 내려받지 못했습니다(curl \(status)). 인터넷 연결을 확인한 뒤 다시 시도하세요.")
+            throw Failure(message: "Driver download failed (curl \(status)). Check your internet connection and try again.")
         }
         guard matchesPins(partial, source) else {
-            throw Failure(message: "내려받은 드라이버 파일의 크기나 SHA-256이 공식 파일과 달라 사용하지 않았습니다. 잠시 후 다시 시도하세요.")
+            throw Failure(message: "The downloaded driver archive failed size or SHA-256 verification. Try downloading it again.")
         }
         guard rename(partial.path, archive.path) == 0 else {
-            throw Failure(message: "내려받은 드라이버 파일을 저장하지 못했습니다: \(archive.path)")
+            throw Failure(message: "Couldn’t save the downloaded drivers to \(archive.path).")
         }
     }
 
     private static func extract(_ member: String, from archive: URL, to file: URL) throws {
         guard FileManager.default.createFile(atPath: file.path, contents: nil),
               let handle = FileHandle(forWritingAtPath: file.path) else {
-            throw Failure(message: "드라이버 파일을 만들 수 없습니다: \(file.path)")
+            throw Failure(message: "Couldn’t create the driver file at \(file.path).")
         }
         let status = run("/usr/bin/unzip", ["-p", archive.path, member], output: handle)
         try? handle.close()
         let size = (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
         guard status == 0, size > 0 else {
-            throw Failure(message: "드라이버 압축 파일에서 \(member)을(를) 꺼내지 못했습니다.")
+            throw Failure(message: "Couldn’t extract \(member) from the driver archive.")
         }
     }
 

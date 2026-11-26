@@ -69,7 +69,7 @@ final class HvfDiskSyncStopFailureTests: XCTestCase {
         try await f.exit()
         XCTAssertTrue(session.runnerDiedWithoutCleanup)
         XCTAssertNil(session.runtimeSupervisionFailureText)
-        XCTAssertEqual(session.guiStartFailureText, "Windows가 예기치 않게 종료되었으니 잠시 후 다시 시작하세요.")
+        XCTAssertEqual(session.guiStartFailureText, "Windows stopped unexpectedly, so wait a moment before starting it again.")
     }
 
     @MainActor

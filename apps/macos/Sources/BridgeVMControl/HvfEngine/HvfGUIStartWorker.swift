@@ -2,7 +2,7 @@ import Foundation
 
 enum HvfGUIStartWorker {
     private struct AdmissionChanged: Error {}
-    private static let changed = "시작 준비 중 VM 설정 또는 작업 소유권이 변경되었습니다."
+    private static let changed = "The VM settings or the operation in progress changed during startup. Check the VM’s status and try again."
 
     static func run(_ input: HvfGUIStartExecution.Input) async -> HvfGUIStartWorkerOutput {
         var key: Data?
@@ -18,14 +18,14 @@ enum HvfGUIStartWorker {
                     try lease.finish()
                 } catch {
                     diagnostics.append("Runner-death retry media lease: \(error.localizedDescription)")
-                    return .init(result: .refused("이전 Windows가 파일을 정리하고 있으니 잠시 후 다시 시작하세요."), diagnostics: diagnostics)
+                    return .init(result: .refused("The previous Windows session is still closing its files. Try starting it again in a moment."), diagnostics: diagnostics)
                 }
             }
             let existing = input.retryAfterRunnerDeath ? false : input.processIsRunning(input.config.targetDiskPath)
             try await checkAdmission(input)
             if existing {
                 return .init(result: input.policy == .attachOrStart ? .observedAttachment
-                    : .refused("이 VM의 디스크를 이미 실행 중인 Windows가 쓰고 있어 새로 시작하지 않았습니다."))
+                    : .refused("Windows is already using this VM’s disk. Open the running VM."))
             }
             let config = input.config.preparingSharedFolder { diagnostics.append($0) }
             if let failure = HvfRuntimeLaunchReadiness.failure(config: config,

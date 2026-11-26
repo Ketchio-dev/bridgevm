@@ -28,7 +28,7 @@ extension VMRegistrationWriter {
                 ? Darwin.rename(temporary.path, url.path)
                 : Darwin.renameatx_np(AT_FDCWD, temporary.path, AT_FDCWD, url.path, UInt32(RENAME_EXCL))
             guard renamed == 0 else {
-                if !replaceExisting, errno == EEXIST { throw VMRegistrationCollision() }
+                if !replaceExisting, errno == EEXIST { throw VMRegistrationCollision(vmID: parent.lastPathComponent) }
                 throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
             }
             published = true

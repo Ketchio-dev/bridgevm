@@ -28,11 +28,11 @@ struct HvfWindowsSnapshotCard: View {
             HStack(spacing: 8) {
                 // In the grouped settings form a titled field turns into a row label with a borderless
                 // input; a hidden label with a prompt and a border reads as something to type into.
-                TextField("스냅샷 이름", text: $name, prompt: Text("스냅샷 이름 (선택 사항)"))
+                TextField("Snapshot name", text: $name, prompt: Text("Snapshot name (optional)"))
                     .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("bridgevm.runtime.snapshot.name")
-                Button("새 스냅샷") {
+                Button("Create Snapshot") {
                     let chosenName = name
                     model.create { [session, config] operation in
                         let notice = try await session.runSnapshot(operation, configuration: config, name: chosenName)
@@ -49,9 +49,9 @@ struct HvfWindowsSnapshotCard: View {
                 .foregroundColor(model.failed ? .red : .secondary)
                 .accessibilityIdentifier("bridgevm.runtime.snapshot.status")
             if listedEntries == nil {
-                ProgressView("스냅샷 불러오는 중…").controlSize(.small)
+                ProgressView("Loading snapshots…").controlSize(.small)
             } else if entries.isEmpty {
-                Text("스냅샷 없음").font(.callout).foregroundStyle(.secondary)
+                Text("No snapshots yet").font(.callout).foregroundStyle(.secondary)
             }
             if !entries.isEmpty { Divider() }
             ForEach(entries) { entry in
@@ -71,9 +71,9 @@ struct HvfWindowsSnapshotCard: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier(identifier("date", entry, entries))
                     Spacer()
-                    Button("복원") { request(.restore, entry) }
+                    Button("Restore") { request(.restore, entry) }
                         .accessibilityIdentifier(identifier("restore", entry, entries))
-                    Button("삭제", role: .destructive) { request(.delete, entry) }
+                    Button("Delete", role: .destructive) { request(.delete, entry) }
                         .accessibilityIdentifier(identifier("delete", entry, entries))
                 }
                 .disabled(session.hasActiveRuntimeWork || model.busy)
@@ -94,7 +94,7 @@ struct HvfWindowsSnapshotCard: View {
         ), titleVisibility: .visible, presenting: confirmation) { confirmation in
             Button(confirmation.action, role: .destructive) { model.confirm(confirmation) }
                 .accessibilityIdentifier("bridgevm.runtime.snapshot.confirm")
-            Button("취소", role: .cancel) {}
+            Button("Cancel", role: .cancel) {}
         } message: { confirmation in
             Text(confirmation.message)
         }

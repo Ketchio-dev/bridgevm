@@ -32,19 +32,19 @@ enum AppUIInstallCancelProtocolTestSupport {
         switch phase {
         case .idle:
             return .init(installVisible: true, startVisible: true, startEnabled: true,
-                cancelVisible: false, cancelEnabled: false, stage: "대기", title: "설치 시작")
+                cancelVisible: false, cancelEnabled: false, stage: "Ready to install", title: "Start Installation")
         case .validating:
             return .init(installVisible: true, startVisible: true, startEnabled: false,
-                cancelVisible: true, cancelEnabled: true, stage: "설치 입력 확인", title: "설치 중…")
+                cancelVisible: true, cancelEnabled: true, stage: "Checking installation files", title: "Installing…")
         case .cancelling:
             return .init(installVisible: true, startVisible: true, startEnabled: false,
-                cancelVisible: true, cancelEnabled: false, stage: "취소 중…", title: "설치 중…")
+                cancelVisible: true, cancelEnabled: false, stage: "Cancelling…", title: "Installing…")
         case .cancelled:
             return .init(installVisible: true, startVisible: true, startEnabled: true,
-                cancelVisible: false, cancelEnabled: false, stage: "취소됨", title: "다시 시도")
+                cancelVisible: false, cancelEnabled: false, stage: "Cancelled", title: "Try Again")
         case .retryFailed:
             return .init(installVisible: true, startVisible: true, startEnabled: true,
-                cancelVisible: false, cancelEnabled: false, stage: "실패", title: "다시 시도",
+                cancelVisible: false, cancelEnabled: false, stage: "Failed", title: "Try Again",
                 failure: AppUIInstallCancelConstants.refusal)
         }
     }

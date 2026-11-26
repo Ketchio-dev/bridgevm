@@ -26,9 +26,9 @@ enum HvfDiskGrow {
     /// Agent starts that try the extend before a failure leaves it to Disk Management.
     static let maximumAttempts = 3
 
-    static let sparseHelp = "추가된 가상 디스크 공간은 Windows가 데이터를 쓸 때 Mac 저장 공간에서 할당됩니다. 늘린 디스크는 줄일 수 없고, 이전 스냅샷을 복원하면 그때 용량으로 돌아갑니다."
-    static let pendingNote = "다음 Windows 시작 때 C: 드라이브를 자동으로 확장합니다. 확장되지 않으면 Windows의 디스크 관리에서 C: 볼륨을 확장하세요."
-    static let stopFirst = "VM을 완전히 중지한 뒤 디스크 크기를 변경하세요."
+    static let sparseHelp = "Additional space uses Mac storage as Windows writes to it. You can’t shrink the disk here. Restoring an older snapshot returns the disk to its size at that snapshot."
+    static let pendingNote = "BridgeVM will extend the C: drive the next time Windows starts. If needed, open Disk Management in Windows and extend the C: volume."
+    static let stopFirst = "Shut down Windows before resizing the disk."
 
     /// Whole GiB sizes at least 1 GiB above the current one (the extend acts only on more than
     /// 1000 MiB) that leave the margin free; nil when none does.
@@ -90,22 +90,22 @@ enum HvfDiskGrow {
         var notice: String {
             switch self {
             case let .extended(bytes):
-                return "C: 드라이브를 늘린 디스크에 맞게 확장했습니다" + (bytes.map { " (\(HvfDiskGrow.gibText($0)))." } ?? ".")
+                return "Extended the C: drive to use the larger disk" + (bytes.map { " (\(HvfDiskGrow.gibText($0)))." } ?? ".")
             case .already:
-                return "C: 드라이브가 이미 디스크 끝까지 확장되어 있습니다."
+                return "The C: drive already uses all available disk space."
             case let .failed(detail):
-                return Self.failedPrefix(detail) + "Windows의 디스크 관리에서 C: 볼륨을 확장하세요."
+                return Self.failedPrefix(detail) + "Open Disk Management in Windows and extend the C: volume."
             }
         }
 
         /// A failure the next agent start tries again.
         var retryNotice: String {
             guard case let .failed(detail) = self else { return notice }
-            return Self.failedPrefix(detail) + "다음 Windows 시작 때 다시 시도합니다."
+            return Self.failedPrefix(detail) + "BridgeVM will try again the next time Windows starts."
         }
 
         private static func failedPrefix(_ detail: String) -> String {
-            "C: 드라이브를 자동으로 확장하지 못했습니다" + (detail.isEmpty ? "" : "(\(detail))") + ". "
+            "Couldn’t extend the C: drive automatically" + (detail.isEmpty ? "" : " (\(detail))") + ". "
         }
     }
 
@@ -155,7 +155,7 @@ enum HvfDiskGrow {
     /// The selected disk's length (the generation a restore selected, not the logical original).
     static func currentBytes(_ plan: Plan) throws -> UInt64 {
         let completion = try HvfHelperProcess.run(plan.executable, ["size", plan.disk.path, plan.vars.path])
-        guard completion.succeeded else { throw failure(completion, action: "디스크 크기를 읽지") }
+        guard completion.succeeded else { throw failure(completion, action: "read the disk size") }
         return try diskBytes(completion.text)
     }
 
@@ -164,7 +164,7 @@ enum HvfDiskGrow {
     static func grow(_ plan: Plan, to bytes: UInt64) throws -> UInt64 {
         let completion = try HvfHelperProcess.run(
             plan.executable, ["grow", plan.disk.path, plan.vars.path, String(bytes)])
-        guard completion.succeeded else { throw failure(completion, action: "디스크를 늘리지") }
+        guard completion.succeeded else { throw failure(completion, action: "expand the disk") }
         let grown = try diskBytes(completion.text)
         try Data("0\n".utf8).write(to: plan.grownFlag, options: [.atomic])
         return grown
@@ -179,14 +179,14 @@ enum HvfDiskGrow {
     private static func diskBytes(_ output: String) throws -> UInt64 {
         let line = output.split(separator: "\n").first { $0.hasPrefix("disk_bytes ") }
         guard let line, let bytes = UInt64(line.dropFirst("disk_bytes ".count)) else {
-            throw error("디스크 크기 도우미가 알 수 없는 결과를 보고했습니다.")
+            throw error("The disk helper returned an unrecognized size.")
         }
         return bytes
     }
 
     private static func failure(_ completion: HvfHelperProcess.Completion, action: String) -> NSError {
         if completion.reason == .exit && completion.status == inUseExitStatus { return error(stopFirst) }
-        return error("\(action) 못했습니다: \(completion.diagnostic)")
+        return error("Couldn’t \(action). \(completion.diagnostic)")
     }
 
     static func error(_ message: String) -> NSError {
@@ -210,7 +210,7 @@ extension HvfEngineSession {
                 let grown = try await Task.detached {
                     try HvfDiskGrow.grow(plan, to: UInt64(gib) * HvfDiskGrow.bytesPerGiB)
                 }.value
-                diskGrowNotice = "디스크를 \(HvfDiskGrow.gibText(grown))로 늘렸습니다. " + HvfDiskGrow.pendingNote
+                diskGrowNotice = "Expanded the disk to \(HvfDiskGrow.gibText(grown)). " + HvfDiskGrow.pendingNote
             } catch {
                 diskGrowNotice = error.localizedDescription
             }

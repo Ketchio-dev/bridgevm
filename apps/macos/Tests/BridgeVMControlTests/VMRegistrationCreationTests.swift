@@ -31,7 +31,10 @@ final class VMRegistrationCreationTests: XCTestCase {
     func testExclusivePublicationRetainsBytesAfterSyncFailureAndDoesNotSyncCollision() throws {
         let fixture = try VMCreationRegistrationCollisionTests.Fixture()
         defer { fixture.remove() }
-        let url = fixture.root.appendingPathComponent("vm.json")
+        let vmID = VMConfig.slugify("Café 서울")
+        let directory = fixture.root.appendingPathComponent(vmID)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        let url = directory.appendingPathComponent("vm.json")
         let winner = Data("published".utf8)
         let outcome = VMRegistrationWriter.commit(winner, to: url, replaceExisting: false, syncParent: { _ in
             throw CocoaError(.fileWriteUnknown)
@@ -39,7 +42,11 @@ final class VMRegistrationCreationTests: XCTestCase {
         guard case .publishedButUnsynced = outcome else { return XCTFail("published bytes need preservation") }
         let collision = VMRegistrationWriter.commit(Data("loser".utf8), to: url,
             replaceExisting: false, syncParent: { _ in XCTFail("refused publication must not sync") })
-        guard case .notPublished = collision else { return XCTFail("existing registration must refuse") }
+        guard case .notPublished(let error) = collision else { return XCTFail("existing registration must refuse") }
+        let refusal = try XCTUnwrap(error as? VMRegistrationCollision)
+        XCTAssertEqual(refusal.vmID, "café-서울")
+        XCTAssertTrue(refusal.localizedDescription.contains("already used the VM ID “café-서울”"))
+        XCTAssertTrue(collision.preservesPreparedDestination)
         XCTAssertEqual(try Data(contentsOf: url), winner)
     }
 }

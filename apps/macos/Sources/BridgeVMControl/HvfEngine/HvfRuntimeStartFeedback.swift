@@ -1,8 +1,8 @@
 extension HvfEngineSession {
     var runtimePendingWorkText: String? {
-        if hasPendingRuntimeMutation { return "작업 중" }
+        if hasPendingRuntimeMutation { return "VM operation in progress…" }
         if let start = guiStartOperation, start.workerPending {
-            return start.invalidationReason == nil ? "시작 준비 중" : "작업 정리 확인 중"
+            return start.invalidationReason == nil ? "Preparing to start Windows…" : "Waiting for startup cleanup…"
         }
         return nil
     }
@@ -14,12 +14,12 @@ extension HvfEngineSession {
             return "Windows를 종료하면서 디스크를 Mac에 안전하게 저장하지 못했으니 Mac의 저장 공간과 디스크 연결을 확인하세요."
         }
         guard !runnerDiedWithoutCleanup, ownedController?.supervisionLost == true else { return nil }
-        return "실행 중인 Windows와 연결이 끊겼으니 강제 중단으로 Windows를 멈추세요."
+        return "BridgeVM lost contact with Windows, so choose Force Stop to stop the VM."
     }
 
     var guiStartFailureText: String? {
         if let text = guiStartOperation?.outcome?.failureText { return text }
-        return runnerDiedWithoutCleanup ? "Windows가 예기치 않게 종료되었으니 잠시 후 다시 시작하세요." : nil
+        return runnerDiedWithoutCleanup ? "Windows stopped unexpectedly, so wait a moment before starting it again." : nil
     }
 }
 
@@ -31,56 +31,56 @@ extension HvfRuntimeStartOutcome {
         case let .failed(stage, detail):
             switch stage {
             case .keyAccessDenied:
-                return "로그인 키체인에 접근할 수 없어 Windows를 시작하지 못했으니 키체인 잠금을 해제하고 다시 시도하세요."
+                return "Unlock your login keychain and try starting Windows again."
             case .keyStateMissing:
-                return "Windows 보안 정보의 암호화 키가 없어 시작하지 못했으니 백업에서 로그인 키체인을 복원하고 다시 시도하세요."
+                return "To recover the missing key for this VM’s security data, restore your login keychain from a backup."
             case .keyStateInvalid:
-                return "Windows 보안 정보를 사용할 수 없어 시작하지 못했으니 VM 설정과 로그인 키체인을 백업에서 복원하고 다시 시도하세요."
+                return "BridgeVM could not read this VM’s security data, so restore the VM settings and login keychain from a backup."
             case .keyGeneration:
-                return "Windows 보안 키를 만들지 못했으니 Mac을 재시동하고 다시 시도하세요."
+                return "BridgeVM could not create a security key for Windows, so restart your Mac and try again."
             case .preparation:
-                return "VM 작업 파일을 준비하지 못했으니 VM 폴더의 접근 권한과 저장 장치의 여유 공간을 확인하고 다시 시도하세요."
+                return "BridgeVM could not prepare the VM files, so check access to the VM folder and the available disk space."
             case .helper:
-                return "앱 실행 파일이 없거나 손상되어 Windows를 시작하지 못했으니 BridgeVM을 다시 설치하세요."
+                return "Reinstall BridgeVM to restore a missing or damaged app component."
             case .keyDelivery:
-                return "Windows 보안 정보를 실행 도우미에 전달하지 못했으니 BridgeVM을 다시 설치하고 다시 시도하세요."
+                return "BridgeVM could not pass this VM’s security data to its helper, so reinstall BridgeVM and try again."
             case let .readiness(codes):
                 // Prefer the first user-adjustable blocker, preserving readiness order.
                 for code in codes {
                     switch code {
                     case "target-disk-missing":
-                        return "Windows 디스크를 찾을 수 없으니 저장 장치를 다시 연결하거나 디스크 파일을 원래 위치에 복원한 뒤 다시 시작하세요."
+                        return "To recover the missing Windows disk, reconnect its drive or restore the disk file to its original location."
                     case "target-disk-access":
-                        return "Windows 디스크에 접근할 수 없어 시작하지 못했으니 Finder에서 디스크 파일의 읽기 및 쓰기 권한을 확인하세요."
+                        return "BridgeVM cannot access the Windows disk, so check its read and write permissions in Finder."
                     case "target-disk-empty":
-                        return "Windows 디스크 파일이 비어 있으니 같은 위치에 원래 디스크의 백업을 복원한 뒤 다시 시작하세요."
+                        return "The Windows disk file is empty, so restore the original disk from a backup to the same location."
                     case "uefi-vars-missing":
-                        return "부팅 설정 파일을 찾을 수 없어 Windows를 시작하지 못했으니 VM 폴더에서 파일을 확인하거나 백업에서 복원하세요."
+                        return "Look for the missing Windows boot settings file in the VM folder or restore it from a backup."
                     case "uefi-vars-access":
-                        return "부팅 설정 파일에 접근할 수 없어 Windows를 시작하지 못했으니 Finder에서 해당 파일의 읽기 및 쓰기 권한을 확인하세요."
+                        return "BridgeVM cannot access the Windows boot settings, so check the file’s read and write permissions in Finder."
                     case "uefi-vars-size":
-                        return "부팅 설정 파일의 크기가 올바르지 않아 Windows를 시작하지 못했으니 백업에서 64 MiB 크기의 파일을 복원하세요."
+                        return "The Windows boot settings file has the wrong size, so restore the 64 MiB file from a backup."
                     case "ram-range":
-                        return "메모리 설정이 범위를 벗어나 Windows를 시작하지 못했으니 메모리를 1024~65536 MiB로 설정하세요."
+                        return "Set the VM’s memory between 1024 and 65536 MiB, then start Windows again."
                     case "cpu-range":
-                        return "CPU 개수 설정이 범위를 벗어나 Windows를 시작하지 못했으니 CPU를 1~64개로 설정하세요."
+                        return "Choose 1 to 64 processors in VM settings, then start Windows again."
                     case "share-invalid":
-                        return "공유 폴더 설정이 올바르지 않아 Windows를 시작하지 못했으니 VM 설정에서 공유 폴더를 다시 선택하세요."
+                        return "Choose the shared folder again in VM settings, then start Windows again."
                     case "share-incomplete":
-                        return "공유 폴더 설정이 완전하지 않아 Windows를 시작하지 못했으니 VM 설정에서 공유 폴더를 다시 선택하세요."
+                        return "To complete the shared folder setup, choose the folder again in VM settings."
                     default: continue
                     }
                 }
                 switch codes.first {
                 case "boot-wrapper-missing", "signed-runner-missing", "swtpm-missing", "swtpm-signature":
-                    return "앱 실행 파일이 없거나 손상되어 Windows를 시작하지 못했으니 BridgeVM을 다시 설치하세요."
+                    return "Reinstall BridgeVM to restore a missing or damaged app component."
                 case "watchdog-range", "evidence-not-directory", "control-path-collision", "vtpm-path-collision", "vtpm-key-id", "vtpm-state-not-directory":
-                    return "VM 설정이 올바르지 않아 Windows를 시작하지 못했으니 VM 설정을 확인하거나 백업에서 복원하세요."
+                    return "BridgeVM could not start Windows with these settings, so check the VM settings or restore them from a backup."
                 default:
-                    return "Windows를 시작하지 못했으니 아래 오류 내용을 확인하고 다시 시도하세요.\n\(detail)"
+                    return "Windows could not start, so review the error below and try again.\n\(detail)"
                 }
             case .keyAccess, .processLaunch:
-                return "Windows를 시작하지 못했으니 아래 오류 내용을 확인하고 다시 시도하세요.\n\(detail)"
+                return "Windows could not start, so review the error below and try again.\n\(detail)"
             }
         case .ownedLaunchAccepted, .observedAttachment: return nil
         }

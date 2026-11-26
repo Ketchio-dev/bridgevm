@@ -21,11 +21,11 @@ struct HvfVMSettingsSheet: View {
 
         var item: (title: String, icon: String, shortcut: KeyEquivalent) {
             switch self {
-            case .general: ("일반", "gearshape", "1")
-            case .display: ("디스플레이", "display", "2")
-            case .sharing: ("공유", "folder", "3")
-            case .network: ("네트워크", "network", "4")
-            case .snapshots: ("스냅샷", "clock.arrow.circlepath", "5")
+            case .general: ("General", "gearshape", "1")
+            case .display: ("Display", "display", "2")
+            case .sharing: ("Sharing", "folder", "3")
+            case .network: ("Network", "network", "4")
+            case .snapshots: ("Snapshots", "clock.arrow.circlepath", "5")
             }
         }
     }
@@ -35,12 +35,12 @@ struct HvfVMSettingsSheet: View {
             VStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Text("설정").font(.title2.bold())
+                        Text("Settings").font(.title2.bold())
                         if let vmName = session.config.libraryContext?.config.displayName {
                             Text(vmName).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer()
-                        Button("완료") { finish(proxy) }
+                        Button("Done") { finish(proxy) }
                             .keyboardShortcut(.cancelAction)
                             .accessibilityIdentifier("bridgevm.runtime.settings.done")
                     }
@@ -51,7 +51,7 @@ struct HvfVMSettingsSheet: View {
                                 Label(item.title, systemImage: item.icon)
                             }
                             .keyboardShortcut(item.shortcut, modifiers: .command)
-                            .help("\(item.title) 설정으로 이동 (⌘\(String(item.shortcut.character)))")
+                            .help("\(item.title) settings (⌘\(String(item.shortcut.character)))")
                             .accessibilityIdentifier("bridgevm.runtime.settings.\(destination.rawValue)")
                         }
                     }
@@ -72,34 +72,39 @@ struct HvfVMSettingsSheet: View {
             .focusedSceneValue(\.hvfVMSettings, { finish(proxy) })
         }
         .frame(width: 680, height: captureHeight)
-        // Without a container element the sheet's identifier replaces the 완료 button's own.
+        // Without a container element the sheet's identifier replaces the Done button's own.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("bridgevm.runtime.settings")
         .onAppear { session.settingsSheetOpen = true }
-        .onDisappear { _ = draft.finish(); session.settingsSheetOpen = false }
+        .onChange(of: session.config.libraryContext?.config.name) { draft.refreshName() }
+        .onDisappear {
+            draft.commitShare()
+            draft.commitForwards()
+            session.settingsSheetOpen = false
+        }
         .interactiveDismissDisabled()
     }
 
     var settingsForm: some View {
         Form {
-            HvfStartCloseSettings(session: session)
+            HvfStartCloseSettings(session: session, draft: draft)
                 .id(Destination.general)
-            Section("하드웨어") {
+            Section("Hardware") {
                 HvfResourceSetting(session: session, ramMiB: binding(\.ramMiB), cpus: binding(\.smpCpus))
                 HvfDiskSizeSetting(session: session, config: session.config)
             }
-            Section("디스플레이") {
+            Section("Display") {
                 if session.config.offersRetinaResolution && !session.config.virtioGpu3d {
                     HvfRetinaResolutionToggle(session: session, setting: binding(\.retinaResolution))
-                    help("Retina 화면의 픽셀 수로 그립니다. CPU 사용량이 늘어날 수 있습니다.")
+                    help("Render at the Retina display’s native resolution. This can increase CPU usage.")
                 }
                 HvfGuestResolutionPicker(session: session, selection: binding(\.guestResolution))
-                help("디스플레이 드라이버를 쓰면 시작 후 화면은 창 크기를 따릅니다.")
+                help("With the display driver installed, Windows adjusts its resolution to fit the window after startup.")
                 HvfDisplayDriverInstallButton(session: session) { _ in HvfDisplayDriverFlag.record(session) }
                 HvfHardwareCursorToggle(session: session)
             }
             .id(Destination.display)
-            Section("공유") {
+            Section("Sharing") {
                 HvfSharedFolderSettings(session: session, enabled: $draft.shareEnabled,
                     hostDir: $draft.host, guestDir: $draft.guest, commit: { draft.commitShare() })
                 if let message = draft.shareMessage { validationMessage(message) }
@@ -108,7 +113,7 @@ struct HvfVMSettingsSheet: View {
                 HvfGuestLinksToggle(session: session)
             }
             .id(Destination.sharing)
-            Section("네트워크") {
+            Section("Network") {
                 HvfNetworkToggle(session: session, isOn: binding(\.virtioNet))
                 if session.config.virtioNet {
                     HvfPortForwardSetting(session: session, text: $draft.forwards,
@@ -117,19 +122,19 @@ struct HvfVMSettingsSheet: View {
                 }
             }
             .id(Destination.network)
-            Section("스냅샷") {
+            Section("Snapshots") {
                 HvfWindowsSnapshotCard(config: session.config, session: session)
             }
             .id(Destination.snapshots)
-            Section("입력") {
+            Section("Input") {
                 HvfCommandKeyPicker(session: session, selection: binding(\.commandKeyMode))
             }
-            Section("마이크") {
+            Section("Microphone") {
                 HvfMicrophoneToggle(session: session, isOn: binding(\.microphoneEnabled))
             }
-            Section("디스크") {
+            Section("Disk") {
                 HvfDurableDiskWritesToggle(session: session, isOn: binding(\.durableDiskWrites))
-                help("켜면 Windows의 쓰기 확인 전에 디스크에 안전하게 저장하지만, 쓰기가 느려집니다.")
+                help("Windows waits until disk writes reach permanent storage before each flush completes. This can slow down writes.")
             }
         }
         .formStyle(.grouped)
@@ -137,8 +142,11 @@ struct HvfVMSettingsSheet: View {
 
     private func validate(_ proxy: ScrollViewProxy) -> Bool {
         if draft.finish() { return true }
-        let destination: Destination = draft.shareMessage == nil ? .network : .sharing
-        proxy.scrollTo(destination, anchor: .top)
+        if draft.nameMessage != nil {
+            proxy.scrollTo(Destination.general, anchor: .top)
+        } else {
+            proxy.scrollTo(draft.shareMessage == nil ? Destination.network : .sharing, anchor: .top)
+        }
         return false
     }
 
@@ -146,7 +154,7 @@ struct HvfVMSettingsSheet: View {
         if validate(proxy) { dismiss() }
     }
 
-    static let runningNotice = "일부 설정은 Windows를 종료한 뒤 바꿀 수 있습니다."
+    static let runningNotice = "Shut down Windows to change settings that are currently unavailable."
     var runningNoticeText: String? { session.hasActiveRuntimeWork ? Self.runningNotice : nil }
 
     private func validationMessage(_ text: String) -> some View {

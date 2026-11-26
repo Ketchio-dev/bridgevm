@@ -286,7 +286,7 @@ def desktop_mode(native: bool) -> str:
 
 
 def command_line(script: str) -> str:
-    # Any guest-side error aborts the script before its BVBENCH line: no number from a failed run.
+    # Surface PowerShell errors through the command exit code, including errors after a metric was printed.
     # The invariant culture keeps 812.5 from turning into 812,5 (-f and C# string.Format follow the
     # thread's culture) on a guest whose regional format uses a decimal comma: new installs take it
     # from the Mac's region, and parse_bvbench reads dot decimals only.

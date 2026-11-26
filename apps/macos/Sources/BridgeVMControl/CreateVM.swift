@@ -17,11 +17,16 @@ extension VMLibrary {
         return slug.utf8.count <= maximumVMSlugBytes ? slug : slug.precomposedStringWithCanonicalMapping
     }
 
-    static func normalizedVMName(_ rawName: String) -> String? {
+    static func normalizedDisplayName(_ rawName: String) -> String? {
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty,
               name.count <= maximumVMNameCharacters,
-              !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+              !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { return nil }
+        return name
+    }
+
+    static func normalizedVMName(_ rawName: String) -> String? {
+        guard let name = normalizedDisplayName(rawName),
               registrationSlug(for: name).utf8.count <= maximumVMSlugBytes else { return nil }
         return name
     }

@@ -22,7 +22,7 @@ enum HvfWindowsCloneMedia {
                 // requires the complete chain before reserving a destination.
                 continue
             }
-            return "복제할 번들·미디어 폴더와 디스크·UEFI vars가 일반 파일 경로인지 확인하세요. 심볼릭 링크나 누락된 미디어는 새 VM으로 가져온 뒤 복제하세요."
+            return "Check that the bundle, disk and UEFI variables exist at their original paths. If files are missing or linked elsewhere, import the disk as a new VM before duplicating it."
         }
         return nil
     }

@@ -25,21 +25,25 @@ final class CreateVMPrerequisitePresentationTests: XCTestCase {
         }
     }
 
-    func testReadyMediaExplainsTheMissingNameUntilItIsEntered() throws {
+    func testReadyMediaUsesAnEditableWindowsNameAndRequiresAReplacementWhenCleared() throws {
         try withLibrary { library in
             var drivers = CreateVMDriverSelection()
             drivers.choosePayload("drivers")
             drivers.chooseManifest("manifest.tsv")
-            let install = try footer(of: CreateVMSheet(library: library, isoPath: "Windows.iso", drivers: drivers))
-            XCTAssertTrue(install.needsName)
-            XCTAssertFalse(install.canCreate)
+            let install = CreateVMSheet(library: library, isoPath: "Windows.iso", drivers: drivers)
+            XCTAssertEqual(install.name, "Windows 11")
+            XCTAssertTrue(install.canCreate)
+            let cleared = try footer(of: CreateVMSheet(library: library, name: "",
+                                                       isoPath: "Windows.iso", drivers: drivers))
+            XCTAssertTrue(cleared.needsName)
+            XCTAssertFalse(cleared.canCreate)
 
             let disk = try footer(of: CreateVMSheet(library: library, mode: .windowsHVF,
                                                    name: "  ", hvfTargetPath: "Windows.raw"))
             XCTAssertTrue(disk.needsName)
             XCTAssertFalse(disk.canCreate)
             let named = try footer(of: CreateVMSheet(library: library, mode: .windowsHVF,
-                                                    name: "Windows 11", hvfTargetPath: "Windows.raw"))
+                                                    name: "연구실 Windows 東京", hvfTargetPath: "Windows.raw"))
             XCTAssertFalse(named.needsName)
             XCTAssertTrue(named.canCreate)
         }

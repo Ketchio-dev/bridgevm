@@ -212,6 +212,14 @@ class LaneKeyForgetTest(unittest.TestCase):
         self.assertEqual(len(self.calls()), 2)
         self.assertIn("0 forgotten, 2 absent", result.stdout)
 
+    def test_previous_app_reports_the_imported_key_as_absent(self) -> None:
+        self.lane(1)
+        old_line = load("t19_lane_key_forget", TOOL).LEGACY_MISSING_KEY
+        self.script_app(f"print({old_line!r}, file=sys.stderr)\nsys.exit(1)")
+        result = self.forget()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("1 absent", result.stdout)
+
     def test_foreign_stderr_on_exit_1_is_refused(self) -> None:
         request = self.lane(1)
         slug = request["vm_slug"]

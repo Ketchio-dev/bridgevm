@@ -19,44 +19,48 @@ extension HvfShareRootNotice {
         if launchUnavailable { return (HvfEngineConfig.shareUnavailableMessage, "") }
         switch stopped {
         case .agentTooOld:
-            return ("이 VM의 게스트 에이전트가 공유 폴더 동기화를 지원하지 않아 이번 실행에서는 동기화하지 않습니다.",
-                    "공유 폴더 없이 VM은 계속 실행됩니다.")
+            return ("This version of Guest Tools can’t sync shared folders.",
+                    "You can keep using Windows without the shared folder.")
         case .failedDestinations:
-            return ("Mac 폴더에 쓰기가 반복해서 실패해 이번 실행에서 공유 폴더 동기화를 중지했습니다.",
-                    "폴더 권한과 남은 공간을 확인한 뒤 VM을 다시 시작하세요.")
+            return ("Folder sync stopped for this session after repeated write failures on your Mac.",
+                    "Check the folder’s write permissions and available disk space, then restart the VM.")
         case nil:
             if let paused {
-                let text: String
+                let limit = paused.limit.formatted()
                 switch paused.reason {
                 case .tooManyEntries:
-                    let limit = paused.limit.formatted(.number.locale(Locale(identifier: "ko_KR")))
-                    text = "공유 폴더에 항목이 너무 많아(\(limit)개 초과) 동기화를 멈추었습니다."
+                    return ("Folder sync paused because the Windows folder has more than \(limit) items.",
+                            "Move some items out of the Windows folder, or shut down the VM and choose a smaller shared folder.")
                 case .tooManyBytes:
-                    text = "공유 폴더에 항목이 너무 많거나 이름이 너무 길어 동기화를 멈추었습니다."
+                    return ("Folder sync paused because the Windows file listing exceeds \(limit) bytes.",
+                            "Shorten some file names or move items out of the Windows folder to resume syncing.")
                 }
-                return (text, "VM을 종료한 뒤 Mac과 Windows 모두 항목이 더 적은 폴더를 고르면 다시 동기화됩니다.")
             }
             if let missingFolder {
-                return ("공유 폴더(\(missingFolder))를 찾을 수 없어 공유 없이 시작했습니다.",
-                        "폴더를 다시 연결하면 자동으로 공유됩니다.")
+                return ("The shared folder “\(missingFolder)” was unavailable when Windows started.",
+                        "Reconnect the folder to your Mac. Sharing will resume automatically.")
             }
             if isBlocked {
-                return ("공유 폴더를 확인할 수 없어 일부 동기화를 기다리고 있습니다.",
-                        "원래 폴더의 연결을 확인하세요. 다른 폴더를 쓰려면 VM을 종료한 뒤 다시 선택하세요.")
+                return ("Some changes are waiting because BridgeVM can’t verify the shared folder.",
+                        "Reconnect the original folder, or shut down the VM and choose another folder.")
             }
             if let lowSpace {
-                let files = lowSpace.count == 1 ? "'\(lowSpace.last)'을(를)" : "'\(lowSpace.last)' 외 \(lowSpace.count - 1)개를"
-                return ("Mac 디스크 공간이 부족해 \(files) 공유 폴더로 가져오지 않았습니다.",
-                        "공간을 확보하면 다시 가져옵니다.")
+                let name = "“\(lowSpace.last)”"
+                let others = lowSpace.count - 1
+                let files = others == 0 ? name : "\(name) and \(others) other \(others == 1 ? "file" : "files")"
+                return ("Your Mac needs more space to receive \(files) from Windows.",
+                        "Free up space on your Mac. Sync will retry automatically.")
             }
             guard let tooLarge else { return nil }
             let kib = HvfEngineConfig.shareMaxKiB
-            let limit = kib % (1024 * 1024) == 0 ? "\(kib / (1024 * 1024)) GB" : "\(kib / 1024) MB"
-            let files = tooLarge.count == 1 ? tooLarge.last : "\(tooLarge.last) 외 \(tooLarge.count - 1)개"
-            return ("\(limit)보다 큰 파일은 공유 폴더로 옮기지 않습니다: \(files)",
-                    "Mac의 파일은 VM 창에 끌어다 놓으면 Windows 바탕 화면으로 옮겨집니다.")
+            let limit = kib % (1024 * 1024) == 0 ? "\(kib / (1024 * 1024)) GiB" : "\(kib) KiB"
+            let text = "Sharing skipped “\(tooLarge.last)” because the per-file limit is \(limit)."
+            let total = tooLarge.count > 1 ? " Folder sharing has skipped oversized files \(tooLarge.count) times this session." : ""
+            return (text + total,
+                    "To copy a large file from your Mac to Windows, drag it onto the VM window.")
         }
     }
+
 }
 
 /// The guest folder's listing is over the runtime's limit (`BVAGENT SHARE paused

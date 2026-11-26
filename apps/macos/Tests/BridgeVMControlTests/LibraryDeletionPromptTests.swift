@@ -6,7 +6,7 @@ import XCTest
 /// managed bundle behind a stale saved absolute path is the entry's
 /// `bundle.vmbridge`, never the stale path a user would check and find empty.
 final class LibraryDeletionPromptTests: XCTestCase {
-    private let guidance = "실행 중인 VM은 삭제할 수 없습니다. 제어 화면에서 완전히 중지한 뒤 진행하세요."
+    private let guidance = "Shut down the VM before continuing."
     private let engines = [("fast-vz", "fast"), ("hvf-engine", "win")]
 
     private func scratch() -> (temp: URL, root: URL) {
@@ -27,9 +27,9 @@ final class LibraryDeletionPromptTests: XCTestCase {
         XCTAssertEqual(VMLibrary.deletionImpact(for: cfg, rootURL: root), .managedBundleDeleted, engine)
         XCTAssertEqual(VMLibrary.deletionTarget(for: cfg, rootURL: root)?.path, path, engine)
         let prompt = LibraryDeletionPrompt(config: cfg, rootURL: root)
-        XCTAssertEqual(prompt.confirmTitle, "\(cfg.name) 및 가상 디스크 삭제", engine)
+        XCTAssertEqual(prompt.confirmTitle, "Delete \(cfg.name) and Its Disk", engine)
         XCTAssertEqual(prompt.message,
-                       "\(guidance) VM 설정과 \(path)에 있는 가상 디스크 데이터가 모두 영구 삭제되며 되돌릴 수 없습니다.", engine)
+                       "\(guidance) This permanently deletes the VM settings and the virtual disk at \(path).", engine)
     }
 
     func testStaleSavedPathNamesTheEntryBundleThatDeletionRemoves() throws {
@@ -69,9 +69,9 @@ final class LibraryDeletionPromptTests: XCTestCase {
             XCTAssertEqual(VMLibrary.deletionImpact(for: cfg, rootURL: root), .registrationOnly, engine)
             XCTAssertNil(VMLibrary.deletionTarget(for: cfg, rootURL: root), engine)
             let prompt = LibraryDeletionPrompt(config: cfg, rootURL: root)
-            XCTAssertEqual(prompt.confirmTitle, "\(slug) 등록 제거", engine)
+            XCTAssertEqual(prompt.confirmTitle, "Remove \(slug) from Library", engine)
             XCTAssertEqual(prompt.message,
-                           "\(guidance) BridgeVM 라이브러리 등록만 제거하며 외부 번들 \(external.path)의 가상 디스크 데이터는 유지됩니다.", engine)
+                           "\(guidance) This removes the VM from your library. Its virtual disk stays in the external bundle at \(external.path).", engine)
         }
     }
 

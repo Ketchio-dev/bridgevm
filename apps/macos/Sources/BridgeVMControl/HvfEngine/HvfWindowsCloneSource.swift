@@ -9,7 +9,7 @@ enum HvfWindowsCloneSource {
         let builtin = disks.appendingPathComponent("hvf-target.raw")
         let selected = URL(fileURLWithPath: config.diskPath ?? builtin.path)
         guard selected.resolvingSymlinksInPath().standardizedFileURL == builtin.resolvingSymlinksInPath().standardizedFileURL else {
-            return "등록된 디스크가 번들 내부 복제 대상과 다릅니다. 선택한 디스크를 새 VM으로 가져온 뒤 복제하세요."
+            return "This VM uses a disk outside the copy selected for duplication. First import the active disk as a new VM, then duplicate it."
         }
         return HvfWindowsCloneMedia.refusal(bundle: bundle, phase: phase)
     }

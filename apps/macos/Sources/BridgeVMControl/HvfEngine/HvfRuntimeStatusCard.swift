@@ -13,14 +13,14 @@ struct HvfRuntimeStatusCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     Button(action: start) {
-                        Label(session.runtimeStartupWorkerPending ? "준비 중…" : "시작", systemImage: "play.fill")
+                        Label(session.runtimeStartupWorkerPending ? "Preparing…" : "Start", systemImage: "play.fill")
                     }
                     .buttonStyle(.borderedProminent).controlSize(.large)
                     .disabled((session.hasActiveRuntimeWork && !session.runnerDiedWithoutCleanup) || session.runtimeStartupWorkerPending || !ready)
                     .accessibilityIdentifier("bridgevm.windows.runtime.start")
                     HvfRuntimeStatusStopControl(session: session)
                     HvfRestartControl(session: session, identifier: "bridgevm.windows.runtime") { enabled, press in
-                        Button(action: press) { Label("다시 시작", systemImage: "arrow.counterclockwise") }
+                        Button(action: press) { Label("Restart", systemImage: "arrow.counterclockwise") }
                             .disabled(!enabled).controlSize(.large)
                             .accessibilityIdentifier("bridgevm.windows.runtime.restart")
                     }
@@ -39,14 +39,14 @@ struct HvfRuntimeStatusCard: View {
                 }
                 HvfRuntimeStatusMessages(session: session, refusal: refusal)
                 HStack(spacing: 24) {
-                    infoItem("상태", stateText, "bridgevm.windows.runtime.state")
+                    infoItem("State", stateText, "bridgevm.windows.runtime.state")
                     HvfRuntimeHeartbeatItem(heartbeat: session.heartbeat)
-                    infoItem("이벤트", "\(session.events.count)", "bridgevm.windows.runtime.events")
+                    infoItem("Events", "\(session.events.count)", "bridgevm.windows.runtime.events")
                 }
             }
             .padding(6)
         } label: {
-            Label("실행 및 상태", systemImage: "play.circle")
+            Label("Runtime status", systemImage: "play.circle")
         }
     }
 

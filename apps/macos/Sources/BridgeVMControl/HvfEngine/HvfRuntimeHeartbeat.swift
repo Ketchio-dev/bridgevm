@@ -21,9 +21,9 @@ struct HvfRuntimeHeartbeatItem: View {
     @ObservedObject var heartbeat: HvfRuntimeHeartbeat
 
     var body: some View {
-        let value = heartbeat.age.map { String(format: "%.1f초 전", $0) } ?? "-"
+        let value = heartbeat.age.map { String(format: "%.1f s ago", $0) } ?? "-"
         VStack(alignment: .leading, spacing: 2) {
-            Text("에이전트 응답").font(.caption).foregroundColor(.secondary)
+            Text("Guest agent response").font(.caption).foregroundColor(.secondary)
             Text(value).font(.body.monospaced()).accessibilityIdentifier("bridgevm.windows.runtime.heartbeat")
                 .accessibilityValue(value)
         }
@@ -36,7 +36,7 @@ struct RetainedRuntimeHeartbeatText: View {
 
     var body: some View {
         if let age = heartbeat.age {
-            Text("최근 응답: \(age, specifier: "%.1f")초 전").font(.caption)
+            Text("Last response \(age, specifier: "%.1f") s ago").font(.caption)
         }
     }
 }

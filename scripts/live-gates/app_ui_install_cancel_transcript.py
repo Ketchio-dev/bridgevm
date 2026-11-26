@@ -4,8 +4,24 @@ from app_ui_install_cancel_json import protocol_record
 
 PHASES = ("idle", "validating", "cancelling", "cancelled", "retryFailed")
 MUTATIONS = {"validating": "start", "cancelling": "cancel", "retryFailed": "retry"}
-FAILURE = "합성 UI 검증 종료"
-LABELS = ("대기", "설치 입력 확인", "취소 중…", "취소됨", "실패")
+FAILURE = "Synthetic UI check complete"
+LABELS = ("Ready to install", "Checking installation files", "Cancelling…", "Cancelled", "Failed")
+
+# Old signed transcripts retain their original visible strings.
+PREVIOUS_LABELS = {
+    "대기": "Ready to install",
+    "설치 입력 확인": "Checking installation files",
+    "취소 중…": "Cancelling…",
+    "취소됨": "Cancelled",
+    "실패": "Failed",
+    "설치 시작": "Start Installation",
+    "다시 시도": "Try Again",
+    "합성 UI 검증 종료": "Synthetic UI check complete",
+}
+
+
+def current_label(value):
+    return PREVIOUS_LABELS.get(value, value) if isinstance(value, str) else value
 
 
 def completed(phase, values):
@@ -13,9 +29,9 @@ def completed(phase, values):
     return (values["installVisible"] and values["startVisible"]
         and values["startEnabled"] == (index in (0, 3, 4))
         and values["cancelVisible"] == (index in (1, 2))
-        and values["cancelEnabled"] == (index == 1) and values["stage"] == LABELS[index]
-        and (index in (1, 2) or values["title"] == ("설치 시작" if index == 0 else "다시 시도"))
-        and values.get("failure") == (FAILURE if index == 4 else None))
+        and values["cancelEnabled"] == (index == 1) and current_label(values["stage"]) == LABELS[index]
+        and (index in (1, 2) or current_label(values["title"]) == ("Start Installation" if index == 0 else "Try Again"))
+        and current_label(values.get("failure")) == (FAILURE if index == 4 else None))
 
 
 def verify_values(value):
@@ -24,7 +40,7 @@ def verify_values(value):
             or set(value) - booleans - {"stage", "title", "failure"}
             or any(type(value[key]) is not bool for key in booleans)
             or any(not isinstance(value[key], str) or len(value[key].encode()) > 1024 or "\0" in value[key] for key in ("stage", "title"))
-            or "failure" in value and value["failure"] != FAILURE):
+            or "failure" in value and current_label(value["failure"]) != FAILURE):
         raise ValueError("install AX state schema differs")
 
 

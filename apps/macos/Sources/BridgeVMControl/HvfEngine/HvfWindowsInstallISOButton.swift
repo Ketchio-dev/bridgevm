@@ -12,8 +12,8 @@ struct HvfWindowsInstallISOButton: View {
         }
         .buttonStyle(.link)
         .disabled(FinderTarget(path: path) == nil)
-        .help("Finder에서 설치 ISO 보기")
-        .accessibilityLabel("Finder에서 \(name) 보기")
+        .help("Show the installer ISO in Finder")
+        .accessibilityLabel("Show \(name) in Finder")
         .accessibilityIdentifier("bridgevm.windows.install.iso.reveal")
     }
 

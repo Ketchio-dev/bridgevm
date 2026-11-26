@@ -24,22 +24,39 @@ enum AppUIInstallCancelOperationPolicy {
     static func completes(_ phase: AppUIInstallCancelPhase, reply: AppUIInstallCancelReply) -> Bool {
         guard reply.operation == .readState, reply.outcome == .observed, let value = reply.values,
               value.installVisible, value.startVisible else { return false }
+        let stage = currentLabel(value.stage)
+        let title = currentLabel(value.title)
         switch phase {
         case .idle:
-            return value.stage == "대기" && value.title == "설치 시작" && value.startEnabled
+            return stage == "Ready to install" && title == "Start Installation" && value.startEnabled
                 && !value.cancelVisible && !value.cancelEnabled && value.failure == nil
         case .validating:
-            return value.stage == "설치 입력 확인" && !value.startEnabled
+            return stage == "Checking installation files" && !value.startEnabled
                 && value.cancelVisible && value.cancelEnabled && value.failure == nil
         case .cancelling:
-            return value.stage == "취소 중…" && !value.startEnabled
+            return stage == "Cancelling…" && !value.startEnabled
                 && value.cancelVisible && !value.cancelEnabled && value.failure == nil
         case .cancelled:
-            return value.stage == "취소됨" && value.title == "다시 시도" && value.startEnabled
+            return stage == "Cancelled" && title == "Try Again" && value.startEnabled
                 && !value.cancelVisible && !value.cancelEnabled && value.failure == nil
         case .retryFailed:
-            return value.stage == "실패" && value.title == "다시 시도" && value.startEnabled
-                && !value.cancelVisible && !value.cancelEnabled && value.failure == syntheticFailure
+            return stage == "Failed" && title == "Try Again" && value.startEnabled
+                && !value.cancelVisible && !value.cancelEnabled && value.failure.map(currentLabel) == syntheticFailure
+        }
+    }
+
+    // Previous development builds exposed these action titles and stages in Korean.
+    static func currentLabel(_ text: String) -> String {
+        switch text {
+        case "대기": return "Ready to install"
+        case "설치 입력 확인": return "Checking installation files"
+        case "취소 중…": return "Cancelling…"
+        case "취소됨": return "Cancelled"
+        case "실패": return "Failed"
+        case "설치 시작": return "Start Installation"
+        case "다시 시도": return "Try Again"
+        case "합성 UI 검증 종료": return "Synthetic UI check complete"
+        default: return text
         }
     }
 }
