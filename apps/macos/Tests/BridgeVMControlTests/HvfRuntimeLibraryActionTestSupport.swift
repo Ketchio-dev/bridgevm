@@ -65,9 +65,7 @@ enum HvfRuntimeLibraryActionEntry: CaseIterable {
     @discardableResult
     func invoke(_ config: VMConfig, library: LibraryModel, destination: URL) -> VMConfig? {
         switch self {
-        case .requestDeletion:
-            library.requestDeletion(config)
-            return library.pendingDeletion
+        case .requestDeletion: return library.requestDeletion(config)
         case .requestClone: return library.requestWindowsClone(config)
         case .deletion: library.confirmDeletion(config)
         case .clone: library.cloneWindowsHVF(config, name: "captured-copy")
@@ -78,7 +76,7 @@ enum HvfRuntimeLibraryActionEntry: CaseIterable {
 
     func clearResponse(in library: LibraryModel) {
         switch self {
-        case .requestDeletion: library.pendingDeletion = nil; library.deletionError = nil
+        case .requestDeletion: library.deletionError = nil
         case .requestClone: library.cloneError = nil
         case .deletion: library.deletionError = nil
         case .clone: library.cloneError = nil
