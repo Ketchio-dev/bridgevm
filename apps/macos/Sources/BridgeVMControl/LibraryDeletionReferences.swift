@@ -14,12 +14,12 @@ enum LibraryDeletionReferences {
             try HvfPendingDeletionReferences.validate(config, rootURL: rootURL)
             return nil
         } catch {
-            return "다른 VM이 이 항목의 파일을 참조하거나 참조 여부를 확인할 수 없습니다. 관련 VM을 다른 위치로 옮기거나 등록 정보를 확인한 뒤 다시 삭제하세요."
+            return "Another VM may use files in this library entry. Move that VM or check its registration before deleting this one."
         }
     }
 
     static func failureMessage(for config: VMConfig, rootURL: URL) -> String {
         refusal(for: config, rootURL: rootURL)
-            ?? "\(config.name)의 라이브러리 항목을 디스크에서 삭제하지 못했습니다."
+            ?? "The library entry for \(config.name) could not be removed from disk."
     }
 }
