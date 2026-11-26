@@ -2,6 +2,10 @@
 
 Status: **owner-approved for V1** (2026-07-30).
 
+In current source builds, shut down Windows and open **Settings → Snapshots**
+for the saved VM. Enter a name if you want one, then choose **Create Snapshot**
+to save the Windows disk and its matching boot settings.
+
 ## Decision
 
 The approved V1 scope is **cold snapshots only**:
