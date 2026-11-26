@@ -691,7 +691,7 @@ extension LibraryModel {
         case let .ready(session):
             _ = bindWindowsInstallSession(session, slug: saved.slug)
             guard operation.start(session) else {
-                operation.fail("Windows 설치를 시작할 수 없습니다. VM 상태를 확인한 뒤 다시 시도하세요."); return
+                operation.fail("Windows installation couldn’t start. Check the VM in the library and try again."); return
             }
         }
     }
