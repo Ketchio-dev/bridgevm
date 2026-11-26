@@ -5,7 +5,7 @@ extension HvfEngineSession {
         defer { updateSleepPrevention() }
         guard guiStartOperation === ticket else { return }
         let admitted = admitGUIStartEffect(ticket)
-        let invalidation = ticket.invalidationReason ?? "VM 시작 예약이 변경되었습니다."
+        let invalidation = ticket.invalidationReason ?? "The start request changed. Check the VM’s status and try again."
         let outcome: HvfRuntimeStartOutcome
         switch result.result {
         case .observedAttachment:

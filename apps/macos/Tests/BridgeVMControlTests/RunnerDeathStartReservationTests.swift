@@ -41,7 +41,7 @@ final class RunnerDeathStartReservationTests: XCTestCase {
         }
         try await wait { !cli.workerPending }
         guard case let .refused(reason) = cli.outcome else { return XCTFail("retry outcome: \(String(describing: cli.outcome))") }
-        XCTAssertTrue(reason.contains("정리"), "Retry must try media leases before runner readiness: \(reason)")
+        XCTAssertTrue(reason.contains("still closing its files"), "Retry must try media leases before runner readiness: \(reason)")
         XCTAssertFalse(session.hasPendingRuntimeStart)
         XCTAssertTrue(dead.mayHaveOwnedWork, "No invented cleanup proof")
     }

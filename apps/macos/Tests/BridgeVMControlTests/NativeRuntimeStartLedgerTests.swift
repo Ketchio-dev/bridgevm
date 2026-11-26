@@ -29,9 +29,9 @@ final class NativeRuntimeStartLedgerTests: XCTestCase {
 
     func testRefusalCarriesTheStartPathSentence() {
         let ledger = NativeRuntimeStartLedger(appInstanceID: F.app, library: F.library)
-        let response = ledger.process(F.request()) { _ in .refused("VM 작업이 진행 중입니다. 완료 후 다시 시도하세요.") }
+        let response = ledger.process(F.request()) { _ in .refused("Another operation is in progress for this VM. Wait for it to finish, then try again.") }
         XCTAssertEqual(response.refusal, .refused)
-        XCTAssertEqual(response.reason, "VM 작업이 진행 중입니다. 완료 후 다시 시도하세요.")
+        XCTAssertEqual(response.reason, "Another operation is in progress for this VM. Wait for it to finish, then try again.")
     }
 
     /// Every CLI start has a fresh operation ID, so a full ledger must not refuse starts after 256.
