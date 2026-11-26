@@ -13,10 +13,9 @@ final class HvfAppUIOverviewContractTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let library = LibraryModel(rootURL: root, migrateLegacy: false, startsModelsAutomatically: false)
-        library.selectedID = LibraryModel.firstRunImportSelectionID
-        XCTAssertTrue(HvfAppUIOverview.reached(library), "Pro mode off, the import selection kept")
-        let refused: [(Bool, String?)] = [(true, nil), (false, nil), (false, "ui-amber"),
-                                          (true, LibraryModel.firstRunImportSelectionID)]
+        XCTAssertTrue(HvfAppUIOverview.reached(library), "leaving a local draft keeps the current selection")
+        let refused: [(Bool, String?)] = [(true, nil), (false, "ui-amber"),
+                                          (false, LibraryModel.firstRunImportSelectionID)]
         for (proMode, selection) in refused {
             library.proMode = proMode
             library.selectedID = selection
