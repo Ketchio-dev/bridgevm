@@ -760,6 +760,27 @@ footer {
   }
 }
 
+@media (forced-colors: active) {
+  .media-choice input:checked + label {
+    forced-color-adjust: none;
+    color: HighlightText;
+    background: Highlight;
+    border-color: Highlight;
+  }
+  .media-choice input:focus-visible + label {
+    outline-color: CanvasText;
+  }
+  .questions summary {
+    display: list-item;
+  }
+  .questions summary::-webkit-details-marker {
+    display: revert;
+  }
+  .questions summary::after {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion:reduce) {
   *, *::before, *::after {
     transition: none !important;
