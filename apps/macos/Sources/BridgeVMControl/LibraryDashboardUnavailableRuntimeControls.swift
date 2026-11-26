@@ -12,7 +12,7 @@ struct LibraryDashboardUnavailableRuntimeControls: View {
                 open: { LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library) },
                 showAdvanced: showAdvanced, refresh: model.refresh)
             if model.running {
-                Button("정지", systemImage: "stop.fill") {
+                Button("Stop", systemImage: "stop.fill") {
                     LibraryDashboardPrimaryAction.stop(config: config, model: model, library: library)
                 }
                 .disabled(model.lifecycleBusy)

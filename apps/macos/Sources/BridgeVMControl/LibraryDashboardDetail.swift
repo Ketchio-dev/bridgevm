@@ -108,14 +108,14 @@ struct LibraryDashboardDetail: View {
 
     private var configurationCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("구성").font(.headline)
+            Text("Configuration").font(.headline)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 2),
                       alignment: .leading, spacing: 18) {
-                LibraryMetadataLabel(title: "프로세서", value: "\(model.cpu) vCPU", symbol: "cpu")
-                LibraryMetadataLabel(title: "메모리", value: memoryText, symbol: "memorychip")
-                LibraryMetadataLabel(title: "디스플레이", value: Self.displayText(for: config), symbol: "display")
+                LibraryMetadataLabel(title: "Processor", value: "\(model.cpu) vCPU", symbol: "cpu")
+                LibraryMetadataLabel(title: "Memory", value: memoryText, symbol: "memorychip")
+                LibraryMetadataLabel(title: "Display", value: Self.displayText(for: config), symbol: "display")
                 if config.engineKind == .hvfEngine {
-                    LibraryMetadataLabel(title: "네트워크", value: config.networkEnabled == false ? "꺼짐" : "공유 네트워크 (NAT)",
+                    LibraryMetadataLabel(title: "Network", value: config.networkEnabled == false ? "Off" : "Shared network (NAT)",
                                          symbol: "network")
                 }
             }
@@ -123,14 +123,14 @@ struct LibraryDashboardDetail: View {
             HStack(spacing: 12) {
                 Image(systemName: "folder").foregroundStyle(.secondary).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("저장 위치").font(.caption).foregroundStyle(.secondary)
+                    Text("Location").font(.caption).foregroundStyle(.secondary)
                     Text(verbatim: (config.bundlePath as NSString).abbreviatingWithTildeInPath)
                         .font(.callout).lineLimit(1).truncationMode(.middle)
                         .textSelection(.enabled).help(config.bundlePath)
                 }
                 .accessibilityElement(children: .combine)
                 Spacer(minLength: 0)
-                Button("Finder에서 보기", action: revealBundle)
+                Button("Show in Finder", action: revealBundle)
                     .fixedSize()
             }
         }
@@ -141,11 +141,11 @@ struct LibraryDashboardDetail: View {
         VStack(spacing: 0) {
             HStack {
                 Button { showingAdvanced = false } label: {
-                    Label("대시보드", systemImage: "chevron.left")
+                    Label("Dashboard", systemImage: "chevron.left")
                 }
                 .accessibilityIdentifier("bridgevm.dashboard.back")
                 Spacer()
-                Text("고급 제어").font(.headline)
+                Text("Advanced Controls").font(.headline)
                 Spacer()
                 Color.clear.frame(width: 80, height: 1)
             }
@@ -156,8 +156,8 @@ struct LibraryDashboardDetail: View {
     }
 
     private var statusText: String {
-        if config.installPending == true { return "설치 필요" }
-        return runtimeState?.title ?? (model.running ? "실행 중" : "정지됨")
+        if config.installPending == true { return "Setup required" }
+        return runtimeState?.title ?? (model.running ? "Running" : "Stopped")
     }
 
     private var visibleStatusNote: String? {
@@ -181,13 +181,13 @@ struct LibraryDashboardDetail: View {
             return "\(config.displayWidth) × \(config.displayHeight)"
         }
         if HvfEngineConfig.virtioGpu2d(for: config) {
-            return config.retinaResolution == true ? "Retina · 창 크기에 맞춤" : "창 크기에 맞춤"
+            return config.retinaResolution == true ? "Retina · Fit to window" : "Fit to window"
         }
         if let mode = HvfGuestResolutionPicker.firmwareMode(config.guestResolution) {
-            return "부팅 시 " + mode.replacingOccurrences(of: "x", with: " × ")
+            return mode.replacingOccurrences(of: "x", with: " × ") + " at startup"
         }
         // Automatic preserves an existing firmware choice. A supplied invalid mode leaves it untouched.
-        return config.guestResolution == nil ? "부팅 시 자동 (기본 1280 × 800)" : "부팅 시 펌웨어 설정"
+        return config.guestResolution == nil ? "Automatic at startup (1280 × 800 by default)" : "Firmware setting at startup"
     }
 
     private func revealBundle() {

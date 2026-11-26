@@ -12,30 +12,31 @@ struct LibraryDashboardActionBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Button(lifecycleBusy ? "작업 중" : (runtimeActive ? "창 열기" : "시작"),
+            Button(lifecycleBusy ? "Working" : (runtimeActive ? "Open Display" : "Start"),
                    systemImage: runtimeActive ? "macwindow" : "play.fill", action: open)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .fontWeight(.semibold)
                 .disabled(lifecycleBusy)
+                .accessibilityIdentifier("bridgevm.dashboard.primary")
             Spacer(minLength: 4)
             if let showSettings {
-                Button("설정", systemImage: "slider.horizontal.3", action: showSettings)
+                Button("Settings", action: showSettings)
                     .accessibilityIdentifier("bridgevm.runtime.settings.open")
             }
-            Button("고급", systemImage: "gearshape", action: showAdvanced)
+            Button("Advanced", action: showAdvanced)
                 .accessibilityIdentifier("bridgevm.dashboard.advanced")
             Menu {
-                Button("새로고침", systemImage: "arrow.clockwise", action: refresh)
+                Button("Refresh", systemImage: "arrow.clockwise", action: refresh)
                 if let clone {
-                    Button("복제", systemImage: "plus.square.on.square", action: clone)
+                    Button("Duplicate", systemImage: "plus.square.on.square", action: clone)
                         .disabled(cloneDisabled)
                 }
             } label: {
                 Image(systemName: "ellipsis").frame(width: 26, height: 26)
             }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-            .help("추가 작업").accessibilityLabel("추가 작업")
+            .help("More Actions").accessibilityLabel("More Actions")
             .accessibilityIdentifier("bridgevm.dashboard.actions")
         }
         .labelStyle(.titleAndIcon)

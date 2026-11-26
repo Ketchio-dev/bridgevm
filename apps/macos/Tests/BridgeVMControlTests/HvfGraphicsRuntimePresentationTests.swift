@@ -6,7 +6,7 @@ final class HvfGraphicsRuntimePresentationTests: XCTestCase {
         let value = HvfGraphicsRuntimePresentation.classify(
             running: false, ownedLaunchRunning: false, experimental3DAllowed: nil)
         XCTAssertEqual(value, .nextLaunchBasic)
-        XCTAssertEqual(value.label, "다음 시작: 기본 디스플레이 · 3D 제외")
+        XCTAssertEqual(value.label, "Next start · Basic display · 3D off")
     }
 
     func testExternalRunningSessionDoesNotInheritSavedPolicy() {
@@ -14,7 +14,7 @@ final class HvfGraphicsRuntimePresentationTests: XCTestCase {
             let value = HvfGraphicsRuntimePresentation.classify(
                 running: true, ownedLaunchRunning: false, experimental3DAllowed: savedPolicy)
             XCTAssertEqual(value, .runningUnverified)
-            XCTAssertEqual(value.label, "실행 그래픽: 기존 세션 · 모드 확인 불가")
+            XCTAssertEqual(value.label, "Current session · Graphics mode unknown")
         }
     }
 
@@ -29,6 +29,6 @@ final class HvfGraphicsRuntimePresentationTests: XCTestCase {
         let value = HvfGraphicsRuntimePresentation.classify(
             running: false, ownedLaunchRunning: false, experimental3DAllowed: true)
         XCTAssertEqual(value, .nextLaunchExperimental)
-        XCTAssertEqual(value.label, "다음 시작: Graphics Lab · 실험적 3D")
+        XCTAssertEqual(value.label, "Next start · Graphics Lab · Experimental 3D")
     }
 }

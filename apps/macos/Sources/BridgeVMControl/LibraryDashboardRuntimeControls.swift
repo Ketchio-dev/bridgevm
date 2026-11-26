@@ -21,7 +21,7 @@ struct LibraryDashboardRuntimeControls: View {
                     session: session, runtimeActive: runtimeActive, lifecycleBusy: lifecycleBusy)
                 HvfRestartControl(session: session, identifier: "bridgevm.dashboard.runtime") { enabled, press in
                     if runtimeActive {
-                        Button("다시 시작", systemImage: "arrow.counterclockwise", action: press)
+                        Button("Restart", systemImage: "arrow.counterclockwise", action: press)
                             .disabled(!enabled || lifecycleBusy)
                             .accessibilityIdentifier("bridgevm.dashboard.runtime.restart")
                     }
