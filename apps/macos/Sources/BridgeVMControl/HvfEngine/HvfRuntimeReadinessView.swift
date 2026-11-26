@@ -13,17 +13,17 @@ struct HvfRuntimeReadinessView: View {
                 GroupBox {
                     HStack(spacing: 10) {
                         ProgressView().controlSize(.small)
-                        Text("부팅 준비 상태를 확인하고 있습니다…").foregroundStyle(.secondary)
+                        Text("Checking startup readiness…").foregroundStyle(.secondary)
                         Spacer()
                     }.padding(6)
                 } label: {
-                    Label("Windows 실행 준비 상태", systemImage: "checklist")
+                    Label("Windows startup readiness", systemImage: "checklist")
                 }
             }
             Button {
                 model.request(configuration: configuration, repoRoot: repoRoot, force: true)
             } label: {
-                Label("준비 상태 새로고침", systemImage: "arrow.clockwise")
+                Label("Refresh readiness", systemImage: "arrow.clockwise")
             }
             .disabled(model.isChecking)
             .accessibilityIdentifier("bridgevm.windows.runtime.readiness.refresh")

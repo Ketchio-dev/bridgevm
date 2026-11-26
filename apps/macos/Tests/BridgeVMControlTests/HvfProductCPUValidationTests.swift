@@ -71,7 +71,7 @@ final class HvfProductCPUValidationTests: XCTestCase {
         var config = fixture.config
         config.smpCpus = 65
         let issue = config.readiness(repoRoot: fixture.root).launchBlockers.first { $0.code == "cpu-range" }
-        XCTAssertTrue(issue?.summary.contains("1~64") == true)
+        XCTAssertTrue(issue?.summary.contains("1 to 64") == true)
         let error = FirstRunImport.ValidationError.badResources(memMiB: 4096, cpuCount: 65)
         XCTAssertTrue(error.description.contains("1~64"))
         XCTAssertTrue(error.description.contains("65"))

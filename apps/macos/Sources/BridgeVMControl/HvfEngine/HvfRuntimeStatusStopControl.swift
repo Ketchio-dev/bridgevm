@@ -10,7 +10,7 @@ struct HvfRuntimeStatusStopControl: View {
                 HvfRuntimeStopAction.perform(session: session,
                     requestStop: { $0.stopOwned(expectedToken: $1.token) },
                     report: { message = $0 }, refresh: {})
-            } label: { Label("중지", systemImage: "stop.fill") }
+            } label: { Label("Stop", systemImage: "stop.fill") }
             .disabled(!presentation.isEnabled).controlSize(.large)
             .help(presentation.guidance).accessibilityHint(presentation.guidance)
             .accessibilityIdentifier("bridgevm.windows.runtime.stop")

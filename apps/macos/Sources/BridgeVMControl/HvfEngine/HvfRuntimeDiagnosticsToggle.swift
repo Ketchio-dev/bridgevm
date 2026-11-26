@@ -6,7 +6,7 @@ struct HvfRuntimeDiagnosticsToggle: View {
     @Binding var expanded: Bool
 
     var body: some View {
-        Button("고급 진단") { expanded.toggle() }
+        Button("Advanced diagnostics") { expanded.toggle() }
             .buttonStyle(.plain)
             .accessibilityIdentifier("bridgevm.runtime.diagnostics.toggle")
     }

@@ -8,7 +8,7 @@ struct HvfRuntimeStatusMessages: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(failureText ?? "시작 오류 없음")
+            Text(failureText ?? "No startup error")
                 .font(.callout).foregroundColor(failureText == nil ? Color.secondary : Color.red).textSelection(.enabled)
                 .accessibilityIdentifier("bridgevm.windows.runtime.start.failure")
                 .accessibilityValue(failureText ?? "none")

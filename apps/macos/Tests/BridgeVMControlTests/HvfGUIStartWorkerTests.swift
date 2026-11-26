@@ -71,7 +71,7 @@ final class HvfGUIStartWorkerTests: XCTestCase {
         guard case let .failed(.readiness(codes), detail) = output.result else { return XCTFail("Expected readiness failure") }
         // The user reads the summaries (6ebec8d0 showed `target-disk-missing,ram-range`); codes stay in the log.
         XCTAssertEqual(codes, ["target-disk-missing", "ram-range"])
-        XCTAssertEqual(detail, "Windows 대상 RAW 디스크를 찾을 수 없습니다. RAM은 1024~65536 MiB 범위여야 합니다.")
+        XCTAssertEqual(detail, "The Windows RAW disk could not be found. Set memory between 1024 and 65536 MiB.")
         XCTAssertTrue(output.diagnostics.contains { $0.contains("target-disk-missing") })
         XCTAssertTrue(output.diagnostics.contains { $0.contains("ram-range") })
         XCTAssertTrue(f.effects.snapshot.keyCreation.isEmpty); XCTAssertEqual(f.effects.snapshot.launches, 0)

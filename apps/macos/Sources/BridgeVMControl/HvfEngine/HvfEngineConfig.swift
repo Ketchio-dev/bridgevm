@@ -279,68 +279,68 @@ extension HvfEngineConfig {
         var isDirectory: ObjCBool = false
         if !fileManager.fileExists(atPath: targetDiskPath, isDirectory: &isDirectory)
             || isDirectory.boolValue {
-            launch("target-disk-missing", "Windows 대상 RAW 디스크를 찾을 수 없습니다.")
+            launch("target-disk-missing", "The Windows RAW disk could not be found.")
         } else {
             if !fileManager.isReadableFile(atPath: targetDiskPath)
                 || !fileManager.isWritableFile(atPath: targetDiskPath) {
-                launch("target-disk-access", "Windows 대상 RAW 디스크에 읽기/쓰기 권한이 필요합니다.")
+                launch("target-disk-access", "BridgeVM needs read and write access to the Windows RAW disk.")
             }
             let diskBytes = (try? fileManager.attributesOfItem(atPath: targetDiskPath)[.size] as? NSNumber)?.uint64Value ?? 0
             if diskBytes == 0 {
-                launch("target-disk-empty", "Windows 대상 RAW 디스크가 비어 있습니다.")
+                launch("target-disk-empty", "The Windows RAW disk is empty.")
             }
         }
 
         isDirectory = false
         if !fileManager.fileExists(atPath: uefiVarsPath, isDirectory: &isDirectory) || isDirectory.boolValue {
-            launch("uefi-vars-missing", "쓰기 가능한 UEFI vars 파일을 찾을 수 없습니다.")
+            launch("uefi-vars-missing", "The UEFI variables file could not be found.")
         } else {
             if !fileManager.isReadableFile(atPath: uefiVarsPath)
                 || !fileManager.isWritableFile(atPath: uefiVarsPath) {
-                launch("uefi-vars-access", "UEFI vars 파일에 읽기/쓰기 권한이 필요합니다.")
+                launch("uefi-vars-access", "BridgeVM needs read and write access to the UEFI variables file.")
             }
             let varsBytes = (try? fileManager.attributesOfItem(atPath: uefiVarsPath)[.size] as? NSNumber)?.uint64Value ?? 0
             if varsBytes != 64 * 1024 * 1024 {
-                launch("uefi-vars-size", "UEFI vars 파일은 정확히 64 MiB여야 합니다.")
+                launch("uefi-vars-size", "The UEFI variables file must be exactly 64 MiB.")
             }
         }
 
         let wrapper = repoRoot.appendingPathComponent("scripts/run-hvf-windows-installed-boot.sh")
         if !fileManager.isExecutableFile(atPath: wrapper.path) {
-            launch("boot-wrapper-missing", "설치된 Windows HVF 부팅 wrapper를 실행할 수 없습니다.")
+            launch("boot-wrapper-missing", "The installed Windows HVF boot script cannot run.")
         }
         let runner = repoRoot.appendingPathComponent("target/release/examples/hvf_gic_boot_probe")
         if !fileManager.isExecutableFile(atPath: runner.path) {
-            launch("signed-runner-missing", "--skip-build 실행에 필요한 release HVF probe가 없습니다. 빌드·entitlement 서명이 필요합니다.")
+            launch("signed-runner-missing", "To use --skip-build, build the release HVF runner and sign it with the required entitlements.")
         }
 
         if !(1024...65_536).contains(ramMiB) {
-            launch("ram-range", "RAM은 1024~65536 MiB 범위여야 합니다.")
+            launch("ram-range", "Set memory between 1024 and 65536 MiB.")
         }
         if !Self.supportedCPURange.contains(smpCpus) {
-            launch("cpu-range", "vCPU 수는 1~64 범위여야 합니다 (현재 \(smpCpus)).")
+            launch("cpu-range", "Choose 1 to 64 vCPUs. The current setting is \(smpCpus).")
         }
         if let watchdogMs, watchdogMs <= 0 {
-            launch("watchdog-range", "진단 watchdog은 양수여야 합니다.")
+            launch("watchdog-range", "Set the diagnostic watchdog to a positive duration.")
         }
 
         isDirectory = false
         if fileManager.fileExists(atPath: evidenceDir, isDirectory: &isDirectory), !isDirectory.boolValue {
-            launch("evidence-not-directory", "증거 경로가 디렉터리가 아닌 파일입니다.")
+            launch("evidence-not-directory", "Choose a directory for diagnostic evidence. The current path points to a file.")
         }
         if ctlFilePath == targetDiskPath || ctlFilePath == uefiVarsPath {
-            launch("control-path-collision", "게스트 제어 파일은 디스크나 UEFI vars와 같은 경로일 수 없습니다.")
+            launch("control-path-collision", "Use a separate guest control file from the Windows disk and UEFI variables.")
         }
         if let vtpmStateDir {
             if vtpmStateDir == targetDiskPath || vtpmStateDir == uefiVarsPath
                 || vtpmStateDir == evidenceDir || vtpmStateDir == ctlFilePath {
-                launch("vtpm-path-collision", "vTPM 상태 경로는 디스크, UEFI vars, 증거 또는 제어 경로와 분리해야 합니다.")
+                launch("vtpm-path-collision", "Choose a separate vTPM state directory from the disk, UEFI variables, diagnostic evidence and guest control file.")
             }
             if vtpmKeyID?.isEmpty != false {
-                launch("vtpm-key-id", "암호화된 vTPM 상태에 사용할 안정적인 VM ID가 없습니다.")
+                launch("vtpm-key-id", "A stable VM ID is required for encrypted vTPM state.")
             }
             if !VTPMStateSecurity.executableAvailable(swtpmBin, fileManager: fileManager) {
-                launch("swtpm-missing", "vTPM에 필요한 swtpm 실행 파일을 찾을 수 없습니다: \(swtpmBin)")
+                launch("swtpm-missing", "The vTPM executable could not be found at \(swtpmBin).")
             } else if let rejection = HelperCodeSignature.validate(
                 helperPath: swtpmBin,
                 appTeam: HelperCodeSignature.readTeamIdentifier(
@@ -356,7 +356,7 @@ extension HvfEngineConfig {
             isDirectory = false
             if fileManager.fileExists(atPath: vtpmStateDir, isDirectory: &isDirectory),
                !isDirectory.boolValue {
-                launch("vtpm-state-not-directory", "vTPM 상태 경로가 디렉터리가 아닌 파일입니다.")
+                launch("vtpm-state-not-directory", "Choose a directory for vTPM state. The current path points to a file.")
             }
         }
         switch (shareHostDir, shareGuestDir) {
@@ -367,15 +367,15 @@ extension HvfEngineConfig {
             // (missingShareFolder). Not a relative one: the runtime resolves it from another directory
             // than this check does, so the folder it would wait for is not this one.
             if guest.isEmpty || !host.hasPrefix("/") {
-                launch("share-invalid", "공유 폴더 경로가 올바르지 않습니다. 설정에서 공유 폴더를 다시 선택하세요.")
+                launch("share-invalid", "Choose the shared folder again in Settings.")
             }
         default:
-            launch("share-incomplete", "호스트/게스트 공유 폴더 경로는 함께 설정해야 합니다.")
+            launch("share-incomplete", "Set both the host and guest paths for the shared folder.")
         }
 
         issues.append(contentsOf: Self.permanentReleaseBlockers)
         if virtioGpu3d {
-            release("gpu-live-receipt", "최종 서명된 ARM64 viogpu3d의 단일 세대 bind, Status OK, 실타이틀 trace 영수증이 필요합니다.")
+            release("gpu-live-receipt", "The final signed ARM64 viogpu3d driver still needs a trace from an actual title with a single driver generation bound and device status OK.")
         }
         return HvfWindowsReadinessReport(
             issues: issues,
@@ -386,13 +386,13 @@ extension HvfEngineConfig {
     /// v1 deliberately exposes stop/start instead of presenting the probe's
     /// single-vCPU checkpoint experiment as a durable suspend contract.
     private static let productLimitations = [
-        "v1에서는 Windows HVF suspend/resume을 지원하지 않습니다. 종료 후 다시 시작하세요."
+        "Windows HVF v1 does not support suspend/resume. Shut down Windows and start it again."
     ]
 
     private static let permanentReleaseBlockers: [HvfWindowsReadinessIssue] = [
         .init(code: "secure-boot-live-receipt", scope: .release,
-              summary: "암호화 vTPM 제품 경로의 Windows TPM/PPI/측정 로그 영수증과 Secure Boot 키 수명주기 검증이 필요합니다."),
+              summary: "The encrypted vTPM path still needs Windows TPM, PPI and measured boot logs, along with verification of the Secure Boot key lifecycle."),
         .init(code: "production-driver-signing", scope: .release,
-              summary: "테스트 서명이 아닌 배포 가능한 Windows ARM64 드라이버 서명/업데이트 경로가 필요합니다."),
+              summary: "Windows ARM64 drivers still need production signing and a verified update path."),
     ]
 }

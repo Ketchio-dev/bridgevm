@@ -14,7 +14,7 @@ final class RunnerDeathRetryTests: XCTestCase {
         f.controller.receive(.message(try f.event("ready", sequence: 1)))
         try await f.exit(); f.controller.receive(.eof)
         XCTAssertEqual(session.connectionState, .timedOut, "Never claim a clean stop without a receipt")
-        XCTAssertEqual(session.guiStartFailureText, "Windows가 예기치 않게 종료되었으니 잠시 후 다시 시작하세요.")
+        XCTAssertEqual(session.guiStartFailureText, "Windows stopped unexpectedly, so wait a moment before starting it again.")
         XCTAssertTrue(session.hasActiveRuntimeWork, "Unconfirmed cleanup still blocks unrelated mutations")
         session.guiStartWorker = { _ in .init(result: .refused("이전 Windows가 파일을 정리하고 있으니 잠시 후 다시 시작하세요.")) }
         guard case let .accepted(ticket) = session.requestGUIStart(configuration: session.config) else {
