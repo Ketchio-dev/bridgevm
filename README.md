@@ -85,7 +85,7 @@ installed disk from Finder onto the matching card to open its setup form.
 | Starting point | What you provide |
 | --- | --- |
 | **Windows 새로 설치** (Install Windows) | Select your licensed Windows 11 Arm ISO. **드라이버 자동 준비** downloads the Microsoft-signed Red Hat virtio-win storage, serial and network drivers (about 95 MB) and checks their pinned SHA-256. You can also select your own signed ARM64 driver folder and manifest. Choose **생성** (Create), then **설치 시작** (Start installation) in the VM detail view. |
-| **기존 디스크 가져오기** (Import an existing disk) | Drop your installed Windows 11 Arm disk onto **파일 선택 또는 놓기** (Choose or drop file), or click that button to browse. Supported formats are RAW, QCOW2 and Hyper-V VHDX. Choose **가져오기** (Import), then **시작** (Start) once the VM appears in your library. This path needs no driver payload. |
+| **기존 디스크 가져오기** (Import an existing disk) | Drop your installed Windows 11 Arm disk onto **파일 선택 또는 놓기** (Choose or drop file), or click that button to browse. The download accepts RAW, QCOW2 and Hyper-V VHDX. Builds from current source also accept fixed-size VHD. Choose **가져오기** (Import), then **시작** (Start) once the VM appears in your library. This path needs no driver payload. |
 
 In current source builds, you can choose **Finish Then Quit** (`완료 후 종료`)
 during a first-run import, while **Create VM** prepares files for an import or
@@ -189,6 +189,8 @@ supported, with its files untouched, and can be deleted from there.
 Windows HVF uses a QEMU `virt`-compatible guest contract with
 [documented deviations](docs/machine-contract/qemu-virt-deviations.json).
 BridgeVM imports RAW, QCOW2 and VHDX disks with its bundled converter.
+Builds from current source also import fixed-size Hyper-V VHD. Convert a
+dynamic VHD to VHDX in Hyper-V before importing.
 The v0.1.0 download imports uncompressed QCOW2. Builds from current source also
 read QEMU's default deflate compression. Use RAW for compressed QCOW2 in v0.1.0
 or for zstd-compressed QCOW2 in either build.

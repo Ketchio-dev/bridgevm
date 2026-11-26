@@ -192,7 +192,8 @@ To install Windows from an ISO:
 To import instead: an installed Windows 11 Arm disk (RAW, QCOW2 or Hyper-V
 VHDX), with its UEFI variables if you have them. Import copies or converts the
 disk into the library and leaves the source unchanged; it needs no driver
-payload.
+payload. Builds from current source also accept fixed-size Hyper-V VHD. Convert
+a dynamic VHD to VHDX in Hyper-V before importing.
 
 For compressed QCOW2 in the v0.1.0 download, import a RAW copy. Builds from
 current source support QEMU's default deflate compression. Use RAW for

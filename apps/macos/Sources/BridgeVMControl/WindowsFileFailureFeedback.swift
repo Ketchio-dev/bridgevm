@@ -51,6 +51,7 @@ enum WindowsFileFailureFeedback {
         // These converter sentences contain fixed guidance. Match the entire sentence
         // before using it in the app, since other helper output can contain file paths.
         case importingOutOfSpace,
+             "동적 VHD는 Hyper-V에서 고정 크기 VHD 또는 VHDX로 변환한 뒤 다시 가져오세요.",
              "이 QCOW2 압축 형식을 지원하지 않으니 원래 VM 앱에서 RAW로 변환한 뒤 다시 가져오세요.",
              "이 VHDX는 4K 논리 섹터 디스크라 BridgeVM에서 부팅할 수 없으니 512바이트 논리 섹터 디스크에 설치한 Windows를 가져오세요.",
              "이 디스크는 다른 디스크를 기반으로 하는 차이 디스크이니 Hyper-V에서 부모 디스크와 병합한 뒤 다시 가져오세요.",

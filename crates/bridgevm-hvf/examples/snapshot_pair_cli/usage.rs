@@ -11,7 +11,7 @@ pub(super) fn usage() -> ExitCode {
          snapshot_pair_cli digest <disk> <vars>\n  \
          snapshot_pair_cli size <disk> <vars>\n  \
          snapshot_pair_cli grow <disk> <vars> <bytes>\n  \
-         snapshot_pair_cli convert-to-raw <qcow2-or-vhdx> <raw>"
+         snapshot_pair_cli convert-to-raw <qcow2-vhd-or-vhdx> <raw>"
     );
     ExitCode::from(2)
 }

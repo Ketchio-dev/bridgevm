@@ -54,9 +54,10 @@ final class HvfCurrentGenerationImportTests: XCTestCase {
         return String(decoding: try handle.read(upToCount: 8) ?? Data(), as: UTF8.self)
     }
 
-    private func restoredFixture() throws -> Fixture {
+    private func restoredFixture(beforeSnapshot: (Fixture) throws -> Void = { _ in }) throws -> Fixture {
         let fixture = try Fixture()
         do {
+            try beforeSnapshot(fixture)
             try invoke(["create", fixture.disk.path, fixture.vars.path, fixture.snapshot.path, "audit"])
             try overwrite(fixture.disk, prefix: "disk-new")
             try overwrite(fixture.vars, prefix: "vars-new")
@@ -122,6 +123,45 @@ final class HvfCurrentGenerationImportTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: library.path), [])
         try assertOriginals(fixture)
         try owner.finish()
+    }
+
+    func testLegacyFixedVHDRegistrationImportsRestoredSectorsAndVars() throws {
+        let fixture = try restoredFixture { source in
+            // Older imports preserved the entire fixed VHD as disk.raw. Give this
+            // single-sector disk a revision-1 fixed footer and its checksum.
+            var raw = try Data(contentsOf: source.disk)
+            raw.count = 512
+            var footer = Data(count: 512)
+            footer.replaceSubrange(0..<8, with: "conectix".utf8)
+            footer[11] = 2
+            footer[13] = 1
+            footer.replaceSubrange(16..<24, with: repeatElement(UInt8.max, count: 8))
+            footer[46] = 2  // Original capacity, 512 bytes, big-endian.
+            footer[54] = 2  // Current capacity.
+            footer[63] = 2  // Fixed disk.
+            var checksum = (~footer.reduce(UInt32(0)) { $0 + UInt32($1) }).bigEndian
+            withUnsafeBytes(of: &checksum) { footer.replaceSubrange(64..<68, with: $0) }
+            try (raw + footer).write(to: source.disk)
+        }
+        defer { fixture.remove() }
+
+        var diskOnly = fixture.inputs("first")
+        diskOnly.varsPath = ""
+        let first = try FirstRunImport.register(diskOnly, slug: "first",
+            libraryRoot: fixture.root.appendingPathComponent("first-library"), snapshotHelper: helper)
+        let firstLayout = FirstRunImport.BundleLayout(bundleURL: URL(fileURLWithPath: first.bundlePath))
+        XCTAssertEqual(try Data(contentsOf: firstLayout.diskURL).count, 512)
+        XCTAssertEqual(try prefix(firstLayout.diskURL), "disk-old")
+        XCTAssertEqual(try prefix(firstLayout.varsURL), "vars-old")
+
+        guard case .created(let vm)? = VMLibrary.createWindowsHVF(name: "ordinary",
+            targetDiskPath: fixture.disk.path, varsPath: fixture.vars.path,
+            libraryRoot: fixture.root.appendingPathComponent("ordinary-library"), snapshotHelper: helper)
+        else { return XCTFail("expected the selected fixed VHD to import") }
+        let created = FirstRunImport.BundleLayout(bundleURL: URL(fileURLWithPath: vm.bundlePath))
+        XCTAssertEqual(try prefix(created.diskURL), "disk-old")
+        XCTAssertEqual(try prefix(created.varsURL), "vars-old")
+        try assertOriginals(fixture)
     }
 
     func testBothImportEntryPointsCopySelectedGeneration() throws {

@@ -24,7 +24,7 @@ struct CreateVMSheet: View {
     @State var error = ""
     @State var creationFailureCode = ""
     @State var creationState = CreateVMCreationState()
-    /// The QCOW2 or VHDX import being converted, and its percent.
+    /// The disk container being converted, and its percent.
     @State var conversion: (format: HvfImportedDiskFormat, percent: Int)?
     let resolutions = [(1280, 800), (1440, 900), (1920, 1080), (2560, 1440)]
     enum Mode: Equatable { case windowsHVF, windowsHVFInstall }
@@ -76,7 +76,7 @@ struct CreateVMSheet: View {
             }
 
             if mode == .windowsHVF {
-                Text("이미 설치되어 정상 부팅한 Windows ARM 디스크(RAW, QCOW2, Hyper-V의 VHDX)를 가져옵니다. UEFI vars가 없으면 기본 부팅 설정을 만듭니다. QCOW2와 VHDX는 RAW로 변환하고, 원본은 변경하지 않고 라이브러리에 복제합니다.")
+                Text("Windows ARM이 설치된 RAW, QCOW2, 고정 크기 VHD 또는 VHDX를 가져옵니다. 라이브러리에 RAW 사본을 만들고, UEFI vars가 없으면 기본 부팅 설정을 만듭니다.")
                     .font(.callout).foregroundColor(.secondary)
                 HStack {
                     Button("설치된 디스크 선택…") { pickHVFTarget() }
@@ -175,7 +175,7 @@ struct CreateVMSheet: View {
     }
 
     private func pickHVFTarget() {
-        FileSelection.choose(directories: false, extensions: ["raw", "img", "qcow2", "vhdx"]) { hvfTargetPath = $0.path }
+        FileSelection.choose(directories: false, extensions: ["raw", "img", "qcow2", "vhd", "vhdx"]) { hvfTargetPath = $0.path }
     }
 
     private func pickHVFVars() {

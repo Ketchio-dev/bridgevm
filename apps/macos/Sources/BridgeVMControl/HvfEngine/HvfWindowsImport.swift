@@ -1,7 +1,7 @@
 import Foundation
 
 extension VMLibrary {
-    /// Import an installed disk with optional matching writable UEFI vars. A QCOW2 or VHDX disk is converted
+    /// Import an installed disk with optional matching writable UEFI vars. A container disk is converted
     /// to RAW; `converting` sees its percent, and a refused conversion returns the helper's sentence.
     static func createWindowsHVF(name: String, targetDiskPath: String, varsPath: String = "",
                                  storageDir: URL? = nil, width: Int = 1280, height: Int = 800,
