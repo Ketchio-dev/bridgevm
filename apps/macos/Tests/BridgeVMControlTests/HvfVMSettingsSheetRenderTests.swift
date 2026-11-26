@@ -21,7 +21,7 @@ final class HvfVMSettingsSheetRenderTests: XCTestCase {
 
         func nameFieldIsVisible() -> Bool {
             FirstRunOptionalRecoveryFixture.fields(host).contains { field in
-                field.placeholderString?.contains("스냅샷 이름") == true && !field.visibleRect.isEmpty
+                field.placeholderString == "Snapshot name (optional)" && !field.visibleRect.isEmpty
             }
         }
         XCTAssertFalse(nameFieldIsVisible())
