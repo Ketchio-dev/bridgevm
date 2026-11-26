@@ -80,12 +80,12 @@ final class ControlAppPowerTests: XCTestCase {
     func testAPIFailureDoesNotPretendAssertionHeldOrReleaseInvalidAssertion() {
         let api = API(); api.succeeds = false
         let power = ControlAppPower(api: api)
-        var failures = 0
-        power.failure = { failures += 1 }
+        var failures = [String]()
+        power.failure = { failures.append($0) }
         power.update(UUID(), active: true)
         power.update(UUID(), active: true)
         XCTAssertFalse(power.held)
-        XCTAssertEqual(failures, 1, "Optional power failure is reported once without blocking start")
+        XCTAssertEqual(failures, ["BridgeVM couldn’t keep your Mac awake. Check your Mac’s sleep settings before leaving Windows running unattended."])
         power.shutdown()
         XCTAssertEqual(api.released, 0)
     }
