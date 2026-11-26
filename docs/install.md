@@ -173,6 +173,14 @@ on current macOS, so the Settings route is the real one.
 
 ### Install Windows from an ISO
 
+1. In v0.1.0, choose **Install Windows** (**새 Windows VM 만들기**), then **Choose ISO…**
+   (**ISO 선택…**) and select your Windows 11 Arm ISO.
+2. Type a VM name in **Name** (**이름**). The displayed “Windows 11” is a
+   placeholder. Choose **Download Drivers** (**드라이버 자동 준비**) or select
+   your own driver folder and its manifest.
+3. Choose **Create** (**생성**). In the new VM’s detail view, choose
+   **Start Installation** (**설치 시작**) to begin Windows setup.
+
 - A Windows 11 ARM64 ISO, downloaded from Microsoft yourself. The app does not
   fetch Windows media; it asks you to choose the ISO file.
 - Signed ARM64 storage, serial and network drivers. Either:
@@ -194,11 +202,18 @@ on current macOS, so the Settings route is the real one.
 
 ### Import an installed Windows disk
 
-Choose an installed Windows 11 Arm disk (RAW, QCOW2 or Hyper-V VHDX) and its
-matching UEFI variables if you have them. BridgeVM copies or converts the disk
-into the library and leaves the source unchanged. Import needs no driver
-payload. Builds from current source also accept fixed-size Hyper-V VHD. Convert
-a dynamic VHD to VHDX in Hyper-V before importing.
+1. In v0.1.0, choose **Import an existing disk** (**기존 VM 가져오기**). Keep the
+   prefilled name “Windows 11” or enter a different name.
+2. Beside **Windows disk** (**Windows 디스크**), click **Choose…** (**선택…**)
+   and select the installed Windows 11 Arm disk. If you have its matching UEFI variables
+   file, select it in the separate optional UEFI field.
+3. Choose **Import** (**가져오기**). Select the saved VM in the library and
+   choose **Start** (**시작**) to boot it.
+
+The v0.1.0 download accepts RAW, QCOW2 and Hyper-V VHDX. BridgeVM copies or
+converts the disk into the library and leaves the source unchanged. Import
+needs no driver payload. Builds from current source also accept fixed-size
+Hyper-V VHD. Convert a dynamic VHD to VHDX in Hyper-V before importing.
 
 For compressed QCOW2 in the v0.1.0 download, import a RAW copy. Builds from
 current source support QEMU's default deflate compression. Use RAW for
