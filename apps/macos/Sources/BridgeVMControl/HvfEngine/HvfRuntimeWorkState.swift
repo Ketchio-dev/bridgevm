@@ -18,7 +18,7 @@ extension HvfEngineSession {
     func runtimeConfigurationChanged() {
         if let reservation = mutationReservation, config != reservation.configuration { reservation.invalidate() }
         if let ticket = guiStartOperation, config != ticket.configuration {
-            ticket.invalidate("VM 설정이 변경되어 시작을 중단했습니다.")
+            ticket.invalidate()
             if ticket.workerPending, process != nil { guiStartCleanupOnly = true }
         }
     }

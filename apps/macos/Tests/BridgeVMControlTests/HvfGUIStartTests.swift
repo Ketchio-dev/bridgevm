@@ -63,7 +63,8 @@ final class HvfGUIStartTests: XCTestCase {
             XCTAssertNotNil(ticket.invalidationReason); XCTAssertTrue(f.session.hasPendingGUIStart)
             XCTAssertNil(f.session.reserveRuntimeMutation(kind: .snapshot))
             gate.release(); try await f.wait { !ticket.workerPending }
-            guard case .refused = ticket.outcome else { throw CocoaError(.executableRuntimeMismatch) }
+            guard case let .refused(reason) = ticket.outcome else { throw CocoaError(.executableRuntimeMismatch) }
+            XCTAssertEqual(reason, "The saved VM changed before startup. Review its settings and start Windows again.")
             XCTAssertFalse(FileManager.default.fileExists(atPath: f.base.config.evidenceDir))
             XCTAssertEqual(f.effects.snapshot.launches, 0); XCTAssertTrue(f.effects.snapshot.keyCreation.isEmpty)
             XCTAssertFalse(f.session.hasActiveRuntimeWork)
