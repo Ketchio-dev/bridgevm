@@ -9,9 +9,9 @@ final class HvfWindowsInstallSourceLock {
 
         var errorDescription: String? {
             switch self {
-            case .unsafePath: return "설치 소스 캐시 잠금 경로가 안전하지 않습니다."
-            case .busy: return "같은 Windows 설치 소스를 다른 작업이 생성하고 있습니다. 잠시 후 다시 시도하세요."
-            case .unavailable: return "설치 소스 캐시 잠금을 만들 수 없습니다."
+            case .unsafePath: return "The installation cache lock is at an unsafe location."
+            case .busy: return "Another task is preparing the same Windows installation files. Wait for it to finish, then retry."
+            case .unavailable: return "BridgeVM couldn’t lock the Windows installation cache."
             }
         }
     }

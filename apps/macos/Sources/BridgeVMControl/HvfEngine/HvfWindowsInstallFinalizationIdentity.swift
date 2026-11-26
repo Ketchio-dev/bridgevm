@@ -12,7 +12,7 @@ enum HvfWindowsInstallFinalizationIdentity {
               sha256.count == 64,
               try HvfWindowsInstallDurability.fileSize(url) == bytes else {
             throw HvfWindowsInstallFinalizationError.invalidState(
-                "transaction 산출물을 안정적으로 봉인하지 못했습니다: \(url.path)")
+                "The installation file changed while it was being verified: \(url.path)")
         }
         return Sealed(bytes: bytes, sha256: sha256)
     }
@@ -21,7 +21,7 @@ enum HvfWindowsInstallFinalizationIdentity {
         guard sha256.count == 64,
               try seal(url) == Sealed(bytes: bytes, sha256: sha256) else {
             throw HvfWindowsInstallFinalizationError.invalidState(
-                "transaction 산출물 digest가 변경되었습니다: \(url.path)")
+                "The installation file’s SHA-256 digest changed: \(url.path)")
         }
     }
 }

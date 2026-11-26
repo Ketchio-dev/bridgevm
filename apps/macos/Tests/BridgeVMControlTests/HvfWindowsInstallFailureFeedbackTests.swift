@@ -31,7 +31,7 @@ final class HvfWindowsInstallFailureFeedbackTests: XCTestCase {
                 verifySource: { _ in true }, prepareMedia: { _ in throw error }))
             session.attemptActive = true
             await session.run()
-            XCTAssertEqual(session.stage, .failed("Windows 설치 파일을 준비하지 못했으니 BridgeVM을 다시 설치하고 VM 폴더의 접근 권한과 여유 공간을 확인한 뒤 다시 시도하세요."), String(reflecting: error))
+            XCTAssertEqual(session.stage, .failed("BridgeVM couldn’t prepare the Windows installation files. Check that the VM folder is writable and the drive has free space. If the problem persists, reinstall BridgeVM and retry."), String(reflecting: error))
             XCTAssertTrue(session.logLines.contains { $0.contains(String(reflecting: error)) }, "raw diagnostic retained")
         }
     }

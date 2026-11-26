@@ -68,7 +68,7 @@ final class HvfWindowsInstallProcess: HvfWindowsInstallProcessRunning {
             }
             do { try process.run() }
             catch {
-                output("실행 실패: \(error.localizedDescription)")
+                output("Couldn’t start the installation command. \(error.localizedDescription)")
                 continuation.resume(returning: false)
             }
         }

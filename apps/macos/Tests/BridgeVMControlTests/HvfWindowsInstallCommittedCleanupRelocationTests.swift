@@ -31,7 +31,7 @@ final class HvfWindowsInstallCommittedCleanupRelocationTests: XCTestCase {
         let current = try XCTUnwrap(scan.configs.first { $0.slug == installed.slug })
         XCTAssertEqual(current.installPending, false, "an installed VM must not be demoted")
         XCTAssertEqual(try HvfWindowsInstallFinalization.loadConfig(f.paths.config).installPending, false)
-        XCTAssertFalse(scan.issues.contains { $0.message.contains("실행을 차단") }, "\(scan.issues)")
+        XCTAssertFalse(scan.issues.contains { $0.message.contains("Windows can’t start until setup recovers") }, "\(scan.issues)")
         XCTAssertEqual(current.bundlePath, installed.bundlePath)
         XCTAssertFalse(FileManager.default.fileExists(atPath: parent.appendingPathComponent("bundle").path))
         // Left in place, the next reconciliation completes the committed cleanup.

@@ -143,7 +143,7 @@ extension HvfWindowsInstallFinalization {
         guard config.slug == paths.slug, config.installPending == pending,
               HvfWindowsInstallDurability.canonical(URL(fileURLWithPath: config.bundlePath))
                 == HvfWindowsInstallDurability.canonical(paths.bundle) else {
-            throw HvfWindowsInstallFinalizationError.invalidState("VM 설정이 transaction identity와 다릅니다.")
+            throw HvfWindowsInstallFinalizationError.invalidState("The VM settings don’t match the installation recovery record.")
         }
     }
 
@@ -159,7 +159,7 @@ extension HvfWindowsInstallFinalization {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(config)
         guard data.count <= VMLibrary.maximumConfigBytes else {
-            throw HvfWindowsInstallFinalizationError.invalidState("VM 설정이 허용 크기를 초과했습니다.")
+            throw HvfWindowsInstallFinalizationError.invalidState("The saved VM settings exceed the size limit.")
         }
         try HvfWindowsInstallDurability.durableWrite(data, to: url)
     }
@@ -197,11 +197,11 @@ extension HvfWindowsInstallFinalization {
                 from: paths.doneRequest, to: paths.pendingRequest)
             return ReconcileResult(
                 config: config,
-                issue: "이전 설치 완료 중단 기록을 재시도 가능한 대기 요청으로 복구했습니다.")
+                issue: "The interrupted setup was recovered. You can retry the installation.")
         } catch {
             return ReconcileResult(
                 config: config,
-                issue: "중단된 Windows 설치 요청을 복구하지 못해 실행을 차단했습니다: \(error.localizedDescription)")
+                issue: "Windows can’t start until setup recovers the interrupted request. \(error.localizedDescription)")
         }
     }
 }

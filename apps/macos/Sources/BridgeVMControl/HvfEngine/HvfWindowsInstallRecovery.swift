@@ -35,7 +35,7 @@ enum HvfWindowsInstallRecovery {
             let (data, journal) = try readPreserved(plan: plan, paths: paths)
             guard digest(data) == ticket.journalSHA256,
                   journal.transactionID == ticket.transactionID else {
-                throw HvfWindowsInstallFinalizationError.invalidState("복구를 기다리는 동안 설치 기록이 변경되었습니다.")
+                throw HvfWindowsInstallFinalizationError.invalidState("The installation recovery record changed while waiting.")
             }
             return try HvfWindowsInstallFinalization.resume(journal, paths: paths, recovering: true, faultInjector: { _ in },
                                                             secureBootSeeder: secureBootSeeder)
@@ -74,7 +74,7 @@ enum HvfWindowsInstallRecovery {
         let requestPath = HvfWindowsInstallFinalization.recoveryRequest(journal, paths: paths)
         let preserved = try HvfWindowsInstallRequestSnapshot.load(requestPath, expectedSHA256: journal.requestSHA256)
         guard preserved.request == plan.request else {
-            throw HvfWindowsInstallFinalizationError.invalidState("복구할 설치 요청이 승인된 설치 계획과 다릅니다.")
+            throw HvfWindowsInstallFinalizationError.invalidState("The recovered installation request differs from the approved installation plan.")
         }
         return (data, journal)
     }

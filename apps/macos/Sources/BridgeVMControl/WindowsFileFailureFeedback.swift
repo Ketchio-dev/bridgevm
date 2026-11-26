@@ -3,10 +3,10 @@ import Foundation
 /// Presentation never exposes error type names, paths or implementation details.
 /// Keep both the reflected error and Foundation's description in diagnostics.
 enum WindowsFileFailureFeedback {
-    static let preparation = "Windows 설치 파일을 준비하지 못했으니 BridgeVM을 다시 설치하고 VM 폴더의 접근 권한과 여유 공간을 확인한 뒤 다시 시도하세요."
-    static let source = "Windows 설치 파일을 사용할 수 없으니 다른 설치 작업이 끝났는지와 VM 폴더의 접근 권한을 확인하고 다시 시도하세요."
-    static let finalization = "Windows 설치 결과를 저장하지 못했으니 VM 파일을 지우지 말고 저장 장치의 연결과 여유 공간을 확인한 뒤 다시 시도하세요."
-    static let recovery = "중단된 Windows 설치를 복구하지 못했으니 VM 파일을 보존하고 저장 장치의 연결과 접근 권한을 확인한 뒤 다시 시도하세요."
+    static let preparation = "BridgeVM couldn’t prepare the Windows installation files. Check that the VM folder is writable and the drive has free space. If the problem persists, reinstall BridgeVM and retry."
+    static let source = "BridgeVM couldn’t use the Windows installation files. Wait for other installations to finish, check access to the VM folder, then retry."
+    static let finalization = "BridgeVM couldn’t save the Windows installation. Keep the VM files, check that the drive is connected and has free space, then retry."
+    static let recovery = "BridgeVM couldn’t recover the interrupted Windows installation. Keep the VM files, check that the drive is connected and writable, then retry."
     static let importing = "Could not import the Windows files. Check access to the disk image and firmware files and make sure the destination has enough free space."
     static let publication = "Could not save the VM registration. Check that the library folder is writable and has enough free space."
     static let unsynced = "BridgeVM kept the VM files but could not confirm the save. Check your library for the saved VM before creating another."
