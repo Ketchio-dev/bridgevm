@@ -7,9 +7,9 @@ struct HvfStartCloseSettings: View {
     @AppStorage(ControlDisplayClose.preferenceKey) private var closeChoice = ""
     @State private var message: String?
     var body: some View {
-        Section("일반") {
+        Section("General") {
             if session.persistsLibraryPreferences {
-                TextField("VM 이름", text: $draft.name)
+                TextField("VM name", text: $draft.name)
                     .onSubmit { draft.commitName() }
                     .disabled(!session.libraryPreferencesEditable)
                     .accessibilityIdentifier("bridgevm.runtime.settings.vm-name")

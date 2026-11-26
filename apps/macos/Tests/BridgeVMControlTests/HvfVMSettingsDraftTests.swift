@@ -41,7 +41,7 @@ final class HvfVMSettingsDraftTests: XCTestCase {
         XCTAssertEqual(try NativeLibraryReader.readConfig(rootURL: fixture.root, id: other.slug), other)
         XCTAssertEqual(untouchedDraft.name, newName)
         XCTAssertFalse(editedDraft.finish(), "Closing a stale draft must not overwrite the other window")
-        XCTAssertTrue(try XCTUnwrap(editedDraft.nameMessage).contains(newName))
+        XCTAssertEqual(editedDraft.nameMessage, "Another window saved the name “\(newName)”. Click Done again to use your edit.")
         XCTAssertEqual(editedDraft.name, other.name)
         XCTAssertEqual(try NativeLibraryReader.readConfig(rootURL: fixture.root, id: original.slug), expected)
         XCTAssertTrue(editedDraft.finish(), "The user can explicitly use the same name as another VM")
@@ -59,7 +59,7 @@ final class HvfVMSettingsDraftTests: XCTestCase {
         let draft = HvfVMSettingsDraft(session: session)
         draft.name = " "
         XCTAssertFalse(draft.finish())
-        XCTAssertNotNil(draft.nameMessage)
+        XCTAssertEqual(draft.nameMessage, "Enter a VM name with 1 to 128 characters and no control characters.")
         session.connectionState = .booting
         defer { session.connectionState = .stopped }
         draft.name = "새 이름"

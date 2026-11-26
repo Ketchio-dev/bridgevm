@@ -42,15 +42,15 @@ final class HvfVMSettingsDraft: ObservableObject {
         refreshName()
         guard name != savedName else { nameMessage = nil; return true }
         guard let trimmed = VMLibrary.normalizedDisplayName(name) else {
-            nameMessage = "VM 이름을 제어 문자 없이 1~\(VMLibrary.maximumVMNameCharacters)자로 입력하세요."
+            nameMessage = "Enter a VM name with 1 to \(VMLibrary.maximumVMNameCharacters) characters and no control characters."
             return false
         }
         if let current = session.config.libraryContext?.config.name, current != savedName, current != trimmed {
             savedName = current
-            nameMessage = "다른 창에서 저장한 이름은 ‘\(current)’입니다. 입력한 이름을 저장하려면 완료를 다시 누르세요."
+            nameMessage = "Another window saved the name “\(current)”. Click Done again to use your edit."
             return false
         }
-        nameMessage = session.saveLibraryPreference("VM 이름", publish: { VMRegistrationWriter.commit($0, to: $1) }) { saved in
+        nameMessage = session.saveLibraryPreference("VM name", publish: { VMRegistrationWriter.commit($0, to: $1) }) { saved in
             saved.name = trimmed
             saved.displayName = trimmed
         }

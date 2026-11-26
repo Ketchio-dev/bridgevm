@@ -88,8 +88,7 @@ installed disk from Finder onto the matching card to open its setup form.
 | **기존 디스크 가져오기** (Import an existing disk) | Drop your installed Windows 11 Arm disk onto **파일 선택 또는 놓기** (Choose or drop file), or click that button to browse. The download accepts RAW, QCOW2 and Hyper-V VHDX. Builds from current source also accept fixed-size VHD. Choose **가져오기** (Import), then **시작** (Start) once the VM appears in your library. This path needs no driver payload. |
 
 To rename a saved Windows VM in a current source build, shut down Windows,
-open **설정** (Settings), edit **VM 이름** under **일반** (General), and click
-**완료** (Done). The VM keeps its disk, snapshots and TPM identity.
+open **Settings**, edit **VM name** under **General**, and click **Done**. The VM keeps its disk, snapshots and TPM identity.
 
 In current source builds, you can choose **Finish Then Quit** (`완료 후 종료`)
 during a first-run import, while **Create VM** prepares files for an import or
