@@ -48,18 +48,21 @@ final class NativeCLICreateWindowsParserTests: XCTestCase {
         let link = fixture.root.appendingPathComponent("linked.iso")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: fixture.iso)
         let invalid = [
-            ["create-windows", "VM", "--iso", "relative.iso"],
-            ["create-windows", "VM", "--iso", fixture.root.appendingPathComponent("missing.iso").path],
-            ["create-windows", "VM", "--iso", directory.path],
-            ["create-windows", "VM", "--iso", link.path],
-            ["create-windows", " VM ", "--iso", fixture.iso.path],
-            ["create-windows", "VM", "--iso", fixture.iso.path, "--iso", fixture.iso.path],
-            ["create-windows", "VM", "--iso", fixture.iso.path, "--cpus", "8"],
-            ["create-windows", "VM", "--iso", fixture.iso.path, "--disk-gib", "65"],
+            (["create-windows", "VM", "--iso", "relative.iso"], "absolute path"),
+            (["create-windows", "VM", "--iso", fixture.root.appendingPathComponent("missing.iso").path], "readable Windows installer ISO"),
+            (["create-windows", "VM", "--iso", directory.path], "readable Windows installer ISO"),
+            (["create-windows", "VM", "--iso", link.path], "readable Windows installer ISO"),
+            (["create-windows", " VM ", "--iso", fixture.iso.path], "VM name"),
+            (["create-windows", "VM", "--iso", fixture.iso.path, "--iso", fixture.iso.path], "Duplicate option"),
+            (["create-windows", "VM", "--iso", fixture.iso.path, "--cpus", "8"], "between 1 and 7"),
+            (["create-windows", "VM", "--iso", fixture.iso.path, "--disk-gib", "65"], "--disk-gib"),
+            (["create-windows", "VM", "--iso", fixture.iso.path, "--memory-mib", "6145"], "--memory-mib"),
         ]
-        for arguments in invalid {
+        for (arguments, guidance) in invalid {
             XCTAssertThrowsError(try NativeCLICreateWindowsParser.parse(
-                arguments: arguments, defaultLibrary: fixture.library, hostCPU: 8), "\(arguments)")
+                arguments: arguments, defaultLibrary: fixture.library, hostCPU: 8), "\(arguments)") { error in
+                XCTAssertTrue(error.localizedDescription.contains(guidance), error.localizedDescription)
+            }
         }
     }
 
