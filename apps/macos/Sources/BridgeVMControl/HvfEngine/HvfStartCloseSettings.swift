@@ -2,11 +2,21 @@ import SwiftUI
 
 struct HvfStartCloseSettings: View {
     @ObservedObject var session: HvfEngineSession
+    @ObservedObject var draft: HvfVMSettingsDraft
     @ObservedObject var power = ControlAppPower.shared
     @AppStorage(ControlDisplayClose.preferenceKey) private var closeChoice = ""
     @State private var message: String?
     var body: some View {
-        Section("시작과 닫기") {
+        Section("일반") {
+            if session.persistsLibraryPreferences {
+                TextField("VM 이름", text: $draft.name)
+                    .onSubmit { draft.commitName() }
+                    .disabled(!session.libraryPreferencesEditable)
+                    .accessibilityIdentifier("bridgevm.runtime.settings.vm-name")
+                if let message = draft.nameMessage {
+                    Label(message, systemImage: "exclamationmark.triangle").font(.callout)
+                }
+            }
             Toggle("Windows 실행 중 Mac 잠자기 방지", isOn: Binding(
                 get: { power.enabled }, set: { power.setEnabled($0) }))
             Text("Windows가 실행되는 동안 Mac은 잠자지 않으며 화면은 꺼질 수 있습니다.")

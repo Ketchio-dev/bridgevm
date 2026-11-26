@@ -76,13 +76,18 @@ struct HvfVMSettingsSheet: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("bridgevm.runtime.settings")
         .onAppear { session.settingsSheetOpen = true }
-        .onDisappear { _ = draft.finish(); session.settingsSheetOpen = false }
+        .onChange(of: session.config.libraryContext?.config.name) { draft.refreshName() }
+        .onDisappear {
+            draft.commitShare()
+            draft.commitForwards()
+            session.settingsSheetOpen = false
+        }
         .interactiveDismissDisabled()
     }
 
     var settingsForm: some View {
         Form {
-            HvfStartCloseSettings(session: session)
+            HvfStartCloseSettings(session: session, draft: draft)
                 .id(Destination.general)
             Section("하드웨어") {
                 HvfResourceSetting(session: session, ramMiB: binding(\.ramMiB), cpus: binding(\.smpCpus))
@@ -137,8 +142,11 @@ struct HvfVMSettingsSheet: View {
 
     private func validate(_ proxy: ScrollViewProxy) -> Bool {
         if draft.finish() { return true }
-        let destination: Destination = draft.shareMessage == nil ? .network : .sharing
-        proxy.scrollTo(destination, anchor: .top)
+        if draft.nameMessage != nil {
+            proxy.scrollTo(Destination.general, anchor: .top)
+        } else {
+            proxy.scrollTo(draft.shareMessage == nil ? Destination.network : .sharing, anchor: .top)
+        }
         return false
     }
 
