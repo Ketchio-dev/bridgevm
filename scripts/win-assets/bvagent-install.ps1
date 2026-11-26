@@ -56,8 +56,7 @@ try {
         exit $child.ExitCode
     }
     if (-not (Test-GuestToolsSerialDevice)) {
-        Write-Host '이 Windows에는 연결 드라이버가 없어 게스트 도구를 설치할 수 없습니다.'
-        Write-Host 'Guest tools cannot be installed because this Windows does not have the connection driver.'
+        Write-Host 'Install or repair the VirtIO Serial Driver in Windows, then run install.cmd again.'
         Read-Host 'Enter'
         exit 1
     }
@@ -77,8 +76,7 @@ try {
         $detail = ($_.Exception.GetType().FullName + ': ' + $_.Exception.Message + ' line=' + $_.InvocationInfo.ScriptLineNumber) -replace '[\r\n]+', ' '
         [IO.File]::WriteAllText((Join-Path $env:TEMP 'BridgeVM-guest-tools-install.log'), $detail)
     } catch { }
-    Write-Host '게스트 도구를 설치하지 못했으니 이 창을 닫고 다시 실행하세요.'
-    Write-Host 'Guest tools could not be installed; close this window and run install.cmd again.'
+    Write-Host 'Guest Tools could not be installed. Close this window and run install.cmd again.'
     Read-Host 'Enter'
     exit 1
 }
