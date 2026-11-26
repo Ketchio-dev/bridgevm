@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="theme-color" content="#f7f8fc">
+    <meta name="description" content="Check your BridgeVM v0.1.0 Mac download and open the app on Apple silicon.">
+    <title>Install BridgeVM v0.1.0 on your Mac — BridgeVM</title>
+    <link rel="icon" href="icon.png" type="image/png">
+    <link rel="stylesheet" href="styles.css">
+    <script src="verify-download.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to installation</a>
+    <header class="mast">
+      <div class="wrap guide-mast">
+        <span class="brand"><img class="brand-logo" src="icon.png" alt="" width="36" height="36">BridgeVM</span>
+        <a class="inline-link" href="index.html">Back to overview</a>
+      </div>
+    </header>
+    <main id="main" class="wrap release-guide install-guide">
+      <h1>Install BridgeVM on your Mac</h1>
+      <p class="lead">Get the v0.1.0 preview for Apple silicon and macOS 15 or later. The Mac app opens in Korean. The Windows setup guide includes the matching button labels.</p>
+      <div class="actions">
+        <a class="button primary" href="https://github.com/Ketchio-dev/bridgevm/releases/download/v0.1.0/BridgeVM-v0.1.0.dmg">Download for Mac</a>
+        <a class="inline-link" href="setup-v0.1.0.html">Already installed? Set up Windows</a>
+      </div>
+
+      <section class="download-check" aria-labelledby="check-title">
+        <h2 id="check-title">Check your download</h2>
+        <p>Compare the file with the published v0.1.0 checksum before opening it.</p>
+        <div id="file-check" hidden>
+          <div class="choose-dmg">
+            <input class="visually-hidden" type="file" id="disk-image" accept=".dmg" aria-describedby="check-location">
+            <label class="button secondary" for="disk-image">Choose downloaded DMG</label>
+            <span id="chosen-name" aria-hidden="true"></span>
+          </div>
+          <p class="check-note" id="check-location">Your browser checks the file on this device. The file stays on your Mac.</p>
+          <p id="check-result" role="status"></p>
+        </div>
+        <details class="manual-check" open>
+          <summary>Verify in Terminal</summary>
+          <p>If you saved the file in Downloads, run this command and compare the first 64 characters with the expected SHA-256.</p>
+          <code>shasum -a 256 ~/Downloads/BridgeVM-v0.1.0.dmg</code>
+          <p>Expected SHA-256</p>
+          <code id="expected-digest" data-bytes="20044182">57fd4cc99c4218e2c6ad5bfcb3b4ab58073859f6d5f0a4027cecb04ff9486d7b</code>
+          <a class="inline-link" href="https://github.com/Ketchio-dev/bridgevm/releases/download/v0.1.0/SHA256SUMS">Published checksums</a>
+        </details>
+      </section>
+
+      <section class="open-mac">
+        <h2>Open the Mac app</h2>
+        <ol>
+          <li>Once the checksum matches, open the DMG and drag <strong>BridgeVM</strong> to <strong>Applications</strong>.</li>
+          <li>Open <strong>BridgeVM</strong> from Applications. This preview is ad-hoc signed and has no Apple notarization.</li>
+          <li>If macOS says it can’t verify the developer and you trust the download, open <strong>System Settings → Privacy &amp; Security</strong>. Choose <strong>Open Anyway</strong> for BridgeVM and confirm.</li>
+        </ol>
+        <a class="inline-link" href="https://support.apple.com/en-us/102445">Apple’s guide to first-open messages</a>
+        <div class="actions"><a class="button primary" href="setup-v0.1.0.html">Continue to Windows setup</a></div>
+      </section>
+    </main>
+  </body>
+</html>

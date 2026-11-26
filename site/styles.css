@@ -854,3 +854,83 @@ footer {
   font-weight: 570;
   word-break: keep-all;
 }
+
+.install-guide .actions {
+  align-items: center;
+  gap: .75rem 1.1rem;
+}
+
+.download-check, .open-mac {
+  margin-top: 2.5rem;
+}
+
+.download-check {
+  padding: clamp(1.15rem, 4vw, 2rem);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--white);
+}
+
+.download-check p {
+  margin-top: .65rem;
+  color: var(--body);
+}
+
+.choose-dmg {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem .8rem;
+  margin-top: 1.25rem;
+}
+
+.choose-dmg label {
+  cursor: pointer;
+}
+
+#chosen-name {
+  color: var(--body);
+  font-size: .92rem;
+  overflow-wrap: anywhere;
+}
+
+.download-check .check-note {
+  font-size: .89rem;
+}
+
+#check-result:not(:empty) {
+  padding: .6rem .85rem;
+  border-inline-start: 3px solid currentColor;
+  background: var(--paper);
+  font-weight: 600;
+}
+
+#check-result[data-state="match"] { color: #1a6541; }
+#check-result[data-state="mismatch"], #check-result[data-state="error"] { color: #993621; }
+
+.manual-check {
+  margin-top: 1.2rem;
+  padding-top: .85rem;
+  border-top: 1px solid var(--line);
+}
+
+.manual-check summary {
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.manual-check code {
+  display: block;
+  margin: .45rem 0 .7rem;
+  padding: .55rem .7rem;
+  border-radius: .4rem;
+  background: var(--paper);
+  font: .9rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.open-mac li strong {
+  display: inline;
+}
