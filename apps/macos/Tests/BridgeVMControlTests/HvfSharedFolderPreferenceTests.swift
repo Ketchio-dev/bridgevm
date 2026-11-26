@@ -163,10 +163,10 @@ final class HvfSharedFolderPreferenceTests: XCTestCase {
         XCTAssertEqual(value(after: "--agent-share-host", in: arguments), selection.hostPath)
         XCTAssertEqual(value(after: "--agent-share-guest", in: arguments), selection.guestPath)
 
-        let missing = "공유 폴더(chosen-share)를 찾을 수 없어 공유 없이 시작했습니다."
+        let missing = "The shared folder “chosen-share” was unavailable when Windows started."
         session.resetObservedRuntimeState(clearEvents: true) // what every start and attach does first
         XCTAssertEqual(session.shareRootNotice.displayed?.text, missing)
-        XCTAssertEqual(session.shareRootNotice.displayed?.help, "폴더를 다시 연결하면 자동으로 공유됩니다.")
+        XCTAssertEqual(session.shareRootNotice.displayed?.help, "Reconnect the folder to your Mac. Sharing will resume automatically.")
         session.append(.unknown("BVAGENT SHARE root-state blocked")) // the runtime reports the missing root at once
         XCTAssertEqual(session.shareRootNotice.displayed?.text, missing)
         try FileManager.default.createDirectory(atPath: selection.hostPath, withIntermediateDirectories: false)
