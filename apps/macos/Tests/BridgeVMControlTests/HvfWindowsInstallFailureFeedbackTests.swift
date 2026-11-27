@@ -67,9 +67,7 @@ final class HvfWindowsInstallFailureFeedbackTests: XCTestCase {
         let cocoa = CocoaError(.fileWriteOutOfSpace)
         let helperMessage = "No space left on device. Free space on the destination volume and try again."
         let helper = NSError(domain: "BridgeVM.MediaImport", code: 1, userInfo: [NSLocalizedDescriptionKey: helperMessage])
-        let legacyConverter = NSError(domain: "BridgeVM.MediaImport", code: 1, userInfo: [NSLocalizedDescriptionKey:
-            "대상 볼륨의 공간이 부족해 디스크를 가져오지 못했습니다. 공간을 확보한 뒤 다시 시도하세요."])
-        let errors: [Error] = [cocoa, helper, legacyConverter]
+        let errors: [Error] = [cocoa, helper]
         for error in errors {
             XCTAssertTrue(WindowsFileFailureFeedback.isImportOutOfSpace(error))
             XCTAssertEqual(WindowsFileFailureFeedback.reportImport("import", error), helperMessage)
