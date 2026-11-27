@@ -50,6 +50,10 @@ All notable changes to BridgeVM are documented in this file.
   VM's TPM helper kept running on its own and held the VM's TPM state, so every
   later start failed until you restarted the Mac. Start now stops that leftover
   helper first; a helper that belongs to a running VM is never touched.
+- If BridgeVM quit while a finished Windows installation was being saved, Start
+  Installation now installs again. Before, every try said BridgeVM couldn't
+  recover the interrupted installation, and deleting the VM was the only way
+  out.
 - A VPN tunnel or call running in Windows over UDP recovers after the Mac
   switches networks. Its traffic kept going to a connection tied to the old
   network, so it stayed dead for as long as Windows kept sending.

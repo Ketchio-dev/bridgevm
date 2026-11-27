@@ -19,7 +19,7 @@ enum HvfWindowsInstallRecovery {
         for directory in [paths.bundle, paths.metadata] {
             _ = try existing(directory, type: S_IFDIR)
         }
-        guard try existing(paths.transaction, type: S_IFDIR) else {
+        guard try existing(paths.transaction, type: S_IFDIR), try !neverJournaled(paths) else {
             try validateFreshConfiguration(paths)
             return .fresh
         }
@@ -45,6 +45,21 @@ enum HvfWindowsInstallRecovery {
     private static func paths(for plan: HvfWindowsInstallPlan) -> HvfWindowsInstallFinalizationPaths {
         HvfWindowsInstallFinalization.paths(slug: plan.slug, libraryRoot: plan.libraryRoot,
                                            bundlePath: plan.bundlePath)
+    }
+
+    /// The transaction folder is made before `begin()` hashes the staged media, and the journal is
+    /// written only after. A quit or a failed read during that hash leaves just the lock (and maybe
+    /// an unfinished journal write): nothing was published, so Try Again installs afresh. Refusing
+    /// it failed every retry until the VM was deleted. A lock someone holds is still busy, and any
+    /// staged file without a journal is still refused.
+    private static func neverJournaled(_ paths: HvfWindowsInstallFinalizationPaths) throws -> Bool {
+        guard try status(paths.journal) == nil else { return false }
+        let names = try FileManager.default.contentsOfDirectory(atPath: paths.transaction.path)
+        let unfinishedJournal = "." + paths.journal.lastPathComponent + "."
+        guard names.allSatisfy({ $0 == paths.lock.lastPathComponent
+            || ($0.hasPrefix(unfinishedJournal) && $0.hasSuffix(".tmp")) }) else { return false }
+        if names.contains(paths.lock.lastPathComponent) { try withExistingLock(paths) {} }
+        return true
     }
 
     private static func validateFreshConfiguration(_ paths: HvfWindowsInstallFinalizationPaths) throws {
