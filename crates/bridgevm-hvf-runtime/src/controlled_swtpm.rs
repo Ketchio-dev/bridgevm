@@ -29,6 +29,8 @@ pub fn start_swtpm_controlled(
     io::check(deadline, control).map_err(|source| failure("swtpm startup cancelled", source))?;
     std::fs::create_dir_all(&config.state_dir)
         .map_err(|source| failure("create vTPM state dir", source))?;
+    #[cfg(target_os = "macos")]
+    super::leftover::stop_orphaned_holder(&config.state_dir);
     let name = unique_runtime_dir_name();
     let preferred = std::env::temp_dir().join(&name);
     // The longer socket name must fit sockaddr_un. Only the ephemeral
