@@ -46,18 +46,33 @@ All notable changes to BridgeVM are documented in this file.
 - Windows connections left idle, such as an SSH session or a database client,
   are no longer cut after 5 minutes without Windows being told. BridgeVM now
   keeps an idle connection open for at least 2 hours, as home routers do.
+- If BridgeVM quits unexpectedly while it installs Windows, the installation
+  now stops too, within a few seconds. Before, the installer VM kept running
+  unseen with 4 GB of memory, and trying the installation again started a
+  second one next to it.
 - A Windows VM can start again after its VM process was killed or crashed. The
   VM's TPM helper kept running on its own and held the VM's TPM state, so every
   later start failed until you restarted the Mac. Start now stops that leftover
   helper first; a helper that belongs to a running VM is never touched.
+- If BridgeVM quit while a finished Windows installation was being saved, Start
+  Installation now installs again. Before, every try said BridgeVM couldn't
+  recover the interrupted installation, and deleting the VM was the only way
+  out.
 - A VPN tunnel or call running in Windows over UDP recovers after the Mac
   switches networks. Its traffic kept going to a connection tied to the old
   network, so it stayed dead for as long as Windows kept sending.
+- When Windows Setup fails during installation, BridgeVM now says "Windows Setup
+  didn't finish. Choose Try Again." instead of showing the path to a log file
+  that Try Again deletes. The log's location is still in the installation log.
 - When Create VM fails for a reason you can fix, it now says so: the Windows
   ISO can't be read (its drive was ejected), the VM's folder can't be made in
   the chosen location, there isn't enough free space on another drive for the
   ISO copy, or another VM took the same ID at the same time. Before, each of
   these said only "Couldn't create the VM or save it to the library."
+- When a Mac port for port forwarding is already in use, the notice now says to
+  restart Windows after quitting the other app or choosing another port. The
+  forward is set up only when Windows starts, so quitting the other app alone
+  never brought it back.
 - A Windows app that stops answering while it holds copied text no longer
   freezes BridgeVM's helper in Windows. Reading the clipboard text now gives up
   after 20 seconds and keeps the last text, so the shared clipboard, shared

@@ -118,3 +118,18 @@ import json,sys
 commands=[json.loads(line) for line in open(sys.argv[1])]
 assert sorted(c[1] for c in commands if c[0]=="detach")[-3:]==["/dev/disk-destination","/dev/disk-destination","/dev/disk-iso"], commands
 PY
+# The app crashing or being force-quit signals nothing: the builder notices its parent is gone and stops the same way.
+BRIDGEVM_SLOW_SPLIT="$TMP/orphan.pids" build_source orphan 0 & app=$!
+for _ in {1..100}; do [[ -s "$TMP/orphan.pids" ]] && break; sleep 0.1; done
+read -r builder split < "$TMP/orphan.pids"
+[[ "$(ps -o ppid= -p "$builder" | tr -d ' ')" == "$app" ]] || { echo "the builder is not the stand-in app's child" >&2; exit 1; }
+kill -KILL "$app"; wait "$app" 2>/dev/null || true
+for _ in {1..50}; do kill -0 "$split" 2>/dev/null || kill -0 "$builder" 2>/dev/null || break; sleep 0.1; done
+if kill -0 "$split" 2>/dev/null || kill -0 "$builder" 2>/dev/null; then
+  kill "$split" "$builder" 2>/dev/null; echo "the builder outlived the app that started it" >&2; exit 1
+fi
+python3 - "$TMP/orphan.log" <<'PY'
+import json,sys
+commands=[json.loads(line) for line in open(sys.argv[1])]
+assert sorted(c[1] for c in commands if c[0]=="detach")[-3:]==["/dev/disk-destination","/dev/disk-destination","/dev/disk-iso"], commands
+PY

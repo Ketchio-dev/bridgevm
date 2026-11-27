@@ -56,20 +56,6 @@ extension HvfEngineSession {
         }
         return (HvfPortForwards.text(HvfPortForwards.saved(config.libraryContext?.config.portForwards)), message)
     }
-
-    /// Runtime-view Start launches what vm.json holds, so typed but unsaved forwards are saved
-    /// first. Forwards never stop the VM from starting: when they cannot be saved, it starts with
-    /// the saved ones. Returns the forwards it starts with and a notice for the user, if any.
-    func savePortForwardsBeforeStart(_ visible: String) -> (text: String, notice: String?) {
-        guard persistsLibraryPreferences, let saved = config.libraryContext?.config else { return (visible, nil) }
-        let savedText = HvfPortForwards.text(HvfPortForwards.saved(saved.portForwards))
-        guard HvfPortForwards.parse(visible) != HvfPortForwards.saved(saved.portForwards) else { return (savedText, nil) }
-        let result = applyPortForwards(visible)
-        guard result.message != nil else { return (result.text, nil) }
-        let started = HvfPortForwards.text(HvfPortForwards.saved(config.libraryContext?.config.portForwards))
-        let using = started.isEmpty ? "without port forwarding" : "with the saved port forwards (\(started))"
-        return (started, "Couldn’t save the new port forwards. Windows will start \(using). \(result.message ?? "")")
-    }
 }
 
 /// Forwards the VMM could not open on the Mac (`BVNET forward-off host=<port> guest=<port>`,
@@ -95,10 +81,10 @@ final class HvfPortForwardNotice: ObservableObject {
     var text: String? {
         guard let first = off.first else { return nil }
         if off.count == 1 {
-            return "Mac port \(first.host) is already in use, so it doesn’t reach Windows port \(first.guest). Quit the app using it, or choose another Mac port in Settings."
+            return "Mac port \(first.host) is already in use, so it doesn’t reach Windows port \(first.guest). Quit the app using it, or choose another Mac port in Settings, then restart Windows."
         }
         let ports = off.map { String($0.host) }.joined(separator: ", ")
-        return "Mac ports \(ports) are already in use, so they don’t reach Windows. Quit the apps using them, or choose other Mac ports in Settings."
+        return "Mac ports \(ports) are already in use, so they don’t reach Windows. Quit the apps using them, or choose other Mac ports in Settings, then restart Windows."
     }
 }
 

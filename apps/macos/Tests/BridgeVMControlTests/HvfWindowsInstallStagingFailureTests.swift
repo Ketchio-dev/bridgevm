@@ -30,9 +30,10 @@ final class HvfWindowsInstallStagingFailureTests: XCTestCase {
 
         let result = try await runFreshAttempt(f.plan, installer)
 
-        guard case let .failed(message) = result.stage else { return XCTFail("stage=\(result.stage)") }
+        // One sentence on screen; the log's path stays in the log lines (Try Again deletes the log).
+        XCTAssertEqual(result.stage, .failed(HvfWindowsInstallSession.setupDidNotFinish))
         let log = media.evidence.appendingPathComponent("run.log")
-        XCTAssertTrue(message.contains(log.path), message)
+        XCTAssertTrue(result.log.contains("Windows Setup log: \(log.path)"), "\(result.log)")
         XCTAssertEqual(installer.mediaPresentAtRun, [true], "the installer ran without prepared media")
         XCTAssertNil(Fixture.status(media.target), "the failed attempt kept its install target")
         XCTAssertNil(Fixture.status(media.vars), "the failed attempt kept its UEFI vars")

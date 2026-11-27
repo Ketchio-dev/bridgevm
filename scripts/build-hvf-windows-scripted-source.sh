@@ -32,6 +32,15 @@ cleanup() {
   [[ -n "${MOUNT_ROOT:-}" ]] && rmdir "$MOUNT_ROOT/iso" "$MOUNT_ROOT/dst" "$MOUNT_ROOT" 2>/dev/null || true
 }
 trap cleanup EXIT
+# A crashed or force-quit app signals nothing, so the copy would run on with the ISO
+# attached and a retry would rebuild the same file. When the process that started this
+# script is gone, stop the way Cancel does (SIGTERM); cleanup also stops this watcher.
+(
+  set +e; parent="$PPID" nap=""
+  trap 'kill "$nap" 2>/dev/null; exit 0' TERM
+  while kill -0 "$parent" 2>/dev/null; do sleep 1 & nap="$!"; wait "$nap"; done
+  kill -TERM "$$"
+) </dev/null >/dev/null 2>&1 &
 mkdir -p "$(dirname "$OUT")"; OUT="$(cd "$(dirname "$OUT")" && pwd -P)/$(basename "$OUT")"
 WORK_ROOT="$(mktemp -d "$(dirname "$OUT")/bridgevm-win-source.XXXXXX")"
 # Disk Arbitration requires an owned mountpoint even when OUT is on a volume
