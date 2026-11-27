@@ -20,6 +20,7 @@ struct HvfRuntimeStatusMessages: View {
             HvfAgentUpdateNoticeView(notice: session.agentUpdateNotice)
             HvfClipboardImageNoticeView(notice: session.clipboardImageNotice)
             HvfPortForwardNoticeView(notice: session.portForwardNotice)
+            HvfAudioNoticeView(notice: session.audioNotice)
             HvfGuestLinkNoticeView(notice: session.guestLinkNotice)
             HvfGuestPrintNoticeView(notice: session.printNotice)
         }

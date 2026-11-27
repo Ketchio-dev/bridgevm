@@ -49,6 +49,7 @@ struct LibraryDashboardRuntimeControls: View {
             HvfShareRootNoticeView(notice: session.shareRootNotice)
             HvfDiskSyncNoticeView(notice: session.diskSyncNotice)
             HvfPortForwardNoticeView(notice: session.portForwardNotice)
+            HvfAudioNoticeView(notice: session.audioNotice)
             HvfMicrophoneNoticeView(session: session)
             HvfAgentUpdateNoticeView(notice: session.agentUpdateNotice)
             HvfClipboardImageNoticeView(notice: session.clipboardImageNotice)
