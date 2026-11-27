@@ -1,7 +1,7 @@
 # Native app CLI
 
 `bridgevm app` reads native `vm.json`, [creates a pending Windows VM](app-cli-create.md), and requests [installation](app-cli-install.md), [start](app-cli-start.md), [stop](app-cli-stop.md) or a [powered-off snapshot](app-cli-snapshot.md).
-Open the app, then create a VM with `--fetch-drivers` to include the signed ARM64 driver payload. Use the returned ID to request installation. After installation succeeds, use Start in the app once to create the new VM's vTPM key. You can use the CLI for subsequent starts.
+Open the app, then create a VM with `--fetch-drivers` to include the signed ARM64 driver payload. Use the returned ID to request installation, then start the VM from the CLI or the app.
 
 ```sh
 bridgevm app list

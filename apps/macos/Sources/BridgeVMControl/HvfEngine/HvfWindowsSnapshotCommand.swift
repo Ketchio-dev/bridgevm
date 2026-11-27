@@ -7,7 +7,7 @@ enum HvfWindowsSnapshotCommand {
     static let errorDomain = "BridgeVM.HvfWindowsSnapshot"
 
     /// What a failure was, as its error code. The English description is for the CLI and the event
-    /// feed; the card says each in Korean (HvfWindowsSnapshotModel.message).
+    /// feed; the card shows its own sentence for each (HvfWindowsSnapshotModel.message).
     enum Failure: Int {
         /// The helper failed; its output is the description.
         case helper = 1

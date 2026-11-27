@@ -1,7 +1,7 @@
 import Foundation
 
 /// After an import the product shows the VM's dashboard, as after a T17 install;
-/// its runtime controls sit behind 고급. The import may take a while.
+/// its runtime controls sit behind Advanced. The import may take a while.
 enum A9ImportRuntimeNavigation {
     static let importTimeout: TimeInterval = 1_200
 
