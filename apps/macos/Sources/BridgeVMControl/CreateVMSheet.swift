@@ -18,6 +18,8 @@ struct CreateVMSheet: View {
     @State var storageDir: URL? = nil
     @State var resIndex = 1
     @State private var showAdvanced = false
+    /// Cancelled when the sheet closes, which stops the download.
+    @State private var driverFetch: Task<Void, Never>?
     @State var ramMiB = CreateVMMemoryOptions.current.recommendedMiB
     @State var cpuCount = 4
     var working: Bool { library.preparingNewVM }
@@ -48,6 +50,7 @@ struct CreateVMSheet: View {
         }
         .frame(width: 480, height: 640)
         .interactiveDismissDisabled(working)
+        .onDisappear { driverFetch?.cancel() }
     }
 
     private var fields: some View {
@@ -168,8 +171,10 @@ struct CreateVMSheet: View {
     /// Only on the user's click: the sheet opens with every source selection empty.
     private func fetchGuestDrivers() {
         guard drivers.beginFetch() else { return }
-        Task.detached {
-            let result = Result { try HvfWindowsDriverPayloadFetch.prepare() }
+        driverFetch = Task.detached {
+            let result = Result { try HvfWindowsDriverPayloadFetch.prepare { percent in
+                Task { @MainActor in drivers.showDownload(percent) }
+            } }
             await MainActor.run { drivers.finishFetch(result) }
         }
     }

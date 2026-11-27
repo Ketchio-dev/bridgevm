@@ -46,7 +46,7 @@ struct CreateWindowsInstallFields: View {
         case .preparing:
             HStack {
                 ProgressView().controlSize(.small)
-                Text("Preparing the drivers…")
+                Text(drivers.downloadPercent.map { "Downloading the drivers… \($0)%" } ?? "Preparing the drivers…")
             }
         case .prepared:
             Label("Drivers and SHA-256 manifest are ready.", systemImage: "checkmark.circle")
