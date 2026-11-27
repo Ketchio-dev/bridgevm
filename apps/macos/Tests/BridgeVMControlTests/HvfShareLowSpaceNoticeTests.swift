@@ -41,7 +41,7 @@ final class HvfShareLowSpaceNoticeTests: XCTestCase {
         XCTAssertNil(notice.lowSpace)
         // A name that holds the other marker is still this file's.
         XCTAssertEqual(HvfShareLowSpace.name(in: "BVAGENT SHARE skip a too-large 5 low-space 99"), "a too-large 5")
-        XCTAssertNil(HvfShareTooLarge.name(in: "BVAGENT SHARE skip a too-large 5 low-space 99"))
+        XCTAssertNil(HvfShareTooLarge.skip(in: "BVAGENT SHARE skip a too-large 5 low-space 99"))
     }
 
     @MainActor

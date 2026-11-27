@@ -25,7 +25,8 @@ pub enum SyncAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SkipReason {
-    TooLarge { size: u64 },
+    /// Over `limit`, the size cap that applied (lower while the agent moves files whole).
+    TooLarge { size: u64, limit: u64 },
     WindowsAlias(Vec<String>),
 }
 
@@ -233,7 +234,7 @@ impl ShareSync {
                 )) {
                     actions.push(SyncAction::Skip {
                         name: name.clone(),
-                        reason: SkipReason::TooLarge { size: entry.size },
+                        reason: SkipReason::TooLarge { size: entry.size, limit: max_bytes },
                     });
                 }
                 continue;

@@ -21,7 +21,9 @@ final class HvfShareRootNotice: ObservableObject {
 
     func consume(_ event: BvAgentEvent) {
         // A whole file's arrival; a large one logs this line too.
-        if case let .shareEvent(.guestToHost, name, _, _) = event { return arrived(name) }
+        if case let .shareEvent(.guestToHost, name, _, _) = event { synced(name); return arrived(name) }
+        // A file skipped under the lower limit before a Guest Tools update syncs after it.
+        if case let .shareEvent(.hostToGuest, name, _, _) = event { return synced(name) }
         guard case let .unknown(raw) = event else { return }
         let line = raw.hasSuffix("\r") ? String(raw.dropLast()) : raw
         switch line {
@@ -39,8 +41,9 @@ final class HvfShareRootNotice: ObservableObject {
                 stopped = stop
             } else if let pause = HvfSharePaused(line: line) {
                 if paused != pause { paused = pause }
-            } else if let name = HvfShareTooLarge.name(in: line) {
-                tooLarge = HvfShareTooLarge(count: (tooLarge?.count ?? 0) + 1, last: name)
+            } else if let skip = HvfShareTooLarge.skip(in: line) {
+                tooLarge = HvfShareTooLarge(count: (tooLarge?.count ?? 0) + 1, last: skip.name,
+                                            limit: skip.limit, fromWindows: skip.fromWindows)
             } else if let name = HvfShareLowSpace.name(in: line) {
                 lowSpace = lowSpace?.reported(name) ?? HvfShareLowSpace(name)
             } else if let file = BvAgentEvent.shareFile(in: line, after: "BVAGENT SHARE transfer-done guest->host ") {
@@ -68,6 +71,11 @@ final class HvfShareRootNotice: ObservableObject {
         guard !pieces.prefix(half).joined(separator: separator).isEmpty else { return nil }
         let copy = pieces.suffix(half).joined(separator: separator)
         return copy.isEmpty ? nil : copy
+    }
+
+    /// The file the too-large notice names was synced after all (the limit rose), so the notice is stale.
+    private func synced(_ name: String) {
+        if tooLarge?.last == name { tooLarge = nil }
     }
 
     /// `name` reached the Mac. Every synced file says so: only a waiting one changes the notice.

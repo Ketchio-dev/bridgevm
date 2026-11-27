@@ -143,7 +143,8 @@ pub(in crate::agent_console) fn print_host_skip_once(
     kind: HostSkipKind,
     size: u64,
 ) {
-    print_host_skip_once_seen(&mut share.host_skip_seen, name, mtime_ms, kind, size);
+    let limit = share.engine.max_bytes();
+    print_host_skip_once_seen(&mut share.host_skip_seen, name, mtime_ms, kind, size, limit);
 }
 
 pub(in crate::agent_console) fn print_host_skip_once_seen(
@@ -152,18 +153,25 @@ pub(in crate::agent_console) fn print_host_skip_once_seen(
     mtime_ms: u128,
     kind: HostSkipKind,
     size: u64,
+    limit: u64,
 ) {
     if !host_skip_seen.insert((name.to_string(), mtime_ms, kind)) {
         return;
     }
     match kind {
-        HostSkipKind::TooLarge => println!("BVAGENT SHARE skip {name} too-large {size}"),
+        HostSkipKind::TooLarge => println!("{}", too_large_line(name, size, limit, "mac")),
     }
+}
+
+/// The app's notice names the limit that applied and the side the file is on
+/// (HvfShareTooLarge in HvfShareStop.swift): 64 MiB until the agent moves files in ranges.
+pub(in crate::agent_console) fn too_large_line(name: &str, size: u64, limit: u64, side: &str) -> String {
+    format!("BVAGENT SHARE skip {name} too-large {size} limit={limit} {side}")
 }
 
 pub(in crate::agent_console) fn print_share_skip(name: &str, reason: SkipReason) {
     match reason {
-        SkipReason::TooLarge { size } => println!("BVAGENT SHARE skip {name} too-large {size}"),
+        SkipReason::TooLarge { size, limit } => println!("{}", too_large_line(name, size, limit, "windows")),
         SkipReason::WindowsAlias(names) => println!("BVAGENT SHARE skip {name} alias {names:?}"),
     }
 }
@@ -172,6 +180,8 @@ pub(in crate::agent_console) fn print_share_skip(name: &str, reason: SkipReason)
 mod share_listing_reply;
 #[path = "share/share_listing_reply_tests.rs"]
 mod share_listing_reply_tests;
+#[path = "share/share_skip_line_tests.rs"]
+mod share_skip_line_tests;
 
 /// The guest path for a share key. Where the guest listed the key, or the
 /// folder it is in, under a spelling other than the key's own guest form (a

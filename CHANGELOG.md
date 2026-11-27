@@ -53,6 +53,10 @@ All notable changes to BridgeVM are documented in this file.
   used to show only in Advanced (the VM read "Stopped" or "Running"), and a
   failed stop read "Booting Windows". Open Display also stays available while
   Windows shuts down, since that window is where an app asking to save shows.
+- Shared folders: the "skipped because the per-file limit is …" notice now
+  names the limit that applied (64 MiB until Guest Tools are updated, not
+  always 16 GiB), gives advice that fits a Windows file, and goes away once the
+  file syncs after the update.
 - "Start when BridgeVM opens" no longer skips a VM that is not ready (for
   example its disk is on a drive that is not connected) without a word: it
   starts it as the Start button does, which says why it could not.
