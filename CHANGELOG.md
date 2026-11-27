@@ -94,6 +94,10 @@ All notable changes to BridgeVM are documented in this file.
 - Quitting BridgeVM after a VM's runner stopped unexpectedly no longer waits
   about two minutes behind "Shut down Windows and quit BridgeVM?", "Windows is
   still shutting down." and a Force Stop button that did nothing.
+- Display driver install: the result now reads as plain sentences ("Installed
+  the display driver.", "Windows didn't answer, so try again when Windows is
+  idle.") instead of device status tokens and protocol names such as
+  "status=OK" or "BVDRIVER result (exit -1)".
 - The guest agent's input capability line is accepted when it carries extra
   keywords from a newer agent.
 - After an unclean stop, the shared folder keeps the Windows version of a file
