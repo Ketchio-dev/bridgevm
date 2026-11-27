@@ -30,10 +30,15 @@ final class NativeCLICreateWindowsParserTests: XCTestCase {
         defer { fixture.remove() }
         let parsed = try NativeCLICreateWindowsParser.parse(
             arguments: ["create-windows", "VM", "--iso", fixture.iso.path],
-            defaultLibrary: fixture.library, hostCPU: 8)
+            defaultLibrary: fixture.library, hostCPU: 8, hostMemoryBytes: 16 << 30)
         guard case .createWindows(let request) = parsed.command else { return XCTFail("wrong command") }
         XCTAssertEqual(request.diskGiB, 64)
         XCTAssertEqual(request.memoryMiB, 6_144)
+        let small = try NativeCLICreateWindowsParser.parse(
+            arguments: ["create-windows", "VM", "--iso", fixture.iso.path],
+            defaultLibrary: fixture.library, hostCPU: 8, hostMemoryBytes: 8 << 30)
+        guard case .createWindows(let smallRequest) = small.command else { return XCTFail("wrong command") }
+        XCTAssertEqual(smallRequest.memoryMiB, 4_096, "an 8 GiB Mac keeps 4 GiB for macOS, as the Create sheet does")
         XCTAssertEqual(request.cpuCount, 4)
         XCTAssertEqual(request.resolution.text, "1440x900")
         XCTAssertTrue(request.networkEnabled)

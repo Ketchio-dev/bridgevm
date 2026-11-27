@@ -160,9 +160,11 @@ enum NativeCLICreateWindowsParser {
     }
 
     static func parse(arguments: [String], defaultLibrary: URL,
-                      hostCPU: Int = ProcessInfo.processInfo.activeProcessorCount) throws -> NativeCLIOptions {
+                      hostCPU: Int = ProcessInfo.processInfo.activeProcessorCount,
+                      hostMemoryBytes: UInt64 = ProcessInfo.processInfo.physicalMemory) throws -> NativeCLIOptions {
         var name: String?, iso: String?, library: URL?
-        var disk = 64, memory = 6_144, cpus = 4
+        // The Create sheet's recommendation: 6 GiB, or 4 GiB on an 8 GiB Mac.
+        var disk = 64, memory = CreateVMMemoryOptions(hostBytes: hostMemoryBytes).recommendedMiB, cpus = 4
         var resolution = NativeCLICreateWindowsOptions.resolutions["1440x900"]!
         var json = false, help = false, network = true, fetchDrivers = false, index = 0
         var seen = Set<String>()

@@ -47,7 +47,8 @@ extension NativeCLI {
         --no-network
         --fetch-drivers
 
-      Defaults: 64 GiB, 6144 MiB, 4 CPUs, 1440x900, shared NAT network.
+      Defaults: 64 GiB, 6144 MiB (4096 MiB on an 8 GiB Mac), 4 CPUs, 1440x900,
+      shared NAT network.
       \(NativeCLICreateWindowsGuidance.help)
       JSON schema: bridgevm.app-create-windows.v2.
       Exit codes: 0 registration confirmed, 1 driver preparation, creation or
