@@ -35,6 +35,7 @@ impl AgentConsoleHarness {
         self.line_scratch = lines;
         if oversized > 0 {
             self.share_listing_line_too_long();
+            self.clip_poll_line_too_long(now);
         }
 
         // Proactively PING while waiting to connect. The agent may have sent
