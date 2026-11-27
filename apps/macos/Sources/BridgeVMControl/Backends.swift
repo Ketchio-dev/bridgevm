@@ -57,7 +57,6 @@ struct VMConfig: Codable, Identifiable, Equatable, Sendable {
     /// as a filesystem component. Normalizing here keeps every caller inside the
     /// VM library even when an ID contains separators or traversal components.
     var slug: String { VMConfig.slugify(id ?? name) }
-    var effectiveBootMode: String { bootMode ?? "direct-kernel" }
     var engineKind: BackendKind { BackendKind(savedKind: backendKind) }
     var engineShortLabel: String { engineKind.shortLabel }
     var engineDetailLabel: String { engineKind.detailLabel }
