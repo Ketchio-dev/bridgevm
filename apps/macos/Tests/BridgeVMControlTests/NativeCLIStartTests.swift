@@ -79,6 +79,17 @@ final class NativeCLIStartTests: XCTestCase {
         }
     }
 
+    /// The most common failure, BridgeVM not open, printed only the code `ownerUnavailable`.
+    func testCommonFailureCodesPrintASentenceAndJSONKeepsTheCode() throws {
+        let output = NativeCLIRuntimeStart(vmID: "vm", libraryPath: "/l", appInstanceID: nil, operationID: "op",
+            started: false, observation: nil, unavailableReason: "ownerUnavailable")
+        XCTAssertTrue(output.text.contains(
+            "Start result unavailable: BridgeVM isn’t open for this library. Open BridgeVM, then try again."), output.text)
+        XCTAssertTrue(String(decoding: try JSONEncoder().encode(output), as: UTF8.self).contains("ownerUnavailable"))
+        XCTAssertEqual(NativeCLIReason.sentence("deadlineExceeded", vmID: "vm", action: "starting"),
+                       "BridgeVM is still starting the VM. Run `bridgevm app status vm` to follow it.")
+    }
+
     func testPendingLateFailureAndOwnerLossCannotSucceed() {
         for variant in ["pending", "late", "failed", "ownerLost"] {
             var time = 0.0

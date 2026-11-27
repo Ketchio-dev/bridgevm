@@ -37,7 +37,10 @@ struct NativeCLIRuntimeStatus: Encodable {
     var text: String {
         var lines = ["Native VM runtime: \(vmID)", "Observation scope: \(scope)",
                      "Runtime state: \(runtimeState)", "Saved configuration: \(savedConfiguration.state.rawValue)"]
-        if let unavailableReason { lines.append("Observation unavailable: \(unavailableReason)") }
+        if let unavailableReason {
+            lines.append("Observation unavailable: "
+                + NativeCLIReason.sentence(unavailableReason, vmID: vmID, action: "checking"))
+        }
         if complete && sessions.isEmpty { lines.append("The running app has no retained session for this ID.") }
         for session in sessions {
             lines.append("Session: \(session.ownership.rawValue), connection: \(session.connectionState ?? "unobserved")")

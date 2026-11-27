@@ -59,7 +59,10 @@ struct NativeCLIInstallResult: Encodable {
             if !observation.logTail.isEmpty { lines.append("Recent log:\n" + observation.logTail.joined(separator: "\n")) }
             lines.append(observation.cliNextAction(vmID: vmID))
         }
-        if let unavailableReason { lines.append("Install control unavailable: \(unavailableReason)") }
+        if let unavailableReason {
+            lines.append("Install control unavailable: "
+                + NativeCLIReason.sentence(unavailableReason, vmID: vmID, action: "installing"))
+        }
         lines.append("This reports app-owned host installation state; it does not prove guest boot or display readiness.")
         return lines.joined(separator: "\n") + "\n" }
 }

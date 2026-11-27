@@ -311,7 +311,7 @@ extension HvfEngineConfig {
         }
         let runner = repoRoot.appendingPathComponent("target/release/examples/hvf_gic_boot_probe")
         if !fileManager.isExecutableFile(atPath: runner.path) {
-            launch("signed-runner-missing", "To use --skip-build, build the release HVF runner and sign it with the required entitlements.")
+            launch("signed-runner-missing", "The VM runner is missing from this BridgeVM installation. Reinstall BridgeVM (in a source checkout, build and sign the release runner).")
         }
 
         if !(1024...65_536).contains(ramMiB) {
