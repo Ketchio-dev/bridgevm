@@ -1146,7 +1146,7 @@ impl BootGeneration {
                 write_mmio_read(vcpu, access, 0);
             }
         }
-        hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
+        hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc.wrapping_add(4));
         Ok(AfterExit::Automation)
     }
 

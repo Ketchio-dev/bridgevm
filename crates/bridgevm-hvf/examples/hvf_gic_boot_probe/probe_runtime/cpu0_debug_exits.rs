@@ -11,7 +11,7 @@ impl BootGeneration {
         let last_pc = self.last_pc;
         let trap = SysRegTrap::decode(esr);
         if emulate_debug_os_lock_sysreg(vcpu, trap) {
-            hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc + 4);
+            hv_vcpu_set_reg(vcpu, HV_REG_PC, last_pc.wrapping_add(4));
             Ok(())
         } else {
             Err(format!(
