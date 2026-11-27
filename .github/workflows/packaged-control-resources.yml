@@ -1,7 +1,7 @@
 name: Packaged control resource contracts
 on:
   push: {branches: [main]}
-  pull_request: {paths: ['apps/macos/Sources/BridgeVMControl/BridgeVMControlResources.swift', 'apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift', 'apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift', 'apps/macos/Sources/BridgeVMControl/Resources/**', 'crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd*', 'tests/integration/HvfSecureBootProvisioningSmoke.swift', 'tests/integration/PackagedControlResourcesSmoke.swift', 'tests/integration/compile-control-resources-smoke.sh', 'tests/integration/hvf-secure-boot-provisioning-smoke.sh', 'tests/integration/packaged-control-resources-smoke.sh', '.github/workflows/packaged-control-resources.yml']}
+  pull_request: {paths: ['apps/macos/Sources/BridgeVMControl/BridgeVMControlResources.swift', 'apps/macos/Sources/BridgeVMControl/HvfEngine/HvfSecureBootProvisioner.swift', 'apps/macos/Sources/BridgeVMControl/HvfEngine/HvfWindowsBootSeed.swift', 'apps/macos/Sources/BridgeVMControl/Resources/**', 'crates/bridgevm-hvf/firmware/edk2-aarch64-secure-code.fd*', 'tests/integration/HvfSecureBootProvisioningSmoke.swift', 'tests/integration/PackagedControlResourcesSmoke.swift', 'tests/integration/compile-control-resources-smoke.sh', 'tests/integration/hvf-secure-boot-provisioning-smoke.sh', 'tests/integration/packaged-control-resources-smoke.sh', 'scripts/build-pinned-wimlib-runtime.sh', 'scripts/bundle-wimlib-runtime.sh', 'scripts/verify-bundled-wimlib-runtime.sh', 'scripts/package-hvf-control-app.sh', 'tests/integration/bundled-wimlib-runtime-contract-smoke.sh', '.github/workflows/packaged-control-resources.yml']}
 permissions:
   contents: read
 jobs:
@@ -14,3 +14,5 @@ jobs:
         run: bash tests/integration/packaged-control-resources-smoke.sh
       - name: Existing Secure Boot policy and provisioning contracts
         run: bash tests/integration/hvf-secure-boot-provisioning-smoke.sh
+      - name: The app package bundles and verifies the pinned wimlib runtime (no workflow ran this smoke)
+        run: bash tests/integration/bundled-wimlib-runtime-contract-smoke.sh
