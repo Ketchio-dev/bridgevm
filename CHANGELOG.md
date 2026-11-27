@@ -127,6 +127,10 @@ All notable changes to BridgeVM are documented in this file.
   input error. It now goes in as one undoable edit, as in Notepad: 5,000
   mixed characters in under half a second (#665). Needs the updated guest
   agent.
+- Duplicate: a copy no longer inherits "Start when BridgeVM opens" (both VMs
+  booted at every launch), and a failed duplicate says what is missing or that
+  the Mac needs free space, instead of pointing at a destination bundle that had
+  already been removed.
 
 ### Removed
 

@@ -124,7 +124,11 @@ final class LibraryModel: ObservableObject {
                 if let clone {
                     self.reload(revealing: clone.slug, ifSelectionIs: selectionAtAdmission)
                 } else {
-                    self.cloneError = "BridgeVM could not confirm the duplicate was saved. Check whether the original is in use and inspect the destination bundle."
+                    // The copy's half-made bundle is already gone; say what the source is missing, if
+                    // that is why, and show a copy whose vm.json was written but not confirmed.
+                    self.cloneError = (cfg.engineKind == .hvfEngine ? HvfWindowsCloneSource.refusal(for: cfg, phase: .copy) : nil)
+                        ?? "BridgeVM couldn’t duplicate “\(cfg.name)”. Check that your Mac has enough free space for a copy of its disk, then try again."
+                    self.reload()
                 }
             }
         }
