@@ -69,7 +69,7 @@ struct CreateVMSheet: View {
                     .accessibilityLabel("Virtual machine name (required)")
                     .accessibilityIdentifier("bridgevm.create.name")
             }
-            if !name.isEmpty, !needsName, VMLibrary.normalizedVMName(name) == nil {
+            if !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, VMLibrary.normalizedVMName(name) == nil {
                 Text("Use 1–\(VMLibrary.maximumVMNameCharacters) characters without control characters. If the name is long, shorten it to fit the file name limit.")
                     .font(.caption)
                     .foregroundColor(.red)
@@ -191,9 +191,22 @@ struct CreateVMSheet: View {
         }
     }
 
-    private var needsName: Bool {
-        !working && creationState.permitsCreation && error.isEmpty && mediaReady
-            && name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    /// What Create still needs, in the order the sheet asks for it. Create was greyed out with no reason
+    /// until drivers were chosen.
+    var footerHint: String? {
+        guard !working, creationState.permitsCreation, error.isEmpty else { return nil }
+        switch mode {
+        case .windowsHVF where hvfTargetPath.isEmpty:
+            return "Choose the Windows disk to continue."
+        case .windowsHVFInstall where isoPath.isEmpty:
+            return "Choose the Windows 11 for Arm ISO to continue."
+        case .windowsHVFInstall where drivers.status == .preparing:
+            return nil // the drivers section shows its progress
+        case .windowsHVFInstall where !drivers.ready:
+            return "Choose Download Drivers, or your driver folder and its manifest, to continue."
+        default:
+            return name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? CreateVMCreationFooter.nameHint : nil
+        }
     }
 
     var canCreate: Bool {
@@ -214,7 +227,7 @@ struct CreateVMSheet: View {
 extension CreateVMSheet {
     var creationFooter: some View {
         CreateVMCreationFooter(working: working, error: error, failureCode: creationFailureCode,
-            canCreate: canCreate, needsName: needsName,
+            canCreate: canCreate, hint: footerHint,
             cancel: { dismiss() }, create: create,
             recoveryAvailable: !creationState.permitsCreation, recover: recoverCreatedVM,
             workingLabel: conversion.map { $0.format.conversionLabel(percent: $0.percent) } ?? "")

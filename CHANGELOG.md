@@ -284,6 +284,9 @@ All notable changes to BridgeVM are documented in this file.
   booted at every launch), and a failed duplicate says what is missing or that
   the Mac needs free space, instead of pointing at a destination bundle that had
   already been removed.
+- Create VM now says what it still needs when Create is greyed out: the
+  Windows ISO, then drivers (Download Drivers, or your folder and manifest),
+  then a name. Before, it said nothing until the drivers were chosen.
 
 ### Removed
 
