@@ -19,7 +19,7 @@ struct HvfStartCloseSettings: View {
             }
             Toggle("Keep Mac awake while Windows is running or installing", isOn: Binding(
                 get: { power.enabled }, set: { power.setEnabled($0) }))
-            Text("The Mac display can still turn off.")
+            Text("Applies to all VMs. The Mac display can still turn off.")
                 .font(.caption).foregroundStyle(.secondary)
             Picker("When the VM window closes", selection: $closeChoice) {
                 Text("Ask each time").tag("")
@@ -27,6 +27,8 @@ struct HvfStartCloseSettings: View {
                     Text($0.title).tag($0.rawValue)
                 }
             }
+            Text("Applies to all VMs.")
+                .font(.caption).foregroundStyle(.secondary)
             if session.persistsLibraryPreferences {
                 Toggle("Start this VM when BridgeVM opens", isOn: Binding(
                     get: { session.startsWithBridgeVM },

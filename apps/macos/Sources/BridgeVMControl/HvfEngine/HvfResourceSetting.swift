@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// RAM and CPUs. A library VM's are saved in vm.json (`memMiB`, `cpuCount`) like its other runtime-view
-/// preferences, so the dashboard's start and every other start path use them, within VMResourceLimits.
+/// preferences, so the dashboard's start and every other start path use them. Memory goes as high as
+/// Create offers on this Mac, or the saved value if that is higher; CPUs stay within VMResourceLimits.
 /// The experimental entry keeps them view-local.
 struct HvfResourceSetting: View {
     @ObservedObject var session: HvfEngineSession
@@ -12,7 +13,7 @@ struct HvfResourceSetting: View {
     var isDisabled: Bool { session.persistsLibraryPreferences && !session.libraryPreferencesEditable }
     private var ramRange: ClosedRange<Int> {
         session.persistsLibraryPreferences
-            ? VMResourceLimits.minimumMemoryMiB...VMResourceLimits.maximumMemoryMiB : 1024...65_536
+            ? CreateVMMemoryOptions.current.settingsRangeMiB(keeping: ramMiB) : 1024...65_536
     }
     private var cpuRange: ClosedRange<Int> {
         session.persistsLibraryPreferences
@@ -52,7 +53,9 @@ struct HvfResourceSetting: View {
 }
 
 extension HvfEngineSession {
-    static let resourceLimitsMessage = "Choose \(VMResourceLimits.minimumMemoryMiB / 1024)–\(VMResourceLimits.maximumMemoryMiB / 1024) GiB of memory and \(VMResourceLimits.minimumCPU)–\(VMResourceLimits.maximumCPU) CPUs."
+    static func resourceLimitsMessage(memoryMiB: ClosedRange<Int>) -> String {
+        "Choose \(memoryMiB.lowerBound / 1024)–\(memoryMiB.upperBound / 1024) GiB of memory and \(VMResourceLimits.minimumCPU)–\(VMResourceLimits.maximumCPU) CPUs."
+    }
 
     /// What the steppers show afterwards: vm.json's values for a library VM, plus any message. Only a
     /// value that changes is checked against the limits and written.
@@ -60,10 +63,11 @@ extension HvfEngineSession {
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (memMiB: Int, cpus: Int, message: String?) {
         guard persistsLibraryPreferences, let saved = config.libraryContext?.config else { return (memMiB, cpus, nil) }
         let memoryChanges = memMiB != saved.hvfRAMMiB, cpuChanges = cpus != saved.hvfCPUs
+        let memoryRange = CreateVMMemoryOptions.current.settingsRangeMiB(keeping: saved.hvfRAMMiB)
         let message: String?
-        if (memoryChanges && !(VMResourceLimits.minimumMemoryMiB...VMResourceLimits.maximumMemoryMiB).contains(memMiB))
+        if (memoryChanges && !memoryRange.contains(memMiB))
             || (cpuChanges && !(VMResourceLimits.minimumCPU...VMResourceLimits.maximumCPU).contains(cpus)) {
-            message = Self.resourceLimitsMessage
+            message = Self.resourceLimitsMessage(memoryMiB: memoryRange)
         } else {
             message = saveLibraryPreference("Memory and CPU", publish: publish) {
                 if memoryChanges { $0.memMiB = memMiB }
