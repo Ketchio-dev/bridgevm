@@ -1,5 +1,7 @@
 //! A cooperating reader selects a complete pair while holding its logical lease.
-//! Original paths remain unchanged; callers must use paths(), not the originals.
+//! Original paths stay in place, but after a restore the original disk is only a
+//! placeholder of the same size (its blocks are given back); callers must use
+//! paths(), not the originals.
 //!
 //! The selected generation lives under a private managed root beside the disk,
 //! named from the pair's relative identity. Restore stages a verified pair under
@@ -155,6 +157,7 @@ impl LockedPair {
         )?;
         self.own_selected()?;
         acknowledge(&self.root)?;
+        release_original_disk(&self.disk);
         Ok(copied)
     }
 
@@ -258,6 +261,24 @@ fn original_paths(root: &Path, disk: &Path, vars: &Path) -> io::Result<(PathBuf,
         return Err(io::Error::other("invalid initial-generation marker"));
     }
     Ok((disk.to_path_buf(), vars.to_path_buf()))
+}
+
+/// Once a restore has selected `current` and removed the initial-generation marker, paths()
+/// never selects the logical original again, yet it still held the whole pre-restore disk:
+/// the changes the restore discarded stayed on the Mac, even with every snapshot deleted.
+/// Punch its blocks out; the size stays, because launch checks the logical file. Best effort:
+/// the restore has succeeded, and a later restore tries again.
+fn release_original_disk(disk: &Path) {
+    let Ok(file) = OpenOptions::new().write(true).open(disk) else {
+        return;
+    };
+    let (Ok(metadata), Ok(block)) = (file.metadata(), crate::nvme::fs_block_size(&file)) else {
+        return;
+    };
+    let whole_blocks = metadata.len() / block.max(1) * block;
+    if metadata.blocks() > 0 && whole_blocks > 0 {
+        let _ = crate::nvme::punch_hole(&file, 0, whole_blocks).and_then(|()| file.sync_all());
+    }
 }
 
 fn acknowledge(root: &Path) -> io::Result<()> {

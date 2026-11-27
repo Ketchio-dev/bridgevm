@@ -98,6 +98,9 @@ All notable changes to BridgeVM are documented in this file.
   the ISO is opened, with a sentence that says so and to create a new VM with
   the Arm64 ISO. It used to copy for minutes, then say only that the setup
   files couldn't be prepared, and Try Again repeated the same wait.
+- Restoring a snapshot now gives back the space of the disk it replaces. The
+  old disk stayed on the Mac, so a restored VM kept using about twice its disk
+  space, even with every snapshot deleted.
 - An interrupted snapshot create or export (for example, its process was
   killed) left a hidden, half-made copy of the VM's disk and vars in the
   snapshot folder, plus an empty folder for an app snapshot. The snapshot list

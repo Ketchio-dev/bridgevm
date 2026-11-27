@@ -19,7 +19,7 @@ fn contents(pair: &LockedPair) -> (Vec<u8>, Vec<u8>) {
 }
 
 #[test]
-fn selects_both_restored_files_and_preserves_originals() {
+fn selects_both_restored_files() {
     let (_s, disk, vars, snapshot) = fixture("managed-select");
     let mut pair = LockedPair::open(&disk, &vars).unwrap();
     assert_eq!(
@@ -31,7 +31,6 @@ fn selects_both_restored_files_and_preserves_originals() {
         contents(&pair),
         (b"new-disk".to_vec(), b"new-vars".to_vec())
     );
-    assert_eq!(fs::read(&disk).unwrap(), b"old-disk");
     assert_eq!(fs::read(&vars).unwrap(), b"old-vars");
     drop(pair);
     let reopened = LockedPair::open(&disk, &vars).unwrap();
@@ -39,6 +38,35 @@ fn selects_both_restored_files_and_preserves_originals() {
         contents(&reopened),
         (b"new-disk".to_vec(), b"new-vars".to_vec())
     );
+}
+
+/// The pre-restore disk stayed whole beside the selected generation, so the changes a
+/// restore discards kept their space on the Mac for good.
+#[test]
+fn restore_gives_back_the_original_disk_blocks_and_keeps_its_size() {
+    let s = Scratch::new("managed-release");
+    let size = 4 << 20;
+    let disk = s.write("disk", &vec![0xA5; size]);
+    let vars = s.write("vars", b"old-vars");
+    let sd = s.write("source-disk", &vec![0x5A; size]);
+    let sv = s.write("source-vars", b"new-vars");
+    let snapshot = s.path("snapshot");
+    create_snapshot(&sd, &sv, &snapshot, "managed").unwrap();
+    let mut pair = LockedPair::open(&disk, &vars).unwrap();
+    assert!(fs::metadata(&disk).unwrap().blocks() > 0);
+
+    pair.restore(&snapshot).unwrap();
+
+    let original = fs::metadata(&disk).unwrap();
+    assert_eq!(
+        original.len(),
+        size as u64,
+        "launch checks the logical disk's size"
+    );
+    assert_eq!(original.blocks(), 0, "the discarded disk keeps no space");
+    assert!(fs::read(&disk).unwrap().iter().all(|&b| b == 0));
+    assert_eq!(contents(&pair).0, vec![0x5A; size]);
+    assert_eq!(fs::read(&vars).unwrap(), b"old-vars");
 }
 
 #[test]
