@@ -13,6 +13,10 @@ final class HvfSessionInputDriver {
     var onLegacyReplay: (([HvfOrderedInputQueue.Event]) -> Void)?
     /// Writes one input.ctl line the switch waits on (HvfLegacyInputActivity.barrier), after any replay.
     var onLegacyBarrier: ((String) -> Void)?
+    /// Keyboard and mouse stopped (Windows never confirmed a request, so both routes refuse until an
+    /// agent restart or guest reset re-arms the router) or came back. Observing never changes routing.
+    var onInputStoppedChange: ((Bool) -> Void)?
+    private var reportedStopped = false
     /// The clock of the receipt deadlines; the session's leaves paused time out (HvfGuestRunClock).
     var now: () -> Date = Date.init
     private(set) var router = HvfSessionInputRouter()
@@ -22,12 +26,22 @@ final class HvfSessionInputDriver {
     deinit { timer?.invalidate() }
     func beginOwnedBoot(binding: [String]) { restart(); router.beginOwnedBoot(binding: binding) }
     func attachUnknown(binding: [String]) { restart(); router.attachUnknown(binding: binding) }
-    private func restart() { textInputGeneration = UUID(); timer?.invalidate(); timer = nil; fallbackReported = false }
+    private func restart() {
+        textInputGeneration = UUID(); timer?.invalidate(); timer = nil; fallbackReported = false
+        if reportedStopped { reportedStopped = false; onInputStoppedChange?(false) }
+    }
+    private func reportStopped() {
+        let stopped = router.failure == .requestFailed
+        guard stopped != reportedStopped else { return }
+        reportedStopped = stopped
+        onInputStoppedChange?(stopped)
+    }
     /// Only legacy admission allows the caller to use the legacy input path.
     func route(_ event: HvfOrderedInputQueue.Event, binding: [String]) -> HvfNegotiatedInputStream.Admission {
         let held = router.count; defer { observeBindingDiscard(held: held) }
         let admission = router.route(event, binding: binding, now: now())
         onAdmission?(admission, held, router.count)
+        reportStopped()
         switch admission {
         case .legacy: break
         case .refused:
@@ -98,6 +112,7 @@ final class HvfSessionInputDriver {
         if !secureAttention.isEmpty { onLegacyReplay?(secureAttention) }
         if let barrier = router.takeLegacyBarrier() { onLegacyBarrier?(barrier) }
         if router.count == 0 { timer?.invalidate(); timer = nil }
+        reportStopped()
     }
 
     private func startPumpIfNeeded() {

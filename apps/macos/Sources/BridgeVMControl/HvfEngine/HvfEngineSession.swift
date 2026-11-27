@@ -41,6 +41,9 @@ final class HvfEngineSession: ObservableObject {
     var mutationReservation: HvfRuntimeMutationReservation?
     var ownedStartNow: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     let workAdmissionGate = HvfRuntimeWorkAdmissionGate()
+    /// Keyboard and mouse refuse input until an agent restart or guest reset (HvfSessionInputDriver);
+    /// the display says so (HvfInputStoppedStrip) instead of only beeping.
+    @Published var inputStopped = false
     let sleepPreventionID = UUID()
     var sleepPrevention = ControlAppPower.shared
     func updateSleepPrevention() {
@@ -141,6 +144,7 @@ final class HvfEngineSession: ObservableObject {
         inputDriver.onDiagnostic = { [weak self] in self?.append(.unknown($0)) }
         inputDriver.onLegacyReplay = { [weak self] in self?.resendOnLegacy($0) }
         inputDriver.onLegacyBarrier = { [weak self] in _ = self?.appendLiveInput($0) }
+        inputDriver.onInputStoppedChange = { [weak self] in self?.inputStopped = $0 }
         appPacing.observe(inputDriver)
     }
 
