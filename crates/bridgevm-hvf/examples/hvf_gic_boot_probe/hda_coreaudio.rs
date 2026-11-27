@@ -142,6 +142,7 @@ pub(crate) fn start_output<S>(
     install: impl FnOnce(S),
 ) -> Result<(), String> {
     let sink = open().map_err(|error| {
+        // The app shows a notice for this line's start (HvfAudioNotice.outputOffPrefix).
         format!(
             "HDA CoreAudio output: off for this run, the Mac's audio output did not start \
              ({error}); Windows runs without sound, restart the VM to try again"

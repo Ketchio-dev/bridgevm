@@ -82,6 +82,9 @@ All notable changes to BridgeVM are documented in this file.
   folder stayed the same), the first sync could take same-named files in the new
   Windows folder for edits and copy them over the Mac's files. The saved sync
   state now belongs to both folders, so a new Windows folder starts fresh.
+- When the Mac's audio output or microphone doesn't start for a VM, the VM's
+  dashboard now says so in one sentence; before, Windows just had no sound or
+  recorded silence with no explanation.
 - Copying more than about 24 MB of text in Windows stalled clipboard sharing,
   shared folders and input for the rest of the session. The copy is now
   refused like any text over 8 MB, and the rest keeps working.

@@ -247,6 +247,7 @@ fn supervise(
                 match open(Arc::clone(ring)) {
                     Ok(running) => input = Some(running),
                     Err(error) if !std::mem::replace(&mut reported, true) => {
+                        // The app shows a notice for this line's start (HvfAudioNotice.microphoneOffPrefix).
                         notices.lock().unwrap().push(format!(
                             "HDA capture: the Mac microphone did not start ({error}); \
                              the guest microphone records silence"
