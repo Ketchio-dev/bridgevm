@@ -17,8 +17,9 @@ final class LibraryDashboardRuntimeStateTests: XCTestCase {
         XCTAssertEqual(stopped, .stopped)
         XCTAssertNil(stopped.note("Starting VM…"))
         XCTAssertNil(stopped.note("Stop requested."))
-        XCTAssertNil(stopped.note("VM 시작 중…"))
-        XCTAssertEqual(stopped.note("디스크에 접근할 수 없습니다."), "디스크에 접근할 수 없습니다.")
+        XCTAssertNil(stopped.note("The VM has already stopped."))
+        XCTAssertEqual(stopped.note("Couldn’t open the display for the running VM."),
+                       "Couldn’t open the display for the running VM.")
     }
 
     /// A stop that left the disk unsaved, or a stop that failed, is not a normal stop or a boot.

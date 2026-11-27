@@ -63,7 +63,7 @@ enum LibraryDashboardRuntimeState: Equatable {
 
     // These action acknowledgements are superseded by the observed state above.
     static let transientNotes: Set<String> = [
-        "Running", "VM exited", "Starting VM…", "Stop requested.", "VM 시작 중…", "VM 부팅 중…", "VM 정지 중…", "VM 정지 요청을 보냈습니다.",
-        "실행 중", "정지됨", "VM이 종료됨"
+        "Running", "VM exited", "Starting VM…", "Stop requested.", "The VM is already stopping.",
+        "The VM has already stopped."
     ]
 }
