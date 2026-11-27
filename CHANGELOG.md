@@ -46,6 +46,10 @@ All notable changes to BridgeVM are documented in this file.
 - Windows connections left idle, such as an SSH session or a database client,
   are no longer cut after 5 minutes without Windows being told. BridgeVM now
   keeps an idle connection open for at least 2 hours, as home routers do.
+- If BridgeVM quits unexpectedly while it installs Windows, the installation
+  now stops too, within a few seconds. Before, the installer VM kept running
+  unseen with 4 GB of memory, and trying the installation again started a
+  second one next to it.
 - A Windows VM can start again after its VM process was killed or crashed. The
   VM's TPM helper kept running on its own and held the VM's TPM state, so every
   later start failed until you restarted the Mac. Start now stops that leftover

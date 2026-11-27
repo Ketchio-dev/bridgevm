@@ -14,8 +14,10 @@ import os
 from pathlib import Path
 import shutil
 import re
+import signal
 import subprocess
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -70,7 +72,7 @@ class ScriptedInstallFirmwareContract(unittest.TestCase):
         path.write_text("#!/bin/bash\nset -eu\n" + body)
         path.chmod(0o700)
 
-    def invoke(self, extra_environment=None, extra_arguments=(), release=True):
+    def invocation(self, extra_environment=None, extra_arguments=(), release=True):
         environment = {k: v for k, v in os.environ.items() if not k.startswith("BRIDGEVM_")}
         environment.update(PATH=f"{self.shims}:/usr/bin:/bin:/usr/sbin:/sbin",
                            FIXTURE_CAPTURE=str(self.capture), FIXTURE_VERIFIED=str(self.verified))
@@ -81,12 +83,80 @@ class ScriptedInstallFirmwareContract(unittest.TestCase):
                      "--watchdog-ms", "1500000"]
         if release:
             arguments.append("--release")
-        result = subprocess.run(arguments + list(extra_arguments), env=environment,
-                                capture_output=True, text=True, timeout=10)
-        return result
+        return arguments + list(extra_arguments), environment
+
+    def invoke(self, extra_environment=None, extra_arguments=(), release=True):
+        arguments, environment = self.invocation(extra_environment, extra_arguments, release)
+        return subprocess.run(arguments, env=environment, capture_output=True, text=True, timeout=10)
+
+    def runner_processes(self):
+        """The runner and any helper it forked (they share its command line)."""
+        listing = subprocess.run(["/bin/ps", "-axwwo", "pid=,command="], capture_output=True, text=True).stdout
+        return [int(line.split()[0]) for line in listing.splitlines() if str(self.runner) in line]
+
+    @staticmethod
+    def alive(pid):
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+
+    def kill_leftovers(self, pids):
+        for pid in pids + self.runner_processes():
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    def assert_all_stopped(self, pids, seconds):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            left = [pid for pid in pids if self.alive(pid)] + self.runner_processes()
+            if not left:
+                return
+            time.sleep(0.1)
+        self.fail(f"still running after {seconds}s: {left}")
+
+    def start_waiting_probe(self):
+        """Run the installer under a stand-in app, with a probe that runs until something stops it."""
+        probe_pid = self.base / "probe.pid"
+        self.executable(self.runtime / "target/release/examples/hvf_gic_boot_probe",
+                        'printf "%s\\n" "$$" > "$FIXTURE_PROBE_PID"\nexec /bin/sleep 600\n')
+        arguments, environment = self.invocation({"FIXTURE_PROBE_PID": str(probe_pid)})
+        app = subprocess.Popen(["/bin/bash", "-c", '"$@" & wait', "app", *arguments], env=environment,
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.addCleanup(app.stdout.close)
+        deadline = time.monotonic() + 10
+        while not probe_pid.is_file() or not probe_pid.read_text().strip():
+            self.assertLess(time.monotonic(), deadline, "stand-in probe did not start")
+            time.sleep(0.05)
+        probe = int(probe_pid.read_text())
+        self.addCleanup(self.kill_leftovers, [probe])
+        runner = subprocess.run(["/usr/bin/pgrep", "-P", str(app.pid)], capture_output=True, text=True)
+        return app, int(runner.stdout.split()[0]), probe
+
+    def test_installer_vm_stops_when_the_app_is_gone(self):
+        # A crashed or force-quit app sends nothing; the VM must not run on unseen, and the
+        # target a retry will reuse must not be judged by this run.
+        app, _, probe = self.start_waiting_probe()
+        app.kill()
+        app.wait()
+        app.stdout.close()  # the app's end of the output pipe goes with it
+        self.assert_all_stopped([probe], seconds=5)
+        self.assertFalse(self.verified.exists(), "the orphaned runner verified the target")
+        self.assertIn("cleanup_status=", (self.evidence / "cleanup.txt").read_text())
+
+    def test_cancel_still_stops_the_probe_and_leaves_nothing_running(self):
+        app, runner, probe = self.start_waiting_probe()
+        os.kill(runner, signal.SIGTERM)  # the app's Cancel: SIGTERM to the runner only
+        app.wait(timeout=5)
+        self.assert_all_stopped([probe], seconds=5)
+        self.assertFalse(self.verified.exists())
 
     def assert_admitted(self, result, expected):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_all_stopped([], seconds=2)
         self.assertTrue(self.capture.is_file(), "fake probe did not execute")
         self.assertEqual(self.capture.read_text().strip(), str(expected))
         self.assertTrue(self.verified.is_file(), "target verifier did not execute")
