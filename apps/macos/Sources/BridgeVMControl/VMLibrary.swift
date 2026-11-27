@@ -161,11 +161,6 @@ enum VMLibrary {
     /// One-time import of the legacy single ~/.bridgevm-control/config.json into
     /// the library, so the VM the user already runs shows up as the first entry.
     @discardableResult
-    static func migrateLegacyIfNeeded() -> Bool {
-        migrateLegacyIfNeeded(rootURL: root, legacy: VMConfig.loadLegacy())
-    }
-
-    @discardableResult
     static func migrateLegacyIfNeeded(rootURL: URL, legacy: VMConfig?) -> Bool {
         let current = scan(rootURL: rootURL)
         guard current.configs.isEmpty, current.issues.isEmpty, var legacy else { return false }

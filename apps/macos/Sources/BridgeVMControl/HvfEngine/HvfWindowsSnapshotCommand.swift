@@ -20,12 +20,6 @@ enum HvfWindowsSnapshotCommand {
         failure("the VM is running, or other work holds it", .notStopped)
     }
 
-    /// Creation timestamp from the filename, or manifest date for a legacy snapshot.
-    static func snapshotDate(config: HvfEngineConfig) -> Date? {
-        guard let bundle = HvfDiskGrow.bundle(config: config) else { return nil }
-        return HvfWindowsSnapshotStore.list(bundle: bundle).first?.date
-    }
-
     struct Plan {
         let executable: URL
         let disk: URL

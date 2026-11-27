@@ -30,12 +30,6 @@ final class NativeInstallOperationStore {
         records[vmID].map { .success($0) } ?? .failure(.targetUnavailable)
     }
 
-    func isActive(vmID: String) -> Bool { records[vmID]?.reservesWork == true }
-
-    func removeTerminal(vmID: String) {
-        guard records[vmID]?.reservesWork == false else { return }
-        records[vmID] = nil
-    }
 }
 
 extension NativeInstallOperationStore {

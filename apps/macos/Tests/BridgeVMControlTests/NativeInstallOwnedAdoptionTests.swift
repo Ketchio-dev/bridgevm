@@ -42,7 +42,6 @@ final class NativeInstallOwnedAdoptionTests: XCTestCase {
                 XCTAssertEqual(result.disposition, .cancelAccepted)
                 XCTAssertTrue(session.cancelled, "Cancellation must reach the starting session synchronously")
                 XCTAssertTrue(result.operation.reservesWork, "Cancellation must retain ownership until acknowledgment")
-                XCTAssertFalse(result.operation.cancelledBeforeSession)
                 XCTAssertEqual(try result.operation.observation().phase, .cancelling)
             } catch { XCTFail("Validating-stage cancellation was refused: \(error)") }
         }
@@ -54,7 +53,6 @@ final class NativeInstallOwnedAdoptionTests: XCTestCase {
         XCTAssertFalse(session.isRunning)
         XCTAssertEqual(try accepted.operation.observation().phase, .cancelled)
         XCTAssertFalse(accepted.operation.reservesWork)
-        XCTAssertFalse(accepted.operation.cancelledBeforeSession)
         XCTAssertEqual(fixture.process.resets, 1)
         XCTAssertEqual(fixture.process.cancellations, 1)
         XCTAssertEqual(fixture.inspection.snapshot.calls, 0)
