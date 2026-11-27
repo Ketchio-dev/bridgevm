@@ -5,7 +5,7 @@ fn fetched_mark_is_on_disk_after_stage_sync_and_before_replacement() {
     let f=Fixture::new();let root=f.root();let path=root.join("doc.bin");
     std::fs::write(&path,b"old Mac").unwrap();
     let vars=root.with_extension("vars");
-    let (file,_,_,error)=crate::agent_console::state::sync_file::SyncStateFile::open(&vars,&root);
+    let (file,_,_,error)=crate::agent_console::state::sync_file::SyncStateFile::open(&vars,&root,"C:\\share");
     assert!(error.is_none());
     let mut called=false;
     Destination::open(&root,"doc.bin",true).unwrap().write_at_unless_changed(b"Windows edit",None,None,false,|| {

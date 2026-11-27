@@ -51,6 +51,10 @@ All notable changes to BridgeVM are documented in this file.
 - "Start when BridgeVM opens" no longer skips a VM that is not ready (for
   example its disk is on a drive that is not connected) without a word: it
   starts it as the Start button does, which says why it could not.
+- Shared folders: after you changed only the Windows folder of a share (the Mac
+  folder stayed the same), the first sync could take same-named files in the new
+  Windows folder for edits and copy them over the Mac's files. The saved sync
+  state now belongs to both folders, so a new Windows folder starts fresh.
 - Copying more than about 24 MB of text in Windows stalled clipboard sharing,
   shared folders and input for the rest of the session. The copy is now
   refused like any text over 8 MB, and the rest keeps working.

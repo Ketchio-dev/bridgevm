@@ -544,7 +544,7 @@ fn a_versions_write_in_flight_when_the_state_turns_off_leaves_no_file_behind() {
     use std::sync::atomic::Ordering;
     let rig = Rig::new("state-off-race");
     let vars = vars(&rig);
-    let (mut file, _, _, _) = SyncStateFile::open(&vars, &rig.dir);
+    let (mut file, _, _, _) = SyncStateFile::open(&vars, &rig.dir, ROOT);
     let mut engine = ShareSync::new(512);
     let marks = file.marks();
     marks.hold.store(true, Ordering::Release);
@@ -797,7 +797,7 @@ fn a_session_end_waits_for_a_mark_being_written_and_none_lands_after_it() {
     use std::sync::atomic::Ordering;
     let rig = Rig::new("finish-drains");
     let vars = vars(&rig);
-    let (file, _, _, _) = SyncStateFile::open(&vars, &rig.dir);
+    let (file, _, _, _) = SyncStateFile::open(&vars, &rig.dir, ROOT);
     let marks = file.marks();
     let mut path = vars.as_os_str().to_owned();
     path.push(".share-sync-puts");
