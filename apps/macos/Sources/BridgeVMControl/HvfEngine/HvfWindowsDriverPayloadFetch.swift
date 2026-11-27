@@ -12,6 +12,8 @@ enum HvfWindowsDriverPayloadFetch {
         var bytes = HvfDisplayDriverInstall.archiveBytes
         var sha256 = HvfDisplayDriverInstall.archiveSHA256
         var folder = HvfDisplayDriverInstall.archiveFolder
+        /// `.default` follows the Mac's proxy settings; tests swap in a stub protocol.
+        var configuration = URLSessionConfiguration.default
         /// The archive's file name without `.zip`, so a new pinned archive gets its own folder.
         var name: String { ((URL(string: url)?.lastPathComponent ?? "virtio-win") as NSString).deletingPathExtension }
     }
@@ -38,15 +40,28 @@ enum HvfWindowsDriverPayloadFetch {
         VMLibrary.root.deletingLastPathComponent().appendingPathComponent("driver-payloads", isDirectory: true)
     }
 
-    /// Blocking (download and unzip); call it off the main actor.
-    static func prepare(source: Source = Source(), root: URL = defaultRoot) throws -> Prepared {
+    static let unreachableMessage = "Couldn’t reach the driver download. Check your internet connection and try again."
+    static let incompleteMessage = "The driver download didn’t complete. Try again later."
+    /// Offline, DNS, refused, timed out or a failed TLS handshake (often a proxy or captive portal).
+    private static let unreachable: Set<URLError.Code> = [.notConnectedToInternet, .networkConnectionLost,
+        .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .timedOut, .dataNotAllowed,
+        .internationalRoamingOff, .secureConnectionFailed]
+
+    /// Blocking (download and unzip); call it off the main actor. Cancelling the calling task
+    /// stops the download and throws `CancellationError`. `progress` gets the download percent.
+    static func prepare(source: Source = Source(), root: URL = defaultRoot,
+                        progress: @escaping (Int) -> Void = { _ in }) throws -> Prepared {
         let fm = FileManager.default
         let folder = root.appendingPathComponent(source.name, isDirectory: true)
         do { try fm.createDirectory(at: folder, withIntermediateDirectories: true) } catch {
             throw Failure(message: "Couldn’t create the driver folder at \(folder.path).")
         }
+        // A quit during a download (or a curl run of an older build) left its partial file here.
+        for name in (try? fm.contentsOfDirectory(atPath: folder.path)) ?? [] where name.hasPrefix(".download-") {
+            try? fm.removeItem(at: folder.appendingPathComponent(name))
+        }
         let archive = folder.appendingPathComponent("archive.zip")
-        if !matchesPins(archive, source) { try download(source, to: archive) }
+        if !matchesPins(archive, source) { try download(source, to: archive, progress: progress) }
 
         let staging = folder.appendingPathComponent(".staging-\(UUID().uuidString)", isDirectory: true)
         defer { try? fm.removeItem(at: staging) }
@@ -90,23 +105,40 @@ enum HvfWindowsDriverPayloadFetch {
         return size == source.bytes && HvfWindowsInstallCacheIdentity.sha256File(archive.path) == source.sha256
     }
 
-    /// fedorapeople.org answers browser-like agents with an HTML bot check, hence `-A BridgeVM`;
-    /// the pins refuse such a page or a truncated file before it replaces the cache.
-    private static func download(_ source: Source, to archive: URL) throws {
+    /// fedorapeople.org answers browser-like agents with an HTML bot check, hence the `BridgeVM`
+    /// agent; the pins refuse such a page or a truncated file before it replaces the cache.
+    /// A data task, not a download task: a cancelled download task leaves its CFNetworkDownload
+    /// file in the temporary folder. The bytes go to a hidden partial file here instead, which
+    /// this function removes and the next fetch removes after a quit.
+    private static func download(_ source: Source, to archive: URL, progress: @escaping (Int) -> Void) throws {
         let partial = archive.deletingLastPathComponent().appendingPathComponent(".download-\(UUID().uuidString).zip")
         defer { try? FileManager.default.removeItem(at: partial) }
-        let status = run("/usr/bin/curl", ["-sS", "-A", "BridgeVM", "--fail", "--location",
-            "--connect-timeout", "30", "--speed-limit", "1024", "--speed-time", "60", "--max-time", "1800",
-            "-o", partial.path, source.url])
-        guard status == 0 else {
-            throw Failure(message: "Driver download failed (curl \(status)). Check your internet connection and try again.")
+        let unsaved = Failure(message: "Couldn’t save the downloaded drivers to \(archive.path).")
+        guard let url = URL(string: source.url), FileManager.default.createFile(atPath: partial.path, contents: nil),
+              let file = FileHandle(forWritingAtPath: partial.path) else { throw unsaved }
+        var request = URLRequest(url: url, timeoutInterval: 60) // a stall, not the whole transfer
+        request.setValue("BridgeVM", forHTTPHeaderField: "User-Agent")
+        let transfer = Transfer(file: file, bytes: source.bytes, progress: progress)
+        let session = URLSession(configuration: source.configuration, delegate: transfer, delegateQueue: nil)
+        defer { session.finishTasksAndInvalidate() }
+        let task = session.dataTask(with: request)
+        task.resume()
+        while transfer.done.wait(timeout: .now() + 0.2) == .timedOut {
+            if Task.isCancelled { task.cancel() }
+        }
+        try? file.close()
+        if let error = transfer.error {
+            guard let code = (error as? URLError)?.code else { throw unsaved }
+            if code == .cancelled { throw CancellationError() }
+            throw Failure(message: unreachable.contains(code) ? unreachableMessage : incompleteMessage)
+        }
+        if let status = (task.response as? HTTPURLResponse)?.statusCode, !(200..<300).contains(status) {
+            throw Failure(message: incompleteMessage)
         }
         guard matchesPins(partial, source) else {
             throw Failure(message: "The downloaded driver archive failed size or SHA-256 verification. Try downloading it again.")
         }
-        guard rename(partial.path, archive.path) == 0 else {
-            throw Failure(message: "Couldn’t save the downloaded drivers to \(archive.path).")
-        }
+        guard rename(partial.path, archive.path) == 0 else { throw unsaved }
     }
 
     private static func extract(_ member: String, from archive: URL, to file: URL) throws {
@@ -127,6 +159,36 @@ enum HvfWindowsDriverPayloadFetch {
             _ = try FileManager.default.replaceItemAt(destination, withItemAt: item)
         } else {
             try FileManager.default.moveItem(at: item, to: destination)
+        }
+    }
+
+    /// Delegate callbacks arrive on the session's serial queue; `error` is read only after `done`.
+    private final class Transfer: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+        let done = DispatchSemaphore(value: 0)
+        let file: FileHandle
+        let bytes: Int
+        let progress: (Int) -> Void
+        private var written = 0
+        private var percent = -1
+        private(set) var error: Error?
+
+        init(file: FileHandle, bytes: Int, progress: @escaping (Int) -> Void) {
+            (self.file, self.bytes, self.progress) = (file, bytes, progress)
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+            do { try file.write(contentsOf: data) } catch {
+                self.error = error // a full disk; the cancellation that follows must not hide it
+                return dataTask.cancel()
+            }
+            written += data.count
+            let now = min(100, written * 100 / max(bytes, 1))
+            if now != percent { percent = now; progress(now) }
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+            self.error = self.error ?? error
+            done.signal()
         }
     }
 

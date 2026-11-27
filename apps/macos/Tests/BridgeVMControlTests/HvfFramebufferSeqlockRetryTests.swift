@@ -29,7 +29,7 @@ final class HvfFramebufferSeqlockRetryTests: XCTestCase {
             XCTAssertEqual(CFGetTypeID(contents as CFTypeRef), CGImage.typeID)
             let image = contents as! CGImage
             XCTAssertEqual(try XCTUnwrap(image.dataProvider?.data) as Data, Data([0xcc, 0xbb, 0xaa, 0xff]))
-            XCTAssertEqual(view.accessibilityValue() as? String, "frame 1x1")
+            XCTAssertEqual(view.accessibilityValue() as? String, "1 by 1")
             view.refreshFrame(at: 1)
             XCTAssertEqual([pauses, made()], [1, 1], "the same sequence is not taken twice")
         }
@@ -49,10 +49,10 @@ final class HvfFramebufferSeqlockRetryTests: XCTestCase {
             view.refreshFrame(at: 0)
             XCTAssertEqual([loads, pauses, made()], [6, 2, 0])
             XCTAssertNil(view.layer?.contents)
-            XCTAssertEqual(view.accessibilityValue() as? String, "no-frame")
+            XCTAssertEqual(view.accessibilityValue() as? String, "Waiting for Windows to show a picture")
             view.refreshFrame(at: 1)
             XCTAssertEqual([loads, pauses, made()], [8, 2, 1], "the next tick takes the settled frame")
-            XCTAssertEqual(view.accessibilityValue() as? String, "frame 1x1")
+            XCTAssertEqual(view.accessibilityValue() as? String, "1 by 1")
         }
         // Once 0.5 ms have passed since the tick's first read, it does not retry.
         try withView(sequence: 2) { view, _, made in

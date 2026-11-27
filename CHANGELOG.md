@@ -43,12 +43,20 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- When Create VM fails for a reason you can fix, it now says so: the Windows
+  ISO can't be read (its drive was ejected), the VM's folder can't be made in
+  the chosen location, there isn't enough free space on another drive for the
+  ISO copy, or another VM took the same ID at the same time. Before, each of
+  these said only "Couldn't create the VM or save it to the library."
 - "Open Windows links on Mac" and "Print to Mac" can now be turned off (or on)
   while Windows runs: links stop opening and the printer goes at once, and the
   choice is saved when the VM stops.
 - Putting the Mac to sleep while a key press or click was still on its way to
   Windows no longer stops the keyboard and mouse on wake until Windows restarts:
   the time Windows has to confirm input now counts only while the Mac is awake.
+- VoiceOver now reads the Windows display in plain English, such as "Waiting for
+  Windows to show a picture" or "1280 by 800". Before, it read internal test
+  text such as "no-frame" and a click count after each click.
 - After you choose Stop, the VM window now shows what Windows is doing while it
   shuts down, with Force Stop and, if Windows is still running after the wait,
   Shut Down Again. Before, only the library showed them, so a full-screen VM
@@ -57,6 +65,10 @@ All notable changes to BridgeVM are documented in this file.
   show as running in the app, and Start no longer "attaches" to it: Start,
   Delete, Duplicate and Move say another BridgeVM task is using the disk. A stop
   can no longer end that task in the middle of a copy.
+- The microphone notice now follows what the running VM started with: after
+  you allow the microphone in System Settings, it asks you to restart the VM
+  (Windows still has none until then), and it no longer says Windows has no
+  microphone when the run has one.
 - Windows sound no longer goes silent when Windows or an app picks a playback
   rate other than 48 kHz (for example "16 bit, 44100 Hz" in Sound > Advanced).
   The VM now offers only the 48 kHz format the Mac side plays.
@@ -65,6 +77,12 @@ All notable changes to BridgeVM are documented in this file.
 - If the drive with a running VM's disk is unplugged or ejected, the app now says
   so and shows Needs attention, with what to do, instead of staying silent while
   Windows gets disk errors.
+- Download Drivers in the Create window now stops when you close the window,
+  instead of downloading on for up to 30 minutes, and a download cut short by
+  quitting is removed the next time you download. The download follows the
+  Mac's proxy settings, shows its percent, and a failure now says whether the
+  download couldn't be reached or didn't complete, instead of showing a curl
+  error number.
 - Choosing "Shut down Windows" when you close a VM window now keeps the window
   open while Windows shuts down, so you can still save work if an app asks, and
   the window then says Windows has shut down. A remembered "Shut down Windows"

@@ -33,7 +33,8 @@ class DisplayClick(unittest.TestCase):
         down = view.split("override func mouseDown(with event: NSEvent) {", 1)[1].split("\n    }\n", 1)[0]
         self.assertIn("guard let session, hasGuestSize else {", down)
         self.assertIn("guestSize.width > 0 && guestSize.height > 0", view)
-        self.assertIn('guard size.width > 0, size.height > 0 else { return "no-frame" }', text(ENGINE / "HvfDisplaySurfaceAccessibility.swift"))
+        self.assertIn('guard size.width > 0, size.height > 0 else { return "Waiting for Windows to show a picture" }',
+                      text(ENGINE / "HvfDisplaySurfaceAccessibility.swift"))
         self.assertIn("guard target.focused, let guest = T17DisplayImageRect.guestSize(target.value)", text(E2E / "T17DisplayClick.swift"))
 
     def test_only_the_display_click_posts_mouse_events(self) -> None:

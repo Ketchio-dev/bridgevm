@@ -13,7 +13,9 @@ final class HvfWindowsDriverPayloadFetchTests: XCTestCase {
         let fixture = try Fixture()
         defer { fixture.remove() }
         let source = try fixture.source()
-        let prepared = try HvfWindowsDriverPayloadFetch.prepare(source: source, root: fixture.cache)
+        var percents: [Int] = []
+        let prepared = try HvfWindowsDriverPayloadFetch.prepare(source: source, root: fixture.cache) { percents.append($0) }
+        XCTAssertEqual(percents.last, 100)
 
         let payload = URL(fileURLWithPath: prepared.payloadDirectory)
         let entries = try FileManager.default.subpathsOfDirectory(atPath: payload.path)
@@ -81,11 +83,71 @@ final class HvfWindowsDriverPayloadFetchTests: XCTestCase {
         defer { fixture.remove() }
         var source = try fixture.source()
         source.sha256 = String(repeating: "0", count: 64)
+        // An older build's curl partial, left by a quit mid-download, goes at the next fetch.
+        let folder = fixture.cache.appendingPathComponent(source.name)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("partial".utf8).write(to: folder.appendingPathComponent(".download-\(UUID().uuidString).zip"))
         XCTAssertThrowsError(try HvfWindowsDriverPayloadFetch.prepare(source: source, root: fixture.cache)) { error in
             XCTAssertTrue((error as? HvfWindowsDriverPayloadFetch.Failure)?.message.contains("SHA-256") == true)
         }
-        let folder = fixture.cache.appendingPathComponent(source.name)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), [])
+    }
+
+    func testAnHTTPErrorAndNoConnectionGetTheirOwnSentence() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        for (name, message) in [("missing.zip", HvfWindowsDriverPayloadFetch.incompleteMessage),
+                                ("offline.zip", HvfWindowsDriverPayloadFetch.unreachableMessage)] {
+            let source = try fixture.stubbed(name)
+            XCTAssertThrowsError(try HvfWindowsDriverPayloadFetch.prepare(source: source, root: fixture.cache)) { error in
+                XCTAssertEqual((error as? HvfWindowsDriverPayloadFetch.Failure)?.message, message)
+            }
+            let folder = fixture.cache.appendingPathComponent(source.name)
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), [])
+        }
+    }
+
+    /// Closing the Create sheet cancels its fetch task.
+    func testCancellingStopsTheDownloadAndLeavesNoPartialFile() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let source = try fixture.stubbed("stall.zip")
+        let (percents, report) = AsyncStream.makeStream(of: Int.self)
+        let fetch = Task.detached {
+            try HvfWindowsDriverPayloadFetch.prepare(source: source, root: fixture.cache) { report.yield($0) }
+        }
+        for await _ in percents { break } // the first bytes arrived; the stub sends no more
+        let folder = fixture.cache.appendingPathComponent(source.name)
+        let during = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        XCTAssertEqual(during.count, 1)
+        XCTAssertTrue(during.allSatisfy { $0.hasPrefix(".download-") }, "\(during)")
+        fetch.cancel()
+        do {
+            _ = try await fetch.value
+            XCTFail("A cancelled download must not finish")
+        } catch {
+            XCTAssertTrue(error is CancellationError, "\(error)")
+        }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), [])
+    }
+
+    /// Answers by file name: `missing.zip` with HTTP 404, `offline.zip` with no connection, and
+    /// `stall.zip` with a first chunk and then nothing.
+    private final class DownloadStub: URLProtocol {
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func stopLoading() {}
+        override func startLoading() {
+            guard let url = request.url, let client else { return }
+            if url.lastPathComponent == "offline.zip" {
+                return client.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+            }
+            let status = url.lastPathComponent == "missing.zip" ? 404 : 200
+            let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!
+            client.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client.urlProtocol(self, didLoad: Data(repeating: 0x3c, count: 4096))
+            if status == 404 { client.urlProtocolDidFinishLoading(self) }
+        }
     }
 
     private struct Fixture {
@@ -120,6 +182,14 @@ final class HvfWindowsDriverPayloadFetchTests: XCTestCase {
             let size = try XCTUnwrap(archive.resourceValues(forKeys: [.fileSizeKey]).fileSize)
             let digest = try XCTUnwrap(HvfWindowsInstallCacheIdentity.sha256File(archive.path))
             return .init(url: archive.absoluteString, bytes: size, sha256: digest, folder: "Win11/ARM64/")
+        }
+
+        func stubbed(_ name: String) throws -> HvfWindowsDriverPayloadFetch.Source {
+            var source = try source()
+            source.url = "https://downloads.invalid/\(name)"
+            source.configuration = .ephemeral
+            source.configuration.protocolClasses = [DownloadStub.self]
+            return source
         }
 
         func remove() { try? FileManager.default.removeItem(at: root) }

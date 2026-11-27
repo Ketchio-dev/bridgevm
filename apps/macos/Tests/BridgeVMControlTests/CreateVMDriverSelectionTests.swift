@@ -57,7 +57,11 @@ final class CreateVMDriverSelectionTests: XCTestCase {
         XCTAssertFalse(selection.ready)
 
         XCTAssertTrue(selection.beginFetch())
+        selection.showDownload(40)
+        selection.showDownload(30)
+        XCTAssertEqual(selection.downloadPercent, 40, "A late progress update never moves it back")
         selection.finishFetch(.success(automatic))
+        XCTAssertNil(selection.downloadPercent)
         XCTAssertEqual(selection.status, .prepared)
         XCTAssertEqual(selection.payloadPath, automatic.payloadDirectory)
         XCTAssertEqual(selection.manifestPath, automatic.manifestPath)

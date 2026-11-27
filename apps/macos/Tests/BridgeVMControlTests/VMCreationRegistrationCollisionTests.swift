@@ -92,6 +92,34 @@ final class VMCreationRegistrationCollisionTests: XCTestCase {
         }
     }
 
+    /// Every Create failure said "Couldn’t create the VM or save it to the library."; the ones the user can
+    /// act on now say what to do.
+    func testCreateFailuresTheUserCanFixSayWhatToDo() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        func create(iso: URL, storage: URL) -> HVFCreationOutcome? {
+            VMLibrary.createWindowsHVFInstall(name: "Fails", isoPath: iso.path, diskGiB: 64, injectViogpu3d: false,
+                driverPackageDir: nil, storageDir: storage, libraryRoot: fixture.library)
+        }
+        guard case .refused(let ejected)? = create(iso: fixture.root.appendingPathComponent("ejected.iso"),
+                                                     storage: fixture.storage) else { return XCTFail("missing ISO") }
+        XCTAssertEqual(ejected, CreateFailure.isoUnreadable)
+
+        let locked = fixture.root.appendingPathComponent("locked")
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: false)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: locked.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: locked.path) }
+        let storage = locked.appendingPathComponent("VMs")
+        guard case .refused(let folder)? = create(iso: fixture.guiISO, storage: storage) else { return XCTFail("folder") }
+        XCTAssertEqual(folder, CreateFailure.folder(storage))
+
+        XCTAssertNil(CreateFailure.isoSpace(isoBytes: 6 << 30, sameVolume: true, freeBytes: 0, volume: "Mac"),
+                     "a clone on the same volume needs no space")
+        XCTAssertNil(CreateFailure.isoSpace(isoBytes: 6 << 30, sameVolume: false, freeBytes: 8 << 30, volume: "USB"))
+        XCTAssertEqual(CreateFailure.isoSpace(isoBytes: 6 << 30, sameVolume: false, freeBytes: 5 << 30, volume: "USB"),
+            "“USB” doesn’t have enough free space to copy the Windows ISO (about 7 GB). Free up space, or choose another location.")
+    }
+
     func testRefusedDefaultCreatorKeepsWinnerPublishedInsideItsReservedDirectory() throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
@@ -107,7 +135,9 @@ final class VMCreationRegistrationCollisionTests: XCTestCase {
                     winnerBytes = try? Data(contentsOf: root.appendingPathComponent(winner.slug + "/vm.json"))
                     return VMLibrary.createOutcome(pending, rootURL: root)
                 })
-            XCTAssertNil(loser, "a late conflicting registration must refuse publication")
+            // A late conflicting registration refuses publication, and says so (it was the general sentence).
+            guard case .refused(let message)? = loser else { XCTFail("expected a refusal"); return publication }
+            XCTAssertTrue(message.contains("BridgeVM kept the prepared files"), message)
             return publication
         }
         guard case .created(let winner)? = outcome else { return XCTFail("expected real winner publication") }
