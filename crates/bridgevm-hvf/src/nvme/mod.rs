@@ -42,6 +42,7 @@ mod tests;
 pub use admin::*;
 pub use controller::*;
 pub use dataset_management::dsm_record;
+pub(crate) use dataset_management::{fs_block_size, punch_hole};
 pub(crate) use disk::*;
 pub(crate) use disk_full::host_failure;
 pub use disk_full::DiskFull;

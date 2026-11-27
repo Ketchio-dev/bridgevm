@@ -161,11 +161,6 @@ enum VMLibrary {
     /// One-time import of the legacy single ~/.bridgevm-control/config.json into
     /// the library, so the VM the user already runs shows up as the first entry.
     @discardableResult
-    static func migrateLegacyIfNeeded() -> Bool {
-        migrateLegacyIfNeeded(rootURL: root, legacy: VMConfig.loadLegacy())
-    }
-
-    @discardableResult
     static func migrateLegacyIfNeeded(rootURL: URL, legacy: VMConfig?) -> Bool {
         let current = scan(rootURL: rootURL)
         guard current.configs.isEmpty, current.issues.isEmpty, var legacy else { return false }
@@ -321,7 +316,15 @@ extension VMLibrary {
         }
         do {
             try fm.moveItem(at: source, to: destination)
-        } catch { return nil }
+        } catch {
+            // Nothing moved (a folder BridgeVM can't write to, for one): the bundle is where vm.json
+            // says, so the record of an unfinished move goes too. Kept, it hid the VM from the library
+            // for good. A move that left anything at the destination keeps it, as before.
+            if VMRelocationRecovery.configuration(original: config, moved: moved, fileManager: fm) == config {
+                try? fm.removeItem(at: pending)
+            }
+            return nil
+        }
         do {
             guard save(moved, rootURL: rootURL) else { throw CocoaError(.fileWriteUnknown) }
             _ = try VTPMIdentityLifecycle(keyStore: KeychainVTPMStateKeyStore())

@@ -36,9 +36,18 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
     let recovery: HvfWindowsInstallRecoveryWorker
     var continuationAdmission: (@MainActor () -> String?)?
     var admissionPending = false
-    var attemptActive = false
+    /// An attempt runs for about half an hour, mostly unattended: like a running VM it keeps the Mac
+    /// from idle sleep (the "Keep Mac awake" setting), which would freeze the build or Windows setup.
+    var attemptActive = false { didSet { sleepPrevention.update(sleepPreventionID, active: attemptActive) } }
+    let sleepPreventionID = UUID()
+    var sleepPrevention = ControlAppPower.shared
     var cancelled = false
     var commitStarted = false
+    /// The Mac disk filled: the setup-file build fails, or the install VM pauses and nothing would resume
+    /// it before the install's 25-minute watchdog. Either failure then says so.
+    var diskFull = false
+    nonisolated static let diskFullMessage =
+        "Your Mac’s disk is full, so the installation stopped. Free about 20 GB on the drive that holds this VM, then choose Try Again."
 
     init(
         plan: HvfWindowsInstallPlan,
@@ -97,6 +106,7 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
     }
 
     func failUnlessCancelled(_ message: String) {
+        let message = diskFull ? Self.diskFullMessage : message
         if !acknowledgeCancellation(cleanup: true) { cleanupTemporaryMedia(); finish(.failed(message)) }
     }
 
@@ -128,6 +138,10 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
         }
         logLines.append(line)
         if logLines.count > 400 { logLines.removeFirst(logLines.count - 400) }
+        if !diskFull, !commitStarted, line.hasPrefix("BVSTORAGE full") || line.contains("No space left on device") {
+            diskFull = true
+            if line.hasPrefix("BVSTORAGE full") { execution.process.cancel() } // end the paused VM now
+        }
     }
 }
 
@@ -218,6 +232,7 @@ extension HvfWindowsInstallSession {
         attemptActive = true
         cancelled = false
         commitStarted = false
+        diskFull = false
         execution.process.reset()
         prepareAttemptPresentation()
         return Task { await inspectAndSchedule() }

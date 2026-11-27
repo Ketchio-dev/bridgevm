@@ -67,9 +67,10 @@ pub(crate) struct AppCreateWindowsArgs {
     /// New raw target size in GiB.
     #[arg(long, default_value_t = 64, value_parser = disk_gib)]
     pub(crate) disk_gib: u16,
-    /// Saved guest memory in MiB.
-    #[arg(long, default_value_t = 6144, value_parser = memory_mib)]
-    pub(crate) memory_mib: u32,
+    /// Saved guest memory in MiB [default: the app's choice for this Mac, as in Create: 6144, or
+    /// 4096 on an 8 GiB Mac].
+    #[arg(long, value_parser = memory_mib)]
+    pub(crate) memory_mib: Option<u32>,
     /// Saved virtual CPU count; the app also enforces the current host limit.
     #[arg(long, default_value_t = 4, value_parser = clap::value_parser!(u16).range(1..=64))]
     pub(crate) cpus: u16,

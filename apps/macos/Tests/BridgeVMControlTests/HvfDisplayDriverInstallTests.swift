@@ -200,10 +200,16 @@ final class HvfDisplayDriverInstallProgressTests: XCTestCase {
         let installed = outcome("BVDRIVER result=installed detail=Red Hat VirtIO GPU DOD controller status=OK\r\n")
         XCTAssertEqual(installed, .init(status: .installed, detail: "Red Hat VirtIO GPU DOD controller status=OK"))
         XCTAssertEqual(installed?.leavesDriverInGuest, true)
+        XCTAssertEqual(installed?.message, "Installed the display driver.", "no device name or status token")
+        XCTAssertEqual(outcome("BVDRIVER result=installed detail=Red Hat VirtIO GPU DOD controller status=OK; restart Windows to finish")?.message,
+                       "Installed the display driver. Restart Windows to finish.")
+        XCTAssertEqual(outcome("BVDRIVER result=installed detail=Red Hat VirtIO GPU DOD controller status=Error")?.message,
+                       "Installed the display driver. Windows reports a problem with the display device, so restart Windows if the display doesn’t change.")
 
         let staged = outcome("BVDRIVER result=staged detail=no 1AF4:1050 device yet; it binds on the next boot with one")
         XCTAssertEqual(staged?.status, .staged)
         XCTAssertEqual(staged?.leavesDriverInGuest, true)
+        XCTAssertEqual(staged?.message, "Added the display driver to Windows. It takes over the display the next time the VM starts.")
 
         let failed = outcome("BVDRIVER result=failed detail=download SHA-256 00AA does not match the pinned ff39")
         XCTAssertEqual(failed, .init(status: .failed, detail: "download SHA-256 00AA does not match the pinned ff39"))
@@ -214,14 +220,15 @@ final class HvfDisplayDriverInstallProgressTests: XCTestCase {
     func testMissingOrUnknownLineIsAFailure() {
         let silent = outcome("", code: 0)
         XCTAssertEqual(silent?.status, .failed)
-        XCTAssertEqual(silent?.detail.contains("BVDRIVER"), true)
+        XCTAssertEqual(silent?.message, "Couldn’t install the display driver. Windows didn’t answer, so try again when Windows is idle.")
 
         let refused = outcome(HvfAgentServiceGate.serviceNotStartedMessage, code: -1)
         XCTAssertEqual(refused?.status, .failed)
-        XCTAssertEqual(refused?.detail.contains("exit -1"), true)
-        XCTAssertEqual(refused?.detail.contains(HvfAgentServiceGate.serviceNotStartedMessage), true)
+        XCTAssertFalse(refused?.detail.contains("exit -1") ?? true, "the exit code and protocol name stay in the log")
+        XCTAssertEqual(refused?.detail, "Windows didn’t answer: \(HvfAgentServiceGate.serviceNotStartedMessage)")
 
         XCTAssertEqual(outcome("BVDRIVER result=maybe detail=x")?.status, .failed)
+        XCTAssertFalse(outcome("BVDRIVER result=maybe detail=x")?.message.contains("BVDRIVER") ?? true)
         XCTAssertEqual(outcome("BVDRIVER pending")?.status, .failed)
         XCTAssertEqual(outcome("BVDRIVER result=failed detail=curl.exe missing"), .init(status: .failed, detail: "curl.exe missing"))
     }

@@ -34,12 +34,14 @@ final class LibraryMoveSelectionTests: XCTestCase {
         XCTAssertEqual(f.library.selectedModel?.config.bundlePath, f.assets.destination.path)
     }
 
-    func testOccupiedDestinationFailurePreservesNewSelectionAndBothLocations() async throws {
+    /// An occupied folder is refused before anything is scheduled or moved.
+    func testOccupiedDestinationIsRefusedUpFrontAndKeepsSelectionAndBothLocations() throws {
         let f = try LibraryMoveSelectionFixture()
         let sentinel = try f.occupyDestination()
-        try f.admit()
         f.library.selectedID = f.other.slug
-        try await f.finish()
+        f.library.moveWindowsHVFBundle(f.source, to: f.assets.destinationParent)
+        XCTAssertEqual(f.scheduledJobs, 0, "nothing is scheduled")
+        XCTAssertTrue(f.library.movingSlugs.isEmpty)
         XCTAssertNotNil(f.library.moveError)
         XCTAssertEqual(f.library.selectedID, f.other.slug)
         XCTAssertTrue(f.library.selectedModel === f.otherModel)

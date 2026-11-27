@@ -90,9 +90,9 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
             (try helper("unusable snapshot manifest: unknown format_version 9"), .create,
              "The new snapshot failed verification, so create it again."),
             (try helper("Operation not permitted (os error 1)"), .create,
-             "Try creating a snapshot again and check the event feed for details if the problem continues."),
+             "Try creating a snapshot again."),
             (try helper(nil), .restore,
-             "Try restoring the snapshot again and check the event feed for details if the problem continues."),
+             "Try restoring the snapshot again."),
         ]
         for (error, operation, expected) in cases {
             let message = HvfWindowsSnapshotModel.message(for: error, operation: operation)
@@ -149,10 +149,10 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
             return try await session.runSnapshot($0, configuration: config)
         }
 
-        XCTAssertNil(HvfWindowsSnapshotCommand.snapshotDate(config: config))
+        XCTAssertNil(HvfWindowsSnapshotStore.list(bundle: bundle).first)
         await model.create(run: run)?.value
         XCTAssertEqual(model.status, "Snapshot created", session.events.last?.displayText ?? "")
-        let date = try XCTUnwrap(HvfWindowsSnapshotCommand.snapshotDate(config: config))
+        let date = try XCTUnwrap(HvfWindowsSnapshotStore.list(bundle: bundle).first?.date)
         let first = try XCTUnwrap(HvfWindowsSnapshotStore.list(bundle: bundle).first)
         try Data(repeating: 5, count: 128).write(to: disk)
         try await session.runSnapshot(.create, configuration: config, name: "두 번째/../이름")

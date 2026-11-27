@@ -289,7 +289,7 @@ fn report_unpunched(error: &io::Error) {
 /// The host file system's block size (`statfs.f_bsize`), which
 /// `F_PUNCHHOLE` offsets and lengths must be multiples of.
 #[cfg(target_os = "macos")]
-fn fs_block_size(file: &File) -> io::Result<u64> {
+pub(crate) fn fs_block_size(file: &File) -> io::Result<u64> {
     use std::os::fd::AsRawFd;
     let mut stats = std::mem::MaybeUninit::<libc::statfs>::zeroed();
     // SAFETY: `file` owns a live descriptor and `stats` is writable.
@@ -303,7 +303,7 @@ fn fs_block_size(file: &File) -> io::Result<u64> {
 /// `F_PUNCHHOLE`: reads of the range return zeros and its blocks go back to
 /// the file system; the file size does not change.
 #[cfg(target_os = "macos")]
-fn punch_hole(file: &File, offset: u64, len: u64) -> io::Result<()> {
+pub(crate) fn punch_hole(file: &File, offset: u64, len: u64) -> io::Result<()> {
     use std::os::fd::AsRawFd;
     #[cfg(test)]
     if let Some(code) = test_punch::errno() {
@@ -329,12 +329,12 @@ fn punch_hole(file: &File, offset: u64, len: u64) -> io::Result<()> {
 
 /// Other hosts (cross-compiled stubs) punch nothing.
 #[cfg(not(target_os = "macos"))]
-fn fs_block_size(_file: &File) -> io::Result<u64> {
+pub(crate) fn fs_block_size(_file: &File) -> io::Result<u64> {
     Err(io::ErrorKind::Unsupported.into())
 }
 
 #[cfg(not(target_os = "macos"))]
-fn punch_hole(_file: &File, _offset: u64, _len: u64) -> io::Result<()> {
+pub(crate) fn punch_hole(_file: &File, _offset: u64, _len: u64) -> io::Result<()> {
     Err(io::ErrorKind::Unsupported.into())
 }
 

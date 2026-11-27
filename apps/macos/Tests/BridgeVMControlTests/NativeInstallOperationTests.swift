@@ -27,7 +27,6 @@ final class NativeInstallOperationTests: XCTestCase {
         XCTAssertEqual(try value.observation().phase, .preparingPlan)
         XCTAssertTrue(value.cancel())
         XCTAssertFalse(value.reservesWork)
-        XCTAssertTrue(value.cancelledBeforeSession)
         XCTAssertEqual(try value.observation().phase, .cancelled)
         XCTAssertFalse(value.cancel())
     }

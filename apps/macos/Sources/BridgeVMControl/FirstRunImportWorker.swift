@@ -12,6 +12,13 @@ enum FirstRunImportWorker {
         progress(.validating)
         if let error = FirstRunImport.validate(inputs) { return .failed(error.description) }
         do {
+            try FirstRunImportVTPMRecovery.check(inputs)
+        } catch {
+            // These sentences name the problem; the import sentence below is about disks and space.
+            NSLog("%@", WindowsFileFailureFeedback.diagnostic("import-vtpm-check", error))
+            return .failed(error.localizedDescription)
+        }
+        do {
             progress(HvfImportedDiskFormat.detect(path: inputs.diskPath).map { .converting($0, percent: 0) } ?? .copying)
             let prepared = try FirstRunImport.prepare(inputs, slug: VMLibrary.registrationSlug(for: inputs.displayName),
                 libraryRoot: libraryRoot, snapshotHelper: snapshotHelper,

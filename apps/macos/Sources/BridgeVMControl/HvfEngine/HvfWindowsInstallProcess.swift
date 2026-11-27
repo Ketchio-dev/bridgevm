@@ -98,6 +98,7 @@ extension HvfWindowsInstallSession {
         line.contains("BOOT_TIMER ramfb source=") && line.contains("state=captured")
             || line.hasPrefix("BVAGENT ")
             || line.hasPrefix("NVMe disk written back")
+            || line.hasPrefix("BVSTORAGE full") // the VM paused on a full Mac disk (nvme/disk_full.rs)
             || line.contains("stop: PSCI")
     }
 }

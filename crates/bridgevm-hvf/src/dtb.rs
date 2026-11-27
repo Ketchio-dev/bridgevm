@@ -47,12 +47,6 @@ impl FdtBuilder {
         Self::default()
     }
 
-    /// Add a memory-reservation entry (rarely needed for `virt`, but part of the
-    /// format).
-    pub fn reserve_memory(&mut self, address: u64, size: u64) {
-        self.mem_rsv.push((address, size));
-    }
-
     pub fn begin_node(&mut self, name: &str) {
         self.structure
             .extend_from_slice(&FDT_BEGIN_NODE.to_be_bytes());

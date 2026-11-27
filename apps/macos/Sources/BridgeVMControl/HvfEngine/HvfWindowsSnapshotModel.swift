@@ -118,6 +118,6 @@ final class HvfWindowsSnapshotModel: ObservableObject {
                 ? "The new snapshot failed verification, so create it again."
                 : "This snapshot is damaged, so create a new snapshot."
         }
-        return "Try \(action) again and check the event feed for details if the problem continues."
+        return "Try \(action) again."
     }
 }

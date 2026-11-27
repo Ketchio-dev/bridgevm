@@ -7,11 +7,6 @@ extension HvfOwnedRunController {
     static let forcedGuestWindow: TimeInterval = 30
     var mayHaveOwnedWork: Bool { !teardownConfirmed }
 
-    func observation(target: HvfOwnedRuntimeIdentity, operationID: UUID) -> HvfOwnedStopObservation? {
-        guard target == identity, operation?.operationID == operationID else { return nil }
-        return operation?.observation
-    }
-
     var forceStopTarget: HvfForceStopTarget? {
         guard waitsForGuestShutdown || canForceAfterSupervisionLoss else { return nil }
         return HvfForceStopTarget(identity: identity, operationID: operation?.operationID ?? supervisionForceOperationID)

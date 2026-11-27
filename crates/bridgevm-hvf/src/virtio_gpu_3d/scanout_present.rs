@@ -13,24 +13,6 @@ impl VirtioGpu3d {
         }
     }
 
-    pub fn read_3d_scanout(
-        &mut self,
-        resource_id: u32,
-        width: u32,
-        height: u32,
-        out: &mut [u8],
-    ) -> bool {
-        let Some(info) = self.scanout_3d_info(resource_id) else {
-            return false;
-        };
-        if width > info.width || height > info.height {
-            return false;
-        }
-        self.backend
-            .as_mut()
-            .is_some_and(|backend| backend.scanout_read(resource_id, width, height, out))
-    }
-
     pub fn blit_3d_scanout_iosurface(
         &mut self,
         resource_id: u32,

@@ -7,6 +7,14 @@ struct HvfPortForward: Equatable {
 }
 
 enum HvfPortForwards {
+    static let invalidMessage = "Enter a Mac port and a Windows port for each rule, separated by a colon. Separate rules with commas, for example 8080:80, 3390:3389."
+    static let repeatedMessage = "Use each Mac port in only one rule: a Mac port can reach only one Windows port."
+
+    /// Forwards that name a Mac port another rule already uses: only the first of them could listen.
+    static func repeatsMacPort(_ forwards: [HvfPortForward]) -> Bool {
+        Set(forwards.map(\.host)).count != forwards.count
+    }
+
     /// The user's "8080:80, 3390:3389": nil when any entry is not two port numbers.
     static func parse(_ text: String) -> [HvfPortForward]? {
         var forwards: [HvfPortForward] = []
@@ -37,9 +45,8 @@ extension HvfEngineSession {
     /// vm.json's forwards for a library VM after the attempt (the visible text otherwise), plus any message.
     func applyPortForwards(_ text: String,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (text: String, message: String?) {
-        guard let forwards = HvfPortForwards.parse(text) else {
-            return (text, "Enter a Mac port and a Windows port for each rule, separated by a colon. Separate rules with commas, for example 8080:80, 3390:3389.")
-        }
+        guard let forwards = HvfPortForwards.parse(text) else { return (text, HvfPortForwards.invalidMessage) }
+        guard !HvfPortForwards.repeatsMacPort(forwards) else { return (text, HvfPortForwards.repeatedMessage) }
         guard persistsLibraryPreferences else {
             config.portForwards = forwards
             return (HvfPortForwards.text(forwards), nil)
@@ -62,6 +69,47 @@ extension HvfEngineSession {
         let started = HvfPortForwards.text(HvfPortForwards.saved(config.libraryContext?.config.portForwards))
         let using = started.isEmpty ? "without port forwarding" : "with the saved port forwards (\(started))"
         return (started, "Couldn’t save the new port forwards. Windows will start \(using). \(result.message ?? "")")
+    }
+}
+
+/// Forwards the VMM could not open on the Mac (`BVNET forward-off host=<port> guest=<port>`,
+/// net_nat/port_forward.rs forward_off_line), usually a port another app holds: the VM runs
+/// without them, and until this notice nothing said so. Cleared at each run.
+@MainActor
+final class HvfPortForwardNotice: ObservableObject {
+    @Published private(set) var off: [HvfPortForward] = []
+
+    func consume(_ line: String) {
+        let line = line.hasSuffix("\r") ? String(line.dropLast()) : line
+        let prefix = "BVNET forward-off host="
+        guard line.hasPrefix(prefix) else { return }
+        let parts = line.dropFirst(prefix.count).split(separator: " ")
+        guard parts.count == 2, let host = UInt16(parts[0]), parts[1].hasPrefix("guest="),
+              let guest = UInt16(parts[1].dropFirst("guest=".count)) else { return }
+        let forward = HvfPortForward(host: host, guest: guest)
+        if !off.contains(forward) { off.append(forward) }
+    }
+
+    func reset() { if !off.isEmpty { off = [] } }
+
+    var text: String? {
+        guard let first = off.first else { return nil }
+        if off.count == 1 {
+            return "Mac port \(first.host) is already in use, so it doesn’t reach Windows port \(first.guest). Quit the app using it, or choose another Mac port in Settings."
+        }
+        let ports = off.map { String($0.host) }.joined(separator: ", ")
+        return "Mac ports \(ports) are already in use, so they don’t reach Windows. Quit the apps using them, or choose other Mac ports in Settings."
+    }
+}
+
+struct HvfPortForwardNoticeView: View {
+    @ObservedObject var notice: HvfPortForwardNotice
+
+    var body: some View {
+        if let text = notice.text {
+            Label(text, systemImage: "network.slash").font(.caption).foregroundStyle(.secondary)
+                .accessibilityIdentifier("bridgevm.runtime.port-forward.notice")
+        }
     }
 }
 

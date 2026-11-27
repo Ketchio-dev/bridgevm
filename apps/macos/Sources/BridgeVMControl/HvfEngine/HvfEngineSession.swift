@@ -18,6 +18,7 @@ final class HvfEngineSession: ObservableObject {
     let agentUpdateNotice = HvfAgentUpdateNotice()
     let fileDrops = HvfFileDropQueue() // Finder drops copied to the guest Desktop
     let clipboardImageNotice = HvfClipboardImageNotice()
+    let portForwardNotice = HvfPortForwardNotice()
     let agentSilenceNotice = HvfAgentSilenceNotice() // the guest agent is not there (HvfEngineSessionAgentSilence)
     @Published var events: [BvAgentEvent] = []
     @Published var guestToolsMessage: String?
@@ -564,6 +565,7 @@ final class HvfEngineSession: ObservableObject {
         lastHeartbeatAge = nil
         serviceStarted = false
         shareRootNotice.reset(missingFolder: config.missingShareFolder())
+        portForwardNotice.reset()
         diskSyncNotice.reset()
         agentUpdateNotice.reset()
         fileDrops.reset()

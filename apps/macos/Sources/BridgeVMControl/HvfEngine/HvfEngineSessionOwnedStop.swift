@@ -14,10 +14,6 @@ extension HvfEngineSession {
         return result
     }
 
-    func ownedStopObservation(target: HvfOwnedRuntimeIdentity, operationID: UUID) -> HvfOwnedStopObservation? {
-        ownedController?.observation(target: target, operationID: operationID)
-    }
-
     func requestForceStop(_ target: HvfForceStopTarget) -> HvfForceStopResult {
         defer { refreshForceStopTarget() }
         guard ownedProcessIdentity == target.identity, let controller = ownedController,

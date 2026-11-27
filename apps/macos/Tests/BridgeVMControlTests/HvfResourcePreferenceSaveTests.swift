@@ -91,7 +91,7 @@ final class HvfResourcePreferenceSaveTests: XCTestCase {
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
         let limits = HvfEngineSession.resourceLimitsMessage
         XCTAssertTrue(session.applyResources(memMiB: 64 * 1024, cpus: 4) == (6144, 4, limits))
-        XCTAssertTrue(session.applyResources(memMiB: 6144, cpus: 12) == (6144, 4, limits))
+        XCTAssertTrue(session.applyResources(memMiB: 6144, cpus: VMResourceLimits.maximumCPU + 1) == (6144, 4, limits))
         XCTAssertTrue(session.applyResources(memMiB: 512, cpus: 4) == (6144, 4, limits))
         XCTAssertEqual(try Data(contentsOf: url), original)
         XCTAssertTrue(probe.lookups.isEmpty, "refused before the save checks")

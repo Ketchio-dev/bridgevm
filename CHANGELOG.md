@@ -67,13 +67,23 @@ All notable changes to BridgeVM are documented in this file.
 - Copying more than about 24 MB of text in Windows stalled clipboard sharing,
   shared folders and input for the rest of the session. The copy is now
   refused like any text over 8 MB, and the rest keeps working.
+- Importing a VM with its vTPM: a recovery code file other accounts can read, a
+  mistyped code or a package for another vTPM now stops the import at once with
+  a sentence that names the problem. It used to copy the whole disk first and
+  then blame disk access or free space.
 - `bridgevm app create-windows --resolution` was saved but never used: the VM
   started at 1280x800. It now sets the VM's startup resolution, and the default
   is the documented 1440x900.
+- Installing Windows now keeps the Mac awake, as a running VM does (the "Keep
+  Mac awake" setting). An unattended install used to stop when the Mac went to
+  sleep, and looked stuck when you came back.
 - Shared folders: while a file in the Mac folder kept changing (a log being
   written, a long Finder copy), files saved in the Windows folder never reached
   the Mac. A Windows listing now goes between the Mac's changes at least every
   12 seconds.
+- Installing Windows on a Mac whose disk fills now stops at once and says the
+  disk is full. It sat on "Installing Windows" for up to 25 minutes, then
+  failed with a general sentence.
 - A duplicated Windows VM attached the Guest Tools disk again at its first start,
   and while its agent was still starting it could say Guest Tools were missing.
   The copy now keeps the record that Windows already has the guest agent.
@@ -90,19 +100,29 @@ All notable changes to BridgeVM are documented in this file.
   old clipboard.
 - The VM dashboard said "Graphics mode unknown" for every Windows that BridgeVM
   itself had started. It now shows the running session's display mode.
+- Canceling a Windows install, or quitting BridgeVM, while it prepares the setup
+  files now stops the file copy too. It kept running and could leave a large
+  scratch disk attached until the Mac restarted.
 - A failed Guest Tools update now says to quit and reopen BridgeVM to try
   again. "Restart BridgeVM" read like the Restart button beside it, which
   restarts Windows and does not retry the update.
+- `bridgevm app install-status` now reports a finished install as done. Once
+  Windows had installed, it failed with "unsupportedTarget".
 - When Windows could not register BridgeVM as a browser or watch for links,
   "Open Windows links on Mac" stayed on and links silently never reached the
   Mac. The VM window now says so and suggests restarting Windows.
 - Keyboard: on German, Swiss, Nordic and other Mac layouts that type @, [ ], { },
   | or ~ with Option, those characters now reach Windows. They were sent as
   Alt+L, Alt+5 and so on, so an email address could only be pasted.
+- `bridgevm app create-windows` without `--memory-mib` now gets the memory the
+  app recommends for this Mac (4 GiB on an 8 GiB Mac). It always sent 6 GiB.
 - Installing from an x64 Windows ISO (not Windows for Arm) now stops as soon as
   the ISO is opened, with a sentence that says so and to create a new VM with
   the Arm64 ISO. It used to copy for minutes, then say only that the setup
   files couldn't be prepared, and Try Again repeated the same wait.
+- Restoring a snapshot now gives back the space of the disk it replaces. The
+  old disk stayed on the Mac, so a restored VM kept using about twice its disk
+  space, even with every snapshot deleted.
 - An interrupted snapshot create or export (for example, its process was
   killed) left a hidden, half-made copy of the VM's disk and vars in the
   snapshot folder, plus an empty folder for an app snapshot. The snapshot list
@@ -110,21 +130,39 @@ All notable changes to BridgeVM are documented in this file.
   disk's old blocks as the VM changed; on other volumes each was a full copy.
   The next create or export into the same folder now removes them, and keeps
   anything it does not recognise.
+- Moving a VM's bundle into a folder that already holds another VM's bundle, or
+  into the folder it is already in, now says so before anything starts, instead
+  of "BridgeVM could not confirm the move".
 - Display settings: the resolution menu's first entry is now "Automatic", not
   "Automatic (1280x800)", and its help says Automatic keeps the resolution
   Windows last started with. Going back to it after choosing 1920x1080 kept
   1920x1080.
+- Canceling a snapshot export now removes the partial copy. It stayed in a
+  hidden folder next to the destination, up to the size of the whole disk.
 - After 256 starts or stops from the CLI in one app session, every further
   one was refused until the app was reopened.
+- Memory and CPU limits now agree across the app. Importing a VM offered up to
+  64 GiB and 16 CPUs, and Create offered every core but one, but Settings
+  accepted only 32 GiB and 10 CPUs, so changing such a VM's resources later was
+  refused. Import now offers Create's choices, and Settings accepts up to every
+  core but one.
 - A Stop could end as "not confirmed", needing Force Stop, when the app and
   the runner disagreed on a harmless detail of a status message. Both sides
   now ignore fields they do not know.
+- Port forwarding: when another app already uses a forward's Mac port, the VM
+  now says so ("Mac port 8080 is already in use, so it doesn't reach Windows
+  port 80 …") instead of running without that forward in silence. Two rules for
+  the same Mac port are refused when you enter them.
 - A never-started VM in a folder that reports itself group- or
   world-writable, as exFAT and some shared folders do, can be deleted. The
   check refused it without protecting anything.
 - Quitting BridgeVM after a VM's runner stopped unexpectedly no longer waits
   about two minutes behind "Shut down Windows and quit BridgeVM?", "Windows is
   still shutting down." and a Force Stop button that did nothing.
+- Display driver install: the result now reads as plain sentences ("Installed
+  the display driver.", "Windows didn't answer, so try again when Windows is
+  idle.") instead of device status tokens and protocol names such as
+  "status=OK" or "BVDRIVER result (exit -1)".
 - The guest agent's input capability line is accepted when it carries extra
   keywords from a newer agent.
 - Settings: the Command key choice (Mac shortcuts or Windows key) can now be
@@ -153,9 +191,15 @@ All notable changes to BridgeVM are documented in this file.
   or `snapshot-export` left the snapshot helper running, so a restore could
   still change the VM after the command had ended. The command now stops the
   helper, waits for it, reports `cancelled` and exits 130 (143 for SIGTERM).
+- The library now shows "Moving…", "Duplicating…" or "Deleting…" on a VM while
+  that runs, and its Start button waits. A large copy read "Stopped" for
+  minutes, and Start was refused only when pressed.
 - Importing a VM: the file chooser now opens other VM apps' bundles, so you can
   pick the disk and UEFI variables file inside one. It showed such a bundle as
   a single file that could not be opened.
+- Moving a VM's bundle to a folder BridgeVM can't write to no longer makes the
+  VM disappear from the library. Nothing had moved, but a leftover "move in
+  progress" record hid the VM, and nothing in the app could bring it back.
 - Long typed or pasted text in a Windows app built on a RichEdit 5 control
   (for example a WinForms RichTextBox) went in one character at a time,
   about 5 ms each, and from roughly 2,000 characters failed partway with an

@@ -4,7 +4,7 @@ import subprocess
 def build_transport_fixture(root, output):
     names = ["Protocol", "SessionObservation", "SessionValidation", "GraphicsValidation", "Codec", "LibraryIdentity",
              "Endpoint", "Owner", "Transport", "TransportConnection",
-             "TransportConnectionCompatibility", "Server", "Client", "ClientExchange",
+             "Server", "Client", "ClientExchange",
              "ControlProtocol", "ControlCodec", "ControlValidation", "ControlClient",
              "RequestContext", "RequestRouter", "RequestRouting", "StartProtocol", "StartCodec", "StartClient"]
     sources = [root / "apps/macos/Sources/BridgeVMControl/NativeRuntime" / f"NativeRuntime{name}.swift"

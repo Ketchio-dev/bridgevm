@@ -32,10 +32,21 @@ enum HvfDisplayDriverInstall {
         /// that has the 1AF4:1050 device. Both leave the driver in the guest.
         var leavesDriverInGuest: Bool { status != .failed }
 
+        /// The guest's `detail` for `installed` is `<device name> status=<PnP status>[; restart Windows
+        /// to finish]`: the user gets what it means, not the device name and status token.
         var message: String {
             switch status {
-            case .installed: return "Installed the display driver. \(detail)"
-            case .staged: return "Added the display driver to the Windows driver store. Windows will use it on the next start with a virtio-gpu device."
+            case .installed:
+                var text = "Installed the display driver."
+                if let range = detail.range(of: "status="),
+                   case let device = detail[range.upperBound...].prefix(while: { !$0.isWhitespace && $0 != ";" }),
+                   !device.isEmpty, device != "OK" {
+                    text += " Windows reports a problem with the display device, so restart Windows if the display doesn’t change."
+                } else if detail.contains("restart Windows to finish") {
+                    text += " Restart Windows to finish."
+                }
+                return text
+            case .staged: return "Added the display driver to Windows. It takes over the display the next time the VM starts."
             case .failed: return "Couldn’t install the display driver. \(detail)"
             }
         }
@@ -238,14 +249,16 @@ enum HvfDisplayDriverInstall {
         let prefix = "BVDRIVER "
         guard let line = lines.last(where: { $0.hasPrefix(prefix) }) else {
             let tail = lines.last(where: { !$0.isEmpty }) ?? ""
+            NSLog("Display driver install: no BVDRIVER result (exit %d): %@", code, tail)
             return .finished(Outcome(status: .failed,
-                detail: "Windows didn’t report a BVDRIVER result (exit \(code))" + (tail.isEmpty ? "." : ": \(tail)")))
+                detail: "Windows didn’t answer" + (tail.isEmpty ? ", so try again when Windows is idle." : ": \(tail)")))
         }
         let rest = line.dropFirst(prefix.count)
         let token = String(rest.prefix { !$0.isWhitespace })
         if token == "ready" || token == "started" || token == "running" { return .running }
         guard token.hasPrefix("result="), let status = Status(rawValue: String(token.dropFirst("result=".count))) else {
-            return .finished(Outcome(status: .failed, detail: "Unrecognized driver result from Windows: \(line)"))
+            NSLog("Display driver install: unrecognized result: %@", line)
+            return .finished(Outcome(status: .failed, detail: "Windows gave an answer this version of BridgeVM doesn’t know, so update BridgeVM and try again."))
         }
         var detail = rest.dropFirst(token.count).trimmingCharacters(in: .whitespaces)
         if detail.hasPrefix("detail=") { detail = String(detail.dropFirst("detail=".count)) }

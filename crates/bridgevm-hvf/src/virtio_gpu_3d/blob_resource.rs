@@ -31,13 +31,6 @@ pub struct BlobMemEntry {
     pub len: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BlobResourceInfo {
-    pub blob_mem: u32,
-    pub size: u64,
-    pub backing: Vec<BlobMemEntry>,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct BlobResourceInfoRef<'a> {
     pub blob_mem: u32,
@@ -54,15 +47,6 @@ pub(crate) struct BlobResource {
 }
 
 impl VirtioGpu3d {
-    pub fn blob_resource_info(&self, resource_id: u32) -> Option<BlobResourceInfo> {
-        let info = self.blob_resource_info_ref(resource_id)?;
-        Some(BlobResourceInfo {
-            blob_mem: info.blob_mem,
-            size: info.size,
-            backing: info.backing.to_vec(),
-        })
-    }
-
     pub(crate) fn blob_resource_info_ref(
         &self,
         resource_id: u32,

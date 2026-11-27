@@ -4,7 +4,9 @@ enum VMResourceLimits {
     static let minimumMemoryMiB = 1_024
     static let maximumMemoryMiB = 32 * 1_024
     static let minimumCPU = 1
-    static let maximumCPU = 10
+    /// At least 10, and on a larger Mac as many as Create and the CLI offer (all cores but one),
+    /// so a VM made there can still be changed in Settings.
+    static let maximumCPU = max(10, ProcessInfo.processInfo.activeProcessorCount - 1)
 
     static func contains(memoryMiB: Int, cpu: Int) -> Bool {
         (minimumMemoryMiB...maximumMemoryMiB).contains(memoryMiB)
@@ -57,7 +59,6 @@ struct VMConfig: Codable, Identifiable, Equatable, Sendable {
     /// as a filesystem component. Normalizing here keeps every caller inside the
     /// VM library even when an ID contains separators or traversal components.
     var slug: String { VMConfig.slugify(id ?? name) }
-    var effectiveBootMode: String { bootMode ?? "direct-kernel" }
     var engineKind: BackendKind { BackendKind(savedKind: backendKind) }
     var engineShortLabel: String { engineKind.shortLabel }
     var engineDetailLabel: String { engineKind.detailLabel }
@@ -268,41 +269,4 @@ protocol VMBackend: AnyObject {
     /// Whether a process is using the VM's disk, wherever it was started.
     func isRunning() -> Bool
     func resources() -> (memMiB: Int, cpu: Int)
-}
-
-// MARK: - JSON file helper
-
-enum JSONFile {
-    static let maximumBytes = 4 * 1_048_576
-
-    static func loadDict(_ path: String) -> [String: Any]? {
-        let url = URL(fileURLWithPath: path).standardizedFileURL
-        guard hasSafeFileAndParent(url) else { return nil }
-        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
-              values.isRegularFile == true,
-              let size = values.fileSize,
-              size <= maximumBytes,
-              let data = try? Data(contentsOf: url, options: [.mappedIfSafe]) else { return nil }
-        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-    }
-
-    @discardableResult
-    static func writeDict(_ obj: [String: Any], to path: String) -> Bool {
-        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted]) else { return false }
-        guard data.count <= maximumBytes else { return false }
-        let url = URL(fileURLWithPath: path).standardizedFileURL
-        guard hasSafeFileAndParent(url, allowMissingFile: true) else { return false }
-        return (try? data.write(to: url, options: [.atomic])) != nil
-    }
-
-    private static func hasSafeFileAndParent(_ url: URL, allowMissingFile: Bool = false) -> Bool {
-        let parent = url.deletingLastPathComponent()
-        if (try? parent.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
-            return false
-        }
-        if (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
-            return false
-        }
-        return allowMissingFile || FileManager.default.fileExists(atPath: url.path)
-    }
 }

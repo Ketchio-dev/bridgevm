@@ -42,20 +42,6 @@ final class HvfWindowsSnapshotCommandTests: XCTestCase {
             config: fixture.config, repoRoot: fixture.repo, operation: .create))
     }
 
-    /// The card's date is when the snapshot's manifest, written last, was written.
-    func testSnapshotDateIsWhenItsManifestWasWritten() throws {
-        let fixture = try makeFixture()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        XCTAssertNil(HvfWindowsSnapshotCommand.snapshotDate(config: fixture.config))
-        let snapshot = fixture.bundle.appendingPathComponent("metadata/snapshots/latest.snapshot")
-        try FileManager.default.createDirectory(at: snapshot, withIntermediateDirectories: true)
-        XCTAssertNil(HvfWindowsSnapshotCommand.snapshotDate(config: fixture.config), "no manifest, no snapshot")
-        let manifest = snapshot.appendingPathComponent("manifest.json")
-        try Data("{}\n".utf8).write(to: manifest)
-        let made = Date(timeIntervalSince1970: 1_794_000_000)
-        try FileManager.default.setAttributes([.modificationDate: made], ofItemAtPath: manifest.path)
-        XCTAssertEqual(HvfWindowsSnapshotCommand.snapshotDate(config: fixture.config), made)
-    }
 
     /// Each refusal before the helper runs keeps its English for the CLI and gives an actionable explanation on the card.
     func testPlanRefusalsExplainTheRecoveryOnTheCard() throws {

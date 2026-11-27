@@ -134,12 +134,28 @@ final class LibraryModel: ObservableObject {
         }
     }
 
+    /// The bundle keeps its folder name (every VM's is bundle.vmbridge), so a folder that already holds
+    /// one, or the folder it is in, can't take it. Both used to end in "could not confirm the move".
+    nonisolated static func moveDestinationRefusal(_ cfg: VMConfig, to destinationParent: URL) -> String? {
+        let source = URL(fileURLWithPath: cfg.bundlePath, isDirectory: true).standardizedFileURL
+        let parent = destinationParent.standardizedFileURL
+        if parent.resolvingSymlinksInPath() == source.deletingLastPathComponent().resolvingSymlinksInPath() {
+            return "This VM is already in that folder. Choose another one."
+        }
+        guard FileManager.default.fileExists(atPath: parent.appendingPathComponent(source.lastPathComponent).path) else { return nil }
+        return "“\(parent.lastPathComponent)” already holds a VM bundle. Choose another folder, or make a new folder for this VM."
+    }
+
     func moveWindowsHVFBundle(_ cfg: VMConfig, to destinationParent: URL) {
         guard admitLibraryAction(cfg, action: .move) else { return }
         guard !movingSlugs.contains(cfg.slug) else { return }
         let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
         guard !backend.isRunning() else {
             moveError = "Shut down the VM before moving it."
+            return
+        }
+        if let refusal = Self.moveDestinationRefusal(cfg, to: destinationParent) {
+            moveError = refusal
             return
         }
         movingSlugs.insert(cfg.slug)
@@ -297,6 +313,15 @@ typealias LibraryCloneOperation = @Sendable (String, VMConfig, URL) -> VMConfig?
 
 extension LibraryModel {
     var cloningSlugs: Set<String> { Set(cloningConfigurations.keys) }
+
+    /// What the row and the dashboard say while a delete, move or duplicate of this VM runs: a large
+    /// copy takes minutes, and without it the VM read "Stopped" until Start was refused.
+    func fileOperationTitle(for slug: String) -> String? {
+        if deletingSlugs.contains(slug) { return "Deleting…" }
+        if movingSlugs.contains(slug) { return "Moving…" }
+        if cloningSlugs.contains(slug) { return "Duplicating…" }
+        return nil
+    }
 }
 
 extension LibraryModel {
@@ -625,10 +650,12 @@ extension LibraryModel {
         // new VM: read the library once, as the manual refresh does, and use what is saved.
         if vms.first(where: { $0.slug == request.vmID })
             != (try? NativeCLIStatusConfigReader.read(library: library, id: request.vmID)) { reload() }
-        let saved = try validatedInstallConfiguration(vmID: request.vmID, library: library)
         let store = windowsInstallSessions.cliOperations
         switch request.operation {
         case .install:
+            // Status and cancel name an operation this app already holds: a finished install has saved
+            // installPending = false, which only a new install must refuse.
+            let saved = try validatedInstallConfiguration(vmID: request.vmID, library: library)
             guard let id = request.operationID.flatMap(UUID.init(uuidString:)) else {
                 throw NativeRuntimeError.invalidMessage
             }

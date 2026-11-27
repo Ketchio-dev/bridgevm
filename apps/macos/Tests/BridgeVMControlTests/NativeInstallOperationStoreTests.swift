@@ -14,7 +14,7 @@ final class NativeInstallOperationStoreTests: XCTestCase {
         else { return XCTFail("expected existing work") }
         XCTAssertTrue(first === same); XCTAssertTrue(first === concurrent)
         XCTAssertEqual(try first.observation().acceptedUptime, 1)
-        XCTAssertTrue(store.isActive(vmID: "vm"))
+        XCTAssertTrue(store.isActive(vmID: "vm", excluding: nil))
     }
 
     func testTerminalFailureAllowsNewExplicitRetry() throws {
@@ -27,20 +27,14 @@ final class NativeInstallOperationStoreTests: XCTestCase {
         guard case let .accepted(retry) = store.reserve(vmID: "vm", operationID: retryID)
         else { return XCTFail("expected retry") }
         XCTAssertTrue(first === replayed); XCTAssertFalse(first === retry)
-        XCTAssertTrue(store.isActive(vmID: "vm"))
+        XCTAssertTrue(store.isActive(vmID: "vm", excluding: nil))
     }
 
-    func testCapacityAndTerminalRemoval() throws {
+    func testCapacity() throws {
         let store = NativeInstallOperationStore(capacity: 1)
-        guard case let .accepted(operation) = store.reserve(vmID: "vm", operationID: UUID())
+        guard case .accepted = store.reserve(vmID: "vm", operationID: UUID())
         else { return XCTFail("expected admission") }
         guard case .refused(.ledgerFull) = store.reserve(vmID: "other", operationID: UUID())
         else { return XCTFail("expected capacity refusal") }
-        store.removeTerminal(vmID: "vm")
-        XCTAssertTrue(store.isActive(vmID: "vm"))
-        operation.cancel(); store.removeTerminal(vmID: "vm")
-        guard case .failure(.targetUnavailable) = store.operation(vmID: "vm") else {
-            return XCTFail("expected removed terminal operation")
-        }
     }
 }

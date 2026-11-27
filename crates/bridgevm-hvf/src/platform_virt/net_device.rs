@@ -24,10 +24,6 @@ impl VirtPlatform {
             .and_then(|dev| dev.backend().nat_stats())
     }
 
-    pub fn pump_virtio_net_receive(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
-        self.poll_virtio_net(mem)
-    }
-
     pub fn poll_virtio_net(&mut self, mem: &mut dyn GuestMemoryMut) -> bool {
         let Some(dev) = self.virtio_net.as_mut() else {
             return false;

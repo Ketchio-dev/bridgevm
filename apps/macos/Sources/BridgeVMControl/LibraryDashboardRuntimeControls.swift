@@ -13,7 +13,8 @@ struct LibraryDashboardRuntimeControls: View {
         VStack(alignment: .leading, spacing: 8) {
             // Open Display stays available while Windows shuts down: the window is where an app
             // asking to save, or holding up the shutdown, shows (HvfGuestStopCommand's advice).
-            LibraryDashboardActionBar(runtimeActive: runtimeActive, lifecycleBusy: session.runtimeStartupWorkerPending,
+            LibraryDashboardActionBar(runtimeActive: runtimeActive,
+                lifecycleBusy: session.runtimeStartupWorkerPending || library.fileOperationTitle(for: config.slug) != nil,
                 open: { LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library) },
                 showAdvanced: showAdvanced, showSettings: showSettings, refresh: model.refresh,
                 clone: { presentation?.wrappedValue.cloneSource = library.requestWindowsClone(config) },
@@ -47,6 +48,7 @@ struct LibraryDashboardRuntimeControls: View {
             HvfGuestToolsAction(session: session)
             HvfShareRootNoticeView(notice: session.shareRootNotice)
             HvfDiskSyncNoticeView(notice: session.diskSyncNotice)
+            HvfPortForwardNoticeView(notice: session.portForwardNotice)
             HvfMicrophoneNoticeView(session: session)
             HvfAgentUpdateNoticeView(notice: session.agentUpdateNotice)
             HvfClipboardImageNoticeView(notice: session.clipboardImageNotice)

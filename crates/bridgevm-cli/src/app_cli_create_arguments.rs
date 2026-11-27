@@ -18,13 +18,15 @@ impl AppCreateWindowsArgs {
             self.iso.into_os_string(),
             "--disk-gib".into(),
             self.disk_gib.to_string().into(),
-            "--memory-mib".into(),
-            self.memory_mib.to_string().into(),
             "--cpus".into(),
             self.cpus.to_string().into(),
             "--resolution".into(),
             self.resolution.into(),
         ];
+        // Without --memory-mib the app picks the size for this Mac, as its Create sheet does.
+        if let Some(memory_mib) = self.memory_mib {
+            result.extend(["--memory-mib".into(), memory_mib.to_string().into()]);
+        }
         if self.no_network {
             result.push("--no-network".into());
         }

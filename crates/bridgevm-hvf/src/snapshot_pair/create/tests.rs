@@ -1,5 +1,5 @@
 use super::*;
-use crate::snapshot_pair::files::{stream_and_sync, COPY_CHUNK};
+use crate::snapshot_pair::files::{stop_for_test, stream_and_sync, COPY_CHUNK};
 use crate::snapshot_pair::managed::LockedPair;
 use crate::snapshot_pair::tests::{retry_create, Scratch};
 use crate::snapshot_pair::{restore_snapshot, verify_snapshot};
@@ -432,6 +432,36 @@ fn a_full_volume_during_a_streaming_copy_removes_the_partial_copy() {
     let copy = |src: &Path, dst: &Path| stream_and_sync(src, dst, |_| Ok(()));
     let retried = create_stopped(&disk, &vars, &dest, "retry", copy, publish, drop);
     assert_eq!(verify_snapshot(&dest).unwrap(), retried.unwrap());
+}
+
+/// Cancelling an export killed the helper mid-copy and left the partial disk in the hidden
+/// staging folder on the backup drive; now the signal stops the copy and the attempt cleans up.
+#[test]
+fn a_stop_signal_during_a_streaming_copy_removes_the_partial_copy() {
+    let (s, _, vars, dest, old) = fixture("create-copy-stopped");
+    let disk = s.write("disk", &vec![7; 2 * COPY_CHUNK + 4096]);
+    let mut partial = None;
+    let stopped = |src: &Path, dst: &Path| {
+        let copied = stream_and_sync(src, dst, |_| {
+            stop_for_test::set(true); // the signal arrives during the first chunk
+            Ok(())
+        });
+        partial = fs::metadata(dst).ok().map(|metadata| metadata.len());
+        copied
+    };
+    let result = create_stopped(&disk, &vars, &dest, "new", stopped, publish, |_| {});
+    stop_for_test::set(false);
+    assert_eq!(
+        partial,
+        Some(COPY_CHUNK as u64),
+        "copy did not stop mid-disk"
+    );
+    assert!(result.is_err(), "a stopped copy must fail the create");
+    assert!(
+        !staging_path(&dest).exists(),
+        "stopped copy stranded staging"
+    );
+    assert_eq!(verify_snapshot(&dest).unwrap(), old);
 }
 
 fn available_vm_id_bytes() -> usize {

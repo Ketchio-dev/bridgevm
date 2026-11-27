@@ -50,6 +50,32 @@ final class NativeInstallOwnedModelTests: XCTestCase {
         XCTAssertEqual(try accepted.operation.observation().phase, .cancelled)
     }
 
+    /// Finalization saves installPending = false before the install reports done, and install-status then
+    /// failed with unsupportedTarget, so the CLI could never see `done`.
+    func testStatusStillAnswersAfterTheInstallSavedItsFinishedConfiguration() async throws {
+        let fixture = HvfWindowsInstallStoreFixture(), config = fixture.config()
+        defer { fixture.clean() }
+        try fixture.save(config)
+        let library = fixture.library()
+        let handle = try NativeRuntimeLibraryHandle.open(rootURL: fixture.root, create: false)
+        let app = UUID().uuidString
+        let accepted = try library.requestOwnedInstall(request(.install, config: config, library: handle.identity,
+            app: app, operationID: UUID()), validateOwner: {})
+        let observedSession = await waitForSession(fixture, library: library, slug: config.slug)
+        let session = try XCTUnwrap(observedSession)
+        var finished = config
+        finished.installPending = false
+        try fixture.save(finished)
+
+        let status = request(.installStatus, config: config, library: handle.identity, app: app)
+        let result = try library.requestOwnedInstall(status, validateOwner: {})
+        XCTAssertEqual(result.disposition, .status)
+        XCTAssertTrue(result.operation === accepted.operation)
+        let cancel = request(.installCancel, config: config, library: handle.identity, app: app)
+        XCTAssertEqual(try library.requestOwnedInstall(cancel, validateOwner: {}).disposition, .cancelAccepted)
+        await fixture.finishCancelled(session)
+    }
+
     /// The CLI publishes vm.json while the app is running; install must find it without a relaunch.
     func testInstallAcceptsAVMPublishedAfterTheAppLaunched() async throws {
         let fixture = HvfWindowsInstallStoreFixture(), config = fixture.config()
