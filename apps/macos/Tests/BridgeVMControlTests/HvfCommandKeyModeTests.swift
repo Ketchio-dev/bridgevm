@@ -29,6 +29,26 @@ final class HvfCommandKeyModeTests: XCTestCase {
         XCTAssertEqual(HvfCommandKeyMode(saved: "hand-edited"), .mac)
     }
 
+    /// The mode only changes how the app maps keys, so it changes while Windows runs: at once for the
+    /// display, and in vm.json once the VM stops (a running VM keeps the registration it started with).
+    func testAModeChosenWhileWindowsRunsAppliesAtOnceAndIsSavedAtStop() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
+        defer { fixture.clean() }
+        let saved = fixture.config(); fixture.save(saved)
+        let library = fixture.library(probe: probe)
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+        session.connectionState = .booting
+        XCTAssertFalse(session.libraryPreferencesEditable)
+        XCTAssertTrue(session.applyCommandKeyMode(.windows) == (.windows, nil))
+        session.config.commandKeyMode = .windows // what the picker's binding does with the result
+        XCTAssertEqual(session.keyMapping.commandKey, .windows, "applies to the running VM at once")
+        XCTAssertNil(library.latestConfiguration(for: saved).commandKeyMode, "vm.json waits for the stop")
+        session.connectionState = .stopped
+        session.markStopped()
+        XCTAssertEqual(library.latestConfiguration(for: saved).commandKeyMode, "windows")
+        XCTAssertNil(HvfCommandKeyLiveSave.pending[saved.slug])
+    }
+
     /// The legacy route (the VMM shipped with the app) takes a bare tap and a Command chord; the line
     /// it gets is the Windows key or the Ctrl chord the mode names. A Command chord stays a tap; Option+S is held
     /// from its key-down (HvfKeyHoldTests).
