@@ -202,7 +202,7 @@ fn guest_size_change_with_restored_time_is_fetched_once() {
     assert!(sync.on_guest_listing(vec![ls_file("a.txt", 4, "g1")]).is_empty());
     assert!(sync.on_host_scan(vec![host_file("a.txt", 4, 10)]).is_empty());
     // An over-limit replacement is skipped, not fetched, without corrupting the record.
-    assert_eq!(sync.on_guest_listing(vec![ls_file("a.txt", 2048, "g1")]), vec![SyncAction::Skip { name: "a.txt".into(), reason: SkipReason::TooLarge { size: 2048 } }]);
+    assert_eq!(sync.on_guest_listing(vec![ls_file("a.txt", 2048, "g1")]), vec![SyncAction::Skip { name: "a.txt".into(), reason: SkipReason::TooLarge { size: 2048, limit: 1024 } }]);
     assert!(sync.on_guest_listing(vec![ls_file("a.txt", 2048, "g1")]).is_empty());
     assert!(sync.on_guest_listing(vec![ls_file("a.txt", 4, "g1")]).is_empty());
     // The listing may show a half-written PUT: existing in-flight protection wins.
@@ -226,7 +226,7 @@ fn guest_oversize_skips_are_deduped_by_name_mtime_kind_and_dirs_are_ignored() {
         sync.on_guest_listing(entries.clone()),
         vec![SyncAction::Skip {
             name: "big.bin".into(),
-            reason: SkipReason::TooLarge { size: 2048 },
+            reason: SkipReason::TooLarge { size: 2048, limit: 1024 },
         }]
     );
     assert!(sync.on_guest_listing(entries).is_empty());
@@ -234,7 +234,7 @@ fn guest_oversize_skips_are_deduped_by_name_mtime_kind_and_dirs_are_ignored() {
         sync.on_guest_listing(vec![ls_file("big.bin", 2048, "m2")]),
         vec![SyncAction::Skip {
             name: "big.bin".into(),
-            reason: SkipReason::TooLarge { size: 2048 },
+            reason: SkipReason::TooLarge { size: 2048, limit: 1024 },
         }]
     );
 }

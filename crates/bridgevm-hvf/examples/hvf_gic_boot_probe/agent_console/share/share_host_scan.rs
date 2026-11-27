@@ -124,6 +124,7 @@ fn scan_share_host_dir_inner(
                 mtime_ms,
                 HostSkipKind::TooLarge,
                 size,
+                max_bytes,
             );
             unseen.push(name);
             continue;

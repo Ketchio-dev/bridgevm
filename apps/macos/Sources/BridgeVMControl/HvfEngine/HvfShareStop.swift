@@ -52,12 +52,14 @@ extension HvfShareRootNotice {
                         "Free up space on your Mac. Sync will retry automatically.")
             }
             guard let tooLarge else { return nil }
-            let kib = HvfEngineConfig.shareMaxKiB
-            let limit = kib % (1024 * 1024) == 0 ? "\(kib / (1024 * 1024)) GiB" : "\(kib) KiB"
-            let text = "Sharing skipped “\(tooLarge.last)” because the per-file limit is \(limit)."
+            let shareLimit = HvfEngineConfig.shareMaxKiB * 1024, limit = tooLarge.limit ?? shareLimit
+            let text = "Sharing skipped “\(tooLarge.last)” because the per-file limit is \(HvfShareTooLarge.sizeText(limit))."
             let total = tooLarge.count > 1 ? " Folder sharing has skipped oversized files \(tooLarge.count) times this session." : ""
-            return (text + total,
-                    "To copy a large file from your Mac to Windows, drag it onto the VM window.")
+            let help = limit < shareLimit
+                ? "Larger files sync after BridgeVM updates Guest Tools in Windows, which it does automatically."
+                : tooLarge.fromWindows ? "To share a larger file from Windows, split or compress it first."
+                : "To copy a large file from your Mac to Windows, drag it onto the VM window."
+            return (text + total, help)
         }
     }
 
@@ -95,12 +97,35 @@ struct HvfSharePaused: Equatable {
     }
 }
 
-/// A shared-folder file left out for its size (`BVAGENT SHARE skip <name> too-large <bytes>`).
+/// A shared-folder file left out for its size (`BVAGENT SHARE skip <name> too-large <bytes>
+/// limit=<bytes> mac|windows`, share.rs `too_large_line`). The limit is 64 MiB until Guest Tools move
+/// files in pieces; an older runtime's line ends at the size and meant the share's own limit.
 struct HvfShareTooLarge: Equatable {
     let count: Int
     let last: String
+    var limit: Int? = nil
+    var fromWindows = false
 
-    static func name(in line: String) -> String? { hvfShareSkippedName(in: line, reason: "too-large") }
+    typealias Skip = (name: String, limit: Int?, fromWindows: Bool)
+
+    static func skip(in line: String) -> Skip? {
+        for side in [" mac", " windows"] where line.hasSuffix(side) {
+            let head = line.dropLast(side.count)
+            guard let marker = head.range(of: " limit=", options: .backwards) else { break }
+            let digits = head[marker.upperBound...]
+            guard !digits.isEmpty, digits.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }), let limit = Int(digits),
+                  let name = hvfShareSkippedName(in: String(head[..<marker.lowerBound]), reason: "too-large")
+            else { break }
+            return (name, limit, side == " windows")
+        }
+        return hvfShareSkippedName(in: line, reason: "too-large").map { ($0, nil, false) }
+    }
+
+    static func sizeText(_ bytes: Int) -> String {
+        if bytes % (1 << 30) == 0 { return "\(bytes >> 30) GiB" }
+        if bytes % (1 << 20) == 0 { return "\(bytes >> 20) MiB" }
+        return "\(bytes.formatted()) bytes"
+    }
 }
 
 /// Windows files the Mac had no room for and that have not reached it since

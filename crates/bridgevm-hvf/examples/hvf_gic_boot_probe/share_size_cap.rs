@@ -23,7 +23,7 @@ impl ShareSync {
         if let Some(mtime) = mtime {
             self.fetched_over_cap.insert(name, mtime);
         }
-        SkipReason::TooLarge { size }
+        SkipReason::TooLarge { size, limit: self.max_bytes() }
     }
 
     /// Take the listed versions a GET found over the cap out of this listing's
