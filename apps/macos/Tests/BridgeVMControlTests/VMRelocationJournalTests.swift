@@ -6,6 +6,7 @@ final class VMRelocationJournalTests: XCTestCase {
     private final class Faults: FileManager {
         let registration: URL
         let partial: Bool
+        var refuseFirst = false
         var moves = 0
         init(registration: URL, partial: Bool) {
             self.registration = registration
@@ -14,6 +15,7 @@ final class VMRelocationJournalTests: XCTestCase {
         }
         override func moveItem(at source: URL, to destination: URL) throws {
             moves += 1
+            if refuseFirst && moves == 1 { throw CocoaError(.fileWriteNoPermission) }
             if partial && moves == 1 {
                 try createDirectory(at: destination, withIntermediateDirectories: true)
                 throw CocoaError(.fileWriteUnknown)
@@ -81,6 +83,21 @@ final class VMRelocationJournalTests: XCTestCase {
         XCTAssertTrue(VMRelocationJournal.isPending(f.config, rootURL: f.library))
         XCTAssertTrue(VMLibrary.list(rootURL: f.library).isEmpty)
         XCTAssertFalse(VMLibrary.scan(rootURL: f.library).issues.isEmpty)
+    }
+
+    /// A destination BridgeVM cannot write to: nothing moves, and the VM stays in the library as it was.
+    /// The unfinished-move record used to stay and hide it, with no way back in the app.
+    func testAMoveThatMovesNothingLeavesTheVMInTheLibrary() throws {
+        let f = try fixture()
+        let faults = Faults(registration: f.library.appendingPathComponent(f.config.slug), partial: false)
+        faults.refuseFirst = true
+        let target = f.root.appendingPathComponent("target")
+        XCTAssertNil(VMLibrary.moveWindowsHVFBundle(f.config, to: target,
+                                                   rootURL: f.library, fileManager: faults))
+        XCTAssertEqual(faults.moves, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: f.config.bundlePath))
+        XCTAssertFalse(VMRelocationJournal.isPending(f.config, rootURL: f.library))
+        XCTAssertEqual(VMLibrary.list(rootURL: f.library).map(\.slug), [f.config.slug])
     }
 
     func testInitialPartialMoveRetainsBothLocationsAndBlocksEntry() throws {
