@@ -75,6 +75,17 @@ final class HvfMicrophoneTests: XCTestCase {
         XCTAssertTrue(refused.requests.isEmpty)
     }
 
+    /// Windows' microphone is fixed at the start. Allowed in System Settings during a run that started without
+    /// it, the notice went away though Windows still had none; revoked during a run that has one, it said
+    /// Windows had no microphone. It now follows the run, and only a stopped VM reads today's permission.
+    func testTheNoticeFollowsWhatTheRunStartedWith() {
+        XCTAssertEqual(HvfMicrophoneNotice.text(.authorized, runHasMicrophone: false), HvfMicrophoneNotice.restart)
+        XCTAssertEqual(HvfMicrophoneNotice.text(.denied, runHasMicrophone: false), HvfMicrophoneNotice.denied)
+        XCTAssertNil(HvfMicrophoneNotice.text(.denied, runHasMicrophone: true), "Windows has its microphone this run")
+        XCTAssertEqual(HvfMicrophoneNotice.text(.denied, runHasMicrophone: nil), HvfMicrophoneNotice.denied)
+        XCTAssertNil(HvfMicrophoneNotice.text(.authorized, runHasMicrophone: nil))
+    }
+
     /// macOS forgets its answer after a reset, a re-signed build or on another Mac. A start with
     /// the setting on then asks first and launches after any answer; a decided permission starts at once.
     func testAStartWithTheSettingOnAsksMacOSFirstWhenItHasNotAskedYet() async throws {

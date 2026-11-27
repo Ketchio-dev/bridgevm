@@ -9,6 +9,8 @@ final class HvfOwnedRuntimeSpawn: @unchecked Sendable {
     let config: HvfEngineConfig
     let digest: String
     var hello: Data
+    /// Windows got a microphone this run (macOS allowed it at the start).
+    var microphone = false
     init(process: Process, channel: HvfOwnedRuntimeChannel, guestShutdown: HvfOwnedGuestShutdown,
          token: UUID, config: HvfEngineConfig, digest: String, hello: Data) {
         self.process = process; self.channel = channel; self.guestShutdown = guestShutdown
@@ -42,13 +44,16 @@ extension HvfOwnedRuntimeLaunch {
         channel.attach(to: process)
         do { try launch(process) }
         catch { channel.close(); guestShutdown.close(); throw error }
-        return HvfOwnedRuntimeSpawn(process: process, channel: channel, guestShutdown: guestShutdown,
+        let spawn = HvfOwnedRuntimeSpawn(process: process, channel: channel, guestShutdown: guestShutdown,
             token: token, config: config, digest: digest, hello: hello)
+        spawn.microphone = arguments.contains("--helper-hda-microphone")
+        return spawn
     }
     @MainActor
     static func adopt(_ spawn: HvfOwnedRuntimeSpawn) -> (controller: HvfOwnedRunController, helloFrame: Data) {
         let controller = HvfOwnedRunController(identity: spawn.identity, config: spawn.config,
             process: spawn.process, manifestSHA256: spawn.digest, channel: spawn.channel, guestShutdown: spawn.guestShutdown)
+        controller.microphone = spawn.microphone
         return (controller, spawn.hello)
     }
 }
