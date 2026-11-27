@@ -83,9 +83,6 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
     }
     var fileComparePath: String { repoRoot.appendingPathComponent("helpers/bv-file-compare.exe").path }
 
-    var bundleDiskPath: String { "\(bundlePath)/disks/hvf-target.raw" }
-    var bundleVarsPath: String { "\(bundlePath)/metadata/hvf-vars.fd" }
-
     // MARK: commands
 
     /// Stage a: host-side WinPE scripted-installer source build from the ISO.
