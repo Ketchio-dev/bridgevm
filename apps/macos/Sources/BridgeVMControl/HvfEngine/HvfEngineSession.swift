@@ -753,7 +753,9 @@ extension HvfEngineSession {
 
 extension HvfEngineSession: ControlAppTerminationSession {
     /// The app's exit closes an owned runner's input, which cancels it; a pending start may still spawn one.
-    var blocksAppTermination: Bool { mayHaveOwnedWork || hasPendingRuntimeStart }
+    /// A runner that already died has nothing left to cancel or confirm, so waiting for it only held
+    /// Quit for two deadlines behind a shutdown question and a Force Stop that had no target.
+    var blocksAppTermination: Bool { (mayHaveOwnedWork && !runnerDiedWithoutCleanup) || hasPendingRuntimeStart }
 
     /// This app's own run, with no stop under way yet: the Stop below, and the Virtual Machine menu's, can begin.
     var terminationStopAvailable: Bool {
