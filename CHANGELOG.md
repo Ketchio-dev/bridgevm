@@ -43,6 +43,9 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- "Open Windows links on Mac" and "Print to Mac" can now be turned off (or on)
+  while Windows runs: links stop opening and the printer goes at once, and the
+  choice is saved when the VM stops.
 - Putting the Mac to sleep while a key press or click was still on its way to
   Windows no longer stops the keyboard and mouse on wake until Windows restarts:
   the time Windows has to confirm input now counts only while the Mac is awake.

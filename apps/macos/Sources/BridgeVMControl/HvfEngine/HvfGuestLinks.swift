@@ -211,8 +211,9 @@ struct HvfWorkspaceURLOpener: HvfURLOpener {
 #endif
 
 extension HvfEngineSession {
-    /// vm.json `openGuestLinksOnMac`: true on, false turned off again, nil never set (off).
-    var guestLinksSetting: Bool? { config.libraryContext?.config.openGuestLinksOnMac }
+    /// vm.json `openGuestLinksOnMac`: true on, false turned off again, nil never set (off). A change made while
+    /// Windows runs counts at once and is saved at the stop (HvfHostSettingLiveSave).
+    var guestLinksSetting: Bool? { config.libraryContext.flatMap { HvfHostSettingLiveSave.preview($0.config).openGuestLinksOnMac } }
     var guestLinksWanted: Bool { guestLinksSetting == true }
 
     /// At `BVAGENT SERVICE start`. On: register the handler (an app update may bring a new one) and start the
@@ -257,9 +258,18 @@ extension HvfEngineSession {
     /// the next agent start removes the registration; never turned on stays absent.
     func applyGuestLinksToggle(_ enabled: Bool,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (isOn: Bool, message: String?) {
-        let message = saveLibraryPreference("Open Windows links on Mac", publish: publish) {
+        let change: HvfHostSettingLiveSave.Change = {
             $0.openGuestLinksOnMac = enabled ? true : ($0.openGuestLinksOnMac == nil ? nil : false)
         }
+        // The Mac opens each link, so this changes while Windows runs: Windows registers or removes
+        // BridgeVM as its browser now, and vm.json follows at the stop.
+        if let slug = HvfHostSettingLiveSave.liveSlug(self) {
+            HvfHostSettingLiveSave.record("Open Windows links on Mac", for: slug, change)
+            if serviceStarted { applyGuestLinksSetting() }
+            objectWillChange.send()
+            return (guestLinksWanted, nil)
+        }
+        let message = HvfHostSettingLiveSave.saveNow("Open Windows links on Mac", session: self, publish: publish, change: change)
         return (guestLinksWanted, message)
     }
 }
