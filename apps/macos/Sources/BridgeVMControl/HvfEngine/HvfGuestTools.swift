@@ -13,7 +13,7 @@ enum HvfGuestTools {
 
     static func attachment(_ config: HvfEngineConfig) -> String? {
         guard let image = image(config), FileManager.default.fileExists(atPath: image.path),
-              !FileManager.default.fileExists(atPath: config.evidenceDir + "/guest-agent-seen") else { return nil }
+              !FileManager.default.fileExists(atPath: config.evidenceDir + "/" + VMLibrary.agentSeenMarkerName) else { return nil }
         return image.path
     }
 

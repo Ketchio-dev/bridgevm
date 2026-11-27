@@ -42,6 +42,9 @@ All notable changes to BridgeVM are documented in this file.
 - `bridgevm app create-windows --resolution` was saved but never used: the VM
   started at 1280x800. It now sets the VM's startup resolution, and the default
   is the documented 1440x900.
+- A duplicated Windows VM attached the Guest Tools disk again at its first start,
+  and while its agent was still starting it could say Guest Tools were missing.
+  The copy now keeps the record that Windows already has the guest agent.
 - Importing a Windows disk smaller than 64 GiB enlarged the disk to 64 GiB, but
   Windows' C: drive never grew into the added space. The next Windows start now
   extends C:, also for VMs imported with an earlier version.
