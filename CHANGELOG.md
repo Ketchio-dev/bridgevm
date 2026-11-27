@@ -64,6 +64,9 @@ All notable changes to BridgeVM are documented in this file.
 - When Windows is still running after a Stop's waiting time (for example an app
   held the shutdown and you chose Cancel in Windows), the VM now offers Shut Down
   Again, which asks Windows once more, instead of only Force Stop.
+- Stop now shuts Windows down after you signed out of Windows. Signing out ends
+  Guest Tools, so Stop kept saying "Windows is closing apps" until Force Stop;
+  it now also presses the VM's power button, and so does Shut Down Again.
 - **Retina resolution** and **Start when BridgeVM opens** can now be changed
   while Windows runs, like the Command key setting. Retina applies to the window
   at once; both are saved when the VM stops. They were locked until shutdown.

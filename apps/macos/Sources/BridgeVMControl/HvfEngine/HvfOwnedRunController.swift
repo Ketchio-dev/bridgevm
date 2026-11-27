@@ -32,6 +32,8 @@ final class HvfOwnedRunController {
     private var guestRequestSent = false
     private var guestBootGeneration = 0
     private var powerButtonPressed = false
+    private var agentSilent = false
+    private var pressedForSilence = false
     private var guestEffectsPending = 0
     private var outputEnded = false
     private var protocolValid = true
@@ -122,11 +124,22 @@ final class HvfOwnedRunController {
             guestShutdown.allowAgain(.shutdown) // on the same queue, so it comes before the request
             guestRequestSent = false
             requestGuestIfReady()
-        } else if let pressPowerButton {
+        }
+        if !serviceReady || agentSilent, let pressPowerButton {
             pressGuestPowerButton(pressPowerButton)
         }
         tick()
         return true
+    }
+
+    /// From each poll: a keepalive to the guest agent is overdue (HvfAgentSilenceNotice.agentOverdue). Signing
+    /// out of Windows ends the agent, which runs with the user's token, so a Stop's request to it may never
+    /// run: while a Stop waits, the power button is pressed too, once, as without the agent.
+    func guestAgentSilence(_ silent: Bool, pressPowerButton: @MainActor () -> Bool) {
+        agentSilent = silent
+        guard silent, serviceReady, waitsForGuestShutdown, !powerButtonPressed, !pressedForSilence else { return }
+        pressedForSilence = true
+        pressGuestPowerButton(pressPowerButton)
     }
 
     /// A Stop is waiting for Windows to shut itself down: Windows still runs and takes input, and the
@@ -196,12 +209,12 @@ final class HvfOwnedRunController {
     /// A held Stop has no deadline until the user escalates; Windows may be waiting on an app.
     private var awaitsUserDecision: Bool { holdsAfterGrace && !forceRequested && !cancelled }
 
-    /// Without the agent (login screen, early boot) Windows still honours its ACPI power button and shuts
+    /// Without the agent (login screen, early boot, signed out) Windows still honours its ACPI power button and shuts
     /// down as for `shutdown.exe /s`. The grace and Force Stop stay as they are, and the agent's request
     /// still follows if the agent becomes ready while Windows is running.
     private func pressGuestPowerButton(_ press: @MainActor () -> Bool) {
         powerButtonPressed = press()
-        onDiagnostic?(powerButtonPressed ? "Guest agent not ready; pressed the guest's ACPI power button"
+        onDiagnostic?(powerButtonPressed ? "Guest agent not ready or not answering; pressed the guest's ACPI power button"
             : "Guest power button unavailable; waiting for the guest agent")
     }
 

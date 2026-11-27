@@ -37,6 +37,13 @@ final class HvfAgentSilenceNotice: ObservableObject {
     private var overdueMs: Int?
     private var latestMs = 0
 
+    /// A keepalive request is overdue, also while the notice is off: a Stop that asked the agent to shut
+    /// Windows down presses the power button too (HvfOwnedRunController.guestAgentSilence).
+    var agentOverdue: Bool {
+        guard let overdueMs else { return false }
+        return latestMs - overdueMs < Self.overdueWindowMs
+    }
+
     var text: String? {
         switch shown {
         case .awaitingFirstConnection: return "Waiting for Windows to connect. Complete any setup or sign-in steps in the VM window."
@@ -81,7 +88,7 @@ final class HvfAgentSilenceNotice: ObservableObject {
             waitingSince = nil
         } else if serviceStarted {
             waitingSince = nil
-            if let overdueMs, latestMs - overdueMs < Self.overdueWindowMs { kind = .notResponding }
+            if agentOverdue { kind = .notResponding }
         } else {
             let since = waitingSince ?? now
             waitingSince = since
