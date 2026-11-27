@@ -48,6 +48,9 @@ Optional settings use the same product choices as the app:
 ```
 
 Defaults: 64 GiB, 6144 MiB, 4 CPUs, 1440x900, shared NAT; CPUs must fit the host.
+`--resolution` is the Windows resolution at startup, the same setting as
+**Resolution** in the VM's settings. With the Windows display driver installed,
+Windows then follows the window size.
 Duplicate/unknown flags, relative paths, `..`, invalid values/names, directories,
 missing media and final-component symlinks fail before library creation.
 

@@ -19,6 +19,9 @@ final class NativeCLICreateWindowsTests: XCTestCase {
         XCTAssertTrue(result.installPending)
         XCTAssertTrue(saved.installPending == true)
         XCTAssertEqual(pending.diskGiB, 64)
+        // The launch reads guestResolution, not displayWidth/Height: --resolution must land there.
+        XCTAssertEqual(saved.guestResolution, "1440x900")
+        XCTAssertEqual(HvfGuestResolutionPicker.firmwareMode(saved.guestResolution), "1440x900")
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: pending.isoPath)), fixture.isoBytes)
         XCTAssertNotEqual(pending.isoPath, fixture.iso.path)
 
