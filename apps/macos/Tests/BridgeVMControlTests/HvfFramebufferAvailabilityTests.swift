@@ -30,7 +30,7 @@ final class HvfFramebufferAvailabilityTests: XCTestCase {
                 view.refreshFrame(at: 1)
                 XCTAssertFalse(view.guestInputAvailable, invalid)
                 XCTAssertNil(view.layer?.contents, invalid)
-                XCTAssertEqual(view.accessibilityValue() as? String, "no-frame", invalid)
+                XCTAssertEqual(view.accessibilityValue() as? String, "Waiting for Windows to show a picture", invalid)
                 XCTAssertEqual(try fixture.commands(), before, invalid)
             }
         }

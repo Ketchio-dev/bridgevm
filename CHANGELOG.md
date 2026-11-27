@@ -54,6 +54,9 @@ All notable changes to BridgeVM are documented in this file.
 - Putting the Mac to sleep while a key press or click was still on its way to
   Windows no longer stops the keyboard and mouse on wake until Windows restarts:
   the time Windows has to confirm input now counts only while the Mac is awake.
+- VoiceOver now reads the Windows display in plain English, such as "Waiting for
+  Windows to show a picture" or "1280 by 800". Before, it read internal test
+  text such as "no-frame" and a click count after each click.
 - After you choose Stop, the VM window now shows what Windows is doing while it
   shuts down, with Force Stop and, if Windows is still running after the wait,
   Shut Down Again. Before, only the library showed them, so a full-screen VM

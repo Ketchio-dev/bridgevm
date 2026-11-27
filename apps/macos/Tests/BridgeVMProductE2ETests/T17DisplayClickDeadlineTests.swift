@@ -4,7 +4,7 @@ import XCTest
 
 final class T17DisplayClickDeadlineTests: XCTestCase {
     private let spot = CGPoint(x: 0.5, y: 0.5)
-    private let target = T17DisplayClick.Target(value: "frame 1920x1080", focused: true,
+    private let target = T17DisplayClick.Target(value: "1920 by 1080", focused: true,
         frame: CGRect(x: 100, y: 50, width: 1280, height: 800))
 
     func testReadyReadEndingAtOrAfterDeadlineCannotPost() {

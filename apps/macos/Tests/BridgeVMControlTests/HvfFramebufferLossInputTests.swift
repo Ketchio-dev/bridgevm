@@ -23,7 +23,7 @@ final class HvfFramebufferLossInputTests: XCTestCase {
             try Frame.writeFrame(path)
             view.refreshFrame(at: 3)
             XCTAssertTrue(view.guestInputAvailable)
-            XCTAssertEqual(view.accessibilityValue() as? String, "frame 1x1")
+            XCTAssertEqual(view.accessibilityValue() as? String, "1 by 1")
             view.insertText("fresh", replacementRange: NSRange(location: NSNotFound, length: 0))
             XCTAssertEqual(try fixture.commands().count, before.count + 1)
         }
