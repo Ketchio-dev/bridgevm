@@ -35,6 +35,8 @@ final class LibraryMoveSelectionFixture {
         library.selectedID = source.slug
     }
 
+    var scheduledJobs: Int { jobs.pending.count }
+
     func admit() throws {
         library.moveWindowsHVFBundle(source, to: assets.destinationParent)
         XCTAssertEqual(jobs.pending.count, 1)
