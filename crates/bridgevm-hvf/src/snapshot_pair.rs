@@ -352,8 +352,12 @@ fn verify_member(
     want_hash: Option<&str>,
     want_bytes: u64,
 ) -> Result<(), SnapshotError> {
-    let file = files::open_regular(path)?;
     let name = path.file_name().unwrap_or_default().to_string_lossy();
+    // A missing member makes the snapshot unusable, not something to retry.
+    let file = files::open_regular(path).map_err(|e| match e.kind() {
+        io::ErrorKind::NotFound => SnapshotError::BadManifest(format!("{name} is missing")),
+        _ => e.into(),
+    })?;
     let mismatch = |bytes| {
         SnapshotError::BadManifest(format!(
             "{name} contains {bytes} bytes, manifest declares {want_bytes}"

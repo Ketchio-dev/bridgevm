@@ -68,10 +68,15 @@ enum HvfWindowsSnapshotStore {
     static func validatedTarget(_ target: URL, bundle: URL) throws -> URL {
         let directory = directory(bundle: bundle).standardizedFileURL
         let target = target.standardizedFileURL
-        guard target.deletingLastPathComponent() == directory, target.pathExtension == "snapshot",
-              HvfWindowsSnapshotCommand.canonical(directory), HvfWindowsSnapshotCommand.canonical(target),
+        let unsafe = HvfWindowsSnapshotCommand.failure("snapshot target is outside its directory or unsafe", .unsafeFolder)
+        guard target.deletingLastPathComponent() == directory, target.pathExtension == "snapshot" else { throw unsafe }
+        var info = stat()
+        if lstat(target.path, &info) != 0, errno == ENOENT {
+            throw HvfWindowsSnapshotCommand.failure("the snapshot does not exist", .snapshotGone)
+        }
+        guard HvfWindowsSnapshotCommand.canonical(directory), HvfWindowsSnapshotCommand.canonical(target),
               HvfWindowsSnapshotCommand.regularDirectory(target) else {
-            throw HvfWindowsSnapshotCommand.failure("snapshot target is outside its directory or unsafe", .unsafeFolder)
+            throw unsafe
         }
         return target
     }
