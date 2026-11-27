@@ -1,7 +1,7 @@
 import Foundation
 
-/// Clipboard, network, shared folder and snapshots are in the VM's 설정 sheet, opened from the
-/// dashboard; Start and the guest control input stay in the runtime view behind 고급.
+/// Clipboard, network, shared folder and snapshots are in the VM's Settings sheet, opened from the
+/// dashboard; Start and the guest control input stay in the runtime view behind Advanced.
 /// Start is refused while the sheet is open, so the sheet is gone before the runtime view returns.
 enum T17SettingsSheet {
     static let sheet = "bridgevm.runtime.settings"
