@@ -1951,12 +1951,16 @@ public static class BvCommand {
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
     [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
     public static string Run(string app,string arguments,out int code) {
-        string path=Path.GetTempFileName(); IntPtr file=new IntPtr(-1); PI pi=new PI(); code=-1;
+        string path=Path.GetTempFileName(); IntPtr file=new IntPtr(-1),none=new IntPtr(-1); PI pi=new PI(); code=-1;
         try {
             var sa=new SA { size=Marshal.SizeOf(typeof(SA)),inherit=1 };
             file=CreateFile(path,0x40000000,7,ref sa,2,0x100,IntPtr.Zero);
             if(file==new IntPtr(-1))throw new Win32Exception();
-            var si=new SI { size=Marshal.SizeOf(typeof(SI)),flags=0x100,input=GetStdHandle(-10),output=file,error=file };
+            // Input is NUL, never the agent's hidden console: a command that prompts (del /p, set /p,
+            // pause, date) reads end of input and returns instead of waiting forever with the channel.
+            none=CreateFile("NUL",0x80000000,3,ref sa,3,0,IntPtr.Zero);
+            if(none==new IntPtr(-1))throw new Win32Exception();
+            var si=new SI { size=Marshal.SizeOf(typeof(SI)),flags=0x100,input=none,output=file,error=file };
             if(!CreateProcess(app,new StringBuilder("\""+app+"\" "+arguments),IntPtr.Zero,IntPtr.Zero,true,0,IntPtr.Zero,null,ref si,out pi))throw new Win32Exception();
             if(WaitForSingleObject(pi.process,0xffffffff)!=0)throw new Win32Exception();
             if(!GetExitCodeProcess(pi.process,out code))throw new Win32Exception();
@@ -1971,6 +1975,7 @@ public static class BvCommand {
             if(pi.thread!=IntPtr.Zero)CloseHandle(pi.thread);
             if(pi.process!=IntPtr.Zero)CloseHandle(pi.process);
             if(file!=new IntPtr(-1))CloseHandle(file);
+            if(none!=new IntPtr(-1))CloseHandle(none);
             File.Delete(path);
         }
     }
@@ -1983,7 +1988,7 @@ function Invoke-B64([string]$b64, [bool]$usePwsh) {
     $code = 0
     if ($usePwsh) {
         $app = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-        $arguments = '-NoProfile -ExecutionPolicy Bypass -EncodedCommand ' + [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
+        $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ' + [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
     } else {
         $app = Join-Path $env:SystemRoot 'System32\cmd.exe'
         $arguments = '/c "' + $cmd + '"'
@@ -2564,8 +2569,12 @@ while ($true) {
                     $r = Invoke-BvDisplay $tok $arg
                     if ($r -is [string]) { Write-Line $h $r 'ERR' } else { Write-CommandResult $h $r }
                 }
-                'RUN'  { $r = Invoke-B64 $arg $false; Write-CommandResult $h $r }
-                'PS'   { $r = Invoke-B64 $arg $true;  Write-CommandResult $h $r }
+                { $_ -in @('RUN', 'PS') } {
+                    # Every RUN/PS gets its OUT line: the host never resends one and waits for it.
+                    try { $r = Invoke-B64 $arg ($tok -eq 'PS') }
+                    catch { $r = @{ Exit = 255; Out = 'BridgeVM could not run the command: ' + $_.Exception.Message } }
+                    Write-CommandResult $h $r
+                }
                 'CLIPGET' {
                     # Return the guest Windows clipboard text as CLIP <base64(utf8)>.
                     # The host polls CLIPGET every second, and repeatedly opening

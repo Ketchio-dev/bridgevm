@@ -43,7 +43,37 @@ try {
     $reply = Invoke-B64 (B64 'for /L %i in (1,1,400) do @echo line-%i') $false
     $lines = @($reply.Out -split '\r?\n' | Where-Object { $_ })
     if ($reply.Exit -ne 0 -or $lines.Count -ne 400 -or $lines[399] -cne 'line-400') { throw "RUN truncated output: $($lines.Count) lines" }
-    Write-Output 'PASS: RUN and PS ignore sleeping child handles, preserve output and exit, second RUN replies, 400 lines complete'
+    # A command that prompts must read end of input, not the agent's stdin: in the guest that is a
+    # hidden console nobody types into, so a prompt waited forever and the host's RUN never got
+    # its reply. Run the agent's functions in a child whose stdin is a pipe nobody writes to.
+    $defs = Join-Path $dir 'defs.ps1'
+    $texts = foreach ($node in $ast.EndBlock.Statements) {
+        if ($node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -in @('Invoke-B64', 'Initialize-BvCommand')) { $node.Extent.Text }
+    }
+    [IO.File]::WriteAllText($defs, ($texts -join "`r`n"))
+    $probe = Join-Path $dir 'prompt.ps1'
+    [IO.File]::WriteAllText($probe, @'
+. $args[0]
+function B64([string]$s) { [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($s)) }
+$c = Invoke-B64 (B64 'set /p v=Value: & echo cmd-after') $false
+Write-Output ('cmd=' + ($c.Out -replace '\s+', ' '))
+$p = Invoke-B64 (B64 "Read-Host 'Value'; 'ps-after'") $true
+Write-Output ('ps=' + ($p.Out -replace '\s+', ' '))
+'@)
+    $start = New-Object Diagnostics.ProcessStartInfo
+    $start.FileName = (Get-Process -Id $PID).Path
+    $start.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $probe + '" "' + $defs + '"'
+    $start.UseShellExecute = $false; $start.RedirectStandardInput = $true; $start.RedirectStandardOutput = $true
+    $prompting = [Diagnostics.Process]::Start($start)
+    $read = $prompting.StandardOutput.ReadToEndAsync()
+    if (-not $prompting.WaitForExit(60000)) {
+        Get-CimInstance Win32_Process -Filter "ParentProcessId=$($prompting.Id)" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        $prompting.Kill()
+        throw 'RUN/PS with a prompt waited for input instead of replying'
+    }
+    $printed = $read.Result
+    if ($printed -notmatch 'cmd=.*cmd-after' -or $printed -notmatch 'ps=') { throw "prompting RUN/PS lost output: $printed" }
+    Write-Output 'PASS: RUN and PS ignore sleeping child handles, preserve output and exit, second RUN replies, 400 lines complete, prompts read end of input'
 } finally {
     if (Test-Path $pidFile) { Stop-Process -Id ([int][IO.File]::ReadAllText($pidFile)) -Force -ErrorAction SilentlyContinue }
     Remove-Item $dir -Recurse -Force
