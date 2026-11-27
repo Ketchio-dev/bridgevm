@@ -130,12 +130,28 @@ final class LibraryModel: ObservableObject {
         }
     }
 
+    /// The bundle keeps its folder name (every VM's is bundle.vmbridge), so a folder that already holds
+    /// one, or the folder it is in, can't take it. Both used to end in "could not confirm the move".
+    nonisolated static func moveDestinationRefusal(_ cfg: VMConfig, to destinationParent: URL) -> String? {
+        let source = URL(fileURLWithPath: cfg.bundlePath, isDirectory: true).standardizedFileURL
+        let parent = destinationParent.standardizedFileURL
+        if parent.resolvingSymlinksInPath() == source.deletingLastPathComponent().resolvingSymlinksInPath() {
+            return "This VM is already in that folder. Choose another one."
+        }
+        guard FileManager.default.fileExists(atPath: parent.appendingPathComponent(source.lastPathComponent).path) else { return nil }
+        return "“\(parent.lastPathComponent)” already holds a VM bundle. Choose another folder, or make a new folder for this VM."
+    }
+
     func moveWindowsHVFBundle(_ cfg: VMConfig, to destinationParent: URL) {
         guard admitLibraryAction(cfg, action: .move) else { return }
         guard !movingSlugs.contains(cfg.slug) else { return }
         let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
         guard !backend.isRunning() else {
             moveError = "Shut down the VM before moving it."
+            return
+        }
+        if let refusal = Self.moveDestinationRefusal(cfg, to: destinationParent) {
+            moveError = refusal
             return
         }
         movingSlugs.insert(cfg.slug)

@@ -95,4 +95,19 @@ final class VMRelocationJournalTests: XCTestCase {
         XCTAssertTrue(VMRelocationJournal.isPending(f.config, rootURL: f.library))
         XCTAssertTrue(VMLibrary.list(rootURL: f.library).isEmpty)
     }
+
+    /// Every bundle is named bundle.vmbridge, so a second VM moved into the same folder, or a VM moved to
+    /// the folder it is in, is refused up front with its own sentence, not "could not confirm the move".
+    func testAFolderThatAlreadyHoldsABundleIsNamed() throws {
+        let f = try fixture()
+        let source = URL(fileURLWithPath: f.config.bundlePath)
+        XCTAssertEqual(LibraryModel.moveDestinationRefusal(f.config, to: source.deletingLastPathComponent()),
+                       "This VM is already in that folder. Choose another one.")
+        let occupied = f.root.appendingPathComponent("VMs")
+        XCTAssertNil(LibraryModel.moveDestinationRefusal(f.config, to: occupied))
+        try FileManager.default.createDirectory(at: occupied.appendingPathComponent("bundle.vmbridge"),
+                                                withIntermediateDirectories: true)
+        XCTAssertEqual(LibraryModel.moveDestinationRefusal(f.config, to: occupied),
+                       "“VMs” already holds a VM bundle. Choose another folder, or make a new folder for this VM.")
+    }
 }
