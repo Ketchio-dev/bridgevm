@@ -31,7 +31,7 @@ final class HvfProductBackendConfigurationTests: XCTestCase {
             HvfWindowsBackend(config, processIsRunning: { _ in
                 access.processLookups += 1
                 return false
-            }, libraryRoot: library, vtpmKeyProvider: access)
+            }, libraryRoot: library)
         }
     }
 

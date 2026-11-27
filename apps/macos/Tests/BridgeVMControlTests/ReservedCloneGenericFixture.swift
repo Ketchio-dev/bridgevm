@@ -40,7 +40,6 @@ final class ReservedCloneGenericFixture {
             return (url, try Data(contentsOf: url))
         })
         let backend = GenericOwnedControlBackend()
-        backend.plan = nil // Captures the owned launch request without spawning even a harmless process.
         backend.setExternalRunning(false)
         self.backend = backend
         let jobs = ReservedCloneJobs()

@@ -97,7 +97,6 @@ final class HvfWindowsInstallPlanPreparationFixture {
         if hosts.count != 1 { work.preserveForUnsettledWork = true }
         XCTAssertEqual(hosts.count, 1)
         XCTAssertTrue(values(HvfEngineView.self, in: body).isEmpty)
-        XCTAssertTrue(values(VMDetailPanel.self, in: body).isEmpty)
         return try XCTUnwrap(hosts.first)
     }
 

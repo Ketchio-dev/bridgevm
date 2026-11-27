@@ -80,7 +80,6 @@ struct LibraryDashboardDetail: View {
                 HStack(spacing: 7) {
                     LibraryVMRunState(text: statusText, color: statusColor,
                         session: library.hvfRuntimeSessions.existingRecord(slug: config.slug)?.session, dot: 8)
-                    if model.busy || model.lifecycleBusy { ProgressView().controlSize(.small) }
                 }
                 .font(.headline)
                 if config.displayName != config.name {
@@ -155,7 +154,7 @@ struct LibraryDashboardDetail: View {
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
             Divider()
-            LibraryRuntimeDetailContent(config: config, model: model, library: library)
+            LibraryRuntimeDetailContent(config: config, library: library)
         }
     }
 

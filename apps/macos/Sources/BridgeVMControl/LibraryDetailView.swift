@@ -20,10 +20,8 @@ struct LibraryDetailView: View {
                     .id(detail.config.slug)
             } else if let session = library.hvfRuntimeDetailSession(for: detail.config) {
                 HvfEngineView(session: session).id(ObjectIdentifier(session))
-            } else if detail.config.engineKind == .hvfEngine {
-                LibraryUnavailableRuntimeDetail(config: detail.config, library: library)
             } else {
-                VMDetailPanel(model: detail.model, library: library).id(detail.config.slug)
+                LibraryUnavailableRuntimeDetail(config: detail.config, library: library)
             }
         } else if library.vms.isEmpty {
             FirstRunView(library: library)

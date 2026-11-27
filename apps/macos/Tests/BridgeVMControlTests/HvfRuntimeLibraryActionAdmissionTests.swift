@@ -80,46 +80,6 @@ final class HvfRuntimeLibraryActionAdmissionTests: XCTestCase {
         XCTAssertEqual(try fixture.snapshot(), before)
     }
 
-    func testBusyAndAcceptedGenericLifecycleRefuseRequestsAndFinalActions() async throws {
-        do {
-            let fixture = Fixture()
-            defer { fixture.clean() }
-            let config = fixture.config()
-            fixture.save(config)
-            let before = try fixture.snapshot()
-            let library = fixture.library()
-            let model = fixture.cacheFake(in: library, config: config)
-            model.busy = true
-            XCTAssertTrue(model.hasAcceptedOperation)
-            fixture.assertRefused(config: config, library: library)
-            XCTAssertEqual(fixture.queue.count, 0)
-            XCTAssertEqual(try fixture.snapshot(), before)
-        }
-        let fixture = Fixture()
-        defer { fixture.clean() }
-        let config = fixture.config()
-        fixture.save(config)
-        let before = try fixture.snapshot()
-        let library = fixture.library()
-        let model = fixture.cacheFake(in: library, config: config)
-        let acknowledged = await fixture.acknowledgeFakeStart(model) {
-            XCTAssertTrue(model.lifecycleBusy)
-            XCTAssertTrue(model.hasAcceptedOperation)
-            fixture.assertRefused(config: config, library: library)
-        }
-        guard acknowledged else { return }
-
-        XCTAssertFalse(model.lifecycleBusy)
-        XCTAssertFalse(model.busy)
-        XCTAssertTrue(model.running) // Optimistic observation; the accepted-start deadline still owns work.
-        XCTAssertTrue(model.hasAcceptedOperation)
-        XCTAssertEqual(fixture.backend(for: config).calls.starts, 1)
-        XCTAssertEqual(fixture.backend(for: config).calls.completedStarts, 1)
-        fixture.assertRefused(config: config, library: library)
-        XCTAssertEqual(fixture.queue.count, 0)
-        XCTAssertEqual(try fixture.snapshot(), before)
-    }
-
     func testObservedRunningAloneDoesNotOwnAnAcceptedOperation() throws {
         for action in Entry.finalActions {
             let fixture = Fixture()
@@ -130,8 +90,6 @@ final class HvfRuntimeLibraryActionAdmissionTests: XCTestCase {
             let library = fixture.library()
             let model = fixture.cacheFake(in: library, config: config)
             model.running = true
-            XCTAssertFalse(model.lifecycleBusy)
-            XCTAssertFalse(model.hasAcceptedOperation)
 
             fixture.assertAccepted(action, config: config, library: library)
 

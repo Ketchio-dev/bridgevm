@@ -2,18 +2,13 @@ import SwiftUI
 
 struct LibraryRuntimeDetailContent: View {
     let config: VMConfig
-    @ObservedObject var model: ControlModel
     @ObservedObject var library: LibraryModel
 
     @ViewBuilder var body: some View {
-        if config.engineKind == .hvfEngine {
-            if let session = library.hvfRuntimeDetailSession(for: config) {
-                HvfEngineView(session: session).id(ObjectIdentifier(session))
-            } else {
-                LibraryUnavailableRuntimeDetail(config: config, library: library)
-            }
+        if config.engineKind == .hvfEngine, let session = library.hvfRuntimeDetailSession(for: config) {
+            HvfEngineView(session: session).id(ObjectIdentifier(session))
         } else {
-            VMDetailPanel(model: model, library: library).id(config.slug)
+            LibraryUnavailableRuntimeDetail(config: config, library: library)
         }
     }
 }

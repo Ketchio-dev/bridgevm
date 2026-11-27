@@ -10,26 +10,25 @@ final class LibraryRuntimeDetailContentTests: XCTestCase {
         return mirror.children.flatMap { values(type, in: $0.value) }
     }
 
-    func testStaleHvfRegistrationRefusesGenericLifecyclePanel() throws {
+    func testStaleHvfRegistrationShowsUnavailableDetail() throws {
         let fixture = try HvfRuntimeSessionStoreFixture()
         defer { fixture.clean() }
         let original = fixture.config()
         fixture.save(original)
         let library = fixture.library()
         let model = try XCTUnwrap(library.selectedModel)
-        model.busy = true
+        model.running = true
         var replacement = original
         replacement.backendKind = "fast-vz"
         fixture.save(replacement)
         library.reload()
         let body = LibraryDetailView(library: library).body
         XCTAssertEqual(values(LibraryUnavailableRuntimeDetail.self, in: body).count, 1)
-        XCTAssertTrue(values(VMDetailPanel.self, in: body).isEmpty)
         XCTAssertTrue(values(HvfEngineView.self, in: body).isEmpty)
         XCTAssertEqual(fixture.runtimeConfigs.count, 0)
     }
 
-    func testOrdinaryNonHvfRegistrationKeepsGenericPanel() throws {
+    func testRetiredEngineRegistrationShowsUnavailableDetail() throws {
         let fixture = try HvfRuntimeSessionStoreFixture()
         defer { fixture.clean() }
         var config = fixture.config()
@@ -37,10 +36,9 @@ final class LibraryRuntimeDetailContentTests: XCTestCase {
         fixture.save(config)
         let library = fixture.library()
 
-        let body = LibraryRuntimeDetailContent(
-            config: config, model: try XCTUnwrap(library.selectedModel), library: library).body
-        XCTAssertEqual(values(VMDetailPanel.self, in: body).count, 1)
-        XCTAssertTrue(values(LibraryUnavailableRuntimeDetail.self, in: body).isEmpty)
+        let body = LibraryRuntimeDetailContent(config: config, library: library).body
+        XCTAssertEqual(values(LibraryUnavailableRuntimeDetail.self, in: body).count, 1)
+        XCTAssertTrue(values(HvfEngineView.self, in: body).isEmpty)
         XCTAssertEqual(fixture.runtimeConfigs.count, 0)
     }
 }

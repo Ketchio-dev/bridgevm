@@ -23,7 +23,6 @@ final class LibraryDashboardNavigationTests: XCTestCase {
         XCTAssertTrue(restored.model === model)
         XCTAssertEqual(restored.config, model.config)
         XCTAssertFalse(model.running)
-        XCTAssertFalse(model.lifecycleBusy)
     }
 
     func testSearchFieldReturnOpensTheOnlyMatchingVM() async throws {
@@ -99,7 +98,7 @@ final class LibraryDashboardNavigationTests: XCTestCase {
 
         XCTAssertEqual(f.library.selectedID, record.slug)
         XCTAssertEqual(f.library.selectedDetail?.config.name, record.name)
-        XCTAssertFalse(try XCTUnwrap(f.library.selectedModel).hasActiveRuntimeWork)
+        XCTAssertFalse(try XCTUnwrap(f.library.selectedModel).running)
     }
 
     func testExplicitImportSelectionKeepsFirstRunAheadOfFleet() throws {
@@ -115,24 +114,5 @@ final class LibraryDashboardNavigationTests: XCTestCase {
         XCTAssertTrue(f.library.firstRunImportBusy)
         XCTAssertEqual(f.library.firstRunImport.stage, .copying)
         XCTAssertEqual(f.library.selectedID, LibraryModel.firstRunImportSelectionID)
-    }
-
-    func testRetainedControlSelectionKeepsExactHandleAheadOfFleet() throws {
-        let f = try LibraryDashboardNavigationFixture()
-        defer { f.clean() }
-        let model = try XCTUnwrap(f.library.selectedModel)
-        model.running = true // An observed active control; no process is launched or adopted.
-        f.library.reload() // The synthetic registration is absent, so its active handle is retained.
-        let retained = try XCTUnwrap(f.library.selectedRetainedControl)
-        try f.paletteCommand("Turn on Pro mode").action()
-        let route = try f.detailRoute()
-        let view = try XCTUnwrap(f.values(RetainedControlDetailView.self, in: route.body).first)
-        XCTAssertEqual(view.record.id, retained.id)
-        XCTAssertTrue(f.values(FleetTableView.self, in: route.body).isEmpty)
-        XCTAssertEqual(f.library.selectedID, retained.id)
-        XCTAssertFalse(f.library.dismissRetainedControl(retained.id))
-        guard case let .generic(_, actual) = view.record.descriptor else { return XCTFail("Expected retained generic control") }
-        XCTAssertTrue(actual === model)
-        XCTAssertTrue(model.running)
     }
 }

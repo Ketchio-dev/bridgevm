@@ -20,7 +20,7 @@ final class LibraryModelPersistenceTests: XCTestCase {
 
         XCTAssertFalse(first === second)
         XCTAssertEqual(second.config, changed)
-        XCTAssertEqual(second.backend.kind, "qemu-compat")
+        XCTAssertTrue(second.backend is UnsupportedEngineBackend)
     }
 
     func testReloadPreservesChangedModelUntilActiveVMBecomesIdle() throws {

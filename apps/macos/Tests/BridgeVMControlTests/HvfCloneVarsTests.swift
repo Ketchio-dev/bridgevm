@@ -11,7 +11,6 @@ final class HvfCloneVarsTests: XCTestCase {
         let f = try HvfCloneVarsFixture(layout)
         defer { f.clean() }
         let backend = GenericOwnedControlBackend()
-        backend.plan = nil
         backend.setExternalRunning(false)
         let queue = HvfRuntimeLibraryActionQueue()
         defer { queue.discard() }
@@ -32,8 +31,5 @@ final class HvfCloneVarsTests: XCTestCase {
         if !allowed { XCTAssertNotNil(library.cloneError) }
         try f.checkCopy(allowed: allowed)
         XCTAssertEqual(try Data(contentsOf: registration), originalRegistration)
-        XCTAssertEqual(backend.calls[0], 0)
-        XCTAssertEqual(backend.calls[2], 0)
-        XCTAssertEqual(backend.calls[3], 0)
     }
 }

@@ -3,8 +3,8 @@ import XCTest
 
 @MainActor
 final class HvfRuntimeWorkAdmissionLifecycleTests: XCTestCase {
-    func testExpiredLibraryRefusesRetainedRuntimeInstallAndGenericHandles() async throws {
-        for kind in ["runtime", "install", "control-start", "control-resources"] {
+    func testExpiredLibraryRefusesRetainedRuntimeAndInstallHandles() async throws {
+        for kind in ["runtime", "install"] {
             let f = try HvfRuntimeWorkAdmissionFixture()
             defer { f.clean() }
             let config = f.config(pending: kind == "install")
@@ -14,7 +14,6 @@ final class HvfRuntimeWorkAdmissionLifecycleTests: XCTestCase {
             let owner = WeakReference(library)
             let runtime = kind == "runtime" ? try f.runtime(config, in: XCTUnwrap(library)) : nil
             let install = kind == "install" ? f.install(config, in: try XCTUnwrap(library)) : nil
-            let model = kind.hasPrefix("control") ? f.model(config, in: try XCTUnwrap(library)) : nil
             let bytes = try f.snapshot()
             library = nil
             XCTAssertNil(owner.object)
@@ -27,11 +26,6 @@ final class HvfRuntimeWorkAdmissionLifecycleTests: XCTestCase {
                 XCTAssertEqual(install.workAdmission?(false), HvfRuntimeWorkAdmissionFixture.expiredReason)
                 await f.assertInstallRefused(install, library: nil,
                     reason: HvfRuntimeWorkAdmissionFixture.expiredReason)
-            } else if let model {
-                XCTAssertEqual(model.workAdmission?(false), HvfRuntimeWorkAdmissionFixture.expiredReason)
-                await f.assertControlRefused(model,
-                    operation: kind == "control-start" ? .start : .resources,
-                    library: nil, reason: HvfRuntimeWorkAdmissionFixture.expiredReason)
             }
 
             XCTAssertEqual(f.queue.count, 0)
@@ -92,25 +86,6 @@ final class HvfRuntimeWorkAdmissionLifecycleTests: XCTestCase {
             XCTAssertEqual(standalone.stage, .failed("owned validation refusal"))
             XCTAssertEqual(f.validator.snapshot.calls, calls + 1)
             XCTAssertEqual(f.installJobCount, 0)
-            XCTAssertEqual(try f.snapshot(), bytes)
-        }
-        for operation in HvfRuntimeWorkAdmissionBackend.Operation.allCases {
-            let f = try HvfRuntimeWorkAdmissionFixture()
-            defer { f.clean() }
-            let config = f.config()
-            f.save(config)
-            let model = ControlModel(config: config, backend: f.backend(config), startsAutomatically: false)
-            XCTAssertNil(model.workAdmission)
-            let bytes = try f.snapshot()
-            let work = HvfRuntimeWorkAdmissionOperation(operation, model: model)
-            let accepted = work.invoke()
-            XCTAssertTrue(accepted)
-            guard await f.acknowledge(work, accepted: accepted) else { continue }
-            let calls = f.backend(config).calls
-            XCTAssertEqual(calls.starts, operation == .start ? 1 : 0)
-            XCTAssertEqual(calls.writes, operation == .resources ? 1 : 0)
-            XCTAssertEqual(calls.stops, 0)
-            XCTAssertEqual(calls.liveness, 0)
             XCTAssertEqual(try f.snapshot(), bytes)
         }
     }

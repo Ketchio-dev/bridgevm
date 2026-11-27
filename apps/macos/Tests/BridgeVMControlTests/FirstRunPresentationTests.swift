@@ -127,7 +127,7 @@ final class FirstRunPresentationTests: XCTestCase {
         })
         try body(library)
         XCTAssertTrue(library.vms.isEmpty)
-        XCTAssertTrue(library.runningModels().isEmpty)
+        XCTAssertTrue(library.cachedControlModels.isEmpty)
         XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
     }
 }

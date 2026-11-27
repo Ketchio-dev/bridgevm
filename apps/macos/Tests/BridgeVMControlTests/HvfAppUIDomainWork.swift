@@ -35,21 +35,12 @@ final class HvfAppUIDomainWork {
     }
 }
 
-/// Every method would reach a process, launch, Keychain or file in production.
+/// Every method would reach a process or file in production.
 final class HvfAppUIInertBackend: VMBackend, Sendable {
     private let refuse: @Sendable () -> Never
     init(refuse: @escaping @Sendable () -> Never) { self.refuse = refuse }
-    let displayName = "Owned UI fixture"
-    let kind = "hvf-engine"
-    let supportsGuestCommands = false, supportsPackageInstall = false, supportsClipboard = false
-    let supportsSSH = false, supportsResourceChanges = false
     func isRunning() -> Bool { refuse() }
-    func currentIP() -> String? { refuse() }
-    func start() -> Bool { refuse() }
-    func stop() { refuse() }
     func resources() -> (memMiB: Int, cpu: Int) { refuse() }
-    func setResources(memMiB: Int, cpu: Int) -> Bool { refuse() }
-    func runInGuest(_ command: String) -> (output: String, code: Int32) { refuse() }
 }
 
 extension HvfAppUICapture {

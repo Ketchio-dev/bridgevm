@@ -175,7 +175,7 @@ enum Shell {
             try? pipe.fileHandleForWriting.close()
             try? readHandle.close()
             _ = group.wait(timeout: .now() + 1)
-            return ("실행 실패: \(error.localizedDescription)", -1)
+            return ("Couldn’t run \(launchPath): \(error.localizedDescription)", -1)
         }
         // Process has inherited/duplicated the write descriptor; the parent copy
         // must close or EOF can never arrive after the child exits.
@@ -199,7 +199,7 @@ enum Shell {
         let snapshot = collector.snapshot()
         let body = String(decoding: snapshot.data, as: UTF8.self)
         let output = snapshot.truncated
-            ? "[출력 일부 생략 — 마지막 \(snapshot.data.count)바이트]\n" + body
+            ? "[Output truncated; last \(snapshot.data.count) bytes]\n" + body
             : body
         return (output, proc.terminationStatus)
     }
@@ -239,20 +239,6 @@ enum Shell {
         }
     }
 
-    /// Launch a long-running process fully detached from this app (its own window).
-    @discardableResult
-    static func launchDetached(_ command: String) -> Bool {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/bin/sh")
-        proc.arguments = ["-c", command]
-        do {
-            try proc.run()
-            return true
-        } catch {
-            return false
-        }
-    }
-
     /// Escape ERE metacharacters so a literal string (e.g. a filesystem path) can
     /// be matched exactly by `pgrep -f` / `pkill -f` (which treat it as a regex).
     static func eregEscape(_ s: String) -> String {
@@ -271,43 +257,17 @@ enum Shell {
         guard !pattern.isEmpty else { return }
         run("/usr/bin/pkill", ["-f", eregEscape(pattern)])
     }
-
-    static func shQuote(_ s: String) -> String {
-        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
-
-    /// Render an executable and argv for `/bin/sh` without allowing any argument
-    /// content to become syntax. Keep shell use at the orchestration boundary;
-    /// all user/config-derived values must enter through this helper.
-    static func shellCommand(_ executable: String, _ args: [String]) -> String {
-        ([executable] + args).map(shQuote).joined(separator: " ")
-    }
 }
 
 // MARK: - Backend abstraction
 
-/// The single control surface every engine plugs into. HvfWindowsBackend is the
-/// only engine; UnsupportedEngineBackend stands in for a VM saved with a removed one.
+/// What the library polls for each VM. HvfWindowsBackend is the only engine;
+/// UnsupportedEngineBackend stands in for a VM saved with a removed one. Starting,
+/// stopping and guest commands belong to HvfEngineSession.
 protocol VMBackend: AnyObject {
-    var displayName: String { get }
-    var kind: String { get }
+    /// Whether a process is using the VM's disk, wherever it was started.
     func isRunning() -> Bool
-    func currentIP() -> String?
-    /// Returns true when the host-side launch request was accepted. This does not
-    /// imply that the guest has finished booting, only that startup was dispatched.
-    @discardableResult func start() -> Bool
-    func stop()
     func resources() -> (memMiB: Int, cpu: Int)
-    func setResources(memMiB: Int, cpu: Int) -> Bool
-    /// Run a shell command inside the guest, return its combined output.
-    func runInGuest(_ command: String) -> (output: String, code: Int32)
-    /// True when a control channel into the guest (e.g. SSH) is available — gates
-    /// the in-app terminal and software-install UI.
-    var supportsGuestCommands: Bool { get }
-    var supportsPackageInstall: Bool { get }
-    var supportsClipboard: Bool { get }
-    var supportsSSH: Bool { get }
-    var supportsResourceChanges: Bool { get }
 }
 
 // MARK: - JSON file helper

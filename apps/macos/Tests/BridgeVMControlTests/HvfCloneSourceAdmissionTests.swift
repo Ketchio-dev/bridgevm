@@ -17,7 +17,6 @@ final class HvfCloneSourceAdmissionTests: XCTestCase {
         source.diskPath = external.path
         XCTAssertTrue(VMLibrary.migrateLegacyIfNeeded(rootURL: libraryRoot, legacy: source))
         let backend = GenericOwnedControlBackend()
-        backend.plan = nil
         backend.setExternalRunning(false)
         let library = LibraryModel(rootURL: libraryRoot, migrateLegacy: false, actionScheduler: queue.enqueue,
             startsModelsAutomatically: false, modelFactory: { config in

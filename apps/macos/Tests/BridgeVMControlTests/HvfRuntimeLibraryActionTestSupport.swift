@@ -1,5 +1,4 @@
 import Foundation
-import Combine
 import XCTest
 @testable import BridgeVMControl
 
@@ -13,49 +12,16 @@ final class HvfRuntimeLibraryActionQueue {
 }
 
 final class HvfRuntimeLibraryActionBackend: VMBackend {
-    struct Calls: Equatable {
-        var starts = 0, completedStarts = 0, stops = 0, liveness = 0, ip = 0
-        var resources = 0, resourceWrites = 0, guest = 0
-    }
+    struct Calls: Equatable { var liveness = 0, resources = 0 }
     private let lock = NSLock()
     private var recorded = Calls()
-    private let startEntered = DispatchSemaphore(value: 0)
-    private let startRelease = DispatchSemaphore(value: 0)
-    private var holdStart = false
-    private var startTimedOut = false
-    let displayName = "fixture", kind = "fixture"
-    let supportsGuestCommands = false, supportsPackageInstall = false
-    let supportsClipboard = false, supportsSSH = false, supportsResourceChanges = false
 
     var calls: Calls { lock.lock(); defer { lock.unlock() }; return recorded }
-    var gateTimedOut: Bool { lock.lock(); defer { lock.unlock() }; return startTimedOut }
-    func holdFakeStart() { lock.lock(); holdStart = true; lock.unlock() }
-    func releaseFakeStart() { startRelease.signal() }
-    @MainActor func waitForStartEntry() async -> Bool {
-        await waitOffCooperativePool(startEntered, seconds: 5)
-    }
     private func record(_ field: WritableKeyPath<Calls, Int>) {
         lock.lock(); recorded[keyPath: field] += 1; lock.unlock()
     }
-    func start() -> Bool {
-        lock.lock()
-        recorded.starts += 1
-        let held = holdStart
-        lock.unlock()
-        startEntered.signal()
-        let timedOut = held && startRelease.wait(timeout: .now() + 10) == .timedOut
-        lock.lock()
-        recorded.completedStarts += 1
-        startTimedOut = startTimedOut || timedOut
-        lock.unlock()
-        return true // An accepted fake launch; no process or filesystem operation.
-    }
-    func stop() { record(\.stops) }
     func isRunning() -> Bool { record(\.liveness); return false }
-    func currentIP() -> String? { record(\.ip); return nil }
     func resources() -> (memMiB: Int, cpu: Int) { record(\.resources); return (4096, 2) }
-    func setResources(memMiB: Int, cpu: Int) -> Bool { record(\.resourceWrites); return false }
-    func runInGuest(_ command: String) -> (output: String, code: Int32) { record(\.guest); return ("", -1) }
 }
 
 @MainActor
@@ -208,28 +174,6 @@ final class HvfRuntimeLibraryActionFixture {
         var expected = before
         if entry != .deletion { expected.liveness += 1 }
         XCTAssertEqual(backend(for: config).calls, expected)
-    }
-
-    func acknowledgeFakeStart(_ model: ControlModel, duringAdmission: () -> Void) async -> Bool {
-        guard let backend = model.backend as? HvfRuntimeLibraryActionBackend else {
-            XCTFail("The lifecycle setup must never start a real backend"); return false
-        }
-        let completed = DispatchSemaphore(value: 0)
-        let subscription = model.$statusNote.sink { note in
-            if note == "VM 부팅 중…" { completed.signal() }
-        }
-        defer { backend.releaseFakeStart(); subscription.cancel() }
-        backend.holdFakeStart()
-        model.start()
-        let entered = await backend.waitForStartEntry()
-        XCTAssertTrue(entered, "The counting fake must enter its finite gate")
-        if entered { duringAdmission() }
-        backend.releaseFakeStart()
-        let acknowledged = await waitOffCooperativePool(completed, seconds: 5)
-        XCTAssertTrue(acknowledged, "The fake Start must acknowledge its MainActor completion")
-        XCTAssertFalse(backend.gateTimedOut)
-        XCTAssertFalse(model.lifecycleBusy)
-        return entered && acknowledged
     }
 
     func clean() {

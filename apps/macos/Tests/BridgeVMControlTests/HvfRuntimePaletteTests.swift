@@ -3,16 +3,8 @@ import XCTest
 
 private final class PaletteEffectBackend: VMBackend {
     var calls = 0
-    let displayName = "fixture", kind = "fixture"
-    let supportsGuestCommands = false, supportsPackageInstall = false
-    let supportsClipboard = false, supportsSSH = false, supportsResourceChanges = false
     func isRunning() -> Bool { calls += 1; return false }
-    func currentIP() -> String? { calls += 1; return nil }
-    func start() -> Bool { calls += 1; return false }
-    func stop() { calls += 1 }
     func resources() -> (memMiB: Int, cpu: Int) { calls += 1; return (4096, 2) }
-    func setResources(memMiB: Int, cpu: Int) -> Bool { calls += 1; return false }
-    func runInGuest(_ command: String) -> (output: String, code: Int32) { calls += 1; return ("", -1) }
 }
 
 @MainActor
@@ -74,7 +66,6 @@ final class HvfRuntimePaletteTests: XCTestCase {
         let title = "Open controls for \(name)"
         XCTAssertEqual(commands.map(\.title), [title])
         XCTAssertEqual(fixture.creations, before, "Listing a retained control surface must not create another owner")
-        // The baseline exposes generic actions: never invoke one even when the assertion above fails.
         guard commands.count == 1, let command = commands.first, command.title == title else { return }
         XCTAssertEqual(command.subtitle, "View startup, shutdown and installation controls")
         XCTAssertEqual(command.systemImage, "desktopcomputer")
@@ -200,7 +191,7 @@ final class HvfRuntimePaletteTests: XCTestCase {
         XCTAssertEqual(fixture.runtimeCreations, 1)
     }
 
-    func testCompatibilityCommandsKeepExistingStoppedAndRunningTitles() throws {
+    func testRetiredEngineSelectionsOfferOnlyNavigation() throws {
         for kind in ["fast-vz", "qemu-compat"] {
             let fixture = Fixture()
             defer { fixture.clean() }
@@ -208,39 +199,8 @@ final class HvfRuntimePaletteTests: XCTestCase {
             fixture.save(config)
             let library = fixture.library()
             library.selectedID = config.slug
-            let model = try XCTUnwrap(library.selectedModel)
-            XCTAssertFalse(model.lifecycleBusy)
-            for running in [false, true] {
-                model.running = running
-                let commands = library.selectedPaletteCommands(dismiss: {})
-                XCTAssertEqual(commands.map(\.title), ["\(running ? "Stop" : "Start") \(config.name)", "Refresh \(config.name)"])
-                XCTAssertEqual(fixture.creations, [1, 0, 0])
-                XCTAssertEqual(fixture.backend.calls, 0)
-                // Generic command actions are deliberately never invoked.
-            }
+            assertNavigation(library, fixture: fixture, slug: config.slug, name: config.name)
+            XCTAssertEqual(fixture.creations, [0, 0, 0])
         }
-    }
-
-    func testRetainedGenericHVFModelNavigatesThroughBusyToIdleWithoutReload() throws {
-        let fixture = Fixture()
-        defer { fixture.clean() }
-        let original = fixture.config()
-        fixture.save(original)
-        let library = fixture.library()
-        library.selectedID = original.slug
-        let model = try XCTUnwrap(library.selectedModel)
-        model.busy = true
-        var changed = original
-        changed.backendKind = "fast-vz"
-        fixture.save(changed)
-        library.reload()
-        XCTAssertEqual(library.vms.first?.backendKind, "fast-vz")
-        XCTAssertTrue(library.selectedModel === model)
-        assertNavigation(library, fixture: fixture, slug: changed.slug, name: changed.name)
-        model.busy = false
-        assertNavigation(library, fixture: fixture, slug: changed.slug, name: changed.name)
-        XCTAssertTrue(library.selectedModel === model)
-        XCTAssertEqual(model.config, original)
-        XCTAssertEqual(fixture.creations, [1, 0, 0])
     }
 }

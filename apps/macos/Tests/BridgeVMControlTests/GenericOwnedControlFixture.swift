@@ -4,9 +4,11 @@ import XCTest
 @MainActor
 final class GenericOwnedControlFixture {
     let root: URL
-    var models: [ControlModel] = []
-    var backends: [GenericOwnedControlBackend] = []
-    init() throws { root = try OwnedChildRecorder.directory() }
+    init() throws {
+        root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["TMPDIR"] ?? NSTemporaryDirectory())
+            .appendingPathComponent("owned-runtime-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
     func config(_ name: String, kind: String = "fast-vz", bundle: URL? = nil) throws -> VMConfig {
         let bundle = bundle ?? root.appendingPathComponent(name + "/bundle")
         try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
@@ -18,16 +20,10 @@ final class GenericOwnedControlFixture {
     func save(_ config: VMConfig) { XCTAssertTrue(VMLibrary.save(config, rootURL: root)) }
     func library() -> LibraryModel {
         LibraryModel(rootURL: root, migrateLegacy: false, modelFactory: { config in
-            let backend = GenericOwnedControlBackend()
-            let model = ControlModel(config: config, backend: backend, startsAutomatically: false)
-            self.backends.append(backend); self.models.append(model)
-            return model
+            ControlModel(config: config, backend: GenericOwnedControlBackend(), startsAutomatically: false)
         })
     }
-    func clean() {
-        for model in models { model.ownedRuntime?.requestStop() }
-        try? FileManager.default.removeItem(at: root)
-    }
+    func clean() { try? FileManager.default.removeItem(at: root) }
     func wait(_ condition: () -> Bool) async {
         let deadline = Date().addingTimeInterval(3)
         while !condition(), Date() < deadline { try? await Task.sleep(nanoseconds: 10_000_000) }
@@ -40,30 +36,13 @@ final class GenericOwnedControlFixture {
     }
 }
 
-final class GenericOwnedControlBackend: VMOwnedLaunchingBackend, @unchecked Sendable {
-    let displayName = "synthetic", kind = "fixture"
-    let supportsGuestCommands = true, supportsPackageInstall = true
-    let supportsClipboard = false, supportsSSH = false, supportsResourceChanges = true
+/// Counts liveness probes; `resources()` is the library's only other backend call.
+final class GenericOwnedControlBackend: VMBackend, @unchecked Sendable {
     private let lock = NSLock()
-    var plan: GenericOwnedLaunchPlan? = .init(primary: .init(executable: "/bin/sleep", arguments: ["5"]))
-    var resourceGate: DispatchSemaphore?
-    private var resourceStarted = false
-    var didBeginResourceUpdate: Bool { lock.withLock { resourceStarted } }
     private var externalRunning = true
-    private var counts = [0, 0, 0, 0, 0]
-    var calls: [Int] { lock.withLock { counts } }
-    func ownedLaunchPlan() -> GenericOwnedLaunchPlan? { lock.withLock { counts[0] += 1; return plan } }
-    func isRunning() -> Bool { lock.withLock { counts[1] += 1; return externalRunning } }
+    private var probes = 0
+    var calls: Int { lock.withLock { probes } }
+    func isRunning() -> Bool { lock.withLock { probes += 1; return externalRunning } }
     func setExternalRunning(_ value: Bool) { lock.withLock { externalRunning = value } }
-    func currentIP() -> String? { nil }
-    func start() -> Bool { lock.withLock { counts[2] += 1; externalRunning = true; return true } }
-    func stop() { lock.withLock { counts[3] += 1; externalRunning = false } }
     func resources() -> (memMiB: Int, cpu: Int) { (4096, 2) }
-    func setResources(memMiB: Int, cpu: Int) -> Bool {
-        lock.withLock { resourceStarted = true }
-        return resourceGate.map { $0.wait(timeout: .now() + 3) == .success } ?? true
-    }
-    func runInGuest(_ command: String) -> (output: String, code: Int32) {
-        lock.withLock { counts[4] += 1 }; return ("", 0)
-    }
 }

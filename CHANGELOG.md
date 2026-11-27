@@ -11,7 +11,9 @@ All notable changes to BridgeVM are documented in this file.
   VM could not start even though the app opened.
 - The Fast VZ (Linux) and QEMU compatibility engines were removed from the app.
   A VM saved with one of them stays in the library, marked as no longer
-  supported, with its files untouched, and can be deleted from there.
+  supported, with its files untouched, and can be deleted from there. The
+  command palette, "Start when BridgeVM opens" and automatic startup no longer
+  offer to start it.
 - `bridgevm app start` runs the same start as the Start button: a failure now
   prints the app's own sentence with the underlying error, and a VM whose
   settings were saved after the app loaded them starts with the saved
