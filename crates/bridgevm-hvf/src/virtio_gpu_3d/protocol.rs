@@ -1,11 +1,5 @@
 //! virtio-gpu 3D wire format: feature/command/response codes, request lengths, header decode and encode.
 
-pub fn response_hdr(typ: u32, request: Option<CtrlHdr3d>) -> Vec<u8> {
-    let mut out = Vec::with_capacity(CTRL_HDR_LEN);
-    response_hdr_into(&mut out, typ, request);
-    out
-}
-
 pub fn response_hdr_into(out: &mut Vec<u8>, typ: u32, request: Option<CtrlHdr3d>) {
     let (flags, fence_id, ctx_id, padding) = request.map_or((0, 0, 0, 0), |hdr| {
         (

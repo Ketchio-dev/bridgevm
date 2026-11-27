@@ -124,15 +124,6 @@ impl VirtPlatform {
         self.nvme.second_namespace_disk_image_if_memory()
     }
 
-    /// Export current NVMe media to a raw file, applying sparse overlay writes.
-    pub fn export_nvme_disk(&mut self, path: impl AsRef<Path>) -> io::Result<u64> {
-        self.nvme.export_disk_image(path)
-    }
-
-    pub fn export_nvme_second_namespace_disk(&mut self, path: impl AsRef<Path>) -> io::Result<u64> {
-        self.nvme.export_second_namespace_disk_image(path)
-    }
-
     /// Flush write-through NVMe media.
     pub fn flush_nvme_disk(&mut self) -> io::Result<()> {
         self.nvme.flush_disk()

@@ -21,13 +21,6 @@ impl VirtPlatform {
         self.flush_virtio_console_pending_msix();
     }
 
-    pub fn virtio_console_agent_take_inbound(&mut self) -> Vec<u8> {
-        self.virtio_console
-            .as_mut()
-            .map(VirtioPciConsole::take_inbound)
-            .unwrap_or_default()
-    }
-
     pub fn virtio_console_agent_drain_inbound_into(&mut self, out: &mut Vec<u8>) {
         let Some(dev) = self.virtio_console.as_mut() else {
             return;
