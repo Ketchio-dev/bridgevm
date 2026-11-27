@@ -68,7 +68,7 @@ final class FirstRunImportAliasAdmissionTests: XCTestCase {
         let varsBefore = try Fingerprint(fixture.vars)
         var inputs = fixture.inputs()
         if usingAlias { inputs.diskPath = alias.path }
-        let expected = FirstRunImport.ValidationError.diskEmpty(inputs.diskPath)
+        let expected = FirstRunImport.ValidationError.media("The Windows disk is empty.")
         XCTAssertEqual(FirstRunImport.validate(inputs), expected)
         let result = FirstRunImportWorker.run(inputs, libraryRoot: fixture.library,
             snapshotHelper: HvfMediaImportTestSupport.helper)
@@ -103,13 +103,13 @@ final class FirstRunImportAliasAdmissionTests: XCTestCase {
         case .wrongSize:
             try Data([9, 8, 7, 6]).write(to: target)
             targetHash = try Fingerprint(target).hash
-            expected = .varsWrongSize(path: alias.path, bytes: 4)
+            expected = .media("The UEFI variables file must be exactly 64 MiB. The selected file contains 4 bytes.")
         case .dangling:
-            expected = .varsMissing(alias.path)
+            expected = .media("Choose the matching UEFI variables file or leave it empty.")
         case .directory:
             try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
             try Data([9, 8, 7, 6]).write(to: marker)
-            expected = .varsMissing(alias.path)
+            expected = .media("Choose the matching UEFI variables file or leave it empty.")
         }
         if kind != .dangling { targetBefore = try Identity(target) }
         try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: target)
