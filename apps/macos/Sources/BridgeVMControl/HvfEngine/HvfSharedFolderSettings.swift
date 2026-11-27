@@ -61,6 +61,7 @@ struct HvfSharedFolderSettings: View {
     /// Turning sharing on only reveals the fields; nothing is shared until a folder is chosen.
     func setEnabled(_ on: Bool) {
         enabled = on
+        if on, draft == nil { return }
         if let commit { commit() }
         else if !on { apply(nil) } else if let draft { apply(draft) }
     }

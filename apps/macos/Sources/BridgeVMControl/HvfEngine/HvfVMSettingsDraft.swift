@@ -87,9 +87,13 @@ final class HvfVMSettingsDraft: ObservableObject {
 
     func didAppear() { session.openSettingsSheets.insert(ObjectIdentifier(self)) }
 
+    /// The sheet can also close without Done (another VM gets selected, say). Its edits are still
+    /// saved, and what could not be saved is shown in the library window.
     func didDisappear() {
-        commitShare()
-        if session.config.virtioNet { commitForwards() }
+        if !finish(), let library = session.library {
+            let messages = [nameMessage, shareMessage, session.config.virtioNet ? forwardsMessage : nil]
+            library.operationError = messages.compactMap { $0 }.joined(separator: "\n")
+        }
         session.openSettingsSheets.remove(ObjectIdentifier(self))
     }
 }
