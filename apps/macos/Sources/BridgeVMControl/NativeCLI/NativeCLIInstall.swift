@@ -72,6 +72,8 @@ extension NativeInstallObservation {
         switch phase {
         case .done:
             return "Next action: check readiness for exact VM ID \(vmID), then start only if ready."
+        case .failed where failure == HvfWindowsInstallPlan.missingDriverFiles:
+            return "Next action: retrying can’t help: " + NativeCLICreateWindowsGuidance.setup
         case .failed, .cancelled:
             return "Next action: explicitly retry installation for exact VM ID \(vmID)."
         case .preparingPlan, .validating, .preparingSource, .installing, .finalizing,

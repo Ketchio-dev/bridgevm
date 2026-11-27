@@ -40,9 +40,15 @@ final class NativeCreatePayloadGuidanceTests: XCTestCase {
         try fm.createDirectory(at: paths.transaction, withIntermediateDirectories: false)
         XCTAssertNil(view.installerForNewVM, "An interrupted install can recover without the original driver payload.")
         XCTAssertFalse(result.text.contains("Next: bridgevm app install"))
-        XCTAssertTrue(result.text.contains("required signed ARM64 guest driver payload"))
-        XCTAssertTrue(result.text.contains("Existing CLI entries cannot be completed"))
-        XCTAssertTrue(NativeCLI.createWindowsHelp.contains(NativeCLICreateWindowsGuidance.limitation))
+        XCTAssertTrue(result.text.contains("can’t install Windows"))
+        XCTAssertTrue(result.text.contains("create it again with --fetch-drivers"))
+        // Its install fails on the missing drivers; the next step names the way out, not a retry.
+        let failed = NativeInstallObservation(operationID: "op", phase: .failed, acceptedUptime: 0,
+            workerPending: false, sessionRunning: false, canCancel: false, logTail: [],
+            failure: HvfWindowsInstallPlan.missingDriverFiles)
+        XCTAssertFalse(failed.cliNextAction(vmID: config.slug).contains("retry installation"))
+        XCTAssertTrue(failed.cliNextAction(vmID: config.slug).contains("--fetch-drivers"))
+        XCTAssertTrue(NativeCLI.createWindowsHelp.contains("Without --fetch-drivers the VM has no driver files"))
         XCTAssertFalse(NativeCLI.createWindowsHelp.contains("bridgevm app install ID"))
     }
 }

@@ -75,9 +75,9 @@ extension NativeCLICreateWindows {
 }
 
 enum NativeCLICreateWindowsGuidance {
-    static let limitation = "CLI-created registrations lack the required signed ARM64 guest driver payload; installation is blocked."
-    static let setup = "For installation, create a new VM in the app with the ISO, signed payload and manifest. Existing CLI entries cannot be completed through the app or CLI."
-    static let help = ["Without --fetch-drivers: " + limitation, setup,
+    static let limitation = "A VM created without driver files can’t install Windows."
+    static let setup = "To install Windows, delete this VM in the app and create it again with --fetch-drivers, or create it in the app with Download Drivers."
+    static let help = ["Without --fetch-drivers the VM has no driver files and can’t install Windows.",
         "With --fetch-drivers, the pinned Microsoft-signed Red Hat virtio-win storage,",
         "serial and network drivers (about 95 MB) are downloaded once from the official",
         "source, checked against their pinned SHA-256 and sealed with the VM, so the",

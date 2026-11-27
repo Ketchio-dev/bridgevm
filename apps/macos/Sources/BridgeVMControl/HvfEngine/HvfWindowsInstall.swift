@@ -73,6 +73,8 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
             repoRoot: repoRoot)
     }
     static let minimumDiskGiB = 64
+    /// A VM created without driver files (the CLI without --fetch-drivers): no retry can install it.
+    nonisolated static let missingDriverFiles = "Windows Setup needs the driver files stored with this VM."
     var sourceImagePath: String {
         libraryRoot.appendingPathComponent(
             "Derived/WindowsInstallSources/\(sourceCacheKey).raw").path
@@ -178,7 +180,7 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
         let expectedPayloadManifest = "\(bundlePath)/metadata/windows-guest-payload.tsv"
         guard request.guestPayloadDirectory == expectedPayloadDirectory,
               request.guestPayloadManifest == expectedPayloadManifest else {
-            return "Windows Setup needs the driver files stored with this VM."
+            return Self.missingDriverFiles
         }
         let payload = HvfWindowsGuestPayloadIdentity.inspect(
             payloadDirectory: request.guestPayloadDirectory,
