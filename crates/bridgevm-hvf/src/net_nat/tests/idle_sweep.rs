@@ -94,3 +94,37 @@ fn zero_idle_timeout_still_sweeps_immediately() {
     assert_eq!(handler.idle_sweep_count, 1);
     assert!(handler.udp_flows.is_empty());
 }
+
+fn tcp_flow(guest_port: u16) -> (TcpFlowKey, TcpFlow, std::net::TcpListener) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let stream = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let mut flow = TcpFlow::new(stream, 1, 1, u16::MAX, None, 0);
+    flow.state = TcpProxyState::Established;
+    let key = TcpFlowKey {
+        guest_ip: GUEST_IP,
+        guest_port,
+        dst_ip: [127, 0, 0, 1],
+        dst_port: listener.local_addr().unwrap().port(),
+    };
+    (key, flow, listener)
+}
+
+/// An SSH or database session Windows leaves alone was cut at the short idle timeout and Windows
+/// was never told. An established connection with no FIN now outlives it; a closing one does not.
+#[test]
+fn an_idle_established_tcp_connection_outlives_the_short_idle_timeout() {
+    let mut handler = HostSocketOutboundIpv4Handler::new().with_idle_timeout_ms(0);
+    let (open_key, open, _open_peer) = tcp_flow(40_010);
+    let (closing_key, mut closing, _closing_peer) = tcp_flow(40_011);
+    closing.guest_fin = true;
+    handler.tcp_flows.insert(open_key, open);
+    handler.tcp_flows.insert(closing_key, closing);
+    handler.epoch = std::time::Instant::now() - std::time::Duration::from_millis(1);
+
+    handler.evict_idle_flows();
+
+    assert!(handler.tcp_flows.contains_key(&open_key));
+    assert!(!handler.tcp_flows.contains_key(&closing_key));
+    let open = &handler.tcp_flows[&open_key];
+    assert_eq!(open.idle_limit_ms(300_000), 124 * 60 * 1000);
+}
