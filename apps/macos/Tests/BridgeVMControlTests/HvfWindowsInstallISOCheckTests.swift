@@ -30,6 +30,9 @@ final class HvfWindowsInstallISOCheckTests: XCTestCase {
             XCTAssertEqual($0.localizedDescription, HvfWindowsInstallISOCheck.notDiskImage)
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: library.path))
+        // An ISO whose drive was ejected is not called "not a disc image".
+        XCTAssertEqual(HvfWindowsInstallISOCheck.problem(isoPath: root.appendingPathComponent("ejected.iso").path),
+                       CreateFailure.isoUnreadable)
     }
 
     func testX64ImageIsRefusedArmImagePassesAndNeitherStaysAttached() throws {

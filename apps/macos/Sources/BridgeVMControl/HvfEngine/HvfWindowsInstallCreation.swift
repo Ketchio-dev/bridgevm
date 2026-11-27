@@ -1,5 +1,32 @@
 import Foundation
 
+/// What a failed Create says when the user can do something about it.
+enum CreateFailure {
+    static let isoUnreadable = "BridgeVM can’t read the Windows ISO. Reconnect its drive, or choose the ISO again."
+    static let isoCopy = "BridgeVM couldn’t copy the Windows ISO into the VM’s folder. Check that both drives are still connected and that there’s enough free space."
+
+    static func folder(_ base: URL) -> String {
+        "BridgeVM couldn’t make the VM’s folder in “\(base.path)”. Check that the drive is connected and that you can save files there."
+    }
+
+    /// A copy to another volume needs the ISO's size free there, plus 1 GiB; a clone on the same volume
+    /// needs none.
+    static func isoSpace(iso: String, destination: URL) -> String? {
+        var source = stat(), folder = stat(), target = statfs()
+        guard stat(iso, &source) == 0, stat(destination.path, &folder) == 0,
+              statfs(destination.path, &target) == 0 else { return nil }
+        return isoSpace(isoBytes: UInt64(max(source.st_size, 0)), sameVolume: source.st_dev == folder.st_dev,
+                        freeBytes: UInt64(target.f_bavail) * UInt64(target.f_bsize),
+                        volume: (try? destination.resourceValues(forKeys: [.volumeNameKey]).volumeName) ?? destination.path)
+    }
+
+    static func isoSpace(isoBytes: UInt64, sameVolume: Bool, freeBytes: UInt64, volume: String) -> String? {
+        guard !sameVolume, freeBytes < isoBytes + (1 << 30) else { return nil }
+        let needed = (isoBytes + (1 << 30) + (1 << 30) - 1) >> 30
+        return "“\(volume)” doesn’t have enough free space to copy the Windows ISO (about \(needed) GB). Free up space, or choose another location."
+    }
+}
+
 extension VMLibrary {
     /// Create an install-pending Windows HVF VM; 3D needs signed provenance.
     static func createWindowsHVFInstall(name: String, isoPath: String, diskGiB: Int,
@@ -27,11 +54,13 @@ extension VMLibrary {
         }
         guard windowsHVFInjectionError(requested: injectViogpu3d) == nil,
               let name = normalizedVMName(name),
-              HvfWindowsInstallPlan.diskSizeError(diskGiB) == nil,
-              isReadableRegularFile(isoPath),
-              let reserved = reserveDestination(
-                name, storageBase: storageDir ?? libraryRoot, libraryRoot: libraryRoot
-              ) else { return nil }
+              HvfWindowsInstallPlan.diskSizeError(diskGiB) == nil else { return nil }
+        // Each failure the user can act on says what to do, not the general sentence.
+        guard isReadableRegularFile(isoPath) else { return .refused(CreateFailure.isoUnreadable) }
+        let storageBase = storageDir ?? libraryRoot
+        guard let reserved = reserveDestination(name, storageBase: storageBase, libraryRoot: libraryRoot) else {
+            return .refused(CreateFailure.folder(storageBase))
+        }
         let slug = reserved.slug
         let destinationRoot = reserved.root
         var preserveDestination = false
@@ -42,10 +71,13 @@ extension VMLibrary {
                 try fm.createDirectory(at: bundle.appendingPathComponent(sub), withIntermediateDirectories: true)
             }
         } catch {
-            return nil
+            return .refused(CreateFailure.folder(storageBase))
         }
         let b = bundle.path
-        guard let managedISO = WindowsHVFProductPolicy.stageISO(isoPath, in: b) else { return nil }
+        if let space = CreateFailure.isoSpace(iso: isoPath, destination: bundle) { return .refused(space) }
+        guard let managedISO = WindowsHVFProductPolicy.stageISO(isoPath, in: b) else {
+            return .refused(CreateFailure.isoCopy)
+        }
         guard let inputs = WindowsHVFInstallInputPolicy.stage(
             payloadDirectory: guestPayloadDirectory,
             payloadManifest: guestPayloadManifest,

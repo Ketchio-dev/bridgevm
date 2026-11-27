@@ -43,6 +43,11 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- When Create VM fails for a reason you can fix, it now says so: the Windows
+  ISO can't be read (its drive was ejected), the VM's folder can't be made in
+  the chosen location, there isn't enough free space on another drive for the
+  ISO copy, or another VM took the same ID at the same time. Before, each of
+  these said only "Couldn't create the VM or save it to the library."
 - "Open Windows links on Mac" and "Print to Mac" can now be turned off (or on)
   while Windows runs: links stop opening and the printer goes at once, and the
   choice is saved when the VM stops.
