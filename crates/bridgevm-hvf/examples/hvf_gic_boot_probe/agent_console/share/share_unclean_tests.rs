@@ -97,7 +97,7 @@ fn ordinary_stage_failure_then_clean_stop_fetches_windows_edit_on_restart() {
 #[test]
 fn missing_state_is_unclean_before_any_mutation() {
     let rig=Rig::new("missing-state");let vars=vars(&rig);
-    let (file,_,_,error)=sync_file::SyncStateFile::open(&vars,&rig.dir);
+    let (file,_,_,error)=sync_file::SyncStateFile::open(&vars,&rig.dir,ROOT);
     assert!(error.is_none());assert!(file.previous_unclean);
     assert!(std::fs::read_to_string(state_path(&vars)).unwrap().contains("session unclean"));
 }
@@ -105,8 +105,8 @@ fn missing_state_is_unclean_before_any_mutation() {
 #[test]
 fn kill_without_finish_keeps_unclean() {
     let rig=Rig::new("kill-no-finish");let vars=vars(&rig);
-    let (file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir);drop(file);
-    let (file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir);assert!(file.previous_unclean);
+    let (file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir,ROOT);drop(file);
+    let (file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir,ROOT);assert!(file.previous_unclean);
 }
 
 #[test]
@@ -115,19 +115,38 @@ fn old_format_loads_versions_but_is_unclean() {
     let text=std::fs::read_to_string(state_path(&vars)).unwrap().replace("bridgevm-share-sync 2","bridgevm-share-sync 1");
     let text=text.lines().filter(|l|!l.starts_with("session ")).collect::<Vec<_>>().join("\n")+"\n";
     std::fs::write(state_path(&vars),text).unwrap();
-    let (file,files,_,error)=sync_file::SyncStateFile::open(&vars,&rig.dir);
+    let (file,files,_,error)=sync_file::SyncStateFile::open(&vars,&rig.dir,ROOT);
     assert!(error.is_none());assert!(file.previous_unclean);assert!(files.contains_key("doc.bin"));
+}
+
+#[test]
+fn a_state_is_taken_only_for_the_windows_folder_it_was_kept_for() {
+    let (mut rig,vars)=synced_from_guest("guest-folder-key",now_ms()-2*HOUR_MS,true);settle(&mut rig);rig.h.share=None;
+    // Written before the key named the Windows folder: "root <Mac folder>" only.
+    for suffix in bridgevm_hvf::snapshot_pair::SHARE_STATE_SUFFIXES {
+        let path=PathBuf::from(format!("{}{suffix}",vars.display()));
+        let Ok(text)=std::fs::read_to_string(&path) else { continue };
+        let text=text.lines().map(|l| if l.starts_with("root ") { l.rsplit_once(' ').unwrap().0 } else { l }).collect::<Vec<_>>().join("\n")+"\n";
+        std::fs::write(&path,text).unwrap();
+    }
+    let (file,files,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir,ROOT);drop(file);
+    assert!(files.contains_key("doc.bin"),"an older state is still taken");
+    let (file,files,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir,&ROOT.to_uppercase());drop(file);
+    assert!(files.contains_key("doc.bin"),"Windows paths ignore case");
+    // Another Windows folder's doc.bin is not an edit of the synced one, to copy over the Mac's.
+    let (_,files,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir,"C:\\Users\\me\\Documents");
+    assert!(files.is_empty(),"a state for another Windows folder was taken");
 }
 
 #[test]
 fn clean_end_reopens_unclean_before_a_new_boot_can_mutate() {
     let rig=Rig::new("clean-reboot");let vars=vars(&rig);
-    let (mut file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir);
+    let (mut file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir,ROOT);
     let mut engine=ShareSync::new(512);
     engine.on_guest_listing(Vec::new()); // a clean stop must have examined the unclean state
     file.finish_clean(&mut engine);
     assert!(std::fs::read_to_string(state_path(&vars)).unwrap().contains("session clean"));
-    let (file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir);
+    let (file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir,ROOT);
     assert!(!file.previous_unclean);
     assert!(std::fs::read_to_string(state_path(&vars)).unwrap().contains("session unclean"));
 }
@@ -148,7 +167,7 @@ fn share_drop_does_not_clear_unclean() {
 #[test]
 fn clean_finish_joins_latest_versions_and_keeps_other_thread_marks() {
     let rig=Rig::new("finish-marks");let vars=vars(&rig);
-    let (mut file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir);
+    let (mut file,_,_,_)=sync_file::SyncStateFile::open(&vars,&rig.dir,ROOT);
     let mut engine=ShareSync::new(512);
     engine.on_guest_listing(Vec::new());
     engine.on_guest_file("latest".into(),b"latest bytes".to_vec(),Some("g"));
@@ -157,7 +176,7 @@ fn clean_finish_joins_latest_versions_and_keeps_other_thread_marks() {
     std::thread::spawn(move || sync_file::mark(&marks,["live-put"]).unwrap()).join().unwrap();
     file.finish_clean(&mut engine);
     file.finish(&mut engine); // ShareState's eventual Drop must not undo the joined write.
-    let (file,files,marks,_)=sync_file::SyncStateFile::open(&vars,&rig.dir);
+    let (file,files,marks,_)=sync_file::SyncStateFile::open(&vars,&rig.dir,ROOT);
     assert!(!file.previous_unclean);assert_eq!(files["latest"].last.size,12);assert!(marks.contains("live-put"));
 }
 

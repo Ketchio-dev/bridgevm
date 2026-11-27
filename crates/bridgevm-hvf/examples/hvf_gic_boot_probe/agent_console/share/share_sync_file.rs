@@ -174,19 +174,24 @@ fn absent(error: &std::io::Error) -> bool {
 }
 
 impl SyncStateFile {
-    /// The state beside `vars` for the Mac folder `host_dir`, and what it holds when it can be
-    /// trusted (otherwise nothing: every decision is then the one without a state). A state not
-    /// taken whole (either file unreadable, corrupt or for another folder) is removed here,
+    /// The state beside `vars` for the Mac folder `host_dir` shared as the Windows folder
+    /// `guest_dir`, and what it holds when it can be trusted (otherwise nothing: every decision is
+    /// then the one without a state). A state not taken whole (either file unreadable, corrupt or
+    /// for another pair of folders) is removed here,
     /// before anything is sent: this session numbers its marks from 0, and a surviving older
     /// file with a higher number would outrank them at the next start.
-    pub(in crate::agent_console) fn open(vars: &Path, host_dir: &Path) -> Opened {
+    pub(in crate::agent_console) fn open(vars: &Path, host_dir: &Path, guest_dir: &str) -> Opened {
         let side = |suffix: &str| {
             let mut name = vars.as_os_str().to_owned();
             name.push(suffix);
             PathBuf::from(name)
         };
+        // Both folders: a state kept for another Windows folder would take that folder's files
+        // for edits of the synced ones and copy them over the Mac's. Windows paths ignore case.
         let mut root = String::new();
         base64_encode_into(host_dir.as_os_str().as_bytes(), &mut root);
+        root.push(' ');
+        base64_encode_into(guest_dir.to_lowercase().as_bytes(), &mut root);
         // One list with the snapshot restore, which removes these files when it rolls the disk back.
         let [versions, marks] = bridgevm_hvf::snapshot_pair::SHARE_STATE_SUFFIXES;
         let mut file = Self {
@@ -539,7 +544,13 @@ fn write_replace(path: &Path, bytes: &[u8]) -> std::io::Result<std::fs::File> {
 fn parse(text: &str, header: &str, root: &str) -> Option<Loaded> {
     let mut lines = text.lines();
     let found = lines.next()?;
-    if (found != header && !(header == VERSIONS_HEADER && found == "bridgevm-share-sync 2")) || lines.next()?.strip_prefix("root ")? != root {
+    if found != header && !(header == VERSIONS_HEADER && found == "bridgevm-share-sync 2") {
+        return None;
+    }
+    // A state written before the key named the Windows folder (the Mac folder only) is still
+    // taken, once: the next write names both.
+    let found_root = lines.next()?.strip_prefix("root ")?;
+    if found_root != root && root.split_once(' ').is_none_or(|(host, _)| found_root != host) {
         return None;
     }
     let seq = lines.next()?.strip_prefix("seq ")?.parse().ok()?;
