@@ -295,8 +295,12 @@ impl<H: OutboundIpv4Handler> NatBackend<H> {
 
         // The gateway too: forwarded connections come from it, so the guest's
         // side of them is addressed to it (handle_tcp opens no flow there).
+        // DNS over TCP to DNS_IP goes to the upstream resolver, like the UDP
+        // relay.
         if packet.protocol == IPV4_PROTOCOL_TCP
-            && (is_non_local_ipv4_destination(packet.dst) || packet.dst == GATEWAY_IP)
+            && (is_non_local_ipv4_destination(packet.dst)
+                || packet.dst == GATEWAY_IP
+                || packet.dst == DNS_IP)
         {
             self.stats.tcp_segments = self.stats.tcp_segments.saturating_add(1);
             self.outbound_ipv4.handle_outbound_ipv4(&packet);
