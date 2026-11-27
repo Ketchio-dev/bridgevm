@@ -21,6 +21,9 @@ use crate::owned_child::OwnedChild;
 use crate::{RuntimeControl, RuntimeError};
 #[path = "owned_swtpm_directory.rs"]
 mod directory;
+#[cfg(target_os = "macos")]
+#[path = "vtpm_leftover.rs"]
+mod leftover;
 use directory::remove_runtime_dir;
 
 /// The durable vTPM state, executable and optional key delivered over the

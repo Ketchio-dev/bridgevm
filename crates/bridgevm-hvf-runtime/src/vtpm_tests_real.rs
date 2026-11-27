@@ -147,3 +147,87 @@ fn an_encrypted_state_dir_refuses_the_wrong_key() {
     assert!(wrong.is_err(), "the wrong key must be refused");
     let _ = std::fs::remove_dir_all(&state);
 }
+
+/// A runner killed with SIGKILL (or crashing) never stops its swtpm. launchd adopts it and it
+/// keeps the lock on the VM's vTPM state, so every later swtpm for that VM exited at once and
+/// Windows could not start again until the Mac restarted.
+#[test]
+fn a_swtpm_left_by_a_killed_runner_does_not_block_the_next_start() {
+    let swtpm = PathBuf::from("/opt/homebrew/bin/swtpm");
+    if !swtpm.exists() {
+        eprintln!("skipping: no swtpm on this host");
+        return;
+    }
+    let state = scratch_state("leftover");
+    std::fs::create_dir_all(&state).unwrap();
+    let sockets = PathBuf::from(format!("/tmp/bv-left-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&sockets);
+    std::fs::create_dir_all(&sockets).unwrap();
+    // sh starts swtpm in the background and exits, so launchd adopts it, as after a killed runner.
+    let script = format!(
+        "'{}' socket --tpm2 --tpmstate dir='{}' --server type=unixio,path='{2}/d' \
+         --ctrl type=unixio,path='{2}/c' --flags not-need-init,startup-clear \
+         </dev/null >/dev/null 2>&1 & echo $!",
+        swtpm.display(),
+        state.display(),
+        sockets.display()
+    );
+    let output = std::process::Command::new("/bin/sh")
+        .args(["-c", &script])
+        .output()
+        .unwrap();
+    let pid: libc::pid_t = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse()
+        .unwrap();
+    assert!(
+        wait_for_state_file(&sockets.join("c")),
+        "the leftover swtpm serves"
+    );
+
+    let next = start_swtpm(&VtpmConfig {
+        state_dir: state.clone(),
+        swtpm_bin: swtpm,
+        state_key: None,
+    });
+    let leftover_alive = unsafe { libc::kill(pid, 0) } == 0;
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    let started = next.is_ok();
+    drop(next);
+    let _ = std::fs::remove_dir_all(&sockets);
+    let _ = std::fs::remove_dir_all(&state);
+    assert!(
+        started,
+        "the next start must not be blocked by the leftover"
+    );
+    assert!(!leftover_alive, "the leftover swtpm is stopped");
+}
+
+/// The leftover rule never touches a swtpm whose runner is alive: a second start for the same
+/// state is refused and the first keeps serving.
+#[test]
+fn a_live_runners_swtpm_is_left_alone() {
+    let swtpm = PathBuf::from("/opt/homebrew/bin/swtpm");
+    if !swtpm.exists() {
+        eprintln!("skipping: no swtpm on this host");
+        return;
+    }
+    let state = scratch_state("live-holder");
+    let config = VtpmConfig {
+        state_dir: state.clone(),
+        swtpm_bin: swtpm,
+        state_key: None,
+    };
+    let mut first = start_swtpm(&config).expect("swtpm starts");
+    let second = start_swtpm(&config);
+    let first_alive = super::super::controlled::require_live(
+        &mut first,
+        "the first swtpm",
+        &RuntimeControl::default(),
+    )
+    .is_ok();
+    drop(second);
+    drop(first);
+    let _ = std::fs::remove_dir_all(&state);
+    assert!(first_alive, "a live runner's swtpm keeps serving");
+}
