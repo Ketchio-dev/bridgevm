@@ -13,9 +13,9 @@ struct HvfStartupDisplayOverlay: View {
                     ProgressView()
                     Text(session.runtimePendingWorkText ?? "Preparing to start Windows…")
                 } else {
-                    Image(systemName: session.guiStartFailureText == nil ? "power" : "exclamationmark.triangle")
+                    Image(systemName: session.runtimeFailureText == nil ? "power" : "exclamationmark.triangle")
                         .font(.largeTitle)
-                    Text(session.guiStartFailureText ?? "Windows has shut down.")
+                    Text(session.runtimeFailureText ?? "Windows has shut down.")
                         .multilineTextAlignment(.center).textSelection(.enabled)
                     HStack {
                         Button("Close Window") { window.window?.performClose(nil) }

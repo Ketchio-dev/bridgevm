@@ -4,7 +4,7 @@ struct HvfRuntimeStatusMessages: View {
     @ObservedObject var session: HvfEngineSession
     let refusal: String?
 
-    private var failureText: String? { refusal ?? session.runtimeSupervisionFailureText ?? session.guiStartFailureText }
+    private var failureText: String? { refusal ?? session.runtimeFailureText }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

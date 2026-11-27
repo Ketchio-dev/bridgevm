@@ -39,6 +39,14 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- The library dashboard now says when a run needs attention: a Windows disk
+  BridgeVM couldn't finish saving at shutdown, or lost contact with Windows,
+  used to show only in Advanced (the VM read "Stopped" or "Running"), and a
+  failed stop read "Booting Windows". Open Display also stays available while
+  Windows shuts down, since that window is where an app asking to save shows.
+- "Start when BridgeVM opens" no longer skips a VM that is not ready (for
+  example its disk is on a drive that is not connected) without a word: it
+  starts it as the Start button does, which says why it could not.
 - Copying more than about 24 MB of text in Windows stalled clipboard sharing,
   shared folders and input for the rest of the session. The copy is now
   refused like any text over 8 MB, and the rest keeps working.

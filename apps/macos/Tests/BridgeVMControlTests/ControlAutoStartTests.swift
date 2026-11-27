@@ -23,7 +23,7 @@ final class ControlAutoStartTests: XCTestCase {
         XCTAssertFalse(ControlAutoStart.isStartable(saved, library: library), "Interrupted installation is skipped")
         try FileManager.default.removeItem(at: transaction)
         try FileManager.default.removeItem(atPath: session.config.targetDiskPath)
-        XCTAssertFalse(ControlAutoStart.isStartable(saved, library: library), "Missing disk is skipped")
+        XCTAssertTrue(ControlAutoStart.isStartable(saved, library: library), "A missing disk is left to the start, which says why")
         try Data([0]).write(to: URL(fileURLWithPath: session.config.targetDiskPath))
         f.existingRuntime = true
         XCTAssertFalse(ControlAutoStart.isStartable(saved, library: library), "Surviving runner is skipped")
