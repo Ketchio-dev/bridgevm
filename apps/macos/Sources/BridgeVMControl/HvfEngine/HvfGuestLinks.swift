@@ -171,6 +171,21 @@ try {
         return bytes[0..<10].allSatisfy { $0 == 0 } && bytes[10] == 0xff && bytes[11] == 0xff && [0, 127].contains(bytes[12])
     }
 
+    /// The detail of a failed registration or link watch in a command's output ("" without one); nil when
+    /// it did not fail.
+    static func setupFailure(in output: String) -> String? {
+        for raw in output.split(whereSeparator: \.isNewline) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line == "BVLINKS watch=unavailable" { return "" }
+            if line.hasPrefix("BVLINKS result=failed") {
+                let rest = line.dropFirst("BVLINKS result=failed".count).trimmingCharacters(in: .whitespaces)
+                let detail = rest.hasPrefix("detail=") ? String(rest.dropFirst("detail=".count)) : rest
+                return String(detail.prefix(200))
+            }
+        }
+        return nil
+    }
+
     /// The event feed shows a link by its host only: a URL can carry a token.
     static func feedEvent(_ event: BvAgentEvent) -> BvAgentEvent {
         guard case let .unknown(line) = event, line.hasPrefix(linePrefix + "at="),
@@ -212,6 +227,13 @@ extension HvfEngineSession {
         case nil:
             break
         }
+    }
+
+    /// The output of a registration or `LINKWATCH` command: a failure becomes the links notice, so the
+    /// setting does not stay on while nothing can work.
+    func guestLinksSetupReported(_ output: String) {
+        guard guestLinksWanted, let detail = HvfGuestLinks.setupFailure(in: output) else { return }
+        guestLinkNotice.show(.setupFailed(detail: detail.isEmpty ? nil : detail))
     }
 
     /// A probe `BVAGENT OPENURL` line: opened at most once a second while the setting is on, else ignored.

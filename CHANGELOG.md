@@ -45,6 +45,9 @@ All notable changes to BridgeVM are documented in this file.
   extends C:, also for VMs imported with an earlier version.
 - The VM dashboard said "Graphics mode unknown" for every Windows that BridgeVM
   itself had started. It now shows the running session's display mode.
+- When Windows could not register BridgeVM as a browser or watch for links,
+  "Open Windows links on Mac" stayed on and links silently never reached the
+  Mac. The VM window now says so and suggests restarting Windows.
 - An interrupted snapshot create or export (for example, its process was
   killed) left a hidden, half-made copy of the VM's disk and vars in the
   snapshot folder, plus an empty folder for an app snapshot. The snapshot list
