@@ -373,7 +373,7 @@ impl SecondaryRunLoopContext<'_> {
                 let trap = SysRegTrap::decode(esr);
                 if unsafe { emulate_debug_os_lock_sysreg(vcpu, trap) } {
                     unsafe {
-                        hv_vcpu_set_reg(vcpu, HV_REG_PC, pc + 4);
+                        hv_vcpu_set_reg(vcpu, HV_REG_PC, pc.wrapping_add(4)); // the PC wraps like the hardware's
                     }
                     Ok(Next::CheckExitCap)
                 } else {
@@ -483,7 +483,7 @@ impl SecondaryRunLoopContext<'_> {
             }
         }
         unsafe {
-            hv_vcpu_set_reg(vcpu, HV_REG_PC, pc + 4);
+            hv_vcpu_set_reg(vcpu, HV_REG_PC, pc.wrapping_add(4)); // the PC wraps like the hardware's
         }
         Ok(Next::CheckExitCap)
     }
