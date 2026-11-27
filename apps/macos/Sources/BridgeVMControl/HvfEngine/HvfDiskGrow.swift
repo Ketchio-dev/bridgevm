@@ -82,14 +82,19 @@ enum HvfDiskGrow {
     // MARK: guest
 
     /// One agent line that extends C: to the largest size Windows supports when that gains more
-    /// than 1000 MiB, and prints `BVDISK result=<extended|already|failed> [size=<bytes>] [detail=...]`.
+    /// than 1000 MiB, and prints `BVDISK result=<extended|already|blocked|failed> [size=<bytes>] [detail=...]`.
+    /// `blocked`: C: cannot grow but the disk has more than 1 GiB unallocated, which a partition after
+    /// C: causes (Windows setup puts Recovery there; BridgeVM's own install does not).
     static let extendCommand: String = {
         let script = #"""
             $ErrorActionPreference = 'Stop'
             try {
               $size = (Get-Partition -DriveLetter C).Size
               $max = (Get-PartitionSupportedSize -DriveLetter C).SizeMax
-              if ($max -le $size + 1000MB) { 'BVDISK result=already size=' + $size; exit }
+              if ($max -le $size + 1000MB) {
+                if ((Get-Disk -Number (Get-Partition -DriveLetter C).DiskNumber).LargestFreeExtent -gt 1GB) { 'BVDISK result=blocked size=' + $size; exit }
+                'BVDISK result=already size=' + $size; exit
+              }
               Resize-Partition -DriveLetter C -Size $max
               'BVDISK result=extended size=' + (Get-Partition -DriveLetter C).Size
             } catch { 'BVDISK result=failed detail=' + (($_.Exception.Message -replace '\s+', ' ').Trim()) }
@@ -101,6 +106,7 @@ enum HvfDiskGrow {
     enum Outcome: Equatable {
         case extended(bytes: UInt64?)
         case already(bytes: UInt64?)
+        case blocked(bytes: UInt64?)
         case failed(detail: String)
 
         var notice: String {
@@ -109,6 +115,8 @@ enum HvfDiskGrow {
                 return "Extended the C: drive to use the larger disk" + (bytes.map { " (\(HvfDiskGrow.gibText($0)))." } ?? ".")
             case .already:
                 return "The C: drive already uses all available disk space."
+            case .blocked:
+                return "A partition after the C: drive (usually Windows Recovery) keeps BridgeVM from extending it, so the added space stays unallocated in Disk Management."
             case let .failed(detail):
                 return Self.failedPrefix(detail) + "Open Disk Management in Windows and extend the C: volume."
             }
@@ -139,6 +147,7 @@ enum HvfDiskGrow {
         switch status {
         case "extended": return .extended(bytes: size)
         case "already": return .already(bytes: size)
+        case "blocked": return .blocked(bytes: size)
         default:
             let detail = fields.hasPrefix("detail=") ? String(fields.dropFirst("detail=".count)) : fields
             return .failed(detail: String(detail.prefix(200)))

@@ -43,8 +43,9 @@ final class HvfDiskGrowTests: XCTestCase {
         let script = try XCTUnwrap(String(data: bytes, encoding: .utf16LittleEndian))
         XCTAssertTrue(script.contains("$max = (Get-PartitionSupportedSize -DriveLetter C).SizeMax"), script)
         XCTAssertTrue(script.contains("Resize-Partition -DriveLetter C -Size $max"), script)
-        XCTAssertTrue(script.contains("if ($max -le $size + 1000MB) { 'BVDISK result=already"), "idempotent: \(script)")
-        for result in ["extended", "already", "failed"] {
+        XCTAssertTrue(script.contains("if ($max -le $size + 1000MB) {"), "idempotent: \(script)")
+        XCTAssertTrue(script.contains("LargestFreeExtent -gt 1GB) { 'BVDISK result=blocked"), "a partition after C: \(script)")
+        for result in ["extended", "already", "blocked", "failed"] {
             XCTAssertTrue(script.contains("'BVDISK result=\(result) "), result)
         }
     }
@@ -54,6 +55,9 @@ final class HvfDiskGrowTests: XCTestCase {
                        .extended(bytes: 77_309_411_328))
         XCTAssertEqual(HvfDiskGrow.outcome(reply: "BVDISK result=already size=68412243968"),
                        .already(bytes: 68_412_243_968))
+        XCTAssertEqual(HvfDiskGrow.outcome(reply: "BVDISK result=blocked size=68412243968"), .blocked(bytes: 68_412_243_968))
+        XCTAssertTrue(HvfDiskGrow.Outcome.blocked(bytes: nil).notice.contains("unallocated"),
+                      "not 'already uses all available disk space' when the space is there but C: cannot reach it")
         XCTAssertEqual(HvfDiskGrow.outcome(reply: "BVDISK result=failed detail=Size Not Supported"),
                        .failed(detail: "Size Not Supported"))
         XCTAssertNil(HvfDiskGrow.outcome(reply: "HVF 게스트 명령 응답 시간 초과"))
