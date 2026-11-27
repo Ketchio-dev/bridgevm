@@ -10,6 +10,8 @@ extension VMLibrary {
     static let windowsHVFVarsBytes: UInt64 = 64 * 1024 * 1024
     static let maximumVMNameCharacters = 128
     static let maximumVMSlugBytes = 200
+    /// Shown when `normalizedVMName` refuses a name that is not empty.
+    static let vmNameRule = "Use 1–\(maximumVMNameCharacters) characters without control characters. If the name is long, shorten it to fit the file name limit."
 
     static func registrationSlug(for name: String) -> String {
         let slug = VMConfig.slugify(name)

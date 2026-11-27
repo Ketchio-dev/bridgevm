@@ -66,6 +66,17 @@ All notable changes to BridgeVM are documented in this file.
 - "Open Windows links on Mac" and "Print to Mac" can now be turned off (or on)
   while Windows runs: links stop opening and the printer goes at once, and the
   choice is saved when the VM stops.
+- Importing a disk that a running VM is using now says "Shut down the VM that
+  uses this disk, then import again." Before, it said only that the Windows
+  files could not be imported and to check access and free space.
+- The first-run import form now checks the name and files the way Create VM
+  does, in plain sentences without file paths. A name too long for the
+  library's folder name is refused at once instead of failing later with a
+  general import error.
+- Choosing a Windows installer ISO as the disk in the first-run import form now
+  says "This is a Windows installer ISO. Use Install Windows instead." Before,
+  the ISO was copied as the VM's disk and the import ended with "This disk has
+  no UEFI boot partition."
 - Putting the Mac to sleep while a key press or click was still on its way to
   Windows no longer stops the keyboard and mouse on wake until Windows restarts:
   the time Windows has to confirm input now counts only while the Mac is awake.

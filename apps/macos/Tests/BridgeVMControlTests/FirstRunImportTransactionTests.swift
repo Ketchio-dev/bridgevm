@@ -67,13 +67,28 @@ final class FirstRunImportTransactionTests: XCTestCase {
     func testConfigWriteRefusalRemovesPreparedBundle() throws {
         let fixture = try FirstRunImportTransactionFixture()
         defer { fixture.remove() }
-        // Three name fields exceed the config limit; the normalized slug is x.
-        let inputs = fixture.inputs(String(repeating: "!", count: 350_000) + "x")
-        XCTAssertNil(FirstRunImport.validate(inputs))
-        let result = FirstRunImportWorker.run(inputs, libraryRoot: fixture.library,
+        let result = FirstRunImportWorker.run(fixture.inputs(), libraryRoot: fixture.library,
+            snapshotHelper: HvfMediaImportTestSupport.helper, publish: { config, root in
+            VMLibrary.createOutcome(config, rootURL: root) { _, _ in .notPublished(CocoaError(.fileWriteOutOfSpace)) }
+        })
+        guard case .failed = result else { return XCTFail("refused config write must fail") }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.entry.path))
+        try fixture.assertSources()
+    }
+
+    /// A running VM holds its runtime writer lease on the disk, as on a BridgeVM VM's hvf-target.raw.
+    func testDiskInUseByARunningVMSaysToShutItDown() throws {
+        let fixture = try FirstRunImportTransactionFixture()
+        defer { fixture.remove() }
+        let lock = open(fixture.disk.path + ".bridgevm-writer.lock", O_RDWR | O_CREAT, 0o600)
+        XCTAssertGreaterThanOrEqual(lock, 0)
+        defer { close(lock) }
+        XCTAssertEqual(flock(lock, LOCK_EX | LOCK_NB), 0)
+        let result = FirstRunImportWorker.run(fixture.inputs(), libraryRoot: fixture.library,
             snapshotHelper: HvfMediaImportTestSupport.helper)
-        guard case .failed = result else { return XCTFail("oversized config must refuse publication") }
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.library.appendingPathComponent("x").path))
+        guard case .failed(let message) = result else { return XCTFail("in-use disk must refuse: \(result)") }
+        XCTAssertEqual(message, "Shut down the VM that uses this disk, then import again.")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.entry.path))
         try fixture.assertSources()
     }
 

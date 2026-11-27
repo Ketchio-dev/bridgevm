@@ -19,13 +19,10 @@ enum FirstRunImport {
     }
 
     enum ValidationError: LocalizedError, Equatable, CustomStringConvertible {
-        case emptyName
-        case diskMissing(String)
-        case diskNotAFile(String)
-        case diskEmpty(String)
+        case emptyName, invalidName, installerISO
+        /// The Create sheet's sentence for the disk and UEFI variables files.
+        case media(String)
         case unsupportedDiskFormat(String)
-        case varsMissing(String)
-        case varsWrongSize(path: String, bytes: UInt64)
         case vtpmNotADirectory(String), vtpmRecoveryMissing(String), vtpmRecoveryWithoutState
         case vtpmRecoveryPackageRequired, vtpmRecoveryCodeRequired, vtpmRecoveryCodeShared(String)
         case badResources(memMiB: Int, cpuCount: Int)
@@ -35,14 +32,11 @@ enum FirstRunImport {
         var description: String {
             switch self {
             case .emptyName: return "Enter a name for the VM."
-            case .diskMissing(let p): return "Disk image not found at \(p)"
-            case .diskNotAFile(let p): return "Choose a disk image file instead of the folder at \(p)"
-            case .diskEmpty(let p): return "The disk image at \(p) is empty."
+            case .invalidName: return VMLibrary.vmNameRule
+            case .installerISO: return "This is a Windows installer ISO. Use Install Windows instead."
+            case .media(let sentence): return sentence
             case .unsupportedDiskFormat(let format):
                 return "To import a \(format) disk, convert it to RAW, QCOW2, fixed-size VHD, or VHDX and choose the converted file."
-            case .varsMissing(let p): return "UEFI variables file not found at \(p)"
-            case .varsWrongSize(let p, let b):
-                return "The UEFI variables file must be exactly 64 MiB. The file at \(p) contains \(b) bytes."
             case .vtpmNotADirectory(let p): return "Choose the vTPM state folder. Check the path \(p)"
             case .vtpmRecoveryMissing(let p): return "The vTPM recovery file is unavailable at \(p)"
             case .vtpmRecoveryPackageRequired: return "Choose the vTPM recovery package."
@@ -58,8 +52,8 @@ enum FirstRunImport {
 
     static let requiredVarsBytes: UInt64 = 64 * 1024 * 1024
 
-    /// Validate user inputs against the filesystem. Pure w.r.t. the injected
-    /// FileManager so it is unit-testable without touching real user paths.
+    /// Validate user inputs with the Create sheet's name and file checks, plus the
+    /// first-run resource, installer ISO and vTPM checks.
     static func validate(
         _ inputs: Inputs,
         fileManager: FileManager = .default
@@ -67,35 +61,25 @@ enum FirstRunImport {
         if inputs.displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return .emptyName
         }
+        if VMLibrary.normalizedVMName(inputs.displayName) == nil { return .invalidName }
         if inputs.memMiB < 2048 || !HvfEngineConfig.supportedCPURange.contains(inputs.cpuCount) {
             return .badResources(memMiB: inputs.memMiB, cpuCount: inputs.cpuCount)
         }
-
-        var isDir: ObjCBool = false
-        guard fileManager.fileExists(atPath: inputs.diskPath, isDirectory: &isDir) else {
-            return .diskMissing(inputs.diskPath)
+        if let sentence = VMLibrary.windowsHVFImportError(targetDiskPath: inputs.diskPath, varsPath: inputs.varsPath) {
+            return .media(sentence)
         }
-        if isDir.boolValue { return .diskNotAFile(inputs.diskPath) }
-        let diskBytes = (try? fileManager.attributesOfItem(atPath:
-            URL(fileURLWithPath: inputs.diskPath).resolvingSymlinksInPath().path)[.size] as? NSNumber)?.uint64Value ?? 0
-        if diskBytes == 0 { return .diskEmpty(inputs.diskPath) }
-        if let error = HvfImportedDiskFormat.detect(path: inputs.diskPath)?.importError { return error }
-
-        if !inputs.varsPath.isEmpty {
-            var varsIsDir: ObjCBool = false
-            guard fileManager.fileExists(atPath: inputs.varsPath, isDirectory: &varsIsDir),
-                !varsIsDir.boolValue
-            else {
-                return .varsMissing(inputs.varsPath)
-            }
-            let varsBytes = (try? fileManager.attributesOfItem(atPath:
-                URL(fileURLWithPath: inputs.varsPath).resolvingSymlinksInPath().path)[.size] as? NSNumber)?.uint64Value ?? 0
-            if varsBytes != requiredVarsBytes {
-                return .varsWrongSize(path: inputs.varsPath, bytes: varsBytes)
-            }
-        }
+        if isInstallerISO(inputs.diskPath) { return .installerISO }
         if let error = FirstRunImportVTPMValidation.validate(inputs, fileManager: fileManager) { return error }
         return nil
+    }
+
+    /// An ISO 9660 volume descriptor ("CD001" at byte 0x8001), as on every Windows installer ISO.
+    /// Called after the disk check, so the path is a readable regular file.
+    private static func isInstallerISO(_ path: String) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return false }
+        defer { try? handle.close() }
+        guard (try? handle.seek(toOffset: 0x8001)) != nil else { return false }
+        return (try? handle.read(upToCount: 5)) == Data("CD001".utf8)
     }
 
     /// Bundle layout the HVF backend expects (see HvfEngineConfig).
