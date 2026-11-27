@@ -72,11 +72,14 @@ final class HvfGuestLinksTests: XCTestCase {
         XCTAssertTrue(session.applyGuestLinksToggle(false) == (false, nil))
         XCTAssertNil(library.latestConfiguration(for: saved).openGuestLinksOnMac, "off while never on stays absent")
 
+        // The Mac opens each link, so this changes while Windows runs; vm.json follows at the stop.
         session.connectionState = .connected(host: "guest")
-        XCTAssertEqual(session.applyGuestLinksToggle(true).message, "Shut down Windows before changing this setting.")
-        XCTAssertNil(library.latestConfiguration(for: saved).openGuestLinksOnMac)
-
+        XCTAssertTrue(session.applyGuestLinksToggle(true) == (true, nil))
+        XCTAssertTrue(session.guestLinksWanted)
+        XCTAssertNil(library.latestConfiguration(for: saved).openGuestLinksOnMac, "vm.json waits for the stop")
         session.connectionState = .stopped
+        session.markStopped()
+        XCTAssertEqual(library.latestConfiguration(for: saved).openGuestLinksOnMac, true)
         XCTAssertTrue(session.applyGuestLinksToggle(true) == (true, nil))
         let latest = library.latestConfiguration(for: saved)
         XCTAssertEqual(latest.openGuestLinksOnMac, true)

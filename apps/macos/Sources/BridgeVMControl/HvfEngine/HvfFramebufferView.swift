@@ -14,7 +14,7 @@ struct HvfFramebufferView: NSViewRepresentable {
     func updateNSView(_ nsView: FBLayerView, context: Context) { nsView.updateSession(session) }
 
     static func dismantleNSView(_ nsView: FBLayerView, coordinator: ()) {
-        nsView.teardown()
+        nsView.teardown(whileSwiftUITearsDown: true)
     }
 }
 
@@ -92,6 +92,11 @@ final class FBLayerView: HvfFramebufferTextInput {
         stopDisplayLink()
         if window != nil { startDisplayLink() }
         reportDisplaySize(settled: false)
+        // Typing into a just-opened VM window (at the Windows sign-in screen, say) reaches Windows without a
+        // click first, unless something else in the window already has the keyboard.
+        if let window, window.firstResponder === window || window.firstResponder === window.contentView {
+            window.makeFirstResponder(self)
+        }
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -206,9 +211,18 @@ final class FBLayerView: HvfFramebufferTextInput {
                                         width: width, height: height, stride: copy.stride))
     }
 
-    func teardown() {
+    /// `whileSwiftUITearsDown`: called from dismantleNSView. Cancelling the input target polls the session,
+    /// which publishes changes, and SwiftUI on macOS 15 aborts on a change during its own teardown ("Fatal
+    /// access conflict detected", seen on the CI runner with the stop-wait strip): the cancel waits one turn.
+    func teardown(whileSwiftUITearsDown: Bool = false) {
         pointerCapture.cancel()
-        cancelGuestInputTarget()
+        if whileSwiftUITearsDown {
+            cancelModifierTap()
+            cancelTextComposition()
+            DispatchQueue.main.async { [weak session] in session?.cancelOrderedInputTarget() }
+        } else {
+            cancelGuestInputTarget()
+        }
         inputFocusMonitor.stop()
         stopDisplayLink()
         resetMapping()

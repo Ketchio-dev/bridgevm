@@ -43,9 +43,16 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- "Open Windows links on Mac" and "Print to Mac" can now be turned off (or on)
+  while Windows runs: links stop opening and the printer goes at once, and the
+  choice is saved when the VM stops.
 - Putting the Mac to sleep while a key press or click was still on its way to
   Windows no longer stops the keyboard and mouse on wake until Windows restarts:
   the time Windows has to confirm input now counts only while the Mac is awake.
+- After you choose Stop, the VM window now shows what Windows is doing while it
+  shuts down, with Force Stop and, if Windows is still running after the wait,
+  Shut Down Again. Before, only the library showed them, so a full-screen VM
+  window gave no sign of the stop and no way out.
 - A snapshot or export run from the command line no longer makes the stopped VM
   show as running in the app, and Start no longer "attaches" to it: Start,
   Delete, Duplicate and Move say another BridgeVM task is using the disk. A stop
@@ -58,12 +65,21 @@ All notable changes to BridgeVM are documented in this file.
 - If the drive with a running VM's disk is unplugged or ejected, the app now says
   so and shows Needs attention, with what to do, instead of staying silent while
   Windows gets disk errors.
+- Choosing "Shut down Windows" when you close a VM window now keeps the window
+  open while Windows shuts down, so you can still save work if an app asks, and
+  the window then says Windows has shut down. A remembered "Shut down Windows"
+  no longer stops you closing the window of a VM that is still starting or was
+  started elsewhere; you are asked instead. Closing the window of a paused or
+  already stopping VM now just closes it.
 - A Windows driver touching a device from the very top of the address space can
   no longer crash the VM: the instruction pointer now wraps around as it does on
   real hardware.
 - When Windows is still running after a Stop's waiting time (for example an app
   held the shutdown and you chose Cancel in Windows), the VM now offers Shut Down
   Again, which asks Windows once more, instead of only Force Stop.
+- Stop now shuts Windows down after you signed out of Windows. Signing out ends
+  Guest Tools, so Stop kept saying "Windows is closing apps" until Force Stop;
+  it now also presses the VM's power button, and so does Shut Down Again.
 - **Retina resolution** and **Start when BridgeVM opens** can now be changed
   while Windows runs, like the Command key setting. Retina applies to the window
   at once; both are saved when the VM stops. They were locked until shutdown.
@@ -116,12 +132,20 @@ All notable changes to BridgeVM are documented in this file.
   folder stayed the same), the first sync could take same-named files in the new
   Windows folder for edits and copy them over the Mac's files. The saved sync
   state now belongs to both folders, so a new Windows folder starts fresh.
+- A Windows driver folder you have opened in Finder no longer fails at Start
+  Installation with "can't be used": Finder's `.DS_Store` file is not a driver
+  file and is left out.
 - When the Mac's audio output or microphone doesn't start for a VM, the VM's
   dashboard now says so in one sentence; before, Windows just had no sound or
   recorded silence with no explanation.
+- Typing into a VM window that just opened, for example at the Windows sign-in
+  screen, now reaches Windows. Before, keys went nowhere until you clicked
+  inside the window.
 - Copying more than about 24 MB of text in Windows stalled clipboard sharing,
   shared folders and input for the rest of the session. The copy is now
   refused like any text over 8 MB, and the rest keeps working.
+- Create VM with a Windows ISO on another drive no longer stops copying it
+  after 30 seconds and starts the copy again from the beginning.
 - Importing a VM with its vTPM: a recovery code file other accounts can read, a
   mistyped code or a package for another vTPM now stops the import at once with
   a sentence that names the problem. It used to copy the whole disk first and
@@ -136,6 +160,10 @@ All notable changes to BridgeVM are documented in this file.
   written, a long Finder copy), files saved in the Windows folder never reached
   the Mac. A Windows listing now goes between the Mac's changes at least every
   12 seconds.
+- Create VM (and `bridgevm app create-windows`) now looks inside the Windows
+  ISO first. An x64 ISO, or a file that isn't a disc image, is refused there
+  with a sentence to choose the Windows 11 for Arm ISO from Microsoft. It used
+  to be copied into a new VM, and only Start Installation said to delete it.
 - Installing Windows on a Mac whose disk fills now stops at once and says the
   disk is full. It sat on "Installing Windows" for up to 25 minutes, then
   failed with a general sentence.
@@ -147,6 +175,11 @@ All notable changes to BridgeVM are documented in this file.
   Windows creates the printer or the VM starts again, and the printer notice
   now includes Windows' reason (for example a stopped Print Spooler) instead of
   always blaming Microsoft Print to PDF.
+- Files and folders copied in Windows and pasted in Finder now carry the macOS
+  quarantine mark, as files from the shared folder already did, so Gatekeeper
+  checks a disk image, archive or app before it first opens. They are readable
+  only by you, like shared-folder files. A copy that cannot be marked stays in
+  Windows instead of reaching the Mac clipboard.
 - Importing a Windows disk smaller than 64 GiB enlarged the disk to 64 GiB, but
   Windows' C: drive never grew into the added space. The next Windows start now
   extends C:, also for VMs imported with an earlier version.
@@ -158,6 +191,10 @@ All notable changes to BridgeVM are documented in this file.
 - Canceling a Windows install, or quitting BridgeVM, while it prepares the setup
   files now stops the file copy too. It kept running and could leave a large
   scratch disk attached until the Mac restarted.
+- Shared folder: a Mac file Windows couldn't take (open in a Windows app, or
+  Windows out of space) is now copied again on its own a few seconds later, then
+  less often, until it gets through. It stayed out of sync both ways until the
+  Mac file changed, and Windows edits to it never reached the Mac.
 - A failed Guest Tools update now says to quit and reopen BridgeVM to try
   again. "Restart BridgeVM" read like the Restart button beside it, which
   restarts Windows and does not retry the update.
@@ -265,6 +302,9 @@ All notable changes to BridgeVM are documented in this file.
   booted at every launch), and a failed duplicate says what is missing or that
   the Mac needs free space, instead of pointing at a destination bundle that had
   already been removed.
+- Create VM now says what it still needs when Create is greyed out: the
+  Windows ISO, then drivers (Download Drivers, or your folder and manifest),
+  then a name. Before, it said nothing until the drivers were chosen.
 
 ### Removed
 

@@ -5,7 +5,8 @@ struct CreateVMCreationFooter: View {
     let error: String
     let failureCode: String
     let canCreate: Bool
-    let needsName: Bool
+    /// What Create still needs (CreateVMSheet.footerHint).
+    let hint: String?
     let cancel: () -> Void
     let create: () -> Void
     let recoveryAvailable: Bool
@@ -25,9 +26,9 @@ struct CreateVMCreationFooter: View {
                 if working {
                     ProgressView().controlSize(.small)
                     Text(workingLabel.isEmpty ? "Preparing VM files…" : workingLabel).font(.caption).foregroundStyle(.secondary)
-                } else if needsName {
-                    Text("Enter a name to create this VM.").font(.caption)
-                        .accessibilityIdentifier("bridgevm.create.name.required")
+                } else if let hint {
+                    Text(hint).font(.caption)
+                        .accessibilityIdentifier(hint == Self.nameHint ? "bridgevm.create.name.required" : "bridgevm.create.hint")
                 }
                 Spacer()
                 Button("Cancel") { if !working { cancel() } }
@@ -42,6 +43,8 @@ struct CreateVMCreationFooter: View {
 }
 
 extension CreateVMCreationFooter {
+    static let nameHint = "Enter a name to create this VM."
+
     var primaryAction: some View {
         Button(recoveryAvailable ? "Load Saved VM" : (working ? "Creating…" : "Create"),
                action: recoveryAvailable ? recover : create)

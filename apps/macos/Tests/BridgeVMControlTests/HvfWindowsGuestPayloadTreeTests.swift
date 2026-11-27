@@ -33,6 +33,29 @@ final class HvfWindowsGuestPayloadTreeTests: XCTestCase {
         XCTAssertFalse(staged.identity.isEmpty)
     }
 
+    /// A driver folder opened in Finder gets a .DS_Store; it is not a driver file, so the VM's identity is
+    /// the same with or without it (the stage script leaves it out of the exact file set too).
+    func testFinderDSStoreIsNotADriverFile() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bridgevm-payload-finder-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let payload = root.appendingPathComponent("payload/storage", isDirectory: true)
+        try FileManager.default.createDirectory(at: payload, withIntermediateDirectories: true)
+        try Data("driver".utf8).write(to: payload.appendingPathComponent("driver.sys"))
+        let manifest = root.appendingPathComponent("manifest.tsv")
+        try Data("manifest".utf8).write(to: manifest)
+        let folder = root.appendingPathComponent("payload").path
+        let plain = HvfWindowsGuestPayloadIdentity.inspect(payloadDirectory: folder, manifestPath: manifest.path)
+        try Data("Bud1".utf8).write(to: root.appendingPathComponent("payload/.DS_Store"))
+        try Data("Bud1".utf8).write(to: payload.appendingPathComponent(".DS_Store"))
+
+        XCTAssertEqual(try HvfWindowsGuestPayloadTree.scan(URL(fileURLWithPath: folder)).map(\.relativePath),
+                       ["storage/driver.sys"])
+        let withFinder = HvfWindowsGuestPayloadIdentity.inspect(payloadDirectory: folder, manifestPath: manifest.path)
+        XCTAssertNil(withFinder.error)
+        XCTAssertEqual(withFinder.digest, plain.digest)
+    }
+
     func testScannerRejectsSymlinkWithoutFollowingIt() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("bridgevm-payload-link-\(UUID().uuidString)")

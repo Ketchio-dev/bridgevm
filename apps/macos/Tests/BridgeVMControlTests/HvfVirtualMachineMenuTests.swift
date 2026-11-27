@@ -70,6 +70,40 @@ final class HvfVirtualMachineMenuTests: XCTestCase {
         XCTAssertFalse(state.stops, "the stop is under way")
     }
 
+    /// Once a Stop waits for Windows the menu's Stop is off, so the display itself shows the wait with the
+    /// library's Shut Down Again and Force Stop; a full-screen VM window had no sign of it and no way out.
+    func testTheDisplayShowsAStopWaitingForWindowsWithItsWayOut() async throws {
+        let f = try Owned(); defer { f.clean() }
+        let session = bind(f)
+        f.controller.receive(.message(try f.event("ready", sequence: 1)))
+        // The strip's close button is .plain, so the probe sees only Force Stop and Shut Down Again.
+        let buttons = InstallCancellationButtonProbe()
+        let host = NSHostingView(rootView: HvfLiveDisplaySurface(session: session)
+            .buttonStyle(InstallCancellationProbeStyle(probe: buttons)))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
+                              styleMask: [], backing: .buffered, defer: true)
+        window.contentView = host
+        defer { window.contentView = nil }
+        func roles() async -> [ButtonRole?] {
+            for _ in 0..<5 { await Task.yield() }
+            host.layoutSubtreeIfNeeded()
+            return buttons.entries.values.map(\.role)
+        }
+        let none = await roles()
+        XCTAssertEqual(none, [], "no stop yet")
+
+        XCTAssertEqual(session.stopOwned(expectedToken: f.controller.identity.token), .requested(deadline: nil))
+        let waiting = await roles()
+        XCTAssertEqual(waiting, [.destructive], "Force Stop while Windows closes its apps")
+
+        f.clock.value = 290; f.controller.tick()
+        XCTAssertEqual(session.stopWait, .windowsStillRunning)
+        let stillRunning = await roles()
+        XCTAssertEqual(stillRunning.count, 2, "Shut Down Again and Force Stop")
+        try XCTUnwrap(buttons.entries.values.first { $0.role == nil }).activateIfEnabled()
+        XCTAssertEqual(session.stopWait, .windowsClosingApps, "the window's Shut Down Again asked Windows again")
+    }
+
     func testTheMenuActsOnTheMainVMWindow() {
         let root = URL(fileURLWithPath: "/tmp/bridgevm-menu-" + UUID().uuidString)
         let target = HvfVirtualMachineMenuTarget()

@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The VM's "Open Windows links on Mac" setting (HvfGuestLinks.swift), saved in vm.json like the other per-VM
-/// settings and changed only while the VM is stopped. Shown for library VMs, whose settings are saved.
+/// settings. It also changes while Windows runs (HvfHostSettingLiveSave). Shown for library VMs, whose settings
+/// are saved.
 struct HvfGuestLinksToggle: View {
     @ObservedObject var session: HvfEngineSession
     @State private var message: String?
@@ -10,8 +11,8 @@ struct HvfGuestLinksToggle: View {
         if session.persistsLibraryPreferences {
             Toggle("Open Windows links on Mac", isOn: Binding(get: { session.guestLinksWanted }, set: update))
                 .accessibilityIdentifier("bridgevm.runtime.guest-links")
-                .disabled(!session.libraryPreferencesEditable)
-                .help("Starting next time, Windows web links can open in your default Mac browser. In Windows Settings, go to Apps > Default apps and choose BridgeVM as your browser.")
+                .disabled(!session.libraryPreferencesEditable && HvfHostSettingLiveSave.liveSlug(session) == nil)
+                .help("Windows web links can open in your default Mac browser. In Windows Settings, go to Apps > Default apps and choose BridgeVM as your browser.")
                 .alert("Windows link settings", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
                     Button("OK") { message = nil }
                 } message: {

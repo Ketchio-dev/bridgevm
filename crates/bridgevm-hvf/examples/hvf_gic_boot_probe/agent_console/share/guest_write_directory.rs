@@ -17,7 +17,7 @@ use std::io;
 use std::os::fd::AsRawFd;
 
 /// Mode a directory created for a guest path gets, before the process umask.
-pub(super) const NEW_DIR_MODE: libc::mode_t = 0o700;
+pub(in crate::agent_console) const NEW_DIR_MODE: libc::mode_t = 0o700;
 
 /// The directory `name` in `parent`, opened with `flags`: created owner-only
 /// and marked when it is missing.

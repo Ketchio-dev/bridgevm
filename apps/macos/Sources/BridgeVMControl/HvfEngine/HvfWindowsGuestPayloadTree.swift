@@ -38,6 +38,9 @@ enum HvfWindowsGuestPayloadTree {
                     throw ScanFailure(errorDescription: "The driver folder exceeds the limit of 8192 entries.")
                 }
                 let name = child.lastPathComponent
+                // Finder writes .DS_Store into any folder it shows; it is not a driver file, and the stage
+                // script leaves it out too.
+                if name == ".DS_Store" { continue }
                 let relative = directory.relativePath.isEmpty
                     ? name : directory.relativePath + "/" + name
                 guard !name.isEmpty, !relative.contains("\n"), !relative.contains("\r") else {

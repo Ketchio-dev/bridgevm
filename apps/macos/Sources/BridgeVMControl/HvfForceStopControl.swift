@@ -55,3 +55,22 @@ struct HvfForceStopControl<Content: View>: View {
         }
     }
 }
+
+/// The same control as a notice over the VM display while a Stop waits for Windows: the menu's Stop is
+/// off by then, and a full-screen VM window had no sign of the wait and no Force Stop.
+/// Closed, it comes back when the wait changes (Windows still running after the grace).
+struct HvfStopWaitStrip: View {
+    @ObservedObject var session: HvfEngineSession
+    @State private var dismissed = false
+
+    var body: some View {
+        Group {
+            if session.stopWait != nil, !dismissed {
+                HvfNoticeStrip(identifier: "bridgevm.display.stop", dismiss: { dismissed = true }) {
+                    HvfForceStopControl(session: session, identifier: "bridgevm.display", spacing: 6) { EmptyView() }
+                }
+            }
+        }
+        .onChange(of: session.stopWait) { _, _ in dismissed = false }
+    }
+}

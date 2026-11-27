@@ -101,30 +101,15 @@ extension VMLibrary {
         }
     }
 
+    /// FileManager clones on APFS (no space used, measured) and copies otherwise, with no time limit. The
+    /// `cp -c` it replaces ran under Shell.run's 30 s limit, and across volumes cp copies: a Windows ISO on
+    /// another drive was cut off after 30 s and then copied again from the start.
     static func cloneOrCopyFile(from source: String, to destination: String) -> Bool {
-        let fm = FileManager.default
-        let clone = Shell.run("/bin/cp", ["-c", source, destination])
-        if clone.code == 0 { return true }
-        try? fm.removeItem(atPath: destination)
-        do {
-            try fm.copyItem(atPath: source, toPath: destination)
-            return true
-        } catch {
-            return false
-        }
+        (try? FileManager.default.copyItem(atPath: source, toPath: destination)) != nil
     }
 
     static func cloneOrCopyDirectory(from source: String, to destination: String) -> Bool {
-        let fm = FileManager.default
-        let clone = Shell.run("/bin/cp", ["-c", "-R", source, destination])
-        if clone.code == 0 { return true }
-        try? fm.removeItem(atPath: destination)
-        do {
-            try fm.copyItem(atPath: source, toPath: destination)
-            return true
-        } catch {
-            return false
-        }
+        cloneOrCopyFile(from: source, to: destination)
     }
 
     static func isReadableRegularFile(_ path: String) -> Bool {

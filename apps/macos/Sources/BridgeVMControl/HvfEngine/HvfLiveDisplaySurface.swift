@@ -19,6 +19,7 @@ struct HvfLiveDisplaySurface: View {
             .overlay { HvfPausedDisplayOverlay(session: session) }
             .overlay(alignment: .top) {
                 VStack(spacing: 0) {
+                    HvfStopWaitStrip(session: session)
                     HvfAgentSilenceStrip(notice: session.agentSilenceNotice)
                     HvfInputStoppedStrip(session: session)
                     HvfGuestToolsStrip(session: session)

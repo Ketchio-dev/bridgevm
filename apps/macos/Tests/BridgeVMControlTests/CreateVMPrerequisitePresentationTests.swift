@@ -14,14 +14,26 @@ final class CreateVMPrerequisitePresentationTests: XCTestCase {
 
     func testWindowsModesStartWithoutCreationWarning() throws {
         try withLibrary { library in
-            for mode: CreateVMSheet.Mode in [.windowsHVF, .windowsHVFInstall] {
+            for (mode, hint): (CreateVMSheet.Mode, String) in [
+                (.windowsHVF, "Choose the Windows disk to continue."),
+                (.windowsHVFInstall, "Choose the Windows 11 for Arm ISO to continue."),
+            ] {
                 let sheet = CreateVMSheet(library: library, mode: mode)
                 let footer = try footer(of: sheet)
                 XCTAssertFalse(footer.canCreate)
-                XCTAssertFalse(footer.needsName)
+                XCTAssertEqual(footer.hint, hint, "a greyed-out Create says what it needs")
                 XCTAssertEqual(footer.error, "")
                 XCTAssertEqual(footer.failureCode, "")
             }
+        }
+    }
+
+    /// With an ISO but no drivers, Create was greyed out and nothing said why.
+    func testAnISOWithoutDriversSaysDriversAreNeeded() throws {
+        try withLibrary { library in
+            let footer = try footer(of: CreateVMSheet(library: library, isoPath: "Windows.iso"))
+            XCTAssertFalse(footer.canCreate)
+            XCTAssertEqual(footer.hint, "Choose Download Drivers, or your driver folder and its manifest, to continue.")
         }
     }
 
@@ -35,16 +47,16 @@ final class CreateVMPrerequisitePresentationTests: XCTestCase {
             XCTAssertTrue(install.canCreate)
             let cleared = try footer(of: CreateVMSheet(library: library, name: "",
                                                        isoPath: "Windows.iso", drivers: drivers))
-            XCTAssertTrue(cleared.needsName)
+            XCTAssertEqual(cleared.hint, CreateVMCreationFooter.nameHint)
             XCTAssertFalse(cleared.canCreate)
 
             let disk = try footer(of: CreateVMSheet(library: library, mode: .windowsHVF,
                                                    name: "  ", hvfTargetPath: "Windows.raw"))
-            XCTAssertTrue(disk.needsName)
+            XCTAssertEqual(disk.hint, CreateVMCreationFooter.nameHint)
             XCTAssertFalse(disk.canCreate)
             let named = try footer(of: CreateVMSheet(library: library, mode: .windowsHVF,
                                                     name: "연구실 Windows 東京", hvfTargetPath: "Windows.raw"))
-            XCTAssertFalse(named.needsName)
+            XCTAssertNil(named.hint)
             XCTAssertTrue(named.canCreate)
         }
     }

@@ -80,14 +80,6 @@ fn print_and_dump_snapshot(frame: FrameSnapshot) {
     }
 }
 
-#[allow(dead_code)]
-pub fn print_checkpoint(label: &str, config: Option<RamfbConfig>, mem: &dyn GuestMemoryMut) {
-    match RamfbCheckpoint::new(label, config, mem).emit(dump_dir().as_deref()) {
-        Ok(checkpoint) => println!("{}", checkpoint.line),
-        Err(error) => println!("ramfb checkpoint dump error: label={label} error={error}"),
-    }
-}
-
 pub fn print_checkpoint_with_virtio_gpu(
     label: &str,
     gpu: Option<VirtioGpuScanout<'_>>,

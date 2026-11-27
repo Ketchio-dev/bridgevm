@@ -11,13 +11,22 @@ enum ControlDisplayCloseChoice: String, CaseIterable {
         case .cancel: return "Cancel"
         }
     }
+    /// Shut down keeps the window open: an app with unsaved work holds the shutdown on Windows' own
+    /// screen, and the window then says that Windows has shut down.
+    var closesWindow: Bool { self != .shutdown }
 }
 
 enum ControlDisplayClosePlan: Equatable {
     case close, ask([ControlDisplayCloseChoice]), apply(ControlDisplayCloseChoice)
-    static func make(running: Bool, quitting: Bool, canPause: Bool, remembered: ControlDisplayCloseChoice?) -> Self {
-        guard running, !quitting else { return .close }
-        let choices: [ControlDisplayCloseChoice] = canPause ? [.background, .pause, .shutdown, .cancel] : [.background, .shutdown, .cancel]
+    /// A paused VM stays paused and one already stopping goes on stopping, so their window closes
+    /// without a question. Shut down is offered only when the Stop button would work.
+    @MainActor
+    static func make(session: HvfEngineSession, quitting: Bool, remembered: ControlDisplayCloseChoice?) -> Self {
+        guard session.hasActiveRuntimeWork, !quitting, !session.pause.showsResume,
+              session.connectionState != .stopping else { return .close }
+        let canPause = session.pauseAvailable && session.pause == .running
+        let canStop = session.ownedProcessIdentity != nil && !session.runtimeStartupWorkerPending
+        let choices = ControlDisplayCloseChoice.allCases.filter { ($0 != .pause || canPause) && ($0 != .shutdown || canStop) }
         if let remembered, remembered != .cancel, choices.contains(remembered) { return .apply(remembered) }
         return .ask(choices)
     }
@@ -44,7 +53,8 @@ enum ControlDisplayClose {
     static func remember(_ choice: ControlDisplayCloseChoice?, defaults: UserDefaults = .standard) {
         defaults.set(choice == .cancel ? nil : choice?.rawValue, forKey: preferenceKey)
     }
-    /// Cancel never closes or persists; stop refusals use the ordinary Stop action's message.
+    /// Whether the choice took effect. Cancel never does. Only refusals are reported, a stop refusal with
+    /// the ordinary Stop action's message: after Shut down the window shows Windows shutting down.
     static func apply(_ choice: ControlDisplayCloseChoice, session: HvfEngineSession, report: (String) -> Void) -> Bool {
         switch choice {
         case .cancel: return false
@@ -53,8 +63,11 @@ enum ControlDisplayClose {
             if let message = session.requestPause().message { report(message); return false }
             return true
         case .shutdown:
-            return HvfRuntimeStopAction.perform(session: session,
-                requestStop: { $0.stopOwned(expectedToken: $1.token) }, report: report, refresh: { session.poll() })
+            var message = ""
+            let accepted = HvfRuntimeStopAction.perform(session: session,
+                requestStop: { $0.stopOwned(expectedToken: $1.token) }, report: { message = $0 }, refresh: { session.poll() })
+            if !accepted { report(message) }
+            return accepted
         }
     }
 }

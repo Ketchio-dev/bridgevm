@@ -27,7 +27,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Mode a new guest file is created with, before the process umask: owner-only.
-pub(super) const NEW_FILE_MODE: libc::mode_t = 0o600;
+pub(in crate::agent_console) const NEW_FILE_MODE: libc::mode_t = 0o600;
 
 /// Make the unpublished temporary `file`, created in `directory`, publishable
 /// over `existing`, or fail.
@@ -133,4 +133,12 @@ pub(super) fn set_mark(
     };
     host.set_mark(target, mark.as_bytes()).map_err(refused)?;
     Ok(mark)
+}
+
+/// Mark `item`, a file or folder of guest bytes staged outside the share (a
+/// clipboard file copy, clip_files.rs), with the mark a share write gets.
+pub(in crate::agent_console) fn mark_guest_item(item: &File) -> io::Result<()> {
+    // set_mark never asks for the volume type, so the item stands in for its directory.
+    let host = &mut NativeSealHost { directory: item };
+    set_mark(item, &mut HostEntropy::new(), host).map(drop)
 }

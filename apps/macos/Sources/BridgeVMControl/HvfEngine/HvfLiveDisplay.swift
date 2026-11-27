@@ -120,13 +120,11 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         let session = state.session
         guard !closeQuestionOpen else { return false }
-        let plan = ControlDisplayClosePlan.make(running: session.hasActiveRuntimeWork,
-            quitting: ControlDisplayClose.quitting,
-            canPause: session.pauseAvailable && session.pause == .running,
+        let plan = ControlDisplayClosePlan.make(session: session, quitting: ControlDisplayClose.quitting,
             remembered: ControlDisplayClose.remembered())
         switch plan {
         case .close: return true
-        case let .apply(choice): return applyClose(choice)
+        case let .apply(choice): return applyClose(choice) && choice.closesWindow
         case let .ask(choices):
             closeQuestionOpen = true
             let alert = ControlDisplayClose.alert(choices: choices)
@@ -139,7 +137,7 @@ final class HvfDisplayWindowController: NSWindowController, NSWindowDelegate {
                     let choice = choices[index]
                     guard self.applyClose(choice) else { return }
                     if alert.suppressionButton?.state == .on { ControlDisplayClose.remember(choice) }
-                    sender.close()
+                    if choice.closesWindow { sender.close() }
                 }
             }
             return false
