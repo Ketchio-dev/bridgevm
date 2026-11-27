@@ -63,6 +63,22 @@ enum HvfDiskGrow {
         bundle(config: config)?.appendingPathComponent(grownName)
     }
 
+    /// What an import of a disk under 64 GiB left before 0.2. Nothing read it, so C: never grew:
+    /// it becomes the grown flag.
+    static let legacyImportMarkerName = "metadata/hvf-grow-pending"
+
+    static func adoptLegacyImportMarker(config: HvfEngineConfig) {
+        guard let bundle = bundle(config: config) else { return }
+        let legacy = bundle.appendingPathComponent(legacyImportMarkerName)
+        let flag = bundle.appendingPathComponent(grownName)
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: legacy.path) else { return }
+        if !fm.fileExists(atPath: flag.path) {
+            guard (try? Data("0\n".utf8).write(to: flag, options: [.atomic])) != nil else { return }
+        }
+        try? fm.removeItem(at: legacy)
+    }
+
     // MARK: guest
 
     /// One agent line that extends C: to the largest size Windows supports when that gains more
@@ -223,6 +239,7 @@ extension HvfEngineSession {
     /// toward `maximumAttempts`, after which the check waits for the next grow; any other resets it.
     @discardableResult
     func extendGrownDisk(runner: HvfDisplayDriverInstall.Runner? = nil) -> Task<Void, Never>? {
+        HvfDiskGrow.adoptLegacyImportMarker(config: config)
         guard !diskExtendInFlight, let flag = HvfDiskGrow.grownFlag(config: config),
               FileManager.default.fileExists(atPath: flag.path),
               HvfDiskGrow.failedAttempts(flag) < HvfDiskGrow.maximumAttempts else { return nil }

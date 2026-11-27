@@ -48,8 +48,9 @@ extension VMLibrary {
         let importedDiskSize = ((try? fm.attributesOfItem(atPath: disk)[.size] as? NSNumber)?.uint64Value) ?? 0
         guard growSparseFileIfNeeded(at: disk, minimumBytes: minimumDiskBytes) else { return nil }
         if importedDiskSize < minimumDiskBytes {
-            let marker = bundle.appendingPathComponent("metadata/hvf-grow-pending")
-            guard fm.createFile(atPath: marker.path, contents: Data("\(minimumDiskBytes)\n".utf8)) else { return nil }
+            // As after a grow in Settings: every agent start extends C: into the added space.
+            let flag = bundle.appendingPathComponent(HvfDiskGrow.grownName)
+            guard fm.createFile(atPath: flag.path, contents: Data("0\n".utf8)) else { return nil }
         }
         guard fm.createFile(atPath: bundle.appendingPathComponent("metadata/hvf.ctl").path, contents: nil) else { return nil }
 
