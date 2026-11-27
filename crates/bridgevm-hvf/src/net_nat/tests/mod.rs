@@ -705,6 +705,36 @@ fn host_socket_udp_flows_evict_after_idle_timeout() {
     assert_eq!(backend.outbound_ipv4_handler().udp_flow_count(), 0);
 }
 
+/// A connected UDP flow whose sends fail is dropped, so the guest's next datagram gets a fresh
+/// socket. After a network switch the old source address fails every send and a guest that keeps
+/// sending never let the flow idle out; here a closed loopback port fails the next send instead.
+#[test]
+fn host_socket_udp_flow_whose_send_fails_gets_a_new_socket() {
+    let Some(closed) = loopback_udp_socket() else {
+        return;
+    };
+    let port = closed.local_addr().unwrap().port();
+    drop(closed);
+    let handler = HostSocketOutboundIpv4Handler::with_dns_resolver(StdIpv4Addr::LOCALHOST);
+    let mut backend = NatBackend::with_outbound_handler(handler);
+
+    backend.transmit(&udp_guest_frame([127, 0, 0, 1], port, 49160, b"one"));
+    assert_eq!(backend.outbound_ipv4_handler().udp_flow_count(), 1);
+    // The port-unreachable answer arrives on its own time; a later send then fails.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        backend.transmit(&udp_guest_frame([127, 0, 0, 1], port, 49160, b"again"));
+        if backend.outbound_ipv4_handler().udp_flow_count() == 0 {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "a flow whose sends fail is kept"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
 /// A VM pause is not idle time: a flow idle only across a pause longer than the
 /// idle timeout survives it (vm_clock).
 #[test]
