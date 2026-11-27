@@ -12,6 +12,19 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
     @Published private(set) var startedAt: Date?
 
     /// The source builder found no Arm64 boot file on the ISO (an x64 Windows ISO).
+    /// The VM's driver files failed stage-hvf-windows-guest-payload.sh (`BLOCKER[guest-payload-<code>]:
+    /// <why>`); they are sealed into the VM like the ISO. Codes about BridgeVM's own tools are not the user's.
+    nonisolated static func unusableDrivers(_ lines: [String]) -> String? {
+        let own = ["guest-payload-signature-tool", "guest-payload-output", "guest-payload-staging"]
+        guard let line = lines.first(where: { line in
+            line.contains("BLOCKER[guest-payload-") && !own.contains { line.contains("BLOCKER[\($0)]") }
+        }) else { return nil }
+        let why = line.components(separatedBy: "]: ").dropFirst().joined(separator: "]: ")
+            .trimmingCharacters(in: .whitespaces).prefix(160)
+        return "The driver files for this VM can’t be used" + (why.isEmpty ? "" : " (\(why))")
+            + ", so delete this VM and create a new one with Download Drivers."
+    }
+
     nonisolated static let notArm64ISO =
         "This ISO isn’t Windows 11 for Arm, so delete this VM and create a new one with the Arm64 ISO from Microsoft."
 
@@ -142,7 +155,8 @@ extension HvfWindowsInstallSession {
                 try? FileManager.default.removeItem(atPath: plan.sourceImagePath)
                 // The ISO is sealed into this VM, so Try Again cannot help an x64 one.
                 let notArm = logLines.contains { $0.contains("FAIL: not-arm64-iso") }
-                failUnlessCancelled(notArm ? Self.notArm64ISO : "Couldn’t prepare the setup files from the Windows ISO.")
+                failUnlessCancelled(notArm ? Self.notArm64ISO
+                    : Self.unusableDrivers(logLines) ?? "Couldn’t prepare the setup files from the Windows ISO.")
                 return
             }
             guard !acknowledgeCancellation(cleanup: true) else { return }

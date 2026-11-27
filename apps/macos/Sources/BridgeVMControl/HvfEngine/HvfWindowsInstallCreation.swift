@@ -17,6 +17,14 @@ extension VMLibrary {
                                         persist: Bool = true,
                                         publish: (VMConfig, URL) -> VMRegistrationCommitOutcome = { VMLibrary.createOutcome($0, rootURL: $1) }) -> HVFCreationOutcome? {
         let fm = FileManager.default
+        // The user's own driver folder: say what is wrong with it before the ISO is copied, not the
+        // general sentence below, nor a setup failure at Start that blames the ISO.
+        if guestPayloadDirectory != nil || guestPayloadManifest != nil,
+           let problem = HvfWindowsGuestPayloadIdentity.inspect(payloadDirectory: guestPayloadDirectory,
+                                                                 manifestPath: guestPayloadManifest).error
+               ?? HvfWindowsGuestPayloadIdentity.manifestFormatError(guestPayloadManifest) {
+            return .refused(problem)
+        }
         guard windowsHVFInjectionError(requested: injectViogpu3d) == nil,
               let name = normalizedVMName(name),
               HvfWindowsInstallPlan.diskSizeError(diskGiB) == nil,

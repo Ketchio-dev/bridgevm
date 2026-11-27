@@ -9,6 +9,19 @@ import XCTest
 final class HvfWindowsInstallStagingFailureTests: XCTestCase {
     typealias Fixture = HvfWindowsInstallStagingFixture
 
+    /// Drivers the builder refuses (here x64 binaries) were reported as an ISO problem.
+    func testUnusableDriverFilesAreNamedInsteadOfTheISO() async throws {
+        let f = try Fixture(diskGiB: 1)
+        defer { f.remove() }
+        let builder = FailingInstaller(output: "BLOCKER[guest-payload-pe]: driver binary is not ARM64: storage/viostor.sys")
+
+        let result = try await runFreshAttempt(f.plan, builder, sourceVerified: false)
+
+        XCTAssertEqual(result.stage, .failed("The driver files for this VM can’t be used (driver binary is not ARM64: storage/viostor.sys), so delete this VM and create a new one with Download Drivers."))
+        XCTAssertNil(HvfWindowsInstallSession.unusableDrivers(["BLOCKER[guest-payload-signature-tool]: osslsigncode missing"]),
+                     "BridgeVM's own tool is not the user's drivers")
+    }
+
     func testFailedInstallerRunDiscardsStagedMediaAndKeepsItsLog() async throws {
         let f = try Fixture(diskGiB: 1)
         defer { f.remove() }

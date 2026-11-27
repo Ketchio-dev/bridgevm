@@ -114,6 +114,10 @@ All notable changes to BridgeVM are documented in this file.
   keychain in the other Unicode form (composed or decomposed, for example
   after the library was copied). Before, the VM refused to start with a
   missing-key error (#689).
+- Creating a VM with your own driver folder now says what is wrong with it
+  (for example a manifest inside the folder, or a file that isn't a BridgeVM
+  driver manifest) before the ISO is copied. It said only "Couldn't create the
+  VM", or created the VM and then failed at setup, blaming the ISO.
 - Ctrl-C or SIGTERM during `bridgevm app snapshot-create`, `snapshot-restore`
   or `snapshot-export` left the snapshot helper running, so a restore could
   still change the VM after the command had ended. The command now stops the
