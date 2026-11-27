@@ -58,5 +58,8 @@ final class HvfPortForwardsTests: XCTestCase {
         template.portForwards = "8080:80"
         let bundle = fixture.root.appendingPathComponent("copy/bundle.vmbridge", isDirectory: true)
         XCTAssertNil(template.windowsCloneRegistration(slug: "copy", name: "Copy", bundle: bundle).portForwards)
+        template.startWithBridgeVM = true
+        XCTAssertNil(template.windowsCloneRegistration(slug: "copy", name: "Copy", bundle: bundle).startWithBridgeVM,
+                     "a copy does not also start when BridgeVM opens")
     }
 }

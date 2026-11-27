@@ -72,6 +72,10 @@ final class LibraryCloneSelectionTests: XCTestCase {
     private func assertCompleted(_ f: ReservedCloneGenericFixture, publishesCopy: Bool) throws {
         XCTAssertTrue(f.library.cloningSlugs.isEmpty)
         XCTAssertEqual(f.library.cloneError == nil, publishesCopy)
+        if !publishesCopy {
+            XCTAssertFalse(f.library.cloneError?.contains("destination bundle") ?? true,
+                           "the half-made copy is already gone, so the text does not point at it")
+        }
         XCTAssertEqual(f.library.vms.contains { $0.slug == "copy" }, publishesCopy)
         XCTAssertEqual(VMLibrary.list(rootURL: f.assets.root).contains { $0.slug == "copy" }, publishesCopy)
         XCTAssertEqual(try Data(contentsOf: f.disk), f.original)
