@@ -43,6 +43,8 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- After restoring a snapshot taken before a disk grow, the disk size setting no
+  longer says "Expanded the disk to N GiB" about the disk that was replaced.
 - **Retina resolution** and **Start when BridgeVM opens** can now be changed
   while Windows runs, like the Command key setting. Retina applies to the window
   at once; both are saved when the VM stops. They were locked until shutdown.

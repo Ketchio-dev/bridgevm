@@ -166,8 +166,10 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         }
         let restore = try XCTUnwrap(model.confirmation(for: .restore, snapshotDate: date, label: first.label, run: restoreFirst))
         XCTAssertEqual(ran, [.create], "the restore waits for its answer")
+        session.diskGrowNotice = "Expanded the disk to 128 GiB."
         await model.confirm(restore)?.value
         XCTAssertEqual(model.status, "Snapshot restored", session.events.last?.displayText ?? "")
+        XCTAssertNil(session.diskGrowNotice, "a restored disk is not the one the grow expanded")
         let selectedDigest = try HvfWindowsSnapshotCommand.invoke(helper, ["digest", disk.path, vars.path])
         let firstDigest = try HvfWindowsSnapshotCommand.invoke(helper, ["digest", first.url.appendingPathComponent("disk.raw").path,
                                                                         first.url.appendingPathComponent("vars.fd").path])
