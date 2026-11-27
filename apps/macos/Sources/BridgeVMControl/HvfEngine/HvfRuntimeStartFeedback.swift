@@ -13,8 +13,24 @@ extension HvfEngineSession {
         if guiStartFailureText == nil, diskSyncNotice.finalSaveFailed {
             return "BridgeVM couldn’t finish saving the Windows disk at shutdown. Check your Mac’s free space and drive connection."
         }
+        if guiStartFailureText == nil, let runEndedText { return runEndedText }
         guard !runnerDiedWithoutCleanup, ownedController?.supervisionLost == true else { return nil }
         return "BridgeVM lost contact with Windows, so choose Force Stop to stop the VM."
+    }
+
+    /// A run that ended by itself with a failure: the VM process crashed or was killed, a restart
+    /// failed, or the disk was still in use. It used to read "Windows has shut down.", like a
+    /// shutdown from Windows' own Start menu.
+    private var runEndedText: String? {
+        guard !hasPendingRuntimeStart, let controller = ownedController, controller.operation == nil,
+              controller.teardownConfirmed else { return nil }
+        switch controller.ledger.complete?.failureCode {
+        case "mediaAdmissionFailed":
+            return "Windows couldn’t start because another process is still using this VM’s disk. Wait a minute, then start it again."
+        case "helperFailed", "resetFailed", "startupFailed":
+            return "Windows stopped unexpectedly. You can start it again."
+        default: return nil
+        }
     }
 
     /// What the dashboard, the display window and the Advanced view say about a run that needs
