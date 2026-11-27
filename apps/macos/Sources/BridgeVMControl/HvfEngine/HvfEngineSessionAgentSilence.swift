@@ -10,6 +10,7 @@ extension HvfEngineSession {
             firstConnection: { firstConnectionNotice }) {
             FileManager.default.fileExists(atPath: agentSeenMarker.path)
         }
+        ownedController?.guestAgentSilence(agentSilenceNotice.agentOverdue, pressPowerButton: pressGuestPowerButton)
     }
 
     private var firstConnectionNotice: HvfAgentSilenceNotice.Kind? {

@@ -163,6 +163,36 @@ final class HvfOwnedStopWaitTests: XCTestCase {
         XCTAssertNotNil(session.forceStopTarget)
     }
 
+    /// Signing out of Windows ends the guest agent (its task runs with the user's token, bvagent-task.ps1),
+    /// so the Stop's request to the agent never runs: the Stop presses the power button too, and so
+    /// does Shut Down Again.
+    func testAStopAfterTheAgentWentSilentPressesThePowerButton() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        let evidence = URL(fileURLWithPath: f.base.config.evidenceDir)
+        try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
+        let log = evidence.appendingPathComponent("run.log"), input = evidence.appendingPathComponent("input.ctl")
+        let presses = { ((try? String(contentsOf: input, encoding: .utf8)) ?? "").components(separatedBy: "POWERBUTTON\n").count - 1 }
+        try "BVAGENT READY host=test t=1\nBVAGENT SERVICE start t=2\n".write(to: log, atomically: true, encoding: .utf8)
+        let session = bind(f)
+        session.poll()
+        f.controller.receive(.message(try f.event("ready", sequence: 1)))
+        // The user signed out: the probe's keepalive goes unanswered.
+        try append("BVAGENT SERVICE overdue clip-poll awaiting-reply=true t=40000\n", to: log)
+        session.poll()
+
+        XCTAssertEqual(session.stopOwned(expectedToken: f.controller.identity.token), .requested(deadline: nil))
+        try await waitForControl(f, "shutdown.exe /s /t 0\n")
+        session.poll(); session.poll()
+        XCTAssertEqual(presses(), 1, "The agent is silent: the power button is pressed once")
+        XCTAssertEqual(session.stopWait, .windowsClosingApps)
+
+        f.clock.value = 281; session.poll()
+        XCTAssertEqual(session.stopWait, .windowsStillRunning)
+        XCTAssertTrue(session.askWindowsToShutDownAgain())
+        XCTAssertEqual(presses(), 2, "Shut Down Again presses it again")
+        try await waitForControl(f, "shutdown.exe /s /t 0\nshutdown.exe /s /t 0\n")
+    }
+
     func testForceStopWithoutTheAgentCancelsTheHeldStopAtOnce() throws {
         let f = try Fixture(); defer { f.clean() }
         f.controller.receive(.message(try f.event("ready", sequence: 1)))
