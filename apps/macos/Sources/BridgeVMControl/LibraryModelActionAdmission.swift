@@ -10,6 +10,9 @@ private enum LibraryBusy {
     static let fileAction = "This VM is being deleted, duplicated or moved. Try again when the operation finishes."
     static let install = "Windows is being installed. Finish or cancel installation before trying again."
     static let runtime = "The VM is running, starting or shutting down. Wait until it is fully stopped, then try again."
+    static let snapshot = "A snapshot of this VM is being created, restored or deleted. Try again when it finishes."
+    static let diskGrow = "This VM’s disk is being expanded. Try again when that finishes."
+    static let securityChip = "This VM’s security chip is being saved, restored or reset. Try again when that finishes."
     /// A running VM keeps the control it was observed with, so its new registration waits.
     static let staleControl = "The VM’s registration changed. When the original VM stops, press Command-K and choose Reload Library. Then try again."
 }
@@ -31,8 +34,18 @@ extension LibraryModel {
         }) {
             return LibraryBusy.install
         }
-        if runtimeWorkConflicts(slug: slug, excluding: reservation) { return LibraryBusy.runtime }
-        return nil
+        guard runtimeWorkConflicts(slug: slug, excluding: reservation) else { return nil }
+        // A stopped VM whose snapshot, disk or security chip is being changed is not running.
+        let mutation = runtimeRecords(slug: slug).lazy.compactMap { record -> HvfRuntimeMutationKind? in
+            if let (session, token) = reservation, record.session === session, session.matchesRuntimeReservation(token) { return nil }
+            return record.session.mutationReservation?.kind
+        }.first
+        switch mutation {
+        case .snapshot?: return LibraryBusy.snapshot
+        case .diskGrow?: return LibraryBusy.diskGrow
+        case .vtpmRecoveryExport?, .vtpmRecoveryRestore?, .vtpmReset?: return LibraryBusy.securityChip
+        case nil: return LibraryBusy.runtime
+        }
     }
 
     func libraryActionRefusal(for cfg: VMConfig) -> String? {
