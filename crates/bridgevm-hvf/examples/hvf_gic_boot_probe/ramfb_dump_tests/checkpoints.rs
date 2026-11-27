@@ -18,7 +18,6 @@ fn ramfb_checkpoint_writes_distinct_artifacts_for_repeated_label() {
         base: config.addr,
         bytes: vec![0x03, 0x02, 0x01, 0x00],
     };
-    let _print_checkpoint: fn(&str, Option<RamfbConfig>, &dyn GuestMemoryMut) = print_checkpoint;
 
     // When: the same checkpoint label is emitted twice.
     let first = RamfbCheckpoint::new("setup-input-before", Some(config), &ram)
