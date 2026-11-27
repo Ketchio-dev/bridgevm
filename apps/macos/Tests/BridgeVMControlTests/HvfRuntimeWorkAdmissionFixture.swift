@@ -37,13 +37,11 @@ final class HvfRuntimeWorkAdmissionFixture {
     static let expiredReason = "The VM library is unavailable. Return to the library and try again."
     static let runtimeReason = "The VM is running, starting or shutting down. Wait until it is fully stopped, then try again."
     static let installReason = "Windows is being installed. Finish or cancel installation before trying again."
-    static let controlReason = "A VM control operation is in progress. Try again when it finishes."
     static let states: [HvfConnectionState] = [.booting, .connected(host: "fixture"), .stopping, .timedOut]
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("work-admission-" + UUID().uuidString)
     let queue = HvfRuntimeLibraryActionQueue()
     let access = HvfRuntimeWorkAdmissionAccess()
     let validator: HvfWindowsInstallValidationProbe
-    let acceptsFakeStart: Bool
     private var installJobs: [@MainActor () async -> Void] = []
     private var backends: [String: HvfRuntimeWorkAdmissionBackend] = [:]
     var preserveForUnsettledWork = false
@@ -53,10 +51,8 @@ final class HvfRuntimeWorkAdmissionFixture {
     var runtimeRepo: URL { root.appendingPathComponent("absent-runtime-repo") }
     var destination: URL { root.appendingPathComponent("unexecuted-destination") }
 
-    init(validator: HvfWindowsInstallValidationProbe = .init(error: "owned validation refusal"),
-         acceptsFakeStart: Bool = false) throws {
+    init(validator: HvfWindowsInstallValidationProbe = .init(error: "owned validation refusal")) throws {
         self.validator = validator
-        self.acceptsFakeStart = acceptsFakeStart
         let helpers = installRepo.appendingPathComponent("helpers")
         try FileManager.default.createDirectory(at: helpers, withIntermediateDirectories: true)
         for name in ["wimlib-imagex", "bridgevm-catalog-verify"] {
@@ -107,7 +103,7 @@ final class HvfRuntimeWorkAdmissionFixture {
     }
     func backend(_ config: VMConfig) -> HvfRuntimeWorkAdmissionBackend {
         if let backend = backends[config.slug] { return backend }
-        let backend = HvfRuntimeWorkAdmissionBackend(startSucceeds: acceptsFakeStart)
+        let backend = HvfRuntimeWorkAdmissionBackend()
         backends[config.slug] = backend
         return backend
     }
@@ -217,34 +213,12 @@ final class HvfRuntimeWorkAdmissionFixture {
             XCTAssertEqual(library.operationError, stage.isRunning ? "existing operation notice" : reason)
         }
     }
-    func acknowledge(_ operation: HvfRuntimeWorkAdmissionOperation, accepted: Bool) async -> Bool {
-        let acknowledged = await operation.acknowledge(if: accepted)
-        if !acknowledged { preserveForUnsettledWork = true }
-        return acknowledged
-    }
-    func assertControlRefused(_ model: ControlModel, operation: HvfRuntimeWorkAdmissionBackend.Operation,
-                              library: LibraryModel?, reason: String) async {
-        guard let backend = model.backend as? HvfRuntimeWorkAdmissionBackend else {
-            return XCTFail("Refusal baseline must use only the counting fake")
-        }
-        let state = HvfRuntimeWorkAdmissionControlState(model), calls = backend.calls
-        library?.operationError = "existing operation notice"
-        let work = HvfRuntimeWorkAdmissionOperation(operation, model: model)
-        let accepted = work.invoke()
-        XCTAssertFalse(accepted)
-        guard await acknowledge(work, accepted: accepted) else { return }
-        XCTAssertEqual(HvfRuntimeWorkAdmissionControlState(model), state)
-        XCTAssertEqual(backend.calls, calls)
-        if let library { XCTAssertEqual(library.operationError, reason) }
-    }
     func clean() {
         validator.release()
-        backends.values.forEach { $0.releaseGate() }
         queue.discard()
         installJobs.removeAll() // No execution API; discard breaks captured ownership cycles only.
         XCTAssertEqual(access.keyRequests, 0)
         XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
-        backends.values.forEach { XCTAssertFalse($0.gateTimedOut) }
         if !preserveForUnsettledWork { try? FileManager.default.removeItem(at: root) }
     }
 }

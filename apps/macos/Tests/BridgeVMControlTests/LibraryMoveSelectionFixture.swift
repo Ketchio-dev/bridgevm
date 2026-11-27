@@ -10,8 +10,6 @@ final class LibraryMoveSelectionFixture {
     let library: LibraryModel
     let otherModel: ControlModel
     let sourceModel: ControlModel
-    private let sourceBackend: GenericOwnedControlBackend
-    private let otherBackend: GenericOwnedControlBackend
     private let otherRegistration: Data
     private let jobs: LibraryMoveSelectionJobs
 
@@ -23,11 +21,7 @@ final class LibraryMoveSelectionFixture {
         self.source = source; self.other = other
         otherRegistration = try Data(contentsOf: assets.libraryRoot.appendingPathComponent("other/vm.json"))
         let sourceBackend = GenericOwnedControlBackend(), otherBackend = GenericOwnedControlBackend()
-        for backend in [sourceBackend, otherBackend] {
-            backend.plan = nil
-            backend.setExternalRunning(false)
-        }
-        self.sourceBackend = sourceBackend; self.otherBackend = otherBackend
+        for backend in [sourceBackend, otherBackend] { backend.setExternalRunning(false) }
         let jobs = LibraryMoveSelectionJobs()
         self.jobs = jobs
         library = LibraryModel(rootURL: assets.libraryRoot, migrateLegacy: false,
@@ -59,10 +53,6 @@ final class LibraryMoveSelectionFixture {
         try assets.assertReadable(other)
         XCTAssertEqual(try Data(contentsOf: assets.libraryRoot.appendingPathComponent("other/vm.json")), otherRegistration)
         XCTAssertTrue(library.model(for: other) === otherModel)
-        for backend in [sourceBackend, otherBackend] {
-            let counts = backend.calls
-            for index in [0, 2, 3, 4] { XCTAssertEqual(counts[index], 0) }
-        }
     }
 
     func assertMoved() throws {
@@ -70,7 +60,7 @@ final class LibraryMoveSelectionFixture {
         let moved = try XCTUnwrap(library.vms.first { $0.slug == source.slug })
         XCTAssertEqual(moved.bundlePath, assets.destination.path)
         XCTAssertFalse(FileManager.default.fileExists(atPath: source.bundlePath))
-        XCTAssertFalse(library.ownsControlModel(sourceModel, for: source))
+        XCTAssertFalse(library.cachedControlModels[source.slug] === sourceModel)
         XCTAssertFalse(VMRelocationJournal.isPending(moved, rootURL: assets.libraryRoot))
         try assets.assertReadable(moved)
         let receipts = try FileManager.default.contentsOfDirectory(at: assets.destination

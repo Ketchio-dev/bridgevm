@@ -33,20 +33,18 @@ final class LibraryAutoStartPreferenceTests: XCTestCase {
         }) { $0.startWithBridgeVM = true })
         session.connectionState = .stopped
     }
-    func testNonHVFPreferenceDoesNotSaveWhileStartingOrRunning() throws {
+    func testRetiredEngineVMNeitherSavesNorAutoStarts() throws {
         let f = try LibraryDashboardNavigationFixture(); defer { f.clean() }
         let saved = try XCTUnwrap(f.library.vms.first)
+        XCTAssertEqual(saved.engineKind, .unsupported)
         XCTAssertTrue(VMLibrary.save(saved, rootURL: f.root))
-        let model = f.library.model(for: saved)
-        model.setLifecycleBusy(true)
+        let registration = f.root.appendingPathComponent(saved.slug + "/vm.json")
+        let bytes = try Data(contentsOf: registration)
+        XCTAssertFalse(f.library.canSetStartWithBridgeVM(for: saved), "Menu must be visibly disabled")
         f.library.setStartWithBridgeVM(true, for: saved)
-        XCTAssertNil(f.library.latestConfiguration(for: saved).startWithBridgeVM)
-        model.setLifecycleBusy(false)
-        model.running = true
-        f.library.setStartWithBridgeVM(true, for: saved)
-        XCTAssertNil(f.library.latestConfiguration(for: saved).startWithBridgeVM)
-        model.running = false
-        f.library.setStartWithBridgeVM(true, for: saved)
-        XCTAssertEqual(f.library.latestConfiguration(for: saved).startWithBridgeVM, true)
+        XCTAssertEqual(try Data(contentsOf: registration), bytes)
+        var enabled = saved
+        enabled.startWithBridgeVM = true
+        XCTAssertFalse(ControlAutoStart.isStartable(enabled, library: f.library))
     }
 }

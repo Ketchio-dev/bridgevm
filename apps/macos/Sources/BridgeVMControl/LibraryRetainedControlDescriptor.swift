@@ -4,18 +4,16 @@ import SwiftUI
 enum LibraryRetainedControlIdentity: Hashable {
     case runtime(ObjectIdentifier)
     case install(ObjectIdentifier)
-    case generic(ObjectIdentifier)
 }
 
 @MainActor
 enum LibraryRetainedControlDescriptor {
     case runtime(config: VMConfig, session: HvfEngineSession)
     case install(config: VMConfig, session: HvfWindowsInstallSession)
-    case generic(config: VMConfig, model: ControlModel)
 
     var config: VMConfig {
         switch self {
-        case let .runtime(config, _), let .install(config, _), let .generic(config, _): return config
+        case let .runtime(config, _), let .install(config, _): return config
         }
     }
 
@@ -23,7 +21,6 @@ enum LibraryRetainedControlDescriptor {
         switch self {
         case let .runtime(_, session): return .runtime(ObjectIdentifier(session))
         case let .install(_, session): return .install(ObjectIdentifier(session))
-        case let .generic(_, model): return .generic(ObjectIdentifier(model))
         }
     }
 
@@ -31,7 +28,6 @@ enum LibraryRetainedControlDescriptor {
         switch self {
         case let .runtime(_, session): return session.hasActiveRuntimeWork
         case let .install(_, session): return session.isRunning
-        case let .generic(_, model): return model.hasActiveRuntimeWork
         }
     }
 
@@ -41,8 +37,6 @@ enum LibraryRetainedControlDescriptor {
             return session.$connectionState.dropFirst().sink { _ in change() }
         case let .install(_, session):
             return session.$stage.dropFirst().sink { _ in change() }
-        case let .generic(_, model):
-            return model.objectWillChange.sink { change() }
         }
     }
 }
@@ -55,7 +49,7 @@ struct LibraryRetainedControlRecord: Identifiable {
 extension LibraryRetainedControlDescriptor {
     var kindLabel: String {
         switch self {
-        case .runtime, .generic: return "Runtime"
+        case .runtime: return "Runtime"
         case .install: return "Installation"
         }
     }
@@ -65,7 +59,6 @@ extension LibraryRetainedControlDescriptor {
         switch self {
         case .install: kind = "0"
         case .runtime: kind = "1"
-        case .generic: kind = "2"
         }
         return [config.slug, kind, config.name, config.bundlePath, String(describing: identity)]
     }
@@ -73,7 +66,6 @@ extension LibraryRetainedControlDescriptor {
     var statusLabel: String {
         switch self {
         case let .install(_, session): return session.stage.label
-        case let .generic(_, model): return model.statusNote.isEmpty ? (model.running ? "Running" : "Stopped") : model.statusNote
         case let .runtime(_, session):
             switch session.connectionState {
             case .stopped: return "Stopped"
@@ -92,8 +84,6 @@ extension LibraryRetainedControlDescriptor {
             RetainedRuntimeControlView(config: config, session: session) {
                 dismiss()
             }
-        case let .generic(config, model):
-            RetainedGenericControlView(config: config, model: model) { dismiss() }
         case let .install(config, session):
             RetainedInstallControlView(config: config, session: session) {
                 dismiss()

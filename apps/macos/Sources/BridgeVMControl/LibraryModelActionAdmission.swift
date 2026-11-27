@@ -10,11 +10,12 @@ private enum LibraryBusy {
     static let fileAction = "This VM is being deleted, duplicated or moved. Try again when the operation finishes."
     static let install = "Windows is being installed. Finish or cancel installation before trying again."
     static let runtime = "The VM is running, starting or shutting down. Wait until it is fully stopped, then try again."
-    static let control = "A VM control operation is in progress. Try again when it finishes."
+    /// A running VM keeps the control it was observed with, so its new registration waits.
+    static let staleControl = "The VM’s registration changed. When the original VM stops, press Command-K and choose Reload Library. Then try again."
 }
 
 extension LibraryModel {
-    /// Why this VM is busy with file, install, runtime or control work, or nil.
+    /// Why this VM is busy with file, install or runtime work, or nil.
     /// Shared by library file actions and runtime/install admission; the exclusions let an
     /// operation's own reservation pass its own check.
     func busyReason(
@@ -31,15 +32,13 @@ extension LibraryModel {
             return LibraryBusy.install
         }
         if runtimeWorkConflicts(slug: slug, excluding: reservation) { return LibraryBusy.runtime }
-        if hasAcceptedControlOperation(for: slug) { return LibraryBusy.control }
         return nil
     }
 
     func libraryActionRefusal(for cfg: VMConfig) -> String? {
         guard vms.first(where: { $0.slug == cfg.slug }) == cfg else { return LibraryBusy.unregistered }
         if let busy = busyReason(slug: cfg.slug) { return busy }
-        if hasActiveOwnedControlRuntime(for: cfg.slug) { return LibraryBusy.runtime }
-        return hasMismatchedCachedControlConfiguration(for: cfg) ? mismatchedCachedControlRefusal(for: cfg) : nil
+        return hasMismatchedCachedControlConfiguration(for: cfg) ? LibraryBusy.staleControl : nil
     }
 
     func libraryWorkRefusal(
@@ -51,7 +50,7 @@ extension LibraryModel {
         guard owns(self, config) else {
             return "The selected VM changed. Refresh the library and reopen its window."
         }
-        return genericRetainedWorkRefusal(for: config) ?? busyReason(slug: slug, excluding: reservation,
+        return busyReason(slug: slug, excluding: reservation,
             excludingInstall: excludingInstall, excludingWindowsInstall: excludingWindowsInstall)
     }
 }

@@ -38,7 +38,6 @@ final class LibraryModel: ObservableObject {
     let windowsInstallSessions: HvfWindowsInstallSessionStore
     let hvfRuntimeSessions: HvfRuntimeSessionStore
     let retainedControlStore = LibraryRetainedControlStore()
-    func runningModels() -> [ControlModel] { vms.compactMap { modelCache[$0.slug] }.filter { $0.running } }
     var rootURL: URL { libraryRoot }
     var cachedControlModels: [String: ControlModel] { modelCache }
 
@@ -74,7 +73,7 @@ final class LibraryModel: ObservableObject {
     private func applyScan(_ scan: VMLibraryScan) {
         vms = scan.configs
         libraryIssues = scan.issues
-        captureRetainedControls(Array(modelCache.values))
+        captureRetainedControls()
         windowsInstallSessions.reconcile(with: vms)
         hvfRuntimeSessions.reconcile(with: vms)
         let configsBySlug = Dictionary(vms.map { ($0.slug, $0) }, uniquingKeysWith: { first, _ in first })
@@ -83,8 +82,8 @@ final class LibraryModel: ObservableObject {
     }
 
     func model(for cfg: VMConfig) -> ControlModel {
-        if let m = modelCache[cfg.slug], keepsCachedControl(m) { return m }
-        let m = bindControlModel(modelFactory(latestConfiguration(for: cfg)))
+        if let m = modelCache[cfg.slug] { return m }
+        let m = modelFactory(latestConfiguration(for: cfg))
         modelCache[cfg.slug] = m
         return m
     }
@@ -171,31 +170,8 @@ extension LibraryModel {
 }
 
 extension LibraryModel {
-    // Host-capacity accounting (sum of RUNNING VMs vs host totals) to warn on oversubscription.
     var hostMemGiB: Double { Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824.0 }
     var hostCPU: Int { ProcessInfo.processInfo.activeProcessorCount }
-    var usedMemGiB: Double { runningModels().reduce(0.0) { $0 + $1.memGiB } }
-    var usedCPU: Int { runningModels().reduce(0) { $0 + $1.cpu } }
-}
-
-extension LibraryModel {
-    func bindControlModel(_ model: ControlModel) -> ControlModel {
-        model.workAdmission = controlWorkAdmission(for: model)
-        model.legacyStopAdmission = legacyStopAdmission(for: model)
-        model.onConfigurationPersisted = { [weak self] in self?.reload() }
-        model.onResourceUpdateFailed = { [weak self] in self?.reload() }
-        return model
-    }
-}
-
-extension LibraryModel {
-    /// A retained control stays the cached control while it is active and, once
-    /// terminal, until its retained record is dismissed; only then does lookup
-    /// build the current registration's ordinary control.
-    func keepsCachedControl(_ model: ControlModel) -> Bool {
-        !model.isRetained || model.hasActiveRuntimeWork
-            || retainedControlRecords.contains { $0.descriptor.identity == .generic(ObjectIdentifier(model)) }
-    }
 }
 
 extension LibraryModel {
@@ -225,9 +201,9 @@ extension LibraryModel {
 
 extension LibraryModel {
     func admitLibraryAction(_ cfg: VMConfig, action: LibraryFileAction) -> Bool {
-        let generic = cloneSourceRefusal(for: cfg, action: action) ?? genericRetainedFileRefusal(for: cfg, action: action)
+        let source = cloneSourceRefusal(for: cfg, action: action)
         let pending = action == .deletion ? pendingDeletionReferenceRefusal(for: cfg) : transactionResidueRefusal(for: cfg, action: action)
-        guard let refusal = libraryActionRefusal(for: cfg) ?? generic ?? pending else { return true }
+        guard let refusal = libraryActionRefusal(for: cfg) ?? source ?? pending else { return true }
         switch action {
         case .deletion: deletionError = refusal
         case .clone: cloneError = refusal
@@ -238,17 +214,8 @@ extension LibraryModel {
 }
 
 extension LibraryModel {
-    func hasAcceptedControlOperation(for slug: String) -> Bool { cachedControlModels[slug]?.hasAcceptedOperation == true || cachedControlModels[slug]?.ownedRuntime?.snapshot.phase == .stopping }
-    func hasActiveOwnedControlRuntime(for slug: String) -> Bool { cachedControlModels[slug]?.ownedRuntime?.snapshot.isActive == true }
     func hasMismatchedCachedControlConfiguration(for cfg: VMConfig) -> Bool {
         cachedControlModels[cfg.slug].map { $0.config != cfg } ?? false
-    }
-    func ownsControlModel(_ model: ControlModel, for config: VMConfig) -> Bool {
-        cachedControlModels[config.slug] === model && model.config == config
-    }
-
-    var activeCachedGenericConfigurations: [VMConfig] {
-        cachedControlModels.values.filter { $0.config.engineKind != .hvfEngine && $0.hasActiveRuntimeWork }.map(\.config)
     }
 }
 
@@ -278,7 +245,7 @@ extension LibraryModel {
         let model = model(for: latest)
         // Keep an active control handle's accepted configuration reachable.
         // Once idle, use current registration even before another cache reload.
-        let config = model.running || model.lifecycleBusy || model.busy ? model.config : latest
+        let config = model.running ? model.config : latest
         return (config, model)
     }
 }
@@ -314,26 +281,11 @@ extension LibraryModel {
 }
 
 extension LibraryModel {
-    /// Closing a terminal generic record also resolves its slot through the ordinary lookup,
-    /// so admission and file actions stop seeing the retained control at once.
     @discardableResult
     func dismissRetainedControl(_ token: String) -> Bool {
-        let record = retainedControlRecords.first { $0.id == token }
         guard retainedControlStore.dismiss(token) else { return false }
-        if case let .generic(config, _)? = record?.descriptor, let current = vms.first(where: { $0.slug == config.slug }) {
-            _ = model(for: current)
-        }
         if selectedID == token { selectedID = vms.first?.slug }
         return true
-    }
-
-    /// Delete, clone and move refuse while a stale control holds the slot. When that control
-    /// is retained with an open record, closing the record is what releases the slot.
-    func mismatchedCachedControlRefusal(for cfg: VMConfig) -> String {
-        guard let cached = cachedControlModels[cfg.slug], cached.isRetained,
-              retainedControlRecords.contains(where: { $0.descriptor.identity == .generic(ObjectIdentifier(cached)) })
-        else { return "The VM’s registration changed. When the original VM stops, press Command-K and choose Reload Library. Then try again." }
-        return "An operation from the previous registration is still listed. Open it under Recent operations in the sidebar. Once it finishes, choose Dismiss and try again."
     }
 }
 
@@ -341,23 +293,6 @@ typealias LibraryCloneOperation = @Sendable (String, VMConfig, URL) -> VMConfig?
 
 extension LibraryModel {
     var cloningSlugs: Set<String> { Set(cloningConfigurations.keys) }
-
-    func controlWorkAdmission(for model: ControlModel) -> LibraryWorkAdmission {
-        let admission = boundWorkAdmission(slug: model.config.slug) { [weak model] owner, current in
-            model.map { owner.ownsControlModel($0, for: current) } ?? false
-        }
-        return { [weak self, weak model] report in
-            if let refusal = admission(report) { return refusal }
-            guard let self, let model, model.config.engineKind != .hvfEngine else { return nil }
-            // Use the accepted source even if a rescan changes or removes its registration.
-            guard self.cloningConfigurations.values.contains(where: {
-                GenericRuntimeAssetReferences.overlaps($0, model.config)
-            }) else { return nil }
-            let refusal = "A duplicate is using this VM’s files. Try again when it finishes."
-            if report { self.operationError = refusal }
-            return refusal
-        }
-    }
 }
 
 extension LibraryModel {
@@ -372,7 +307,7 @@ extension LibraryModel {
             let request: HvfWindowsInstallRequest?
             switch control {
             case let .install(_, session): request = session.plan.request
-            case .runtime, .generic: request = nil
+            case .runtime: request = nil
             }
             if HvfPendingDeletionReferences.references(config: control.config,
                                                         request: request, removedEntry: entry) {
@@ -431,17 +366,11 @@ extension LibraryModel {
 }
 
 extension LibraryModel {
-    func captureRetainedControls(_ models: [ControlModel]) {
+    func captureRetainedControls() {
         let registered = Set(vms.map(\.slug))
-        let generic = models.filter { model in
-            model.config.engineKind != .hvfEngine && model.hasActiveRuntimeWork && !vms.contains(where: model.matchesRegisteredConfiguration)
-        }.map { model -> LibraryRetainedControlDescriptor in
-            model.retainForRecovery()
-            return .generic(config: model.config, model: model)
-        }
         retainedControlStore.capture(
             windowsInstallSessions.retainedControls(excludingSlugs: registered)
-                + hvfRuntimeSessions.retainedControls(excludingSlugs: registered) + generic)
+                + hvfRuntimeSessions.retainedControls(excludingSlugs: registered))
     }
 }
 
@@ -450,10 +379,8 @@ enum LibraryControlModelReconciliation {
     static func reconcile(_ cache: [String: ControlModel], configurations: [String: VMConfig]) -> [String: ControlModel] {
         cache.filter { slug, model in
             guard let current = configurations[slug] else { return false }
-            if model.isRetained { return model.config != current && model.hasActiveRuntimeWork }
-            if model.config == current { return true }
-            // Native-HVF compatibility handles retain their existing cache policy.
-            return model.running || model.lifecycleBusy || model.busy
+            // A running VM keeps the model it was observed with until it stops.
+            return model.config == current || model.running
         }
     }
 }
@@ -554,23 +481,7 @@ extension LibraryModel {
             return [paletteControlNavigation(id: Self.hvfEngineSelectionID, name: "HVF Engine", dismiss: dismiss)]
         }
         guard let id = selectedID, let config = vms.first(where: { $0.slug == id }) else { return [] }
-        if config.engineKind == .hvfEngine || windowsInstallSessions.isActive(slug: id)
-            || hvfRuntimeSessions.isActive(slug: id) {
-            return [paletteControlNavigation(id: id, name: config.name, dismiss: dismiss)]
-        }
-        var c: [PaletteCommand] = []
-        if let m = selectedModel {
-            if m.config.engineKind == .hvfEngine {
-                return [paletteControlNavigation(id: id, name: m.config.name, dismiss: dismiss)]
-            }
-            if !m.running && !m.lifecycleBusy {
-                c.append(.init(id: "start.\(id)", title: "Start \(m.config.name)", subtitle: "Start the VM and open its window", systemImage: "play.fill") { m.start(); dismiss() })
-            } else if m.running && !m.lifecycleBusy {
-                c.append(.init(id: "stop.\(id)", title: "Stop \(m.config.name)", subtitle: "Stop the VM", systemImage: "stop.fill") { m.stop(); dismiss() })
-            }
-            c.append(.init(id: "refresh.\(id)", title: "Refresh \(m.config.name)", subtitle: "Refresh VM status", systemImage: "arrow.clockwise") { m.refresh(); dismiss() })
-        }
-        return c
+        return [paletteControlNavigation(id: id, name: config.name, dismiss: dismiss)]
     }
 
     private func paletteControlNavigation(id: String, name: String, dismiss: @escaping () -> Void) -> PaletteCommand {

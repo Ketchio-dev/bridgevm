@@ -71,9 +71,7 @@ final class BackendKindTests: XCTestCase {
             XCTAssertEqual(config.engineKind, .unsupported)
             let backend = config.makeBackend(libraryRoot: root)
             XCTAssertTrue(backend is UnsupportedEngineBackend)
-            XCTAssertFalse(backend.start())
-            XCTAssertFalse(backend.setResources(memMiB: 8192, cpu: 6))
-            backend.stop()
+            XCTAssertFalse(backend.isRunning())
             XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("\(id)/vm.json")), written[id])
         }
         XCTAssertEqual(try NativeLibraryReader.readConfig(rootURL: root, id: "win").engineKind, .hvfEngine)
@@ -379,15 +377,6 @@ final class ShellCommandSafetyTests: XCTestCase {
         XCTAssertTrue(Shell.isProcessRunning(matching: literalMarker))
     }
 
-    func testShellCommandPreservesHostileArgumentsAsData() {
-        let hostile = "quote' $(printf INJECTED) ; touch /tmp/never"
-        let command = Shell.shellCommand("/usr/bin/printf", ["%s", hostile])
-        let result = Shell.run("/bin/sh", ["-c", command])
-
-        XCTAssertEqual(result.code, 0)
-        XCTAssertEqual(result.output, hostile)
-    }
-
     func testShellRunDrainsButRetainsOnlyBoundedOutputTail() {
         let result = Shell.run(
             "/usr/bin/printf",
@@ -396,7 +385,7 @@ final class ShellCommandSafetyTests: XCTestCase {
         )
 
         XCTAssertEqual(result.code, 0)
-        XCTAssertTrue(result.output.hasPrefix("[출력 일부 생략"))
+        XCTAssertTrue(result.output.hasPrefix("[Output truncated; last 256 bytes]\n"))
         XCTAssertTrue(result.output.hasSuffix(String(repeating: "x", count: 256)))
         XCTAssertLessThan(result.output.utf8.count, 400)
     }
@@ -439,7 +428,7 @@ final class ShellCommandSafetyTests: XCTestCase {
         let pidFile = FileManager.default.temporaryDirectory
             .appendingPathComponent("bridgevm-child-\(UUID().uuidString).pid")
         defer { try? FileManager.default.removeItem(at: pidFile) }
-        let command = "/bin/sleep 30 & child=$!; echo $child > \(Shell.shQuote(pidFile.path)); wait $child"
+        let command = "/bin/sleep 30 & child=$!; echo $child > '\(pidFile.path)'; wait $child"
 
         _ = Shell.run("/bin/sh", ["-c", command], timeout: 0.2)
 
@@ -523,17 +512,5 @@ final class JSONFileSafetyTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
-    }
-}
-
-@MainActor
-final class ControlModelLogBoundTests: XCTestCase {
-    func testBoundedLogKeepsNewestContentAndMarksOmission() {
-        let value = "old-" + String(repeating: "n", count: 100)
-        let bounded = ControlModel.boundedLog(value, limit: 12)
-
-        XCTAssertTrue(bounded.hasPrefix("… 이전 로그 생략 …\n"))
-        XCTAssertTrue(bounded.hasSuffix(String(repeating: "n", count: 12)))
-        XCTAssertFalse(bounded.contains("old-"))
     }
 }

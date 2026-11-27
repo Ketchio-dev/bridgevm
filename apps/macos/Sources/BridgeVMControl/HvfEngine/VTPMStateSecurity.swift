@@ -118,16 +118,6 @@ enum VTPMStateSecurity {
         return try fileManager.contentsOfDirectory(atPath: path).contains { !$0.isEmpty }
     }
 
-    static func processInput(
-        for config: HvfEngineConfig,
-        provider: VTPMStateKeyProviding,
-        fileManager: FileManager = .default
-    ) throws -> VTPMProcessKeyInput? {
-        try VTPMRuntimeKey.withKey(for: config, provider: provider, fileManager: fileManager) { key in
-            try key.map { try VTPMProcessKeyInput(key: $0) }
-        }
-    }
-
     static func defaultSwtpmCommand(
         fileManager: FileManager = .default,
         environment: [String: String] = ProcessInfo.processInfo.environment,

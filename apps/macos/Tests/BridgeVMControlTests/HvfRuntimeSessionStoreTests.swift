@@ -231,7 +231,7 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
         XCTAssertNil(observed.object)
     }
 
-    func testBusyGenericModelDefersMetadataThenNextDetailUsesLatestWithoutReload() throws {
+    func testRunningRetiredEngineModelDefersMetadataThenNextDetailUsesLatestWithoutReload() throws {
         let fixture = try Fixture()
         defer { fixture.clean() }
         var original = fixture.config()
@@ -239,7 +239,7 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
         fixture.save(original)
         let library = fixture.library()
         let model = try XCTUnwrap(library.selectedModel)
-        model.busy = true
+        model.running = true // A process is still observed on the old registration's disk.
         var changed = original
         changed.backendKind = "hvf-engine"
         changed.bundlePath = fixture.root.appendingPathComponent("replacement").path
@@ -247,10 +247,10 @@ final class HvfRuntimeSessionStoreTests: XCTestCase {
         library.reload()
         let busyBody = LibraryDetailView(library: library).body
         XCTAssertTrue(values(HvfEngineView.self, in: busyBody).isEmpty)
-        XCTAssertTrue(try XCTUnwrap(values(VMDetailPanel.self, in: busyBody).first).model === model)
+        XCTAssertEqual(values(LibraryUnavailableRuntimeDetail.self, in: busyBody).count, 1)
         XCTAssertEqual(library.selectedDetail?.config, original)
         XCTAssertEqual(fixture.runtimeConfigs.count, 0)
-        model.busy = false
+        model.running = false
         XCTAssertEqual(library.selectedModel?.config, original, "The control cache is still stale")
         XCTAssertEqual(try runtime(in: library, fixture: fixture).session.config.libraryContext?.config, changed)
         XCTAssertEqual(library.selectedDetail?.config, changed)

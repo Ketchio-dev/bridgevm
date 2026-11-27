@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// RAM and CPUs. A library VM's are saved in vm.json (`memMiB`, `cpuCount`) like its other runtime-view
-/// preferences, so the dashboard's start and every other start path use them, within the limits the
-/// other engines' resource change keeps (VMResourceLimits). The experimental entry keeps them view-local.
+/// preferences, so the dashboard's start and every other start path use them, within VMResourceLimits.
+/// The experimental entry keeps them view-local.
 struct HvfResourceSetting: View {
     @ObservedObject var session: HvfEngineSession
     @Binding var ramMiB: Int

@@ -67,42 +67,8 @@ final class HvfRuntimeWorkAdmissionIdentityTests: XCTestCase {
         XCTAssertEqual(f.installJobCount, 0)
     }
 
-    func testBusyRetainedGenericHandleStaysDeniedUntilOrdinaryIdleReload() async throws {
-        for operation in HvfRuntimeWorkAdmissionBackend.Operation.allCases {
-            let f = try HvfRuntimeWorkAdmissionFixture()
-            defer { f.clean() }
-            let original = f.config()
-            f.save(original)
-            let library = f.library()
-            let old = f.model(original, in: library)
-            old.busy = true // Public observation setup; actual accepted work is covered separately.
-            var changed = original
-            changed.bundlePath = f.root.appendingPathComponent("new-bundle").path
-            changed.memMiB = 6144
-            f.save(changed); library.reload()
-            old.busy = false
-            XCTAssertTrue(f.model(original, in: library) === old)
-            XCTAssertEqual(old.config, original)
-            XCTAssertEqual(library.vms.first, changed)
-            let bytes = try f.snapshot()
-
-            await f.assertControlRefused(old, operation: operation, library: library,
-                reason: HvfRuntimeWorkAdmissionFixture.ownerReason)
-
-            library.reload()
-            let fresh = f.model(original, in: library)
-            XCTAssertFalse(fresh === old)
-            XCTAssertEqual(fresh.config, changed, "A stale getter cannot seed an old configuration after reload")
-            let work = HvfRuntimeWorkAdmissionOperation(.resources, model: fresh)
-            let accepted = work.invoke()
-            XCTAssertTrue(accepted)
-            guard await f.acknowledge(work, accepted: accepted) else { continue }
-            XCTAssertEqual(try f.snapshot(), bytes)
-        }
-    }
-
     func testRemovedAndEqualRecreatedRegistrationsRequireNewObjectIdentity() async throws {
-        for kind in ["runtime", "install", "control"] {
+        for kind in ["runtime", "install"] {
             let f = try HvfRuntimeWorkAdmissionFixture()
             defer { f.clean() }
             let config = f.config(pending: kind == "install")
@@ -111,7 +77,6 @@ final class HvfRuntimeWorkAdmissionIdentityTests: XCTestCase {
             let library = f.library()
             let oldRuntime = kind == "runtime" ? try f.runtime(config, in: library) : nil
             let oldInstall = kind == "install" ? f.install(config, in: library) : nil
-            let oldModel = kind == "control" ? f.model(config, in: library) : nil
             try FileManager.default.removeItem(at: f.registration(config))
             library.reload()
             if let oldRuntime {
@@ -119,10 +84,6 @@ final class HvfRuntimeWorkAdmissionIdentityTests: XCTestCase {
             }
             if let oldInstall {
                 await f.assertInstallRefused(oldInstall, library: library, reason: HvfRuntimeWorkAdmissionFixture.missingReason)
-            }
-            if let oldModel {
-                await f.assertControlRefused(oldModel, operation: .resources, library: library,
-                    reason: HvfRuntimeWorkAdmissionFixture.missingReason)
             }
             f.save(config); library.reload()
             let bytes = try f.snapshot()
@@ -139,16 +100,6 @@ final class HvfRuntimeWorkAdmissionIdentityTests: XCTestCase {
                 let handle = fresh.start()
                 XCTAssertNotNil(handle)
                 if let handle { await handle.value }
-            }
-            if let oldModel {
-                let fresh = f.model(config, in: library)
-                XCTAssertFalse(fresh === oldModel)
-                await f.assertControlRefused(oldModel, operation: .resources, library: library,
-                    reason: HvfRuntimeWorkAdmissionFixture.ownerReason)
-                let work = HvfRuntimeWorkAdmissionOperation(.resources, model: fresh)
-                let accepted = work.invoke()
-                XCTAssertTrue(accepted)
-                guard await f.acknowledge(work, accepted: accepted) else { continue }
             }
             XCTAssertEqual(try f.snapshot(), bytes)
         }

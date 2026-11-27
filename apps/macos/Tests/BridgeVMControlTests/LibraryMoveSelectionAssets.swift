@@ -32,7 +32,7 @@ final class LibraryMoveSelectionAssets {
         helperDigest = try digest(originalHelper)
         try FileManager.default.copyItem(at: originalHelper, to: helper)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helper.path)
-        try Data(("#!/bin/sh\nprintf 'unexpected wrapper\\n' > " + Shell.shQuote(wrapperMarker.path)
+        try Data(("#!/bin/sh\nprintf 'unexpected wrapper\\n' > '" + wrapperMarker.path + "'"
             + "\nexit 99\n").utf8).write(to: wrapper, options: .withoutOverwriting)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: wrapper.path)
         XCTAssertEqual(try digest(helper), helperDigest)

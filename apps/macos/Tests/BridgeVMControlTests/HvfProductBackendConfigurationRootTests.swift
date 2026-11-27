@@ -35,39 +35,25 @@ final class HvfProductBackendConfigurationRootTests: XCTestCase {
         func clean() { try? FileManager.default.removeItem(at: root) }
     }
 
-    private func updateResources(_ backend: HvfWindowsBackend, in fixture: Fixture) throws -> VMConfig? {
+    /// The backend reads the saved resources of the library it was made for, never another library's.
+    private func assertReadsSuppliedLibrary(_ backend: HvfWindowsBackend, expected: VMConfig,
+                                            in fixture: Fixture) throws {
         let context = try XCTUnwrap(backend.makeHvfEngineConfig().libraryContext)
         XCTAssertEqual(context.rootURL, fixture.rootA)
-        // This guard must precede every backend write: the failing baseline cannot write the global library.
-        guard context.rootURL == fixture.rootA else { return nil }
-        let pathA = fixture.registration(in: fixture.rootA)
-        let pathB = fixture.registration(in: fixture.rootB)
-        let beforeA = try Data(contentsOf: pathA)
-        let beforeB = try Data(contentsOf: pathB)
-
-        XCTAssertTrue(backend.setResources(memMiB: 8192, cpu: 6))
-
-        let afterA = try Data(contentsOf: pathA)
-        let saved = try JSONDecoder().decode(VMConfig.self, from: afterA)
-        XCTAssertNotEqual(afterA, beforeA)
-        XCTAssertEqual(try Data(contentsOf: pathB), beforeB)
-        XCTAssertEqual(saved.memMiB, 8192)
-        XCTAssertEqual(saved.cpuCount, 6)
-        XCTAssertEqual(saved.bundlePath, fixture.config(in: fixture.rootA).bundlePath)
-        XCTAssertEqual(backend.config, saved)
-        XCTAssertEqual(backend.makeHvfEngineConfig().libraryContext?.config, saved)
+        XCTAssertEqual(context.config, expected)
+        XCTAssertEqual(backend.resources().memMiB, expected.memMiB)
+        XCTAssertEqual(backend.resources().cpu, expected.cpuCount)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.config(in: fixture.rootA).bundlePath))
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.config(in: fixture.rootB).bundlePath))
-        return saved
     }
 
-    func testActualConfigFactoryPersistsResourcesOnlyInSuppliedLibrary() throws {
+    func testActualConfigFactoryReadsResourcesOnlyFromSuppliedLibrary() throws {
         let fixture = Fixture()
         defer { fixture.clean() }
         let config = fixture.prepare()
         let backend = try XCTUnwrap(config.makeBackend(libraryRoot: fixture.rootA) as? HvfWindowsBackend)
 
-        _ = try updateResources(backend, in: fixture)
+        try assertReadsSuppliedLibrary(backend, expected: config, in: fixture)
     }
 
     func testDefaultLibraryFactoryKeepsRootAfterStoppedModelReload() throws {
@@ -78,22 +64,17 @@ final class HvfProductBackendConfigurationRootTests: XCTestCase {
         let library = LibraryModel(rootURL: fixture.rootA, migrateLegacy: false, startsModelsAutomatically: false)
         library.selectedID = original.slug
         let model = try XCTUnwrap(library.selectedModel)
-        let backend = try XCTUnwrap(model.backend as? HvfWindowsBackend)
+        try assertReadsSuppliedLibrary(try XCTUnwrap(model.backend as? HvfWindowsBackend), expected: original, in: fixture)
 
-        guard let saved = try updateResources(backend, in: fixture) else { return }
-
-        XCTAssertEqual(model.config, original)
-        XCTAssertFalse(model.running || model.lifecycleBusy || model.busy)
+        var saved = original
+        saved.memMiB = 8192; saved.cpuCount = 6
+        XCTAssertTrue(VMLibrary.save(saved, rootURL: fixture.rootA))
+        XCTAssertFalse(model.running)
         library.reload()
         let replacement = try XCTUnwrap(library.selectedModel)
         XCTAssertFalse(replacement === model)
         XCTAssertEqual(replacement.config, saved)
-        let replacementBackend = try XCTUnwrap(replacement.backend as? HvfWindowsBackend)
-        let context = try XCTUnwrap(replacementBackend.makeHvfEngineConfig().libraryContext)
-        XCTAssertEqual(context.rootURL, fixture.rootA)
-        XCTAssertEqual(context.config, saved)
-        XCTAssertEqual(replacementBackend.resources().memMiB, 8192)
-        XCTAssertEqual(replacementBackend.resources().cpu, 6)
+        try assertReadsSuppliedLibrary(try XCTUnwrap(replacement.backend as? HvfWindowsBackend), expected: saved, in: fixture)
     }
 
     func testExplicitFactoryRemainsAuthoritativeAndCached() throws {
@@ -114,6 +95,6 @@ final class HvfProductBackendConfigurationRootTests: XCTestCase {
         XCTAssertTrue(library.model(for: config) === injected)
         XCTAssertEqual(received, [config])
         XCTAssertEqual(backend.makeHvfEngineConfig().libraryContext?.rootURL, fixture.rootB)
-        // The injected model is never started, refreshed, or asked to save resources.
+        // The injected model is never refreshed.
     }
 }

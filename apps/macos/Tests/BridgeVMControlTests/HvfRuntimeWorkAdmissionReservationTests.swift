@@ -50,37 +50,12 @@ final class HvfRuntimeWorkAdmissionReservationTests: XCTestCase {
         }
     }
 
-    func testEveryFileReservationRejectsGenericStartAndResourcesBeforeBackendCalls() async throws {
-        for action in HvfRuntimeLibraryActionEntry.finalActions {
-            for operation in HvfRuntimeWorkAdmissionBackend.Operation.allCases {
-                let f = try HvfRuntimeWorkAdmissionFixture()
-                defer { f.clean() }
-                let config = f.config()
-                f.save(config)
-                let library = f.library()
-                let model = f.model(config, in: library)
-                model.statusNote = "retained status"
-                model.pendingMemGiB = 6; model.pendingCPU = 3
-                guard f.reserve(action, config: config, in: library) else { continue }
-                f.seedErrors(library)
-                let bytes = try f.snapshot()
-
-                await f.assertControlRefused(model, operation: operation, library: library,
-                    reason: HvfRuntimeWorkAdmissionFixture.reservationReason)
-
-                f.assertFileErrors(library)
-                XCTAssertEqual(f.queue.count, 1)
-                XCTAssertEqual(try f.snapshot(), bytes)
-            }
-        }
-    }
-
     func testOtherSlugsAndRootsAdmitSafeWorkWithoutClearingExistingErrors() async throws {
         let f = try HvfRuntimeWorkAdmissionFixture(), otherRoot = try HvfRuntimeWorkAdmissionFixture()
         defer { f.clean(); otherRoot.clean() }
         let reserved = f.config(), runtimeConfig = f.config("runtime")
-        let installConfig = f.config("install", pending: true), controlConfig = f.config("control")
-        for config in [reserved, runtimeConfig, installConfig, controlConfig] { f.save(config) }
+        let installConfig = f.config("install", pending: true)
+        for config in [reserved, runtimeConfig, installConfig] { f.save(config) }
         f.saveRequest(installConfig)
         let library = f.library()
         guard f.reserve(.move, config: reserved, in: library) else { return }
@@ -98,12 +73,6 @@ final class HvfRuntimeWorkAdmissionReservationTests: XCTestCase {
         if let handle { await handle.value }
         XCTAssertEqual(install.stage, .failed("owned validation refusal"))
         XCTAssertEqual(f.installJobCount, 0)
-        let model = f.model(controlConfig, in: library)
-        let operation = HvfRuntimeWorkAdmissionOperation(.resources, model: model)
-        let accepted = operation.invoke()
-        XCTAssertTrue(accepted)
-        guard await f.acknowledge(operation, accepted: accepted) else { return }
-        XCTAssertEqual(f.backend(controlConfig).calls.writes, 1)
         XCTAssertEqual(library.operationError, "existing operation notice")
         f.assertFileErrors(library)
 

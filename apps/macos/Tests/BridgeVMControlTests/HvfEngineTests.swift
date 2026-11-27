@@ -282,6 +282,11 @@ private final class InMemoryVTPMKeyStore: VTPMStateKeyManaging {
 }
 
 final class VTPMStateSecurityTests: XCTestCase {
+    /// The key handoff every runtime launch builds (VTPMRuntimeKey, then the one-shot pipe).
+    private func processInput(for config: HvfEngineConfig, provider: VTPMStateKeyProviding) throws -> VTPMProcessKeyInput? {
+        try VTPMRuntimeKey.withKey(for: config, provider: provider) { key in try key.map { try VTPMProcessKeyInput(key: $0) } }
+    }
+
     func testKeyInputUsesOneShotBinaryPipe() throws {
         let config = HvfEngineConfig(
             targetDiskPath: "target", uefiVarsPath: "vars", evidenceDir: "evidence",
@@ -290,7 +295,7 @@ final class VTPMStateSecurityTests: XCTestCase {
             virtioGpu3d: false, nvmeBufferedIO: false, ctlFilePath: "control",
             vtpmStateDir: "state", swtpmBin: "swtpm", vtpmKeyID: "stable-vm"
         )
-        let input = try XCTUnwrap(VTPMStateSecurity.processInput(
+        let input = try XCTUnwrap(processInput(
             for: config,
             provider: TestVTPMKeyProvider()
         ))
@@ -319,7 +324,7 @@ final class VTPMStateSecurityTests: XCTestCase {
             vtpmStateDir: "state", swtpmBin: "swtpm", vtpmKeyID: "stable-vm"
         )
 
-        XCTAssertThrowsError(try VTPMStateSecurity.processInput(
+        XCTAssertThrowsError(try processInput(
             for: config,
             provider: TestVTPMKeyProvider(key: Data(repeating: 1, count: 31))
         )) { error in
@@ -346,7 +351,7 @@ final class VTPMStateSecurityTests: XCTestCase {
             vtpmStateDir: temp.path, swtpmBin: "swtpm", vtpmKeyID: "stable-vm"
         )
 
-        XCTAssertThrowsError(try VTPMStateSecurity.processInput(for: config, provider: provider))
+        XCTAssertThrowsError(try processInput(for: config, provider: provider))
         XCTAssertNil(provider.allowCreation)
     }
 
@@ -363,7 +368,7 @@ final class VTPMStateSecurityTests: XCTestCase {
             vtpmStateDir: temp.path, swtpmBin: "swtpm", vtpmKeyID: "stable-vm"
         )
 
-        XCTAssertThrowsError(try VTPMStateSecurity.processInput(for: config, provider: provider))
+        XCTAssertThrowsError(try processInput(for: config, provider: provider))
         XCTAssertNil(provider.allowCreation)
     }
 
@@ -382,7 +387,7 @@ final class VTPMStateSecurityTests: XCTestCase {
             vtpmStateDir: temp.path, swtpmBin: "swtpm", vtpmKeyID: "stable-vm"
         )
 
-        _ = try VTPMStateSecurity.processInput(for: config, provider: provider)
+        _ = try processInput(for: config, provider: provider)
 
         XCTAssertEqual(provider.allowCreation, false)
     }
@@ -1158,313 +1163,22 @@ final class HvfWindowsBackendTests: XCTestCase {
         )
     }
 
-    func testPathKindAndDisplayNameDerivation() throws {
+    func testPathDerivation() throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
         let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in true })
 
-        XCTAssertEqual(backend.displayName, "Windows Preview")
-        XCTAssertEqual(backend.kind, "hvf-engine")
-        XCTAssertTrue(backend.supportsGuestCommands)
-        XCTAssertFalse(backend.supportsPackageInstall)
-        XCTAssertTrue(backend.supportsClipboard)
-        XCTAssertFalse(backend.supportsSSH)
         XCTAssertEqual(backend.targetDiskPath, cfg.bundlePath + "/disks/hvf-target.raw")
         XCTAssertEqual(backend.uefiVarsPath, cfg.bundlePath + "/metadata/hvf-vars.fd")
         XCTAssertEqual(backend.evidenceDir, cfg.bundlePath + "/logs/hvf")
         XCTAssertEqual(backend.ctlFilePath, cfg.bundlePath + "/metadata/hvf.ctl")
     }
 
-    func testLaunchCommandUsesExplicitCLIResourcesAndSeparateLauncherLog() throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
-        let backend = HvfWindowsBackend(cfg)
-
-        let command = backend.launchCommand()
-        XCTAssertTrue(command.contains("'--agent-service-control' '\(backend.ctlFilePath)'"))
-        XCTAssertTrue(command.contains("'--ram-mib' '4096'"))
-        XCTAssertTrue(command.contains("'--smp-cpus' '1'"))
-        XCTAssertTrue(command.contains(">\(Shell.shQuote(backend.launcherLogPath)) 2>&1"))
-        XCTAssertFalse(command.contains(">\(Shell.shQuote(backend.evidenceDir + "/run.log")) 2>&1"))
-        XCTAssertFalse(command.contains("BRIDGEVM_VIRTIO_CONSOLE=") || command.contains("'--nvme-buffered-io'"))
-    }
-
-    func testRunInGuestAppendsCtlAndParsesReply() throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
-        let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in true })
-        let log = URL(fileURLWithPath: backend.evidenceDir).appendingPathComponent("run.log")
-        try HvfAgentServiceStartFixture.seed(backend)
-
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) {
-            try? FileManager.default.createDirectory(atPath: backend.evidenceDir, withIntermediateDirectories: true)
-            try? """
-            BVAGENT SERVICE start t=1
-            BVAGENT CMD foo exit=0
-            hello
-            world
-            BVAGENT END foo
-
-            """.write(to: log, atomically: true, encoding: .utf8)
-        }
-
-        let result = backend.runInGuest("foo")
-        XCTAssertEqual(result.output, "hello\nworld")
-        XCTAssertEqual(result.code, 0)
-        XCTAssertEqual(try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8), "foo\n")
-    }
-
-    func testRunInGuestRejectsStoppedVMWithoutWritingControlFile() throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
-        let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in false })
-
-        let result = backend.runInGuest("foo")
-
-        XCTAssertEqual(result.output, "Start the VM before sending a command.")
-        XCTAssertEqual(result.code, -1)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: backend.ctlFilePath))
-    }
-
-    func testRunInGuestRejectsMultilineCommandBeforeCheckingVMOrWritingControlFile() throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
-        let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in true })
-
-        let result = backend.runInGuest("one\ntwo")
-
-        XCTAssertEqual(result.output, HvfGuestCommandError.multiline.message)
-        XCTAssertEqual(result.code, -1)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: backend.ctlFilePath))
-    }
-
-    func testRunInGuestReturnsImmediatelyWhenControlChannelCannotBeWritten() throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
-        let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in true })
-        try FileManager.default.createDirectory(
-            atPath: backend.ctlFilePath,
-            withIntermediateDirectories: true
-        )
-        try HvfAgentServiceStartFixture.seed(backend)
-
-        let started = Date()
-        let result = backend.runInGuest("whoami")
-
-        XCTAssertLessThan(Date().timeIntervalSince(started), 1)
-        XCTAssertEqual(result.code, -1)
-        XCTAssertEqual(result.output, "BridgeVM couldn’t write the command to \(backend.ctlFilePath).")
-    }
-
-    func testRunInGuestReturnsImmediatelyWhenRuntimeDirectoriesCannotBeCreated() throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let blockingFile = dir.appendingPathComponent("not-a-directory")
-        try Data("file".utf8).write(to: blockingFile)
-        let cfg = makeConfig(
-            bundlePath: blockingFile.appendingPathComponent("bundle.vmbridge").path
-        )
-        let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in true })
-
-        let started = Date()
-        let result = backend.runInGuest("whoami")
-
-        XCTAssertLessThan(Date().timeIntervalSince(started), 1)
-        XCTAssertEqual(result.code, -1)
-        XCTAssertEqual(result.output, "BridgeVM couldn’t prepare the runtime folders in \(cfg.bundlePath).")
-    }
-
-    func testRunInGuestReturnsImmediatelyWhenVMExitsWhileWaiting() throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
-        let lock = NSLock()
-        var checks = 0
-        let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in
-            lock.lock()
-            defer { lock.unlock() }
-            checks += 1
-            return checks == 1
-        })
-        try HvfAgentServiceStartFixture.seed(backend)
-
-        let started = Date()
-        let result = backend.runInGuest("foo")
-
-        XCTAssertLessThan(Date().timeIntervalSince(started), 1)
-        XCTAssertEqual(result.output, "Windows disconnected before reporting the result of “foo”.")
-        XCTAssertEqual(result.code, -1)
-        XCTAssertEqual(try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8), "foo\n")
-    }
-
-    func testGracefulStopRequestUsesAgentControlChannel() throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
-        let backend = HvfWindowsBackend(cfg)
-
-        XCTAssertTrue(backend.requestGracefulStop())
-
-        XCTAssertEqual(
-            try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8),
-            "shutdown.exe /s /t 0\n"
-        )
-    }
-
-    func testGracefulStopRequestReportsUnwritableControlChannel() throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let backend = HvfWindowsBackend(
-            makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
-        )
-        try FileManager.default.createDirectory(
-            atPath: backend.ctlFilePath,
-            withIntermediateDirectories: true
-        )
-
-        XCTAssertFalse(backend.requestGracefulStop())
-    }
-
-    func testConcurrentControlWritesRemainWholeAndLossless() throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
-        let backend = HvfWindowsBackend(cfg)
-
-        DispatchQueue.concurrentPerform(iterations: 32) { _ in
-            backend.requestGracefulStop()
-        }
-
-        let lines = try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8)
-            .split(separator: "\n")
-        XCTAssertEqual(lines.count, 32)
-        XCTAssertTrue(lines.allSatisfy { $0 == "shutdown.exe /s /t 0" })
-    }
-
-    func testConcurrentGuestCommandsWaitForPriorReplyBeforeAppending() throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let cfg = makeConfig(bundlePath: dir.appendingPathComponent("bundle.vmbridge").path)
-        let backend = HvfWindowsBackend(cfg, processIsRunning: { _ in true })
-        let log = URL(fileURLWithPath: backend.evidenceDir).appendingPathComponent("run.log")
-        try HvfAgentServiceStartFixture.seed(backend)
-        let group = DispatchGroup()
-        for command in ["first", "second"] {
-            group.enter()
-            DispatchQueue.global().async {
-                _ = backend.runInGuest(command)
-                group.leave()
-            }
-        }
-
-        let firstCommand = try waitForControlLines(backend, count: 1).first.map(String.init)!
-        usleep(150_000)
-        XCTAssertEqual(try controlLines(backend).count, 1)
-        try FileManager.default.createDirectory(atPath: backend.evidenceDir, withIntermediateDirectories: true)
-        try "BVAGENT SERVICE start t=1\nBVAGENT CMD \(firstCommand) exit=0\nfirst-ok\nBVAGENT END \(firstCommand)\n"
-            .write(to: log, atomically: true, encoding: .utf8)
-
-        let commands = try waitForControlLines(backend, count: 2).map(String.init)
-        let secondCommand = commands[1]
-        try """
-        BVAGENT SERVICE start t=1
-        BVAGENT CMD \(firstCommand) exit=0
-        first-ok
-        BVAGENT END \(firstCommand)
-        BVAGENT CMD \(secondCommand) exit=0
-        second-ok
-        BVAGENT END \(secondCommand)
-
-        """.write(to: log, atomically: true, encoding: .utf8)
-
-        XCTAssertEqual(group.wait(timeout: .now() + 2), .success)
-        XCTAssertEqual(Set(commands), Set(["first", "second"]))
-    }
-
-    func testPendingDiskGrowthCommandIsIdempotentOnlyAtDiskEnd() {
-        let command = HvfWindowsBackend.pendingDiskGrowthCommand
-
-        XCTAssertFalse(command.contains("\n"))
-        XCTAssertTrue(command.contains("$tailGap -gt 16777216"))
-        XCTAssertTrue(command.contains("throw 'C: has no contiguous extension space'"))
-        XCTAssertTrue(command.contains("$state='already-max'"))
-        XCTAssertTrue(command.contains("BRIDGEVM_DISK_GROW_OK state="))
-    }
-
-    func testResourceSaveFailureKeepsBackendConfigurationUnchanged() throws {
-        let temp = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: temp) }
-        let unusableRoot = temp.appendingPathComponent("not-a-directory")
-        try Data("blocked".utf8).write(to: unusableRoot)
-        let backend = HvfWindowsBackend(
-            makeConfig(bundlePath: temp.appendingPathComponent("bundle.vmbridge").path),
-            libraryRoot: unusableRoot
-        )
-
-        XCTAssertFalse(backend.setResources(memMiB: 8192, cpu: 4))
-        XCTAssertEqual(backend.resources().memMiB, 4096)
-        XCTAssertEqual(backend.resources().cpu, 1)
-        XCTAssertEqual(backend.config.memMiB, 4096)
-        XCTAssertEqual(backend.config.cpuCount, 1)
-    }
-
-    func testResourceSaveCommitsMemoryAndPersistedConfigurationTogether() throws {
-        let temp = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: temp) }
-        let library = temp.appendingPathComponent("library", isDirectory: true)
-        let original = makeConfig(bundlePath: temp.appendingPathComponent("bundle.vmbridge").path)
-        XCTAssertTrue(VMLibrary.save(original, rootURL: library))
-        let backend = HvfWindowsBackend(original, libraryRoot: library)
-
-        XCTAssertTrue(backend.setResources(memMiB: 8192, cpu: 4))
-
-        XCTAssertEqual(backend.resources().memMiB, 8192)
-        XCTAssertEqual(backend.resources().cpu, 4)
-        let persisted = try XCTUnwrap(VMLibrary.scan(rootURL: library).configs.first)
-        XCTAssertEqual(persisted.memMiB, 8192)
-        XCTAssertEqual(persisted.cpuCount, 4)
-    }
-
-    func testResourceSaveRejectsInvalidValuesWithoutMutation() throws {
-        let temp = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: temp) }
-        let backend = HvfWindowsBackend(
-            makeConfig(bundlePath: temp.appendingPathComponent("bundle.vmbridge").path),
-            libraryRoot: temp.appendingPathComponent("library")
-        )
-
-        XCTAssertFalse(backend.setResources(memMiB: 0, cpu: 0))
-        XCTAssertEqual(backend.resources().memMiB, 4096)
-        XCTAssertEqual(backend.resources().cpu, 1)
-    }
-
     private func makeTempDir() throws -> URL {
         let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
-    }
-
-    private func controlLines(_ backend: HvfWindowsBackend) throws -> [Substring] {
-        try String(contentsOfFile: backend.ctlFilePath, encoding: .utf8).split(separator: "\n")
-    }
-
-    private func waitForControlLines(_ backend: HvfWindowsBackend, count: Int) throws -> [Substring] {
-        let deadline = Date().addingTimeInterval(2)
-        while Date() < deadline {
-            if FileManager.default.fileExists(atPath: backend.ctlFilePath) {
-                let lines = try controlLines(backend)
-                if lines.count >= count { return lines }
-            }
-            usleep(10_000)
-        }
-        XCTFail("timed out waiting for \(count) HVF control lines")
-        return []
     }
 
     private func makeConfig(bundlePath: String, diskPath: String? = nil) -> VMConfig {
@@ -1528,55 +1242,6 @@ final class HvfCommandReplyReaderTests: XCTestCase {
         XCTAssertTrue(reply.output.contains("line-99-"))
         XCTAssertFalse(reply.output.contains("line-0-"))
         XCTAssertLessThan(reply.output.utf8.count, 200)
-    }
-}
-
-final class HvfIncrementalMarkerReaderTests: XCTestCase {
-    func testFindsMarkerAcrossAppendsAndChunkBoundary() throws {
-        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let log = dir.appendingPathComponent("run.log")
-        try Data("noise\nBVAGENT SERV".utf8).write(to: log)
-        let reader = HvfIncrementalMarkerReader(marker: "BVAGENT SERVICE start")
-        XCTAssertFalse(reader.containsMarker(in: log))
-
-        let handle = try FileHandle(forWritingTo: log)
-        try handle.seekToEnd()
-        try handle.write(contentsOf: Data("ICE start t=1\n".utf8))
-        try handle.close()
-        XCTAssertTrue(reader.containsMarker(in: log))
-        XCTAssertTrue(reader.containsMarker(in: log))
-    }
-
-    func testResetAllowsASecondLogGeneration() throws {
-        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let log = dir.appendingPathComponent("run.log")
-        let reader = HvfIncrementalMarkerReader(marker: "ready")
-        try Data("ready\n".utf8).write(to: log)
-        XCTAssertTrue(reader.containsMarker(in: log))
-
-        reader.reset()
-        try Data("booting\n".utf8).write(to: log, options: .atomic)
-        XCTAssertFalse(reader.containsMarker(in: log))
-        try Data("ready\n".utf8).write(to: log, options: .atomic)
-        XCTAssertTrue(reader.containsMarker(in: log))
-    }
-
-    func testAtomicLogReplacementInvalidatesCachedMarkerWithoutExplicitReset() throws {
-        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let log = dir.appendingPathComponent("run.log")
-        let reader = HvfIncrementalMarkerReader(marker: "ready")
-        try Data("ready\n".utf8).write(to: log)
-        XCTAssertTrue(reader.containsMarker(in: log))
-
-        try Data("new generation is still booting\n".utf8).write(to: log, options: .atomic)
-
-        XCTAssertFalse(reader.containsMarker(in: log))
     }
 }
 

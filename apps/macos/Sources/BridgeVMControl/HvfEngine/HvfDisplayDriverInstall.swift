@@ -300,10 +300,9 @@ enum HvfDisplayDriverInstall {
         }
     }
 
-    /// The agent command path of `HvfWindowsBackend.runInGuest` (shell normalization, one
-    /// control-file line, the `BVAGENT CMD`/`END` reply) with the session's liveness: the
-    /// backend's `pgrep` on the disk path cannot see the owned runtime, whose helper gets
-    /// its disk through the environment.
+    /// The app's agent command path: shell normalization, one control-file line, the
+    /// `BVAGENT CMD`/`END` reply, with the session's liveness (a `pgrep` on the disk path
+    /// cannot see the owned runtime, whose helper gets its disk through the environment).
     @MainActor static func runInGuest(_ command: String, session: HvfEngineSession,
                                       timeout: TimeInterval) async -> (output: String, code: Int32) {
         let normalized: String

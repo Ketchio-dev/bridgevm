@@ -76,8 +76,5 @@ final class LibraryCloneSelectionTests: XCTestCase {
         XCTAssertEqual(VMLibrary.list(rootURL: f.assets.root).contains { $0.slug == "copy" }, publishesCopy)
         XCTAssertEqual(try Data(contentsOf: f.disk), f.original)
         for (url, bytes) in f.registrations { XCTAssertEqual(try Data(contentsOf: url), bytes) }
-        XCTAssertEqual(f.backend.calls[0], 0)
-        XCTAssertEqual(f.backend.calls[2], 0)
-        XCTAssertEqual(f.backend.calls[3], 0)
     }
 }

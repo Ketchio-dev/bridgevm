@@ -11,16 +11,15 @@ final class HvfRuntimeLibraryActionCacheIdentityTests: XCTestCase {
             fixture.save(original)
             let library = fixture.library()
             let oldModel = fixture.cacheFake(in: library, config: original)
-            oldModel.busy = true
+            oldModel.running = true // A running VM keeps its observed control across the reload.
             var current = original
             current.bundlePath = fixture.root.appendingPathComponent("replacement/bundle").path
             current.memMiB = 8192
             fixture.save(current)
             library.reload()
-            oldModel.busy = false
+            oldModel.running = false
             XCTAssertEqual(library.vms, [current])
             XCTAssertEqual(oldModel.config, original)
-            XCTAssertFalse(oldModel.hasAcceptedOperation)
             XCTAssertTrue(library.model(for: current) === oldModel)
             let before = try fixture.snapshot()
             let creations = fixture.modelCreations
