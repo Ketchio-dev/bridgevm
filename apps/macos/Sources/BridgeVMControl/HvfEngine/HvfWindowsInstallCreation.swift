@@ -9,6 +9,7 @@ extension VMLibrary {
                                         e2eUnattendedPath: String? = nil,
                                         storageDir: URL? = nil,
                                         width: Int = 1280, height: Int = 800,
+                                        guestResolution: String? = nil,
                                         memMiB: Int = 6144, cpuCount: Int = 4,
                                         networkEnabled: Bool = true,
                                         libraryRoot: URL = root,
@@ -61,6 +62,7 @@ extension VMLibrary {
                            displayWidth: width, displayHeight: height, installPending: true,
                            isoPath: nil, diskPath: "\(b)/disks/hvf-target.raw",
                            memMiB: memMiB, cpuCount: cpuCount, networkEnabled: networkEnabled, experimental3DAllowed: false)
+        cfg.guestResolution = guestResolution
         VMLibrary.windowsShareRegistrationLock.lock()
         defer { VMLibrary.windowsShareRegistrationLock.unlock() }
         cfg.enableNewWindowsShare(otherRegistrations: VMLibrary.scan(rootURL: libraryRoot).configs)

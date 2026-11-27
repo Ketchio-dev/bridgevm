@@ -14,6 +14,7 @@ enum NativeCLICreateWindows {
               saved.installPending == true, saved.displayName == request.name,
               saved.cpuCount == request.cpuCount, saved.memMiB == request.memoryMiB,
               saved.displayWidth == request.resolution.width, saved.displayHeight == request.resolution.height,
+              saved.guestResolution == request.resolution.text,
               saved.networkEnabled == request.networkEnabled,
               let pending = HvfWindowsInstallRequest.load(bundlePath: saved.bundlePath),
               pending.diskGiB == request.diskGiB, pending.isoSHA256 != nil,
@@ -68,7 +69,7 @@ extension NativeCLICreateWindows {
             guestPayloadDirectory: request.guestPayload?.payloadDirectory,
             guestPayloadManifest: request.guestPayload?.manifestPath,
             storageDir: nil, width: request.resolution.width, height: request.resolution.height,
-            memMiB: request.memoryMiB, cpuCount: request.cpuCount,
+            guestResolution: request.resolution.text, memMiB: request.memoryMiB, cpuCount: request.cpuCount,
             networkEnabled: request.networkEnabled, libraryRoot: libraryRoot)
     }
 }
