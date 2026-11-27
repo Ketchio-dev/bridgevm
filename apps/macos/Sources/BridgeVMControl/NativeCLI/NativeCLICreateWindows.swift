@@ -36,6 +36,10 @@ extension NativeCLI {
         guard case .createWindows(var request) = options.command else {
             throw NativeCLIError.invalid("Expected create-windows command.")
         }
+        // Before the driver download and the copy, not at install time.
+        if let problem = HvfWindowsInstallISOCheck.problem(isoPath: request.isoPath) {
+            throw NativeCLIError.unavailable(problem)
+        }
         if request.fetchDrivers {
             write("BridgeVM: preparing the pinned Red Hat virtio-win drivers (about 95 MB on first use)...\n", to: .standardError)
             do { request.guestPayload = try HvfWindowsDriverPayloadFetch.prepare() } catch {

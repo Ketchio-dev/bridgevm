@@ -49,6 +49,10 @@ extension CreateVMSheet {
                         }
                     })
             case .windowsHVFInstall:
+                if let problem = HvfWindowsInstallISOCheck.problem(isoPath: selectedISO) {
+                    config = .refused(problem)
+                    break
+                }
                 config = VMLibrary.createWindowsHVFInstall(
                     name: normalizedName, isoPath: selectedISO, diskGiB: disk,
                     injectViogpu3d: false, driverPackageDir: nil,
