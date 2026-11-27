@@ -85,6 +85,9 @@ All notable changes to BridgeVM are documented in this file.
 - When the Mac's audio output or microphone doesn't start for a VM, the VM's
   dashboard now says so in one sentence; before, Windows just had no sound or
   recorded silence with no explanation.
+- Typing into a VM window that just opened, for example at the Windows sign-in
+  screen, now reaches Windows. Before, keys went nowhere until you clicked
+  inside the window.
 - Copying more than about 24 MB of text in Windows stalled clipboard sharing,
   shared folders and input for the rest of the session. The copy is now
   refused like any text over 8 MB, and the rest keeps working.

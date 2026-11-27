@@ -92,6 +92,11 @@ final class FBLayerView: HvfFramebufferTextInput {
         stopDisplayLink()
         if window != nil { startDisplayLink() }
         reportDisplaySize(settled: false)
+        // Typing into a just-opened VM window (at the Windows sign-in screen, say) reaches Windows without a
+        // click first, unless something else in the window already has the keyboard.
+        if let window, window.firstResponder === window || window.firstResponder === window.contentView {
+            window.makeFirstResponder(self)
+        }
     }
 
     override func setFrameSize(_ newSize: NSSize) {
