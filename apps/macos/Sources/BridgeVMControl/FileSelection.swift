@@ -7,6 +7,7 @@ protocol FileSelectionPanel: AnyObject {
     var canChooseDirectories: Bool { get set }
     var canChooseFiles: Bool { get set }
     var allowedContentTypes: [UTType] { get set }
+    var treatsFilePackagesAsDirectories: Bool { get set }
     var url: URL? { get }
     func begin(completionHandler handler: @escaping (NSApplication.ModalResponse) -> Void)
 }
@@ -34,6 +35,8 @@ enum FileSelection {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = directories
         panel.canChooseFiles = !directories
+        // Another VM app may keep its disk and UEFI variables inside a bundle macOS shows as one file.
+        panel.treatsFilePackagesAsDirectories = !directories
         if let extensions {
             panel.allowedContentTypes = extensions.compactMap { UTType(filenameExtension: $0) }
         }
