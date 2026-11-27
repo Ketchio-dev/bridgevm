@@ -45,18 +45,19 @@ final class HvfResourcePreferenceSaveTests: XCTestCase {
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
         XCTAssertEqual(try dashboardLaunch(library, saved).ramMiB, 6144)
 
-        XCTAssertTrue(session.applyResources(memMiB: 8192, cpus: 4) == (8192, 4, nil))
+        // 4 GiB: inside the Settings range on any Mac (it follows the Mac's memory and keeps the saved 6 GiB).
+        XCTAssertTrue(session.applyResources(memMiB: 4096, cpus: 4) == (4096, 4, nil))
         let memory = try Data(contentsOf: url)
-        XCTAssertTrue(String(decoding: memory, as: UTF8.self).contains("\"memMiB\" : 8192"))
+        XCTAssertTrue(String(decoding: memory, as: UTF8.self).contains("\"memMiB\" : 4096"))
         XCTAssertFalse(String(decoding: memory, as: UTF8.self).contains("cpuCount"), "an unchanged CPU count is not written")
-        XCTAssertTrue(session.applyResources(memMiB: 8192, cpus: 6) == (8192, 6, nil))
+        XCTAssertTrue(session.applyResources(memMiB: 4096, cpus: 6) == (4096, 6, nil))
         XCTAssertEqual(lines(try Data(contentsOf: url)), lines(original), "every other vm.json line is unchanged")
 
         let launch = try dashboardLaunch(library, saved)
-        XCTAssertEqual(launch.ramMiB, 8192, "the dashboard's start uses the page's value")
+        XCTAssertEqual(launch.ramMiB, 4096, "the dashboard's start uses the page's value")
         XCTAssertEqual(launch.smpCpus, 6)
         XCTAssertTrue(library.hvfRuntimeDetailSession(for: saved) === session)
-        XCTAssertEqual(session.config.ramMiB, 8192)
+        XCTAssertEqual(session.config.ramMiB, 4096)
         XCTAssertEqual(session.config.smpCpus, 6)
         XCTAssertNil(library.operationError)
     }
@@ -73,7 +74,7 @@ final class HvfResourcePreferenceSaveTests: XCTestCase {
             XCTAssertFalse(setting.isDisabled)
             session.connectionState = state
             XCTAssertTrue(setting.isDisabled, "\(state)")
-            XCTAssertTrue(session.applyResources(memMiB: 8192, cpus: 6)
+            XCTAssertTrue(session.applyResources(memMiB: 2048, cpus: 6)
                 == (4096, 4, "Shut down Windows before changing this setting."), "\(state)")
             XCTAssertEqual(try Data(contentsOf: url), original)
             XCTAssertEqual(try dashboardLaunch(library, saved).ramMiB, 4096)
