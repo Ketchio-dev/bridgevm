@@ -4,7 +4,9 @@ enum VMResourceLimits {
     static let minimumMemoryMiB = 1_024
     static let maximumMemoryMiB = 32 * 1_024
     static let minimumCPU = 1
-    static let maximumCPU = 10
+    /// At least 10, and on a larger Mac as many as Create and the CLI offer (all cores but one),
+    /// so a VM made there can still be changed in Settings.
+    static let maximumCPU = max(10, ProcessInfo.processInfo.activeProcessorCount - 1)
 
     static func contains(memoryMiB: Int, cpu: Int) -> Bool {
         (minimumMemoryMiB...maximumMemoryMiB).contains(memoryMiB)
