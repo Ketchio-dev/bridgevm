@@ -67,6 +67,16 @@ enum HvfHostSettingLiveSave {
         return copy
     }
 
+    /// Saves a change made while the VM is stopped. A change still waiting from the last run (its save at
+    /// the stop failed) is dropped first, so it can't overwrite this newer choice at the next stop.
+    static func saveNow(_ setting: String, session: HvfEngineSession,
+                        publish: HvfEngineSession.RegistrationPublish, change: @escaping Change) -> String? {
+        if let slug = session.config.libraryContext?.config.slug { done(setting, for: slug, session) }
+        return session.saveLibraryPreference(setting, publish: publish, change: change)
+    }
+
+    /// Saves the changes made while Windows ran. One that can't be saved keeps waiting, and the VM's
+    /// dashboard says so (`hostSettingsSaveMessage`) until it is saved or replaced.
     @discardableResult
     static func saveIfStopped(_ session: HvfEngineSession,
                               publish: @escaping HvfEngineSession.RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> String? {
@@ -74,14 +84,27 @@ enum HvfHostSettingLiveSave {
               session.libraryPreferencesEditable else { return nil }
         var failure: String?
         for (setting, change) in changes.sorted(by: { $0.key < $1.key }) {
-            if let message = session.saveLibraryPreference(setting, publish: publish, change: change) {
-                failure = message
-            } else {
-                pending[slug]?[setting] = nil
-            }
+            let message = session.saveLibraryPreference(setting, publish: publish, change: change)
+            // A write that landed but couldn't be confirmed is in vm.json already: it waits no longer.
+            if message == nil || holds(session, change) { done(setting, for: slug, session) }
+            if let message { failure = message }
         }
-        if pending[slug]?.isEmpty == true { pending[slug] = nil }
+        if session.hostSettingsSaveMessage != failure { session.hostSettingsSaveMessage = failure }
         return failure
+    }
+
+    private static func holds(_ session: HvfEngineSession, _ change: Change) -> Bool {
+        guard let saved = session.config.libraryContext?.config else { return false }
+        var changed = saved
+        change(&changed)
+        return changed == saved
+    }
+
+    private static func done(_ setting: String, for slug: String, _ session: HvfEngineSession) {
+        pending[slug]?[setting] = nil
+        guard pending[slug]?.isEmpty != false else { return }
+        pending[slug] = nil
+        if session.hostSettingsSaveMessage != nil { session.hostSettingsSaveMessage = nil }
     }
 }
 
@@ -96,7 +119,7 @@ extension HvfEngineSession {
             HvfHostSettingLiveSave.record("Command key", for: slug, change)
             return (mode, nil) // the picker's binding puts it in `config`, which keyMapping reads
         }
-        let message = saveLibraryPreference("Command key", publish: publish, change: change)
+        let message = HvfHostSettingLiveSave.saveNow("Command key", session: self, publish: publish, change: change)
         return (HvfCommandKeyMode(saved: config.libraryContext?.config.commandKeyMode), message)
     }
 }

@@ -45,18 +45,19 @@ final class HvfResourcePreferenceSaveTests: XCTestCase {
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
         XCTAssertEqual(try dashboardLaunch(library, saved).ramMiB, 6144)
 
-        XCTAssertTrue(session.applyResources(memMiB: 8192, cpus: 4) == (8192, 4, nil))
+        // 4 GiB: inside the Settings range on any Mac (it follows the Mac's memory and keeps the saved 6 GiB).
+        XCTAssertTrue(session.applyResources(memMiB: 4096, cpus: 4) == (4096, 4, nil))
         let memory = try Data(contentsOf: url)
-        XCTAssertTrue(String(decoding: memory, as: UTF8.self).contains("\"memMiB\" : 8192"))
+        XCTAssertTrue(String(decoding: memory, as: UTF8.self).contains("\"memMiB\" : 4096"))
         XCTAssertFalse(String(decoding: memory, as: UTF8.self).contains("cpuCount"), "an unchanged CPU count is not written")
-        XCTAssertTrue(session.applyResources(memMiB: 8192, cpus: 6) == (8192, 6, nil))
+        XCTAssertTrue(session.applyResources(memMiB: 4096, cpus: 6) == (4096, 6, nil))
         XCTAssertEqual(lines(try Data(contentsOf: url)), lines(original), "every other vm.json line is unchanged")
 
         let launch = try dashboardLaunch(library, saved)
-        XCTAssertEqual(launch.ramMiB, 8192, "the dashboard's start uses the page's value")
+        XCTAssertEqual(launch.ramMiB, 4096, "the dashboard's start uses the page's value")
         XCTAssertEqual(launch.smpCpus, 6)
         XCTAssertTrue(library.hvfRuntimeDetailSession(for: saved) === session)
-        XCTAssertEqual(session.config.ramMiB, 8192)
+        XCTAssertEqual(session.config.ramMiB, 4096)
         XCTAssertEqual(session.config.smpCpus, 6)
         XCTAssertNil(library.operationError)
     }
@@ -73,7 +74,7 @@ final class HvfResourcePreferenceSaveTests: XCTestCase {
             XCTAssertFalse(setting.isDisabled)
             session.connectionState = state
             XCTAssertTrue(setting.isDisabled, "\(state)")
-            XCTAssertTrue(session.applyResources(memMiB: 8192, cpus: 6)
+            XCTAssertTrue(session.applyResources(memMiB: 2048, cpus: 6)
                 == (4096, 4, "Shut down Windows before changing this setting."), "\(state)")
             XCTAssertEqual(try Data(contentsOf: url), original)
             XCTAssertEqual(try dashboardLaunch(library, saved).ramMiB, 4096)
@@ -81,7 +82,17 @@ final class HvfResourcePreferenceSaveTests: XCTestCase {
         }
     }
 
-    /// The limits the other engines' resource change keeps (VMResourceLimits, as setResources checks).
+    /// Settings offered 1–32 GiB on any Mac; it now offers what Create offers there (host RAM less 4 GiB,
+    /// from 2 GiB), and a VM saved with more, or less, keeps its value selectable.
+    func testMemoryRangeIsWhatCreateOffersAndKeepsTheSavedValue() {
+        let eightGiB = CreateVMMemoryOptions(hostBytes: 8 << 30), sixtyFourGiB = CreateVMMemoryOptions(hostBytes: 64 << 30)
+        XCTAssertEqual(eightGiB.settingsRangeMiB(keeping: 4096), 2048...4096)
+        XCTAssertEqual(sixtyFourGiB.settingsRangeMiB(keeping: 6144), 2048...32768)
+        XCTAssertEqual(eightGiB.settingsRangeMiB(keeping: 16384), 2048...16384, "a saved value above the ceiling stays")
+        XCTAssertEqual(eightGiB.settingsRangeMiB(keeping: 1024), 1024...4096, "so does one below the minimum")
+    }
+
+    /// Memory outside that range and CPUs outside VMResourceLimits are refused.
     func testAValueOutsideTheLimitsIsRefused() throws {
         let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
         defer { fixture.clean() }
@@ -89,10 +100,11 @@ final class HvfResourcePreferenceSaveTests: XCTestCase {
         let url = fixture.registration(saved), original = try Data(contentsOf: url)
         let library = fixture.library(probe: probe)
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
-        let limits = HvfEngineSession.resourceLimitsMessage
+        let limits = HvfEngineSession.resourceLimitsMessage(
+            memoryMiB: CreateVMMemoryOptions.current.settingsRangeMiB(keeping: 6144))
         XCTAssertTrue(session.applyResources(memMiB: 64 * 1024, cpus: 4) == (6144, 4, limits))
         XCTAssertTrue(session.applyResources(memMiB: 6144, cpus: VMResourceLimits.maximumCPU + 1) == (6144, 4, limits))
-        XCTAssertTrue(session.applyResources(memMiB: 512, cpus: 4) == (6144, 4, limits))
+        XCTAssertTrue(session.applyResources(memMiB: 1024, cpus: 4) == (6144, 4, limits))
         XCTAssertEqual(try Data(contentsOf: url), original)
         XCTAssertTrue(probe.lookups.isEmpty, "refused before the save checks")
     }

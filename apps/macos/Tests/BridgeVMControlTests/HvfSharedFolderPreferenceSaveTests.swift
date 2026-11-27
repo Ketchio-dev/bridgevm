@@ -43,8 +43,35 @@ final class HvfSharedFolderPreferenceSaveTests: XCTestCase {
         XCTAssertEqual(probe.sessions, 1)
     }
 
-    /// Only an existing folder the user selected is saved; nothing else is substituted.
-    func testMissingRelativeFileOrIncompleteSelectionIsNotSaved() throws {
+    /// Launch shares a Mac folder that is missing for now (HvfEngineConfig.readiness), so Settings saves
+    /// it too. Before: changing only the Windows folder of an imported VM before its first start was
+    /// refused, and a successful save dropped the default folder's create-on-start flag.
+    func testMissingMacFolderIsSavedAndAnUnchangedDefaultIsStillCreatedAtStart() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        var saved = fixture.config()
+        saved.enableNewWindowsShare(otherRegistrations: [], home: fixture.root)
+        fixture.save(saved)
+        let host = try XCTUnwrap(saved.sharedFolderHostPath)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: host), "Created only at the first start")
+        let library = fixture.library(probe: HvfClipboardSyncProbe())
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+        let draft = HvfVMSettingsDraft(session: session)
+        draft.guest = "D:\\Mac"
+        XCTAssertTrue(draft.finish(), draft.shareMessage ?? "")
+        var file = try NativeLibraryReader.readConfig(rootURL: fixture.root, id: saved.slug)
+        XCTAssertEqual(file.sharedFolder, HvfSharedFolderSelection(hostPath: host, guestPath: "D:\\Mac"))
+        XCTAssertEqual(file.createSharedFolderOnStart, true)
+
+        let unplugged = HvfSharedFolderSelection(hostPath: "/Volumes/Unplugged-\(UUID().uuidString)/Share", guestPath: "D:\\Mac")
+        XCTAssertNil(session.saveSharedFolderPreference(unplugged))
+        file = try NativeLibraryReader.readConfig(rootURL: fixture.root, id: saved.slug)
+        XCTAssertEqual(file.sharedFolder, unplugged)
+        XCTAssertNil(file.createSharedFolderOnStart, "A folder the user chose is never created by BridgeVM")
+    }
+
+    /// A relative path, a file or an empty Windows path is refused; nothing else is substituted.
+    func testRelativeFileOrIncompleteSelectionIsNotSaved() throws {
         let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
         defer { fixture.clean() }
         let saved = fixture.config(); fixture.save(saved)
@@ -55,7 +82,6 @@ final class HvfSharedFolderPreferenceSaveTests: XCTestCase {
         let library = fixture.library(probe: probe)
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
         for rejected in [
-            HvfSharedFolderSelection(hostPath: folder.hostPath + "-absent", guestPath: folder.guestPath),
             HvfSharedFolderSelection(hostPath: "chosen-share", guestPath: folder.guestPath),
             HvfSharedFolderSelection(hostPath: file.path, guestPath: folder.guestPath),
             HvfSharedFolderSelection(hostPath: folder.hostPath, guestPath: "  "),
@@ -80,8 +106,8 @@ final class HvfSharedFolderPreferenceSaveTests: XCTestCase {
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
         XCTAssertNil(session.saveSharedFolderBeforeStart(nil), "Nothing visible, nothing saved")
         XCTAssertEqual(try Data(contentsOf: url), original)
-        let missing = HvfSharedFolderSelection(hostPath: selection.hostPath + "-absent", guestPath: selection.guestPath)
-        XCTAssertNotNil(session.saveSharedFolderBeforeStart(missing), "An unsavable share refuses the start")
+        let relative = HvfSharedFolderSelection(hostPath: "chosen-share", guestPath: selection.guestPath)
+        XCTAssertNotNil(session.saveSharedFolderBeforeStart(relative), "An unsavable share refuses the start")
         XCTAssertEqual(try Data(contentsOf: url), original)
 
         XCTAssertNil(session.saveSharedFolderBeforeStart(selection))
@@ -91,7 +117,7 @@ final class HvfSharedFolderPreferenceSaveTests: XCTestCase {
         XCTAssertNil(session.saveSharedFolderBeforeStart(selection))
         XCTAssertEqual(try Data(contentsOf: url), shared, "An already saved share is not rewritten")
         XCTAssertEqual(probe.lookups.count, 1)
-        XCTAssertNil(library.experimentalHvfRuntimeSession().saveSharedFolderBeforeStart(missing),
+        XCTAssertNil(library.experimentalHvfRuntimeSession().saveSharedFolderBeforeStart(relative),
                      "The experimental entry keeps view-local options")
     }
 

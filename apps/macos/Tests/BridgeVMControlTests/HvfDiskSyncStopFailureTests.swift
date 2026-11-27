@@ -43,6 +43,32 @@ final class HvfDiskSyncStopFailureTests: XCTestCase {
         XCTAssertNil(session.runtimeSupervisionFailureText, "a new run clears the storage cause")
     }
 
+    /// A VM process that crashes or is killed (or a disk still in use) ends the run with a failure
+    /// code and no Stop: that is not "Windows has shut down.".
+    @MainActor
+    func testARunThatFailsByItselfSaysSo() async throws {
+        for (code, text) in [("helperFailed", "Windows stopped unexpectedly. You can start it again."),
+                             ("mediaAdmissionFailed", "Windows couldn’t start because another process is still using this VM’s disk. Wait a minute, then start it again."),
+                             (nil, nil)] as [(String?, String?)] {
+            let f = try HvfOwnedRuntimeControllerTests.Fixture()
+            defer { f.clean() }
+            let session = HvfEngineSession(config: f.base.config, repoRoot: f.base.root) { _ in false }
+            session.ownedController = f.controller
+            f.controller.receive(.message(try f.event("ready", sequence: 1)))
+            let finished = try f.event("complete-not-admitted", sequence: 2, success: true)
+            var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(finished)) as? [String: Any])
+            var payload = try XCTUnwrap(object["complete"] as? [String: Any])
+            if let code { payload["outcome"] = "failed"; payload["failureCode"] = code }
+            object["complete"] = payload
+            f.controller.receive(.message(try JSONDecoder().decode(HvfOwnedRuntimeEvent.self,
+                from: JSONSerialization.data(withJSONObject: object))))
+            try await f.exit()
+            f.controller.receive(.eof)
+            XCTAssertTrue(f.controller.teardownConfirmed)
+            XCTAssertEqual(session.runtimeFailureText, text, code ?? "a normal end")
+        }
+    }
+
     @MainActor
     func testFailedStartReceiptKeepsSpecificStartSentence() throws {
         let f = try HvfOwnedRuntimeControllerTests.Fixture()

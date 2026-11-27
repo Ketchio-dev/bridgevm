@@ -25,7 +25,7 @@ enum HvfPauseState: Equatable {
     }
 }
 
-/// Host time with the paused stretches left out, as the probe's vm_clock is for the devices. The app's
+/// Host uptime with the paused stretches left out, as the probe's vm_clock is for the devices. The app's
 /// deadlines for guest answers (input receipts and the release cleanup, window inventory, guest
 /// commands) run on it, so a pause never uses up the time the guest has to answer.
 struct HvfGuestRunClock {

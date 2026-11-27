@@ -78,6 +78,27 @@ fn the_input_opens_only_while_the_guest_captures_and_closes_after_the_grace() {
 }
 
 #[test]
+fn a_paused_vm_lets_go_of_the_mac_microphone_and_takes_it_again_on_resume() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let grace = Duration::from_millis(100);
+    let paused = Arc::new(AtomicBool::new(false));
+    let pause = Arc::clone(&paused);
+    let mut source = MicrophoneSource::with_pause(logging_opener(&log), grace, move || {
+        pause.load(Ordering::Acquire)
+    })
+    .unwrap();
+    source.stream_started();
+    wait_for("open", || log.lock().unwrap().len() == 1);
+    // The guest is still capturing when it is paused; nothing else happens.
+    paused.store(true, Ordering::Release);
+    wait_for("close while paused", || log.lock().unwrap().len() == 2);
+    paused.store(false, Ordering::Release);
+    wait_for("reopen on resume", || log.lock().unwrap().len() == 3);
+    drop(source);
+    assert_eq!(*log.lock().unwrap(), ["open", "close", "open", "close"]);
+}
+
+#[test]
 fn a_default_input_change_during_capture_reopens_the_input_and_keeps_the_buffered_audio() {
     let log = Arc::new(Mutex::new(Vec::new()));
     let mut source = MicrophoneSource::new(logging_opener(&log), STOP_GRACE).unwrap();

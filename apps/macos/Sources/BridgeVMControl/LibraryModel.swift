@@ -471,7 +471,8 @@ extension LibraryModel {
               let session = hvfRuntimeDetailSession(for: saved) else {
             return .refused("BridgeVM could not read the saved VM configuration. Reload the library and try again.")
         }
-        switch session.requestGUIStart(configuration: launch, policy: .requireNew) {
+        // No microphone prompt: nobody may be at the Mac to answer it, and the start would wait.
+        switch session.requestGUIStart(configuration: launch, policy: .requireNew, microphone: nil) {
         case let .accepted(ticket): return .accepted(ticket, session)
         case let .refused(reason): return .refused(reason)
         }

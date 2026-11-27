@@ -99,6 +99,15 @@ pub(crate) struct MicrophoneSource {
 
 impl MicrophoneSource {
     pub(crate) fn new(open: OpenInput, grace: Duration) -> Result<Self, String> {
+        Self::with_pause(open, grace, || crate::pause_gate::GATE.paused())
+    }
+
+    /// `paused` is the VM's pause (pause_gate.rs): a paused VM does not hold the Mac microphone.
+    fn with_pause(
+        open: OpenInput,
+        grace: Duration,
+        paused: impl Fn() -> bool + Send + 'static,
+    ) -> Result<Self, String> {
         let ring = Arc::new(CaptureRing {
             ring: AtomicPcmRing::new(RING_BYTES),
         });
@@ -108,7 +117,7 @@ impl MicrophoneSource {
             let (ring, control, notices) = (ring.clone(), control.clone(), notices.clone());
             thread::Builder::new()
                 .name("hda-microphone".into())
-                .spawn(move || supervise(&control, &ring, open, grace, &notices))
+                .spawn(move || supervise(&control, &ring, open, grace, &notices, paused))
                 .map_err(|error| format!("supervisor thread: {error}"))?
         };
         Ok(Self {
@@ -221,12 +230,15 @@ fn discard(consumer: &mut Consumer<'_>, mut bytes: usize) {
     }
 }
 
+const PAUSE_POLL: Duration = Duration::from_millis(250);
+
 fn supervise(
     control: &Control,
     ring: &Arc<CaptureRing>,
     mut open: OpenInput,
     grace: Duration,
     notices: &Mutex<Vec<String>>,
+    paused: impl Fn() -> bool,
 ) {
     let mut input: Option<RunningInput> = None;
     let mut tried = false; // this capture stream already tried to open a queue
@@ -241,7 +253,11 @@ fn supervise(
             tried = false;
             reported = false;
         }
-        if control.capturing.load(Ordering::Acquire) {
+        // A paused VM captures nothing, so it lets go of the Mac microphone like an idle guest
+        // (the orange indicator goes off); the capture opens again on resume. Nothing wakes this
+        // thread on pause or resume, so it looks again every PAUSE_POLL while the guest captures.
+        let wanted = control.capturing.load(Ordering::Acquire);
+        if wanted && !paused() {
             idle_since = None;
             if input.is_none() && !std::mem::replace(&mut tried, true) {
                 match open(Arc::clone(ring)) {
@@ -256,12 +272,16 @@ fn supervise(
                     Err(_) => {}
                 }
             }
-            thread::park();
+            thread::park_timeout(PAUSE_POLL);
             continue;
         }
         tried = false;
         if input.is_none() {
-            thread::park();
+            if wanted {
+                thread::park_timeout(PAUSE_POLL);
+            } else {
+                thread::park();
+            }
             continue;
         }
         let since = *idle_since.get_or_insert_with(Instant::now);

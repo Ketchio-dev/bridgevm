@@ -34,6 +34,38 @@ final class ShellDiskHelperTests: XCTestCase {
         XCTAssertFalse(Shell.isDiskHelperRunning(matching: disk))
     }
 
+    /// The owned runner has no disk path on its command line: after the app crashed, the reopened app
+    /// showed a VM still shutting down as Stopped and started a second run against its held disk.
+    func testARunnerHoldingTheDiskCountsAsARunningVM() throws {
+        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("disk-runner-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let disk = root.appendingPathComponent("disk.raw").path, lock = disk + ".bridgevm-writer.lock"
+        try Data().write(to: URL(fileURLWithPath: disk))
+        // A stand-in runner named hvf-runner, with no disk path in its arguments. Built here: a re-signed
+        // copy of /bin/sleep is arm64e outside the platform, which macOS 15 kills at launch.
+        let runner = root.appendingPathComponent("hvf-runner"), source = root.appendingPathComponent("runner.c")
+        try Data("#include <unistd.h>\nint main(void) { pause(); return 0; }\n".utf8).write(to: source)
+        XCTAssertEqual(Shell.run("/usr/bin/cc", ["-o", runner.path, source.path], timeout: 120).code, 0)
+        let process = Process()
+        process.executableURL = runner
+        try process.run()
+        defer { if process.isRunning { process.terminate() } }
+
+        XCTAssertFalse(Shell.isProcessRunning(matching: disk))
+        try Data("hvf-runner --owned-runtime-stdio (pid \(process.processIdentifier))\n".utf8).write(to: URL(fileURLWithPath: lock))
+        XCTAssertTrue(Shell.isProcessRunning(matching: disk))
+        // Another live process's pid, left in a lock by a killed runner, is not a runner.
+        try Data("hvf-runner --owned-runtime-stdio (pid \(getpid()))\n".utf8).write(to: URL(fileURLWithPath: lock))
+        XCTAssertFalse(Shell.isProcessRunning(matching: disk))
+        try Data("hvf-runner --owned-runtime-stdio (pid \(process.processIdentifier))\n".utf8).write(to: URL(fileURLWithPath: lock))
+        Shell.killProcesses(matching: disk)
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationReason, .uncaughtSignal)
+        XCTAssertFalse(Shell.isProcessRunning(matching: disk), "a dead runner's pid does not count")
+    }
+
     @MainActor
     func testFileActionsWaitForTheDiskHelperWithASentence() {
         let fixture = HvfRuntimeLibraryActionFixture()

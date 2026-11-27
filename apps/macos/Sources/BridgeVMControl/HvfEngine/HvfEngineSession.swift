@@ -22,9 +22,11 @@ final class HvfEngineSession: ObservableObject {
     let audioNotice = HvfAudioNotice()
     let agentSilenceNotice = HvfAgentSilenceNotice() // the guest agent is not there (HvfEngineSessionAgentSilence)
     @Published var events: [BvAgentEvent] = []
+    @Published var driveDisconnected = false // the drive with this run's disk was unmounted (HvfDriveDisconnect)
     @Published var guestToolsMessage: String?
     @Published var guestToolsPreparing = false
     @Published var displayDriverFlagMessage: String? // why HvfDisplayDriverFlag could not save yet
+    @Published var hostSettingsSaveMessage: String? // why a setting changed while Windows ran is not saved yet
     @Published var displayDriverNoticeDismissed = false // per VM, only for this app session
     @Published var displayDriverRestartRequired = false
     @Published var displayDriverUnbound = false
@@ -71,7 +73,9 @@ final class HvfEngineSession: ObservableObject {
             updateSleepPrevention()
         }
     }
-    var hostNow: () -> Date = Date.init // the host clock behind guestNow()
+    /// The host clock behind guestNow(): uptime (ownedStartNow), which stops while the Mac sleeps, as the guest does. On
+    /// the wall clock an input receipt still awaited at sleep expired on wake and stopped all input.
+    lazy var hostNow: () -> Date = { [unowned self] in Date(timeIntervalSinceReferenceDate: self.ownedStartNow()) }
     var guestRunClock = HvfGuestRunClock()
     @Published var pauseNotice: String? // a Pause or Resume that did not happen, or a full Mac disk's pause
     var diskFullReported = false // `BVSTORAGE full`: the `BVPAUSE paused` that follows is for a full Mac disk
@@ -141,7 +145,9 @@ final class HvfEngineSession: ObservableObject {
         self.vtpmKeyProvider = vtpmKeyProvider
         // The 10 ms input pump waits out a pause: no receipt comes before the guest runs again.
         inputDriver.onPoll = { [weak self] in if self?.pause == .running { self?.poll() } }
-        inputDriver.now = { [weak self] in self?.guestNow() ?? Date() }
+        inputDriver.now = { [weak self] in
+            self?.guestNow() ?? Date(timeIntervalSinceReferenceDate: ProcessInfo.processInfo.systemUptime)
+        }
         inputDriver.onDiagnostic = { [weak self] in self?.append(.unknown($0)) }
         inputDriver.onLegacyReplay = { [weak self] in self?.resendOnLegacy($0) }
         inputDriver.onLegacyBarrier = { [weak self] in _ = self?.appendLiveInput($0) }
@@ -590,6 +596,7 @@ final class HvfEngineSession: ObservableObject {
         stopDeadline = nil
         guestBootChanged()
         liveInputWriteFailureReported = false
+        driveDisconnected = false
         displayResize.deviceRestarted() // a new run's display starts at its default size; an attached one is unknown
         if clearEvents { events = [] }
     }

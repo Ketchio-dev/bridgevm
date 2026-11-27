@@ -1,17 +1,10 @@
 import Foundation
 
 enum VMResourceLimits {
-    static let minimumMemoryMiB = 1_024
-    static let maximumMemoryMiB = 32 * 1_024
     static let minimumCPU = 1
     /// At least 10, and on a larger Mac as many as Create and the CLI offer (all cores but one),
     /// so a VM made there can still be changed in Settings.
     static let maximumCPU = max(10, ProcessInfo.processInfo.activeProcessorCount - 1)
-
-    static func contains(memoryMiB: Int, cpu: Int) -> Bool {
-        (minimumMemoryMiB...maximumMemoryMiB).contains(memoryMiB)
-            && (minimumCPU...maximumCPU).contains(cpu)
-    }
 }
 
 // MARK: - Configuration
@@ -258,15 +251,32 @@ enum Shell {
 
     /// BridgeVM's disk helper (a snapshot, export, disk grow or media lease, also from the CLI)
     /// names the disk in its arguments too, but it is not the VM: the media lock keeps them apart.
-    private static func isDiskHelper(_ pid: pid_t) -> Bool {
+    private static func isDiskHelper(_ pid: pid_t) -> Bool { executableName(pid) == "snapshot_pair_cli" }
+
+    private static func executableName(_ pid: pid_t) -> String? {
         var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
-        guard proc_pidpath(pid, &path, UInt32(path.count)) > 0 else { return false }
-        return URL(fileURLWithPath: String(cString: path)).lastPathComponent == "snapshot_pair_cli"
+        guard proc_pidpath(pid, &path, UInt32(path.count)) > 0 else { return nil }
+        return URL(fileURLWithPath: String(cString: path)).lastPathComponent
     }
 
-    /// Whether a process other than the disk helper has `pattern` (a VM's disk) on its command line.
+    /// The runner holding a VM's disk. Its command line has no disk path (the VM gets its settings
+    /// through the runner), so after the app crashed or was force-quit `pgrep` could not see the VM
+    /// still shutting down. While it holds the disk, the writer lock beside the disk ends with
+    /// "(pid N)" (media_lock.rs); a dead or reused pid does not count.
+    private static func diskWriterRunner(disk: String) -> pid_t? {
+        guard !disk.isEmpty, let file = FileHandle(forReadingAtPath: disk + ".bridgevm-writer.lock") else { return nil }
+        defer { try? file.close() }
+        let text = String(decoding: (try? file.read(upToCount: 4096)) ?? Data(), as: UTF8.self)
+        guard let range = text.range(of: "(pid ", options: .backwards),
+              let pid = pid_t(text[range.upperBound...].prefix(while: \.isNumber)), pid > 0,
+              executableName(pid) == "hvf-runner" else { return nil }
+        return pid
+    }
+
+    /// Whether a VM runs on `pattern` (a VM's disk): a runner holds the disk, or a process other than
+    /// the disk helper has the path on its command line (a wrapper-launched VM).
     static func isProcessRunning(matching pattern: String) -> Bool {
-        processIDs(matching: pattern).contains { !isDiskHelper($0) }
+        diskWriterRunner(disk: pattern) != nil || processIDs(matching: pattern).contains { !isDiskHelper($0) }
     }
 
     static func isDiskHelperRunning(matching pattern: String) -> Bool {
@@ -275,6 +285,8 @@ enum Shell {
 
     /// Ends the VM process using the disk, never a helper in the middle of a copy.
     static func killProcesses(matching pattern: String) {
+        // SIGTERM makes the runner shut Windows down and save the disk.
+        if let runner = diskWriterRunner(disk: pattern) { kill(runner, SIGTERM) }
         for pid in processIDs(matching: pattern) where !isDiskHelper(pid) { kill(pid, SIGTERM) }
     }
 }

@@ -43,41 +43,75 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- Putting the Mac to sleep while a key press or click was still on its way to
+  Windows no longer stops the keyboard and mouse on wake until Windows restarts:
+  the time Windows has to confirm input now counts only while the Mac is awake.
 - A snapshot or export run from the command line no longer makes the stopped VM
   show as running in the app, and Start no longer "attaches" to it: Start,
   Delete, Duplicate and Move say another BridgeVM task is using the disk. A stop
   can no longer end that task in the middle of a copy.
+- Windows sound no longer goes silent when Windows or an app picks a playback
+  rate other than 48 kHz (for example "16 bit, 44100 Hz" in Sound > Advanced).
+  The VM now offers only the 48 kHz format the Mac side plays.
 - After restoring a snapshot taken before a disk grow, the disk size setting no
   longer says "Expanded the disk to N GiB" about the disk that was replaced.
+- If the drive with a running VM's disk is unplugged or ejected, the app now says
+  so and shows Needs attention, with what to do, instead of staying silent while
+  Windows gets disk errors.
 - A Windows driver touching a device from the very top of the address space can
   no longer crash the VM: the instruction pointer now wraps around as it does on
   real hardware.
+- When Windows is still running after a Stop's waiting time (for example an app
+  held the shutdown and you chose Cancel in Windows), the VM now offers Shut Down
+  Again, which asks Windows once more, instead of only Force Stop.
 - **Retina resolution** and **Start when BridgeVM opens** can now be changed
   while Windows runs, like the Command key setting. Retina applies to the window
   at once; both are saved when the VM stops. They were locked until shutdown.
+- When Windows stops by itself because something failed (the VM process
+  crashed or was ended, or the disk was still in use), the app says so and shows
+  Needs attention, instead of "Windows has shut down."
 - While a snapshot is being made, restored or deleted, Delete, Duplicate and Move
   say so, instead of "The VM is running" about a stopped VM. A disk being
   expanded or a security chip change says so too.
+- Settings no longer offers up to 32 GiB of memory on any Mac: like Create, it
+  stops 4 GiB short of the Mac's memory; a VM saved with more keeps it. **Keep
+  Mac awake** and **When the VM window closes** now say they apply to all VMs.
 - When keyboard and mouse stop because Windows didn't confirm input in time, the
   VM window now says so and how to get them back. Keys only beeped and clicks
   did nothing.
+- After BridgeVM quits unexpectedly while Windows runs, reopening it shows that
+  VM as running while Windows shuts down, instead of Stopped, and Start no longer
+  launches a second run against the disk it still holds.
 - Snapshots: restoring or deleting a snapshot that was deleted elsewhere since
   the list was shown now says so, instead of asking you to check the snapshots
   folder; a snapshot missing its disk or UEFI file now reads as damaged instead
   of offering a retry; and a Quit that waits for a snapshot no longer gets
   cancelled when only the snapshot's name could not be saved.
+- A Command key, Retina or "Start when BridgeVM opens" choice made while Windows
+  runs that can't be saved when it stops is now shown on the VM's dashboard, and
+  a choice made later no longer gets overwritten by it at the next stop.
 - The library dashboard now says when a run needs attention: a Windows disk
   BridgeVM couldn't finish saving at shutdown, or lost contact with Windows,
   used to show only in Advanced (the VM read "Stopped" or "Running"), and a
   failed stop read "Booting Windows". Open Display also stays available while
   Windows shuts down, since that window is where an app asking to save shows.
+- Pausing Windows now lets go of the Mac microphone (the orange indicator turns
+  off) instead of keeping it open for the whole pause; recording continues on
+  resume.
 - Shared folders: the "skipped because the per-file limit is …" notice now
   names the limit that applied (64 MiB until Guest Tools are updated, not
   always 16 GiB), gives advice that fits a Windows file, and goes away once the
   file syncs after the update.
+- Starting a VM with **Use microphone** on now lets macOS ask for microphone
+  access first if it has not asked yet (a reset permission, a re-signed build,
+  another Mac). Before, Windows silently started without a microphone.
 - "Start when BridgeVM opens" no longer skips a VM that is not ready (for
   example its disk is on a drive that is not connected) without a word: it
   starts it as the Start button does, which says why it could not.
+- Settings now saves a shared folder whose Mac folder doesn't exist yet, such as
+  a new VM's default folder before its first start or a folder on an unplugged
+  drive. Turning on "Share a folder" no longer warns before you choose a folder,
+  and a VM name typed in Settings is no longer lost if the sheet closes without Done.
 - Shared folders: after you changed only the Windows folder of a share (the Mac
   folder stayed the same), the first sync could take same-named files in the new
   Windows folder for edits and copy them over the Mac's files. The saved sync

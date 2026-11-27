@@ -32,6 +32,11 @@ final class HvfOwnedGuestShutdown: @unchecked Sendable {
         queue.async { [self] in attempted.removeAll() }
     }
 
+    /// The user asked again (Stop's "Shut Down Again"): `command` may go once more this boot.
+    func allowAgain(_ command: HvfGuestStopCommand) {
+        queue.async { [self] in attempted.removeAll { $0 == command } }
+    }
+
     func request(_ command: HvfGuestStopCommand, _ completion: @escaping @Sendable (Bool) -> Void) {
         queue.async { [self] in
             guard !isClosing, !attempted.contains(command) else { completion(false); return }

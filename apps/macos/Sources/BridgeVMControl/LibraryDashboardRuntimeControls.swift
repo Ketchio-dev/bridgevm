@@ -44,6 +44,9 @@ struct LibraryDashboardRuntimeControls: View {
             if let failure = session.runtimeFailureText {
                 Text(failure).font(.caption).foregroundStyle(.red).textSelection(.enabled)
             }
+            if let unsaved = session.hostSettingsSaveMessage {
+                Label(unsaved, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+            }
             HvfAgentSilenceNoticeView(notice: session.agentSilenceNotice)
             HvfGuestToolsAction(session: session)
             HvfShareRootNoticeView(notice: session.shareRootNotice)

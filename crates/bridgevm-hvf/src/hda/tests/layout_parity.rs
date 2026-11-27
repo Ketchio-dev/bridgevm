@@ -1,6 +1,7 @@
 //! With the microphone setting off, the guest sees main's HDA device: every register
 //! byte and codec response equals main bb1b1e08's (main_layout_bb1b1e08.txt, written by
-//! layout_dump.rs on that tree), and playback interrupts and positions as main's do.
+//! layout_dump.rs on that tree; since then the playback rates are 48 kHz only, as the Mac side
+//! plays), and playback interrupts and positions as main's do.
 
 use super::super::*;
 use super::layout_dump::layout_dump;

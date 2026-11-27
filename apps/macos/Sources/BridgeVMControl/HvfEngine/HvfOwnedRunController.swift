@@ -112,6 +112,23 @@ final class HvfOwnedRunController {
         return .requested
     }
 
+    /// A held Stop past its grace: Windows may have cancelled its shutdown (an app held it and the user
+    /// chose Cancel), and nothing would ask again. Asks once more, as the Stop did, and the grace starts over.
+    func askGuestAgain(pressPowerButton: (@MainActor () -> Bool)?) -> Bool {
+        guard waitsForGuestShutdown, graceExpired else { return false }
+        graceExpired = false
+        graceDeadline = now() + Self.guestGrace
+        if serviceReady {
+            guestShutdown.allowAgain(.shutdown) // on the same queue, so it comes before the request
+            guestRequestSent = false
+            requestGuestIfReady()
+        } else if let pressPowerButton {
+            pressGuestPowerButton(pressPowerButton)
+        }
+        tick()
+        return true
+    }
+
     /// A Stop is waiting for Windows to shut itself down: Windows still runs and takes input, and the
     /// Stop may still be escalated. A held Stop stays so after its grace; Force Stop or cancellation ends it.
     var waitsForGuestShutdown: Bool {
