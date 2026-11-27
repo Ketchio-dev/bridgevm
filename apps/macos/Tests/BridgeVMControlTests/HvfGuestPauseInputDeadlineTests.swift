@@ -46,4 +46,34 @@ final class HvfGuestPauseInputDeadlineTests: XCTestCase {
             XCTAssertEqual(try fixture.bytes(fixture.input), Data("PAUSE\nRESUME\n".utf8))
         }
     }
+
+    /// Crash and relaunch audit, finding 5: the receipt deadlines ran on the wall clock, which keeps going while the
+    /// Mac sleeps and the guest does not, so a key still awaited at sleep expired on wake and stopped all input until
+    /// Windows restarted. They run on the session's uptime (ownedStartNow), which a sleep does not advance.
+    func testReceiptDeadlinesCountUptimeSoAMacSleepDoesNotExpireAnAwaitedKey() throws {
+        let fixture = try HvfRuntimeKeyboardDraftFixture()
+        defer { fixture.remove() }
+        try fixture.withSession { session in
+            var uptime: TimeInterval = 1_000
+            session.ownedStartNow = { uptime }
+            try fixture.negotiateOrderedInput(session)
+            let count = try XCTUnwrap(HvfGuestInputEncoding(.key("enter"))).insertedEventCount
+            XCTAssertTrue(session.sendKey("enter"))
+            let key = try XCTUnwrap(try fixture.commands().last)
+            let words = key.split(separator: " "), label = words.prefix(2).joined(separator: " ")
+            // Windows answered just before the Mac slept; the app reads it on wake. The sleep added no uptime.
+            uptime += 29
+            try fixture.appendLog("BVAGENT CMD \(label) exit=0\nBVINPUT_INSERTED \(words[1]) \(count)\nBVAGENT END \(label)\n")
+            session.poll()
+            XCTAssertNotEqual(session.inputDriver.router.state, .failed, "the key went in")
+            XCTAssertFalse(session.inputStopped)
+
+            // 30 s of uptime with no answer still expire a key and stop input.
+            XCTAssertTrue(session.sendKey("tab"))
+            uptime += 30
+            session.poll()
+            XCTAssertEqual(session.inputDriver.router.state, .failed)
+            XCTAssertTrue(session.inputStopped)
+        }
+    }
 }
