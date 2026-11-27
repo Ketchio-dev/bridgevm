@@ -154,7 +154,7 @@ final class HvfClipboardImageNoticeTests: XCTestCase {
         let session = session()
         let cases: [(String, HvfClipboardImageNotice.Kind)] = [
             ("BVAGENT CLIPSYNC skip bytes=8193 too-large copy=2 t=2001", .macTextTooLarge),
-            ("BVAGENT CLIPSYNC refused guest-text too-large bytes=8388609 limit=8388608 refusals=1 t=2000", .windowsTextTooLarge)
+            ("BVAGENT CLIPSYNC refused guest-text too-large bytes=8388609 limit=8388608 refusals=1 copy=2 t=2000", .windowsTextTooLarge)
         ]
         for (line, kind) in cases {
             feed(session, ["BVAGENT CMD example exit=0", line, "BVAGENT END example"])
@@ -165,6 +165,15 @@ final class HvfClipboardImageNoticeTests: XCTestCase {
             feed(session, ["BVAGENT CLIPSYNC host->guest bytes=6 copy=3 t=2010"])
             XCTAssertNil(session.clipboardImageNotice.shown)
         }
+    }
+
+    /// The runtime logs a refused Windows text and, in the same poll, that the Mac keeps its copy.
+    @MainActor
+    func testARefusedWindowsTextStaysShownThroughItsOwnUnchangedLine() {
+        let session = session()
+        feed(session, ["BVAGENT CLIPSYNC refused guest-text too-large bytes=10485760 limit=8388608 refusals=1 copy=4 t=3000",
+                       "BVAGENT CLIPSYNC guest->host unchanged copy=4 t=3000"])
+        XCTAssertEqual(session.clipboardImageNotice.shown, .windowsTextTooLarge)
     }
 
     @MainActor

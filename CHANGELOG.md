@@ -63,6 +63,9 @@ All notable changes to BridgeVM are documented in this file.
 - Importing a Windows disk smaller than 64 GiB enlarged the disk to 64 GiB, but
   Windows' C: drive never grew into the added space. The next Windows start now
   extends C:, also for VMs imported with an earlier version.
+- Clipboard: copying more than 8 MB of text in Windows now shows the "too large"
+  notice. It was cleared again by the same poll, so the Mac silently kept its
+  old clipboard.
 - The VM dashboard said "Graphics mode unknown" for every Windows that BridgeVM
   itself had started. It now shows the running session's display mode.
 - When Windows could not register BridgeVM as a browser or watch for links,

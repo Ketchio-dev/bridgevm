@@ -26,23 +26,25 @@ pub(super) struct GuestClipRefusals {
 
 /// The bounded refusal record: sizes and counts only, never clipboard text.
 /// It names no direction, so the app's run.log parser never reads it as a sync.
-pub(super) fn guest_clip_refusal_line(bytes: usize, refusals: u64, t_ms: u128) -> String {
+/// The copy number keeps the app's notice up through that copy's own lines
+/// ("guest->host unchanged" in the same poll), as for image and file refusals.
+pub(super) fn guest_clip_refusal_line(bytes: usize, refusals: u64, copy: u64, t_ms: u128) -> String {
     format!(
         "BVAGENT CLIPSYNC refused guest-text too-large bytes={bytes} \
-         limit={GUEST_CLIP_MAX_BYTES} refusals={refusals} t={t_ms}"
+         limit={GUEST_CLIP_MAX_BYTES} refusals={refusals} copy={copy} t={t_ms}"
     )
 }
 
 /// All decode refusals carry fixed reasons and counters, never guest bytes.
-pub(super) fn guest_clip_error_line(error: GuestClipError, refusals: u64, t_ms: u128) -> String {
+pub(super) fn guest_clip_error_line(error: GuestClipError, refusals: u64, copy: u64, t_ms: u128) -> String {
     let reason = match error {
         GuestClipError::TooLarge { bytes } => {
-            return guest_clip_refusal_line(bytes, refusals, t_ms)
+            return guest_clip_refusal_line(bytes, refusals, copy, t_ms)
         }
         GuestClipError::InvalidBase64 => "invalid-base64",
         GuestClipError::InvalidUtf8 => "invalid-utf8",
     };
-    format!("BVAGENT CLIPSYNC refused guest-text {reason} refusals={refusals} t={t_ms}")
+    format!("BVAGENT CLIPSYNC refused guest-text {reason} refusals={refusals} copy={copy} t={t_ms}")
 }
 
 impl AgentConsoleHarness {
@@ -98,7 +100,7 @@ impl AgentConsoleHarness {
         if baseline.refusals.last != copy {
             baseline.refusals.count = baseline.refusals.count.saturating_add(1);
             let refusals = baseline.refusals.count;
-            println!("{}", guest_clip_error_line(error, refusals, t_ms));
+            clip_line(guest_clip_error_line(error, refusals, baseline.guest_copy, t_ms));
         }
         baseline.text = None;
         baseline.refusals.last = copy;

@@ -66,10 +66,10 @@ fn invalid_decode_records_are_bounded_fixed_reasons_and_not_completed_syncs() {
         (GuestClipError::InvalidUtf8, "invalid-utf8"),
     ] {
         assert_eq!(
-            guest_clip_error_line(error, 2, 1234),
-            format!("BVAGENT CLIPSYNC refused guest-text {reason} refusals=2 t=1234")
+            guest_clip_error_line(error, 2, 7, 1234),
+            format!("BVAGENT CLIPSYNC refused guest-text {reason} refusals=2 copy=7 t=1234")
         );
-        let line = guest_clip_error_line(error, u64::MAX, u128::MAX);
+        let line = guest_clip_error_line(error, u64::MAX, u64::MAX, u128::MAX);
         assert!(line.len() <= 160);
         assert!(!line.contains(" guest->host ") && !line.contains(" host->guest "));
     }

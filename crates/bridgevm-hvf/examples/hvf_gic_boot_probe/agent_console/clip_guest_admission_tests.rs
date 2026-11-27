@@ -145,10 +145,10 @@ fn base64_length_gives_the_exact_decoded_size() {
 #[test]
 fn refusal_line_is_bounded_and_carries_no_clipboard_content() {
     assert_eq!(
-        guest_clip_refusal_line(9_437_184, 2, 1234),
-        "BVAGENT CLIPSYNC refused guest-text too-large bytes=9437184 limit=8388608 refusals=2 t=1234"
+        guest_clip_refusal_line(9_437_184, 2, 7, 1234),
+        "BVAGENT CLIPSYNC refused guest-text too-large bytes=9437184 limit=8388608 refusals=2 copy=7 t=1234"
     );
-    assert!(guest_clip_refusal_line(usize::MAX, u64::MAX, u128::MAX).len() <= 160);
+    assert!(guest_clip_refusal_line(usize::MAX, u64::MAX, u64::MAX, u128::MAX).len() <= 200);
     // BvAgentEvent.swift reads a CLIPSYNC line as a completed sync only when
     // it names a direction; a refusal must not show up as one in the app.
     let swift = include_str!(
@@ -156,7 +156,7 @@ fn refusal_line_is_bounded_and_carries_no_clipboard_content() {
     );
     for direction in [" host->guest ", " guest->host "] {
         assert!(swift.contains(&format!("line.contains(\"{direction}\")")));
-        assert!(!guest_clip_refusal_line(1, 1, 1).contains(direction));
+        assert!(!guest_clip_refusal_line(1, 1, 1, 1).contains(direction));
     }
 }
 
