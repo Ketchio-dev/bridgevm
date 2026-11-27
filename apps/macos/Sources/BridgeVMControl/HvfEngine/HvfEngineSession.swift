@@ -21,6 +21,7 @@ final class HvfEngineSession: ObservableObject {
     let portForwardNotice = HvfPortForwardNotice()
     let agentSilenceNotice = HvfAgentSilenceNotice() // the guest agent is not there (HvfEngineSessionAgentSilence)
     @Published var events: [BvAgentEvent] = []
+    @Published var driveDisconnected = false // the drive with this run's disk was unmounted (HvfDriveDisconnect)
     @Published var guestToolsMessage: String?
     @Published var guestToolsPreparing = false
     @Published var displayDriverFlagMessage: String? // why HvfDisplayDriverFlag could not save yet
@@ -593,6 +594,7 @@ final class HvfEngineSession: ObservableObject {
         stopDeadline = nil
         guestBootChanged()
         liveInputWriteFailureReported = false
+        driveDisconnected = false
         displayResize.deviceRestarted() // a new run's display starts at its default size; an attached one is unknown
         if clearEvents { events = [] }
     }

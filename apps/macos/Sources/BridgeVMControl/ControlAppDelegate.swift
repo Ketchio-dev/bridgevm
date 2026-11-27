@@ -15,6 +15,7 @@ final class ControlAppDelegate: NSObject, NSApplicationDelegate {
         ControlAppPower.shared.failure = {
             NSLog("%@", $0)
         }
+        HvfDriveDisconnect.watch { NativeRuntimeAppOwner.sessions }
         #if DEBUG && BRIDGEVM_APP_UI_HOST
         AppUIHost.prepared?.applicationDidFinishLaunching(notification)
         #endif
