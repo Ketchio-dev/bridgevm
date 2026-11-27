@@ -128,6 +128,8 @@ All notable changes to BridgeVM are documented in this file.
 - Copying more than about 24 MB of text in Windows stalled clipboard sharing,
   shared folders and input for the rest of the session. The copy is now
   refused like any text over 8 MB, and the rest keeps working.
+- Create VM with a Windows ISO on another drive no longer stops copying it
+  after 30 seconds and starts the copy again from the beginning.
 - Importing a VM with its vTPM: a recovery code file other accounts can read, a
   mistyped code or a package for another vTPM now stops the import at once with
   a sentence that names the problem. It used to copy the whole disk first and
