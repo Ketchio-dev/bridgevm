@@ -78,6 +78,9 @@ All notable changes to BridgeVM are documented in this file.
   extends C:, also for VMs imported with an earlier version.
 - The VM dashboard said "Graphics mode unknown" for every Windows that BridgeVM
   itself had started. It now shows the running session's display mode.
+- Canceling a Windows install, or quitting BridgeVM, while it prepares the setup
+  files now stops the file copy too. It kept running and could leave a large
+  scratch disk attached until the Mac restarted.
 - A failed Guest Tools update now says to quit and reopen BridgeVM to try
   again. "Restart BridgeVM" read like the Restart button beside it, which
   restarts Windows and does not retry the update.
