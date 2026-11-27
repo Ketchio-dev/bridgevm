@@ -22,6 +22,7 @@ final class HvfWindowsBackend: VMBackend {
     var ctlFilePath: String { config.bundlePath + "/metadata/hvf.ctl" }
 
     func isRunning() -> Bool { processIsRunning(targetDiskPath) }
+    func diskHelperIsRunning() -> Bool { Shell.isDiskHelperRunning(matching: targetDiskPath) }
 
     func resources() -> (memMiB: Int, cpu: Int) {
         let launch = makeHvfEngineConfig()

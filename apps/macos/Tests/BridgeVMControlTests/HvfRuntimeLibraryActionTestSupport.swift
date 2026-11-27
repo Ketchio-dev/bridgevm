@@ -21,6 +21,8 @@ final class HvfRuntimeLibraryActionBackend: VMBackend {
         lock.lock(); recorded[keyPath: field] += 1; lock.unlock()
     }
     func isRunning() -> Bool { record(\.liveness); return false }
+    var diskHelper = false
+    func diskHelperIsRunning() -> Bool { diskHelper }
     func resources() -> (memMiB: Int, cpu: Int) { record(\.resources); return (4096, 2) }
 }
 

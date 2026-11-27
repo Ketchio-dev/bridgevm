@@ -249,15 +249,38 @@ enum Shell {
         return out
     }
 
-    static func isProcessRunning(matching pattern: String) -> Bool {
-        guard !pattern.isEmpty else { return false }
-        return run("/usr/bin/pgrep", ["-f", eregEscape(pattern)]).code == 0
+    private static func processIDs(matching pattern: String) -> [pid_t] {
+        guard !pattern.isEmpty else { return [] }
+        let result = run("/usr/bin/pgrep", ["-f", eregEscape(pattern)])
+        guard result.code == 0 else { return [] }
+        return result.output.split(whereSeparator: \.isWhitespace).compactMap { pid_t($0) }
     }
 
-    static func killProcesses(matching pattern: String) {
-        guard !pattern.isEmpty else { return }
-        run("/usr/bin/pkill", ["-f", eregEscape(pattern)])
+    /// BridgeVM's disk helper (a snapshot, export, disk grow or media lease, also from the CLI)
+    /// names the disk in its arguments too, but it is not the VM: the media lock keeps them apart.
+    private static func isDiskHelper(_ pid: pid_t) -> Bool {
+        var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        guard proc_pidpath(pid, &path, UInt32(path.count)) > 0 else { return false }
+        return URL(fileURLWithPath: String(cString: path)).lastPathComponent == "snapshot_pair_cli"
     }
+
+    /// Whether a process other than the disk helper has `pattern` (a VM's disk) on its command line.
+    static func isProcessRunning(matching pattern: String) -> Bool {
+        processIDs(matching: pattern).contains { !isDiskHelper($0) }
+    }
+
+    static func isDiskHelperRunning(matching pattern: String) -> Bool {
+        processIDs(matching: pattern).contains(where: isDiskHelper)
+    }
+
+    /// Ends the VM process using the disk, never a helper in the middle of a copy.
+    static func killProcesses(matching pattern: String) {
+        for pid in processIDs(matching: pattern) where !isDiskHelper(pid) { kill(pid, SIGTERM) }
+    }
+}
+
+enum VMDiskHelper {
+    static let busy = "Another BridgeVM task, such as a snapshot or export, is using this VM’s disk. Try again when it finishes."
 }
 
 // MARK: - Backend abstraction
@@ -266,7 +289,14 @@ enum Shell {
 /// UnsupportedEngineBackend stands in for a VM saved with a removed one. Starting,
 /// stopping and guest commands belong to HvfEngineSession.
 protocol VMBackend: AnyObject {
-    /// Whether a process is using the VM's disk, wherever it was started.
+    /// Whether the VM is running: a process other than BridgeVM's disk helper uses its disk,
+    /// wherever it was started.
     func isRunning() -> Bool
+    /// Whether the disk helper (a snapshot or export, maybe from the CLI) is using the disk.
+    func diskHelperIsRunning() -> Bool
     func resources() -> (memMiB: Int, cpu: Int)
+}
+
+extension VMBackend {
+    func diskHelperIsRunning() -> Bool { false }
 }

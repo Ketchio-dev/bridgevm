@@ -27,6 +27,9 @@ enum HvfGUIStartWorker {
                 return .init(result: input.policy == .attachOrStart ? .observedAttachment
                     : .refused("Windows is already using this VM’s disk. Open the running VM."))
             }
+            if Shell.isDiskHelperRunning(matching: input.config.targetDiskPath) {
+                return .init(result: .refused(VMDiskHelper.busy), diagnostics: diagnostics)
+            }
             let config = input.config.preparingSharedFolder { diagnostics.append($0) }
             if let failure = HvfRuntimeLaunchReadiness.failure(config: config,
                 repoRoot: input.repoRoot, diagnostic: { diagnostics.append($0) }),
