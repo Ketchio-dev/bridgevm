@@ -50,6 +50,8 @@ struct LibraryDashboardRuntimeControls: View {
             HvfMicrophoneNoticeView(session: session)
             HvfAgentUpdateNoticeView(notice: session.agentUpdateNotice)
             HvfClipboardImageNoticeView(notice: session.clipboardImageNotice)
+            HvfGuestLinkNoticeView(notice: session.guestLinkNotice)
+            HvfGuestPrintNoticeView(notice: session.printNotice)
         }
         .onChange(of: session.runtimeStartupWorkerPending) { wasPending, isPending in
             guard wasPending, !isPending else { return }

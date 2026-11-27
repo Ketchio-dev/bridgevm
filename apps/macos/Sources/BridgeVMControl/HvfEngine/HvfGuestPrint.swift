@@ -131,7 +131,8 @@ final class HvfPDFPrintPresenter: NSObject, HvfPrintPresenter {
 /// The last thing about Windows printing the user should know; cleared by the next job printed.
 @MainActor
 final class HvfGuestPrintNotice: ObservableObject {
-    enum Kind: Equatable { case printerFailed, tooLarge, notReceived, notOpened }
+    /// `printerFailed` carries the agent's `detail=` (a Windows error, often a stopped Print Spooler).
+    enum Kind: Equatable { case printerFailed(detail: String?), tooLarge, notReceived, notOpened }
 
     @Published private(set) var shown: Kind?
 
@@ -142,7 +143,9 @@ final class HvfGuestPrintNotice: ObservableObject {
     var text: String? {
         switch shown {
         case nil: return nil
-        case .printerFailed: return "Turn on Microsoft Print to PDF in Windows Features and restart the VM to create the Mac (BridgeVM) printer."
+        case .printerFailed(let detail?):
+            return "Windows couldn’t create the Mac (BridgeVM) printer (\(detail)), so check that Microsoft Print to PDF is on in Windows Features and restart the VM."
+        case .printerFailed(nil): return "Turn on Microsoft Print to PDF in Windows Features and restart the VM to create the Mac (BridgeVM) printer."
         case .tooLarge: return "The Windows print job exceeds the 256 MiB limit, so try printing fewer pages at a time."
         case .notReceived: return "The print job from Windows didn’t reach your Mac, so try printing again."
         case .notOpened: return "Your Mac couldn’t open the print job from Windows, so try printing again."
@@ -172,11 +175,20 @@ extension HvfEngineSession {
         }
     }
 
-    /// The agent's PRINTWATCH output: a printer it could not make is one notice per app session.
+    /// The agent's PRINTWATCH output: a printer it could not make is one notice per run, until a
+    /// later PRINTWATCH (the next boot) makes it.
     func printWatchReported(_ output: String) {
-        guard printToMacWanted, output.contains(HvfGuestPrint.printerFailed), !printSetupFailureShown else { return }
+        guard printToMacWanted else { return }
+        if output.contains("BVPRINT printer=ready") {
+            if case .printerFailed? = printNotice.shown { printNotice.show(nil) }
+            return
+        }
+        guard let line = output.split(whereSeparator: \.isNewline).first(where: { $0.contains(HvfGuestPrint.printerFailed) }),
+              !printSetupFailureShown else { return }
         printSetupFailureShown = true
-        printNotice.show(.printerFailed)
+        let rest = line.components(separatedBy: HvfGuestPrint.printerFailed + " detail=").dropFirst().first
+        let detail = rest.map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200)) }
+        printNotice.show(.printerFailed(detail: detail?.isEmpty == false ? detail : nil))
     }
 
     /// A probe `BVPRINT ...` line: a job joins the queue of print panels, a refusal is a notice.
@@ -244,7 +256,7 @@ extension HvfEngineSession {
         guard printShowing == url, printPanelPresented else { return }
         printPanelPresented = false
         printShowing = nil
-        if printNotice.shown != .printerFailed { printNotice.show(nil) }
+        if case .printerFailed? = printNotice.shown {} else { printNotice.show(nil) }
         // A stopped run has no work to present; a new agent may have queued jobs
         // behind this old panel while it was still open.
         if printGeneration == generation || serviceStarted { presentNextPrintJob() }

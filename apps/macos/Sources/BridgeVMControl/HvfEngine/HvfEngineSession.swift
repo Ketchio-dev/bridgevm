@@ -567,6 +567,10 @@ final class HvfEngineSession: ObservableObject {
         agentUpdateNotice.reset()
         fileDrops.reset()
         clipboardImageNotice.reset()
+        // A new run sets the printer and links up again and reports afresh.
+        printNotice.show(nil)
+        printSetupFailureShown = false
+        guestLinkNotice.show(nil)
         stopCommandSent = false
         stopDeadline = nil
         guestBootChanged()
