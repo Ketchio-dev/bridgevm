@@ -1,4 +1,4 @@
-//! Windows print jobs for the Mac (the app's "Mac으로 인쇄", HvfGuestPrint.swift).
+//! Windows print jobs for the Mac (the app's "Print to Mac", HvfGuestPrint.swift).
 //!
 //! The app sends `PRINTWATCH` at each agent start; the agent makes the printer `Mac (BridgeVM)` and
 //! then writes `PRINTJOB <b64(utf8 path)> <bytes>` between replies for each finished job

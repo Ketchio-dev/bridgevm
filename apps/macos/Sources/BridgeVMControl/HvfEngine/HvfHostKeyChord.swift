@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The per-VM 'Command 키' setting. Mac-like (the default): a Command chord is the same Ctrl chord
+/// The per-VM 'Command key' setting. Mac-like (the default): a Command chord is the same Ctrl chord
 /// (⌘C is Ctrl+C), text navigation follows the Mac (`macTextNavigation`) and a bare Command tap is
 /// the Windows key. Windows key: Command is the Windows key and Option is Alt in every chord.
 /// Saved in vm.json as `commandKeyMode`, absent for the default.
@@ -40,7 +40,7 @@ extension HvfHostKeyCommand {
         return .key((parts + [key]).joined(separator: "+"))
     }
 
-    /// 'Mac처럼' text navigation does what these keys do on a Mac, not the literal Ctrl or Alt chord
+    /// 'Mac shortcuts' text navigation does what these keys do on a Mac, not the literal Ctrl or Alt chord
     /// (Alt+Left is Back in Windows). Exact modifiers only; the Shift variants select.
     static let macTextNavigation: [String: String] = [
         "cmd+left": "home", "cmd+right": "end", "cmd+up": "ctrl+home", "cmd+down": "ctrl+end",

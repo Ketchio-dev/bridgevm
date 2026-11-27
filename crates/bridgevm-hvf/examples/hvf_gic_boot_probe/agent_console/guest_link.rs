@@ -1,4 +1,4 @@
-//! Windows links for the Mac browser (the app's "Windows 링크를 Mac에서 열기").
+//! Windows links for the Mac browser (the app's "Open Windows links on Mac").
 //!
 //! The app registers a per-user BridgeVM browser in the guest and sends
 //! `LINKWATCH`. The agent then writes `OPENURL <b64(utf8 url)>` between replies

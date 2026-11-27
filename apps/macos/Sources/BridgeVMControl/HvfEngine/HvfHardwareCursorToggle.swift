@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The VM's "Windows 커서를 Mac 커서로 표시" setting (vm.json `hardwareCursor`). On, the default, the
+/// The VM's "Use Mac pointer for Windows" setting (vm.json `hardwareCursor`). On, the default, the
 /// app switches viogpudo's hardware cursor on and shows Windows' pointer as the Mac cursor
 /// (HvfDisplayDriverHardwareCursor.swift, HvfGuestCursorPresenter.swift). Off, it writes HWCursor=0
 /// instead and Windows draws its own pointer again. Shown once the VirtIO display driver is installed;

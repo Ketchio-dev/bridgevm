@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The VM's "Windows 링크를 Mac에서 열기" setting (HvfGuestLinks.swift), saved in vm.json like the other per-VM
+/// The VM's "Open Windows links on Mac" setting (HvfGuestLinks.swift), saved in vm.json like the other per-VM
 /// settings and changed only while the VM is stopped. Shown for library VMs, whose settings are saved.
 struct HvfGuestLinksToggle: View {
     @ObservedObject var session: HvfEngineSession

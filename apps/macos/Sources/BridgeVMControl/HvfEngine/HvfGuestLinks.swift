@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-/// "Windows 링크를 Mac에서 열기" (vm.json `openGuestLinksOnMac`, nil = off). On, the app registers a per-user
+/// "Open Windows links on Mac" (vm.json `openGuestLinksOnMac`, nil = off). On, the app registers a per-user
 /// "BridgeVM" browser in the guest at each `BVAGENT SERVICE start` (HKCU only) and sends `LINKWATCH`. Once the
 /// user picks BridgeVM in Windows' Default apps, each http(s) link Windows opens runs `handlerScript`, which
 /// appends it to `%LOCALAPPDATA%\BridgeVM\open-links.txt`; the agent reports it (bvagent.ps1, link watch), the

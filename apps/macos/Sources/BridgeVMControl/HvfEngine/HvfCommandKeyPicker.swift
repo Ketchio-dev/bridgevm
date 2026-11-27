@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The per-VM 'Command 키' setting (HvfCommandKeyMode).
+/// The per-VM 'Command key' setting (HvfCommandKeyMode).
 struct HvfCommandKeyPicker: View {
     @ObservedObject var session: HvfEngineSession
     @Binding var selection: HvfCommandKeyMode
