@@ -120,7 +120,10 @@ fn a_snapshot_missing_a_member_reads_as_damaged() {
 
     let err = restore_snapshot(&s.path("snap"), &disk, &vars).unwrap_err();
     // The app reads this prefix as a damaged snapshot instead of offering a retry.
-    assert_eq!(err.to_string(), "unusable snapshot manifest: disk.raw is missing");
+    assert_eq!(
+        err.to_string(),
+        "unusable snapshot manifest: disk.raw is missing"
+    );
     assert_eq!(fs::read(&disk).unwrap(), b"live disk");
 }
 
