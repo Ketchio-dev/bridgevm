@@ -39,6 +39,8 @@ extension HvfEngineSession {
             resetAcknowledged()
         case let .unknown(line) where line.hasPrefix("BVPAUSE "):
             pauseReported(line)
+        case let .unknown(line) where line.hasPrefix("BVNET "):
+            portForwardNotice.consume(line)
         case let .unknown(line) where line.hasPrefix("BVSTORAGE "):
             storageReported(line)
         case let .unknown(line) where line.hasPrefix(HvfGuestLinks.linePrefix):

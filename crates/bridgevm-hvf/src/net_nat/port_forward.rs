@@ -56,6 +56,15 @@ pub(crate) fn parse_forwards(spec: &str) -> Vec<PortForward> {
         .collect()
 }
 
+/// The line the app turns into its notice (HvfPortForwardNotice.swift): the
+/// Mac port could not be opened, usually because another app holds it.
+pub(crate) fn forward_off_line(forward: &PortForward) -> String {
+    format!(
+        "BVNET forward-off host={} guest={}",
+        forward.host, forward.guest
+    )
+}
+
 impl HostSocketOutboundIpv4Handler {
     /// Listens on 127.0.0.1 for each forward. A port another app holds turns
     /// that forward off, said once in the log; the others and the VM go on.
@@ -76,10 +85,13 @@ impl HostSocketOutboundIpv4Handler {
                         watched: false,
                     });
                 }
-                Err(error) => eprintln!(
-                    "virtio-net NAT port forward 127.0.0.1:{} -> guest port {} is off: {error}",
-                    forward.host, forward.guest
-                ),
+                Err(error) => {
+                    crate::host_log::out(forward_off_line(forward));
+                    eprintln!(
+                        "virtio-net NAT port forward 127.0.0.1:{} -> guest port {} is off: {error}",
+                        forward.host, forward.guest
+                    );
+                }
             }
         }
         self

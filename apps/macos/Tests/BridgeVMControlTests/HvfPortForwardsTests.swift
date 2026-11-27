@@ -45,6 +45,31 @@ final class HvfPortForwardsTests: XCTestCase {
         XCTAssertNil(library.latestConfiguration(for: saved).portForwards)
     }
 
+    /// A Mac port another app holds (or a second rule for the same Mac port) was only a run.log line:
+    /// the VM ran without that forward and nothing said so.
+    func testAForwardTheMacCannotOpenIsNamedAndARepeatedMacPortIsRefused() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
+        defer { fixture.clean() }
+        let saved = fixture.config(); fixture.save(saved)
+        let library = fixture.library(probe: probe)
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+        XCTAssertTrue(session.applyPortForwards("8080:80, 8080:8080") == ("8080:80, 8080:8080", HvfPortForwards.repeatedMessage))
+        XCTAssertNil(library.latestConfiguration(for: saved).portForwards)
+
+        // The line net_nat/port_forward.rs forward_off_line writes (its test checks the same text).
+        for line in ["BVNET forward-off host=8080 guest=80", "BVNET forward-off host=8080 guest=80\r"] {
+            session.handle(.unknown(line))
+        }
+        XCTAssertEqual(session.portForwardNotice.text,
+            "Mac port 8080 is already in use, so it doesn’t reach Windows port 80. Quit the app using it, or choose another Mac port in Settings.")
+        session.handle(.unknown("BVNET forward-off host=3390 guest=3389"))
+        session.handle(.unknown("BVNET forward-off host=x guest=1"))
+        XCTAssertEqual(session.portForwardNotice.text,
+            "Mac ports 8080, 3390 are already in use, so they don’t reach Windows. Quit the apps using them, or choose other Mac ports in Settings.")
+        session.resetObservedRuntimeState(clearEvents: false)
+        XCTAssertNil(session.portForwardNotice.text, "a new run opens the ports again")
+    }
+
     func testAHandEditedEntryThatDoesNotParseIsLeftOut() {
         XCTAssertEqual(HvfPortForwards.saved("8080:80, junk, 0:22, 2222:22"),
                        [HvfPortForward(host: 8080, guest: 80), HvfPortForward(host: 2222, guest: 22)])

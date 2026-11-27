@@ -88,6 +88,10 @@ All notable changes to BridgeVM are documented in this file.
 - A Stop could end as "not confirmed", needing Force Stop, when the app and
   the runner disagreed on a harmless detail of a status message. Both sides
   now ignore fields they do not know.
+- Port forwarding: when another app already uses a forward's Mac port, the VM
+  now says so ("Mac port 8080 is already in use, so it doesn't reach Windows
+  port 80 …") instead of running without that forward in silence. Two rules for
+  the same Mac port are refused when you enter them.
 - A never-started VM in a folder that reports itself group- or
   world-writable, as exFAT and some shared folders do, can be deleted. The
   check refused it without protecting anything.

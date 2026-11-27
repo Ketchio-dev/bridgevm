@@ -2,7 +2,7 @@
 
 #![cfg(unix)]
 
-use super::super::port_forward::parse_forwards;
+use super::super::port_forward::{forward_off_line, parse_forwards};
 use super::super::*;
 use super::helpers::*;
 use crate::virtio_net::NetBackend;
@@ -163,6 +163,14 @@ fn a_host_port_another_app_holds_turns_only_that_forward_off() {
         ]);
     assert_eq!(handler.forwards.len(), 1);
     assert_eq!(handler.forwards[0].guest_port, 22);
+    assert_eq!(
+        forward_off_line(&PortForward {
+            host: 8080,
+            guest: 80
+        }),
+        "BVNET forward-off host=8080 guest=80",
+        "the line HvfPortForwardNoticeTests reads"
+    );
 }
 
 #[test]
