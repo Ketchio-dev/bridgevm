@@ -11,7 +11,9 @@ struct LibraryDashboardRuntimeControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            LibraryDashboardActionBar(runtimeActive: runtimeActive, lifecycleBusy: lifecycleBusy,
+            // Open Display stays available while Windows shuts down: the window is where an app
+            // asking to save, or holding up the shutdown, shows (HvfGuestStopCommand's advice).
+            LibraryDashboardActionBar(runtimeActive: runtimeActive, lifecycleBusy: session.runtimeStartupWorkerPending,
                 open: { LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library) },
                 showAdvanced: showAdvanced, showSettings: showSettings, refresh: model.refresh,
                 clone: { presentation?.wrappedValue.cloneSource = library.requestWindowsClone(config) },
@@ -38,7 +40,7 @@ struct LibraryDashboardRuntimeControls: View {
             if let pending = session.runtimePendingWorkText {
                 Label(pending, systemImage: "hourglass").font(.caption).foregroundStyle(.secondary)
             }
-            if let failure = session.guiStartFailureText {
+            if let failure = session.runtimeFailureText {
                 Text(failure).font(.caption).foregroundStyle(.red).textSelection(.enabled)
             }
             HvfAgentSilenceNoticeView(notice: session.agentSilenceNotice)

@@ -19,12 +19,13 @@ enum LibraryDashboardRuntimeState: Equatable {
         if session.hasPendingRuntimeStart { self = .starting; return }
         if session.connectionState == .stopping { self = .stopping; return }
         if session.hasPendingRuntimeMutation { self = .working; return }
-        if session.guiStartFailureText != nil { self = .failed; return }
+        if session.runtimeFailureText != nil { self = .failed; return }
         if session.pause.holdsInput { self = .paused; return }
         switch session.connectionState {
         case .connected: self = .running
         case .booting: self = .booting
-        case .timedOut: self = session.hasActiveRuntimeWork ? .booting : .failed
+        // A stop or cleanup that failed (a missed deadline, an unconfirmed cleanup), not a boot.
+        case .timedOut: self = .failed
         case .stopping: self = .stopping
         case .stopped:
             if session.process?.isRunning == true || session.ownedProcessIdentity != nil { self = .booting }

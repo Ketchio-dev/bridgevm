@@ -13,13 +13,14 @@ enum ControlAutoStart {
         }
     }
     /// Only Windows VMs on the BridgeVM engine start; a VM saved with a retired engine never can.
+    /// One that is not ready (its disk on a drive that is not connected) is left to the start,
+    /// which says why in the library as the Start button does.
     static func isStartable(_ config: VMConfig, library: LibraryModel) -> Bool {
         guard config.engineKind == .hvfEngine, config.installPending != true, !library.shouldShowWindowsInstall(for: config),
               !HvfWindowsInstallTransactionResidue.isPresent(config, rootURL: library.rootURL) else { return false }
         guard let session = library.hvfRuntimeDetailSession(for: config),
               !session.hasActiveRuntimeWork, !session.hasRetainedAttachment,
-              !session.processIsRunning(session.config.targetDiskPath),
-              session.config.readiness(repoRoot: session.repoRoot).launchReady else { return false }
+              !session.processIsRunning(session.config.targetDiskPath) else { return false }
         return true
     }
     static func launch(_ library: LibraryModel, optionHeld: Bool) async {

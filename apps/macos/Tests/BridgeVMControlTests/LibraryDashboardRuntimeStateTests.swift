@@ -20,4 +20,18 @@ final class LibraryDashboardRuntimeStateTests: XCTestCase {
         XCTAssertNil(stopped.note("VM 시작 중…"))
         XCTAssertEqual(stopped.note("디스크에 접근할 수 없습니다."), "디스크에 접근할 수 없습니다.")
     }
+
+    /// A stop that left the disk unsaved, or a stop that failed, is not a normal stop or a boot.
+    func testUnsavedDiskAndFailedStopNeedAttention() throws {
+        let fixture = try HvfOwnedRuntimeFixture(readyForLaunch: false)
+        let session = fixture.session()
+        session.connectionState = .stopped
+        session.handle(.diskFinalSaveFailed)
+        XCTAssertEqual(LibraryDashboardRuntimeState(session: session, observedRunning: false), .failed)
+        XCTAssertEqual(session.runtimeFailureText,
+            "BridgeVM couldn’t finish saving the Windows disk at shutdown. Check your Mac’s free space and drive connection.")
+        session.resetObservedRuntimeState(clearEvents: true)
+        session.connectionState = .timedOut
+        XCTAssertEqual(LibraryDashboardRuntimeState(session: session, observedRunning: true), .failed)
+    }
 }

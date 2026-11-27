@@ -17,6 +17,10 @@ extension HvfEngineSession {
         return "BridgeVM lost contact with Windows, so choose Force Stop to stop the VM."
     }
 
+    /// What the dashboard, the display window and the Advanced view say about a run that needs
+    /// attention: a disk not saved at shutdown or lost contact, else a start that failed.
+    var runtimeFailureText: String? { runtimeSupervisionFailureText ?? guiStartFailureText }
+
     var guiStartFailureText: String? {
         if let text = guiStartOperation?.outcome?.failureText { return text }
         return runnerDiedWithoutCleanup ? "Windows stopped unexpectedly, so wait a moment before starting it again." : nil
