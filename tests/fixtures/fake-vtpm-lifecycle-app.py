@@ -22,9 +22,9 @@ KEYCHAIN = Path(__file__).resolve().parents[2].parent / "fake-vtpm-keychain"
 OPTIONS = ("--stable-vm-id", "--state-dir", "--package", "--recovery-code-file")
 FORMAT = "bridgevm-vtpm-recovery-v1"
 MISSING_KEY = "The Keychain key for this vTPM is missing. BridgeVM kept the encrypted state. Restore its matching recovery key, or reset the TPM identity to start with a new TPM."
-UNREADABLE = "Keychain에서 vTPM 상태 키를 읽지 못했습니다 (OSStatus -25293)."
+UNREADABLE = "Couldn’t read the vTPM state key from Keychain (OSStatus -25293)."
 MISMATCH = "The current vTPM key does not match the selected recovery package."
-INVALID_PACKAGE = "vTPM 복구 패키지가 손상되었거나 코드와 일치하지 않습니다."
+INVALID_PACKAGE = "The vTPM recovery package is damaged or the recovery code does not match."
 
 
 class Refused(Exception):
@@ -49,10 +49,10 @@ def fingerprint(state):
     if not os.path.lexists(state):
         return digest.hexdigest()
     if state.is_symlink() or not state.is_dir():
-        raise Refused(f"vTPM 상태에 안전하지 않은 링크 또는 파일이 있습니다: {state}")
+        raise Refused(f"The vTPM state contains an unsafe link or file at {state}.")
     for path in sorted(state.rglob("*"), key=str):
         if path.is_symlink() or not (path.is_dir() or path.is_file()):
-            raise Refused(f"vTPM 상태에 안전하지 않은 링크 또는 파일이 있습니다: {path}")
+            raise Refused(f"The vTPM state contains an unsafe link or file at {path}.")
         if path.is_file() and path.name != ".lock":
             digest.update(str(path.relative_to(state)).encode() + b"\0" + path.read_bytes() + b"\xff")
     return digest.hexdigest()
