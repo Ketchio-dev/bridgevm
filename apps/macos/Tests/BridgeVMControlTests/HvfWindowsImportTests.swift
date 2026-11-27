@@ -58,7 +58,9 @@ final class HvfWindowsImportTests: XCTestCase {
             VMLibrary.windowsHVFVarsBytes
         )
         XCTAssertTrue(FileManager.default.fileExists(atPath: config.bundlePath + "/metadata/hvf.ctl"))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: config.bundlePath + "/metadata/hvf-grow-pending"))
+        // The first agent start extends C: into the added space, as after a grow in Settings.
+        XCTAssertEqual(try String(contentsOfFile: config.bundlePath + "/metadata/disk-grown", encoding: .utf8), "0\n")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: config.bundlePath + "/metadata/hvf-grow-pending"))
         XCTAssertEqual(try Data(contentsOf: sourceDisk), diskBytes)
         XCTAssertEqual(
             (try FileManager.default.attributesOfItem(atPath: sourceVars.path)[.size] as? NSNumber)?.uint64Value,

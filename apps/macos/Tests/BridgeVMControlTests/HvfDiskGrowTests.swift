@@ -97,6 +97,31 @@ final class HvfDiskGrowTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: flag, encoding: .utf8), "0\n", "the flag stays")
     }
 
+    /// A VM imported before 0.2 with a disk under 64 GiB has only the old import marker, which
+    /// nothing read: its next agent start extends C: like a grown VM's, and the marker is gone.
+    func testTheOldImportMarkerExtendsCAtTheNextAgentStart() async throws {
+        let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
+        defer { fixture.clean() }
+        let saved = fixture.config()
+        fixture.save(saved)
+        let session = try XCTUnwrap(fixture.library(probe: probe).hvfRuntimeDetailSession(for: saved))
+        let legacy = URL(fileURLWithPath: saved.bundlePath + "/metadata/hvf-grow-pending")
+        try Data("68719476736\n".utf8).write(to: legacy)
+        var sent: [String] = []
+        let runner: HvfDisplayDriverInstall.Runner = { command, _ in
+            sent.append(command)
+            return ("BVDISK result=extended size=\(64 * self.gib)\n", 0)
+        }
+
+        await session.extendGrownDisk(runner: runner)?.value
+
+        XCTAssertEqual(sent, [HvfDiskGrow.extendCommand])
+        XCTAssertEqual(session.diskGrowNotice, HvfDiskGrow.Outcome.extended(bytes: 64 * gib).notice)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+        let flag = try XCTUnwrap(HvfDiskGrow.grownFlag(config: session.config))
+        XCTAssertEqual(try String(contentsOf: flag, encoding: .utf8), "0\n")
+    }
+
     /// Grow, boot (C: extends), then restore a snapshot taken before that boot: the restore brings
     /// back disk and vars only, so the grown disk has an unextended C: again, and the next agent
     /// start extends it. (Before, the extend removed the marker and nothing ran again.)

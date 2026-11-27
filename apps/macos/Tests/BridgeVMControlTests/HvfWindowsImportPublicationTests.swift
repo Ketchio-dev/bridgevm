@@ -105,7 +105,7 @@ final class HvfWindowsImportPublicationTests: XCTestCase {
         try assertFile(bundle.appendingPathComponent("metadata/hvf-vars.fd"),
             prefix: varsPrefix, size: VMLibrary.windowsHVFVarsBytes)
         XCTAssertTrue(FileManager.default.fileExists(atPath: bundle.appendingPathComponent("metadata/hvf.ctl").path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: bundle.appendingPathComponent("metadata/hvf-grow-pending").path))
+        XCTAssertEqual(try String(contentsOf: bundle.appendingPathComponent(HvfDiskGrow.grownName), encoding: .utf8), "0\n")
     }
 
     private func assertSources(_ fixture: HVFCreationPublicationFixture) throws {

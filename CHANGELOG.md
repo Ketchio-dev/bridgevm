@@ -37,6 +37,11 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- Importing a Windows disk smaller than 64 GiB enlarged the disk to 64 GiB, but
+  Windows' C: drive never grew into the added space. The next Windows start now
+  extends C:, also for VMs imported with an earlier version.
+- The VM dashboard said "Graphics mode unknown" for every Windows that BridgeVM
+  itself had started. It now shows the running session's display mode.
 - An interrupted snapshot create or export (for example, its process was
   killed) left a hidden, half-made copy of the VM's disk and vars in the
   snapshot folder, plus an empty folder for an app snapshot. The snapshot list

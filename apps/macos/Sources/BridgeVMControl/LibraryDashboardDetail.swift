@@ -86,7 +86,7 @@ struct LibraryDashboardDetail: View {
                 if config.displayName != config.name {
                     Text(config.displayName).foregroundStyle(.secondary).lineLimit(2)
                 }
-                Text([config.engineDetailLabel, model.graphicsPresentation?.label].compactMap { $0 }.joined(separator: " · ")).font(.callout).foregroundStyle(.secondary)
+                Text([config.engineDetailLabel, graphicsLabel].compactMap { $0 }.joined(separator: " · ")).font(.callout).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -157,6 +157,13 @@ struct LibraryDashboardDetail: View {
             Divider()
             LibraryRuntimeDetailContent(config: config, model: model, library: library)
         }
+    }
+
+    private var graphicsLabel: String? {
+        guard config.engineKind == .hvfEngine else { return nil }
+        let session = library.hvfRuntimeSessions.existingRecord(slug: config.slug)?.session
+        return HvfGraphicsRuntimePresentation.classify(running: model.running,
+            ownedRun3D: session?.ownedRunExperimental3D, saved3D: config.experimental3DAllowed).label
     }
 
     private var statusText: String {

@@ -7,13 +7,14 @@ enum HvfGraphicsRuntimePresentation: Equatable {
     case runningExperimental
     case runningUnverified
 
-    static func classify(running: Bool, ownedLaunchRunning: Bool,
-                         experimental3DAllowed: Bool?) -> Self {
+    /// `ownedRun3D` is the graphics of the run this app started, nil when the running Windows is
+    /// another process's (attached, external): its mode is then unknown, whatever is saved.
+    static func classify(running: Bool, ownedRun3D: Bool?, saved3D: Bool?) -> Self {
         guard running else {
-            return experimental3DAllowed == true ? .nextLaunchExperimental : .nextLaunchBasic
+            return saved3D == true ? .nextLaunchExperimental : .nextLaunchBasic
         }
-        guard ownedLaunchRunning else { return .runningUnverified }
-        return experimental3DAllowed == true ? .runningExperimental : .runningBasic
+        guard let ownedRun3D else { return .runningUnverified }
+        return ownedRun3D ? .runningExperimental : .runningBasic
     }
 
     var label: String {
@@ -27,15 +28,10 @@ enum HvfGraphicsRuntimePresentation: Equatable {
     }
 }
 
-extension HvfWindowsBackend {
-    func graphicsPresentation(running: Bool) -> HvfGraphicsRuntimePresentation {
-        .classify(running: running, ownedLaunchRunning: launchedProcess?.isRunning == true,
-                  experimental3DAllowed: config.experimental3DAllowed)
-    }
-}
-
-extension ControlModel {
-    var graphicsPresentation: HvfGraphicsRuntimePresentation? {
-        (backend as? HvfWindowsBackend)?.graphicsPresentation(running: running)
+extension HvfEngineSession {
+    /// Whether the Windows this app started, and that is still running, has experimental 3D.
+    var ownedRunExperimental3D: Bool? {
+        guard let controller = ownedController, controller.process.isRunning else { return nil }
+        return controller.config.virtioGpu3d
     }
 }
