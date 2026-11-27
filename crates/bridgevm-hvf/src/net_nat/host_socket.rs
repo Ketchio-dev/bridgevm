@@ -282,7 +282,8 @@ impl HostSocketOutboundIpv4Handler {
                             key,
                             seq: our_seq,
                             ack: tcp.seq.wrapping_add(1),
-                            error: HostError::from(&e),
+                            reason: TcpResetReason::Connect,
+                            error: Some(HostError::from(&e)),
                         });
                     }
                     return;
@@ -412,13 +413,7 @@ impl HostSocketOutboundIpv4Handler {
                 &[],
             );
             stats.tcp_segments_out = stats.tcp_segments_out.saturating_add(1);
-            note_tcp_reset(
-                stats,
-                TcpResetReason::Connect,
-                &reset.key,
-                None,
-                reset.error,
-            );
+            note_tcp_reset(stats, reset.reason, &reset.key, None, reset.error);
         }
         let now = self.now_ms();
         // Capacity, not length: a drained deque keeps its allocation.
@@ -488,7 +483,7 @@ impl HostSocketOutboundIpv4Handler {
                             TcpResetReason::Connect,
                             key,
                             Some(&flow.stream),
-                            error,
+                            Some(error),
                         );
                         remove_scratch.push(*key);
                         continue;
@@ -549,7 +544,7 @@ impl HostSocketOutboundIpv4Handler {
                                 TcpResetReason::HostRead,
                                 key,
                                 Some(&flow.stream),
-                                error,
+                                Some(error),
                             );
                             remove_scratch.push(*key);
                         }

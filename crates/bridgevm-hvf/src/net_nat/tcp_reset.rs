@@ -39,6 +39,9 @@ pub(crate) enum TcpResetReason {
     Connect,
     /// Reading the host socket of an established flow failed.
     HostRead,
+    /// The NAT dropped the flow: idle past its limit, or the oldest when the
+    /// flow table was full.
+    Evicted,
 }
 
 fn or_dash(value: Option<impl Display>) -> String {
@@ -56,24 +59,28 @@ pub(crate) fn note_tcp_reset(
     reason: TcpResetReason,
     key: &TcpFlowKey,
     stream: Option<&TcpStream>,
-    error: HostError,
+    error: Option<HostError>,
 ) {
-    let earlier = stats.rst_connect.saturating_add(stats.rst_hostread);
+    let earlier = stats
+        .rst_connect
+        .saturating_add(stats.rst_hostread)
+        .saturating_add(stats.rst_evicted);
     let (name, count) = match reason {
         TcpResetReason::Connect => ("connect", &mut stats.rst_connect),
         TcpResetReason::HostRead => ("hostread", &mut stats.rst_hostread),
+        TcpResetReason::Evicted => ("evicted", &mut stats.rst_evicted),
     };
     *count = count.saturating_add(1);
     if earlier >= LOGGED_TCP_RESETS {
         return;
     }
-    let errno = or_dash(error.errno);
+    let kind = or_dash(error.map(|e| format!("{:?}", e.kind)));
+    let errno = or_dash(error.and_then(|e| e.errno));
     let host_port = or_dash(stream.and_then(|s| s.local_addr().ok()).map(|a| a.port()));
     log_tcp_reset(format!(
-        "virtio-net NAT reset {}/{LOGGED_TCP_RESETS}: reason={name} kind={:?} errno={errno} \
+        "virtio-net NAT reset {}/{LOGGED_TCP_RESETS}: reason={name} kind={kind} errno={errno} \
          guest_port={} dst_port={} host_port={host_port}",
         earlier + 1,
-        error.kind,
         key.guest_port,
         key.dst_port,
     ));
