@@ -133,10 +133,18 @@ struct NativeLibrarySnapshot: Encodable {
 }
 
 enum NativeLibraryConfigLoader {
+    static func unknownID(_ id: String) -> String {
+        "No VM has the ID ‘\(id)’ in this library. Run `bridgevm app list` to find its ID."
+    }
+
     static func readConfig(rootDescriptor: Int32, id: String) throws -> VMConfig {
         guard NativeLibraryReader.isCanonicalID(id) else { throw NativeCLIError.invalid("Invalid VM ID.") }
         let directory = openat(rootDescriptor, id, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        guard directory >= 0 else { throw NativeCLIError.unavailable("Cannot open the VM directory safely.") }
+        guard directory >= 0 else {
+            // A mistyped ID is the usual cause; say so, as start does.
+            if errno == ENOENT { throw NativeCLIError.unavailable(unknownID(id)) }
+            throw NativeCLIError.unavailable("Cannot open the VM directory safely.")
+        }
         defer { close(directory) }
         let descriptor = openat(directory, "vm.json", O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
         guard descriptor >= 0 else { throw NativeCLIError.unavailable("Cannot open vm.json as a regular file.") }
