@@ -1,8 +1,8 @@
 //! Host-scan planning: changed host files become PUTs and vanished ones guest
-//! deletions. A case-only rename is the same file; a refused PUT waits for a
-//! host change (`share_put_outcome`); a file the scan found but could not read
-//! has not vanished; names Windows cannot keep apart are held, neither
-//! uploaded nor vanished.
+//! deletions. A case-only rename is the same file; a refused PUT waits for its
+//! retry or a host change (`share_put_outcome`); a file the scan found but
+//! could not read has not vanished; names Windows cannot keep apart are held,
+//! neither uploaded nor vanished.
 
 use super::*;
 
@@ -75,8 +75,9 @@ impl ShareSync {
                     || record.put_unconfirmed
             }) {
                 self.pending_host_changed.insert(name.clone());
-                // A PUT the guest refused is retried once the host file changes.
-                if self.put_rejected.get(name) != Some(file) {
+                // A PUT the guest refused is retried after its wait or once the host file changes.
+                let refused = self.put_rejected.get(name);
+                if refused.is_none_or(|refused| refused.due || refused.stat != *file) {
                     actions.push(SyncAction::Get { name: name.clone() });
                 }
             }

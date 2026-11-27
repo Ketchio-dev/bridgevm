@@ -187,7 +187,7 @@ fn refused_doc() -> ShareSync {
     assert!(sync
         .on_host_file("doc".into(), b"newer".to_vec(), 20)
         .is_some());
-    sync.on_put_rejected("doc");
+    sync.on_put_rejected("doc", std::time::Instant::now());
     sync
 }
 

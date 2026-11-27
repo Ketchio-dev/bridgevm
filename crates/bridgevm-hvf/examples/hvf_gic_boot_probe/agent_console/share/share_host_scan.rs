@@ -28,7 +28,7 @@ pub(in crate::agent_console) fn scan_share_host_dir(share: &mut ShareState, now:
             return Some(HostScan::Unchanged);
         }
         let unseen = share.reuse_host_walk();
-        return accept_scan(share, true, unseen).then_some(HostScan::Kept);
+        return accept_scan(share, true, unseen, now).then_some(HostScan::Kept);
     }
     #[cfg(test)]
     {
@@ -49,7 +49,7 @@ pub(in crate::agent_console) fn scan_share_host_dir(share: &mut ShareState, now:
     if listed {
         share.keep_host_walk(changes, &unseen, now);
     }
-    let accepted = accept_scan(share, listed, unseen);
+    let accepted = accept_scan(share, listed, unseen, now);
     if !accepted {
         share.forget_host_walk();
     }
@@ -57,7 +57,7 @@ pub(in crate::agent_console) fn scan_share_host_dir(share: &mut ShareState, now:
 }
 
 /// Publish an accepted scan, then announce recovery from a root deferral.
-fn accept_scan(share: &mut ShareState, listed: bool, unseen: Vec<String>) -> bool {
+fn accept_scan(share: &mut ShareState, listed: bool, unseen: Vec<String>, now: Instant) -> bool {
     if !listed || !share.root_matches() {
         share.report_root_state(true);
         return false;
@@ -66,6 +66,7 @@ fn accept_scan(share: &mut ShareState, listed: bool, unseen: Vec<String>) -> boo
     share_host_write::forget_absent_share_failures(share);
     std::mem::swap(&mut share.host_scan_scratch, &mut share.host_scan_work);
     share.engine.for_pass().set_host_unseen(unseen);
+    share.engine.for_pass().retry_refused_puts(now);
     share.report_root_state(false);
     true
 }

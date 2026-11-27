@@ -128,7 +128,7 @@ fn a_name_the_host_tried_to_send_is_never_adopted_from_the_listing() {
     // The Mac file differs: the host sends it, and the PUT fails after the guest truncated its copy.
     assert!(!engine.adopt_listed_copy("x.txt", b"abcd", 1_794_096_400_000));
     assert!(engine.on_host_file("x.txt".into(), b"abcd".to_vec(), 1_794_096_400_000).is_some());
-    engine.on_put_rejected("x.txt");
+    engine.on_put_rejected("x.txt", std::time::Instant::now());
     // Restored to the listed size and time (cp -p): the guest copy is not the listed one any more.
     assert_eq!(engine.on_host_scan_normalized([host(3, 1_794_096_312_123)]).len(), 1);
     assert!(!engine.adopt_listed_copy("x.txt", b"abc", 1_794_096_312_123), "adopted a copy the PUT may have cut short");

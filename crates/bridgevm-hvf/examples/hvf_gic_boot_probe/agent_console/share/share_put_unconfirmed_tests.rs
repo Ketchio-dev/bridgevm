@@ -30,17 +30,16 @@ fn refused_then_restored(
     let synced_mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
     std::fs::write(&path, vec![b'n'; size + 7]).unwrap();
     rig.guest.failing.insert("doc.bin".into());
-    match restore {
-        Restore::NewMtime => rig.run(24),
-        // Stop right after the refusal, before the next host scan.
-        Restore::SyncedMtime => {
-            for _ in 0..24 {
-                if rig.guest.puts.len() == 2 {
-                    break;
-                }
-                rig.run(1);
-            }
+    // Stop right after the refusal, before the next host scan.
+    for _ in 0..24 {
+        if rig.guest.puts.len() == 2 {
+            break;
         }
+        rig.run(1);
+    }
+    // Or a few scans later, before the refused PUT is retried.
+    if let Restore::NewMtime = restore {
+        rig.run(3);
     }
     assert_eq!(rig.guest.puts.len(), 2, "{label}: {:?}", rig.guest.puts);
     let partial = rig.guest.content("doc.bin").unwrap();
@@ -67,12 +66,9 @@ fn refused_then_restored(
         String::from_utf8_lossy(&host[..host.len().min(8)])
     );
     assert!(rig.guest.gets.is_empty(), "{label}: {:?}", rig.guest.gets);
-    assert_eq!(
-        rig.guest.puts.len(),
-        3,
-        "{label}: re-sent once {:?}",
-        rig.guest.puts
-    );
+    // Re-sent once; still refused, it is also retried after its wait, not every tick.
+    let expected = if disk_freed { 3..=3 } else { 4..=5 };
+    assert!(expected.contains(&rig.guest.puts.len()), "{label}: {:?}", rig.guest.puts);
     (rig, original)
 }
 
@@ -110,12 +106,14 @@ fn host_restored_to_the_synced_bytes_after_a_refused_put_is_resent_not_pulled() 
 }
 
 #[test]
-fn restored_host_file_still_refused_waits_for_the_next_host_change() {
+fn restored_host_file_still_refused_is_retried_and_never_pulled_back() {
     for (size, label, restore) in cases("restore-full") {
         let (mut rig, original) = refused_then_restored(&label, size, restore, false);
         assert_ne!(rig.guest.content("doc.bin"), Some(&original[..]), "{label}");
-        // Refused again: neither retried every tick nor pulled back.
-        rig.assert_settled();
+        // Refused again: retried after its wait, not every tick, and never pulled back.
+        let puts = rig.guest.puts.len();
+        rig.run(12);
+        assert!(rig.guest.puts.len() <= puts + 1, "{label}: {:?}", rig.guest.puts);
         // Deleting the truncated guest copy leaves the host file alone.
         rig.guest.files.retain(|(name, _, _)| name != "doc.bin");
         rig.run(24);
