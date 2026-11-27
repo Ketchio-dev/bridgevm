@@ -835,6 +835,28 @@ fn every_refused_guest_copy_is_reported_once() {
     assert!(failures.is_empty(), "{failures:#?}");
 }
 
+/// A Windows text over the limit is refused under its copy number, the number the same poll's
+/// `unchanged` line carries, so the app's notice for it stays up (HvfClipboardImageNotice.swift).
+/// Without it that line read as a later copy and cleared the notice at once.
+#[test]
+fn a_refused_windows_text_shares_its_copy_number_with_its_unchanged_line() {
+    let mut rig = Rig::new(true);
+    let mut names = Vec::new();
+    rig.guest.text = "A".into();
+    rig.settle();
+    take_lines(&mut names);
+    let bytes = 8 * 1024 * 1024 + 1;
+    rig.guest.text = "x".repeat(bytes);
+    rig.settle();
+    assert_eq!(
+        take_lines(&mut names),
+        vec![
+            format!("BVAGENT CLIPSYNC refused guest-text too-large bytes={bytes} limit=8388608 refusals=1 copy=b"),
+            "BVAGENT CLIPSYNC guest->host unchanged copy=b".to_owned(),
+        ]
+    );
+}
+
 /// Every copy, either way, gets the lines the app keys its notice by: a refused
 /// copy its refusal before its text, a copy that leaves the other side as it is
 /// one `unchanged` line, unchanged polls and a push coming back none.
