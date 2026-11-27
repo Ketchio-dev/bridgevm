@@ -34,7 +34,7 @@ case "$1" in
       mkdir -p "$mountpoint/sources" "$mountpoint/efi/boot"
       : > "$mountpoint/sources/install.wim"
       : > "$mountpoint/sources/boot.wim"
-      : > "$mountpoint/efi/boot/bootaa64.efi"
+      : > "$mountpoint/efi/boot/boot${BRIDGEVM_ISO_ARCH:-aa64}.efi"
       printf '/dev/disk-iso\t%s\n' "$mountpoint"
     elif [[ -n "$mountpoint" ]]; then
       mkdir -p "$mountpoint"
@@ -94,6 +94,13 @@ TMPDIR="$TMP" PATH="$FAKE:/usr/bin:/bin:/usr/sbin:/sbin" \
 build_source hdiutil 0
 build_source hdiutil 0
 if build_source failed 1; then echo "expected forced ISO attach failure" >&2; exit 1; fi
+# An x64 ISO is refused once mounted, before the destination disk is made or anything is copied.
+if BRIDGEVM_ISO_ARCH=x64 build_source x64 0 2>"$TMP/x64.err"; then echo "expected the x64 ISO refusal" >&2; exit 1; fi
+grep -q '^FAIL: not-arm64-iso' "$TMP/x64.err" || { cat "$TMP/x64.err" >&2; exit 1; }
+python3 - "$TMP/x64.log" <<'PY'
+import json,sys
+commands=[json.loads(line) for line in open(sys.argv[1])]; assert [c[0] for c in commands if c[0] != "info"]==["attach","detach"], commands
+PY
 python3 - "$TMP/hdiutil.log" "$TMP/windows.iso" <<'PY'
 import json,sys
 commands=[json.loads(line) for line in open(sys.argv[1])]; assert sum(c[0]=="attach" for c in commands)==6; assert sum(c[0]=="detach" for c in commands)==6; assert sum("-readonly" in c for c in commands)==2; assert sum(sys.argv[2] in c for c in commands)==2

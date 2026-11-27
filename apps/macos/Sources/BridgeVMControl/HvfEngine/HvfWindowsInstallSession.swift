@@ -11,6 +11,10 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
     @Published private(set) var sourceActivity: String?
     @Published private(set) var startedAt: Date?
 
+    /// The source builder found no Arm64 boot file on the ISO (an x64 Windows ISO).
+    nonisolated static let notArm64ISO =
+        "This ISO isn’t Windows 11 for Arm, so delete this VM and create a new one with the Arm64 ISO from Microsoft."
+
     let plan: HvfWindowsInstallPlan
     var lifecycle = HvfWindowsInstallLifecycle()
     let execution: HvfWindowsInstallExecution
@@ -136,7 +140,9 @@ extension HvfWindowsInstallSession {
             guard await runProcess(arguments: build.arguments, extraEnvironment: build.environment,
                                    progressLog: nil) else {
                 try? FileManager.default.removeItem(atPath: plan.sourceImagePath)
-                failUnlessCancelled("Couldn’t prepare the setup files from the Windows ISO.")
+                // The ISO is sealed into this VM, so Try Again cannot help an x64 one.
+                let notArm = logLines.contains { $0.contains("FAIL: not-arm64-iso") }
+                failUnlessCancelled(notArm ? Self.notArm64ISO : "Couldn’t prepare the setup files from the Windows ISO.")
                 return
             }
             guard !acknowledgeCancellation(cleanup: true) else { return }

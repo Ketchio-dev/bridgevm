@@ -68,6 +68,10 @@ All notable changes to BridgeVM are documented in this file.
 - When Windows could not register BridgeVM as a browser or watch for links,
   "Open Windows links on Mac" stayed on and links silently never reached the
   Mac. The VM window now says so and suggests restarting Windows.
+- Installing from an x64 Windows ISO (not Windows for Arm) now stops as soon as
+  the ISO is opened, with a sentence that says so and to create a new VM with
+  the Arm64 ISO. It used to copy for minutes, then say only that the setup
+  files couldn't be prepared, and Try Again repeated the same wait.
 - An interrupted snapshot create or export (for example, its process was
   killed) left a hidden, half-made copy of the VM's disk and vars in the
   snapshot folder, plus an empty folder for an app snapshot. The snapshot list
