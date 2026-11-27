@@ -39,6 +39,42 @@ final class VTPMImportedRecoveryTests: XCTestCase {
         custody = nil; XCTAssertNil(custody); XCTAssertNil(store.keys["imported-vm"])
     }
 
+    /// The app shows the code on screen, so a code file the user saved is usually readable by
+    /// others, and a code can be mistyped: both used to fail after the whole disk copy, with the
+    /// sentence about disk access and free space.
+    func testRecoveryProblemsAreNamedBeforeTheDiskIsCopied() throws {
+        let fixture = try FirstRunImportTransactionFixture()
+        defer { fixture.remove() }
+        let state = fixture.root.appendingPathComponent("state"), package = fixture.root.appendingPathComponent("recovery.json")
+        let code = fixture.root.appendingPathComponent("code.txt")
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        try Data("sealed-state".utf8).write(to: state.appendingPathComponent("tpm2-00.permall"))
+        let store = ImportedRecoveryKeyStore(); store.keys["source-vm"] = Data(repeating: 0x42, count: 32)
+        let exported = try VTPMIdentityLifecycle(keyStore: store).exportRecovery(
+            stableVMID: "source-vm", stateDirectory: state, destination: package)
+        try Data(exported.recoveryCode.utf8).write(to: code)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: code.path)
+        var inputs = fixture.inputs()
+        inputs.vtpmStateDir = state.path; inputs.vtpmRecoveryPackagePath = package.path; inputs.vtpmRecoveryCodePath = code.path
+        func failure() -> String? {
+            let result = FirstRunImportWorker.run(inputs, libraryRoot: fixture.library,
+                snapshotHelper: HvfMediaImportTestSupport.helper)
+            guard case .failed(let message) = result else { return nil }
+            return message
+        }
+        XCTAssertEqual(failure(), FirstRunImport.ValidationError.vtpmRecoveryCodeShared(code.path).description)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.entry.path), "refused before any copy")
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: code.path)
+        let wrong = String(exported.recoveryCode.reversed())
+        try Data(wrong.utf8).write(to: code)
+        let message = failure()
+        XCTAssertTrue(message == VTPMIdentityLifecycleError.invalidRecoveryPackage.localizedDescription
+            || message == VTPMIdentityLifecycleError.invalidRecoveryCode.localizedDescription, message ?? "nil")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.entry.path))
+        try Data(exported.recoveryCode.utf8).write(to: code)
+        XCTAssertNoThrow(try FirstRunImportVTPMRecovery.check(inputs, keyStore: store))
+    }
+
     func testExistingDestinationKeyIsNeverOverwritten() throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
         let state = root.appendingPathComponent("state"), package = root.appendingPathComponent("recovery.json")
