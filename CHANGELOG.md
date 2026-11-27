@@ -109,6 +109,8 @@ All notable changes to BridgeVM are documented in this file.
   "Automatic (1280x800)", and its help says Automatic keeps the resolution
   Windows last started with. Going back to it after choosing 1920x1080 kept
   1920x1080.
+- Canceling a snapshot export now removes the partial copy. It stayed in a
+  hidden folder next to the destination, up to the size of the whole disk.
 - After 256 starts or stops from the CLI in one app session, every further
   one was refused until the app was reopened.
 - A Stop could end as "not confirmed", needing Force Stop, when the app and

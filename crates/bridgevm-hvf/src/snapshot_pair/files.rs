@@ -5,6 +5,36 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Set by the handler `stop_copies_on_signals` installs. Dying of the signal left an export's
+/// partial copy (tens of GB on a backup drive) in its hidden staging folder.
+static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// For the helper's create, restore and import commands: SIGINT and SIGTERM (the app's and the
+/// CLI's cancel) stop the copy or hash in progress at its next chunk, so the attempt's own error
+/// path removes its staging and the command fails. A signal after the copies lets it finish.
+pub fn stop_copies_on_signals() {
+    extern "C" fn request_stop(_: libc::c_int) {
+        STOP_REQUESTED.store(true, Ordering::Relaxed);
+    }
+    let handler = request_stop as extern "C" fn(libc::c_int);
+    for signal in [libc::SIGINT, libc::SIGTERM] {
+        // SAFETY: the handler only stores to an atomic, which is async-signal-safe.
+        unsafe { libc::signal(signal, handler as libc::sighandler_t) };
+    }
+}
+
+fn stop_requested() -> io::Result<()> {
+    #[cfg(test)]
+    let requested = stop_for_test::requested() || STOP_REQUESTED.load(Ordering::Relaxed);
+    #[cfg(not(test))]
+    let requested = STOP_REQUESTED.load(Ordering::Relaxed);
+    if requested {
+        return Err(io::Error::other("stopped by a signal"));
+    }
+    Ok(())
+}
 
 /// Bytes copied per read/write when streaming a large disk image.
 pub(super) const COPY_CHUNK: usize = 4 * 1024 * 1024;
@@ -38,6 +68,7 @@ pub(super) fn sha256_reader(mut reader: impl Read) -> io::Result<(String, u64)> 
         }
         hasher.update(&buf[..n]);
         bytes += n as u64;
+        stop_requested()?;
     }
     let digest = hasher.finalize();
     let hash = digest.iter().map(|b| format!("{b:02x}")).collect();
@@ -111,6 +142,7 @@ pub(super) fn stream_and_sync(
         output.write_all(&buf[..n])?;
         total += n as u64;
         after_chunk(total)?;
+        stop_requested()?;
     }
     output.sync_all()?;
     Ok(total)
@@ -159,4 +191,17 @@ pub(super) fn clone_file(src: &Path, dst: &Path) -> Option<()> {
 #[cfg(not(target_os = "macos"))]
 pub(super) fn clone_file(_src: &Path, _dst: &Path) -> Option<()> {
     None
+}
+
+/// The flag is per process; tests set a per-thread one so parallel tests are unaffected.
+#[cfg(test)]
+pub(crate) mod stop_for_test {
+    use std::cell::Cell;
+    thread_local!(static REQUESTED: Cell<bool> = const { Cell::new(false) });
+    pub(crate) fn set(requested: bool) {
+        REQUESTED.with(|flag| flag.set(requested));
+    }
+    pub(super) fn requested() -> bool {
+        REQUESTED.with(Cell::get)
+    }
 }
