@@ -1,5 +1,4 @@
 #![allow(non_camel_case_types)]
-#![allow(dead_code)]
 use super::*;
 
 use std::{
@@ -241,6 +240,8 @@ pub struct virgl_renderer_callbacks {
 pub(crate) const VIRGL_RENDERER_USE_EXTERNAL_BLOB: c_int = 1 << 5;
 pub(crate) const VIRGL_RENDERER_THREAD_SYNC: c_int = 2;
 pub(crate) const VIRGL_RENDERER_VENUS: c_int = 1 << 6;
+/// Only the init-flag test names it: BridgeVM keeps virgl on.
+#[cfg(test)]
 pub(crate) const VIRGL_RENDERER_NO_VIRGL: c_int = 1 << 7;
 pub(crate) const VIRGL_RENDERER_ASYNC_FENCE_CB: c_int = 1 << 8;
 pub(crate) const VIRGL_RENDERER_RENDER_SERVER: c_int = 1 << 9;

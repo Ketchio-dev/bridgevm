@@ -6,9 +6,11 @@ $matches = [regex]::Matches($source, $pattern)
 if ($matches.Count -ne 1) { throw 'Expected exactly one CLIPSET implementation' }
 $body = [scriptblock]::Create($matches[0].Groups['body'].Value)
 # CLIPSET writes through Set-ClipText; without its STA helper that is Set-Clipboard, stubbed below.
-$helper = [regex]::Match($source, '(?s)\r?\nfunction Set-ClipText\(.*?\r?\n\}\r?\n')
-if (-not $helper.Success) { throw 'Expected the Set-ClipText implementation' }
-. ([scriptblock]::Create($helper.Value))
+foreach ($name in @('Initialize-ClipText', 'Set-ClipText')) {
+    $helper = [regex]::Match($source, "(?s)\r?\nfunction $name\b.*?\r?\n\}\r?\n")
+    if (-not $helper.Success) { throw "Expected the $name implementation" }
+    . ([scriptblock]::Create($helper.Value))
+}
 $script:BvClipTextReady = $false
 function Log([string]$m) { }
 Add-Type 'public static class ClipboardAckFixture { public static uint GetClipboardSequenceNumber() { return 8; } }'

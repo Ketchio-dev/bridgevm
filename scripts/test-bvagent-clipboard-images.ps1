@@ -46,6 +46,8 @@ if ($desktop) {
     Add-Type -AssemblyName System.Windows.Forms, System.Drawing
     $K = Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();' -Name 'BvClipTestUser32' -Namespace 'BridgeVM' -PassThru
     Assert (Initialize-ClipImage) 'the agent compiles its clipboard image helper'
+    # The poll verbs then read the text through BvClipText.Get on the real clipboard.
+    Assert (Initialize-ClipText) 'the agent compiles its clipboard text helper'
     function New-Png([int]$width, [int]$height) {
         $bitmap = New-Object System.Drawing.Bitmap $width, $height
         for ($x = 0; $x -lt $width; $x++) { for ($y = 0; $y -lt $height; $y++) { $bitmap.SetPixel($x, $y, [Drawing.Color]::FromArgb(255, (40 * $x) % 256, (60 * $y) % 256, 128)) } }
@@ -63,6 +65,8 @@ if ($desktop) {
         $script:fakeText = $null
     }
 } else {
+    # The stand-in Get-Clipboard (top) serves the text: BvClipText would read the real one.
+    $script:BvClipTextReady = $false
     # C# 5 is what Windows PowerShell 5.1 compiles; prove the option bites first.
     $rejected = $false
     try { Add-Type -TypeDefinition 'public static class BvLangCheck { public static string N() { return nameof(N); } }' -CompilerOptions '/langversion:5' -ErrorAction Stop } catch { $rejected = $true }

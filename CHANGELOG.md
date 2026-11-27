@@ -52,6 +52,11 @@ All notable changes to BridgeVM are documented in this file.
   the chosen location, there isn't enough free space on another drive for the
   ISO copy, or another VM took the same ID at the same time. Before, each of
   these said only "Couldn't create the VM or save it to the library."
+- A Windows app that stops answering while it holds copied text no longer
+  freezes BridgeVM's helper in Windows. Reading the clipboard text now gives up
+  after 20 seconds and keeps the last text, so the shared clipboard, shared
+  folders and window resizing keep working; before, they all stopped until
+  Windows restarted.
 - "Open Windows links on Mac" and "Print to Mac" can now be turned off (or on)
   while Windows runs: links stop opening and the printer goes at once, and the
   choice is saved when the VM stops.

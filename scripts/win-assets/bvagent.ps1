@@ -2062,22 +2062,62 @@ namespace BridgeVM {
             if (!thread.Join(20000)) { throw new TimeoutException("the clipboard did not answer"); }
             if (failure != null) { throw new InvalidOperationException(failure.Message, failure); }
         }
+
+        // The poll verbs' text read, on its own STA thread like Set: Get-Clipboard ran on the
+        // agent's only thread with no time limit, so one wedged read held every agent feature.
+        public static string Get() {
+            string text = null;
+            Exception failure = null;
+            Thread thread = new Thread(delegate () {
+                try { text = Clipboard.GetText(TextDataFormat.UnicodeText); }
+                catch (Exception e) { failure = e; } finally { Application.ExitThread(); }
+            });
+            thread.TrySetApartmentState(ApartmentState.STA);
+            thread.IsBackground = true;
+            thread.Start();
+            if (!thread.Join(20000)) { throw new TimeoutException("the clipboard did not answer"); }
+            if (failure != null) { throw new InvalidOperationException(failure.Message, failure); }
+            return text ?? "";
+        }
     }
 }
 '@
 
-# Without the helper (it failed to compile), Set-Clipboard as before.
-function Set-ClipText([string]$text) {
+# Without the helper (it failed to compile), Set-Clipboard and Get-Clipboard as before.
+function Initialize-ClipText {
     if ($null -eq $script:BvClipTextReady) {
         try {
             Add-Type -TypeDefinition $script:BvClipTextSource -ReferencedAssemblies System.Windows.Forms -ErrorAction Stop
             $script:BvClipTextReady = $true
         } catch {
-            Log ('CLIP TEXT helper unavailable, using Set-Clipboard: ' + $_.Exception.Message)
+            Log ('CLIP TEXT helper unavailable, using Set-Clipboard and Get-Clipboard: ' + $_.Exception.Message)
             $script:BvClipTextReady = $false
         }
     }
-    if ($script:BvClipTextReady) { [BridgeVM.BvClipText]::Set($text) } else { Set-Clipboard -Value $text -ErrorAction Stop }
+    return $script:BvClipTextReady
+}
+
+function Set-ClipText([string]$text) {
+    if (Initialize-ClipText) { [BridgeVM.BvClipText]::Set($text) } else { Set-Clipboard -Value $text -ErrorAction Stop }
+}
+
+# The text CLIPGET, CLIPX, CLIPXH and CLIPXF send. The host polls every second, and
+# repeatedly opening the OLE clipboard from PS 5.1 wedges after a few hundred calls
+# (live-observed: the agent froze inside Get-Clipboard ~5-6 min into every clipsync run,
+# killing the channel). So the read is gated behind user32's GetClipboardSequenceNumber -
+# a cheap, never-blocking query that bumps on every clipboard change - and a cached copy
+# is served while the sequence is unchanged (idle polls open the clipboard zero times).
+# A read that fails or times out keeps the last text until the next change.
+function Update-ClipTextCache {
+    $seq = $K::GetClipboardSequenceNumber()
+    if ($seq -eq $script:BvClipSeq) { return }
+    $script:BvClipSeq = $seq
+    try {
+        if (Initialize-ClipText) { $script:BvClipCache = [BridgeVM.BvClipText]::Get() }
+        else { $c = Get-Clipboard -Raw -ErrorAction SilentlyContinue; $script:BvClipCache = if ($null -ne $c) { [string]$c } else { '' } }
+    } catch {
+        Log ('CLIP TEXT read failed, keeping the last text: ' + $_.Exception.Message)
+    }
 }
 
 $script:BvClipImageSource = @'
@@ -2576,48 +2616,21 @@ while ($true) {
                     Write-CommandResult $h $r
                 }
                 'CLIPGET' {
-                    # Return the guest Windows clipboard text as CLIP <base64(utf8)>.
-                    # The host polls CLIPGET every second, and repeatedly opening
-                    # the OLE clipboard from PS 5.1 wedges after a few hundred
-                    # calls (live-observed: the agent froze inside Get-Clipboard
-                    # ~5-6 min into every clipsync run, killing the channel). So
-                    # gate the actual Get-Clipboard behind user32's
-                    # GetClipboardSequenceNumber - a cheap, never-blocking query
-                    # that bumps on every clipboard change - and serve a cached
-                    # copy while the sequence is unchanged (idle polls open the
-                    # clipboard zero times).
-                    $seq = $K::GetClipboardSequenceNumber()
-                    if ($seq -ne $script:BvClipSeq) {
-                        $clip = ''
-                        try { $c = Get-Clipboard -Raw -ErrorAction SilentlyContinue; if ($null -ne $c) { $clip = [string]$c } } catch { }
-                        $script:BvClipCache = $clip
-                        $script:BvClipSeq = $seq
-                    }
+                    # Return the guest Windows clipboard text as CLIP <base64(utf8)> (Update-ClipTextCache).
+                    Update-ClipTextCache
                     Write-Line $h ("CLIP " + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipCache))) 'CLIP'
                 }
                 'CLIPX' {
                     # CLIPGET plus the clipboard image, for hosts that saw IMAGE_PNG:
                     # CLIPX <w> <h> <bytes> <sha256|-> <b64(path)|-> <b64(utf8 text)>.
-                    $seq = $K::GetClipboardSequenceNumber()
-                    if ($seq -ne $script:BvClipSeq) {
-                        $clip = ''
-                        try { $c = Get-Clipboard -Raw -ErrorAction SilentlyContinue; if ($null -ne $c) { $clip = [string]$c } } catch { }
-                        $script:BvClipCache = $clip
-                        $script:BvClipSeq = $seq
-                    }
+                    Update-ClipTextCache
                     $image = Get-ClipImageDescriptor
                     Write-Line $h ('CLIPX ' + $image + ' ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipCache))) 'CLIPX'
                 }
                 'CLIPXH' {
                     # CLIPX plus the clipboard's HTML, for hosts that saw CF_HTML: CLIPXH <w> <h>
                     # <bytes> <sha256|-> <b64(path)|-> <html-bytes> <b64(html)|-> <b64(utf8 text)>.
-                    $seq = $K::GetClipboardSequenceNumber()
-                    if ($seq -ne $script:BvClipSeq) {
-                        $clip = ''
-                        try { $c = Get-Clipboard -Raw -ErrorAction SilentlyContinue; if ($null -ne $c) { $clip = [string]$c } } catch { }
-                        $script:BvClipCache = $clip
-                        $script:BvClipSeq = $seq
-                    }
+                    Update-ClipTextCache
                     $image = Get-ClipImageDescriptor
                     $html = Get-ClipHtmlPart
                     Write-Line $h ('CLIPXH ' + $image + ' ' + $html + ' ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:BvClipCache))) 'CLIPXH'
@@ -2626,13 +2639,7 @@ while ($true) {
                     # CLIPXH plus the clipboard's file list (an Explorer copy), for hosts that saw
                     # CF_HDROP: CLIPXF <w> <h> <bytes> <sha256|-> <b64(path)|-> <html-bytes>
                     # <b64(html)|-> <file-count> <b64(list)|-> <b64(utf8 text)>.
-                    $seq = $K::GetClipboardSequenceNumber()
-                    if ($seq -ne $script:BvClipSeq) {
-                        $clip = ''
-                        try { $c = Get-Clipboard -Raw -ErrorAction SilentlyContinue; if ($null -ne $c) { $clip = [string]$c } } catch { }
-                        $script:BvClipCache = $clip
-                        $script:BvClipSeq = $seq
-                    }
+                    Update-ClipTextCache
                     $image = Get-ClipImageDescriptor
                     $html = Get-ClipHtmlPart
                     $files = Get-ClipFilesPart
