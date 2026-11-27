@@ -70,7 +70,9 @@ final class HvfEngineSession: ObservableObject {
             updateSleepPrevention()
         }
     }
-    var hostNow: () -> Date = Date.init // the host clock behind guestNow()
+    /// The host clock behind guestNow(): uptime (ownedStartNow), which stops while the Mac sleeps, as the guest does. On
+    /// the wall clock an input receipt still awaited at sleep expired on wake and stopped all input.
+    lazy var hostNow: () -> Date = { [unowned self] in Date(timeIntervalSinceReferenceDate: self.ownedStartNow()) }
     var guestRunClock = HvfGuestRunClock()
     @Published var pauseNotice: String? // a Pause or Resume that did not happen, or a full Mac disk's pause
     var diskFullReported = false // `BVSTORAGE full`: the `BVPAUSE paused` that follows is for a full Mac disk
@@ -140,7 +142,9 @@ final class HvfEngineSession: ObservableObject {
         self.vtpmKeyProvider = vtpmKeyProvider
         // The 10 ms input pump waits out a pause: no receipt comes before the guest runs again.
         inputDriver.onPoll = { [weak self] in if self?.pause == .running { self?.poll() } }
-        inputDriver.now = { [weak self] in self?.guestNow() ?? Date() }
+        inputDriver.now = { [weak self] in
+            self?.guestNow() ?? Date(timeIntervalSinceReferenceDate: ProcessInfo.processInfo.systemUptime)
+        }
         inputDriver.onDiagnostic = { [weak self] in self?.append(.unknown($0)) }
         inputDriver.onLegacyReplay = { [weak self] in self?.resendOnLegacy($0) }
         inputDriver.onLegacyBarrier = { [weak self] in _ = self?.appendLiveInput($0) }
