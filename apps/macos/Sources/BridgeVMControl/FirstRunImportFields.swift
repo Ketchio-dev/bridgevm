@@ -25,11 +25,12 @@ struct FirstRunImportFields: View {
             }
             GroupBox {
                 HStack(spacing: 24) {
-                    Stepper(value: $memGiB, in: 2...64) {
+                    // The Create sheet's choices, which Settings accepts too.
+                    Stepper(value: $memGiB, in: 2...max(2, (CreateVMMemoryOptions.current.choicesMiB.last ?? 4096) / 1024)) {
                         LibraryMetadataLabel(title: "Memory", value: "\(memGiB) GiB", symbol: "memorychip")
                     }
                     Divider().frame(height: 36)
-                    Stepper(value: $cpuCount, in: 1...16) {
+                    Stepper(value: $cpuCount, in: 1...max(1, ProcessInfo.processInfo.activeProcessorCount - 1)) {
                         LibraryMetadataLabel(title: "CPU", value: "\(cpuCount) vCPU", symbol: "cpu")
                     }
                 }

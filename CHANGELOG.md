@@ -116,6 +116,11 @@ All notable changes to BridgeVM are documented in this file.
   1920x1080.
 - After 256 starts or stops from the CLI in one app session, every further
   one was refused until the app was reopened.
+- Memory and CPU limits now agree across the app. Importing a VM offered up to
+  64 GiB and 16 CPUs, and Create offered every core but one, but Settings
+  accepted only 32 GiB and 10 CPUs, so changing such a VM's resources later was
+  refused. Import now offers Create's choices, and Settings accepts up to every
+  core but one.
 - A Stop could end as "not confirmed", needing Force Stop, when the app and
   the runner disagreed on a harmless detail of a status message. Both sides
   now ignore fields they do not know.
