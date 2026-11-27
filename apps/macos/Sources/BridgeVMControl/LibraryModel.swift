@@ -621,10 +621,12 @@ extension LibraryModel {
         // new VM: read the library once, as the manual refresh does, and use what is saved.
         if vms.first(where: { $0.slug == request.vmID })
             != (try? NativeCLIStatusConfigReader.read(library: library, id: request.vmID)) { reload() }
-        let saved = try validatedInstallConfiguration(vmID: request.vmID, library: library)
         let store = windowsInstallSessions.cliOperations
         switch request.operation {
         case .install:
+            // Status and cancel name an operation this app already holds: a finished install has saved
+            // installPending = false, which only a new install must refuse.
+            let saved = try validatedInstallConfiguration(vmID: request.vmID, library: library)
             guard let id = request.operationID.flatMap(UUID.init(uuidString:)) else {
                 throw NativeRuntimeError.invalidMessage
             }

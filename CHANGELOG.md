@@ -84,6 +84,8 @@ All notable changes to BridgeVM are documented in this file.
 - A failed Guest Tools update now says to quit and reopen BridgeVM to try
   again. "Restart BridgeVM" read like the Restart button beside it, which
   restarts Windows and does not retry the update.
+- `bridgevm app install-status` now reports a finished install as done. Once
+  Windows had installed, it failed with "unsupportedTarget".
 - When Windows could not register BridgeVM as a browser or watch for links,
   "Open Windows links on Mac" stayed on and links silently never reached the
   Mac. The VM window now says so and suggests restarting Windows.
