@@ -106,6 +106,9 @@ All notable changes to BridgeVM are documented in this file.
   (#675).
 - `create-windows` on an 8 GiB Mac now gives the VM 4 GiB by default, as the
   app's Create sheet does, instead of 6 GiB that left macOS 2 GiB.
+- Expanding the disk of an imported VM whose C: drive is followed by another
+  partition (usually Windows Recovery) now says that partition keeps C: from
+  growing, instead of claiming C: already uses all available space.
 - A VM with a Korean name finds its vTPM key even when its ID reaches the
   keychain in the other Unicode form (composed or decomposed, for example
   after the library was copied). Before, the VM refused to start with a
