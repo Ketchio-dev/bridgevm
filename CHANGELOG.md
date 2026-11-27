@@ -43,10 +43,16 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- Windows connections left idle, such as an SSH session or a database client,
+  are no longer cut after 5 minutes without Windows being told. BridgeVM now
+  keeps an idle connection open for at least 2 hours, as home routers do.
 - A Windows VM can start again after its VM process was killed or crashed. The
   VM's TPM helper kept running on its own and held the VM's TPM state, so every
   later start failed until you restarted the Mac. Start now stops that leftover
   helper first; a helper that belongs to a running VM is never touched.
+- A VPN tunnel or call running in Windows over UDP recovers after the Mac
+  switches networks. Its traffic kept going to a connection tied to the old
+  network, so it stayed dead for as long as Windows kept sending.
 - When Create VM fails for a reason you can fix, it now says so: the Windows
   ISO can't be read (its drive was ejected), the VM's folder can't be made in
   the chosen location, there isn't enough free space on another drive for the

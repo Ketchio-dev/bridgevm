@@ -244,7 +244,15 @@ impl HostSocketOutboundIpv4Handler {
             }
         };
         flow.last_activity = now;
-        let _ = flow.socket.send(udp.payload);
+        if let Err(error) = flow.socket.send(udp.payload) {
+            // A connected socket keeps the source address it was connected with. Once that is gone
+            // (the Mac switched networks) every send fails, and a guest that keeps sending never lets
+            // the flow idle out, so a VPN tunnel or call stayed dead. The next datagram opens a new
+            // socket on the current network.
+            if !would_block(&error) && error.raw_os_error() != Some(libc::ENOBUFS) {
+                self.udp_flows.remove(&key);
+            }
+        }
         self.evict_idle_flows();
     }
 
