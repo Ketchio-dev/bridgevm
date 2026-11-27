@@ -170,11 +170,11 @@ extension FirstRunImport {
         try HvfMediaImport.copy(disk: inputs.diskPath, vars: inputs.varsPath,
             toDisk: layout.diskURL, toVars: layout.varsURL, helper: snapshotHelper, fileManager: fileManager,
             converting: converting)
-        let keyCustody = try FirstRunImportVTPMRecovery.materialize(inputs, destinationStableVMID: slug,
+        let keyCustody = try FirstRunImportVTPMRecovery.materialize(inputs, destinationStableVMID: destination.slug,
             destination: layout.vtpmURL, fileManager: fileManager)
 
         var config = VMConfig(
-            id: slug,
+            id: destination.slug,
             name: inputs.displayName,
             displayName: inputs.displayName,
             backendKind: BackendKind.hvfEngine.rawValue,

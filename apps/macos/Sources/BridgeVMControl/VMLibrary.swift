@@ -107,6 +107,9 @@ enum VMLibrary {
                 decoded.append((dir, cfg))
             } catch is DecodingError {
                 issues.append(VMLibraryIssue(dir, file: f, message: "BridgeVM could not read the settings in vm.json. Check the file or restore it from a backup."))
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+                // A creation, duplicate or import that is still running also has no vm.json yet.
+                issues.append(VMLibraryIssue(dir, file: f, message: "This folder has no vm.json, so it is usually left from a VM setup or import that did not finish. If BridgeVM is not setting up a VM right now, you can move the folder to the Trash."))
             } catch {
                 issues.append(VMLibraryIssue(dir, file: f, message: "BridgeVM could not open vm.json. Check that the file exists and is readable."))
             }

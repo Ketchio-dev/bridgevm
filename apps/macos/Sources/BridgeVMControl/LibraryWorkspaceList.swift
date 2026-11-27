@@ -71,6 +71,7 @@ struct LibraryWorkspaceList: View {
                 Spacer(minLength: 8)
                 Button {
                     library.proMode = false
+                    library.discardFirstRunImportFailure()
                     library.selectedID = LibraryModel.firstRunImportSelectionID
                     didSelect?()
                 } label: {

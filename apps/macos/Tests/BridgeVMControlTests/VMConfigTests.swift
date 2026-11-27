@@ -159,7 +159,7 @@ final class VMLibraryPersistenceTests: XCTestCase {
         let corruptIssue = try XCTUnwrap(issues["corrupt"])
         let missingIssue = try XCTUnwrap(issues["missing"])
         XCTAssertTrue(corruptIssue.message.contains("settings in vm.json"))
-        XCTAssertTrue(missingIssue.message.contains("file exists and is readable"))
+        XCTAssertTrue(missingIssue.message.contains("has no vm.json"))
         XCTAssertTrue(corruptIssue.path.hasSuffix("/corrupt/vm.json"))
         XCTAssertTrue(missingIssue.path.hasSuffix("/missing/vm.json"))
     }
