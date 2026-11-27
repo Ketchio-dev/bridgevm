@@ -54,7 +54,9 @@ pub(crate) struct PendingTcpReset {
     pub(crate) key: TcpFlowKey,
     pub(crate) seq: u32,
     pub(crate) ack: u32,
-    pub(crate) error: HostError,
+    pub(crate) reason: TcpResetReason,
+    /// None when the NAT dropped the flow itself.
+    pub(crate) error: Option<HostError>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,12 +197,19 @@ pub(crate) fn evict_lru<K: Copy + Eq + std::hash::Hash, V: HasLastActivity>(
     map: &mut HashMap<K, V>,
     cap: usize,
 ) {
-    while map.len() > cap {
-        let Some((&key, _)) = map.iter().min_by_key(|(_, flow)| flow.last_activity()) else {
-            return;
-        };
-        map.remove(&key);
+    while pop_lru(map, cap).is_some() {}
+}
+
+/// Removes and returns the least recently active flow while `map` holds more than `cap`.
+pub(crate) fn pop_lru<K: Copy + Eq + std::hash::Hash, V: HasLastActivity>(
+    map: &mut HashMap<K, V>,
+    cap: usize,
+) -> Option<(K, V)> {
+    if map.len() <= cap {
+        return None;
     }
+    let (&key, _) = map.iter().min_by_key(|(_, flow)| flow.last_activity())?;
+    map.remove_entry(&key)
 }
 
 pub(crate) fn get_or_insert_lru<K, V, E, F>(

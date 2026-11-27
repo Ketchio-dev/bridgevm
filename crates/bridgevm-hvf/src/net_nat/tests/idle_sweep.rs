@@ -1,5 +1,6 @@
 use super::super::reply_queue::MAX_PENDING_REPLY_FRAMES;
 use super::super::*;
+use super::helpers::{parse_ipv4_tcp, GUEST_MAC};
 use std::collections::VecDeque;
 use std::net::{Ipv4Addr as StdIpv4Addr, SocketAddrV4, UdpSocket};
 
@@ -127,4 +128,55 @@ fn an_idle_established_tcp_connection_outlives_the_short_idle_timeout() {
     assert!(!handler.tcp_flows.contains_key(&closing_key));
     let open = &handler.tcp_flows[&open_key];
     assert_eq!(open.idle_limit_ms(300_000), 124 * 60 * 1000);
+}
+
+/// A TCP flow the NAT dropped itself, idle or over the flow cap, was dropped silently: the guest's
+/// next segment matched no flow and the Windows app hung until its own timeout. The guest now gets
+/// a RST it accepts: our next sequence number, acknowledging everything it sent.
+#[test]
+fn a_tcp_flow_dropped_by_the_idle_sweep_or_the_flow_cap_is_reset_toward_the_guest() {
+    let mut handler = HostSocketOutboundIpv4Handler::new().with_idle_timeout_ms(0);
+    handler.max_flows = 1;
+    let (closing_key, mut closing, _closing_peer) = tcp_flow(40_020);
+    closing.guest_fin = true;
+    closing.guest_next = 0x1111_0000;
+    closing.send.next = 0x2222_0000;
+    let (oldest_key, mut oldest, _oldest_peer) = tcp_flow(40_021);
+    oldest.guest_next = 0x3333_0000;
+    oldest.send.next = 0x4444_0000;
+    let (newest_key, mut newest, _newest_peer) = tcp_flow(40_022);
+    newest.last_activity = 1;
+    for (key, flow) in [
+        (closing_key, closing),
+        (oldest_key, oldest),
+        (newest_key, newest),
+    ] {
+        flow.stream.set_nonblocking(true).unwrap();
+        handler.tcp_flows.insert(key, flow);
+    }
+    handler.epoch = std::time::Instant::now() - std::time::Duration::from_millis(2);
+
+    handler.evict_idle_flows();
+    let mut queue = VecDeque::new();
+    let mut stats = NatStats::default();
+    handler.poll_tcp(Some(GUEST_MAC), &mut queue, &mut stats);
+
+    assert_eq!(handler.tcp_flows.keys().collect::<Vec<_>>(), [&newest_key]);
+    let resets: Vec<_> = queue
+        .iter()
+        .map(|frame| {
+            let (_, ip, tcp) = parse_ipv4_tcp(frame);
+            assert_eq!(tcp.flags, TCP_FLAG_RST | TCP_FLAG_ACK);
+            assert_eq!((ip.src, ip.dst), ([127, 0, 0, 1], GUEST_IP));
+            (tcp.src_port, tcp.dst_port, tcp.seq, tcp.ack)
+        })
+        .collect();
+    assert_eq!(
+        resets,
+        [
+            (closing_key.dst_port, 40_020, 0x2222_0000, 0x1111_0000),
+            (oldest_key.dst_port, 40_021, 0x4444_0000, 0x3333_0000),
+        ]
+    );
+    assert_eq!(stats.rst_evicted, 2);
 }

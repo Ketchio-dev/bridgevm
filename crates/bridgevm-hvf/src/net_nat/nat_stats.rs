@@ -52,6 +52,9 @@ pub struct NatStats {
     /// Resets sent to the guest because reading an established flow's host
     /// socket failed.
     pub rst_hostread: u64,
+    /// Resets sent to the guest because the NAT dropped the flow: idle past
+    /// its limit, or the oldest when the flow table was full.
+    pub rst_evicted: u64,
     /// Guest TCP segments that matched no flow, dropped without a reset.
     pub tcp_noflow_drops: u64,
 }
