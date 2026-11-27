@@ -167,6 +167,7 @@ struct LibraryDashboardDetail: View {
 
     private var statusText: String {
         if config.installPending == true { return "Setup required" }
+        if let operation = library.fileOperationTitle(for: config.slug) { return operation }
         return runtimeState?.title ?? (model.running ? "Running" : "Stopped")
     }
 
@@ -177,6 +178,7 @@ struct LibraryDashboardDetail: View {
 
     private var statusColor: Color {
         if config.installPending == true { return .orange }
+        if library.fileOperationTitle(for: config.slug) != nil { return .blue }
         return runtimeState?.color ?? (model.running ? .green : .secondary)
     }
 
