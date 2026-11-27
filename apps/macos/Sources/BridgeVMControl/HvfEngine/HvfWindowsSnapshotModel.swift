@@ -102,6 +102,10 @@ final class HvfWindowsSnapshotModel: ObservableObject {
             return "Check that the snapshots folder in the VM bundle is a regular directory before \(action)."
         case .noSnapshot?:
             return noSnapshot
+        case .snapshotGone?:
+            return operation == .delete
+                ? "This snapshot was already deleted."
+                : "This snapshot no longer exists, so choose another one."
         case .helper?, nil:
             break
         }

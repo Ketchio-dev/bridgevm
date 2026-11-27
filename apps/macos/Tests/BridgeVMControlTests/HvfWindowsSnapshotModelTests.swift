@@ -190,6 +190,12 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         XCTAssertEqual(HvfWindowsSnapshotStore.list(bundle: bundle).count, 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: first.url.path))
         XCTAssertEqual(try HvfWindowsSnapshotCommand.invoke(helper, ["digest", disk.path, vars.path]), selectedDigest)
+        // A list shown before that delete still offers the snapshot.
+        let staleRestore = try XCTUnwrap(model.confirmation(for: .restore, snapshotDate: date, label: first.label, run: restoreFirst))
+        await model.confirm(staleRestore)?.value
+        XCTAssertEqual(model.status, "This snapshot no longer exists, so choose another one.")
+        await model.confirm(delete)?.value
+        XCTAssertEqual(model.status, "This snapshot was already deleted.")
 
         // The helper owns staging; a failed invocation must not publish an entry.
         let before = HvfWindowsSnapshotStore.list(bundle: bundle)

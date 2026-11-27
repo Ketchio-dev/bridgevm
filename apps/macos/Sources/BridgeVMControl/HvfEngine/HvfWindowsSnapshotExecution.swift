@@ -40,7 +40,9 @@ extension HvfEngineSession {
             guard await self.validateRuntimeMutation(reservation) else { throw Command.notStopped() }
             try reservation.checkEffect()
         }
-        succeeded = notice == nil
+        // A notice (the name could not be saved) still means the snapshot was made: a Quit
+        // waiting for it goes ahead.
+        succeeded = true
         return notice
     }
 }

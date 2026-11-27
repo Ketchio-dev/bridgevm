@@ -12,6 +12,8 @@ enum HvfWindowsSnapshotCommand {
         /// The helper failed; its output is the description.
         case helper = 1
         case notStopped, settingsUnsaved, notLibraryVM, helperMissing, unsafeFolder, noSnapshot
+        /// The chosen snapshot was deleted since the list was shown (by the CLI, or in Finder).
+        case snapshotGone
     }
 
     static func notStopped() -> NSError {

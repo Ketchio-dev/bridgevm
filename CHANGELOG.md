@@ -43,6 +43,11 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- Snapshots: restoring or deleting a snapshot that was deleted elsewhere since
+  the list was shown now says so, instead of asking you to check the snapshots
+  folder; a snapshot missing its disk or UEFI file now reads as damaged instead
+  of offering a retry; and a Quit that waits for a snapshot no longer gets
+  cancelled when only the snapshot's name could not be saved.
 - The library dashboard now says when a run needs attention: a Windows disk
   BridgeVM couldn't finish saving at shutdown, or lost contact with Windows,
   used to show only in Advanced (the VM read "Stopped" or "Running"), and a

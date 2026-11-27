@@ -110,6 +110,20 @@ fn restore_refuses_a_tampered_snapshot_without_touching_the_live_pair() {
     assert_eq!(fs::read(&vars).unwrap(), b"live vars");
 }
 
+#[test]
+fn a_snapshot_missing_a_member_reads_as_damaged() {
+    let s = Scratch::new("restore-missing");
+    let disk = s.write("disk", b"live disk");
+    let vars = s.write("vars", b"live vars");
+    create_snapshot(&disk, &vars, &s.path("snap"), "vm").unwrap();
+    fs::remove_file(s.path("snap").join(DISK_NAME)).unwrap();
+
+    let err = restore_snapshot(&s.path("snap"), &disk, &vars).unwrap_err();
+    // The app reads this prefix as a damaged snapshot instead of offering a retry.
+    assert_eq!(err.to_string(), "unusable snapshot manifest: disk.raw is missing");
+    assert_eq!(fs::read(&disk).unwrap(), b"live disk");
+}
+
 fn share_state(vars: &Path, suffix: &str) -> PathBuf {
     let mut path = vars.as_os_str().to_owned();
     path.push(suffix);

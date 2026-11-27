@@ -15,8 +15,9 @@ stale logical originals. Export atomically publishes `disk.raw`, `vars.fd`, and
 `manifest.json`, whose hashes are computed from the copied files.
 The destination must be absent, an
 empty directory or a prior snapshot of exactly those files; anything else, even
-Finder metadata, is refused and left intact. Restore verifies before selecting
-the pair. The media lease refuses an active runtime rather than waiting.
+Finder metadata, is refused and left intact. Restore uses the newest snapshot
+(the app's snapshot list can restore an older one) and verifies it before
+selecting the pair. The media lease refuses an active runtime rather than waiting.
 
 The export destination is the only media path accepted on the command line. It
 must be absolute and outside the managed VM bundle. Disk and vars paths come
