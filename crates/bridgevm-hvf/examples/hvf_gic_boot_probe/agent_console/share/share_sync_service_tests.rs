@@ -549,6 +549,18 @@ fn lone_trailing_dot_name_is_never_deleted_or_duplicated() {
 }
 
 #[test]
+fn a_mac_file_that_keeps_changing_does_not_stop_windows_files_arriving() {
+    let mut rig = Rig::synced("busy-mac", "log.txt", b"line 0\n");
+    rig.guest.write("from-windows.txt", b"saved in Windows");
+    // A Mac program appending to its log every second, as long as the test runs.
+    for i in 1..=30 {
+        std::fs::write(rig.dir.join("log.txt"), format!("line {i}\n").repeat(i)).unwrap();
+        rig.run(1);
+    }
+    assert_eq!(rig.host("from-windows.txt").as_deref(), Some(&b"saved in Windows"[..]));
+}
+
+#[test]
 fn rejected_put_waits_for_a_host_change_and_guest_listing_continues() {
     let mut rig = Rig::new("rejected");
     std::fs::write(rig.dir.join("nul"), b"q1").unwrap();

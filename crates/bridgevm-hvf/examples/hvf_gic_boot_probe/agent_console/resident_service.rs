@@ -2,6 +2,9 @@
 
 use super::*;
 
+/// Share intervals a listing may wait behind Mac changes (12 s at the default 3 s).
+const LISTING_OVERDUE_INTERVALS: u32 = 4;
+
 fn is_scale(req: &ServiceReq) -> bool {
     matches!(req, ServiceReq::Ctl(c) if super::desktop_scale::is_desktop_scale_command(c))
 }
@@ -91,7 +94,21 @@ impl AgentConsoleHarness {
                 .last_poll
                 .is_none_or(|t| now.duration_since(t) >= share.interval)
         });
-        if share_due && !self.share_pending() && !self.enqueue_one_share_host_change(now) {
+        // A Mac file that keeps changing (a log being written, a long copy) is found changed by
+        // every new scan, so a listing never got its turn and changes from Windows stopped. Once
+        // listings are overdue, one goes when a plan made since the last one is done, before the
+        // next scan: where it goes when the Mac side is quiet.
+        let listing_overdue = self.share.as_ref().is_some_and(|share| {
+            share.last_poll.is_some_and(|listed| {
+                now.duration_since(listed) >= share.interval * LISTING_OVERDUE_INTERVALS
+                    && share.host_actions.is_empty()
+                    && share.host_actions_at.is_some_and(|scanned| scanned > listed)
+            })
+        });
+        if share_due
+            && !self.share_pending()
+            && (listing_overdue || !self.enqueue_one_share_host_change(now))
+        {
             self.queue.push_back(ServiceReq::ShareLs);
         }
 
