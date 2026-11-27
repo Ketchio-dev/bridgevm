@@ -81,7 +81,17 @@ final class HvfResourcePreferenceSaveTests: XCTestCase {
         }
     }
 
-    /// The limits the other engines' resource change keeps (VMResourceLimits, as setResources checks).
+    /// Settings offered 1–32 GiB on any Mac; it now offers what Create offers there (host RAM less 4 GiB,
+    /// from 2 GiB), and a VM saved with more, or less, keeps its value selectable.
+    func testMemoryRangeIsWhatCreateOffersAndKeepsTheSavedValue() {
+        let eightGiB = CreateVMMemoryOptions(hostBytes: 8 << 30), sixtyFourGiB = CreateVMMemoryOptions(hostBytes: 64 << 30)
+        XCTAssertEqual(eightGiB.settingsRangeMiB(keeping: 4096), 2048...4096)
+        XCTAssertEqual(sixtyFourGiB.settingsRangeMiB(keeping: 6144), 2048...32768)
+        XCTAssertEqual(eightGiB.settingsRangeMiB(keeping: 16384), 2048...16384, "a saved value above the ceiling stays")
+        XCTAssertEqual(eightGiB.settingsRangeMiB(keeping: 1024), 1024...4096, "so does one below the minimum")
+    }
+
+    /// Memory outside that range and CPUs outside VMResourceLimits are refused.
     func testAValueOutsideTheLimitsIsRefused() throws {
         let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
         defer { fixture.clean() }
@@ -89,10 +99,11 @@ final class HvfResourcePreferenceSaveTests: XCTestCase {
         let url = fixture.registration(saved), original = try Data(contentsOf: url)
         let library = fixture.library(probe: probe)
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
-        let limits = HvfEngineSession.resourceLimitsMessage
+        let limits = HvfEngineSession.resourceLimitsMessage(
+            memoryMiB: CreateVMMemoryOptions.current.settingsRangeMiB(keeping: 6144))
         XCTAssertTrue(session.applyResources(memMiB: 64 * 1024, cpus: 4) == (6144, 4, limits))
         XCTAssertTrue(session.applyResources(memMiB: 6144, cpus: VMResourceLimits.maximumCPU + 1) == (6144, 4, limits))
-        XCTAssertTrue(session.applyResources(memMiB: 512, cpus: 4) == (6144, 4, limits))
+        XCTAssertTrue(session.applyResources(memMiB: 1024, cpus: 4) == (6144, 4, limits))
         XCTAssertEqual(try Data(contentsOf: url), original)
         XCTAssertTrue(probe.lookups.isEmpty, "refused before the save checks")
     }

@@ -67,6 +67,9 @@ All notable changes to BridgeVM are documented in this file.
 - While a snapshot is being made, restored or deleted, Delete, Duplicate and Move
   say so, instead of "The VM is running" about a stopped VM. A disk being
   expanded or a security chip change says so too.
+- Settings no longer offers up to 32 GiB of memory on any Mac: like Create, it
+  stops 4 GiB short of the Mac's memory; a VM saved with more keeps it. **Keep
+  Mac awake** and **When the VM window closes** now say they apply to all VMs.
 - When keyboard and mouse stop because Windows didn't confirm input in time, the
   VM window now says so and how to get them back. Keys only beeped and clicks
   did nothing.

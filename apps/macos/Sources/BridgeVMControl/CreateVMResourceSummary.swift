@@ -30,4 +30,9 @@ struct CreateVMMemoryOptions {
         choicesMiB = [2048, 4096, 6144, 8192, 12288, 16384, 24576, 32768]
             .filter { $0 <= ceilingMiB }
     }
+
+    /// Settings offers the same range, widened so a VM's saved value stays selectable.
+    func settingsRangeMiB(keeping savedMiB: Int) -> ClosedRange<Int> {
+        min(choicesMiB.first!, savedMiB)...max(choicesMiB.last!, savedMiB)
+    }
 }
