@@ -75,6 +75,9 @@ All notable changes to BridgeVM are documented in this file.
   names the limit that applied (64 MiB until Guest Tools are updated, not
   always 16 GiB), gives advice that fits a Windows file, and goes away once the
   file syncs after the update.
+- Starting a VM with **Use microphone** on now lets macOS ask for microphone
+  access first if it has not asked yet (a reset permission, a re-signed build,
+  another Mac). Before, Windows silently started without a microphone.
 - "Start when BridgeVM opens" no longer skips a VM that is not ready (for
   example its disk is on a drive that is not connected) without a word: it
   starts it as the Start button does, which says why it could not.

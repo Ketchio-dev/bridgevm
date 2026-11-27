@@ -1,9 +1,13 @@
 import Foundation
 
 extension HvfEngineSession {
+    /// With the VM's microphone setting on and macOS not asked yet (a reset, a re-signed build,
+    /// another Mac), macOS asks first and the start continues with either answer: the launch
+    /// reads the permission again. `microphone: nil` never asks, for a CLI start.
     @discardableResult
     func requestGUIStart(configuration: HvfEngineConfig,
-                         policy: HvfRuntimeStartPolicy = .attachOrStart) -> HvfGUIStartAdmission {
+                         policy: HvfRuntimeStartPolicy = .attachOrStart,
+                         microphone: (any HvfMicrophonePermission)? = HvfSystemMicrophonePermission()) -> HvfGUIStartAdmission {
         guard openSettingsSheets.isEmpty else {
             return .refused("Close Settings before starting Windows.")
         }
@@ -31,7 +35,11 @@ extension HvfEngineSession {
         guiStartExecution = execution
         objectWillChange.send()
         updateSleepPrevention()
-        execution.begin()
+        if configuration.audioEnabled, configuration.microphoneEnabled, let microphone, microphone.status == .undetermined {
+            microphone.requestAccess { _ in execution.begin() }
+        } else {
+            execution.begin()
+        }
         return .accepted(ticket)
     }
 

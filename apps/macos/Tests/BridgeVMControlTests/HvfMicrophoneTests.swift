@@ -74,4 +74,45 @@ final class HvfMicrophoneTests: XCTestCase {
             == (true, HvfMicrophoneNotice.denied))
         XCTAssertTrue(refused.requests.isEmpty)
     }
+
+    /// macOS forgets its answer after a reset, a re-signed build or on another Mac. A start with
+    /// the setting on then asks first and launches after any answer; a decided permission starts at once.
+    func testAStartWithTheSettingOnAsksMacOSFirstWhenItHasNotAskedYet() async throws {
+        let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
+        defer { fixture.clean() }
+        var saved = fixture.config(); saved.microphoneEnabled = true; fixture.save(saved)
+        let library = fixture.library(probe: probe)
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+        let launch = try XCTUnwrap(HvfEngineConfig.libraryVM(library.latestConfiguration(for: saved),
+            rootURL: library.rootURL, e2eHostDiagnosticStopAdmitted: library.e2eHostDiagnosticStopAdmitted))
+        XCTAssertTrue(launch.microphoneEnabled && launch.audioEnabled)
+        // Stands in for the launch: the ticket finishes with this only once the worker has run.
+        session.guiStartWorker = { _ in .init(result: .refused("fixture: launched")) }
+        func start(_ permission: FakeMicrophonePermission) throws -> HvfGUIStartOperation {
+            guard case let .accepted(ticket) = session.requestGUIStart(configuration: launch, microphone: permission) else {
+                throw CocoaError(.executableRuntimeMismatch)
+            }
+            return ticket
+        }
+        func launched(_ ticket: HvfGUIStartOperation) async throws {
+            let deadline = ProcessInfo.processInfo.systemUptime + 2
+            while ticket.workerPending, ProcessInfo.processInfo.systemUptime < deadline { try await Task.sleep(nanoseconds: 5_000_000) }
+            XCTAssertEqual(ticket.outcome, .refused("fixture: launched"))
+        }
+
+        let undecided = FakeMicrophonePermission(.undetermined)
+        let first = try start(undecided)
+        XCTAssertEqual(undecided.requests.count, 1)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertTrue(first.workerPending, "the launch waits for macOS's answer")
+        try XCTUnwrap(undecided.requests.first)(false)
+        try await launched(first)
+        XCTAssertEqual(undecided.requests.count, 1)
+
+        for status in [HvfMicrophoneStatus.authorized, .denied] {
+            let decided = FakeMicrophonePermission(status)
+            try await launched(try start(decided))
+            XCTAssertTrue(decided.requests.isEmpty, "\(status) is never asked again")
+        }
+    }
 }

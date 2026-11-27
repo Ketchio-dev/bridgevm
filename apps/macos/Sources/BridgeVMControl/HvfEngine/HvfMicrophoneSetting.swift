@@ -7,7 +7,7 @@ enum HvfMicrophoneStatus: Equatable {
 }
 
 /// macOS's microphone permission for this app, behind a protocol so that no test
-/// reaches it: only the user turning the setting on may make macOS ask.
+/// reaches it: only the user turning the setting on, or starting a VM with it on, may make macOS ask.
 protocol HvfMicrophonePermission {
     var status: HvfMicrophoneStatus { get }
     /// Lets macOS ask the user; `completion` runs on the main actor.
@@ -33,7 +33,7 @@ struct HvfSystemMicrophonePermission: HvfMicrophonePermission {
 /// Why a VM whose microphone setting is on still records silence. The VM starts either way.
 enum HvfMicrophoneNotice {
     static let denied = "Windows has no microphone because macOS denied access. Allow BridgeVM Control in System Settings > Privacy & Security > Microphone, then restart the VM."
-    static let undetermined = "Windows has no microphone yet. Shut down the VM, then turn Use microphone off and on again to request access."
+    static let undetermined = "Windows has no microphone yet. macOS asks for access the next time you start this VM from BridgeVM."
 
     static func text(_ status: HvfMicrophoneStatus) -> String? {
         switch status {
