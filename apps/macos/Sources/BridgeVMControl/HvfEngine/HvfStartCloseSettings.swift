@@ -17,7 +17,7 @@ struct HvfStartCloseSettings: View {
                     Label(message, systemImage: "exclamationmark.triangle").font(.callout)
                 }
             }
-            Toggle("Keep Mac awake while Windows is running", isOn: Binding(
+            Toggle("Keep Mac awake while Windows is running or installing", isOn: Binding(
                 get: { power.enabled }, set: { power.setEnabled($0) }))
             Text("The Mac display can still turn off.")
                 .font(.caption).foregroundStyle(.secondary)
