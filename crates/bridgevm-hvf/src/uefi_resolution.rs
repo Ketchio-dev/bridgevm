@@ -4,7 +4,8 @@
 //! `PlatformConfig` variable (the firmware setup's "Preferred Resolution") makes
 //! the console pick another mode: a VM without one gets [`DEFAULT_RESOLUTION`],
 //! a `PlatformConfig` the user saved in the firmware setup is kept, and the
-//! user's choice in the app ([`with_resolution`]) replaces it.
+//! user's choice in the app ([`set_resolution`]) replaces it. Both edit the
+//! flash bank in place: a 64 MiB copy would stay resident for the whole run.
 
 /// The modes the bundled ramfb driver offers, in its order.
 pub const RESOLUTIONS: [(u32, u32); 15] = [
@@ -68,44 +69,49 @@ const fn guid(a: u32, b: u16, c: u16, d: [u8; 8]) -> [u8; 16] {
     ]
 }
 
-/// `vars` with a `PlatformConfig` of [`DEFAULT_RESOLUTION`] appended, or `None`
-/// when it is not an EDK2 authenticated variable store, already has a live
-/// `PlatformConfig`, or has no room.
-pub fn with_default_resolution(vars: &[u8]) -> Option<Vec<u8>> {
-    let scan = scan(vars)?;
-    if scan.live.is_some() {
-        return None;
+/// Append a `PlatformConfig` of [`DEFAULT_RESOLUTION`] to `vars`. False, with
+/// `vars` unchanged, when it is not an EDK2 authenticated variable store,
+/// already has a live `PlatformConfig`, or has no room.
+pub fn set_default_resolution(vars: &mut [u8]) -> bool {
+    match scan(vars) {
+        Some(scan) if scan.live.is_none() => append(vars, scan.free, DEFAULT_RESOLUTION),
+        _ => false,
     }
-    append(vars, scan.free, DEFAULT_RESOLUTION)
 }
 
-/// `vars` whose live `PlatformConfig` asks for `resolution`: a different one
-/// is marked deleted and the new one appended, as the firmware's own variable
-/// driver does. `None` when it already asks for `resolution`, `vars` is not an
-/// EDK2 authenticated variable store, or the store has no room.
-pub fn with_resolution(vars: &[u8], resolution: (u32, u32)) -> Option<Vec<u8>> {
-    let scan = scan(vars)?;
-    if let Some((at, current)) = scan.live {
-        if current == Some(resolution) {
-            return None;
+/// Make the live `PlatformConfig` in `vars` ask for `resolution`: a different
+/// one is marked deleted and the new one appended, as the firmware's own
+/// variable driver does. False, with `vars` unchanged, when it already asks
+/// for `resolution`, `vars` is not an EDK2 authenticated variable store, or the
+/// store has no room.
+pub fn set_resolution(vars: &mut [u8], resolution: (u32, u32)) -> bool {
+    let Some(scan) = scan(vars) else {
+        return false;
+    };
+    match scan.live {
+        Some((_, current)) if current == Some(resolution) => false,
+        Some((at, _)) => {
+            let added = append(vars, scan.free, resolution);
+            if added {
+                vars[at + 2] &= VAR_DELETED;
+            }
+            added
         }
-        let mut out = append(vars, scan.free, resolution)?;
-        out[at + 2] &= VAR_DELETED;
-        return Some(out);
+        None => append(vars, scan.free, resolution),
     }
-    append(vars, scan.free, resolution)
 }
 
-fn append(vars: &[u8], free: usize, resolution: (u32, u32)) -> Option<Vec<u8>> {
+fn append(vars: &mut [u8], free: usize, resolution: (u32, u32)) -> bool {
     let record = platform_config_record(resolution);
-    let end = free.checked_add(record.len())?;
-    let store_end = store_end(vars)?;
-    if end > store_end || vars[free..end].iter().any(|&b| b != 0xff) {
-        return None;
+    let Some(end) = free.checked_add(record.len()) else {
+        return false;
+    };
+    let fits = store_end(vars).is_some_and(|store_end| end <= store_end);
+    if !fits || vars[free..end].iter().any(|&b| b != 0xff) {
+        return false;
     }
-    let mut out = vars.to_vec();
-    out[free..end].copy_from_slice(&record);
-    Some(out)
+    vars[free..end].copy_from_slice(&record);
+    true
 }
 
 fn read_u16(bytes: &[u8], at: usize) -> Option<u16> {
@@ -240,44 +246,45 @@ mod tests {
         };
         vars[0x64..0x64 + other.len()].copy_from_slice(&other);
 
-        let seeded = with_default_resolution(&vars).expect("seeded");
+        let mut seeded = vars.clone();
+        assert!(set_default_resolution(&mut seeded), "seeded");
         assert_eq!(platform_config(&seeded), Some(DEFAULT_RESOLUTION));
         assert_eq!(
             &seeded[..0x64 + other.len()],
             &vars[..0x64 + other.len()],
             "nothing before it moves"
         );
-        assert_eq!(
-            with_default_resolution(&seeded),
-            None,
-            "a live PlatformConfig is kept"
-        );
+        let before = seeded.clone();
+        assert!(!set_default_resolution(&mut seeded));
+        assert_eq!(seeded, before, "a live PlatformConfig is kept");
     }
 
     #[test]
     fn the_users_choice_replaces_the_preferred_resolution_once() {
-        let vars = with_default_resolution(&empty_store(0x2000)).expect("seeded");
-        let chosen = with_resolution(&vars, (1920, 1080)).expect("replaced");
-        assert_eq!(platform_config(&chosen), Some((1920, 1080)));
+        let mut vars = empty_store(0x2000);
+        assert!(set_default_resolution(&mut vars), "seeded");
+        assert!(set_resolution(&mut vars, (1920, 1080)), "replaced");
+        assert_eq!(platform_config(&vars), Some((1920, 1080)));
         let old = 0x48 + VARIABLE_STORE_HEADER_LEN;
         assert_eq!(
-            chosen[old + 2],
+            vars[old + 2],
             VAR_ADDED & VAR_DELETED,
             "the old one is deleted"
         );
-        assert_eq!(
-            with_resolution(&chosen, (1920, 1080)),
-            None,
-            "already chosen"
-        );
-        let again = with_resolution(&chosen, (1280, 800)).expect("changed again");
-        assert_eq!(platform_config(&again), Some((1280, 800)));
-        assert_eq!(
-            with_resolution(&empty_store(0x2000), (2560, 1600)).map(|v| platform_config(&v)),
-            Some(Some((2560, 1600))),
+        let chosen = vars.clone();
+        assert!(!set_resolution(&mut vars, (1920, 1080)), "already chosen");
+        assert_eq!(vars, chosen);
+        assert!(set_resolution(&mut vars, (1280, 800)), "changed again");
+        assert_eq!(platform_config(&vars), Some((1280, 800)));
+        let mut fresh = empty_store(0x2000);
+        assert!(
+            set_resolution(&mut fresh, (2560, 1600)),
             "a store without one gets it"
         );
-        assert_eq!(with_resolution(b"saved-vars", (1920, 1080)), None);
+        assert_eq!(platform_config(&fresh), Some((2560, 1600)));
+        let mut foreign = *b"saved-vars";
+        assert!(!set_resolution(&mut foreign, (1920, 1080)));
+        assert_eq!(&foreign, b"saved-vars");
     }
 
     #[test]
@@ -295,9 +302,14 @@ mod tests {
         let mut vars = empty_store(0x2000);
         let users = platform_config_record((800, 600));
         vars[0x64..0x64 + users.len()].copy_from_slice(&users);
-        assert_eq!(with_default_resolution(&vars), None);
+        let users_vars = vars.clone();
+        assert!(!set_default_resolution(&mut vars));
+        assert_eq!(vars, users_vars);
 
-        assert_eq!(with_default_resolution(b"saved-vars"), None);
-        assert_eq!(with_default_resolution(&empty_store(0x80)), None, "no room");
+        assert!(!set_default_resolution(&mut b"saved-vars".to_vec()));
+        let mut full = empty_store(0x80);
+        let erased = full.clone();
+        assert!(!set_default_resolution(&mut full), "no room");
+        assert_eq!(full, erased);
     }
 }

@@ -2,11 +2,11 @@
 
 use crate::*;
 
-const HV_ALLOCATE_DEFAULT: u64 = 0;
+pub(crate) const HV_ALLOCATE_DEFAULT: u64 = 0;
 
 #[link(name = "Hypervisor", kind = "framework")]
 extern "C" {
-    fn hv_vm_allocate(address: *mut *mut c_void, size: usize, flags: u64) -> HvReturn;
+    pub(crate) fn hv_vm_allocate(address: *mut *mut c_void, size: usize, flags: u64) -> HvReturn;
     fn hv_vm_deallocate(address: *mut c_void, size: usize) -> HvReturn;
 }
 

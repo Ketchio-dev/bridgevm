@@ -67,6 +67,12 @@ impl P30NorFlash {
         self.mode = Mode::ReadArray;
     }
 
+    /// The whole bank, to load or edit in place before the guest runs.
+    pub fn bank_mut(&mut self) -> &mut [u8] {
+        self.mode = Mode::ReadArray;
+        &mut self.bytes
+    }
+
     /// Snapshot of the whole pflash bank, including guest variable-store writes.
     pub fn image(&self) -> &[u8] {
         &self.bytes

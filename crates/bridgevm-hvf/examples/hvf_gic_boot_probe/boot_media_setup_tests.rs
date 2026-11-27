@@ -1,7 +1,7 @@
 //! The firmware's preferred resolution and the Windows desktop switch.
 
 use super::*;
-use bridgevm_hvf::uefi_resolution::with_resolution;
+use bridgevm_hvf::uefi_resolution::set_resolution;
 
 /// An empty EDK2 authenticated variable store: FV header, store header, erased space.
 fn empty_vars() -> Vec<u8> {
@@ -21,22 +21,22 @@ fn empty_vars() -> Vec<u8> {
 fn a_chosen_mode_is_switched_to_even_when_the_vars_already_ask_for_it() {
     // The firmware already asks for 1024x768 (set in its setup, or by a boot
     // that stopped before the switch ran); Windows may still show 800x600.
-    let at_1024 = with_resolution(&empty_vars(), (1024, 768)).expect("an EDK2 store");
-    assert_eq!(
-        guest_resolution(Some("1024x768"), &at_1024, true),
-        (None, Some((1024, 768)))
-    );
+    let mut at_1024 = empty_vars();
+    assert!(set_resolution(&mut at_1024, (1024, 768)), "an EDK2 store");
+    let mut vars = at_1024.clone();
+    assert_eq!(guest_resolution(Some("1024x768"), &mut vars, true), Some((1024, 768)));
+    assert_eq!(vars, at_1024, "kept");
     // A virtio-gpu display's desktop follows the window instead.
-    assert_eq!(
-        guest_resolution(Some("1024x768"), &at_1024, false),
-        (None, None)
-    );
+    assert_eq!(guest_resolution(Some("1024x768"), &mut vars, false), None);
     // A new choice is written and switched to on either display.
-    let (vars, desktop) = guest_resolution(Some("1920x1080"), &at_1024, false);
-    assert_eq!(vars, with_resolution(&at_1024, (1920, 1080)));
-    assert_eq!(desktop, Some((1920, 1080)));
+    let mut at_1920 = at_1024.clone();
+    assert!(set_resolution(&mut at_1920, (1920, 1080)));
+    assert_eq!(guest_resolution(Some("1920x1080"), &mut vars, false), Some((1920, 1080)));
+    assert_eq!(vars, at_1920);
     // The default never replaces a preference, nor switches without adding one.
-    assert_eq!(guest_resolution(None, &at_1024, true), (None, None));
+    let mut vars = at_1024.clone();
+    assert_eq!(guest_resolution(None, &mut vars, true), None);
+    assert_eq!(vars, at_1024);
 }
 
 #[test]

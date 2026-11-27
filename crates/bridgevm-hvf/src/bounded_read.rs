@@ -53,3 +53,28 @@ pub fn read_bounded_file(path: impl AsRef<Path>, max_bytes: usize) -> io::Result
     }
     Ok(data)
 }
+
+/// Read a file into the start of `region`, leaving the rest as it is, and return its
+/// length; a file larger than the region is refused. Unlike [`read_bounded_file`] it needs
+/// no buffer of its own: macOS malloc keeps a freed 64 MiB buffer resident for the run.
+pub fn read_file_into(path: impl AsRef<Path>, region: &mut [u8]) -> io::Result<usize> {
+    let path = path.as_ref();
+    let mut file = fs::File::open(path)?;
+    let file_bytes = file.metadata()?.len();
+    let Some(len) = usize::try_from(file_bytes)
+        .ok()
+        .filter(|len| *len <= region.len())
+    else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "{} is {} bytes, larger than the {} byte region",
+                path.display(),
+                file_bytes,
+                region.len()
+            ),
+        ));
+    };
+    file.read_exact(&mut region[..len])?;
+    Ok(len)
+}

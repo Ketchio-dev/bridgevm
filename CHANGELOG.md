@@ -6,6 +6,10 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Changed
 
+- A running VM uses about 190 MB less memory. The 3 MiB firmware no longer
+  fills a 64 MiB region, and the UEFI variable file is read straight into the
+  flash device instead of through two 64 MiB copies that stayed resident
+  (measured: 6397 to 6208 MB footprint for a 6 GiB Windows VM at idle).
 - The app now states and enforces macOS 15 as its minimum. The engine uses the
   Hypervisor.framework GIC API that first shipped in macOS 15, so on macOS 14 a
   VM could not start even though the app opened.

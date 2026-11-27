@@ -9,7 +9,7 @@
 mod bounded_read;
 #[path = "media_lock.rs"] // exclusive writer leases for the media declared here
 pub mod lock;
-pub use bounded_read::read_bounded_file;
+pub use bounded_read::{read_bounded_file, read_file_into};
 #[path = "media_persist.rs"]
 mod persistence;
 use std::{
@@ -354,6 +354,18 @@ mod tests {
         let err = read_bounded_file(&path, 3).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         assert!(err.to_string().contains("536870912 bytes"));
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn a_file_read_into_a_region_fills_its_start_and_must_fit() {
+        let path = temp_path("into-region");
+        fs::write(&path, b"vars").unwrap();
+        let mut region = [0xff; 6];
+        assert_eq!(read_file_into(&path, &mut region).unwrap(), 4);
+        assert_eq!(&region, b"vars\xff\xff", "the rest stays erased");
+        let err = read_file_into(&path, &mut [0; 3]).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         fs::remove_file(path).ok();
     }
 

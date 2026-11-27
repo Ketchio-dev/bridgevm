@@ -1,6 +1,7 @@
 //! Host file mapping, clock, and serial stop helpers.
 
 use crate::*;
+use guest_ram_backing::{hv_vm_allocate, HV_ALLOCATE_DEFAULT};
 
 pub(crate) fn serial_reached_shell(serial: &[u8], scans: &mut SerialStopScans) -> bool {
     scans
@@ -21,14 +22,21 @@ pub(crate) fn serial_reached_linux_panic(serial: &[u8], scans: &mut SerialStopSc
 }
 
 pub(crate) fn map_file(path: &Path, ipa: u64, region_bytes: usize, flags: u64) {
-    let data = read_bounded_file(path, region_bytes)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    let layout = std::alloc::Layout::from_size_align(region_bytes, 0x1_0000).unwrap();
     unsafe {
-        let mem = std::alloc::alloc_zeroed(layout);
-        std::ptr::copy_nonoverlapping(data.as_ptr(), mem, data.len());
+        // Zero pages that stay unbacked until touched, as for guest RAM, and the file read
+        // straight in: the aligned alloc_zeroed this replaced wrote all 64 MiB of the code
+        // region for a 3 MiB firmware image.
+        let mut mem = null_mut();
         assert_eq!(
-            hv_vm_map(mem as *mut c_void, ipa, region_bytes, flags),
+            hv_vm_allocate(&mut mem, region_bytes, HV_ALLOCATE_DEFAULT),
+            0,
+            "allocate {}",
+            path.display()
+        );
+        let region = std::slice::from_raw_parts_mut(mem.cast::<u8>(), region_bytes);
+        read_file_into(path, region).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        assert_eq!(
+            hv_vm_map(mem, ipa, region_bytes, flags),
             0,
             "map {}",
             path.display()

@@ -24,6 +24,11 @@ impl VirtPlatform {
         self.flash_vars.load(data);
     }
 
+    /// The variable bank (erased bytes past the vars file), to fill before the guest runs.
+    pub fn flash_vars_mut(&mut self) -> &mut [u8] {
+        self.flash_vars.bank_mut()
+    }
+
     /// Snapshot the writable pflash variable bank, including guest writes
     /// accepted through the NOR command protocol.
     pub fn flash_vars_image(&self) -> &[u8] {
