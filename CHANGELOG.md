@@ -43,6 +43,9 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- **Retina resolution** and **Start when BridgeVM opens** can now be changed
+  while Windows runs, like the Command key setting. Retina applies to the window
+  at once; both are saved when the VM stops. They were locked until shutdown.
 - Snapshots: restoring or deleting a snapshot that was deleted elsewhere since
   the list was shown now says so, instead of asking you to check the snapshots
   folder; a snapshot missing its disk or UEFI file now reads as damaged instead

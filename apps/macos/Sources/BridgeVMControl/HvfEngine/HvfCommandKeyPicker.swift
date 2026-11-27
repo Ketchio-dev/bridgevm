@@ -59,6 +59,14 @@ enum HvfHostSettingLiveSave {
         return session.config.libraryContext?.config.slug
     }
 
+    /// vm.json's configuration with this VM's changes that wait for the stop, for controls that show them.
+    static func preview(_ config: VMConfig) -> VMConfig {
+        guard let changes = pending[config.slug] else { return config }
+        var copy = config
+        for (_, change) in changes.sorted(by: { $0.key < $1.key }) { change(&copy) }
+        return copy
+    }
+
     @discardableResult
     static func saveIfStopped(_ session: HvfEngineSession,
                               publish: @escaping HvfEngineSession.RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> String? {
