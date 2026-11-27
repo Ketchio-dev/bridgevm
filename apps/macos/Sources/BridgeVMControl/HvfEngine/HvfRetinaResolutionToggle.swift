@@ -60,7 +60,7 @@ extension HvfEngineSession {
             displayResizeSettingChanged() // Windows gets the window's size at the new scale now
             return (config.retinaResolution, nil)
         }
-        let message = saveLibraryPreference("Retina resolution", publish: publish, change: change)
+        let message = HvfHostSettingLiveSave.saveNow("Retina resolution", session: self, publish: publish, change: change)
         return (config.libraryContext?.config.retinaResolution, message)
     }
 }

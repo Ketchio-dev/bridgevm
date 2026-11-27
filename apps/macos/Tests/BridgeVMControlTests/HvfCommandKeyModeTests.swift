@@ -49,6 +49,30 @@ final class HvfCommandKeyModeTests: XCTestCase {
         XCTAssertNil(HvfHostSettingLiveSave.pending[saved.slug])
     }
 
+    /// A mode chosen while Windows ran whose save at the stop failed is shown, and a choice made later
+    /// while stopped replaces it: the old change can't come back at the next stop.
+    func testAFailedSaveAtStopIsShownAndALaterChoiceReplacesIt() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
+        defer { fixture.clean() }
+        let saved = fixture.config(); fixture.save(saved)
+        let library = fixture.library(probe: probe)
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+        session.connectionState = .booting
+        XCTAssertTrue(session.applyCommandKeyMode(.windows) == (.windows, nil))
+        session.connectionState = .stopped
+        let failure = HvfHostSettingLiveSave.saveIfStopped(session,
+            publish: { _, _ in .notPublished(CocoaError(.fileWriteOutOfSpace)) })
+        XCTAssertNotNil(failure)
+        XCTAssertEqual(session.hostSettingsSaveMessage, failure, "the dashboard says the choice isn't saved")
+        XCTAssertNotNil(HvfHostSettingLiveSave.pending[saved.slug], "it waits for another try")
+
+        XCTAssertTrue(session.applyCommandKeyMode(.mac) == (.mac, nil))
+        XCTAssertNil(HvfHostSettingLiveSave.pending[saved.slug], "the newer choice replaces it")
+        XCTAssertNil(session.hostSettingsSaveMessage)
+        session.markStopped()
+        XCTAssertNil(library.latestConfiguration(for: saved).commandKeyMode, "Mac-like stays")
+    }
+
     /// The legacy route (the VMM shipped with the app) takes a bare tap and a Command chord; the line
     /// it gets is the Windows key or the Ctrl chord the mode names. A Command chord stays a tap; Option+S is held
     /// from its key-down (HvfKeyHoldTests).

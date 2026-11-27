@@ -72,7 +72,7 @@ extension HvfEngineSession {
             objectWillChange.send()
             return nil
         }
-        return saveLibraryPreference("Start when BridgeVM opens", publish: publish, change: change)
+        return HvfHostSettingLiveSave.saveNow("Start when BridgeVM opens", session: self, publish: publish, change: change)
     }
 
     var startsWithBridgeVM: Bool {
