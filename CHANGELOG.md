@@ -68,6 +68,9 @@ All notable changes to BridgeVM are documented in this file.
   used to show only in Advanced (the VM read "Stopped" or "Running"), and a
   failed stop read "Booting Windows". Open Display also stays available while
   Windows shuts down, since that window is where an app asking to save shows.
+- Pausing Windows now lets go of the Mac microphone (the orange indicator turns
+  off) instead of keeping it open for the whole pause; recording continues on
+  resume.
 - Shared folders: the "skipped because the per-file limit is …" notice now
   names the limit that applied (64 MiB until Guest Tools are updated, not
   always 16 GiB), gives advice that fits a Windows file, and goes away once the
