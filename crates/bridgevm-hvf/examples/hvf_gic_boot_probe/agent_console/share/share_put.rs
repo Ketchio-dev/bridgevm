@@ -142,7 +142,7 @@ impl AgentConsoleHarness {
             };
             println!("BVAGENT SHARE put-error {name} {line}");
             if let Some(share) = self.share.as_mut() {
-                share.engine.on_put_rejected(&name);
+                share.engine.on_put_rejected(&name, now);
             }
         }
     }

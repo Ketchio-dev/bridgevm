@@ -69,7 +69,7 @@ impl ShareSync {
     pub(super) fn retain_put_rejected(&mut self) {
         let mut rejected = std::mem::take(&mut self.put_rejected);
         let (before, host) = (rejected.len(), &self.host_files_scratch);
-        rejected.retain(|name, stat| host.get(name) == Some(stat) || self.host_held(name));
+        rejected.retain(|name, refused| host.get(name) == Some(&refused.stat) || self.host_held(name));
         self.pass_changed |= rejected.len() != before;
         self.put_rejected = rejected;
     }

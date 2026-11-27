@@ -7,8 +7,8 @@
 //! (bvagent.ps1 "large put"). Before every chunk and before LPUTEND the descriptor's size,
 //! modification and change times must be the ones it had at the start: a file changed while it
 //! was sent is abandoned with LPUTABORT and sent again from the next host scan. A guest refusal
-//! (disk-full, a name Windows rejects) holds the file until the Mac copy changes, as a refused
-//! PUT does. An agent restart abandons the file; the new agent's first listing deletes the
+//! (disk-full, a name Windows rejects) holds the file until its retry or a Mac change, as a
+//! refused PUT does. An agent restart abandons the file; the new agent's first listing deletes the
 //! temporary.
 
 use super::host_destination::snapshot::{version, SourceVersion};
@@ -202,7 +202,7 @@ impl AgentConsoleHarness {
             return;
         }
         if refused {
-            return self.big_put_refused(line);
+            return self.big_put_refused(line, now);
         }
         match kind {
             StepKind::Beg => {
@@ -226,7 +226,7 @@ impl AgentConsoleHarness {
         let written = line.rsplit(' ').next().and_then(|n| n.parse::<u64>().ok());
         if written != Some(put.size) {
             println!("BVAGENT SHARE put-error {} {line}", put.name);
-            share.engine.on_put_rejected(&put.name);
+            share.engine.on_put_rejected(&put.name, now);
             return;
         }
         share.engine.on_put_ok_with_mtime(put.name.clone(), put.size, put.hash, Some(put.mtime_ms));
@@ -244,7 +244,7 @@ impl AgentConsoleHarness {
         );
     }
 
-    fn big_put_refused(&mut self, line: &str) {
+    fn big_put_refused(&mut self, line: &str, now: Instant) {
         let Some(share) = self.share.as_mut() else {
             return;
         };
@@ -252,7 +252,7 @@ impl AgentConsoleHarness {
             return;
         };
         println!("BVAGENT SHARE put-error {} {line}", put.name);
-        share.engine.on_put_rejected(&put.name);
+        share.engine.on_put_rejected(&put.name, now);
         self.queue
             .retain(|req| !matches!(req, ServiceReq::ShareBigPut(_)));
     }

@@ -18,7 +18,7 @@ fn refused_put_then_host_restored_to_the_synced_bytes_is_resent_not_pulled() {
     assert!(sync
         .on_host_file("a.txt".into(), b"new!".to_vec(), 20)
         .is_some());
-    sync.on_put_rejected("a.txt");
+    sync.on_put_rejected("a.txt", std::time::Instant::now());
     // The guest truncated its copy first. `git checkout` then restores the
     // last-synced bytes with a new mtime.
     assert_eq!(sync.on_host_scan(scan(3, 30)), get());
@@ -29,7 +29,7 @@ fn refused_put_then_host_restored_to_the_synced_bytes_is_resent_not_pulled() {
         "host wins"
     );
     assert_eq!(sync.on_guest_listing(partial()), Vec::new(), "unconfirmed");
-    sync.on_put_rejected("a.txt");
+    sync.on_put_rejected("a.txt", std::time::Instant::now());
     for _ in 0..3 {
         assert_eq!(sync.on_host_scan(scan(3, 30)), Vec::new(), "retried");
         assert_eq!(sync.on_guest_listing(partial()), Vec::new(), "pulled");
@@ -65,12 +65,12 @@ fn refused_put_then_host_restored_with_the_synced_mtime_is_resent_once() {
     assert!(sync
         .on_host_file("a.txt".into(), b"new!".to_vec(), 20)
         .is_some());
-    sync.on_put_rejected("a.txt");
+    sync.on_put_rejected("a.txt", std::time::Instant::now());
     // `cp -p` restores the synced bytes and mtime before the next scan.
     assert_eq!(sync.on_host_scan(scan(3, 10)), get);
     let push = sync.on_host_file("a.txt".into(), b"old".to_vec(), 10);
     assert_eq!(push.map(|push| push.bytes), Some(b"old".to_vec()));
-    sync.on_put_rejected("a.txt");
+    sync.on_put_rejected("a.txt", std::time::Instant::now());
     for _ in 0..3 {
         assert_eq!(sync.on_host_scan(scan(3, 10)), Vec::new(), "retried");
         let partial = vec![ls_file("a.txt", 2, "g-partial")];

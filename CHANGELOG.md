@@ -173,6 +173,10 @@ All notable changes to BridgeVM are documented in this file.
 - Canceling a Windows install, or quitting BridgeVM, while it prepares the setup
   files now stops the file copy too. It kept running and could leave a large
   scratch disk attached until the Mac restarted.
+- Shared folder: a Mac file Windows couldn't take (open in a Windows app, or
+  Windows out of space) is now copied again on its own a few seconds later, then
+  less often, until it gets through. It stayed out of sync both ways until the
+  Mac file changed, and Windows edits to it never reached the Mac.
 - A failed Guest Tools update now says to quit and reopen BridgeVM to try
   again. "Restart BridgeVM" read like the Restart button beside it, which
   restarts Windows and does not retry the update.

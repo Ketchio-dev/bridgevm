@@ -90,7 +90,7 @@ pub struct ShareSync {
     present_scratch: HashSet<String>,
     guest_file_entries_scratch: HashMap<String, GuestFileStat>,
     host_files_scratch: HashMap<String, HostFileStat>,
-    put_rejected: HashMap<String, HostFileStat>,
+    put_rejected: HashMap<String, share_put_outcome::RefusedPut>,
     host_unseen: HashSet<String>,
     /// Directory rows with size 1: the guest listed but did not enter a reparse point.
     guest_unseen: HashSet<String>,

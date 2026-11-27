@@ -561,7 +561,9 @@ fn a_mac_file_that_keeps_changing_does_not_stop_windows_files_arriving() {
 }
 
 #[test]
-fn rejected_put_waits_for_a_host_change_and_guest_listing_continues() {
+fn rejected_put_is_retried_ever_less_often_and_guest_listing_continues() {
+    // The agent's message does not say whether a refusal lasts: even a name Windows never
+    // takes is retried, each wait twice the last, up to five minutes.
     let mut rig = Rig::new("rejected");
     std::fs::write(rig.dir.join("nul"), b"q1").unwrap();
     rig.run(12);
@@ -569,10 +571,43 @@ fn rejected_put_waits_for_a_host_change_and_guest_listing_continues() {
     rig.run(12);
     assert_eq!(rig.host("new.txt").as_deref(), Some(&b"from guest"[..]));
     let rejected = |rig: &Rig| rig.guest.puts.iter().filter(|p| p.as_str() == "nul").count();
-    assert_eq!(rejected(&rig), 1, "{:?}", rig.guest.puts);
+    let first = rejected(&rig);
+    assert!((2..=4).contains(&first), "retried, not every tick: {:?}", rig.guest.puts);
+    // A Mac change is sent at once.
     std::fs::write(rig.dir.join("nul"), b"q2 changed").unwrap();
+    rig.run(2);
+    assert_eq!(rejected(&rig), first + 1, "{:?}", rig.guest.puts);
+    // Waits of 5, 10, 20, 40, 80 and 160 s (the next one 300 s): six retries in ten minutes.
+    rig.run(600);
+    assert_eq!(rejected(&rig), first + 7, "{:?}", rig.guest.puts);
+    assert!(rig.guest.gets.iter().all(|name| name != "nul"), "{:?}", rig.guest.gets);
+}
+
+#[test]
+fn refused_put_is_sent_again_after_its_wait_and_syncs_both_ways_again() {
+    // A Windows app held the file, or the guest disk was full; the Mac file does not change.
+    let mut rig = Rig::synced("refused-retry", "doc.txt", b"old");
+    std::fs::write(rig.dir.join("doc.txt"), b"new from the mac").unwrap();
+    rig.guest.failing.insert("doc.txt".into());
+    for _ in 0..24 {
+        if rig.guest.puts.len() == 2 {
+            break;
+        }
+        rig.run(1);
+    }
+    assert_eq!(rig.guest.puts.len(), 2, "{:?}", rig.guest.puts);
+    rig.guest.failing.clear();
+    rig.run(3);
+    assert_eq!(rig.guest.puts.len(), 2, "not before its wait: {:?}", rig.guest.puts);
+    rig.run(6);
+    assert_eq!(rig.guest.content("doc.txt"), Some(&b"new from the mac"[..]));
+    assert_eq!(rig.guest.puts.len(), 3, "{:?}", rig.guest.puts);
+    rig.assert_settled();
+    // Confirmed, the file is no longer held: a Windows edit reaches the Mac.
+    rig.guest.write("doc.txt", b"edited in windows");
     rig.run(12);
-    assert_eq!(rejected(&rig), 2, "{:?}", rig.guest.puts);
+    assert_eq!(rig.host("doc.txt").as_deref(), Some(&b"edited in windows"[..]));
+    assert_eq!(rig.guest.gets, ["doc.txt"]);
     rig.assert_settled();
 }
 
@@ -589,7 +624,8 @@ fn put_failing_after_truncating_the_guest_copy_never_overwrites_the_host() {
         assert!(partial.len() < newer.len() && partial.iter().all(|b| *b == b'n'), "{label}");
         assert_eq!(rig.host("doc.bin"), Some(newer.clone()), "{label}");
         assert!(rig.guest.gets.is_empty(), "{label}: {:?}", rig.guest.gets);
-        assert_eq!(rig.guest.puts.len(), 2, "{label}: refused PUT is not retried");
+        let puts = rig.guest.puts.len();
+        assert!((3..=4).contains(&puts), "{label}: retried after its wait, not every tick: {puts}");
         rig.guest.write("other.txt", b"guest->host still flows");
         rig.run(12);
         assert!(rig.host("other.txt").is_some(), "{label}");

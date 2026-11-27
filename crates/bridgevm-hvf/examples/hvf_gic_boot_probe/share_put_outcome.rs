@@ -3,10 +3,26 @@
 //! unknown and the record's hash no longer describes it: the next host scan
 //! re-sends the host file even when its bytes and stat match the record (say
 //! `git checkout` or `cp -p` restored them), and the guest copy is never pulled
-//! back. A refused PUT is retried only once its host file changes, never every
-//! tick.
+//! back. A refused PUT is sent again after a wait or once its host file
+//! changes, never every tick.
 
 use super::*;
+use std::time::{Duration, Instant};
+
+/// The first wait before a refused PUT is sent again; it doubles with each refusal of the same
+/// Mac version, up to `LONGEST_PUT_RETRY`.
+const FIRST_PUT_RETRY: Duration = Duration::from_secs(5);
+const LONGEST_PUT_RETRY: Duration = Duration::from_secs(300);
+
+/// A PUT the guest refused: the Mac version it was for, and when it is sent again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct RefusedPut {
+    pub(super) stat: HostFileStat,
+    wait: Duration,
+    retry_at: Instant,
+    /// The wait is over: the next host pass sends the file again.
+    pub(super) due: bool,
+}
 
 impl ShareSync {
     pub fn on_put_ok_with_mtime(&mut self, name: String, size: u64, hash: u64, mtime_ms: Option<u128>) {
@@ -34,12 +50,31 @@ impl ShareSync {
         );
     }
 
-    /// The guest refused a PUT (for example a name Windows rejects). Keep the
-    /// scanned host version so it is not re-sent every tick ahead of LSR.
-    pub fn on_put_rejected(&mut self, name: &str) {
+    /// The guest refused a PUT: a Windows app holds the file, the guest disk is full, or
+    /// Windows rejects the name. The agent's message does not tell these apart, so each is
+    /// taken as passing: the scanned host version is sent again after a wait (5 s, doubling
+    /// with each refusal of that version up to 5 min) or as soon as the Mac file changes, not
+    /// every tick ahead of LSR. Until then the guest copy is not pulled back.
+    pub fn on_put_rejected(&mut self, name: &str, now: Instant) {
         let name = normalize_rel(name);
-        if let Some(stat) = self.host_files_scratch.get(&name).copied() {
-            self.put_rejected.insert(name, stat);
+        let Some(stat) = self.host_files_scratch.get(&name).copied() else {
+            return;
+        };
+        let wait = match self.put_rejected.get(&name) {
+            Some(refused) if refused.stat == stat => (refused.wait * 2).min(LONGEST_PUT_RETRY),
+            _ => FIRST_PUT_RETRY,
+        };
+        let retry_at = now + wait;
+        self.put_rejected.insert(name, RefusedPut { stat, wait, retry_at, due: false });
+    }
+
+    /// Setup of a host pass: refused PUTs whose wait is over are sent again by it.
+    pub fn retry_refused_puts(&mut self, now: Instant) {
+        for refused in self.put_rejected.values_mut() {
+            if !refused.due && refused.retry_at <= now {
+                refused.due = true;
+                self.pass_changed = true;
+            }
         }
     }
 
