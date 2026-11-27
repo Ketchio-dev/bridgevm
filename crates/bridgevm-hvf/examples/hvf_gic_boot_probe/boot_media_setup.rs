@@ -5,13 +5,11 @@ pub(crate) fn attach_boot_media(
     media: &VirtBootMediaConfig,
     platform_cfg: VirtPlatformConfig,
     ram_size: usize,
-    vars_data: &[u8],
 ) {
     // Persisted with the vars at exit, like a choice made in the firmware setup.
     let chosen = std::env::var("BRIDGEVM_GUEST_RESOLUTION").ok();
     let ramfb_desktop = !platform_cfg.devices.virtio_gpu_present;
-    let (vars, desktop) = guest_resolution(chosen.as_deref(), vars_data, ramfb_desktop);
-    platform.load_flash_vars(vars.as_deref().unwrap_or(vars_data));
+    let desktop = guest_resolution(chosen.as_deref(), platform.flash_vars_mut(), ramfb_desktop);
     if let Some(mode) = desktop {
         agent_console::request_desktop_mode(mode);
     }
@@ -178,33 +176,31 @@ fn attach_guest_tools(platform: &mut VirtPlatform, path: &std::path::Path) -> bo
 /// switched to only in the boot that adds it, so a mode set in Windows stays.
 fn guest_resolution(
     chosen: Option<&str>,
-    vars: &[u8],
+    vars: &mut [u8],
     ramfb_desktop: bool,
-) -> (Option<Vec<u8>>, Option<(u32, u32)>) {
+) -> Option<(u32, u32)> {
     use bridgevm_hvf::uefi_resolution as res;
     let report = |mode: (u32, u32), how| {
         println!("UEFI vars: preferred resolution {}x{} {how} (PlatformConfig)", mode.0, mode.1);
     };
     match chosen.map(|text| (text, res::parse_resolution(text))) {
         Some((_, Some(mode))) => {
-            let vars = res::with_resolution(vars, mode);
-            if vars.is_some() {
+            let set = res::set_resolution(vars, mode);
+            if set {
                 report(mode, "set");
             }
-            let switch = vars.is_some() || ramfb_desktop;
-            (vars, switch.then_some(mode))
+            (set || ramfb_desktop).then_some(mode)
         }
         Some((text, None)) => {
             println!("UEFI vars: guest resolution {text:?} is not a firmware mode; kept");
-            (None, None)
+            None
         }
         None => {
-            let vars = res::with_default_resolution(vars);
-            let mode = vars.is_some().then_some(res::DEFAULT_RESOLUTION);
-            if let Some(mode) = mode {
-                report(mode, "added");
+            let added = res::set_default_resolution(vars);
+            if added {
+                report(res::DEFAULT_RESOLUTION, "added");
             }
-            (vars, mode)
+            added.then_some(res::DEFAULT_RESOLUTION)
         }
     }
 }

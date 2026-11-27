@@ -132,7 +132,7 @@ unsafe fn run_vm(
     let shm_page_size = create_vm(use_4k_ipa);
     let _vm_guard = HvVmGuard;
     create_gic();
-    let (mut platform, vars_data, boot_dtb) = prepare_platform(media, platform_cfg, tpm_backend);
+    let (mut platform, boot_dtb) = prepare_platform(media, platform_cfg, tpm_backend);
 
     let ram_backing = GuestRamBacking::allocate_and_map(machine::RAM_BASE, ram_size);
     let ram = ram_backing.pointer();
@@ -150,7 +150,7 @@ unsafe fn run_vm(
     raise_vcpu_qos();
 
     let (watch_addr, watch_target) = watchpoint_config();
-    attach_boot_media(&mut platform, media, platform_cfg, ram_size, &vars_data);
+    attach_boot_media(&mut platform, media, platform_cfg, ram_size);
     let mut guest_ram = MappedRam {
         base: machine::RAM_BASE,
         ptr: ram,

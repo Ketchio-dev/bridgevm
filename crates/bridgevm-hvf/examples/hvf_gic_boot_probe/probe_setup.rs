@@ -4,18 +4,17 @@ pub(crate) unsafe fn prepare_platform(
     media: &VirtBootMediaConfig,
     platform_cfg: VirtPlatformConfig,
     tpm_backend: Option<Box<dyn Tpm2Backend>>,
-) -> (VirtPlatform, Vec<u8>, Vec<u8>) {
+) -> (VirtPlatform, Vec<u8>) {
     map_file(
         &media.firmware_code_path,
         machine::FLASH_CODE.base,
         machine::FLASH_CODE.size as usize,
         HV_MEMORY_READ | HV_MEMORY_EXEC,
     );
-    let vars_data = media
-        .flash_vars
-        .read_bounded(machine::FLASH_VARS.size as usize)
-        .unwrap_or_else(|e| panic!("read UEFI vars {}: {e}", media.flash_vars.path.display()));
     let mut platform = VirtPlatform::new_with_config_and_tpm_backend(platform_cfg, tpm_backend);
+    // Straight into the flash bank: a separate 64 MiB buffer stays resident after it is freed.
+    read_file_into(&media.flash_vars.path, platform.flash_vars_mut())
+        .unwrap_or_else(|e| panic!("read UEFI vars {}: {e}", media.flash_vars.path.display()));
     if env_flag("BRIDGEVM_HDA_COREAUDIO") {
         if !platform_cfg.devices.hda_present {
             eprintln!("BRIDGEVM_HDA_COREAUDIO ignored because BRIDGEVM_HDA is not enabled");
@@ -62,5 +61,5 @@ pub(crate) unsafe fn prepare_platform(
     }
 
     let boot_dtb = platform.dtb().to_vec();
-    (platform, vars_data, boot_dtb)
+    (platform, boot_dtb)
 }
