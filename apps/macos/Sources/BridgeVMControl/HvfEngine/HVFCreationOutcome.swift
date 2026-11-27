@@ -21,6 +21,8 @@ extension HVFCreationOutcome {
         switch outcome {
         case .committed:
             return .created(config)
+        case .notPublished(let error as VMRegistrationCollision):
+            return .refused(error.errorDescription ?? "")
         case .notPublished:
             return nil
         case .publishedButUnsynced:

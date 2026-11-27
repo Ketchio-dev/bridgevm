@@ -55,7 +55,9 @@ final class VMCreationCollisionRetentionTests: XCTestCase {
                     varsPath: source.vars.path, storageDir: fixture.storage, libraryRoot: fixture.library,
                     snapshotHelper: HvfMediaImportTestSupport.helper, publish: publish)
                 : fixture.createExternal(publish: publish)
-            XCTAssertNil(outcome, "preservation must not advertise a created VM")
+            // Preservation never advertises a created VM; it says the files were kept.
+            guard case .refused(let message)? = outcome else { return XCTFail("expected a refusal") }
+            XCTAssertTrue(message.contains("BridgeVM kept the prepared files"), message)
             let config = try XCTUnwrap(prepared)
             XCTAssertFalse(NativeLibraryReader.entryMayExist(fixture.library.appendingPathComponent(config.slug + "/vm.json")))
             XCTAssertTrue(FileManager.default.fileExists(atPath: config.bundlePath))

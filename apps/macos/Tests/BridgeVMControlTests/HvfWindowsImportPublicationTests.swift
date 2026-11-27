@@ -38,7 +38,8 @@ final class HvfWindowsImportPublicationTests: XCTestCase {
                 varsPath: sourceVars(fixture).path, storageDir: fixture.storage,
                 libraryRoot: fixture.library, snapshotHelper: HvfMediaImportTestSupport.helper,
                 publish: fixture.publishWithRenameRefusal)
-            XCTAssertNil(outcome)
+            guard case .refused(let message)? = outcome else { return XCTFail("expected a refusal") }
+            XCTAssertTrue(message.contains("BridgeVM kept the prepared files"), message)
             try fixture.assertAmbiguousPreparationPreserved()
             try assertSources(fixture)
         }

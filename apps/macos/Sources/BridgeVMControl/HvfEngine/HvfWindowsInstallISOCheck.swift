@@ -11,6 +11,8 @@ enum HvfWindowsInstallISOCheck {
     /// The sentence to show, or nil for a Windows for Arm installer. It attaches the image, so call it
     /// off the main thread.
     static func problem(isoPath: String) -> String? {
+        // A file that can't be read (its drive was ejected, say) gets Create's own sentence for that.
+        guard VMLibrary.isReadableRegularFile(isoPath) else { return CreateFailure.isoUnreadable }
         // Disk Arbitration wants a mount point the user owns: the user's temporary folder, as the script.
         let mountRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("bridgevm-iso-check-\(UUID().uuidString)", isDirectory: true)
