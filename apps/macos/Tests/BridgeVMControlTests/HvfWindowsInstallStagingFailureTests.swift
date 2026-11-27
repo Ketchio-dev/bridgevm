@@ -54,14 +54,29 @@ final class HvfWindowsInstallStagingFailureTests: XCTestCase {
         XCTAssertEqual(result.stage, .failed(HvfWindowsInstallSession.notArm64ISO))
     }
 
+    /// The Mac stayed free to idle-sleep through a half-hour install, which froze it when unattended.
+    func testAnAttemptKeepsTheMacAwakeUntilItEnds() async throws {
+        let f = try Fixture(diskGiB: 1)
+        defer { f.remove() }
+        let power = ControlAppPower(api: ControlAppPowerTests.API())
+        _ = try await runFreshAttempt(f.plan, FailingInstaller()) { session in
+            session.sleepPrevention = power
+            return { XCTAssertTrue(power.held, "held while the attempt runs") }
+        }
+        XCTAssertFalse(power.held, "released when it ends")
+    }
+
     private func runFreshAttempt(
-        _ plan: HvfWindowsInstallPlan, _ installer: FailingInstaller, sourceVerified: Bool = true
+        _ plan: HvfWindowsInstallPlan, _ installer: FailingInstaller, sourceVerified: Bool = true,
+        configure: (HvfWindowsInstallSession) -> (() -> Void) = { _ in {} }
     ) async throws -> (stage: HvfWindowsInstallStage, log: [String]) {
         let queue = HvfWindowsInstallPipelineQueue()
         defer { queue.discard() }
         let session = HvfWindowsInstallSession(plan: plan, validate: { _ in nil }, schedule: queue.enqueue,
             execution: HvfWindowsInstallExecution(process: installer, verifySource: { _ in sourceVerified }))
+        let whileRunning = configure(session)
         let acknowledgment = try XCTUnwrap(session.start())
+        whileRunning()
         await acknowledgment.value
         if !queue.jobs.isEmpty { await queue.runNext() }
         return (session.stage, session.logLines)

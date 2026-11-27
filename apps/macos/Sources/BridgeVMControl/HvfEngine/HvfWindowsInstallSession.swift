@@ -23,7 +23,11 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
     let recovery: HvfWindowsInstallRecoveryWorker
     var continuationAdmission: (@MainActor () -> String?)?
     var admissionPending = false
-    var attemptActive = false
+    /// An attempt runs for about half an hour, mostly unattended: like a running VM it keeps the Mac
+    /// from idle sleep (the "Keep Mac awake" setting), which would freeze the build or Windows setup.
+    var attemptActive = false { didSet { sleepPrevention.update(sleepPreventionID, active: attemptActive) } }
+    let sleepPreventionID = UUID()
+    var sleepPrevention = ControlAppPower.shared
     var cancelled = false
     var commitStarted = false
 

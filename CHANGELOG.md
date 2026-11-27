@@ -57,6 +57,9 @@ All notable changes to BridgeVM are documented in this file.
 - `bridgevm app create-windows --resolution` was saved but never used: the VM
   started at 1280x800. It now sets the VM's startup resolution, and the default
   is the documented 1440x900.
+- Installing Windows now keeps the Mac awake, as a running VM does (the "Keep
+  Mac awake" setting). An unattended install used to stop when the Mac went to
+  sleep, and looked stuck when you came back.
 - Shared folders: while a file in the Mac folder kept changing (a log being
   written, a long Finder copy), files saved in the Windows folder never reached
   the Mac. A Windows listing now goes between the Mac's changes at least every
