@@ -166,6 +166,7 @@ CREATED_TARGET="0"
 CREATED_VARS="0"
 RUN_STATUS=0
 PROBE_PID=""
+PARENT_WATCH_PID=""
 
 terminate_owned_probe() {
   [[ -n "$PROBE_PID" ]] || return 0
@@ -186,6 +187,7 @@ terminate_owned_probe() {
 cleanup() {
   local status="$?"
   set +e
+  [[ -z "$PARENT_WATCH_PID" ]] || kill -TERM "$PARENT_WATCH_PID" 2>/dev/null
   {
     printf '\ncleanup_status=%s\n' "$status"
     date -u
@@ -208,6 +210,16 @@ cleanup() {
   exit "$status"
 }
 trap cleanup EXIT
+# A crashed or force-quit app signals nothing, so the VM would run on unseen and a retry
+# would start a second one. When the process that started this script is gone, stop the
+# way Cancel does (SIGTERM), so cleanup still stops the probe.
+(
+  set +e; parent="$PPID" nap=""
+  trap 'kill "$nap" 2>/dev/null; exit 0' TERM
+  while kill -0 "$parent" 2>/dev/null; do sleep 1 & nap="$!"; wait "$nap"; done
+  kill -TERM "$$"
+) </dev/null >/dev/null 2>&1 &
+PARENT_WATCH_PID="$!"
 
 if [[ -n "$FRESH_TARGET_SIZE" ]]; then
   require_destructive_media_path target "$TARGET"
