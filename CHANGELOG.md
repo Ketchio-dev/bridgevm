@@ -113,6 +113,11 @@ All notable changes to BridgeVM are documented in this file.
   Windows creates the printer or the VM starts again, and the printer notice
   now includes Windows' reason (for example a stopped Print Spooler) instead of
   always blaming Microsoft Print to PDF.
+- Files and folders copied in Windows and pasted in Finder now carry the macOS
+  quarantine mark, as files from the shared folder already did, so Gatekeeper
+  checks a disk image, archive or app before it first opens. They are readable
+  only by you, like shared-folder files. A copy that cannot be marked stays in
+  Windows instead of reaching the Mac clipboard.
 - Importing a Windows disk smaller than 64 GiB enlarged the disk to 64 GiB, but
   Windows' C: drive never grew into the added space. The next Windows start now
   extends C:, also for VMs imported with an earlier version.

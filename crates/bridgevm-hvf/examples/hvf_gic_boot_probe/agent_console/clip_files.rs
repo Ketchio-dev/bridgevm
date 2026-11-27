@@ -8,7 +8,10 @@
 //! item is checked part by part, files are written only inside a fresh 0700
 //! staging directory, and each GET must name the listed path and size. Over a
 //! limit, or with a path that could leave the staging directory, the copy
-//! stays in Windows with one line.
+//! stays in Windows with one line. Like a shared-folder write, each staged
+//! folder is owner-only 0700 and each file 0600, and each carries a fresh
+//! com.apple.quarantine mark before the pasteboard sees it, so Gatekeeper
+//! checks what Finder pastes. A mark that cannot be set refuses the copy.
 //!
 //! A copy past the old limits (`CLIP_FILES_MAX_*`), from an agent whose READY
 //! carries `bigfile`, comes over with the shared folder's GETRANGE
@@ -244,18 +247,38 @@ fn create_staging(dir: &Path, copy: u64) -> std::io::Result<PathBuf> {
     Ok(staging)
 }
 
-/// A new file (never an existing one, never through a link).
-fn create_new_file(path: &Path) -> std::io::Result<std::fs::File> {
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
+/// `dir` below `staging`, each level it adds owner-only and quarantined.
+fn create_staged_dir(staging: &Path, dir: &Path) -> Result<(), &'static str> {
+    let mut path = staging.to_path_buf();
+    for part in dir.components() {
+        path.push(part);
+        match std::fs::DirBuilder::new().mode(NEW_DIR_MODE.into()).create(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            made => made.map_err(|_| "staging-error")?,
+        }
+        let flags = libc::O_DIRECTORY | libc::O_NOFOLLOW;
+        let level = std::fs::OpenOptions::new().read(true).custom_flags(flags).open(&path);
+        mark_guest_item(&level.map_err(|_| "staging-error")?).map_err(|_| "quarantine-error")?;
+    }
+    Ok(())
 }
 
-/// A new file (never an existing one, never through a link) with `bytes`.
-fn write_new_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    create_new_file(path)?.write_all(bytes)
+/// A new owner-only, quarantined file (never an existing one, never through a link).
+fn create_new_file(path: &Path) -> Result<std::fs::File, &'static str> {
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(NEW_FILE_MODE.into())
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+        .map_err(|error| write_refusal(&error))?;
+    mark_guest_item(&file).map_err(|_| "quarantine-error")?;
+    Ok(file)
+}
+
+/// The same with `bytes`.
+fn write_new_file(path: &Path, bytes: &[u8]) -> Result<(), &'static str> {
+    create_new_file(path)?.write_all(bytes).map_err(|error| write_refusal(&error))
 }
 
 /// The refusal record: counts and sizes only, never a name.
@@ -397,10 +420,7 @@ impl AgentConsoleHarness {
             return clip_line(guest_files_refusal_line("staging-error", entries, bytes, copy, t_ms));
         };
         let ranged = self.share_big && over_old_limits(entries, bytes);
-        let made = plan
-            .dirs
-            .iter()
-            .try_for_each(|dir| std::fs::DirBuilder::new().recursive(true).create(staging.join(dir)));
+        let made = plan.dirs.iter().try_for_each(|dir| create_staged_dir(&staging, dir));
         // As for a large shared-folder file: the copy and a margin must fit (share_big.rs).
         let free = std::fs::File::open(&staging).and_then(|dir| free_bytes(&dir)).unwrap_or(u64::MAX);
         let low_space = ranged && free < bytes.saturating_add(self.clip_files_stage.free_margin);
@@ -416,8 +436,8 @@ impl AgentConsoleHarness {
             ranged,
             current: None,
         });
-        if made.is_err() {
-            return self.fail_files_pull("staging-error", now);
+        if let Err(reason) = made {
+            return self.fail_files_pull(reason, now);
         }
         if low_space {
             return self.fail_files_pull("low-space", now);
@@ -541,7 +561,7 @@ impl AgentConsoleHarness {
         let written = match finished {
             _ if error => Err("get-error"),
             Some(get) if get.path == file.guest && get.total as u64 == file.bytes && get.bytes.len() as u64 == file.bytes => {
-                write_new_file(&pull.staging.join(&file.rel), &get.bytes).map_err(|error| write_refusal(&error))
+                write_new_file(&pull.staging.join(&file.rel), &get.bytes)
             }
             _ => Err("mismatch"),
         };
@@ -595,7 +615,7 @@ impl AgentConsoleHarness {
                 Ok(created) => {
                     pull.current = Some(FileIn { file: created, next: 0, mtime: None, range: None });
                 }
-                Err(error) => return Some(write_refusal(&error)),
+                Err(reason) => return Some(reason),
             }
         }
         let current = pull.current.as_mut()?;

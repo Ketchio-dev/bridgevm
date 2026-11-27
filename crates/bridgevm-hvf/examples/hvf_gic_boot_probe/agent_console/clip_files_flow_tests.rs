@@ -96,6 +96,77 @@ fn a_guest_file_and_folder_copy_lands_on_the_mac_as_its_top_level_items() {
     std::fs::remove_dir_all(&rig.h.clip_files_stage.dir).unwrap();
 }
 
+/// The com.apple.quarantine value on `path` itself, not through a link.
+fn quarantine(path: &Path) -> Option<String> {
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    let mut value = [0u8; 128];
+    // SAFETY: NUL-terminated path and name; `value` has value.len() writable bytes.
+    let len = unsafe {
+        libc::getxattr(
+            path.as_ptr(),
+            c"com.apple.quarantine".as_ptr(),
+            value.as_mut_ptr().cast(),
+            value.len(),
+            0,
+            libc::XATTR_NOFOLLOW,
+        )
+    };
+    Some(String::from_utf8_lossy(&value[..usize::try_from(len).ok()?]).into_owned())
+}
+
+#[test]
+fn a_guest_file_copy_is_quarantined_and_owner_only_like_a_shared_folder_write() {
+    // Without the mark, a .dmg or an app copied in Explorer and pasted in Finder skips Gatekeeper.
+    let mut rig = rig();
+    let (file, app) = (r"C:\s\setup.dmg", r"C:\s\Tool.app");
+    let (contents, run) = (r"C:\s\Tool.app\Contents", r"C:\s\Tool.app\Contents\run");
+    rig.guest.files.insert(file.into(), b"dmg".to_vec());
+    rig.guest.files.insert(run.into(), b"run".to_vec());
+    rig.guest.listing = Some(listing(&[(0, 1, 3, file), (1, 1, 0, app), (1, 0, 0, contents), (0, 0, 3, run)]));
+    rig.settle();
+    let tops = rig.mac.file_writes.last().expect("published").clone();
+    let staged = [
+        (tops[0].clone(), 0o600),
+        (tops[1].clone(), 0o700),
+        (tops[1].join("Contents"), 0o700),
+        (tops[1].join("Contents/run"), 0o600),
+    ];
+    for (path, mode) in staged {
+        let mark = quarantine(&path).unwrap_or_default();
+        assert!(mark.starts_with("0083;") && mark.contains(";BridgeVM;"), "{path:?} is not quarantined: {mark:?}");
+        let found = std::fs::metadata(&path).unwrap().permissions().mode() & 0o7777;
+        assert_eq!(found, mode, "{path:?} is {found:o}");
+    }
+    take_lines(&mut Vec::new());
+    std::fs::remove_dir_all(&rig.h.clip_files_stage.dir).unwrap();
+}
+
+#[test]
+fn a_guest_file_copy_whose_mark_cannot_be_set_never_reaches_the_pasteboard() {
+    let mut rig = rig();
+    let stage = rig.h.clip_files_stage.dir.clone();
+    std::fs::create_dir_all(&stage).unwrap();
+    // Every folder and file staged below inherits "deny writeextattr": no mark holds.
+    let status = std::process::Command::new("/bin/chmod")
+        .args(["+a", "everyone deny writeextattr,file_inherit,directory_inherit"])
+        .arg(&stage)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let file = r"C:\s\setup.dmg";
+    rig.guest.files.insert(file.into(), b"dmg".to_vec());
+    rig.guest.listing = Some(listing(&[(0, 1, 3, file)]));
+    rig.settle();
+    assert!(rig.mac.file_writes.is_empty(), "an unmarked copy was published");
+    assert_eq!(
+        take_lines(&mut Vec::new()),
+        ["BVAGENT CLIPSYNC refused guest-files quarantine-error files=1 bytes=3 copy=a"]
+    );
+    assert_eq!(std::fs::read_dir(&stage).unwrap().count(), 0, "the refused copy stayed staged");
+    std::fs::remove_dir_all(&stage).unwrap();
+}
+
 #[test]
 fn two_copied_folders_of_one_name_stay_two_items() {
     let mut rig = rig();
