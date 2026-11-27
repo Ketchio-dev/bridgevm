@@ -102,6 +102,10 @@ All notable changes to BridgeVM are documented in this file.
   written, a long Finder copy), files saved in the Windows folder never reached
   the Mac. A Windows listing now goes between the Mac's changes at least every
   12 seconds.
+- Create VM (and `bridgevm app create-windows`) now looks inside the Windows
+  ISO first. An x64 ISO, or a file that isn't a disc image, is refused there
+  with a sentence to choose the Windows 11 for Arm ISO from Microsoft. It used
+  to be copied into a new VM, and only Start Installation said to delete it.
 - Installing Windows on a Mac whose disk fills now stops at once and says the
   disk is full. It sat on "Installing Windows" for up to 25 minutes, then
   failed with a general sentence.
