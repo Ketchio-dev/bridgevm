@@ -133,7 +133,8 @@ final class HvfVMSettingsSheetValueTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(values(HvfSharedFolderSettings.self, in: running).first).isDisabled)
         XCTAssertTrue(try XCTUnwrap(values(HvfGuestResolutionPicker.self, in: running).first).isDisabled)
         XCTAssertTrue(try XCTUnwrap(values(HvfRetinaResolutionToggle.self, in: running).first).isDisabled)
-        XCTAssertTrue(try XCTUnwrap(values(HvfCommandKeyPicker.self, in: running).first).isDisabled)
+        XCTAssertFalse(try XCTUnwrap(values(HvfCommandKeyPicker.self, in: running).first).isDisabled,
+                       "host-only: it applies at once and is saved when the VM stops")
         XCTAssertTrue(try XCTUnwrap(values(HvfMicrophoneToggle.self, in: running).first).isDisabled)
         XCTAssertTrue(try XCTUnwrap(values(HvfDurableDiskWritesToggle.self, in: running).first).isDisabled)
         XCTAssertFalse(session.libraryPreferencesEditable, "print, links and cursor keep their own stopped-only guard")

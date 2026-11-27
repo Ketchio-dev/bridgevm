@@ -545,6 +545,7 @@ final class HvfEngineSession: ObservableObject {
         // vm.json may change again: a display driver installed during this run is saved now,
         // whether or not the VM's view is open (a guest shutdown, another VM selected).
         HvfDisplayDriverFlag.saveIfStopped(self)
+        HvfCommandKeyLiveSave.saveIfStopped(self)
         displayDriverRestartRequired = false
     }
 
