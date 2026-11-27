@@ -47,6 +47,9 @@ All notable changes to BridgeVM are documented in this file.
   show as running in the app, and Start no longer "attaches" to it: Start,
   Delete, Duplicate and Move say another BridgeVM task is using the disk. A stop
   can no longer end that task in the middle of a copy.
+- Windows sound no longer goes silent when Windows or an app picks a playback
+  rate other than 48 kHz (for example "16 bit, 44100 Hz" in Sound > Advanced).
+  The VM now offers only the 48 kHz format the Mac side plays.
 - After restoring a snapshot taken before a disk grow, the disk size setting no
   longer says "Expanded the disk to N GiB" about the disk that was replaced.
 - **Retina resolution** and **Start when BridgeVM opens** can now be changed

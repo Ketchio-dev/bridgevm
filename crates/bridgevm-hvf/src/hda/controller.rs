@@ -156,7 +156,9 @@ pub(crate) const CODEC_AFG_CHILD_NODE_COUNT_NO_MIC: u32 =
 pub(crate) const CODEC_AFG_CHILD_NODE_COUNT: u32 =
     ((CODEC_DAC as u32) << 16) | (CODEC_MIC - CODEC_DAC + 1) as u32;
 pub(crate) const CODEC_AFG_CAPABILITIES: u32 = 0x0000_0808;
-pub(crate) const CODEC_PCM_SIZE_RATES: u32 = 0x0002_01fc; // 16..96 kHz, signed 16-bit.
+/// 48 kHz signed 16-bit only: the Mac side plays nothing else, so a rate Windows could pick in
+/// Sound > Advanced (or an app in exclusive mode) played as silence.
+pub(crate) const CODEC_PCM_SIZE_RATES: u32 = 0x0002_0040;
 pub(crate) const CODEC_STREAM_FORMATS: u32 = 0x0000_0001; // PCM.
 
 // The virtual output AFG exposes the parameter but no explicit Dx bits.
