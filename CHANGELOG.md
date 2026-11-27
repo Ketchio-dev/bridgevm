@@ -81,6 +81,9 @@ All notable changes to BridgeVM are documented in this file.
   written, a long Finder copy), files saved in the Windows folder never reached
   the Mac. A Windows listing now goes between the Mac's changes at least every
   12 seconds.
+- Installing Windows on a Mac whose disk fills now stops at once and says the
+  disk is full. It sat on "Installing Windows" for up to 25 minutes, then
+  failed with a general sentence.
 - A duplicated Windows VM attached the Guest Tools disk again at its first start,
   and while its agent was still starting it could say Guest Tools were missing.
   The copy now keeps the record that Windows already has the guest agent.

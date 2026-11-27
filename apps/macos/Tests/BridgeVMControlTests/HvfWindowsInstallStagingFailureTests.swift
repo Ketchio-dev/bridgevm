@@ -39,6 +39,23 @@ final class HvfWindowsInstallStagingFailureTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: log), FailingInstaller.log)
     }
 
+    /// A full Mac disk paused the install VM, which then sat on "Installing Windows" until the 25-minute
+    /// watchdog and failed with the general sentence (the freed target hid the cause).
+    func testAFullMacDiskStopsTheInstallAndSaysSo() async throws {
+        let f = try Fixture(diskGiB: 1)
+        defer { f.remove() }
+        XCTAssertTrue(HvfWindowsInstallSession.isProgressLine("BVSTORAGE full errno=28 free=0 path=/"))
+        let installer = FailingInstaller(output: "BVSTORAGE full errno=28 free=0 path=/")
+
+        let result = try await runFreshAttempt(f.plan, installer)
+
+        XCTAssertEqual(result.stage, .failed(HvfWindowsInstallSession.diskFullMessage))
+        XCTAssertEqual(installer.cancels, 1, "the paused VM is stopped at once")
+        let builder = FailingInstaller(output: "rsync: write failed on \"sources/install.wim\": No space left on device (28)")
+        let build = try await runFreshAttempt(f.plan, builder, sourceVerified: false)
+        XCTAssertEqual(build.stage, .failed(HvfWindowsInstallSession.diskFullMessage))
+    }
+
     func testBundleOrMetadataOthersCanWriteIsRefusedWithThePermissionCause() async throws {
         for relative in ["", "metadata"] {
             let f = try Fixture(diskGiB: 1)
@@ -104,8 +121,9 @@ private final class FailingInstaller: HvfWindowsInstallProcessRunning {
     /// A line the failing command prints first, as the source builder does.
     let outputLine: String?
     init(output: String? = nil) { outputLine = output }
+    private(set) var cancels = 0
     func reset() {}
-    func cancel() {}
+    func cancel() { cancels += 1 }
     func run(plan: HvfWindowsInstallPlan, arguments: [String], environment: [String: String],
              progressLog: URL?, output: @escaping (String) -> Void) async -> Bool {
         if let outputLine { output(outputLine); return false }
