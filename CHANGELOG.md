@@ -90,6 +90,8 @@ All notable changes to BridgeVM are documented in this file.
   Mac version was sent back, the next start made a second, identical
   "(Windows copy 2)"; now it keeps one copy and sends the Mac version again
   (#675).
+- `create-windows` on an 8 GiB Mac now gives the VM 4 GiB by default, as the
+  app's Create sheet does, instead of 6 GiB that left macOS 2 GiB.
 - A VM with a Korean name finds its vTPM key even when its ID reaches the
   keychain in the other Unicode form (composed or decomposed, for example
   after the library was copied). Before, the VM refused to start with a

@@ -47,7 +47,8 @@ Optional settings use the same product choices as the app:
 --fetch-drivers
 ```
 
-Defaults: 64 GiB, 6144 MiB, 4 CPUs, 1440x900, shared NAT; CPUs must fit the host.
+Defaults: 64 GiB, 6144 MiB (4096 MiB on an 8 GiB Mac, as in the app), 4 CPUs,
+1440x900, shared NAT; CPUs must fit the host.
 `--resolution` is the Windows resolution at startup, the same setting as
 **Resolution** in the VM's settings. With the Windows display driver installed,
 Windows then follows the window size.
