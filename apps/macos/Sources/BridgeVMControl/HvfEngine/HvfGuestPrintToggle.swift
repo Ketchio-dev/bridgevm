@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The VM's "Mac으로 인쇄" setting (HvfGuestPrint.swift), saved in vm.json like the other per-VM settings and
+/// The VM's "Print to Mac" setting (HvfGuestPrint.swift), saved in vm.json like the other per-VM settings and
 /// changed only while the VM is stopped. Shown for library VMs, whose settings are saved.
 struct HvfGuestPrintToggle: View {
     @ObservedObject var session: HvfEngineSession

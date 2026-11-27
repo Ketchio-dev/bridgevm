@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// "Mac으로 인쇄" (vm.json `printToMac`; nil = on, as Parallels shares the Mac's printers by default; false =
+/// "Print to Mac" (vm.json `printToMac`; nil = on, as Parallels shares the Mac's printers by default; false =
 /// off). On, the app sends `PRINTWATCH` at each `BVAGENT SERVICE start`; the agent makes the Windows printer
 /// `Mac (BridgeVM)` (bvagent.ps1, print), the probe brings each job over into `<evidence>/print` and logs
 /// `BVPRINT job bytes=<n> sha256=<hex> path=<path>` (agent_console/print_jobs.rs), and the app opens the macOS

@@ -2,7 +2,7 @@
 import SwiftUI
 
 /// The VM window's content. Nothing of the app's own sits over Windows but the notices and the
-/// paused overlay: the VM's actions, Guest windows included, are in the menu bar's 가상 머신 menu.
+/// paused overlay: the VM's actions, Guest windows included, are in the menu bar's Virtual Machine menu.
 struct HvfLiveDisplaySurface: View {
     @ObservedObject var session: HvfEngineSession
     @ObservedObject var window: HvfDisplayWindowState

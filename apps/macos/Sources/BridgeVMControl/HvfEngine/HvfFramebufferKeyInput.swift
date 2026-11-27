@@ -30,7 +30,7 @@ enum HvfFramebufferKeyInput {
 }
 
 extension HvfEngineSession {
-    /// The VM's 'Command 키' setting, and whether generic chords reach the guest on the current route.
+    /// The VM's 'Command key' setting, and whether generic chords reach the guest on the current route.
     var keyMapping: HvfHostKeyMapping {
         HvfHostKeyMapping(commandKey: config.commandKeyMode, modifierChords: inputDriver.router.modifierChords)
     }

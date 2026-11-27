@@ -2,7 +2,7 @@
 import AppKit
 
 /// A bare Command or Option tap: pressed with no other modifier down and released before any key,
-/// click, other modifier or focus loss. Left Command is the Windows key in both 'Command 키' modes
+/// click, other modifier or focus loss. Left Command is the Windows key in both 'Command key' modes
 /// and Option is Alt. Right Command (0x36) never taps: Korean users often make it the 한/영 key, and
 /// each language switch would open Start; its chords still map as usual. Guest chords, and the
 /// modifiers a click or scroll carries (HvfPointerModifiers.swift), are whole press-and-release
