@@ -655,6 +655,9 @@ extension LibraryModel {
         if vms.first(where: { $0.slug == request.vmID })
             != (try? NativeCLIStatusConfigReader.read(library: library, id: request.vmID)) { reload() }
         let store = windowsInstallSessions.cliOperations
+        if let session = windowsInstallSessions.record(for: request.vmID)?.session {
+            store.adopt(vmID: request.vmID, session: session)
+        }
         switch request.operation {
         case .install:
             // Status and cancel name an operation this app already holds: a finished install has saved

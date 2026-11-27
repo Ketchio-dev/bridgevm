@@ -38,6 +38,7 @@ enum NativeCLIReason {
         case "modelUnavailable": return "BridgeVM is still opening this library. Try again in a moment."
         case "busy": return "Another operation is using this VM. Try again when it finishes."
         case "unsupportedTarget": return "This VM isn’t waiting to be installed."
+        case "targetUnavailable": return "BridgeVM isn’t installing this VM."
         case "cancellationUnavailable": return "The installation can no longer be canceled."
         default: return reason
         }
