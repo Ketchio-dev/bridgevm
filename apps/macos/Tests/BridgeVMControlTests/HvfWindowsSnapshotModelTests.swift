@@ -149,10 +149,10 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
             return try await session.runSnapshot($0, configuration: config)
         }
 
-        XCTAssertNil(HvfWindowsSnapshotCommand.snapshotDate(config: config))
+        XCTAssertNil(HvfWindowsSnapshotStore.list(bundle: bundle).first)
         await model.create(run: run)?.value
         XCTAssertEqual(model.status, "Snapshot created", session.events.last?.displayText ?? "")
-        let date = try XCTUnwrap(HvfWindowsSnapshotCommand.snapshotDate(config: config))
+        let date = try XCTUnwrap(HvfWindowsSnapshotStore.list(bundle: bundle).first?.date)
         let first = try XCTUnwrap(HvfWindowsSnapshotStore.list(bundle: bundle).first)
         try Data(repeating: 5, count: 128).write(to: disk)
         try await session.runSnapshot(.create, configuration: config, name: "두 번째/../이름")

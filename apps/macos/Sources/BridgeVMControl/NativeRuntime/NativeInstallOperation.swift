@@ -18,10 +18,6 @@ final class NativeInstallOperation {
         if let session { return session.stage == .idle || session.admissionPending || session.isRunning }
         return true
     }
-    var cancelledBeforeSession: Bool {
-        if case .cancelled? = terminal?.0 { return session == nil }
-        return false
-    }
 
     func attach(_ task: Task<Void, Never>) {
         guard terminal == nil, session == nil, preparationTask == nil else { task.cancel(); return }
