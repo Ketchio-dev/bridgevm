@@ -58,6 +58,12 @@ All notable changes to BridgeVM are documented in this file.
 - If the drive with a running VM's disk is unplugged or ejected, the app now says
   so and shows Needs attention, with what to do, instead of staying silent while
   Windows gets disk errors.
+- Choosing "Shut down Windows" when you close a VM window now keeps the window
+  open while Windows shuts down, so you can still save work if an app asks, and
+  the window then says Windows has shut down. A remembered "Shut down Windows"
+  no longer stops you closing the window of a VM that is still starting or was
+  started elsewhere; you are asked instead. Closing the window of a paused or
+  already stopping VM now just closes it.
 - A Windows driver touching a device from the very top of the address space can
   no longer crash the VM: the instruction pointer now wraps around as it does on
   real hardware.
