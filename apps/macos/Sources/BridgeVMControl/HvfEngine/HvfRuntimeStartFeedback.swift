@@ -8,6 +8,7 @@ extension HvfEngineSession {
     }
 
     var runtimeSupervisionFailureText: String? {
+        if driveDisconnected, hasActiveRuntimeWork { return HvfDriveDisconnect.text }
         // A failed lifecycle receipt alone says nothing about storage, and must not hide
         // a specific startup error or the runner-death sentence.
         if guiStartFailureText == nil, diskSyncNotice.finalSaveFailed {

@@ -49,6 +49,9 @@ All notable changes to BridgeVM are documented in this file.
   can no longer end that task in the middle of a copy.
 - After restoring a snapshot taken before a disk grow, the disk size setting no
   longer says "Expanded the disk to N GiB" about the disk that was replaced.
+- If the drive with a running VM's disk is unplugged or ejected, the app now says
+  so and shows Needs attention, with what to do, instead of staying silent while
+  Windows gets disk errors.
 - A Windows driver touching a device from the very top of the address space can
   no longer crash the VM: the instruction pointer now wraps around as it does on
   real hardware.
