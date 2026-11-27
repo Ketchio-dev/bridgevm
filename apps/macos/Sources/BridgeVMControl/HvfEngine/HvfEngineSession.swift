@@ -24,6 +24,7 @@ final class HvfEngineSession: ObservableObject {
     @Published var guestToolsMessage: String?
     @Published var guestToolsPreparing = false
     @Published var displayDriverFlagMessage: String? // why HvfDisplayDriverFlag could not save yet
+    @Published var hostSettingsSaveMessage: String? // why a setting changed while Windows ran is not saved yet
     @Published var displayDriverNoticeDismissed = false // per VM, only for this app session
     @Published var displayDriverRestartRequired = false
     @Published var displayDriverUnbound = false

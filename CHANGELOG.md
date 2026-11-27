@@ -63,6 +63,9 @@ All notable changes to BridgeVM are documented in this file.
   folder; a snapshot missing its disk or UEFI file now reads as damaged instead
   of offering a retry; and a Quit that waits for a snapshot no longer gets
   cancelled when only the snapshot's name could not be saved.
+- A Command key, Retina or "Start when BridgeVM opens" choice made while Windows
+  runs that can't be saved when it stops is now shown on the VM's dashboard, and
+  a choice made later no longer gets overwritten by it at the next stop.
 - The library dashboard now says when a run needs attention: a Windows disk
   BridgeVM couldn't finish saving at shutdown, or lost contact with Windows,
   used to show only in Advanced (the VM read "Stopped" or "Running"), and a
