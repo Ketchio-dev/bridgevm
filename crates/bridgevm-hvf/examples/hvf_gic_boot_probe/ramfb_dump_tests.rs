@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{
-    print_checkpoint, DisplayCheckpoint, RamfbCheckpoint, RamfbSampleEnvError, RamfbSampleSchedule,
+    DisplayCheckpoint, RamfbCheckpoint, RamfbSampleEnvError, RamfbSampleSchedule,
     RamfbShellObservation,
 };
 use bridgevm_hvf::{
