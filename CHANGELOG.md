@@ -74,6 +74,12 @@ All notable changes to BridgeVM are documented in this file.
 - If the drive with a running VM's disk is unplugged or ejected, the app now says
   so and shows Needs attention, with what to do, instead of staying silent while
   Windows gets disk errors.
+- Download Drivers in the Create window now stops when you close the window,
+  instead of downloading on for up to 30 minutes, and a download cut short by
+  quitting is removed the next time you download. The download follows the
+  Mac's proxy settings, shows its percent, and a failure now says whether the
+  download couldn't be reached or didn't complete, instead of showing a curl
+  error number.
 - Choosing "Shut down Windows" when you close a VM window now keeps the window
   open while Windows shuts down, so you can still save work if an app asks, and
   the window then says Windows has shut down. A remembered "Shut down Windows"
