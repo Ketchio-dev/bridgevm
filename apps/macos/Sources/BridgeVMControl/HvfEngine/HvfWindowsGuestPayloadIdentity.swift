@@ -7,6 +7,24 @@ enum HvfWindowsGuestPayloadIdentity {
         let error: String?
     }
 
+    static let notAManifest = "This file isn’t a BridgeVM driver manifest. Choose the manifest that came with the drivers, or use Download Drivers."
+
+    /// The records stage-hvf-windows-guest-payload.sh requires first (one `schema` of
+    /// bridgevm-windows-guest-payload-v1 and one `architecture` of arm64), so a plain `shasum` list
+    /// is refused at Create instead of failing the setup files at Start. The script checks the rest.
+    static func manifestFormatError(_ path: String?) -> String? {
+        guard let path, let data = FileManager.default.contents(atPath: path), data.count <= 1 << 20,
+              let text = String(data: data, encoding: .utf8) else { return notAManifest }
+        let records = text.replacingOccurrences(of: "\r", with: "").split(separator: "\n")
+            .map { $0.split(separator: "\t", omittingEmptySubsequences: false).map(String.init) }
+        let schema = records.filter { $0.first == "schema" }, architecture = records.filter { $0.first == "architecture" }
+        guard schema.count == 1, schema[0] == ["schema", "bridgevm-windows-guest-payload-v1"] else { return notAManifest }
+        guard architecture.count == 1, architecture[0] == ["architecture", "arm64"] else {
+            return "These drivers aren’t for Windows on Arm. Choose ARM64 drivers, or use Download Drivers."
+        }
+        return nil
+    }
+
     static func inspect(payloadDirectory: String?, manifestPath: String?) -> Inspection {
         guard let payloadDirectory, let manifestPath,
               !payloadDirectory.isEmpty, !manifestPath.isEmpty else {

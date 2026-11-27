@@ -79,6 +79,37 @@ final class HvfWindowsGuestPayloadIdentityTests: XCTestCase {
                         manifestPath: request.guestPayloadManifest).digest)
     }
 
+    /// A driver folder problem was dropped for "Couldn't create the VM or save it to the library.", and a
+    /// plain checksum list passed Create, then failed the setup files at Start, sealed into the VM.
+    func testAnOwnDriverFolderProblemIsNamedAtCreateBeforeTheISOIsCopied() throws {
+        let root = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let iso = root.appendingPathComponent("windows.iso")
+        try Data("iso".utf8).write(to: iso)
+        let library = root.appendingPathComponent("library", isDirectory: true)
+        try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+        func create(manifest: URL) -> HVFCreationOutcome? {
+            VMLibrary.createWindowsHVFInstall(name: "Own Drivers", isoPath: iso.path, diskGiB: 64,
+                injectViogpu3d: false, driverPackageDir: nil,
+                guestPayloadDirectory: root.appendingPathComponent("payload").path, guestPayloadManifest: manifest.path,
+                storageDir: library, libraryRoot: library, persist: false)
+        }
+        let inside = root.appendingPathComponent("payload/manifest.tsv")
+        try FileManager.default.copyItem(at: root.appendingPathComponent("manifest.tsv"), to: inside)
+        guard case .refused(let insideMessage)? = create(manifest: inside) else { return XCTFail("expected refused") }
+        XCTAssertEqual(insideMessage, "Keep the driver manifest outside the driver folder.")
+        try FileManager.default.removeItem(at: inside)
+        let checksums = root.appendingPathComponent("SHA256SUMS.tsv")
+        try Data("0123abcd  storage/driver.sys\n".utf8).write(to: checksums)
+        guard case .refused(let listMessage)? = create(manifest: checksums) else { return XCTFail("expected refused") }
+        XCTAssertEqual(listMessage, HvfWindowsGuestPayloadIdentity.notAManifest)
+        let x64 = root.appendingPathComponent("x64.tsv")
+        try Data("schema\tbridgevm-windows-guest-payload-v1\narchitecture\tamd64\n".utf8).write(to: x64)
+        guard case .refused(let archMessage)? = create(manifest: x64) else { return XCTFail("expected refused") }
+        XCTAssertTrue(archMessage.contains("Windows on Arm"), archMessage)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: library.path), [], "nothing was copied")
+    }
+
     func testSourceCacheKeyAndBuildEnvironmentBindGuestPayload() throws {
         let root = try makeFixture()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -110,7 +141,8 @@ final class HvfWindowsGuestPayloadIdentityTests: XCTestCase {
         let storage = root.appendingPathComponent("payload/storage", isDirectory: true)
         try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
         try Data("driver".utf8).write(to: storage.appendingPathComponent("driver.sys"))
-        try Data("manifest".utf8).write(to: root.appendingPathComponent("manifest.tsv"))
+        try Data("schema\tbridgevm-windows-guest-payload-v1\narchitecture\tarm64\n".utf8)
+            .write(to: root.appendingPathComponent("manifest.tsv"))
         return root
     }
 }
