@@ -27,8 +27,25 @@ final class HvfWindowsInstallRecoveryTests: XCTestCase {
                 withDestinationURL: f.root.appendingPathComponent("missing-journal"))
         }
     }
-    func testTransactionWithoutJournalRefusesFreshEffects() async throws {
-        try await assertRefused { try FileManager.default.removeItem(at: $0.paths.journal) }
+    /// A quit (or a failed disk read) while "Saving the VM" hashes the media leaves the transaction
+    /// folder with only its lock. Nothing was published, so Try Again installs afresh; it used to
+    /// fail every retry until the VM was deleted.
+    func testTransactionWithOnlyItsLockInstallsAfresh() async throws {
+        let f = try HvfWindowsInstallRecoveryFixture(boundary: .prepared); defer { f.clean() }
+        _ = try await f.failFirstFinalization()
+        try FileManager.default.removeItem(at: f.paths.journal)
+        try await f.attempt()
+        XCTAssertEqual(f.session.stage, .done)
+        XCTAssertEqual(f.completions, 1)
+        XCTAssertEqual(f.process.requests, 2, "the installer runs again")
+        let config = try JSONDecoder().decode(VMConfig.self, from: Data(contentsOf: f.paths.config))
+        XCTAssertEqual(config.installPending, false)
+    }
+    func testTransactionWithStagedMediaButNoJournalRefusesFreshEffects() async throws {
+        try await assertRefused { f in
+            try FileManager.default.removeItem(at: f.paths.journal)
+            try Data("staged".utf8).write(to: f.paths.stagedDisk)
+        }
     }
     func testChangedPreservedRequestRefusesFreshEffects() async throws {
         try await assertRefused { f in
