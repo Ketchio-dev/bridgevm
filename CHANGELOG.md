@@ -117,6 +117,9 @@ All notable changes to BridgeVM are documented in this file.
   disk's old blocks as the VM changed; on other volumes each was a full copy.
   The next create or export into the same folder now removes them, and keeps
   anything it does not recognise.
+- Moving a VM's bundle into a folder that already holds another VM's bundle, or
+  into the folder it is already in, now says so before anything starts, instead
+  of "BridgeVM could not confirm the move".
 - Display settings: the resolution menu's first entry is now "Automatic", not
   "Automatic (1280x800)", and its help says Automatic keeps the resolution
   Windows last started with. Going back to it after choosing 1920x1080 kept
