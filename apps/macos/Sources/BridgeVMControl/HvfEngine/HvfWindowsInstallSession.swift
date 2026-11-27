@@ -27,6 +27,10 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
 
     nonisolated static let notArm64ISO =
         "This ISO isn’t Windows 11 for Arm, so delete this VM and create a new one with the Arm64 ISO from Microsoft."
+    /// The screen shows a sentence, not the log's path (WindowsFileFailureFeedback): Try Again deletes
+    /// that log, and its path stays in the log lines below the progress.
+    nonisolated static let setupDidNotFinish = "Windows Setup didn’t finish. Choose Try Again."
+    nonisolated static let setupFilesFailed = "Couldn’t prepare the setup files from the Windows ISO. Choose Try Again."
 
     let plan: HvfWindowsInstallPlan
     var lifecycle = HvfWindowsInstallLifecycle()
@@ -170,7 +174,7 @@ extension HvfWindowsInstallSession {
                 // The ISO is sealed into this VM, so Try Again cannot help an x64 one.
                 let notArm = logLines.contains { $0.contains("FAIL: not-arm64-iso") }
                 failUnlessCancelled(notArm ? Self.notArm64ISO
-                    : Self.unusableDrivers(logLines) ?? "Couldn’t prepare the setup files from the Windows ISO.")
+                    : Self.unusableDrivers(logLines) ?? Self.setupFilesFailed)
                 return
             }
             guard !acknowledgeCancellation(cleanup: true) else { return }
@@ -198,7 +202,8 @@ extension HvfWindowsInstallSession {
         let installLog = URL(fileURLWithPath: plan.stagingEvidenceDir).appendingPathComponent("run.log")
         guard await runProcess(arguments: plan.installCommand(), extraEnvironment: [:],
                                progressLog: installLog) else {
-            failUnlessCancelled("Windows installation failed. See \(plan.stagingEvidenceDir)/run.log for details.")
+            appendLog("Windows Setup log: \(installLog.path)")
+            failUnlessCancelled(Self.setupDidNotFinish)
             return
         }
         guard !acknowledgeCancellation(cleanup: true) else { return }

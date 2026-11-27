@@ -22,10 +22,7 @@ enum WindowsFileFailureFeedback {
         case NSCocoaErrorDomain:
             return ns.code == CocoaError.Code.fileWriteOutOfSpace.rawValue
         case "BridgeVM.MediaImport":
-            // Recognize the current helper and older converters used by source builds.
-            let detail = ns.localizedDescription
-            return detail == importingOutOfSpace
-                || detail == "대상 볼륨의 공간이 부족해 디스크를 가져오지 못했습니다. 공간을 확보한 뒤 다시 시도하세요."
+            return ns.localizedDescription == importingOutOfSpace
         default:
             return false
         }

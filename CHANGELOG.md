@@ -53,6 +53,9 @@ All notable changes to BridgeVM are documented in this file.
 - A VPN tunnel or call running in Windows over UDP recovers after the Mac
   switches networks. Its traffic kept going to a connection tied to the old
   network, so it stayed dead for as long as Windows kept sending.
+- When Windows Setup fails during installation, BridgeVM now says "Windows Setup
+  didn't finish. Choose Try Again." instead of showing the path to a log file
+  that Try Again deletes. The log's location is still in the installation log.
 - When Create VM fails for a reason you can fix, it now says so: the Windows
   ISO can't be read (its drive was ejected), the VM's folder can't be made in
   the chosen location, there isn't enough free space on another drive for the
