@@ -34,6 +34,17 @@ struct HvfSystemMicrophonePermission: HvfMicrophonePermission {
 enum HvfMicrophoneNotice {
     static let denied = "Windows has no microphone because macOS denied access. Allow BridgeVM Control in System Settings > Privacy & Security > Microphone, then restart the VM."
     static let undetermined = "Windows has no microphone yet. macOS asks for access the next time you start this VM from BridgeVM."
+    static let restart = "macOS now allows the microphone. Restart the VM so Windows gets it."
+
+    /// `runHasMicrophone`: what the current run started with (nil while no run of this app's is going). Windows'
+    /// microphone is fixed at the start, so the notice follows that, not a permission changed since.
+    static func text(_ status: HvfMicrophoneStatus, runHasMicrophone: Bool?) -> String? {
+        switch runHasMicrophone {
+        case true?: return nil
+        case false? where status == .authorized: return restart
+        default: return text(status)
+        }
+    }
 
     static func text(_ status: HvfMicrophoneStatus) -> String? {
         switch status {
@@ -83,7 +94,8 @@ struct HvfMicrophoneNoticeView: View {
     var permission: any HvfMicrophonePermission = HvfSystemMicrophonePermission()
 
     var body: some View {
-        if session.config.microphoneEnabled, let notice = HvfMicrophoneNotice.text(permission.status) {
+        if session.config.microphoneEnabled,
+           let notice = HvfMicrophoneNotice.text(permission.status, runHasMicrophone: session.ownedController?.microphone) {
             Label(notice, systemImage: "mic.slash").font(.caption).foregroundStyle(.secondary)
                 .accessibilityIdentifier("bridgevm.runtime.microphone.notice")
         }

@@ -29,6 +29,8 @@ final class HvfOwnedRunController {
     let supervisionForceOperationID = UUID()
     private var cancelled = false
     private var serviceReady = false
+    /// Windows got a microphone this run (HvfOwnedRuntimeSpawn.microphone).
+    var microphone = false
     private var guestRequestSent = false
     private var guestBootGeneration = 0
     private var powerButtonPressed = false

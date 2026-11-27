@@ -50,6 +50,10 @@ All notable changes to BridgeVM are documented in this file.
   show as running in the app, and Start no longer "attaches" to it: Start,
   Delete, Duplicate and Move say another BridgeVM task is using the disk. A stop
   can no longer end that task in the middle of a copy.
+- The microphone notice now follows what the running VM started with: after
+  you allow the microphone in System Settings, it asks you to restart the VM
+  (Windows still has none until then), and it no longer says Windows has no
+  microphone when the run has one.
 - Windows sound no longer goes silent when Windows or an app picks a playback
   rate other than 48 kHz (for example "16 bit, 44100 Hz" in Sound > Advanced).
   The VM now offers only the 48 kHz format the Mac side plays.
