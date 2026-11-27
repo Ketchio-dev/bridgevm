@@ -112,13 +112,23 @@ extension HvfHostKeyCommand {
 #if canImport(AppKit)
 
 extension HvfHostKeyCommand {
-    static func resolve(event: NSEvent, mapping: HvfHostKeyMapping = HvfHostKeyMapping()) -> Self {
+    static func modifiers(_ event: NSEvent) -> EventModifiers {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         var modifiers: EventModifiers = []
         if flags.contains(.control) { modifiers.insert(.control) }
         if flags.contains(.option) { modifiers.insert(.option) }
         if flags.contains(.command) { modifiers.insert(.command) }
         if flags.contains(.shift) { modifiers.insert(.shift) }
+        return modifiers
+    }
+
+    static func optionLayerASCII(event: NSEvent) -> String? {
+        optionLayerASCII(characters: event.characters ?? "",
+                         charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "", modifiers: modifiers(event))
+    }
+
+    static func resolve(event: NSEvent, mapping: HvfHostKeyMapping = HvfHostKeyMapping()) -> Self {
+        let modifiers = modifiers(event)
         if let chord = resolveChord(keyCode: event.keyCode, charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
                                     modifiers: modifiers, mapping: mapping) { return chord }
         // kVK_ANSI_KeypadEnter produces ETX, also used by Ctrl+C. Its physical identity must win:

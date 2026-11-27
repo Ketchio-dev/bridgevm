@@ -34,6 +34,18 @@ final class HvfCompositionCommitTests: XCTestCase {
         }
     }
 
+    /// ⌥L is @ on a German Mac keyboard, ⌥5 is [: Windows (en-US) has no other key for them, so they
+    /// are typed, not sent as Alt+L. A US ⌥S (ß) is still Alt+S.
+    func testAnOptionCharacterInASCIIIsTypedAndAUSOptionLetterIsAlt() throws {
+        try withOrderedDisplay { view, session, fixture in
+            view.keyDown(with: try key("@", ignoring: "l", code: 0x25, flags: .option))
+            view.keyDown(with: try key("[", ignoring: "5", code: 0x17, flags: .option))
+            view.keyDown(with: try key("ß", ignoring: "s", code: 0x01, flags: .option))
+            view.keyDown(with: try key("\u{f702}", code: 0x7b, flags: [.option, .numericPad, .function]))
+            XCTAssertEqual(try deliver(fixture, session), ["TEXTINPUT @", "TEXTINPUT [", "KEYINPUT alt+s", "KEYINPUT ctrl+left"])
+        }
+    }
+
     func testClickOnTheOrderedRouteSendsTheSyllableBeforeThePress() throws {
         try withOrderedDisplay { view, session, fixture in
             type(view, committed: nil, composing: "다")
