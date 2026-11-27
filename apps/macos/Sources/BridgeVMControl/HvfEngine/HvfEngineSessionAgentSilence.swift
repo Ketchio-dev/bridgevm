@@ -2,7 +2,7 @@ import Foundation
 
 extension HvfEngineSession {
     /// Written at the agent's first SERVICE start; distinguishes missing tools from a broken agent.
-    var agentSeenMarker: URL { URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("guest-agent-seen") }
+    var agentSeenMarker: URL { URL(fileURLWithPath: config.evidenceDir).appendingPathComponent(VMLibrary.agentSeenMarkerName) }
 
     /// From poll(): the agent notice for this moment (HvfAgentSilenceNotice).
     func refreshAgentSilence() {
