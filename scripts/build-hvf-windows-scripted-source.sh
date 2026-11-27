@@ -22,6 +22,10 @@ DST_DEV=""
 MOUNT_ROOT=""
 WORK_ROOT=""
 cleanup() {
+  # Cancel or Quit sends SIGTERM to this shell only. Stop the copy, split or
+  # digest it was waiting on first; it would keep the disks busy (no detach) and run on.
+  pkill -TERM -P $$ 2>/dev/null || true
+  for _ in {1..50}; do pgrep -qP $$ || break; sleep 0.1; done
   [[ -n "${ISO_DEV:-}" ]] && bridgevm_detach_image "$ISO_DEV" 2>/dev/null || true
   [[ -n "${DST_DEV:-}" ]] && bridgevm_detach_image "$DST_DEV" 2>/dev/null || true
   [[ -n "$WORK_ROOT" ]] && rm -rf "$WORK_ROOT" || true

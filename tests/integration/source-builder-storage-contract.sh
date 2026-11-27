@@ -75,7 +75,8 @@ MOCK
 cat > "$FAKE/wimlib-imagex" <<'MOCK'
 #!/usr/bin/env bash
 case "$1" in
-  split) : > "$3" ;;
+  split) [[ -z "${BRIDGEVM_SLOW_SPLIT:-}" ]] || { echo "$PPID $$" > "$BRIDGEVM_SLOW_SPLIT"; exec sleep 30; }
+         : > "$3" ;;
   update) cat >/dev/null ;;
   dir) printf '%s\n' winpeshl.ini bvinstall.cmd bvdiskpart.txt bv-file-compare.exe ;;
   *) exit 2 ;;
@@ -106,3 +107,14 @@ import json,sys
 commands=[json.loads(line) for line in open(sys.argv[1])]; assert sum(c[0]=="attach" for c in commands)==6; assert sum(c[0]=="detach" for c in commands)==6; assert sum("-readonly" in c for c in commands)==2; assert sum(sys.argv[2] in c for c in commands)==2
 PY
 python3 "$ROOT/tests/integration/source-builder-mount-layout.py" "$TMP"
+# Cancel (SIGTERM to the builder) stops the split it waits on and still detaches both disks.
+BRIDGEVM_SLOW_SPLIT="$TMP/split.pids" build_source cancel 0 & job=$!
+for _ in {1..100}; do [[ -s "$TMP/split.pids" ]] && break; sleep 0.1; done
+read -r builder split < "$TMP/split.pids"
+kill -TERM "$builder"; wait "$job" 2>/dev/null || true
+if kill -0 "$split" 2>/dev/null; then kill "$split"; echo "the split outlived the cancelled builder" >&2; exit 1; fi
+python3 - "$TMP/cancel.log" <<'PY'
+import json,sys
+commands=[json.loads(line) for line in open(sys.argv[1])]
+assert sorted(c[1] for c in commands if c[0]=="detach")[-3:]==["/dev/disk-destination","/dev/disk-destination","/dev/disk-iso"], commands
+PY
