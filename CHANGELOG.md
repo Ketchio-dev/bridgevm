@@ -173,6 +173,9 @@ All notable changes to BridgeVM are documented in this file.
 - Importing a VM: the file chooser now opens other VM apps' bundles, so you can
   pick the disk and UEFI variables file inside one. It showed such a bundle as
   a single file that could not be opened.
+- Moving a VM's bundle to a folder BridgeVM can't write to no longer makes the
+  VM disappear from the library. Nothing had moved, but a leftover "move in
+  progress" record hid the VM, and nothing in the app could bring it back.
 - Long typed or pasted text in a Windows app built on a RichEdit 5 control
   (for example a WinForms RichTextBox) went in one character at a time,
   about 5 ms each, and from roughly 2,000 characters failed partway with an
