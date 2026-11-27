@@ -87,6 +87,9 @@ All notable changes to BridgeVM are documented in this file.
 - When Windows could not register BridgeVM as a browser or watch for links,
   "Open Windows links on Mac" stayed on and links silently never reached the
   Mac. The VM window now says so and suggests restarting Windows.
+- Keyboard: on German, Swiss, Nordic and other Mac layouts that type @, [ ], { },
+  | or ~ with Option, those characters now reach Windows. They were sent as
+  Alt+L, Alt+5 and so on, so an email address could only be pasted.
 - Installing from an x64 Windows ISO (not Windows for Arm) now stops as soon as
   the ISO is opened, with a sentence that says so and to create a new VM with
   the Arm64 ISO. It used to copy for minutes, then say only that the setup

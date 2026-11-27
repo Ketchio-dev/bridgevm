@@ -40,6 +40,18 @@ extension HvfHostKeyCommand {
         return .key((parts + [key]).joined(separator: "+"))
     }
 
+    /// The ASCII character a Mac layout's Option layer types for this key (⌥L is @ on German, Swiss and
+    /// Nordic keyboards; ⌥5 is [), or nil. Windows stays en-US, so such a character has no other key
+    /// there, and it is typed instead of sent as Alt. US Option characters are not ASCII (ß, å), so
+    /// Alt+letter stays the chord on a US keyboard.
+    static func optionLayerASCII(characters: String, charactersIgnoringModifiers: String,
+                                 modifiers: EventModifiers) -> String? {
+        guard modifiers.contains(.option), modifiers.isDisjoint(with: [.command, .control]),
+              characters.unicodeScalars.count == 1, let scalar = characters.unicodeScalars.first,
+              (0x21...0x7e).contains(scalar.value), characters != charactersIgnoringModifiers else { return nil }
+        return characters
+    }
+
     /// 'Mac shortcuts' text navigation does what these keys do on a Mac, not the literal Ctrl or Alt chord
     /// (Alt+Left is Back in Windows). Exact modifiers only; the Shift variants select.
     static let macTextNavigation: [String: String] = [
