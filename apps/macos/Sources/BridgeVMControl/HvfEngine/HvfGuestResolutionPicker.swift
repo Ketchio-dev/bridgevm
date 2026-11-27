@@ -27,7 +27,8 @@ struct HvfGuestResolutionPicker: View {
     /// mode from a hand-edited vm.json as its own entry. A value the VMM ignores shows Automatic.
     static func menu(for value: String?) -> (entries: [Entry], selected: String?) {
         let selected = firmwareMode(value)
-        var entries = [Entry(title: "Automatic (1280x800)", mode: nil)] + resolutions.map { Entry(title: $0, mode: $0) }
+        // Automatic leaves the firmware's own setting: a mode chosen before stays (uefi_resolution.rs).
+        var entries = [Entry(title: "Automatic", mode: nil)] + resolutions.map { Entry(title: $0, mode: $0) }
         if let selected, !resolutions.contains(selected) {
             entries.append(Entry(title: "\(selected) (custom)", mode: selected))
         }
@@ -65,6 +66,7 @@ struct HvfGuestResolutionPicker: View {
         (followsWindow
             ? "Sets the startup resolution until the Windows display driver loads. After startup, Windows resizes to fit the window."
             : "Sets the Windows resolution on the next start. If Windows remembers an older resolution, BridgeVM adjusts it after startup. To fit the VM window, install the display driver.")
+            + " Automatic keeps the resolution Windows last started with, 1280x800 for a new VM."
             + (persists ? " Changes made while the VM is stopped are saved for future starts." : "")
     }
 

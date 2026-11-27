@@ -16,6 +16,13 @@ final class HvfGuestResolutionPickerHelpTests: XCTestCase {
         XCTAssertFalse(text.contains("Windows resizes to fit the window"), text)
     }
 
+    func testAutomaticIsExplainedAsKeepingTheLastStartupResolution() {
+        for follows in [false, true] {
+            XCTAssertTrue(HvfGuestResolutionPicker.helpText(followsWindow: follows, persists: false)
+                .hasSuffix(" Automatic keeps the resolution Windows last started with, 1280x800 for a new VM."))
+        }
+    }
+
     func testTheLibraryNoteIsAppendedOnlyWhenSaved() {
         for follows in [false, true] {
             XCTAssertTrue(HvfGuestResolutionPicker.helpText(followsWindow: follows, persists: true)

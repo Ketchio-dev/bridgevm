@@ -83,6 +83,10 @@ All notable changes to BridgeVM are documented in this file.
   disk's old blocks as the VM changed; on other volumes each was a full copy.
   The next create or export into the same folder now removes them, and keeps
   anything it does not recognise.
+- Display settings: the resolution menu's first entry is now "Automatic", not
+  "Automatic (1280x800)", and its help says Automatic keeps the resolution
+  Windows last started with. Going back to it after choosing 1920x1080 kept
+  1920x1080.
 - After 256 starts or stops from the CLI in one app session, every further
   one was refused until the app was reopened.
 - A Stop could end as "not confirmed", needing Force Stop, when the app and
