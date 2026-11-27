@@ -114,6 +114,8 @@ All notable changes to BridgeVM are documented in this file.
 - Keyboard: on German, Swiss, Nordic and other Mac layouts that type @, [ ], { },
   | or ~ with Option, those characters now reach Windows. They were sent as
   Alt+L, Alt+5 and so on, so an email address could only be pasted.
+- `bridgevm app create-windows` without `--memory-mib` now gets the memory the
+  app recommends for this Mac (4 GiB on an 8 GiB Mac). It always sent 6 GiB.
 - Installing from an x64 Windows ISO (not Windows for Arm) now stops as soon as
   the ISO is opened, with a sentence that says so and to create a new VM with
   the Arm64 ISO. It used to copy for minutes, then say only that the setup
