@@ -58,6 +58,9 @@ All notable changes to BridgeVM are documented in this file.
 - When keyboard and mouse stop because Windows didn't confirm input in time, the
   VM window now says so and how to get them back. Keys only beeped and clicks
   did nothing.
+- After BridgeVM quits unexpectedly while Windows runs, reopening it shows that
+  VM as running while Windows shuts down, instead of Stopped, and Start no longer
+  launches a second run against the disk it still holds.
 - Snapshots: restoring or deleting a snapshot that was deleted elsewhere since
   the list was shown now says so, instead of asking you to check the snapshots
   folder; a snapshot missing its disk or UEFI file now reads as damaged instead
