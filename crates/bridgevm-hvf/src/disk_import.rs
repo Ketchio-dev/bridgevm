@@ -337,7 +337,7 @@ fn block(buf: &[u8], at: usize) -> &[u8] {
     &buf[at..buf.len().min(at + ZERO_BLOCK)]
 }
 
-fn is_zero(bytes: &[u8]) -> bool {
+pub(crate) fn is_zero(bytes: &[u8]) -> bool {
     let mut words = bytes.chunks_exact(8);
     let any = words.by_ref().fold(0u64, |acc, w| {
         acc | u64::from_ne_bytes(w.try_into().unwrap())

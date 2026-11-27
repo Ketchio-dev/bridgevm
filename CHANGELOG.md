@@ -54,6 +54,12 @@ All notable changes to BridgeVM are documented in this file.
   VM's TPM helper kept running on its own and held the VM's TPM state, so every
   later start failed until you restarted the Mac. Start now stops that leftover
   helper first; a helper that belongs to a running VM is never touched.
+- Importing a RAW Windows disk from another drive now copies only the space
+  Windows uses, and no longer asks for room for the disk's full size: a
+  256 GiB disk holding 40 GB needs about 40 GB free. Before, the import was
+  refused unless the Mac had room for all 256 GiB, and then wrote all of it.
+  Exporting or restoring a snapshot on another drive keeps unused space
+  free the same way.
 - If BridgeVM quit while a finished Windows installation was being saved, Start
   Installation now installs again. Before, every try said BridgeVM couldn't
   recover the interrupted installation, and deleting the VM was the only way
