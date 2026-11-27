@@ -288,11 +288,9 @@ final class FBLayerView: HvfFramebufferTextInput {
         if let release = pointerRelease(at: point(event)) { pointerCapture.arm(window: window, release: release) }
     }
 
-    /// Accessibility help counts the presses the view received and where the last one went,
-    /// so an automated click that never reaches the guest says why.
     private func notePress(_ outcome: String) {
         pointerPresses += 1
-        setAccessibilityHelp("presses=\(pointerPresses) last=\(outcome)")
+        HvfDisplaySurfaceAccessibility.notePress(self, count: pointerPresses, outcome: outcome)
     }
 
     override func mouseUp(with event: NSEvent) {

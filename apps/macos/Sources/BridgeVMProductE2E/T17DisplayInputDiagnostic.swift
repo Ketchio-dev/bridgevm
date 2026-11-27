@@ -1,9 +1,10 @@
 import ApplicationServices
 import Foundation
 
-/// The display surface's own account of the presses it received. The app's
-/// HvfFramebufferView writes it to the surface's accessibility help. Read it
-/// when the guest challenge fails so the lane retains where the click went.
+/// The display surface's own account of the presses it received. The app
+/// writes it to the surface's accessibility help only when launched with
+/// --e2e-library-root, as this harness does. Read it when the guest challenge
+/// fails so the lane retains where the click went.
 extension T17UIControlling {
     func displayInputDiagnostic() -> String {
         guard let accessibility = self as? T17Accessibility else { return "" }

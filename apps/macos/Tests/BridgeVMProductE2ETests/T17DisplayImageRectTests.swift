@@ -3,8 +3,9 @@ import XCTest
 
 final class T17DisplayImageRectTests: XCTestCase {
     func testGuestSizeComesOnlyFromAnExactFrameValue() {
-        XCTAssertEqual(T17DisplayImageRect.guestSize("frame 800x600"), CGSize(width: 800, height: 600))
-        for value in [nil, "no-frame", "frame 800x", "frame x600", "frame 0x600", "frame 800x600x2", "frame -8x600", "frames 800x600"] {
+        XCTAssertEqual(T17DisplayImageRect.guestSize("800 by 600"), CGSize(width: 800, height: 600))
+        for value in [nil, "Waiting for Windows to show a picture", "800 by", "by 600", "0 by 600", "800 by 600 by 2",
+                      "-8 by 600", "800 by 600 pixels", "frame 800x600"] {
             XCTAssertNil(T17DisplayImageRect.guestSize(value), String(describing: value))
         }
     }

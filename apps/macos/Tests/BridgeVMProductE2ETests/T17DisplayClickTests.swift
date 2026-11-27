@@ -5,12 +5,12 @@ final class T17DisplayClickTests: XCTestCase {
     private let frame = CGRect(x: 100, y: 50, width: 1280, height: 800)
 
     func testClickNeedsAPresentedFrameInTheFocusedWindow() {
-        XCTAssertNil(T17DisplayClick.point(for: .init(value: "no-frame", focused: true, frame: frame)))
+        XCTAssertNil(T17DisplayClick.point(for: .init(value: "Waiting for Windows to show a picture", focused: true, frame: frame)))
         XCTAssertNil(T17DisplayClick.point(for: .init(value: nil, focused: true, frame: frame)))
-        XCTAssertNil(T17DisplayClick.point(for: .init(value: "frame 1920x1080", focused: false, frame: frame)))
-        XCTAssertNil(T17DisplayClick.point(for: .init(value: "frame 1920x1080", focused: true, frame: nil)))
-        XCTAssertNil(T17DisplayClick.point(for: .init(value: "frame 1920x1080", focused: true, frame: .zero)))
-        XCTAssertEqual(T17DisplayClick.point(for: .init(value: "frame 1920x1080", focused: true, frame: frame)),
+        XCTAssertNil(T17DisplayClick.point(for: .init(value: "1920 by 1080", focused: false, frame: frame)))
+        XCTAssertNil(T17DisplayClick.point(for: .init(value: "1920 by 1080", focused: true, frame: nil)))
+        XCTAssertNil(T17DisplayClick.point(for: .init(value: "1920 by 1080", focused: true, frame: .zero)))
+        XCTAssertEqual(T17DisplayClick.point(for: .init(value: "1920 by 1080", focused: true, frame: frame)),
                        CGPoint(x: 740, y: 450))
     }
 
@@ -18,7 +18,7 @@ final class T17DisplayClickTests: XCTestCase {
         var reads = 0, posted: [CGPoint] = []
         try T17DisplayClick.click(at: CGPoint(x: 0.5, y: 0.5), timeout: 5, read: {
             reads += 1
-            return .init(value: reads < 3 ? "no-frame" : "frame 1920x1080", focused: true, frame: frame)
+            return .init(value: reads < 3 ? "Waiting for Windows to show a picture" : "1920 by 1080", focused: true, frame: frame)
         }, post: { posted.append($0); return true })
         XCTAssertEqual(reads, 3)
         XCTAssertEqual(posted, [CGPoint(x: 740, y: 450)])
@@ -27,7 +27,7 @@ final class T17DisplayClickTests: XCTestCase {
     func testClickWithoutAFrameFailsWithoutPosting() {
         var posted = 0
         XCTAssertThrowsError(try T17DisplayClick.click(at: CGPoint(x: 0.5, y: 0.5), timeout: 0.3, read: {
-            .init(value: "no-frame", focused: true, frame: frame)
+            .init(value: "Waiting for Windows to show a picture", focused: true, frame: frame)
         }, post: { _ in posted += 1; return true })) {
             XCTAssertEqual(($0 as? T17Blocker)?.detail, "guest display surface did not present a frame in the focused window")
         }
@@ -36,7 +36,7 @@ final class T17DisplayClickTests: XCTestCase {
 
     func testUnpostableClickFails() {
         XCTAssertThrowsError(try T17DisplayClick.click(at: CGPoint(x: 0.5, y: 0.5), timeout: 1, read: {
-            .init(value: "frame 1920x1080", focused: true, frame: frame)
+            .init(value: "1920 by 1080", focused: true, frame: frame)
         }, post: { _ in false })) {
             XCTAssertEqual(($0 as? T17Blocker)?.detail, "display click events could not be created")
         }
