@@ -7,7 +7,7 @@ fn create_windows_forwards_one_exact_request_without_a_shell() {
             name: "개발 VM 'A'".into(),
             iso: PathBuf::from("/owned media/Windows 11.iso"),
             disk_gib: 128,
-            memory_mib: 8_192,
+            memory_mib: Some(8_192),
             cpus: 6,
             resolution: "1920x1080".into(),
             no_network: true,
@@ -26,12 +26,12 @@ fn create_windows_forwards_one_exact_request_without_a_shell() {
             "/owned media/Windows 11.iso",
             "--disk-gib",
             "128",
-            "--memory-mib",
-            "8192",
             "--cpus",
             "6",
             "--resolution",
             "1920x1080",
+            "--memory-mib",
+            "8192",
             "--no-network",
             "--fetch-drivers",
             "--library",
@@ -49,7 +49,7 @@ fn create_windows_default_network_adds_no_disable_flag() {
             name: "VM".into(),
             iso: PathBuf::from("/Windows.iso"),
             disk_gib: 64,
-            memory_mib: 6_144,
+            memory_mib: None,
             cpus: 4,
             resolution: "1440x900".into(),
             no_network: false,
@@ -61,6 +61,10 @@ fn create_windows_default_network_adds_no_disable_flag() {
     let forwarded = native_arguments(args);
     assert!(!forwarded.contains(&OsString::from("--no-network")));
     assert!(!forwarded.contains(&OsString::from("--fetch-drivers")));
+    assert!(
+        !forwarded.contains(&OsString::from("--memory-mib")),
+        "the app picks memory for this Mac; a fixed 6144 overrode it on 8 GiB Macs"
+    );
     assert_eq!(forwarded.first(), Some(&OsString::from("--cli")));
 }
 
