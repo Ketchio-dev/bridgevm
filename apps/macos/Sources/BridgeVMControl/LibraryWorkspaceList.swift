@@ -184,6 +184,7 @@ struct LibraryWorkspaceRow: View {
             }
         }
         if config.installPending == true { return ("Installation required", .orange) }
+        if let operation = library.fileOperationTitle(for: config.slug) { return (operation, .blue) }
         if let runtimeState { return (runtimeState.title, runtimeState.color) }
         return model.running ? ("Running", .green) : ("Stopped", .secondary)
     }

@@ -173,6 +173,9 @@ All notable changes to BridgeVM are documented in this file.
   or `snapshot-export` left the snapshot helper running, so a restore could
   still change the VM after the command had ended. The command now stops the
   helper, waits for it, reports `cancelled` and exits 130 (143 for SIGTERM).
+- The library now shows "Moving…", "Duplicating…" or "Deleting…" on a VM while
+  that runs, and its Start button waits. A large copy read "Stopped" for
+  minutes, and Start was refused only when pressed.
 - Importing a VM: the file chooser now opens other VM apps' bundles, so you can
   pick the disk and UEFI variables file inside one. It showed such a bundle as
   a single file that could not be opened.

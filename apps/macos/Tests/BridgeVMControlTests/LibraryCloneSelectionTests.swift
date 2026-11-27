@@ -53,6 +53,18 @@ final class LibraryCloneSelectionTests: XCTestCase {
         try assertCompleted(f, publishesCopy: false)
     }
 
+    /// A duplicate of a large disk takes minutes; the row said "Stopped" all along.
+    func testTheRowSaysDuplicatingWhileTheCopyIsMade() async throws {
+        let f = try fixture()
+        defer { f.clean() }
+        f.admitClone(operation: publishCopy)
+        let row = LibraryWorkspaceRow(library: f.library, config: f.selected,
+                                      model: f.library.model(for: f.selected), selected: true)
+        XCTAssertEqual(row.status.text, "Duplicating…")
+        try await f.finishClone()
+        XCTAssertNotEqual(row.status.text, "Duplicating…")
+    }
+
     private func fixture() throws -> ReservedCloneGenericFixture {
         try ReservedCloneGenericFixture(kind: "fast-vz", shared: false)
     }

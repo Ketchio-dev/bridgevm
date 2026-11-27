@@ -297,6 +297,15 @@ typealias LibraryCloneOperation = @Sendable (String, VMConfig, URL) -> VMConfig?
 
 extension LibraryModel {
     var cloningSlugs: Set<String> { Set(cloningConfigurations.keys) }
+
+    /// What the row and the dashboard say while a delete, move or duplicate of this VM runs: a large
+    /// copy takes minutes, and without it the VM read "Stopped" until Start was refused.
+    func fileOperationTitle(for slug: String) -> String? {
+        if deletingSlugs.contains(slug) { return "Deleting…" }
+        if movingSlugs.contains(slug) { return "Moving…" }
+        if cloningSlugs.contains(slug) { return "Duplicating…" }
+        return nil
+    }
 }
 
 extension LibraryModel {
