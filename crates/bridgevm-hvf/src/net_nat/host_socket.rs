@@ -268,13 +268,25 @@ impl HostSocketOutboundIpv4Handler {
             self.tcp_flows.remove(&key);
             return;
         }
+        // Windows retries a lookup over TCP when the UDP answer was truncated;
+        // the guest's side of the flow stays addressed to DNS_IP.
+        let dns = packet.dst == DNS_IP && tcp.dst_port == 53;
         if tcp.flags & TCP_FLAG_SYN != 0
             && !self.tcp_flows.contains_key(&key)
-            && is_non_local_ipv4_destination(packet.dst)
+            && (dns || is_non_local_ipv4_destination(packet.dst))
         {
             let our_seq = self.next_tcp_isn();
-            let stream = match nonblocking_tcp_connect(StdIpv4Addr::from(packet.dst), tcp.dst_port)
-            {
+            let target = if dns {
+                self.dns.server_at(now)
+            } else {
+                SocketAddr::from((packet.dst, tcp.dst_port))
+            };
+            let connected = match target {
+                SocketAddr::V4(v4) => nonblocking_tcp_connect(*v4.ip(), v4.port()),
+                // An IPv6-only resolver: reset, so the lookup fails at once.
+                SocketAddr::V6(_) => Err(io::Error::from_raw_os_error(libc::EAFNOSUPPORT)),
+            };
+            let stream = match connected {
                 Ok(stream) => stream,
                 Err(e) => {
                     if self.pending_tcp_resets.len() < MAX_PENDING_REPLY_FRAMES {

@@ -8,6 +8,7 @@ use std::{
     path::Path,
 };
 
+mod dns_over_tcp;
 mod fake_guest;
 mod helpers;
 mod host_wake_download;
