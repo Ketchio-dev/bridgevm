@@ -50,9 +50,9 @@ struct LibrarySidebar: View {
             return
         }
         library.proMode = false
+        // A failed import is finished: going back shows Get Started without the old error.
         if library.vms.isEmpty, library.selectedID == LibraryModel.firstRunImportSelectionID,
-           !library.firstRunImportBusy, library.firstRunImportError == nil,
-           library.firstRunImport.publishedConfig == nil {
+           library.discardFirstRunImportFailure() {
             library.selectedID = nil
         } else if library.selectedID == nil {
             library.selectedID = library.vms.first?.slug

@@ -206,6 +206,15 @@ extension LibraryModel {
         selectedID = LibraryModel.firstRunImportSelectionID
         return true
     }
+
+    /// Drops a finished import's failure so Get Started and the next form start clean. A running
+    /// import and a saved VM that still has to be opened keep their status.
+    @discardableResult
+    func discardFirstRunImportFailure() -> Bool {
+        guard !firstRunImportBusy, firstRunImport.publishedConfig == nil else { return false }
+        if firstRunImport.error != nil { firstRunImport.returnToInputs() }
+        return true
+    }
 }
 
 extension LibraryModel {

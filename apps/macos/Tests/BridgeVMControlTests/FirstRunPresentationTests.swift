@@ -69,12 +69,16 @@ final class FirstRunPresentationTests: XCTestCase {
         }
     }
 
-    func testFailedImportKeepsRetryFieldsAndStatusWithoutImportSelection() throws {
+    func testFailedImportKeepsRetryFieldsAndStatusOnlyWhileTheImportIsShown() throws {
         try withLibrary { library in
+            library.selectedID = LibraryModel.firstRunImportSelectionID
             library.firstRunImport.finish(error: "Owned test validation refusal")
-            XCTAssertNil(library.selectedID)
             XCTAssertFalse(library.firstRunImportBusy)
             assertImportPresentation(library, editable: true)
+
+            // An old error alone does not keep the import form in front of Get Started.
+            library.selectedID = nil
+            XCTAssertEqual(values(FirstRunWelcomeView.self, in: FirstRunView(library: library).body).count, 1)
         }
     }
 

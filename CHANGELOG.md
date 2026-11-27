@@ -58,6 +58,15 @@ All notable changes to BridgeVM are documented in this file.
   the chosen location, there isn't enough free space on another drive for the
   ISO copy, or another VM took the same ID at the same time. Before, each of
   these said only "Couldn't create the VM or save it to the library."
+- An import cut off by Force Quit, a crash or a power loss no longer blocks the
+  next import of the same name. The half-made folder kept the name, so BridgeVM
+  said "That name is already in your library" while the library was empty. The
+  new import now gets the next free ID (such as `windows-11-2`), the old folder's
+  files are left alone, and the library explains that a folder with no vm.json
+  is usually left from a setup that did not finish and can be moved to the Trash.
+- After an import fails, Virtual machines in the sidebar goes back to Get
+  Started again and clears the error. Before, the failed import form stayed with
+  no way back, and a later import form still showed the old red error.
 - A Windows app that stops answering while it holds copied text no longer
   freezes BridgeVM's helper in Windows. Reading the clipboard text now gives up
   after 20 seconds and keeps the last text, so the shared clipboard, shared
