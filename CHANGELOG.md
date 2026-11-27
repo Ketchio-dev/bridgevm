@@ -46,6 +46,10 @@ All notable changes to BridgeVM are documented in this file.
 - A Windows connection that BridgeVM has to drop, because Windows opened more
   than 256 at once or a closing connection sat idle, now fails at once in the
   Windows app instead of hanging until Windows gives up on its own.
+- `bridgevm app install-status`, `install-cancel` and `install` now see a Windows installation
+  started in the app window. Before, status and cancel answered `targetUnavailable`, and `install`
+  failed as busy and then reported that failure while Windows went on installing. The code
+  `targetUnavailable` also prints as "BridgeVM isn’t installing this VM." in text output.
 - Windows connections left idle, such as an SSH session or a database client,
   are no longer cut after 5 minutes without Windows being told. BridgeVM now
   keeps an idle connection open for at least 2 hours, as home routers do.

@@ -123,7 +123,10 @@ final class NativeInstallOwnedModelTests: XCTestCase {
         await fixture.finishCancelled(session)
     }
 
-    func testExistingUIInstallRefusesAsBusy() async throws {
+    /// An install started in the window: install-status and install-cancel answered `targetUnavailable`,
+    /// and `install` failed as busy, after which install-status reported that failure while Windows
+    /// went on installing.
+    func testTheCLIFollowsAndCancelsAnInstallStartedInTheWindow() async throws {
         let fixture = HvfWindowsInstallStoreFixture(), config = fixture.config()
         defer { fixture.clean() }
         try fixture.save(config)
@@ -132,12 +135,23 @@ final class NativeInstallOwnedModelTests: XCTestCase {
         let session = library.windowsInstallSession(for: config)
         let started = try XCTUnwrap(session.start())
         await started.value
-        let install = request(.install, config: config, library: handle.identity,
-            app: UUID().uuidString, operationID: UUID())
-        XCTAssertThrowsError(try library.requestOwnedInstall(install, validateOwner: {})) {
-            XCTAssertEqual($0 as? NativeInstallControlRefusal, .busy)
-        }
-        session.cancel(); await fixture.finishCancelled(session)
+        let app = UUID().uuidString
+
+        let status = try library.requestOwnedInstall(request(.installStatus, config: config,
+            library: handle.identity, app: app), validateOwner: {})
+        XCTAssertEqual(status.disposition, .status)
+        XCTAssertEqual(try status.operation.observation().phase, .preparingSource)
+        let install = try library.requestOwnedInstall(request(.install, config: config,
+            library: handle.identity, app: app, operationID: UUID()), validateOwner: {})
+        XCTAssertEqual(install.disposition, .existing)
+        XCTAssertTrue(install.operation === status.operation)
+        XCTAssertEqual(fixture.made, 1)
+        let cancel = try library.requestOwnedInstall(request(.installCancel, config: config,
+            library: handle.identity, app: app), validateOwner: {})
+        XCTAssertEqual(cancel.disposition, .cancelAccepted)
+        XCTAssertEqual(try status.operation.observation().phase, .cancelling)
+        await fixture.finishCancelled(session)
+        XCTAssertEqual(try status.operation.observation().phase, .cancelled)
     }
 
     func testConfigurationChangeDuringDetachedPreparationPreventsSessionCreation() async throws {
