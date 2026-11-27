@@ -49,6 +49,10 @@ ISO_ATTACH="$(hdiutil attach -readonly -nobrowse -mountpoint "$ISO_MNT" "$ISO")"
 ISO_DEV="$(awk 'NR==1{print $1}' <<<"$ISO_ATTACH")"
 [[ "$ISO_DEV" == /dev/* && -d "$ISO_MNT" ]] || { echo "FAIL: ISO attach did not produce a device and mount" >&2; exit 1; }
 log "ISO mounted at $ISO_MNT"
+# An x64 Windows ISO cannot boot here: say so now, not after minutes of copying (the app turns this
+# line into its own sentence).
+find "$ISO_MNT/" -maxdepth 3 -ipath '*/efi/boot/bootaa64.efi' -print -quit | grep -q . \
+  || { echo "FAIL: not-arm64-iso: the ISO has no efi/boot/bootaa64.efi, so it is not Windows for Arm" >&2; exit 1; }
 log "creating destination raw $OUT ($SIZE_BYTES bytes)"
 rm -f "$OUT"
 mkfile -n "$SIZE_BYTES" "$OUT" 2>/dev/null || dd if=/dev/zero of="$OUT" bs=1 count=0 seek="$SIZE_BYTES"

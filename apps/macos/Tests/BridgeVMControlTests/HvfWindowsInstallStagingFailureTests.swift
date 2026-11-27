@@ -44,13 +44,23 @@ final class HvfWindowsInstallStagingFailureTests: XCTestCase {
         }
     }
 
+    func testAnX64ISOIsNamedInsteadOfTheGeneralSetupFilesSentence() async throws {
+        let f = try Fixture(diskGiB: 1)
+        defer { f.remove() }
+        let builder = FailingInstaller(output: "FAIL: not-arm64-iso: the ISO has no efi/boot/bootaa64.efi, so it is not Windows for Arm")
+
+        let result = try await runFreshAttempt(f.plan, builder, sourceVerified: false)
+
+        XCTAssertEqual(result.stage, .failed(HvfWindowsInstallSession.notArm64ISO))
+    }
+
     private func runFreshAttempt(
-        _ plan: HvfWindowsInstallPlan, _ installer: FailingInstaller
+        _ plan: HvfWindowsInstallPlan, _ installer: FailingInstaller, sourceVerified: Bool = true
     ) async throws -> (stage: HvfWindowsInstallStage, log: [String]) {
         let queue = HvfWindowsInstallPipelineQueue()
         defer { queue.discard() }
         let session = HvfWindowsInstallSession(plan: plan, validate: { _ in nil }, schedule: queue.enqueue,
-            execution: HvfWindowsInstallExecution(process: installer, verifySource: { _ in true }))
+            execution: HvfWindowsInstallExecution(process: installer, verifySource: { _ in sourceVerified }))
         let acknowledgment = try XCTUnwrap(session.start())
         await acknowledgment.value
         if !queue.jobs.isEmpty { await queue.runNext() }
@@ -63,10 +73,14 @@ final class HvfWindowsInstallStagingFailureTests: XCTestCase {
 private final class FailingInstaller: HvfWindowsInstallProcessRunning {
     static let log = Data("BVINSTALL synthetic failure\n".utf8)
     private(set) var mediaPresentAtRun: [Bool] = []
+    /// A line the failing command prints first, as the source builder does.
+    let outputLine: String?
+    init(output: String? = nil) { outputLine = output }
     func reset() {}
     func cancel() {}
     func run(plan: HvfWindowsInstallPlan, arguments: [String], environment: [String: String],
              progressLog: URL?, output: @escaping (String) -> Void) async -> Bool {
+        if let outputLine { output(outputLine); return false }
         let value = { (flag: String) in arguments.firstIndex(of: flag).map { arguments[$0 + 1] } ?? "" }
         mediaPresentAtRun.append([value("--target"), value("--vars")].allSatisfy { FileManager.default.fileExists(atPath: $0) })
         try? Self.log.write(to: URL(fileURLWithPath: value("--evidence-dir")).appendingPathComponent("run.log"))
