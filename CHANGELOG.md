@@ -65,6 +65,9 @@ All notable changes to BridgeVM are documented in this file.
   extends C:, also for VMs imported with an earlier version.
 - The VM dashboard said "Graphics mode unknown" for every Windows that BridgeVM
   itself had started. It now shows the running session's display mode.
+- A failed Guest Tools update now says to quit and reopen BridgeVM to try
+  again. "Restart BridgeVM" read like the Restart button beside it, which
+  restarts Windows and does not retry the update.
 - When Windows could not register BridgeVM as a browser or watch for links,
   "Open Windows links on Mac" stayed on and links silently never reached the
   Mac. The VM window now says so and suggests restarting Windows.

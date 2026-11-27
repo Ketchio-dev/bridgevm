@@ -37,9 +37,9 @@ final class HvfAgentUpdateTests: XCTestCase {
         let late = HvfAgentUpdate.notice(for: "BVAGENT UPDATE failed reason=no-ready t=1")
         let rolledBack = HvfAgentUpdate.notice(for: "BVAGENT UPDATE rolled-back to=none t=1")
         XCTAssertEqual(ok, "Guest Tools updated successfully.")
-        XCTAssertEqual(failed, "Guest Tools couldn’t update. The previous version is still in use. Restart BridgeVM to try again.")
+        XCTAssertEqual(failed, "Guest Tools couldn’t update. The previous version is still in use. Quit and reopen BridgeVM to try again.")
         XCTAssertEqual(late, failed)
-        XCTAssertEqual(rolledBack, "The new Guest Tools couldn’t start, so BridgeVM restored the previous version. Restart BridgeVM to try again.")
+        XCTAssertEqual(rolledBack, "The new Guest Tools couldn’t start, so BridgeVM restored the previous version. Quit and reopen BridgeVM to try again.")
         for text in [ok, failed, rolledBack] { XCTAssertFalse(text?.contains("\n") ?? true) }
         for quiet in ["BVAGENT UPDATE begin from=none to=0123456789abcdef t=1", "BVAGENT UPDATE armed to=0123456789abcdef t=2",
                       "BVAGENT UPDATE current agent=0123456789abcdef t=3", "BVAGENT UPDATE skipped reason=stop t=4",

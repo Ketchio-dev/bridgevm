@@ -15,14 +15,15 @@ enum HvfAgentUpdate {
          "--helper-agent-update-session", session]
     }
 
-    /// The one line the user sees for a probe result, or nil for other lines.
+    /// The one line the user sees for a probe result, or nil for other lines. A retry needs a new
+    /// app launch (`session`), so the text does not say "Restart": that button restarts Windows.
     static func notice(for line: String) -> String? {
         let prefix = "BVAGENT UPDATE "
         guard line.hasPrefix(prefix) else { return nil }
         switch line.dropFirst(prefix.count).prefix(while: { $0 != " " }) {
         case "ok": return "Guest Tools updated successfully."
-        case "failed": return "Guest Tools couldn’t update. The previous version is still in use. Restart BridgeVM to try again."
-        case "rolled-back": return "The new Guest Tools couldn’t start, so BridgeVM restored the previous version. Restart BridgeVM to try again."
+        case "failed": return "Guest Tools couldn’t update. The previous version is still in use. Quit and reopen BridgeVM to try again."
+        case "rolled-back": return "The new Guest Tools couldn’t start, so BridgeVM restored the previous version. Quit and reopen BridgeVM to try again."
         default: return nil
         }
     }
