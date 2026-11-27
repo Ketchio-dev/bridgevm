@@ -4,9 +4,8 @@ import Foundation
 /// Builds the storage, serial and network guest payload for an ISO install from the pinned,
 /// Microsoft-signed Red Hat virtio-win archive the display driver install already uses, so an
 /// ISO alone is enough. The archive is downloaded once, refused unless its length and SHA-256
-/// match the pins, and kept; every call rebuilds the payload folder and its manifest from it (a
-/// Finder `.DS_Store` would break the exact file set) and the result feeds the normal payload
-/// path, which copies and seals both into the VM bundle.
+/// match the pins, and kept; every call rebuilds the payload folder and its manifest from it, and
+/// the result feeds the normal payload path, which copies and seals both into the VM bundle.
 enum HvfWindowsDriverPayloadFetch {
     struct Source {
         var url = HvfDisplayDriverInstall.archiveURL

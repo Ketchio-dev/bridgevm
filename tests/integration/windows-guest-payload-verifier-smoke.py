@@ -95,6 +95,15 @@ def main() -> int:
         require_block(invoke(payload, manifest, root / "extra", verifier), "guest-payload-file-set")
         extra.unlink()
 
+        # Finder's .DS_Store (top level or in a driver folder) is not a payload file.
+        for finder in (payload / ".DS_Store", payload / "network/.DS_Store"):
+            finder.write_bytes(b"Bud1")
+        finder_staged = invoke(payload, manifest, root / "finder", verifier)
+        assert finder_staged.returncode == 0, finder_staged.stderr
+        assert not list((root / "finder").rglob(".DS_Store")), "a .DS_Store is never staged"
+        for finder in (payload / ".DS_Store", payload / "network/.DS_Store"):
+            finder.unlink()
+
         missing_role = root / "missing-role.tsv"
         missing_role.write_text("\n".join(
             line for line in manifest.read_text().splitlines()

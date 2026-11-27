@@ -124,7 +124,8 @@ if LC_ALL=C sort "$binaries" | uniq -d | grep -q .; then
   fail guest-payload-schema "a binary is assigned to more than one driver"
 fi
 
-(cd "$PAYLOAD_DIR" && find . -type f -print | sed 's#^\./##' | LC_ALL=C sort) > "$actual"
+# Finder's .DS_Store is not part of the payload: only listed files are staged below.
+(cd "$PAYLOAD_DIR" && find . -type f ! -name .DS_Store -print | sed 's#^\./##' | LC_ALL=C sort) > "$actual"
 cut -f1 "$files" | LC_ALL=C sort > "$listed"
 while IFS= read -r path; do
   valid_path "$path" || fail guest-payload-path "payload contains an unsafe path: $path"
