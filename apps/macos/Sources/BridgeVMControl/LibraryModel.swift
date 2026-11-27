@@ -91,8 +91,9 @@ final class LibraryModel: ObservableObject {
     func confirmDeletion(_ cfg: VMConfig) {
         let slug = cfg.slug
         guard admitLibraryAction(cfg, action: .deletion), !deletingSlugs.contains(slug) else { return }
-        deletingSlugs.insert(slug)
         let backend = modelCache[slug]?.backend ?? cfg.makeBackend(libraryRoot: libraryRoot)
+        if backend.diskHelperIsRunning() { deletionError = VMDiskHelper.busy; return }
+        deletingSlugs.insert(slug)
         let root = libraryRoot, deletion = deletionOperation
         actionScheduler {
             let result = deletion(cfg, root, backend.isRunning)
@@ -114,6 +115,7 @@ final class LibraryModel: ObservableObject {
             cloneError = "Shut down the VM before duplicating it."
             return
         }
+        if backend.diskHelperIsRunning() { cloneError = VMDiskHelper.busy; return }
         cloningConfigurations[cfg.slug] = cfg
         let libraryRoot = self.libraryRoot
         let selectionAtAdmission = selectedID
@@ -154,6 +156,7 @@ final class LibraryModel: ObservableObject {
             moveError = "Shut down the VM before moving it."
             return
         }
+        if backend.diskHelperIsRunning() { moveError = VMDiskHelper.busy; return }
         if let refusal = Self.moveDestinationRefusal(cfg, to: destinationParent) {
             moveError = refusal
             return

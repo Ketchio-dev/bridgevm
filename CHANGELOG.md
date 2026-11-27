@@ -43,6 +43,10 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- A snapshot or export run from the command line no longer makes the stopped VM
+  show as running in the app, and Start no longer "attaches" to it: Start,
+  Delete, Duplicate and Move say another BridgeVM task is using the disk. A stop
+  can no longer end that task in the middle of a copy.
 - After restoring a snapshot taken before a disk grow, the disk size setting no
   longer says "Expanded the disk to N GiB" about the disk that was replaced.
 - **Retina resolution** and **Start when BridgeVM opens** can now be changed

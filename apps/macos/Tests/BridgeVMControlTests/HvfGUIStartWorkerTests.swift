@@ -63,6 +63,19 @@ final class HvfGUIStartWorkerTests: XCTestCase {
             await f.clean()
         }
     }
+    /// A CLI snapshot or export holds the disk through the helper: Start says so instead of attaching to it.
+    func testStartWaitsForTheDiskHelperWithASentence() async throws {
+        let f = try HvfGUIStartFixture(rejectLaunch: true)
+        let lease = try HvfMediaLeaseSession(executable: HvfMediaImportTestSupport.helper,
+            disk: f.base.config.targetDiskPath, vars: f.base.config.uefiVarsPath)
+        let request = input(f)
+        let output = await Task.detached { await HvfGUIStartWorker.run(request) }.value
+        lease.abort()
+        guard case let .refused(text) = output.result else { await f.clean(); return XCTFail("\(output.result)") }
+        XCTAssertEqual(text, VMDiskHelper.busy)
+        XCTAssertEqual(f.effects.snapshot.launches, 0)
+        await f.clean()
+    }
     func testReadinessFailurePreservesAllDiagnosticsAndHasNoKeyOrChildEffects() async throws {
         let f = try HvfGUIStartFixture(encrypted: true)
         var config = f.base.config; config.targetDiskPath += ".missing"; config.ramMiB = 1
