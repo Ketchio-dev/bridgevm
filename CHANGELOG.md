@@ -58,6 +58,10 @@ All notable changes to BridgeVM are documented in this file.
   the chosen location, there isn't enough free space on another drive for the
   ISO copy, or another VM took the same ID at the same time. Before, each of
   these said only "Couldn't create the VM or save it to the library."
+- When a Mac port for port forwarding is already in use, the notice now says to
+  restart Windows after quitting the other app or choosing another port. The
+  forward is set up only when Windows starts, so quitting the other app alone
+  never brought it back.
 - A Windows app that stops answering while it holds copied text no longer
   freezes BridgeVM's helper in Windows. Reading the clipboard text now gives up
   after 20 seconds and keeps the last text, so the shared clipboard, shared

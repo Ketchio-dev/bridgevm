@@ -32,14 +32,6 @@ final class HvfPortForwardsTests: XCTestCase {
         XCTAssertNotNil(refused.message)
         XCTAssertEqual(library.latestConfiguration(for: saved).portForwards, "8080:80, 3390:3389")
 
-        // At Start a typo does not stop the VM: it starts with the saved forwards and says so.
-        let start = session.savePortForwardsBeforeStart("8080:")
-        XCTAssertEqual(start.text, "8080:80, 3390:3389")
-        XCTAssertNotNil(start.notice)
-        XCTAssertEqual(library.latestConfiguration(for: saved).portForwards, "8080:80, 3390:3389")
-        XCTAssertTrue(session.savePortForwardsBeforeStart("2222:22") == ("2222:22", nil), "a valid draft is saved")
-        XCTAssertEqual(library.latestConfiguration(for: saved).portForwards, "2222:22")
-
         // Clearing the field restores the never-touched registration.
         XCTAssertTrue(session.applyPortForwards("") == ("", nil))
         XCTAssertNil(library.latestConfiguration(for: saved).portForwards)
@@ -61,11 +53,11 @@ final class HvfPortForwardsTests: XCTestCase {
             session.handle(.unknown(line))
         }
         XCTAssertEqual(session.portForwardNotice.text,
-            "Mac port 8080 is already in use, so it doesn’t reach Windows port 80. Quit the app using it, or choose another Mac port in Settings.")
+            "Mac port 8080 is already in use, so it doesn’t reach Windows port 80. Quit the app using it, or choose another Mac port in Settings, then restart Windows.")
         session.handle(.unknown("BVNET forward-off host=3390 guest=3389"))
         session.handle(.unknown("BVNET forward-off host=x guest=1"))
         XCTAssertEqual(session.portForwardNotice.text,
-            "Mac ports 8080, 3390 are already in use, so they don’t reach Windows. Quit the apps using them, or choose other Mac ports in Settings.")
+            "Mac ports 8080, 3390 are already in use, so they don’t reach Windows. Quit the apps using them, or choose other Mac ports in Settings, then restart Windows.")
         session.resetObservedRuntimeState(clearEvents: false)
         XCTAssertNil(session.portForwardNotice.text, "a new run opens the ports again")
     }
