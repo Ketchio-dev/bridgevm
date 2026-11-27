@@ -54,5 +54,8 @@ final class LibraryModelOwnedRuntimeStartTests: XCTestCase {
         defer { session.finishRuntimeMutation(reservation) }
         guard case .refused = model.requestCLIStart(vmID: config.slug) else { return XCTFail("Start ran during a mutation") }
         XCTAssertEqual(f.access.processLookups, 0); XCTAssertEqual(f.access.keyRequests, 0)
+        // Delete, Duplicate and Move say what is going on instead of "The VM is running…".
+        XCTAssertEqual(model.libraryActionRefusal(for: config),
+            "A snapshot of this VM is being created, restored or deleted. Try again when it finishes.")
     }
 }
