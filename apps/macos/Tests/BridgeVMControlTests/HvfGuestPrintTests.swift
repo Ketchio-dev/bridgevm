@@ -362,8 +362,18 @@ final class HvfGuestPrintTests: XCTestCase {
         XCTAssertEqual(library.latestConfiguration(for: saved).printToMac, true)
         agentStarts()
         XCTAssertEqual(sent().last, "PRINTWATCH")
-        session.connectionState = .connected(host: "guest")
-        XCTAssertEqual(session.applyPrintToggle(false).message, "Shut down Windows before changing this setting.")
+        // The Mac shows each job, so turning it off while Windows runs works at once: the printer goes now
+        // and no job opens; vm.json follows at the stop.
+        XCTAssertTrue(session.applyPrintToggle(false) == (false, nil))
+        XCTAssertEqual(sent().last, "PRINTWATCH off")
+        let (late, lateLine) = try job(session, 2, pdf("late"))
+        session.handle(.unknown(lateLine))
+        XCTAssertTrue(presenter.shown.isEmpty, "off while running: nothing opens")
+        XCTAssertTrue(exists(late))
+        XCTAssertEqual(library.latestConfiguration(for: saved).printToMac, true, "vm.json waits for the stop")
+        session.connectionState = .stopped
+        session.markStopped()
+        XCTAssertEqual(library.latestConfiguration(for: saved).printToMac, false)
         XCTAssertNil(library.operationError)
     }
 }

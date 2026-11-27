@@ -154,8 +154,9 @@ final class HvfGuestPrintNotice: ObservableObject {
 }
 
 extension HvfEngineSession {
-    /// vm.json `printToMac` for a library VM: nil (never set) and true are on, false is off.
-    var printToMacSetting: Bool? { config.libraryContext?.config.printToMac }
+    /// vm.json `printToMac` for a library VM: nil (never set) and true are on, false is off. A change made while
+    /// Windows runs counts at once and is saved at the stop (HvfHostSettingLiveSave).
+    var printToMacSetting: Bool? { config.libraryContext.flatMap { HvfHostSettingLiveSave.preview($0.config).printToMac } }
     var printToMacWanted: Bool { config.libraryContext != nil && printToMacSetting != false }
 
     /// The probe's print folder (BRIDGEVM_VIRTIO_CONSOLE_PRINT_DIR).
@@ -270,9 +271,18 @@ extension HvfEngineSession {
     /// agent start removes the printer; on again goes back to the default.
     func applyPrintToggle(_ enabled: Bool,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (isOn: Bool, message: String?) {
-        let message = saveLibraryPreference("Printing", publish: publish) {
+        let change: HvfHostSettingLiveSave.Change = {
             $0.printToMac = enabled ? ($0.printToMac == nil ? nil : true) : false
         }
+        // The Mac shows each print job, so this changes while Windows runs: Windows adds or removes the
+        // printer now, and vm.json follows at the stop.
+        if let slug = HvfHostSettingLiveSave.liveSlug(self) {
+            HvfHostSettingLiveSave.record("Printing", for: slug, change)
+            if serviceStarted { applyPrintSetting() }
+            objectWillChange.send()
+            return (printToMacWanted, nil)
+        }
+        let message = HvfHostSettingLiveSave.saveNow("Printing", session: self, publish: publish, change: change)
         return (printToMacWanted, message)
     }
 }
