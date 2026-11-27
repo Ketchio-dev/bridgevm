@@ -278,7 +278,7 @@ fn is_persistent(error: &std::io::Error) -> bool {
 mod harness_get_end;
 #[path = "share/host_destination.rs"]
 mod host_destination;
-pub(super) use host_destination::free_bytes;
+pub(super) use host_destination::{free_bytes, mark_guest_item, NEW_DIR_MODE, NEW_FILE_MODE};
 pub(super) use host_destination::snapshot::{version as source_version, SourceVersion};
 #[path = "share/share_host_snapshot.rs"]
 mod share_host_snapshot;

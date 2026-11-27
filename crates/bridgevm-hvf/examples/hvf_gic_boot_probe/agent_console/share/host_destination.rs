@@ -20,6 +20,9 @@ mod directory;
 mod policy;
 #[path = "guest_write_host.rs"]
 mod seal_host;
+// A clipboard file copy from Windows is staged with the same modes and mark (clip_files.rs).
+pub(in crate::agent_console) use directory::NEW_DIR_MODE;
+pub(in crate::agent_console) use policy::{mark_guest_item, NEW_FILE_MODE};
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
