@@ -65,6 +65,9 @@ pub(crate) enum TcpProxyState {
     Established,
 }
 
+/// RFC 5382 REQ-5: an established TCP connection's idle timeout is at least 2 h 4 min.
+pub(crate) const ESTABLISHED_TCP_IDLE_TIMEOUT_MS: u64 = 124 * 60 * 1000;
+
 #[derive(Debug)]
 pub(crate) struct TcpFlow {
     pub(crate) stream: TcpStream,
@@ -125,6 +128,18 @@ impl TcpFlow {
 
     fn free_window(&self) -> usize {
         MAX_TCP_WRITE_BACKLOG.saturating_sub(self.write_buf.len())
+    }
+
+    /// How long this flow may sit idle. An established connection with no FIN either way keeps
+    /// at least 2 h 4 min (RFC 5382; Windows' keepalive is 2 h): an SSH or database session left
+    /// alone was cut after 5 min and Windows was never told. Connecting and closing flows keep
+    /// the short `transitory` timeout.
+    pub(crate) fn idle_limit_ms(&self, transitory: u64) -> u64 {
+        if self.state == TcpProxyState::Established && !self.guest_fin && !self.send.fin_sent {
+            transitory.max(ESTABLISHED_TCP_IDLE_TIMEOUT_MS)
+        } else {
+            transitory
+        }
     }
 
     pub(crate) fn new(

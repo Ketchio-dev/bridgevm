@@ -17,8 +17,9 @@ impl HostSocketOutboundIpv4Handler {
             let timeout = self.idle_timeout_ms;
             self.udp_flows
                 .retain(|_, flow| now.saturating_sub(flow.last_activity) <= timeout);
-            self.tcp_flows
-                .retain(|_, flow| now.saturating_sub(flow.last_activity) <= timeout);
+            self.tcp_flows.retain(|_, flow| {
+                now.saturating_sub(flow.last_activity) <= flow.idle_limit_ms(timeout)
+            });
             self.icmp_flows
                 .retain(|_, flow| now.saturating_sub(flow.last_activity) <= timeout);
             #[cfg(test)]
