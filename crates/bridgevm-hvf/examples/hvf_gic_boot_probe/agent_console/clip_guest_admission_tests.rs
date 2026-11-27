@@ -196,3 +196,25 @@ fn pasteboard_worker_never_writes_guest_text_over_8_mib() {
         "the worker wrote guest text over 8 MiB"
     );
 }
+
+/// A guest text so large its CLIP reply passes the 32 MiB line bound is dropped unread. The poll
+/// used to wait for a reply that never came (resent a minute later to the same answer), holding up
+/// every other request; now it is refused like any text too large and the channel goes on.
+#[test]
+fn a_clip_reply_past_the_line_bound_is_refused_and_ends_the_poll() {
+    let mut rig = ClipRig::synced("old");
+    rig.enqueue();
+    assert_eq!(rig.send(), "CLIPGET\n");
+    rig.h.inbound_scratch = b"CLIP ".to_vec();
+    rig.h.inbound_scratch.resize(crate::agent_console::harness_protocol::MAX_AGENT_LINE_BYTES + 2, b'A');
+    rig.h.advance(rig.now, &mut |_| {});
+    assert!(rig.h.in_flight.is_none(), "the poll still waits for its reply");
+    assert_eq!(rig.h.last_synced.refusals.count, 1);
+    assert!(rig.mac_sets().is_empty());
+    // The rest of that line is dropped up to its newline; the next reply is read as before.
+    rig.h.inbound_scratch = b"AAAA\n".to_vec();
+    rig.h.advance(rig.now, &mut |_| {});
+    rig.guest = "guest-new".into();
+    rig.settle();
+    assert_eq!(rig.mac_sets(), vec!["guest-new".to_owned()]);
+}

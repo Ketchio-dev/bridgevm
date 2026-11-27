@@ -72,6 +72,19 @@ impl AgentConsoleHarness {
         None
     }
 
+    /// A reply past the line bound is discarded unread (harness_protocol.rs). For a clipboard
+    /// poll that is a guest text far over the limit: it is refused like any text too large, and
+    /// the poll ends. Before, the poll waited for a reply that never came, was resent a minute
+    /// later to the same answer, and held up every other request (shared folders, input) meanwhile.
+    pub(in crate::agent_console) fn clip_poll_line_too_long(&mut self, now: Instant) {
+        if !matches!(self.in_flight, Some((ServiceReq::ClipPoll, _))) {
+            return;
+        }
+        let bytes = super::harness_protocol::MAX_AGENT_LINE_BYTES / 4 * 3;
+        self.refuse_guest_clip(GuestClipError::TooLarge { bytes }, now);
+        self.complete_in_flight();
+    }
+
     /// The Mac keeps its copy and the guest's text becomes unknown, so the next
     /// Mac copy is pushed and the next guest copy is adopted. A pending
     /// rebaseline stays pending: a paste landing after this poll is learned,
