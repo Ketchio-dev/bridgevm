@@ -31,6 +31,7 @@ mod publish;
 pub mod selected;
 
 pub use create::{create_snapshot, import_disk};
+pub use files::stop_copies_on_signals;
 
 /// Manifest format version. A restore refuses anything it does not know.
 pub const SNAPSHOT_FORMAT_VERSION: u32 = 1;

@@ -2,7 +2,9 @@
 //! the product uses rather than a reimplementation of it.
 
 use bridgevm_hvf::media_lease_session::{self, pending_delete};
-use bridgevm_hvf::snapshot_pair::{create_snapshot, restore_snapshot, verify_snapshot};
+use bridgevm_hvf::snapshot_pair::{
+    create_snapshot, restore_snapshot, stop_copies_on_signals, verify_snapshot,
+};
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -15,6 +17,10 @@ fn main() -> ExitCode {
     let Some(command) = args.first() else {
         return usage();
     };
+    // Cancel then removes a partial copy; `lease` keeps dying of SIGTERM, which releases it.
+    if matches!(command.as_str(), "create" | "restore" | "import-disk") {
+        stop_copies_on_signals();
+    }
     let result = match (command.as_str(), args.len()) {
         ("lease", 3) => return media_lease_session::command(&args[1..]),
         ("lease-pending-delete", 3) => return pending_delete::command(&args[1..]),
