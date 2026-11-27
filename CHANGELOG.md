@@ -144,6 +144,10 @@ All notable changes to BridgeVM are documented in this file.
   "status=OK" or "BVDRIVER result (exit -1)".
 - The guest agent's input capability line is accepted when it carries extra
   keywords from a newer agent.
+- Settings: the Command key choice (Mac shortcuts or Windows key) can now be
+  changed while Windows runs. It applies at once and is saved when the VM
+  stops; it was locked until you shut Windows down, though it only changes how
+  BridgeVM maps keys.
 - After an unclean stop, the shared folder keeps the Windows version of a file
   beside the Mac one as "(Windows copy)". If the VM stopped again before the
   Mac version was sent back, the next start made a second, identical
