@@ -205,6 +205,8 @@ final class HvfGuestLinksTests: XCTestCase {
         session.handle(.commandOutput(label: Links.watchCommand, body: "BVLINKS watch=unavailable"))
         XCTAssertEqual(session.guestLinkNotice.shown, .setupFailed(detail: nil))
         XCTAssertEqual(session.guestLinkNotice.text, "Windows couldn’t set up opening its links on your Mac. Restart Windows to try again.")
+        session.resetObservedRuntimeState(clearEvents: false)
+        XCTAssertNil(session.guestLinkNotice.shown, "a new run sets the links up again; it used to keep saying so until Quit")
     }
 
     func testLinksOpenAtMostOncePerSecondAndOnlyWithTheSettingOn() throws {
