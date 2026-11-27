@@ -58,6 +58,9 @@ All notable changes to BridgeVM are documented in this file.
 - **Retina resolution** and **Start when BridgeVM opens** can now be changed
   while Windows runs, like the Command key setting. Retina applies to the window
   at once; both are saved when the VM stops. They were locked until shutdown.
+- When Windows stops by itself because something failed (the VM process
+  crashed or was ended, or the disk was still in use), the app says so and shows
+  Needs attention, instead of "Windows has shut down."
 - While a snapshot is being made, restored or deleted, Delete, Duplicate and Move
   say so, instead of "The VM is running" about a stopped VM. A disk being
   expanded or a security chip change says so too.
