@@ -83,6 +83,9 @@ All notable changes to BridgeVM are documented in this file.
 - A never-started VM in a folder that reports itself group- or
   world-writable, as exFAT and some shared folders do, can be deleted. The
   check refused it without protecting anything.
+- Quitting BridgeVM after a VM's runner stopped unexpectedly no longer waits
+  about two minutes behind "Shut down Windows and quit BridgeVM?", "Windows is
+  still shutting down." and a Force Stop button that did nothing.
 - The guest agent's input capability line is accepted when it carries extra
   keywords from a newer agent.
 - After an unclean stop, the shared folder keeps the Windows version of a file

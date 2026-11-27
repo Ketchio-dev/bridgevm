@@ -80,8 +80,10 @@ final class SupervisionForceStopRegressionTests: XCTestCase {
             XCTAssertNil(f.controller.operation, "A spontaneous exit must not invent a Stop")
             XCTAssertEqual(f.controller.teardownConfirmed, !broken)
             XCTAssertEqual(session.connectionState, broken ? .timedOut : .stopped)
-            XCTAssertEqual(session.blocksAppTermination, broken,
+            XCTAssertEqual(session.runnerDiedWithoutCleanup, broken,
                 "An exited runner alone does not prove its helper/TPM cleanup over a broken channel")
+            XCTAssertFalse(session.blocksAppTermination,
+                "Either way no runner is left for Quit to stop or wait for; a new start still checks the disk lease")
         }
     }
 }

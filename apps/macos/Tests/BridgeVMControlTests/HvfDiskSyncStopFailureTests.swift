@@ -68,6 +68,7 @@ final class HvfDiskSyncStopFailureTests: XCTestCase {
         session.handle(.diskFinalSaveFailed)
         try await f.exit()
         XCTAssertTrue(session.runnerDiedWithoutCleanup)
+        XCTAssertFalse(session.blocksAppTermination, "Quit has no runner left to wait for")
         XCTAssertNil(session.runtimeSupervisionFailureText)
         XCTAssertEqual(session.guiStartFailureText, "Windows stopped unexpectedly, so wait a moment before starting it again.")
     }
