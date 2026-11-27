@@ -39,22 +39,49 @@ struct HvfCommandKeyPicker: View {
     }
 }
 
-/// A running VM keeps vm.json as it was admitted with (HvfLibraryPreferenceSave), so a mode chosen while it
-/// runs applies to the session at once and is saved once it stops, as HvfDisplayDriverFlag saves its flag.
+/// Host-only settings (how this app maps keys or sizes the display) change while Windows runs. A running
+/// VM keeps vm.json as it was admitted with (HvfLibraryPreferenceSave), so the session uses a change at once
+/// and it is saved once the VM stops, as HvfDisplayDriverFlag saves its flag.
 @MainActor
-enum HvfCommandKeyLiveSave {
-    private(set) static var pending: [String: HvfCommandKeyMode] = [:]
+enum HvfHostSettingLiveSave {
+    typealias Change = (inout VMConfig) -> Void
+    private(set) static var pending: [String: [String: Change]] = [:]
 
-    static func record(_ mode: HvfCommandKeyMode, for slug: String) { pending[slug] = mode }
+    static func record(_ setting: String, for slug: String, _ change: @escaping Change) {
+        pending[slug, default: [:]][setting] = change
+    }
+
+    /// The slug to record a change for, or nil when the setting saves now (stopped) or must wait (a start
+    /// or another change is being prepared, which disables the control).
+    static func liveSlug(_ session: HvfEngineSession) -> String? {
+        guard !session.libraryPreferencesEditable, !session.hasPendingRuntimeStart,
+              !session.hasPendingRuntimeMutation else { return nil }
+        return session.config.libraryContext?.config.slug
+    }
+
+    /// vm.json's configuration with this VM's changes that wait for the stop, for controls that show them.
+    static func preview(_ config: VMConfig) -> VMConfig {
+        guard let changes = pending[config.slug] else { return config }
+        var copy = config
+        for (_, change) in changes.sorted(by: { $0.key < $1.key }) { change(&copy) }
+        return copy
+    }
 
     @discardableResult
     static func saveIfStopped(_ session: HvfEngineSession,
                               publish: @escaping HvfEngineSession.RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> String? {
-        guard let slug = session.config.libraryContext?.config.slug, let mode = pending[slug],
+        guard let slug = session.config.libraryContext?.config.slug, let changes = pending[slug],
               session.libraryPreferencesEditable else { return nil }
-        let message = session.saveCommandKeyMode(mode, publish: publish)
-        if message == nil { pending[slug] = nil }
-        return message
+        var failure: String?
+        for (setting, change) in changes.sorted(by: { $0.key < $1.key }) {
+            if let message = session.saveLibraryPreference(setting, publish: publish, change: change) {
+                failure = message
+            } else {
+                pending[slug]?[setting] = nil
+            }
+        }
+        if pending[slug]?.isEmpty == true { pending[slug] = nil }
+        return failure
     }
 }
 
@@ -64,18 +91,12 @@ extension HvfEngineSession {
     func applyCommandKeyMode(_ mode: HvfCommandKeyMode,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (mode: HvfCommandKeyMode, message: String?) {
         guard persistsLibraryPreferences else { return (mode, nil) }
-        if !libraryPreferencesEditable, !hasPendingRuntimeStart, !hasPendingRuntimeMutation,
-           let slug = config.libraryContext?.config.slug {
-            HvfCommandKeyLiveSave.record(mode, for: slug)
+        let change: HvfHostSettingLiveSave.Change = { $0.commandKeyMode = mode == .mac ? nil : mode.rawValue }
+        if let slug = HvfHostSettingLiveSave.liveSlug(self) {
+            HvfHostSettingLiveSave.record("Command key", for: slug, change)
             return (mode, nil) // the picker's binding puts it in `config`, which keyMapping reads
         }
-        let message = saveCommandKeyMode(mode, publish: publish)
+        let message = saveLibraryPreference("Command key", publish: publish, change: change)
         return (HvfCommandKeyMode(saved: config.libraryContext?.config.commandKeyMode), message)
-    }
-
-    func saveCommandKeyMode(_ mode: HvfCommandKeyMode, publish: RegistrationPublish) -> String? {
-        saveLibraryPreference("Command key", publish: publish) {
-            $0.commandKeyMode = mode == .mac ? nil : mode.rawValue
-        }
     }
 }

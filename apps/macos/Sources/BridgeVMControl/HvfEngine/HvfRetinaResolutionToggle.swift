@@ -9,7 +9,11 @@ struct HvfRetinaResolutionToggle: View {
     @Binding var setting: Bool?
     @State private var message: String?
 
-    var isDisabled: Bool { session.persistsLibraryPreferences && !session.libraryPreferencesEditable }
+    /// Host-only: it changes the size this app asks Windows for, so it is not locked while Windows runs,
+    /// only while a start or another change is being prepared.
+    var isDisabled: Bool {
+        session.persistsLibraryPreferences && (session.hasPendingRuntimeStart || session.hasPendingRuntimeMutation)
+    }
 
     var body: some View {
         Toggle("Retina resolution", isOn: Binding(get: { setting == true }, set: update))
@@ -27,7 +31,7 @@ struct HvfRetinaResolutionToggle: View {
 
     static func helpText(persists: Bool) -> String {
         "Experimental. On a Retina display, Windows uses the display’s native pixels and 200% scaling. This uses more CPU. Older apps may look blurry until reopened. Very large windows use standard resolution. After you turn this on once, BridgeVM adjusts Windows scaling whenever the window resizes, even if you later turn it off (100% outside Retina mode). This overrides custom Windows scaling."
-            + (persists ? " Changes made while the VM is stopped are saved for future starts." : "")
+            + (persists ? " Changes apply at once and are saved for future starts." : "")
     }
 
     /// On is `true`; off is `false` once it was set, and stays nil for a VM that never set it.
@@ -47,9 +51,16 @@ extension HvfEngineSession {
     func applyRetinaResolutionToggle(_ enabled: Bool, current: Bool? = nil,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (setting: Bool?, message: String?) {
         guard persistsLibraryPreferences else { return (HvfRetinaResolutionToggle.saved(current, enabled: enabled), nil) }
-        let message = saveLibraryPreference("Retina resolution", publish: publish) {
+        let change: HvfHostSettingLiveSave.Change = {
             $0.retinaResolution = HvfRetinaResolutionToggle.saved($0.retinaResolution, enabled: enabled)
         }
+        if let slug = HvfHostSettingLiveSave.liveSlug(self) {
+            HvfHostSettingLiveSave.record("Retina resolution", for: slug, change)
+            config.retinaResolution = HvfRetinaResolutionToggle.saved(config.retinaResolution, enabled: enabled)
+            displayResizeSettingChanged() // Windows gets the window's size at the new scale now
+            return (config.retinaResolution, nil)
+        }
+        let message = saveLibraryPreference("Retina resolution", publish: publish, change: change)
         return (config.libraryContext?.config.retinaResolution, message)
     }
 }

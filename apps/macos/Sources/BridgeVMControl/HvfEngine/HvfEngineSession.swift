@@ -374,6 +374,12 @@ final class HvfEngineSession: ObservableObject {
         }
     }
 
+    /// The Retina setting changed while the view stays: the size for the new setting goes out now.
+    func displayResizeSettingChanged() {
+        displayResize.settingChanged(retina: config.retinaResizeSetting)
+        flushDisplayResize()
+    }
+
     private func flushDisplayResize() {
         displayResize.retina = config.retinaResizeSetting
         guard let size = displayResize.take(at: ProcessInfo.processInfo.systemUptime, fallback: savedDisplaySize),
@@ -546,7 +552,7 @@ final class HvfEngineSession: ObservableObject {
         // vm.json may change again: a display driver installed during this run is saved now,
         // whether or not the VM's view is open (a guest shutdown, another VM selected).
         HvfDisplayDriverFlag.saveIfStopped(self)
-        HvfCommandKeyLiveSave.saveIfStopped(self)
+        HvfHostSettingLiveSave.saveIfStopped(self)
         displayDriverRestartRequired = false
     }
 

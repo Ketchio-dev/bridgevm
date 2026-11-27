@@ -41,20 +41,41 @@ enum ControlAutoStart {
 }
 
 extension LibraryModel {
-    /// A VM saved with a retired engine can never start, so its toggle stays disabled.
+    /// A VM saved with a retired engine can never start, so its toggle stays disabled. The setting only
+    /// matters when BridgeVM opens, so a running VM takes it too (saved when it stops).
     func canSetStartWithBridgeVM(for config: VMConfig) -> Bool {
         let saved = latestConfiguration(for: config)
-        guard saved.engineKind == .hvfEngine else { return false }
-        return hvfRuntimeDetailSession(for: saved)?.libraryPreferencesEditable == true
+        guard saved.engineKind == .hvfEngine, let session = hvfRuntimeDetailSession(for: saved) else { return false }
+        return session.libraryPreferencesEditable || HvfHostSettingLiveSave.liveSlug(session) != nil
+    }
+
+    /// What the toggle shows: vm.json's value, or the change that waits for the VM to stop.
+    func startsWithBridgeVM(_ config: VMConfig) -> Bool {
+        HvfHostSettingLiveSave.preview(latestConfiguration(for: config)).startWithBridgeVM == true
     }
 
     func setStartWithBridgeVM(_ enabled: Bool, for config: VMConfig) {
         let saved = latestConfiguration(for: config)
         guard canSetStartWithBridgeVM(for: saved), let session = hvfRuntimeDetailSession(for: saved) else { return }
-        if let message = session.saveLibraryPreference("Start when BridgeVM opens",
-            publish: { VMRegistrationWriter.commit($0, to: $1) },
-            change: { $0.startWithBridgeVM = enabled }) {
-            operationError = message
+        if let message = session.setStartWithBridgeVM(enabled) { operationError = message }
+        objectWillChange.send()
+    }
+}
+
+extension HvfEngineSession {
+    /// Saves now while stopped; while Windows runs, records it for the stop (HvfHostSettingLiveSave).
+    func setStartWithBridgeVM(_ enabled: Bool,
+        publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> String? {
+        let change: HvfHostSettingLiveSave.Change = { $0.startWithBridgeVM = enabled }
+        if let slug = HvfHostSettingLiveSave.liveSlug(self) {
+            HvfHostSettingLiveSave.record("Start when BridgeVM opens", for: slug, change)
+            objectWillChange.send()
+            return nil
         }
+        return saveLibraryPreference("Start when BridgeVM opens", publish: publish, change: change)
+    }
+
+    var startsWithBridgeVM: Bool {
+        config.libraryContext.map { HvfHostSettingLiveSave.preview($0.config).startWithBridgeVM == true } ?? false
     }
 }

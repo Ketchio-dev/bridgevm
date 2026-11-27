@@ -29,12 +29,9 @@ struct HvfStartCloseSettings: View {
             }
             if session.persistsLibraryPreferences {
                 Toggle("Start this VM when BridgeVM opens", isOn: Binding(
-                    get: { session.config.libraryContext?.config.startWithBridgeVM == true },
-                    set: { value in
-                        message = session.saveLibraryPreference("Automatic startup",
-                            publish: { VMRegistrationWriter.commit($0, to: $1) }) { $0.startWithBridgeVM = value }
-                    }))
-                    .disabled(!session.libraryPreferencesEditable)
+                    get: { session.startsWithBridgeVM },
+                    set: { message = session.setStartWithBridgeVM($0) }))
+                    .disabled(session.hasPendingRuntimeStart || session.hasPendingRuntimeMutation)
                 Text("Hold Option while opening BridgeVM to skip automatic startup.")
                     .font(.caption).foregroundStyle(.secondary)
             }

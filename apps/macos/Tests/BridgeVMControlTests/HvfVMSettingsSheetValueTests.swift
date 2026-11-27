@@ -132,7 +132,8 @@ final class HvfVMSettingsSheetValueTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(values(HvfClipboardSyncToggle.self, in: running).first).isDisabled)
         XCTAssertTrue(try XCTUnwrap(values(HvfSharedFolderSettings.self, in: running).first).isDisabled)
         XCTAssertTrue(try XCTUnwrap(values(HvfGuestResolutionPicker.self, in: running).first).isDisabled)
-        XCTAssertTrue(try XCTUnwrap(values(HvfRetinaResolutionToggle.self, in: running).first).isDisabled)
+        XCTAssertFalse(try XCTUnwrap(values(HvfRetinaResolutionToggle.self, in: running).first).isDisabled,
+                       "host-only: it applies at once and is saved when the VM stops")
         XCTAssertFalse(try XCTUnwrap(values(HvfCommandKeyPicker.self, in: running).first).isDisabled,
                        "host-only: it applies at once and is saved when the VM stops")
         XCTAssertTrue(try XCTUnwrap(values(HvfMicrophoneToggle.self, in: running).first).isDisabled)

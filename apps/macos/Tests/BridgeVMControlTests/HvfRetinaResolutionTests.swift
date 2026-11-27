@@ -58,8 +58,9 @@ final class HvfRetinaResolutionTests: XCTestCase {
         }
     }
 
-    /// Stopped-only, like the other saved preferences: a running VM keeps the registration it started with.
-    func testTheToggleIsDisabledAndTheSaveRefusedWhileRunning() throws {
+    /// Host-only, so it changes while Windows runs: at once for the display, and in vm.json once the VM
+    /// stops (a running VM keeps the registration it started with). It was locked until a restart.
+    func testTheToggleAppliesWhileRunningAndIsSavedAtStop() throws {
         let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
         defer { fixture.clean() }
         var saved = fixture.config(); saved.virtioDisplayDriverInstalled = true; fixture.save(saved)
@@ -69,21 +70,23 @@ final class HvfRetinaResolutionTests: XCTestCase {
         let toggle = HvfRetinaResolutionToggle(session: session, setting: .constant(nil))
         XCTAssertFalse(toggle.isDisabled)
         session.connectionState = .connected(host: "fixture")
-        XCTAssertTrue(toggle.isDisabled)
-        XCTAssertTrue(session.applyRetinaResolutionToggle(true)
-            == (nil, "Shut down Windows before changing this setting."))
-        XCTAssertEqual(try Data(contentsOf: url), original)
-        XCTAssertFalse(session.config.requestsRetinaResolution)
+        XCTAssertFalse(toggle.isDisabled)
+        XCTAssertTrue(session.applyRetinaResolutionToggle(true) == (true, nil))
+        XCTAssertTrue(session.config.requestsRetinaResolution, "applies to the running VM at once")
+        XCTAssertEqual(try Data(contentsOf: url), original, "vm.json waits for the stop")
         session.connectionState = .stopped
+        session.markStopped()
+        XCTAssertEqual(library.latestConfiguration(for: saved).retinaResolution, true)
+        XCTAssertNil(HvfHostSettingLiveSave.pending[saved.slug])
     }
 
     func testHelpTextIsKoreanAndMarkedExperimental() {
         let text = HvfRetinaResolutionToggle.helpText(persists: true)
         for needle in ["Experimental", "native pixels", "200%", "CPU", "blurry", "standard resolution", "later turn it off", "100%",
-                       "overrides custom Windows scaling", "while the VM is stopped"] {
+                       "overrides custom Windows scaling", "apply at once"] {
             XCTAssertTrue(text.contains(needle), needle)
         }
-        XCTAssertFalse(HvfRetinaResolutionToggle.helpText(persists: false).contains("while the VM is stopped"))
+        XCTAssertFalse(HvfRetinaResolutionToggle.helpText(persists: false).contains("apply at once"))
     }
 
     func testAFrameOfTheBackingSizeIsShownOneToOne() {

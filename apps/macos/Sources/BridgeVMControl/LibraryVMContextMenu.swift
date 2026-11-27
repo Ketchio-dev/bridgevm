@@ -8,7 +8,7 @@ struct LibraryVMContextMenu: View {
 
     var body: some View {
         Toggle("Start when BridgeVM opens", isOn: Binding(
-            get: { library.latestConfiguration(for: config).startWithBridgeVM == true },
+            get: { library.startsWithBridgeVM(config) },
             set: { library.setStartWithBridgeVM($0, for: config) }))
             .disabled(!library.canSetStartWithBridgeVM(for: config))
             .help("Hold Option while opening BridgeVM to skip automatic startup.")

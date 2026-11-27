@@ -84,6 +84,13 @@ struct HvfDisplayResizeRequest {
         if latest != before { dueAt = now + Self.settleDelay }
     }
 
+    /// The Retina setting changed while the view stays: its size for the new setting is due now.
+    mutating func settingChanged(retina: Bool?) {
+        let before = latest
+        self.retina = retina
+        if latest != before { dueAt = -.infinity }
+    }
+
     /// A live resize ended: a pending size is due now instead of after the debounce.
     mutating func settle() {
         if dueAt != nil { dueAt = -.infinity }
