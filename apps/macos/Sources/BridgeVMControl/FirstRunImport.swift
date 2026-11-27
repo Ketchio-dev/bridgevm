@@ -27,7 +27,7 @@ enum FirstRunImport {
         case varsMissing(String)
         case varsWrongSize(path: String, bytes: UInt64)
         case vtpmNotADirectory(String), vtpmRecoveryMissing(String), vtpmRecoveryWithoutState
-        case vtpmRecoveryPackageRequired, vtpmRecoveryCodeRequired
+        case vtpmRecoveryPackageRequired, vtpmRecoveryCodeRequired, vtpmRecoveryCodeShared(String)
         case badResources(memMiB: Int, cpuCount: Int)
 
         var errorDescription: String? { description }
@@ -47,6 +47,8 @@ enum FirstRunImport {
             case .vtpmRecoveryMissing(let p): return "The vTPM recovery file is unavailable at \(p)"
             case .vtpmRecoveryPackageRequired: return "Choose the vTPM recovery package."
             case .vtpmRecoveryCodeRequired: return "Choose the vTPM recovery code file."
+            case .vtpmRecoveryCodeShared(let p):
+                return "Other accounts on this Mac can read the recovery code file at \(p). Make it private (in Terminal: chmod 600 and the file's path), then import again."
             case .vtpmRecoveryWithoutState: return "Choose the vTPM state folder to use these recovery files."
             case .badResources(let mem, let cpu):
                 return "Choose at least 2048 MiB of memory and 1 to 64 CPUs. The current settings are \(mem) MiB and \(cpu) CPUs."

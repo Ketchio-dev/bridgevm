@@ -67,6 +67,10 @@ All notable changes to BridgeVM are documented in this file.
 - Copying more than about 24 MB of text in Windows stalled clipboard sharing,
   shared folders and input for the rest of the session. The copy is now
   refused like any text over 8 MB, and the rest keeps working.
+- Importing a VM with its vTPM: a recovery code file other accounts can read, a
+  mistyped code or a package for another vTPM now stops the import at once with
+  a sentence that names the problem. It used to copy the whole disk first and
+  then blame disk access or free space.
 - `bridgevm app create-windows --resolution` was saved but never used: the VM
   started at 1280x800. It now sets the VM's startup resolution, and the default
   is the documented 1440x900.
