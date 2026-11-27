@@ -99,6 +99,24 @@ final class HvfDisplayWindowPlacementTests: XCTestCase {
         XCTAssertEqual(surface.convert(surface.bounds, to: content), content.bounds)
     }
 
+    /// Keys typed into a just-opened VM window (at the Windows sign-in screen, say) reach Windows: the
+    /// display takes the keyboard when it joins the window, not only after a click.
+    func testTheDisplayTakesTheKeyboardWhenTheWindowOpens() throws {
+        let vm = config()
+        defer { forget(vm) }
+        let display = HvfDisplayWindowController(session: session(vm), title: "vm")
+        defer { display.close() }
+        let window = try XCTUnwrap(display.window)
+        let content = try XCTUnwrap(window.contentView)
+        content.layoutSubtreeIfNeeded()
+        func framebuffer(in view: NSView) -> FBLayerView? {
+            if let surface = view as? FBLayerView { return surface }
+            return view.subviews.lazy.compactMap { framebuffer(in: $0) }.first
+        }
+        let surface = try XCTUnwrap(framebuffer(in: content))
+        XCTAssertTrue(window.firstResponder === surface)
+    }
+
     private func controller(_ config: HvfEngineConfig) -> HvfDisplayWindowController {
         HvfDisplayWindowController(session: session(config), title: "vm")
     }
