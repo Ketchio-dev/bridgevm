@@ -15,6 +15,7 @@ final class FileSelectionTests: XCTestCase {
         XCTAssertFalse(panel.allowsMultipleSelection)
         XCTAssertTrue(panel.canChooseFiles)
         XCTAssertFalse(panel.canChooseDirectories)
+        XCTAssertTrue(panel.treatsFilePackagesAsDirectories, "a disk inside another VM app's bundle can be chosen")
         XCTAssertEqual(panel.allowedContentTypes, ["iso", "img"].compactMap { UTType(filenameExtension: $0) })
         panel.url = URL(fileURLWithPath: "/tmp/selected.iso")
         panel.complete(.OK)

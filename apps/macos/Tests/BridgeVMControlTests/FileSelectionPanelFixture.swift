@@ -8,6 +8,7 @@ final class SelectionPanelStub: FileSelectionPanel {
     var canChooseDirectories = false
     var canChooseFiles = true
     var allowedContentTypes: [UTType] = []
+    var treatsFilePackagesAsDirectories = false
     var url: URL?
     var beginCalls = 0
     private var handler: ((NSApplication.ModalResponse) -> Void)?
