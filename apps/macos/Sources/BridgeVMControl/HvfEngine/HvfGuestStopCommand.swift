@@ -27,7 +27,7 @@ enum HvfGuestStopWait: Equatable, Sendable {
         case .windowsClosingApps:
             return "Windows is closing apps. Save any open work in the VM window, or use Force Stop to shut down now."
         case .windowsStillRunning:
-            return "Windows is still running. Check the VM window for an app blocking shutdown, or use Force Stop."
+            return "Windows is still running. Check the VM window for an app blocking shutdown, then choose Shut Down Again, or use Force Stop."
         }
     }
 }

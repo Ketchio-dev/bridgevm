@@ -97,6 +97,29 @@ final class HvfOwnedStopWaitTests: XCTestCase {
         XCTAssertNil(ticket.observation.failure)
     }
 
+    /// Windows cancelled its shutdown (an app held it and the user chose Cancel): past the grace, the Stop
+    /// can ask again instead of leaving only Force Stop.
+    func testPastTheGraceTheStopAsksWindowsAgain() async throws {
+        let f = try Fixture(); defer { f.clean() }
+        f.controller.receive(.message(try f.event("ready", sequence: 1)))
+        f.controller.guestServiceReady()
+        let ticket = try appStop(f)
+        try await waitForControl(f, "shutdown.exe /s /t 0\n")
+        XCTAssertFalse(f.controller.askGuestAgain(pressPowerButton: nil), "not before the grace ends")
+        f.clock.value = 281; f.controller.tick()
+        XCTAssertEqual(f.controller.guestStopWait, .windowsStillRunning)
+        XCTAssertTrue(f.controller.askGuestAgain(pressPowerButton: nil))
+        try await waitForControl(f, "shutdown.exe /s /t 0\nshutdown.exe /s /t 0\n")
+        XCTAssertEqual(f.controller.guestStopWait, .windowsClosingApps, "the grace starts over")
+        f.clock.value = 462; f.controller.tick()
+        XCTAssertEqual(f.controller.guestStopWait, .windowsStillRunning)
+        XCTAssertEqual(ticket.observation.phase, .guestGrace)
+        XCTAssertNil(ticket.observation.failure)
+        f.controller.receive(.message(try f.event("complete-not-admitted", sequence: 2, success: true)))
+        try await f.exit(); f.controller.receive(.eof)
+        XCTAssertTrue(ticket.observation.isComplete)
+    }
+
     func testForceStopAfterThePowerButtonCancelsTheHeldStopAtOnce() throws {
         let f = try Fixture(); defer { f.clean() }
         f.controller.receive(.message(try f.event("ready", sequence: 1)))

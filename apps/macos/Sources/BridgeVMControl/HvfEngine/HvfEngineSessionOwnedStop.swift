@@ -14,6 +14,16 @@ extension HvfEngineSession {
         return result
     }
 
+    /// Stop's "Shut Down Again" once Windows outlasted the grace (HvfOwnedRunController.askGuestAgain).
+    @discardableResult
+    func askWindowsToShutDownAgain() -> Bool {
+        guard let controller = ownedController, ownedProcessIdentity == controller.identity else { return false }
+        resumeBeforeStop() // a paused Windows cannot shut down
+        let asked = controller.askGuestAgain(pressPowerButton: { [weak self] in self?.pressGuestPowerButton() ?? false })
+        ownedRuntimeChanged(token: controller.identity.token)
+        return asked
+    }
+
     func requestForceStop(_ target: HvfForceStopTarget) -> HvfForceStopResult {
         defer { refreshForceStopTarget() }
         guard ownedProcessIdentity == target.identity, let controller = ownedController,

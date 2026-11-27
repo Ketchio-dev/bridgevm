@@ -25,6 +25,10 @@ struct HvfForceStopControl<Content: View>: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier(identifier + ".stop-wait")
             }
+            if session.stopWait == .windowsStillRunning {
+                Button("Shut Down Again") { session.askWindowsToShutDownAgain() }
+                    .accessibilityIdentifier(identifier + ".ask-again")
+            }
             if session.forceStopTarget != nil {
                 Button("Force Stop", role: .destructive) {
                     guard let target = session.forceStopTarget else { return }
