@@ -24,6 +24,26 @@ enum NativeCLIError: LocalizedError {
     }
 }
 
+/// Text output names the common failures in a sentence (the most common, BridgeVM not open, printed
+/// `ownerUnavailable`); --json keeps the codes. Other reasons, including app sentences, pass through.
+enum NativeCLIReason {
+    static func sentence(_ reason: String, vmID: String, action: String) -> String {
+        switch reason {
+        case "ownerUnavailable": return "BridgeVM isn’t open for this library. Open BridgeVM, then try again."
+        case "ownerBusy": return "BridgeVM is busy with another request. Try again in a moment."
+        case "timedOut": return "BridgeVM didn’t answer in time. Try again."
+        case "libraryChanged", "configurationChanged": return "The VM library changed meanwhile. Try again."
+        case "deadlineExceeded":
+            return "BridgeVM is still \(action) the VM. Run `bridgevm app status \(vmID)` to follow it."
+        case "modelUnavailable": return "BridgeVM is still opening this library. Try again in a moment."
+        case "busy": return "Another operation is using this VM. Try again when it finishes."
+        case "unsupportedTarget": return "This VM isn’t waiting to be installed."
+        case "cancellationUnavailable": return "The installation can no longer be canceled."
+        default: return reason
+        }
+    }
+}
+
 extension NativeCLI {
     static func execute(_ options: NativeCLIOptions) throws -> Int32 {
         switch options.command {

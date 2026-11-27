@@ -63,7 +63,10 @@ extension NativeCLIRuntimeStop {
         if let operationID { lines.append("Operation: \(operationID)") }
         if let target { lines.append("Owned run: \(target.runToken), PID \(target.processID)") }
         if let observation { lines.append("Stop phase: \(observation.phase.rawValue)") }
-        if let unavailableReason { lines.append("Stop result unavailable: \(unavailableReason)") }
+        if let unavailableReason {
+            lines.append("Stop result unavailable: "
+                + NativeCLIReason.sentence(unavailableReason, vmID: vmID, action: "stopping"))
+        }
         lines.append("Completion requires supervisor cleanup and retained runner exit; normal guest shutdown is unproven.")
         return lines.joined(separator: "\n") + "\n"
     }
