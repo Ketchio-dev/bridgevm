@@ -46,7 +46,7 @@ final class HvfCommandKeyModeTests: XCTestCase {
         session.connectionState = .stopped
         session.markStopped()
         XCTAssertEqual(library.latestConfiguration(for: saved).commandKeyMode, "windows")
-        XCTAssertNil(HvfCommandKeyLiveSave.pending[saved.slug])
+        XCTAssertNil(HvfHostSettingLiveSave.pending[saved.slug])
     }
 
     /// The legacy route (the VMM shipped with the app) takes a bare tap and a Command chord; the line

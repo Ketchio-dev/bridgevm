@@ -24,6 +24,21 @@ final class HvfDisplayResizeRequestTests: XCTestCase {
         XCTAssertEqual(Request.Size(width: 1517, height: 931).command, "RESIZE 1517x931")
     }
 
+    /// Turning Retina on or off while Windows runs sends the same window's size for the new setting at once.
+    func testAChangedRetinaSettingMakesTheViewsNewSizeDueNow() {
+        var request = Request()
+        request.retina = false
+        request.viewResized(to: view(1000, 700, scale: 2), at: 0)
+        request.settle()
+        guard let plain = request.take(at: 0) else { return XCTFail("the plain size went out first") }
+        request.didSend(plain)
+        request.settingChanged(retina: true)
+        XCTAssertEqual(request.take(at: 0), retina(1000, 700, scale: 2))
+        XCTAssertNotEqual(retina(1000, 700, scale: 2), plain)
+        request.settingChanged(retina: true)
+        XCTAssertNil(request.take(at: 0), "an unchanged setting sends nothing")
+    }
+
     func testTrailingDebounceSendsOnlyTheSettledSize() {
         var request = Request()
         request.viewResized(to: view(1300, 800), at: 10)
