@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import BridgeVMControl
 
@@ -114,15 +115,58 @@ final class HvfVMSettingsDraftTests: XCTestCase {
         let display = HvfVMSettingsDraft(session: session)
         dashboard.didAppear()
         display.didAppear()
-        dashboard.name = "Unfinished rename"
         dashboard.didDisappear()
-        XCTAssertEqual(session.config.libraryContext?.config.name, saved.name)
         guard case let .refused(message) = session.requestGUIStart(configuration: session.config) else {
             return XCTFail("Start must not admit a visible settings draft")
         }
         XCTAssertEqual(message, "Close Settings before starting Windows.")
         display.didDisappear()
         XCTAssertTrue(session.openSettingsSheets.isEmpty)
+    }
+
+    /// The sheet also closes without Done, for example when a finished Duplicate selects the copy.
+    /// Before: the typed name was dropped, and nothing told the user.
+    func testClosingWithoutDoneSavesTheTypedNameAndReportsWhatWasNotSaved() throws {
+        let f = try HvfRuntimeSessionStoreFixture()
+        defer { f.clean() }
+        let saved = f.config(); f.save(saved)
+        let library = f.library(probe: HvfClipboardSyncProbe())
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+        let renamed = HvfVMSettingsDraft(session: session)
+        renamed.didAppear()
+        renamed.name = "Work PC"
+        renamed.didDisappear()
+        XCTAssertEqual(try NativeLibraryReader.readConfig(rootURL: f.root, id: saved.slug).name, "Work PC")
+        XCTAssertNil(library.operationError)
+
+        let invalid = HvfVMSettingsDraft(session: session)
+        invalid.name = " "
+        invalid.didDisappear()
+        XCTAssertEqual(library.operationError, "Enter a VM name with 1 to 128 characters and no control characters.")
+        XCTAssertEqual(try NativeLibraryReader.readConfig(rootURL: f.root, id: saved.slug).name, "Work PC")
+    }
+
+    /// Turning sharing on only reveals the fields. Before: it saved at once with an empty Mac folder,
+    /// which showed a warning before the user could type anything.
+    func testTurningSharingOnWithoutAFolderWaitsForDone() throws {
+        let f = try HvfRuntimeSessionStoreFixture()
+        defer { f.clean() }
+        let saved = f.config(); f.save(saved)
+        let original = try Data(contentsOf: f.registration(saved))
+        let library = f.library()
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+        let draft = HvfVMSettingsDraft(session: session)
+        let settings = HvfSharedFolderSettings(session: session,
+            enabled: Binding(get: { draft.shareEnabled }, set: { draft.shareEnabled = $0 }),
+            hostDir: Binding(get: { draft.host }, set: { draft.host = $0 }),
+            guestDir: Binding(get: { draft.guest }, set: { draft.guest = $0 }),
+            commit: { draft.commitShare() })
+        settings.setEnabled(true)
+        XCTAssertTrue(draft.shareEnabled)
+        XCTAssertNil(draft.shareMessage)
+        XCTAssertEqual(try Data(contentsOf: f.registration(saved)), original)
+        XCTAssertFalse(draft.finish(), "Done still asks for the Mac folder")
+        XCTAssertEqual(draft.shareMessage, "Enter the full path to a Mac folder and a destination path in Windows.")
     }
 
     func testExperimentalTextCommitsReachLaunchConfiguration() throws {

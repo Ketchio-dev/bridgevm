@@ -95,23 +95,24 @@ extension HvfEngineSession {
         return (config.libraryContext?.config.sharedFolder, message)
     }
 
-    /// nil stops sharing. A selection is saved only while its host folder exists as a directory.
+    /// nil stops sharing. Like launch, a selection may name a Mac folder that is missing for now (a new
+    /// VM's default before its first start, an unplugged drive); a path to a file is refused.
     func saveSharedFolderPreference(_ selection: HvfSharedFolderSelection?,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> String? {
         guard persistsLibraryPreferences else { return nil }
         if let selection {
             var isDirectory: ObjCBool = false
-            guard selection.hostPath.hasPrefix("/"),
-                  FileManager.default.fileExists(atPath: selection.hostPath, isDirectory: &isDirectory),
-                  isDirectory.boolValue,
+            let exists = FileManager.default.fileExists(atPath: selection.hostPath, isDirectory: &isDirectory)
+            guard selection.hostPath.hasPrefix("/"), !exists || isDirectory.boolValue,
                   !selection.guestPath.trimmingCharacters(in: .whitespaces).isEmpty else {
-                return "Enter the full path to an existing Mac folder and a destination path in Windows."
+                return "Enter the full path to a Mac folder and a destination path in Windows."
             }
         }
         return saveLibraryPreference("Shared folder", publish: publish) {
+            // A new VM's default folder is still created at start; a folder the user chose never is.
+            if $0.sharedFolderHostPath != selection?.hostPath { $0.createSharedFolderOnStart = nil }
             $0.sharedFolderHostPath = selection?.hostPath
             $0.sharedFolderGuestPath = selection?.guestPath
-            $0.createSharedFolderOnStart = nil
         }
     }
 

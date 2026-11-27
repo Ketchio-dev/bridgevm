@@ -78,6 +78,10 @@ All notable changes to BridgeVM are documented in this file.
 - "Start when BridgeVM opens" no longer skips a VM that is not ready (for
   example its disk is on a drive that is not connected) without a word: it
   starts it as the Start button does, which says why it could not.
+- Settings now saves a shared folder whose Mac folder doesn't exist yet, such as
+  a new VM's default folder before its first start or a folder on an unplugged
+  drive. Turning on "Share a folder" no longer warns before you choose a folder,
+  and a VM name typed in Settings is no longer lost if the sheet closes without Done.
 - Shared folders: after you changed only the Windows folder of a share (the Mac
   folder stayed the same), the first sync could take same-named files in the new
   Windows folder for edits and copy them over the Mac's files. The saved sync
