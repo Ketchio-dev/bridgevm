@@ -7,6 +7,7 @@ import SwiftUI
 final class InstallCancellationButtonProbe {
     struct Entry {
         let enabled: Bool
+        let role: ButtonRole?
         let trigger: () -> Void
         func activateIfEnabled() { if enabled { trigger() } }
     }
@@ -19,7 +20,7 @@ struct InstallCancellationProbeStyle: PrimitiveButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         VStack {
             configuration.label
-            InstallCancellationProbeEntry(probe: probe, trigger: { configuration.trigger() })
+            InstallCancellationProbeEntry(probe: probe, role: configuration.role, trigger: { configuration.trigger() })
         }
     }
 }
@@ -30,11 +31,12 @@ private final class InstallCancellationProbeNode: NSView {
 
 private struct InstallCancellationProbeEntry: NSViewRepresentable {
     let probe: InstallCancellationButtonProbe
+    let role: ButtonRole?
     let trigger: () -> Void
     func makeNSView(context: Context) -> InstallCancellationProbeNode { InstallCancellationProbeNode() }
     func updateNSView(_ view: InstallCancellationProbeNode, context: Context) {
         view.probe = probe
-        probe.entries[ObjectIdentifier(view)] = .init(enabled: context.environment.isEnabled, trigger: trigger)
+        probe.entries[ObjectIdentifier(view)] = .init(enabled: context.environment.isEnabled, role: role, trigger: trigger)
     }
     static func dismantleNSView(_ view: InstallCancellationProbeNode, coordinator: ()) {
         view.probe?.entries.removeValue(forKey: ObjectIdentifier(view))

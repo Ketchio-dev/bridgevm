@@ -49,6 +49,10 @@ All notable changes to BridgeVM are documented in this file.
 - Putting the Mac to sleep while a key press or click was still on its way to
   Windows no longer stops the keyboard and mouse on wake until Windows restarts:
   the time Windows has to confirm input now counts only while the Mac is awake.
+- After you choose Stop, the VM window now shows what Windows is doing while it
+  shuts down, with Force Stop and, if Windows is still running after the wait,
+  Shut Down Again. Before, only the library showed them, so a full-screen VM
+  window gave no sign of the stop and no way out.
 - A snapshot or export run from the command line no longer makes the stopped VM
   show as running in the app, and Start no longer "attaches" to it: Start,
   Delete, Duplicate and Move say another BridgeVM task is using the disk. A stop
