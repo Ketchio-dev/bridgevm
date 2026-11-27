@@ -61,6 +61,9 @@ All notable changes to BridgeVM are documented in this file.
 - A Windows driver touching a device from the very top of the address space can
   no longer crash the VM: the instruction pointer now wraps around as it does on
   real hardware.
+- When Windows is still running after a Stop's waiting time (for example an app
+  held the shutdown and you chose Cancel in Windows), the VM now offers Shut Down
+  Again, which asks Windows once more, instead of only Force Stop.
 - **Retina resolution** and **Start when BridgeVM opens** can now be changed
   while Windows runs, like the Command key setting. Retina applies to the window
   at once; both are saved when the VM stops. They were locked until shutdown.
