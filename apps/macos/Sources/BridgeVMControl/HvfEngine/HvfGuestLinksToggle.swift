@@ -31,6 +31,9 @@ struct HvfGuestLinksToggle: View {
 final class HvfGuestLinkNotice: ObservableObject {
     enum Kind: Equatable {
         case refused(host: String?), loopback(host: String), tooFrequent(host: String), failed(host: String)
+        /// The guest could not register BridgeVM as a browser or watch for links (`BVLINKS result=failed`,
+        /// `BVLINKS watch=unavailable`): no link can reach the Mac until that works.
+        case setupFailed(detail: String?)
     }
 
     @Published private(set) var shown: Kind?
@@ -47,6 +50,9 @@ final class HvfGuestLinkNotice: ObservableObject {
         case let .loopback(host): return "Open the link to \(Self.short(host)) in Windows. On your Mac, that address points back to the Mac itself."
         case let .tooFrequent(host): return "BridgeVM opens one Windows link per second. Try the link to \(Self.short(host)) again."
         case let .failed(host): return "Your Mac couldn’t open the Windows link to \(Self.short(host))."
+        case let .setupFailed(detail):
+            return "Windows couldn’t set up opening its links on your Mac" + (detail.map { " (\($0))" } ?? "")
+                + ". Restart Windows to try again."
         }
     }
 

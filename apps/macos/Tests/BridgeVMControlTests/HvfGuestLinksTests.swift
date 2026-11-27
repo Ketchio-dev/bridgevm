@@ -181,6 +181,32 @@ final class HvfGuestLinksTests: XCTestCase {
         XCTAssertEqual(opener.opened.map(\.absoluteString), ["https://example.com/new"])
     }
 
+    /// A registration or link watch Windows could not set up is said once, in the links notice: before,
+    /// the setting stayed on and links silently never reached the Mac. Off, a failed removal says nothing.
+    func testAFailedRegistrationOrLinkWatchIsShownWhileTheSettingIsOn() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
+        defer { fixture.clean() }
+        let saved = fixture.config(); fixture.save(saved)
+        let library = fixture.library(probe: probe)
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+        let failed = "BVLINKS result=failed detail=reparse point: C:\\Users\\a\\AppData\\Local\\BridgeVM"
+
+        session.handle(.commandOutput(label: Links.registerCommands[1], body: failed))
+        XCTAssertNil(session.guestLinkNotice.shown, "off: nothing to report")
+
+        XCTAssertTrue(session.applyGuestLinksToggle(true) == (true, nil))
+        session.handle(.commandOutput(label: Links.registerCommands[1], body: "BVLINKS result=registered"))
+        XCTAssertNil(session.guestLinkNotice.shown)
+        session.handle(.commandOutput(label: Links.registerCommands[1], body: failed + "\r"))
+        XCTAssertEqual(session.guestLinkNotice.shown,
+                       .setupFailed(detail: "reparse point: C:\\Users\\a\\AppData\\Local\\BridgeVM"))
+        XCTAssertEqual(session.guestLinkNotice.text,
+            "Windows couldn’t set up opening its links on your Mac (reparse point: C:\\Users\\a\\AppData\\Local\\BridgeVM). Restart Windows to try again.")
+        session.handle(.commandOutput(label: Links.watchCommand, body: "BVLINKS watch=unavailable"))
+        XCTAssertEqual(session.guestLinkNotice.shown, .setupFailed(detail: nil))
+        XCTAssertEqual(session.guestLinkNotice.text, "Windows couldn’t set up opening its links on your Mac. Restart Windows to try again.")
+    }
+
     func testLinksOpenAtMostOncePerSecondAndOnlyWithTheSettingOn() throws {
         let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
         defer { fixture.clean() }
