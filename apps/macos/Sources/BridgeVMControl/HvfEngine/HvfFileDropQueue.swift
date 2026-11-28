@@ -11,7 +11,7 @@ final class HvfFileDropQueue: ObservableObject {
         let failed: Bool
     }
 
-    static let notReadyText = "Windows isn’t ready to receive files. Try again after Guest Tools connects."
+    static let notRunningText = "Windows isn’t running, so the files weren’t copied."
 
     @Published private(set) var notice: Notice?
     /// How long a finished drop's notice stays up.
@@ -24,6 +24,8 @@ final class HvfFileDropQueue: ObservableObject {
         let open: Bool
         let itemName: String?
         var skipped = 0
+        /// Staged while Windows was still starting: sent at the agent's SERVICE start.
+        var waiting: HvfFileDropStaging.Summary?
         var sent = false
         var started = false
         var files = (done: 0, total: 0)
@@ -38,6 +40,12 @@ final class HvfFileDropQueue: ObservableObject {
 
     func refuse(_ text: String) {
         notice = Notice(text: text, failed: true)
+    }
+
+    /// The close button on a failed notice. A finished drop's notice goes by itself.
+    func dismiss() {
+        guard notice?.failed == true else { return }
+        notice = nil
     }
 
     /// A new job and its staging folder below `root`. With no other job in flight, whatever an
@@ -60,10 +68,23 @@ final class HvfFileDropQueue: ObservableObject {
             return finish(index, Notice(text: "Couldn’t start the copy. Try again in a moment.", failed: true))
         }
         jobs[index].sent = true
+        jobs[index].waiting = nil
         jobs[index].skipped = summary.skipped
         jobs[index].files.total = summary.files
         jobs[index].bytes.total = summary.bytes
         show()
+    }
+
+    /// Staged before Windows can take the files: they wait for `waitingForWindows()`.
+    func waitForWindows(_ id: String, _ summary: HvfFileDropStaging.Summary) {
+        guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
+        jobs[index].waiting = summary
+        show()
+    }
+
+    /// The drops waiting for Windows, in drop order. Each one then gets `staged(_:_:sent:)`.
+    func waitingForWindows() -> [(id: String, staging: URL, open: Bool, summary: HvfFileDropStaging.Summary)] {
+        jobs.compactMap { job in job.waiting.map { (job.id, job.staging, job.open, $0) } }
     }
 
     func nothingToCopy(_ id: String) {
@@ -191,7 +212,9 @@ final class HvfFileDropQueue: ObservableObject {
         guard let job = jobs.first else { return }
         let waiting = jobs.count > 1 ? " · \(jobs.count - 1) queued" : ""
         let text: String
-        if !job.sent {
+        if job.waiting != nil {
+            text = "The copy starts when Windows is ready…"
+        } else if !job.sent {
             text = "Preparing to copy…"
         } else if !job.started {
             text = "Starting the copy to Windows…"
