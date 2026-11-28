@@ -19,7 +19,7 @@ pub struct HostSocketOutboundIpv4Handler {
     pub(crate) icmp_flows: HashMap<IcmpFlowKey, IcmpFlow>,
     pub(crate) pending_tcp_resets: VecDeque<PendingTcpReset>,
     pub(crate) tcp_remove_scratch: Vec<TcpFlowKey>,
-    pub(crate) udp_recv_scratch: [u8; HOST_SOCKET_UDP_RECV_SCRATCH_LEN],
+    pub(crate) udp_recv_scratch: Box<[u8]>,
     pub(crate) tcp_read_scratch: [u8; TCP_MSS],
     pub(crate) icmp_recv_scratch: [u8; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
     pub(crate) pending_socket_errors: u64,
@@ -55,7 +55,9 @@ pub(crate) fn watch_socket(
         .is_some_and(|wake| wake.watch(fd, writable))
 }
 
-pub(crate) const HOST_SOCKET_UDP_RECV_SCRATCH_LEN: usize = 2048;
+/// A whole UDP datagram: macOS reassembles fragmented ones, and a reply over the guest's MTU goes
+/// back as IPv4 fragments (queue_udp_reply). A 2048-byte read cut larger ones short.
+pub(crate) const HOST_SOCKET_UDP_RECV_SCRATCH_LEN: usize = 65_535;
 
 /// The lines the app turns into its notice (HvfPortForwards.swift
 /// HvfPortForwardNotice): Windows can't reach the Mac's DNS server, and later
@@ -109,7 +111,7 @@ impl HostSocketOutboundIpv4Handler {
             icmp_flows: HashMap::new(),
             pending_tcp_resets: VecDeque::new(),
             tcp_remove_scratch: Vec::new(),
-            udp_recv_scratch: [0; HOST_SOCKET_UDP_RECV_SCRATCH_LEN],
+            udp_recv_scratch: vec![0; HOST_SOCKET_UDP_RECV_SCRATCH_LEN].into_boxed_slice(),
             tcp_read_scratch: [0; TCP_MSS],
             icmp_recv_scratch: [0; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
             pending_socket_errors: 0,

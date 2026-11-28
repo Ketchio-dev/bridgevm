@@ -68,6 +68,9 @@ All notable changes to BridgeVM are documented in this file.
   or BridgeVM loses contact with Windows, and offers Stop or Force Stop.
   Before, only the library said so, and the VM window, often in full screen,
   just went black or froze.
+- A UDP reply larger than 1,472 bytes no longer stops all networking in
+  Windows until the VM restarts. Large replies, such as from VPN, voice-call
+  or DNS servers, now reach Windows whole, as IPv4 fragments.
 - Files dropped on a VM window, or opened with BridgeVM from Finder, while
   Windows is still starting are now copied once Windows is ready. Before,
   they were refused with a message that stayed over the Windows taskbar. A
