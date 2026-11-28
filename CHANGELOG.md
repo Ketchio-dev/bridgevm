@@ -43,6 +43,26 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- The terminal installer works on a Mac without the Xcode Command Line Tools.
+  It used to call Python and `lipo`, which on such a Mac only open the "install
+  developer tools" dialog, so it failed or wrongly said the app was not Apple
+  Silicon native. It now uses only tools that come with macOS, and every check
+  it makes is as strict as before.
+- The installer no longer replaces BridgeVM while BridgeVM or one of its VMs is
+  running. It stops before downloading and asks you to shut down your VMs and
+  quit BridgeVM first. Before, the old app kept running on top of the new
+  app's files, and `--launch` only brought that old app to the front.
+- `curl … | bash` run inside an older BridgeVM source folder no longer picks up
+  that folder's installer and fails with misleading advice. If the downloaded
+  installer does not match, the message now says so and suggests trying again in
+  a few minutes.
+- When GitHub can't be reached or rate-limits the newest-release lookup, the
+  installer says so in one sentence instead of printing a Python traceback.
+- The installers accept an Apple Silicon Mac when they are run from a Rosetta
+  shell, such as an Intel Homebrew bash.
+- The install guide no longer says Open Anyway is needed only once: each newly
+  downloaded DMG version is blocked again on its first launch. The guide now
+  also covers updating a DMG install.
 - A Windows connection that BridgeVM has to drop, because Windows opened more
   than 256 at once or a closing connection sat idle, now fails at once in the
   Windows app instead of hanging until Windows gives up on its own.

@@ -89,7 +89,10 @@ checks.
 curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.sh | bash -s -- --launch
 ```
 
-This command installs the newest General Preview (currently `v0.1.0`).
+This command installs the newest General Preview (currently `v0.1.0`). It uses
+only tools that come with macOS, so it works on a Mac without the Xcode Command
+Line Tools. Quit BridgeVM and shut down its VMs first: the installer refuses to
+replace an app that is running.
 
 The bootstrap fetches the full installer at a pinned SHA-256 and refuses to run
 anything else. The installer then fails closed at every step:
@@ -165,8 +168,9 @@ On macOS Sequoia and later the only supported unblock is:
 2. System Settings → Privacy & Security → scroll to the Security section.
 3. Next to the message about BridgeVM, click **Open Anyway** and confirm.
 
-This is required exactly once. Right-click → Open no longer bypasses the block
-on current macOS, so the Settings route is the real one.
+You need to do this once for each version you download: every new DMG is
+blocked again on its first launch. Right-click → Open no longer bypasses the
+block on current macOS, so the Settings route is the real one.
 
 ## What you need after installing
 
@@ -273,8 +277,11 @@ default).
 
 ## Updating, rolling back, uninstalling
 
-- **Update**: run the installer again (optionally `--version <tag>` to pin).
-  The previous app is preserved until the new one verifies in place.
+- **Update**: quit BridgeVM and shut down its VMs, then run the installer again
+  (optionally `--version <tag>` to pin). The previous app is preserved until the
+  new one verifies in place. If you installed from the DMG, download the new
+  version's DMG, verify it and drag BridgeVM into Applications again; its first
+  launch is blocked again, so repeat **Open Anyway** as described above.
 - **Roll back**: run the installer with `--version <older-tag>`, or if you
   updated with `--keep-backup`, remove the new app and rename the
   `BridgeVM.app.backup-*` bundle back.

@@ -55,7 +55,7 @@ Hypervisor.framework GIC). The declared host matrix is M4/M5;
 M1–M3 are not yet covered. A VM installed from an ISO gets a 64 GiB disk and
 6 GiB of memory by default (4 GiB on an 8 GiB Mac). The
 [installation guide](docs/install.md) has the terminal installer, the DMG and
-its one-time Open Anyway step. Source builds require Xcode/Swift, Rust 1.85+
+its Open Anyway step for each downloaded version. Source builds require Xcode/Swift, Rust 1.85+
 and pinned native dependencies; follow the complete
 [build and packaging guide](docs/install.md#build-the-current-source), because `cargo build` and `swift build` alone do not prepare a
 Windows-installation app.
