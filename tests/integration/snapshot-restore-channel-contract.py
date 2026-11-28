@@ -27,6 +27,12 @@ class RestoreReceiptContract(unittest.TestCase):
         self.assertIsNone(receipt.feed(b"unrelated\nBVAGENT CMD marker exit=0\r\nBV-ORIGINAL\r\n"))
         self.assertEqual(receipt.feed(b"BVAGENT END marker\r\n"), b"BV-ORIGINAL\n")
 
+    def test_prefixed_guest_lines_read_bare_and_a_printed_end_ends_nothing(self):
+        # The probe prints each guest line after `| ` (guest_text.rs guest_lines).
+        receipt = CHANNEL.Receipt("marker")
+        self.assertIsNone(receipt.feed(b"BVAGENT CMD marker exit=0\r\n| BV-ORIGINAL\r\n| BVAGENT END marker\r\n| \n"))
+        self.assertEqual(receipt.feed(b"BVAGENT END marker\n"), b"BV-ORIGINAL\nBVAGENT END marker\n\n")
+
     def test_split_records(self):
         receipt = CHANNEL.Receipt("marker")
         record = b"BVAGENT CMD marker exit=0\nvalue\nBVAGENT END marker\n"

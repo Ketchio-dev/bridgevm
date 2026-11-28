@@ -31,6 +31,11 @@ final class HvfGuestCaretTests: XCTestCase {
         XCTAssertNil(request.consume(lines: ["BVAGENT CMD \(request.command) exit=0\r"], now: start))
         XCTAssertEqual(request.consume(lines: ["BVCARET 10 20 2 18\r", "BVAGENT END \(request.command)"], now: start),
                        .caret(CGRect(x: 10, y: 20, width: 2, height: 18)))
+        // The probe prints the answer after `| ` (guest_text.rs guest_lines).
+        var prefixed = HvfGuestCaretRequest(now: start, id: id)
+        XCTAssertEqual(prefixed.consume(lines: ["BVAGENT CMD \(prefixed.command) exit=0", "| BVAGENT READY x",
+                                               "| BVCARET 10 20 2 18\r"], now: start),
+                       .caret(CGRect(x: 10, y: 20, width: 2, height: 18)))
     }
 
     func testNoneAnErrorAMalformedLineARestartOrNoAnswerIsNoCaret() {

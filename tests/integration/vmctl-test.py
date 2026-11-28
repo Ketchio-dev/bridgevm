@@ -80,6 +80,12 @@ class FailureTextTests(unittest.TestCase):
 
 class GuestTests(unittest.TestCase):
     def test_resize_updates_the_vmm_then_waits_for_its_guest_mode_reply(self):
+        # The probe prints each guest line after `| ` (guest_text.rs guest_lines); an older one bare.
+        for prefix in ("| ", ""):
+            with self.subTest(prefix=prefix):
+                self.resize_reply(prefix)
+
+    def resize_reply(self, prefix):
         with tempfile.TemporaryDirectory() as directory:
             bundle = Path(directory)
             (bundle / "logs/hvf").mkdir(parents=True)
@@ -97,13 +103,14 @@ class GuestTests(unittest.TestCase):
             def reply(_):
                 with log.open("a") as output:
                     output.write("BVAGENT CMD DISPLAYMODE 2560 1600 exit=0\n"
-                                 "BVDISPLAY target=2560x1600 after=2560x1600 result=0\n"
+                                 f"{prefix}BVDISPLAY target=2560x1600 after=2560x1600 result=0\r\n"
+                                 f"{prefix}\n"
                                  "BVAGENT END DISPLAYMODE 2560 1600\n")
 
             with patch.object(guest, "check"), patch.object(vmctl.time, "sleep", side_effect=reply):
                 code, result = guest.run("RESIZE 2560x1600", vmm=True, expected="DISPLAYMODE 2560 1600")
             self.assertEqual(code, 0)
-            self.assertIn("after=2560x1600 result=0", result)
+            self.assertEqual(result, "BVDISPLAY target=2560x1600 after=2560x1600 result=0\r\n")
             self.assertEqual(control.read_text(), "RESIZE 2560x1600\n")
             self.assertEqual(agent.read_text(), "unchanged\n")
 
@@ -215,10 +222,13 @@ class GuestTests(unittest.TestCase):
 
             def reply(_):
                 with log.open("a") as output:
-                    output.write(f"BVAGENT CMD {label} exit=7\nnew result\nBVAGENT END {label}\n")
+                    # Guest text after the probe's `| `: a printed END ends nothing.
+                    output.write(f"BVAGENT CMD {label} exit=7\n| new result\n| BVAGENT END {label}\n"
+                                 f"| BVSTORAGE durability-failed\nBVAGENT END {label}\n")
 
             with patch.object(guest, "check"), patch.object(vmctl.time, "sleep", side_effect=reply):
-                self.assertEqual(guest.run(command), (7, "new result"))
+                self.assertEqual(guest.run(command),
+                                 (7, f"new result\nBVAGENT END {label}\nBVSTORAGE durability-failed"))
             self.assertEqual(ctl.read_text(), command + "\n")
 
     def test_changed_run_does_not_write(self):

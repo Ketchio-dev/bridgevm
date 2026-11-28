@@ -62,7 +62,7 @@ final class HvfCommandReplyReader {
                 let output = body.joined(separator: "\n")
                 return (outputTruncated ? "[Some output omitted]\n" + output : output, exitCode)
             }
-            appendBody(line)
+            appendBody(HvfGuestLine.text(line))
             return nil
         }
 

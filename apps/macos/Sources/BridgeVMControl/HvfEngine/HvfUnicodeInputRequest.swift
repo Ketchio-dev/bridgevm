@@ -47,26 +47,27 @@ struct HvfUnicodeInputRequest {
             $0.hasPrefix("BVAGENT SERVICE start") || HvfGuestResetRecord.matches($0)
         }) { return finish(.failed(.restarted)) }
         for line in lines {
+            let body = HvfGuestLine.text(line) // the receipts; the envelope's lines are host records
             if let accepted = envelope.header(line) {
                 guard phase == .header else { return finish(.failed(.invalidReceipt)) }
                 phase = accepted ? .marker : .rejected
             } else if phase == .rejected {
                 // bvagent-input.ps1: `BVINPUT_FAILED <id> <exception message>`, then END; SendInput's shortfall
                 // reads `... unicode-input-incomplete inserted=<n> requested=<m>` (bvagent-unicode-input.cs).
-                if line.hasPrefix(failurePrefix) {
-                    return finish(.failed(Self.insertedNothing(line) ? .notInserted : .guestRejected))
+                if body.hasPrefix(failurePrefix) {
+                    return finish(.failed(Self.insertedNothing(body) ? .notInserted : .guestRejected))
                 }
                 if envelope.isEnd(line) { return finish(.failed(.guestRejected)) }
-            } else if phase != .header, line.hasPrefix(failurePrefix) {
+            } else if phase != .header, body.hasPrefix(failurePrefix) {
                 return finish(.failed(.invalidReceipt))
-            } else if line == unsupportedMarker {
+            } else if body == unsupportedMarker {
                 guard phase == .marker else { return finish(.failed(.invalidReceipt)) }
                 phase = .unsupported
-            } else if let dispatchPrefix, line.hasPrefix(dispatchPrefix) {
-                guard phase == .marker, line == dispatchMarker else { return finish(.failed(.invalidReceipt)) }
+            } else if let dispatchPrefix, body.hasPrefix(dispatchPrefix) {
+                guard phase == .marker, body == dispatchMarker else { return finish(.failed(.invalidReceipt)) }
                 phase = .end
-            } else if line.hasPrefix(markerPrefix) {
-                guard !queuedTextDispatch, phase == .marker, line == marker else { return finish(.failed(.invalidReceipt)) }
+            } else if body.hasPrefix(markerPrefix) {
+                guard !queuedTextDispatch, phase == .marker, body == marker else { return finish(.failed(.invalidReceipt)) }
                 phase = .end
             } else if envelope.isEnd(line) {
                 if phase == .unsupported, envelope.matchesEnd(line) { return finish(.unsupported) }

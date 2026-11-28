@@ -15,6 +15,15 @@ final class HvfInputCapabilitiesRequestTests: XCTestCase {
         XCTAssertNil(request.consume(lines: [marker]))
     }
 
+    /// The probe prints the agent's markers after `| ` (guest_text.rs guest_lines); a printed END ends nothing.
+    func testMarkersAfterTheGuestLinePrefixReadTheSame() {
+        var request = HvfInputCapabilitiesRequest(id: id)
+        XCTAssertEqual(request.consume(lines: ["BVAGENT CMD \(request.command) exit=0", "| " + marker + "\r",
+            "| BVAGENT END \(request.command)", "| BVINPUT_TEXT \(id.uuidString) CARET", "| ",
+            "BVAGENT END \(request.command)"]), .supported)
+        XCTAssertTrue(request.caret)
+    }
+
     func testExtraCapabilityKeywordFromANewerAgentIsAccepted() {
         var request = HvfInputCapabilitiesRequest(id: id)
         XCTAssertEqual(request.consume(lines: ["BVAGENT CMD \(request.command) exit=0",

@@ -95,6 +95,21 @@ final class HvfUnicodeInputRequestTests: XCTestCase {
         XCTAssertNil(request.consume(lines: [], now: now.addingTimeInterval(31)))
     }
 
+    /// The probe prints the agent's receipt after `| ` (guest_text.rs guest_lines); guest text ends and restarts nothing.
+    func testAReceiptAfterTheGuestLinePrefixReadsTheSame() throws {
+        let base = try makeRequest()
+        let lines = receipt(base)
+        var request = base
+        XCTAssertNil(request.consume(lines: [lines[0], "| " + lines[1] + "\r", "| " + lines[2], "| BVAGENT READY guest", "| "],
+                                     now: now))
+        XCTAssertEqual(request.consume(lines: [lines[2]], now: now), .inserted)
+        var failed = base
+        let label = "TEXTINPUT \(id.uuidString)"
+        XCTAssertEqual(failed.consume(lines: ["BVAGENT CMD \(label) exit=1",
+            "| BVINPUT_FAILED \(id.uuidString) unicode-input-incomplete inserted=0 requested=2", "BVAGENT END \(label)"], now: now),
+            .failed(.notInserted))
+    }
+
     private func makeRequest() throws -> HvfUnicodeInputRequest {
         try XCTUnwrap(HvfUnicodeInputRequest(text: "\u{d55c}", now: now, id: id))
     }

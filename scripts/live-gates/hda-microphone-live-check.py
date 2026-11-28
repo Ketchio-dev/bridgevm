@@ -138,7 +138,8 @@ class Guest:
                 elif body is not None and line == f"BVAGENT END {command}":
                     return code, [entry.rstrip("\r") for entry in body]
                 elif body is not None:
-                    body.append(line)
+                    # Each guest line after the probe's `| ` (guest_text.rs guest_lines), or bare from an older one.
+                    body.append(line[2:] if line.startswith("| ") else line)
         except TimeoutError:
             return "timeout", body or []
 

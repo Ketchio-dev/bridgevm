@@ -43,7 +43,7 @@ struct HvfClipboardPaste {
             if let success = envelope.header(line) {
                 guard !began, success else { return finish(false) }
                 began = true
-            } else if began && line == marker {
+            } else if began && HvfGuestLine.text(line) == marker {
                 acknowledged = true
             } else if envelope.isEnd(line) {
                 return finish(acknowledged && envelope.matchesEnd(line))

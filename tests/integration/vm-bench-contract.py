@@ -308,6 +308,20 @@ class VmBenchContract(unittest.TestCase):
             engine.log.write_text(f"BVAGENT SERVICE alive t=1\n{GUEST_OFF}\n")
             self.assertTrue(engine.guest_off_seen())
 
+    def test_guest_lines_read_without_the_probes_prefix_and_a_printed_end_ends_nothing(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            engine = vm_bench.BridgeVM(None, Path("disk.raw"), Path("vars.fd"))
+            engine.log, engine.offset, engine.pending = Path(scratch) / "run.log", 0, ""
+            engine.ctl, engine.input_ctl = Path(scratch) / "agent.ctl", Path(scratch) / "input.ctl"
+            engine.proc = mock.Mock(**{"poll.return_value": None})
+            engine.log.write_text("BVAGENT CMD probe exit=0\n| BVBENCH x 1 MB/s\r\n| BVAGENT END probe\n| \nBVAGENT END probe\n")
+            deadline = vm_bench.time.monotonic() + 5
+            self.assertEqual(engine.run("probe", deadline), (0, "BVBENCH x 1 MB/s\r\nBVAGENT END probe\n"))
+            with engine.log.open("a") as log:
+                log.write("BVAGENT CMD DISPLAYMODE 1920 1080 exit=0\n| BVDISPLAY target=1920x1080 result=0\r\n| \n"
+                          "BVAGENT END DISPLAYMODE 1920 1080\n")
+            self.assertEqual(engine.resize("1920x1080", deadline), {"display": "BVDISPLAY target=1920x1080 result=0"})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -94,7 +94,9 @@ class TerminalStopContract(unittest.TestCase):
         banner = lines.index(f'println!("{BANNER}");')
         self.assertEqual(lines[banner + 1], 'println!("stop: {}", $stop_reason);')
         count = lines.index('println!("serial raw bytes: {} output bytes: {}", serial.len(), rendered.len());')
-        self.assertEqual(lines[count - 1], "let rendered = String::from_utf8_lossy(&serial);")
+        # M counts the serial as printed, each line after `| ` (guest_text.rs guest_lines).
+        self.assertEqual(lines[count - 1],
+                         "let rendered = crate::guest_text::guest_lines(&String::from_utf8_lossy(&serial));")
         self.assertEqual(lines[count + 1:count + 4],
                          ['println!("--- serial (tail) ---\\n{rendered}\\n--- end ---");', "}};", "}"])
         self.assertEqual((source.count(BANNER), source.count("--- serial (tail) ---")), (1, 1))

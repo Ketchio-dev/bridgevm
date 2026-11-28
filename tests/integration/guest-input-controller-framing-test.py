@@ -20,6 +20,17 @@ class Framing(unittest.TestCase):
         with self.assertRaises(ValueError):
             c.completed_reply(lines, "label", "BVINPUT_INSERTED fresh 2")
 
+    def test_prefixed_guest_lines(self):
+        # The probe prints each guest line after `| ` (guest_text.rs guest_lines), an empty one as `| `.
+        wire = "BVAGENT CMD label exit=0\n| BVINPUT_INSERTED fresh 2\r\n| \nBVAGENT END label\n"
+        lines = wire.replace("\r", "\n").splitlines()
+        self.assertEqual(c.completed_reply(lines, "label", "BVINPUT_INSERTED fresh 2"),
+                         "BVINPUT_INSERTED fresh 2")
+        # A printed END is guest output, not the reply's end.
+        lines.insert(2, "| BVAGENT END label")
+        with self.assertRaises(ValueError):
+            c.completed_reply(lines, "label", "BVINPUT_INSERTED fresh 2")
+
     def test_pending_then_ready_is_read_only(self):
         driver = c.Controller("unused", "unused", "unused")
         calls = []
@@ -47,6 +58,7 @@ class Framing(unittest.TestCase):
         choices = ("BVINPUT_STAGED fresh", "BVINPUT_PENDING fresh")
         lines = ["BVAGENT CMD label exit=0", choices[1], "BVAGENT END label"]
         self.assertEqual(c.completed_reply(lines, "label", choices), choices[1])
+        self.assertEqual(c.completed_reply([lines[0], "| " + choices[1], "| ", lines[2]], "label", choices), choices[1])
         self.assertFalse(c.completed_reply(lines[:2], "label", choices))
         lines[0] = "BVAGENT CMD label exit=1"
         with self.assertRaises(ValueError):

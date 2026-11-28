@@ -55,23 +55,24 @@ struct HvfInputCapabilityReceipt {
 
     mutating func consume(_ line: String) -> HvfInputCapabilitiesRequest.Outcome? {
         let header = "BVAGENT CMD \(command) exit="
+        let body = HvfGuestLine.text(line) // the markers; header and END are host records
         if line.hasPrefix(header) {
             guard phase == .header else { return .failed(.invalidReceipt) }
             guard line == header + "0" else { return .failed(.unsupported) }
             phase = .marker
-        } else if line.hasPrefix("BVINPUT_CAPS \(id) ") {
+        } else if body.hasPrefix("BVINPUT_CAPS \(id) ") {
             // Guest bytes: bounded, version 3 with all three inputs and the 64 KiB limit; extra keywords are ignored.
-            let fields = line.split(separator: " ")
-            guard phase == .marker, line.utf8.count <= 512, fields.count >= 7, fields[2] == "3",
+            let fields = body.split(separator: " ")
+            guard phase == .marker, body.utf8.count <= 512, fields.count >= 7, fields[2] == "3",
                   Set(fields.dropFirst(3)).isSuperset(of: ["TEXTINPUT", "KEYINPUT", "POINTERINPUT", "65536"]) else {
                 return .failed(.invalidReceipt)
             }
             phase = .end
-        } else if line.hasPrefix("BVINPUT_KEYS ") || line.hasPrefix("BVINPUT_CHORDS ") || line.hasPrefix("BVINPUT_POINTER ")
-                    || line.hasPrefix("BVINPUT_TEXT ") {
+        } else if body.hasPrefix("BVINPUT_KEYS ") || body.hasPrefix("BVINPUT_CHORDS ") || body.hasPrefix("BVINPUT_POINTER ")
+                    || body.hasPrefix("BVINPUT_TEXT ") {
             // A marker only ever grants its own keys: a foreign, early, repeated or misspelled one is ignored
             // instead of failing the whole handshake (which would leave the guest with no typed input at all).
-            if phase == .end, markers.contains(line), !accepted.contains(line) { accepted.append(line) }
+            if phase == .end, markers.contains(body), !accepted.contains(body) { accepted.append(body) }
         } else if line == "BVAGENT END \(command)" {
             return phase == .end ? .supported : .failed(.invalidReceipt)
         }
