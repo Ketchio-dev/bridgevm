@@ -72,6 +72,9 @@ All notable changes to BridgeVM are documented in this file.
   a few minutes.
 - When GitHub can't be reached or rate-limits the newest-release lookup, the
   installer says so in one sentence instead of printing a Python traceback.
+- Duplicating a VM stored on another drive no longer writes the full size of
+  its virtual disk to the library: the copy keeps the disk's unused space
+  empty, as the original has it.
 - When one of a VM's virtual processors crashes in BridgeVM, the VM now stops
   the way it does after other errors: its firmware settings are saved and its
   disk is flushed to the Mac's drive. Before, the stop crashed too and skipped
