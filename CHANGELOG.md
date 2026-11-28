@@ -50,6 +50,20 @@ All notable changes to BridgeVM are documented in this file.
   started in the app window. Before, status and cancel answered `targetUnavailable`, and `install`
   failed as busy and then reported that failure while Windows went on installing. The code
   `targetUnavailable` also prints as "BridgeVM isn’t installing this VM." in text output.
+- Quitting BridgeVM while it moves, duplicates or deletes a VM now asks to
+  finish first and quits when it is done, as it already did while VM files were
+  being prepared. Before, BridgeVM quit at once: a move cut short left the VM
+  hidden from the library at the next launch.
+- A VM whose disk and firmware settings files were removed outside BridgeVM
+  (in Finder, say) can now be deleted. Every try said its library entry could
+  not be removed from disk. BridgeVM still keeps the VM's folder when it holds a
+  snapshot or any file BridgeVM didn't write, and after a delete that fails the
+  library now shows what is still on disk.
+- Moving a VM whose files are on a disconnected drive now says "BridgeVM can't
+  find this VM's files. Connect the drive that holds them, then try again."
+  before it asks for a folder, and Show in Finder says the same. Before, Move
+  asked for a folder and then said it could not confirm the move, though
+  nothing had moved.
 - Windows connections left idle, such as an SSH session or a database client,
   are no longer cut after 5 minutes without Windows being told. BridgeVM now
   keeps an idle connection open for at least 2 hours, as home routers do.

@@ -34,6 +34,7 @@ struct LibraryVMContextMenu: View {
     }
 
     private func chooseMoveDestination() {
+        guard library.admitBundleMove(config) else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true

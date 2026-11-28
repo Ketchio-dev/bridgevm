@@ -188,8 +188,11 @@ extension ControlAppTermination.QuitReason {
 }
 
 extension LibraryModel {
+    /// A Move, Duplicate or Delete counts too: quitting mid-copy left a moved VM hidden from the
+    /// library at the next launch, a half-made duplicate, or a half-deleted entry.
     var vmPreparationInProgress: Bool {
-        preparingNewVM || firstRunImportBusy || appRuntimeSessions().contains(where: \.preparingSnapshot)
+        preparingNewVM || firstRunImportBusy || !movingSlugs.isEmpty || !cloningConfigurations.isEmpty
+            || !deletingSlugs.isEmpty || appRuntimeSessions().contains(where: \.preparingSnapshot)
     }
 
     func finishVMPreparation(succeeded: Bool) {
