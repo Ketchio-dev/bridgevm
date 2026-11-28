@@ -95,6 +95,23 @@ final class FirstRunImportDiskFormatTests: XCTestCase {
         try fixture.assertPersisted()
     }
 
+    /// VMDK versions other than qemu-img's default, a VMDK descriptor, and a Parallels expanding disk
+    /// were taken for RAW disks: a 1 KB "VM" and the notice that it has no boot partition.
+    func testOtherVMDKsAndParallelsDisksAreNamedAndRefused() throws {
+        let fixture = try FirstRunImportTransactionFixture()
+        defer { fixture.remove() }
+        let image = fixture.root.appendingPathComponent("Windows.vmdk")
+        for (header, format) in [(Data([0x4b, 0x44, 0x4d, 0x56, 3, 0, 0, 0]), "VMDK"),
+                                 (Data("# Disk DescriptorFile\nversion=1\n".utf8), "VMDK"),
+                                 (Data("WithoutFreeSpace".utf8), "Parallels"),
+                                 (Data("WithouFreSpacExt".utf8), "Parallels")] {
+            try (header + Data(count: 4096)).write(to: image)
+            let message = try XCTUnwrap(VMLibrary.windowsHVFImportError(targetDiskPath: image.path, varsPath: fixture.vars.path),
+                                        "\(format) was taken for a RAW disk")
+            XCTAssertEqual(message, "To import a \(format) disk, convert it to RAW, QCOW2, fixed-size VHD, or VHDX, for example with qemu-img convert -O qcow2 in Terminal, then choose the converted file.")
+        }
+    }
+
     func testVDIAndSparseVMDKAreRefusedByBothWindowsImportForms() throws {
         let qemuImg = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":")
             .map { URL(fileURLWithPath: String($0)).appendingPathComponent("qemu-img") }

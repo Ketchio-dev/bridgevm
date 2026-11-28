@@ -46,6 +46,10 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- Importing a VMware VMDK other than qemu-img's default kind, a VMDK
+  descriptor file or a Parallels disk now says to convert it, instead
+  of importing a few-KB "VM" with no boot partition; the import
+  progress shows a spinner until the converter reports a percent.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.

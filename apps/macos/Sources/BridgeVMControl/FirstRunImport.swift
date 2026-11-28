@@ -35,7 +35,7 @@ enum FirstRunImport {
             case .invalidName: return VMLibrary.vmNameRule
             case .media(let sentence): return sentence
             case .unsupportedDiskFormat(let format):
-                return "To import a \(format) disk, convert it to RAW, QCOW2, fixed-size VHD, or VHDX and choose the converted file."
+                return "To import a \(format) disk, convert it to RAW, QCOW2, fixed-size VHD, or VHDX, for example with qemu-img convert -O qcow2 in Terminal, then choose the converted file."
             case .vtpmNotADirectory(let p): return "Choose the folder that holds the original TPM data. There’s no folder at \(p)."
             case .vtpmRecoveryMissing(let p): return "BridgeVM can’t use the recovery file at \(p). Choose the original file again."
             case .vtpmRecoveryPackageRequired: return "Choose the TPM recovery package."
