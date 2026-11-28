@@ -8,6 +8,8 @@ import SwiftUI
 @MainActor
 final class HvfBootFailureNotice: ObservableObject {
     @Published private(set) var text: String?
+    /// The user closed the strip; `text` stays, so other notices still know.
+    @Published private(set) var dismissed = false
 
     nonisolated static func text(for line: String) -> String? {
         guard line.hasPrefix("BVBOOT no-bootable-disk") else { return nil }
@@ -22,15 +24,18 @@ final class HvfBootFailureNotice: ObservableObject {
         if let text = Self.text(for: line), text != self.text { self.text = text }
     }
 
-    func dismiss() { text = nil }
-    func reset() { if text != nil { text = nil } }
+    func dismiss() { dismissed = true }
+    func reset() {
+        if text != nil { text = nil }
+        if dismissed { dismissed = false }
+    }
 }
 
 struct HvfBootFailureNoticeView: View {
     @ObservedObject var notice: HvfBootFailureNotice
 
     var body: some View {
-        if let text = notice.text {
+        if let text = notice.text, !notice.dismissed {
             HvfNoticeStrip(identifier: "bridgevm.runtime.boot-failure", dismiss: { notice.dismiss() }) {
                 Text(text)
             }

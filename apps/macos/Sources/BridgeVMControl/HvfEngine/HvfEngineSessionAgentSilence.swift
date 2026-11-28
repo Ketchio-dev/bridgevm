@@ -31,9 +31,11 @@ extension HvfEngineSession {
     }
 
     /// Paused, stopping, or restarting (Windows goes down on purpose): quiet, and the wait for the
-    /// agent starts again when the VM runs on.
+    /// agent starts again when the VM runs on. Also quiet when Windows can't start from the disk
+    /// (HvfBootFailureNotice): no agent will come, and restarting Windows doesn't help.
     private var agentSilenceWatched: Bool {
-        guard pause == .running, restartRequest == nil, !guiStartCleanupOnly else { return false }
+        guard pause == .running, restartRequest == nil, !guiStartCleanupOnly,
+              bootFailureNotice.text == nil else { return false }
         switch connectionState {
         case .booting, .connected: return true
         case .stopped, .stopping, .timedOut: return false

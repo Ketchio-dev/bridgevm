@@ -46,6 +46,8 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- When Windows can't start from the VM's disk, BridgeVM no longer also asks you
+  to restart Windows for Guest Tools.
 - When the VM's disk has nothing to start, such as an imported disk with
   Windows for Intel or AMD PCs, BridgeVM now says so instead of leaving the
   window on the firmware's text.
