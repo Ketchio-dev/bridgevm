@@ -14,7 +14,10 @@ enum NativeRuntimeLibraryStartup {
                 LibraryModel(rootURL: rootURL, e2eUnattendedPath: options.e2eUnattendedPath?.path,
                     e2eHostDiagnosticStopAdmitted: options.admitsHostDiagnosticStop, initialScan: scan)
             }
-            Task { await ControlAutoStart.launch(model, optionHeld: skipAutoStart) }
+            Task {
+                await ControlAutoStart.launch(model, optionHeld: skipAutoStart)
+                HvfOpenFilesAtLaunch.libraryDidStart()
+            }
             return model
         }, closeOwner: { owner.close() })
     }
