@@ -9,6 +9,8 @@ final class NativeCLISnapshotRuntimeOwnershipTests: XCTestCase {
     func testPoweredOffOperationsRefuseWhileARuntimeHoldsTheMedia() throws {
         let fixture = try Fixture()
         addTeardownBlock { fixture.remove() }
+        // Restore before any snapshot said "the verified powered-off snapshot is unavailable".
+        XCTAssertEqual(fixture.run(.restore).unavailableReason, HvfWindowsSnapshotModel.noSnapshot)
         let baseline = fixture.run(.create)
         XCTAssertTrue(baseline.complete, baseline.unavailableReason ?? "")
         let manifest = fixture.snapshot.appendingPathComponent("manifest.json")
@@ -18,11 +20,15 @@ final class NativeCLISnapshotRuntimeOwnershipTests: XCTestCase {
         let locks = try [fixture.disk, fixture.vars].map(RuntimeWriterLock.init)
         let export = fixture.root.appendingPathComponent("exports/out.snapshot", isDirectory: true)
         for result in [fixture.run(.restore), fixture.run(.create), fixture.export(to: export)] {
-            let reason = result.unavailableReason ?? ""
+            let detail = result.detail ?? ""
             XCTAssertFalse(result.complete, "\(result.command) admitted under a runtime")
             XCTAssertNil(result.snapshotPath)
-            XCTAssertTrue(reason.contains("media is in use by a running VM"), reason)
-            XCTAssertTrue(reason.contains("hvf-runner --owned-runtime-stdio"), reason)
+            // The app's sentence, not the helper's lock text with a runner's command line and pid.
+            let action = result.command == "restore" ? "restoring the snapshot" : "creating a snapshot"
+            XCTAssertEqual(result.unavailableReason, "Shut down the VM and wait for other operations to finish before \(action).")
+            XCTAssertFalse(result.text.contains("hvf-runner"), result.text)
+            XCTAssertTrue(detail.contains("media is in use by a running VM"), detail)
+            XCTAssertTrue(detail.contains("hvf-runner --owned-runtime-stdio"), detail)
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: export.path))
         XCTAssertEqual(try Data(contentsOf: manifest), snapshot)

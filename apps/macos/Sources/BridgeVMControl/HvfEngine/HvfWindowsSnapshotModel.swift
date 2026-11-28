@@ -84,6 +84,12 @@ final class HvfWindowsSnapshotModel: ObservableObject {
     /// SnapshotError and io::Error texts) is matched for the failures that happen in practice;
     /// anything else gets the operation's general sentence.
     nonisolated static func message(for error: Error, operation: Operation) -> String {
+        knownMessage(for: error, operation: operation)
+            ?? "Try \(operation == .create ? "creating a snapshot" : operation == .restore ? "restoring the snapshot" : "deleting the snapshot") again."
+    }
+
+    /// The sentence for a failure this matches, else nil (the CLI then keeps the helper's own text).
+    nonisolated static func knownMessage(for error: Error, operation: Operation) -> String? {
         let error = error as NSError
         let action = operation == .create ? "creating a snapshot" : operation == .restore ? "restoring the snapshot" : "deleting the snapshot"
         let text = error.localizedDescription
@@ -128,6 +134,6 @@ final class HvfWindowsSnapshotModel: ObservableObject {
                 ? "The new snapshot failed verification, so create it again."
                 : "This snapshot is damaged, so create a new snapshot."
         }
-        return "Try \(action) again."
+        return nil
     }
 }
