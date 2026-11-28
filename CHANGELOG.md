@@ -64,6 +64,9 @@ All notable changes to BridgeVM are documented in this file.
 - A Windows copy made while another app briefly held the clipboard (such as
   clipboard history or Office) now still reaches the Mac. Needs the Guest
   Tools update.
+- When the VM's disk has nothing to start, such as an imported disk with
+  Windows for Intel or AMD PCs, BridgeVM now says so instead of leaving the
+  window on the firmware's text.
 - A Mac change made just as the shared folder is renamed or deleted in
   Windows no longer makes the Windows folder again with only that file,
   after the Guest Tools update.

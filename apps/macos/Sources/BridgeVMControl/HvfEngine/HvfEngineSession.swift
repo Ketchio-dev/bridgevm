@@ -20,6 +20,7 @@ final class HvfEngineSession: ObservableObject {
     let heartbeat = HvfRuntimeHeartbeat() // publishes the per-poll heartbeat age apart from the session
     let shareRootNotice = HvfShareRootNotice()
     let diskSyncNotice = HvfDiskSyncNotice()
+    let bootFailureNotice = HvfBootFailureNotice()
     let snapshotModel = HvfWindowsSnapshotModel()
     let agentUpdateNotice = HvfAgentUpdateNotice()
     let fileDrops = HvfFileDropQueue() // Finder drops copied to the guest Desktop
@@ -633,6 +634,7 @@ final class HvfEngineSession: ObservableObject {
         portForwardNotice.reset()
         audioNotice.reset()
         diskSyncNotice.reset()
+        bootFailureNotice.reset()
         agentUpdateNotice.reset()
         fileDrops.reset()
         clipboardImageNotice.reset()
@@ -694,6 +696,7 @@ extension HvfEngineSession {
     func append(_ event: BvAgentEvent) {
         shareRootNotice.consume(event)
         diskSyncNotice.consume(event)
+        bootFailureNotice.consume(event)
         agentUpdateNotice.consume(event)
         fileDrops.consume(event)
         clipboardImageNotice.consume(event)

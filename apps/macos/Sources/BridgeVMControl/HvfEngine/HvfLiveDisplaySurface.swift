@@ -20,6 +20,7 @@ struct HvfLiveDisplaySurface: View {
             .overlay(alignment: .top) {
                 VStack(spacing: 0) {
                     HvfRunFailureStrip(session: session)
+                    HvfBootFailureNoticeView(notice: session.bootFailureNotice)
                     HvfStopWaitStrip(session: session)
                     HvfAgentSilenceStrip(notice: session.agentSilenceNotice)
                     HvfInputStoppedStrip(session: session)
