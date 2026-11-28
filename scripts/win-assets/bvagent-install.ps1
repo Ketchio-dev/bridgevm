@@ -47,6 +47,16 @@ function Install-ToolsFiles([string]$Source, [string]$Staging, [string]$Target) 
     }
     if (-not $existing) { [IO.Directory]::Move($Staging, $Target) }
 }
+# Declining Windows' administrator prompt (UAC) fails Start-Process -Verb RunAs with
+# ERROR_CANCELLED (1223), wrapped or not; it said the install failed, as for any error.
+function Get-InstallFailureText($exception) {
+    for ($cause = $exception; $null -ne $cause; $cause = $cause.InnerException) {
+        if ($cause -is [ComponentModel.Win32Exception] -and $cause.NativeErrorCode -eq 1223) {
+            return 'Guest Tools need administrator approval. Run install.cmd again and choose Yes when Windows asks.'
+        }
+    }
+    return 'Guest Tools could not be installed. Close this window and run install.cmd again.'
+}
 try {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
@@ -57,7 +67,7 @@ try {
     }
     if (-not (Test-GuestToolsSerialDevice)) {
         Write-Host 'Install or repair the VirtIO Serial Driver in Windows, then run install.cmd again.'
-        Read-Host 'Enter'
+        Read-Host 'Press Enter to close'
         exit 1
     }
     $user = (Get-CimInstance Win32_ComputerSystem).UserName
@@ -71,12 +81,14 @@ try {
     . (Join-Path $target 'bvagent-task.ps1')
     Register-ScheduledTask -TaskName 'BridgeVM Guest Agent' -Xml (Get-GuestAgentTaskXml $user (Join-Path $target 'bvagent.ps1')) -Force | Out-Null
     Start-ScheduledTask -TaskName 'BridgeVM Guest Agent'
+    Write-Host 'Guest Tools are installed. This window closes in a few seconds.'
+    Start-Sleep -Seconds 3
 } catch {
     try {
         $detail = ($_.Exception.GetType().FullName + ': ' + $_.Exception.Message + ' line=' + $_.InvocationInfo.ScriptLineNumber) -replace '[\r\n]+', ' '
         [IO.File]::WriteAllText((Join-Path $env:TEMP 'BridgeVM-guest-tools-install.log'), $detail)
     } catch { }
-    Write-Host 'Guest Tools could not be installed. Close this window and run install.cmd again.'
-    Read-Host 'Enter'
+    Write-Host (Get-InstallFailureText $_.Exception)
+    Read-Host 'Press Enter to close'
     exit 1
 }
