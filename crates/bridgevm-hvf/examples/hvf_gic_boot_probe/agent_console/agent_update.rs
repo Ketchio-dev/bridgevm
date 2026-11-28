@@ -153,6 +153,10 @@ const PREPARE_SCRIPT: &str = r#"$ErrorActionPreference = 'Stop'
 try {
   # The update re-points the agent's task: an agent started any other way stays as it is.
   if ($null -eq (Get-ScheduledTask -TaskName 'BridgeVM Guest Agent' -ErrorAction SilentlyContinue)) { 'BVUPDATE skipped no-task'; return }
+  # The agent runs as the signed-in user (HighestAvailable): a standard user's agent cannot write
+  # Program Files, so every launch failed here and said "Guest Tools couldn't update".
+  $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+  if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { 'BVUPDATE skipped not-admin'; return }
   $root = '@ROOT@'
   $sid = [Security.Principal.SecurityIdentifier]
   $locked = New-Object Security.AccessControl.DirectorySecurity
@@ -173,6 +177,14 @@ try {
   'BVUPDATE ready'
 } catch { 'BVUPDATE result=failed detail=' + (($_.Exception.Message -replace '\s+', ' ').Trim()) }
 "#;
+
+/// Prepare's `BVUPDATE skipped <reason>` replies: the update leaves this agent as it is.
+const SKIP_REASONS: [&str; 2] = ["no-task", "not-admin"];
+
+fn skip_reason(reply: &str) -> Option<&'static str> {
+    let detail = reply.strip_prefix("BVUPDATE skipped ")?;
+    SKIP_REASONS.into_iter().find(|reason| *reason == detail)
+}
 
 /// The update script runs only with the SHA-256 the host sent.
 const ARM_SCRIPT: &str = r#"$f = '@ROOT@\@ID@.new\bvagent-update.ps1'
@@ -323,11 +335,14 @@ impl AgentUpdate {
             && self.marker_field("session").as_deref() == Some(self.session.as_str())
     }
 
-    /// The guest had no agent task for this version: it is left alone, with no traffic.
-    pub(super) fn skipped_no_task(&self) -> bool {
-        self.marker_is_for_bundled()
-            && self.marker_field("state").as_deref() == Some("skipped")
-            && self.marker_field("detail").as_deref() == Some("no-task")
+    /// The guest had no agent task, or its agent runs without administrator rights, for this
+    /// version: it is left alone, with no traffic. The reason, from the marker.
+    pub(super) fn skipped_for_this_version(&self) -> Option<&'static str> {
+        if !self.marker_is_for_bundled() || self.marker_field("state").as_deref() != Some("skipped") {
+            return None;
+        }
+        let detail = self.marker_field("detail")?;
+        SKIP_REASONS.into_iter().find(|reason| *reason == detail)
     }
 
     pub(super) fn write_marker(&self, state: &str, detail: &str) {
@@ -568,8 +583,8 @@ impl AgentConsoleHarness {
                     Some("agent-too-old")
                 } else if update.attempted() {
                     Some("attempted")
-                } else if update.skipped_no_task() {
-                    Some("no-task")
+                } else if let Some(reason) = update.skipped_for_this_version() {
+                    Some(reason)
                 } else if gate == Some("stop") {
                     Some("stop")
                 } else {
@@ -741,10 +756,10 @@ impl AgentConsoleHarness {
                     phase: SharePutPhase::Beg,
                 }));
             }
-            UpdateStep::Prepare if code == 0 && reply == "BVUPDATE skipped no-task" => {
-                if let Some(update) = self.agent_update.as_mut() {
-                    println!("BVAGENT UPDATE skipped reason=no-task t={t}");
-                    update.write_marker("skipped", "no-task");
+            UpdateStep::Prepare if code == 0 && skip_reason(reply).is_some() => {
+                if let (Some(update), Some(reason)) = (self.agent_update.as_mut(), skip_reason(reply)) {
+                    println!("BVAGENT UPDATE skipped reason={reason} t={t}");
+                    update.write_marker("skipped", reason);
                     update.phase = UpdatePhase::Done;
                 }
             }
