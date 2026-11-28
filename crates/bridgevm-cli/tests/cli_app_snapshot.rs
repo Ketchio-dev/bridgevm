@@ -13,7 +13,7 @@ fn snapshot_help_is_available_without_launching_the_app() {
             .expect("run bridgevm");
         assert!(output.status.success());
         let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(stdout.contains("powered-off"));
+        assert!(stdout.contains("shut-down VM"));
         assert!(stdout.contains("<ID>"));
     }
 }

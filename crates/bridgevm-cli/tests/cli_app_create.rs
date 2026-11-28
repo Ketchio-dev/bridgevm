@@ -10,8 +10,8 @@ fn create_help_exposes_owned_pending_registration_boundary() {
         assert_eq!(output.status.code(), Some(0));
         assert!(output.stderr.is_empty());
         let help = String::from_utf8(output.stdout).unwrap();
-        assert!(help.contains("installation-pending"));
-        assert!(help.contains("does not install or boot"));
+        assert!(help.contains("ready to install"));
+        assert!(help.contains("does not install or start"));
     }
 }
 
