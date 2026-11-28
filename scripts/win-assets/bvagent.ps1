@@ -682,6 +682,13 @@ function Close-PutStream {
 $script:BvLPut = $null
 
 function New-PutStage([string]$path, [bool]$writeThrough = $false) {
+    # A file for the shared folder never makes the folder itself: one renamed, moved or deleted in
+    # Windows came back holding only that file, and the host took every other file for deleted on
+    # the Mac. The host makes a new guest's folder itself, before its first listing.
+    $root = $script:BvShareRoot
+    if ($root -and $path.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase) -and -not [System.IO.Directory]::Exists($root)) {
+        throw 'The shared folder is missing in Windows.'
+    }
     $io = Get-IoPath $path
     $dir = [System.IO.Path]::GetDirectoryName($io)
     if ($dir) { [void][System.IO.Directory]::CreateDirectory($dir) }
@@ -1774,6 +1781,8 @@ namespace BridgeVM {
 '@
 $script:BvShareWatchReady = $null
 $script:BvLsrRoot = $null
+# The shared folder the host lists (LSR), whether or not it is watched: a PUT never makes it (New-PutStage).
+$script:BvShareRoot = $null
 $script:BvLsrChanges = [long]-1
 $script:BvLsrAt = [long]0
 $script:BvLsrLine = $null
@@ -2804,6 +2813,7 @@ while ($true) {
                         $root = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($lsrArgs[0]))
                         $rootFull = [System.IO.Path]::GetFullPath($root)
                         if (-not $rootFull.EndsWith('\')) { $rootFull = $rootFull + '\' }
+                        $script:BvShareRoot = $rootFull
                         Pin-ShareQuickAccess $rootFull
                         # Unchanged since the last listing (share watch): the same reply again.
                         $watched = Watch-ShareRoot $rootFull

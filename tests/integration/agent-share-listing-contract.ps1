@@ -456,6 +456,28 @@ try {
     $again = List $unwatched.Gen
     Assert ($again.Enumerated -and $again.Gen -and $again.Gen -cne $unwatched.Gen) 'without the watcher a gen gets the listing again'
     $cases++
+
+    # A shared folder renamed in Windows is not made again by a PUT below it: it came back holding
+    # only that file, and the host took every other file for deleted on the Mac.
+    [void](List)
+    $moved = $root + '-moved'
+    [IO.Directory]::Move($root, $moved)
+    try {
+        $arg = (& $b64 (Join-Path $root 'after.bin')) + ' ' + [Convert]::ToBase64String([byte[]](5))
+        & $verbs['PUT']
+        Assert ($script:sent -clike 'ERR PUT *') "PUT into a missing shared folder: $script:sent"
+        $arg = (& $b64 (Join-Path $root 'after.bin')) + ' 1 1'
+        & $verbs['PUTBEG']
+        Assert ($script:sent -clike 'ERR PUTBEG *') "PUTBEG into a missing shared folder: $script:sent"
+        Assert (-not [IO.Directory]::Exists($root)) 'a PUT made the missing shared folder again'
+    } finally {
+        if ([IO.Directory]::Exists($root)) { Remove-Item -LiteralPath $root -Recurse -Force }
+        [IO.Directory]::Move($moved, $root)
+    }
+    $arg = (& $b64 (Join-Path $root 'after.bin')) + ' ' + [Convert]::ToBase64String([byte[]](5))
+    & $verbs['PUT']
+    Assert ($script:sent -clike 'PUTOK *') "PUT once the folder is back: $script:sent"
+    $cases++
 } finally {
     Remove-Item -LiteralPath (Get-IoPath $root $true) -Recurse -Force -ErrorAction SilentlyContinue
 }
