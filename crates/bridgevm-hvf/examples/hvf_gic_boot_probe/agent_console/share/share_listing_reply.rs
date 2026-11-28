@@ -26,7 +26,11 @@ impl AgentConsoleHarness {
         } else if line.starts_with("ERR") {
             if let Some(share) = self.share.as_mut() {
                 share.listing_same.forget();
-                if share.engine.has_synced() {
+                // Before a first listing, one that still fails once the host made the folder
+                // (access denied, a drive Windows lacks) is said too: nothing syncs, and every
+                // Mac file waits for a listing anyway.
+                let still_failing = share.guest_root_create_sent && !share.engine.applied_listing();
+                if share.engine.has_synced() || still_failing {
                     share.note_listing_failed();
                 }
             }

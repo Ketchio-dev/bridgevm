@@ -38,7 +38,7 @@ final class HvfSharePausedNoticeTests: XCTestCase {
         XCTAssertEqual(notice.displayed?.text, "Folder sync paused because the Windows folder has more than \(4096.formatted()) items.")
         notice.consume(.unknown("BVAGENT SHARE resumed\r"))
         XCTAssertNil(notice.paused)
-        XCTAssertEqual(notice.displayed?.text, "Some changes are waiting because BridgeVM can’t verify the shared folder.")
+        XCTAssertEqual(notice.displayed?.text, "Some changes are waiting because BridgeVM can’t find the shared folder on your Mac.")
         notice.consume(.unknown(entries))
         notice.consume(.unknown("BVAGENT SHARE disabled failed-destination-limit"))
         XCTAssertEqual(notice.displayed?.text, "Folder sync stopped for this session after repeated write failures on your Mac.")

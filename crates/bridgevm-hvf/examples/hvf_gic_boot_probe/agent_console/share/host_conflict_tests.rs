@@ -77,21 +77,26 @@ fn a_long_names_windows_copy_is_kept_under_a_shorter_name() {
 #[test]
 fn failed_conflict_copy_removes_partial_and_settles_mac_change() {
     let f = Fixture::new();
-    std::fs::write(f.root().join("report.docx"), b"newer Mac save").unwrap();
+    let _ = take_not_kept_lines();
+    std::fs::write(f.root().join("Q3 report.docx"), b"newer Mac save").unwrap();
     LINK_FAULT.with(|fault| fault.set(Some(libc::ENOTSUP)));
     CONFLICT_COPY_FAULT.with(|fault| fault.set(Some(libc::ENOSPC)));
-    let result = Destination::open(&f.root(), "report.docx", true).unwrap()
+    let result = Destination::open(&f.root(), "Q3 report.docx", true).unwrap()
         .write_at_unless_changed(b"Windows bytes", None, Some(Some((3, 1))), false, || {});
     LINK_FAULT.with(|fault| fault.set(None));
     CONFLICT_COPY_FAULT.with(|fault| fault.set(None));
     assert!(result.as_ref().is_err_and(is_mac_changed));
-    assert_eq!(std::fs::read(f.root().join("report.docx")).unwrap(), b"newer Mac save");
+    assert_eq!(std::fs::read(f.root().join("Q3 report.docx")).unwrap(), b"newer Mac save");
     assert_eq!(std::fs::read_dir(f.root()).unwrap().count(), 1, "partial conflict or staging file leaked");
+    // The Windows version is lost; the app names the file, which ends the line (HvfShareStop.swift).
+    assert_eq!(take_not_kept_lines(),
+               ["BVAGENT SHARE conflict windows-copy-not-kept No space left on device (os error 28) kept-mac=Q3 report.docx"]);
 }
 
 #[test]
 fn recovery_preservation_errors_are_write_failures_not_mac_changed() {
     let f = Fixture::new();
+    let _ = take_not_kept_lines();
     std::fs::write(f.root().join("report.docx"), b"unchanged Mac").unwrap();
     for errno in [libc::ENOSPC, libc::EIO] {
         LINK_FAULT.with(|fault| fault.set(Some(errno)));
@@ -104,6 +109,8 @@ fn recovery_preservation_errors_are_write_failures_not_mac_changed() {
         assert_eq!(std::fs::read(f.root().join("report.docx")).unwrap(), b"unchanged Mac");
         assert_eq!(std::fs::read_dir(f.root()).unwrap().count(), 1);
     }
+    // Nothing is lost: the write is retried, and write-refused says so.
+    assert_eq!(take_not_kept_lines(), Vec::<String>::new());
 }
 
 #[test]

@@ -62,7 +62,7 @@ final class HvfShareTooLargeNoticeTests: XCTestCase {
         let notice = HvfShareRootNotice()
         notice.consume(.unknown("BVAGENT SHARE skip a.bin too-large 99999999"))
         notice.consume(.unknown("BVAGENT SHARE root-state blocked"))
-        XCTAssertEqual(notice.displayed?.text, "Some changes are waiting because BridgeVM can’t verify the shared folder.")
+        XCTAssertEqual(notice.displayed?.text, "Some changes are waiting because BridgeVM can’t find the shared folder on your Mac.")
         notice.consume(.unknown("BVAGENT SHARE root-state ready"))
         XCTAssertNotNil(notice.tooLarge)
         notice.consume(.unknown(HvfGuestResetRecord.processRecreation))
