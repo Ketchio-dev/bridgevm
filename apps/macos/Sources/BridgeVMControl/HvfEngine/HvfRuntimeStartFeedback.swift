@@ -36,7 +36,10 @@ extension HvfEngineSession {
 
     /// What the dashboard, the display window and the Advanced view say about a run that needs
     /// attention: a disk not saved at shutdown or lost contact, else a start that failed.
-    var runtimeFailureText: String? { runtimeSupervisionFailureText ?? guiStartFailureText }
+    var runtimeFailureText: String? {
+        runtimeSupervisionFailureText ?? guiStartFailureText
+            ?? (connectionState == .stopped ? displayDriverRestartNote : nil)
+    }
 
     var guiStartFailureText: String? {
         if let text = guiStartOperation?.outcome?.failureText { return text }
