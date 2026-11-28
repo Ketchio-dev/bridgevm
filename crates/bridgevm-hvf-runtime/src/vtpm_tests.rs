@@ -3,12 +3,12 @@
 
 use super::*;
 
-/// `start_swtpm` waits for the sockets, which is all the product needs, but
-/// swtpm writes its state file separately and slightly later. Dropping the
-/// handle SIGKILLs the process, so a state file it has not written by then is
-/// never written at all -- wait while it is still alive, not after. Asserting
-/// immediately passed on an idle machine 10 times out of 10 and failed under an
-/// eight-way parallel test load.
+/// `start_swtpm_controlled` waits for the sockets, which is all the product
+/// needs, but swtpm writes its state file separately and slightly later.
+/// Dropping the handle SIGKILLs the process, so a state file it has not
+/// written by then is never written at all -- wait while it is still alive,
+/// not after. Asserting immediately passed on an idle machine 10 times out of
+/// 10 and failed under an eight-way parallel test load.
 fn wait_for_state_file(path: &Path) -> bool {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     while std::time::Instant::now() < deadline {
@@ -28,11 +28,14 @@ fn scratch_state(tag: &str) -> PathBuf {
 
 #[test]
 fn a_missing_swtpm_binary_names_the_spawn_context() {
-    let error = match start_swtpm(&VtpmConfig {
-        state_dir: scratch_state("missing"),
-        swtpm_bin: "/nonexistent/swtpm".into(),
-        state_key: None,
-    }) {
+    let error = match start_swtpm_controlled(
+        &VtpmConfig {
+            state_dir: scratch_state("missing"),
+            swtpm_bin: "/nonexistent/swtpm".into(),
+            state_key: None,
+        },
+        &RuntimeControl::default(),
+    ) {
         Err(error) => error,
         Ok(_) => panic!("no binary must not start"),
     };
@@ -44,11 +47,14 @@ fn a_binary_that_exits_early_is_reported_not_waited_out() {
     // /usr/bin/false accepts any args and exits 1 immediately: the wait
     // loop must report the death, not sleep to the timeout.
     let started = std::time::Instant::now();
-    let error = match start_swtpm(&VtpmConfig {
-        state_dir: scratch_state("early"),
-        swtpm_bin: "/usr/bin/false".into(),
-        state_key: None,
-    }) {
+    let error = match start_swtpm_controlled(
+        &VtpmConfig {
+            state_dir: scratch_state("early"),
+            swtpm_bin: "/usr/bin/false".into(),
+            state_key: None,
+        },
+        &RuntimeControl::default(),
+    ) {
         Err(error) => error,
         Ok(_) => panic!("false must not serve sockets"),
     };

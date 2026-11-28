@@ -12,6 +12,10 @@ use std::time::{Duration, Instant};
 #[path = "controlled_swtpm_io.rs"]
 pub(super) mod io;
 
+/// Start swtpm for one run and wait until both sockets exist.
+///
+/// The socket directory is fresh and private (0700); the state directory is
+/// created if missing, like the wrapper's `install -d -m 700`.
 pub fn start_swtpm_controlled(
     config: &VtpmConfig,
     control: &RuntimeControl<'_>,

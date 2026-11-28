@@ -29,8 +29,8 @@ pub struct HelperLaunch {
     pub agent_control: Option<PathBuf>,
     /// The app-facing device surfaces; None boots headless (soak mode).
     pub surfaces: Option<DeviceSurfaces>,
-    /// swtpm sockets when the supervisor runs a vTPM (crate::start_swtpm);
-    /// the probe attaches its TPM2 TIS device iff the data socket is set.
+    /// swtpm sockets when the supervisor runs a vTPM
+    /// (crate::start_swtpm_controlled); the probe attaches its TPM2 TIS device iff the data socket is set.
     pub swtpm_sockets: Option<(PathBuf, PathBuf)>,
 }
 

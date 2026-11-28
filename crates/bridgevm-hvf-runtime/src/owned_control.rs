@@ -1,6 +1,6 @@
 //! Run-scoped cancellation and explicit failure to observe owned cleanup.
 
-pub use crate::controlled_run::{run_prepared_vm, ControlledRun, RunTermination};
+pub use crate::controlled_run::{run_prepared_vm, ControlledRun, ResetCycle, RunTermination};
 pub use crate::vtpm::start_swtpm_controlled;
 use std::cell::Cell;
 

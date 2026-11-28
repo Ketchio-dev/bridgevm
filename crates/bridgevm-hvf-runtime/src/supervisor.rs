@@ -4,9 +4,10 @@
 //! helper process. The decision of whether a helper exit warrants a restart
 //! is policy, so it lives here with the receipt and generation types; the
 //! process spawning lives with the process owner (hvf-runner). Keeping the
-//! decision pure also makes the dangerous cases table-testable: a crashed
-//! helper must never be restarted into a disk whose flush state is unknown,
-//! and a stale receipt from generation N proves nothing about N+1.
+//! decision pure also makes the dangerous cases table-testable: a missing
+//! receipt, or a stale one from generation N, proves nothing about N+1. A
+//! crashed helper never gets here: `run_prepared_vm` stops on any exit that
+//! is not a guest-requested reset.
 
 use std::path::Path;
 
@@ -22,26 +23,12 @@ pub enum RestartDecision {
     Stop { reason: &'static str },
 }
 
-/// Decide from the two facts the supervisor has: whether the helper's exit
-/// claimed to be a guest-requested reset, and whether the receipt on disk
+/// After a guest-requested reset exit: restart only if the receipt on disk
 /// proves the current generation's flush.
 ///
 /// On `Restart` the generation has been advanced: events stamped by the dead
 /// helper are stale from this moment, before any new process exists.
-pub fn decide_restart(
-    reset_requested: bool,
-    receipt: &Path,
-    generation: &ResetGeneration,
-) -> RestartDecision {
-    if !reset_requested {
-        // A crash or a normal shutdown. Restarting a crashed helper would
-        // hand the new VM a disk whose last writes may still be in the dead
-        // process's page cache -- the exact corruption the receipt exists to
-        // prevent -- and auto-restarting a clean shutdown ignores the user.
-        return RestartDecision::Stop {
-            reason: "helper exit was not a guest-requested reset",
-        };
-    }
+pub fn decide_restart(receipt: &Path, generation: &ResetGeneration) -> RestartDecision {
     if !receipt_proves_flush(receipt, generation.stamp()) {
         return RestartDecision::Stop {
             reason: "no reset receipt proves this generation's flush; refusing to restart",

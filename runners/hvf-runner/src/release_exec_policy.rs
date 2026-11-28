@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub(super) fn validate(args: &super::Args) -> Result<()> {
-    if args.launch || args.repo_root.is_some() || args.supervise.is_some() {
-        bail!("--launch, --repo-root, and --supervise are unavailable in release builds");
+    if args.launch || args.repo_root.is_some() {
+        bail!("--launch and --repo-root are unavailable in release builds");
     }
     let helper = args.typed.helper.as_deref();
     let swtpm = args.typed.helper_swtpm_bin.as_deref();
