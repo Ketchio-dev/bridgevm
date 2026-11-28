@@ -75,6 +75,9 @@ All notable changes to BridgeVM are documented in this file.
 - Switching to another app while Windows is busy no longer drops what you just
   typed: the rest still reaches the Windows app you typed it into. Keys and
   mouse buttons you were holding down are still let go.
+- On a drive that can't give space back (exFAT, HFS+), the app now says once
+  per run that the VM's disk file won't shrink when Windows frees space, and
+  suggests moving the VM to an APFS drive. Before, this was silent.
 - Deleting the selected VM selects the VM next to it, not the first VM
   in the library.
 - A Mac file that never reaches Windows now gets a notice: when Windows
