@@ -99,10 +99,17 @@ final class LibraryModel: ObservableObject {
             let result = deletion(cfg, root, backend.isRunning)
             await MainActor.run {
                 self.deletingSlugs.remove(slug)
-                if result.outcome == .deleted { self.modelCache[slug] = nil; self.deletionWarning = result.warning ?? self.deletionWarning; self.reload(); return }
-                self.deletionError = result.outcome == .running
-                    ? "Shut down \(cfg.name) before deleting it."
-                    : LibraryDeletionReferences.failureMessage(for: cfg, rootURL: root)
+                let deleted = result.outcome == .deleted
+                if deleted {
+                    self.modelCache[slug] = nil; self.deletionWarning = result.warning ?? self.deletionWarning
+                } else {
+                    self.deletionError = result.outcome == .running
+                        ? "Shut down \(cfg.name) before deleting it."
+                        : LibraryDeletionReferences.failureMessage(for: cfg, rootURL: root)
+                }
+                // A failed delete may still have removed part of the entry: list what is on disk now.
+                self.reload()
+                self.finishVMPreparation(succeeded: deleted)
             }
         }
     }
@@ -132,6 +139,7 @@ final class LibraryModel: ObservableObject {
                         ?? "BridgeVM couldn’t duplicate “\(cfg.name)”. Check that your Mac has enough free space for a copy of its disk, then try again."
                     self.reload()
                 }
+                self.finishVMPreparation(succeeded: clone != nil)
             }
         }
     }
@@ -175,11 +183,38 @@ final class LibraryModel: ObservableObject {
                     self.modelCache[cfg.slug] = nil
                     self.reload(revealing: moved.slug, ifSelectionIs: selectionAtAdmission)
                 } else {
-                    self.moveError = VMRelocationReferences.failureMessage(for: cfg, rootURL: self.libraryRoot)
+                    // A drive pulled after the folder was chosen. A bundle that left but could not be
+                    // committed or put back keeps its unfinished-move record, and the old sentence.
+                    let pending = VMRelocationJournal.isPending(cfg, rootURL: self.libraryRoot)
+                    self.moveError = (pending ? nil : Self.missingBundleRefusal(cfg))
+                        ?? VMRelocationReferences.failureMessage(for: cfg, rootURL: self.libraryRoot)
                     self.reload() // It may have committed: replace stale idle handles with the persisted registration.
                 }
+                self.finishVMPreparation(succeeded: moved != nil)
             }
         }
+    }
+}
+
+extension LibraryModel {
+    static let missingBundleMessage = "BridgeVM can’t find this VM’s files. Connect the drive that holds them, then try again."
+
+    /// The saved bundle is gone (its drive is disconnected, say). Move used to ask for a folder and then
+    /// fail with “could not confirm the move”, and Show in Finder opened nothing.
+    static func missingBundleRefusal(_ cfg: VMConfig) -> String? {
+        (try? cfg.bundleIsAbsent()) == true ? missingBundleMessage : nil
+    }
+
+    /// Checked before the folder panel opens.
+    func admitBundleMove(_ cfg: VMConfig) -> Bool {
+        guard let missing = Self.missingBundleRefusal(cfg) else { return true }
+        moveError = missing
+        return false
+    }
+
+    func revealBundleInFinder(_ cfg: VMConfig, reveal: ([URL]) -> Void) {
+        if let missing = Self.missingBundleRefusal(cfg) { operationError = missing; return }
+        reveal([URL(fileURLWithPath: cfg.bundlePath)])
     }
 }
 
