@@ -143,6 +143,20 @@ final class ControlAppPowerTests: XCTestCase {
         XCTAssertNil(power.sharedMemoryNotice(for: first, hostBytes: eightGB), "One VM alone stays within its own limit")
         sessions[0].attachedToExistingProcess = false; sessions[0].markStopped()
     }
+    /// One VM alone above what the Mac can spare (one made on a Mac with more memory keeps its amount)
+    /// said nothing.
+    func testOneVMAboveTheMacsSpareMemorySaysSo() {
+        let power = ControlAppPower(api: API())
+        var config = HvfEngineView.defaultConfig(); config.ramMiB = 16384
+        let session = HvfEngineSession(config: config, processIsRunning: { _ in true })
+        session.sleepPrevention = power
+        session.attachedToExistingProcess = true
+        session.connectionState = .booting
+        XCTAssertEqual(power.sharedMemoryNotice(for: session.sleepPreventionID, hostBytes: 16 << 30),
+            "This VM uses 16 GiB of memory, more than this Mac can spare, so Windows and your Mac may slow down. Give it less memory in Settings.")
+        XCTAssertNil(power.sharedMemoryNotice(for: session.sleepPreventionID, hostBytes: 32 << 30))
+        session.attachedToExistingProcess = false; session.markStopped()
+    }
     func testDisabledDefaultDoesNotAcquire() {
         let api = API()
         let power = ControlAppPower(api: api, enabled: false)

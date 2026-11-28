@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Shown on each running VM while running VMs together use more memory than this Mac can spare
-/// (ControlAppPower.sharedMemoryNotice); it goes away when one of them stops.
+/// Shown on each running VM while it, or the running VMs together, use more memory than this Mac can
+/// spare (ControlAppPower.sharedMemoryNotice); it goes away when one of them stops.
 struct HvfSharedMemoryNoticeView: View {
     @ObservedObject private var power: ControlAppPower
     private let runtime: UUID
