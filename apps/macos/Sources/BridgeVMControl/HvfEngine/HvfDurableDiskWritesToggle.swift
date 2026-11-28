@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Opt-in durable disk writes: every Windows flush waits for F_FULLFSYNC.
+/// Opt-in durable disk writes: every Windows flush waits for F_FULLFSYNC. Only flushes change, not
+/// every write, so the wording speaks of Windows asking to save its changes.
 struct HvfDurableDiskWritesToggle: View {
     @ObservedObject var session: HvfEngineSession
     @Binding var isOn: Bool
@@ -10,12 +11,12 @@ struct HvfDurableDiskWritesToggle: View {
 
     var explanation: String {
         isOn
-            ? "Each Windows disk flush waits for the writes to reach permanent storage. This can slow down writes."
-            : "Writes stay in order. If your Mac loses power, you may lose about the last second of writes Windows has flushed."
+            ? "Each time Windows asks to save its changes, it waits until they’re stored on your Mac’s disk. This is safest if your Mac loses power, but can slow Windows down."
+            : "Windows doesn’t wait, and its saved changes are stored on your Mac’s disk within about a second. If your Mac loses power, Windows may lose about the last second of saved changes, but its disk stays intact."
     }
 
     var body: some View {
-        Toggle("Wait for durable disk flushes", isOn: Binding(get: { isOn }, set: update))
+        Toggle("Wait until each save reaches your Mac’s disk", isOn: Binding(get: { isOn }, set: update))
             .accessibilityIdentifier("bridgevm.runtime.durable-disk-writes")
             .disabled(isDisabled)
             .help(explanation

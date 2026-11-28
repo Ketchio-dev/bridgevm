@@ -29,7 +29,7 @@ final class HvfVMSettingsSheetValueTests: XCTestCase {
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
         XCTAssertEqual(HvfDisplayDriverInstall.unavailableReason(session), "Start Windows and wait for it to connect.")
         session.connectionState = .connected(host: "fixture")
-        XCTAssertEqual(HvfDisplayDriverInstall.unavailableReason(session), "Wait for the Windows helper to be ready.")
+        XCTAssertEqual(HvfDisplayDriverInstall.unavailableReason(session), "Wait for Guest Tools to start in Windows.")
         session.serviceStarted = true
         XCTAssertNil(HvfDisplayDriverInstall.unavailableReason(session))
         session.connectionState = .stopped

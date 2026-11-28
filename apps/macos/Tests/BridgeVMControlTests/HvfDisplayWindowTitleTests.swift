@@ -24,13 +24,13 @@ final class HvfDisplayWindowTitleTests: XCTestCase {
     func testArbitraryAndRelativePathsDoNotBecomeWindowTitles() {
         for path in ["", "disks/root.raw", "/tmp/disks/root.raw", "/tmp/vm/disk.raw"] {
             XCTAssertEqual(HvfDisplayWindowTitle.resolve(
-                libraryName: nil, targetDiskPath: path), "Windows HVF")
+                libraryName: nil, targetDiskPath: path), "Windows")
         }
     }
 
     func testNearMatchDoesNotImpersonateProductBundleLayout() {
         XCTAssertEqual(HvfDisplayWindowTitle.resolve(
             libraryName: nil,
-            targetDiskPath: "/tmp/vm/bundle.vmbridge/disks-extra/root.raw"), "Windows HVF")
+            targetDiskPath: "/tmp/vm/bundle.vmbridge/disks-extra/root.raw"), "Windows")
     }
 }

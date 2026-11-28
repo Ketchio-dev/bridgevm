@@ -19,7 +19,7 @@ final class HvfRuntimeMutationReservation: @unchecked Sendable {
     func invalidate() { effectAdmission.invalidate() }
     func checkEffect() throws {
         guard isActive else { throw NSError(domain: "BridgeVM.RuntimeMutation", code: 1,
-            userInfo: [NSLocalizedDescriptionKey: "VM operation reservation is no longer valid"]) }
+            userInfo: [NSLocalizedDescriptionKey: "This VM’s settings changed, so BridgeVM stopped before doing anything. Try again."]) }
     }
 }
 

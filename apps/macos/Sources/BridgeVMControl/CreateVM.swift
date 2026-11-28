@@ -52,7 +52,7 @@ extension VMLibrary {
         }
         let varsBytes = ((try? fm.attributesOfItem(atPath: varsURL.path)[.size] as? NSNumber)?.uint64Value) ?? 0
         guard varsBytes == windowsHVFVarsBytes else {
-            return "The UEFI variables file must be exactly 64 MiB. The selected file contains \(varsBytes) bytes."
+            return "The UEFI variables file must be exactly 64 MiB. Choose the one that came with this Windows disk, or leave it empty."
         }
         return nil
     }

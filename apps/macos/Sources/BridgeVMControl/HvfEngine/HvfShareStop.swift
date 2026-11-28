@@ -32,7 +32,7 @@ extension HvfShareRootNotice {
                     return ("Folder sync paused because the Windows folder has more than \(limit) items.",
                             "Move some items out of the Windows folder, or shut down the VM and choose a smaller shared folder.")
                 case .tooManyBytes:
-                    return ("Folder sync paused because the Windows file listing exceeds \(limit) bytes.",
+                    return ("Folder sync paused because the Windows folder has too many files with long names.",
                             "Shorten some file names or move items out of the Windows folder to resume syncing.")
                 }
             }

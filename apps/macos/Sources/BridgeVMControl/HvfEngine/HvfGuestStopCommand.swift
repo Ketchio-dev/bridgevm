@@ -23,7 +23,7 @@ enum HvfGuestStopWait: Equatable, Sendable {
     var message: String {
         switch self {
         case .waitingForGuestAgent:
-            return "Waiting for the Windows agent to accept the shutdown request. To stop waiting, use Force Stop."
+            return "Waiting for Guest Tools to accept the shutdown request. To stop waiting, use Force Stop."
         case .windowsClosingApps:
             return "Windows is closing apps. Save any open work in the VM window, or use Force Stop to shut down now."
         case .windowsStillRunning:

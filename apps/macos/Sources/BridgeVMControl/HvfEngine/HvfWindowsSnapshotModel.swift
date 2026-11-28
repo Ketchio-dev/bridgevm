@@ -97,9 +97,9 @@ final class HvfWindowsSnapshotModel: ObservableObject {
         case .notLibraryVM?:
             return "Open the VM from the BridgeVM library to use snapshots."
         case .helperMissing?:
-            return "Reinstall BridgeVM to restore the missing snapshot helper before \(action)."
+            return "Reinstall BridgeVM to restore a missing app component, then try \(action) again."
         case .unsafeFolder?:
-            return "Check that the snapshots folder in the VM bundle is a regular directory before \(action)."
+            return "This VM’s “snapshots” folder, or a snapshot in it, was replaced by a file or link. Restore it as a normal folder, then try \(action) again."
         case .noSnapshot?:
             return noSnapshot
         case .snapshotGone?:

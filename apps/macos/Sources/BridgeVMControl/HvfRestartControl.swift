@@ -60,10 +60,10 @@ struct HvfRestartControl<Content: View>: View {
     }
 
     static func message(_ prompt: HvfResetPrompt) -> String {
-        let reset = "Resetting immediately power cycles the VM. You will lose any unsaved work."
+        let reset = "Reset turns the VM off and on again right away. You will lose any unsaved work."
         switch prompt {
         case .agentUnavailable:
-            return "The Windows guest agent isn’t ready to handle a restart request. " + reset
+            return "Guest Tools isn’t ready to restart Windows. " + reset
         case .windowsHasNotRestarted:
             return "Check the VM display for apps blocking the restart. " + reset
         }

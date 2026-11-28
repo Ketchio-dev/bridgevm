@@ -204,14 +204,17 @@ enum HvfDiskGrow {
     private static func diskBytes(_ output: String) throws -> UInt64 {
         let line = output.split(separator: "\n").first { $0.hasPrefix("disk_bytes ") }
         guard let line, let bytes = UInt64(line.dropFirst("disk_bytes ".count)) else {
-            throw error("The disk helper returned an unrecognized size.")
+            NSLog("Disk size: unrecognized helper output: %@", String(output.prefix(500)))
+            throw error("Couldn’t read the disk size. Reinstall BridgeVM, then try again.")
         }
         return bytes
     }
 
     private static func failure(_ completion: HvfHelperProcess.Completion, action: String) -> NSError {
         if completion.reason == .exit && completion.status == inUseExitStatus { return error(stopFirst) }
-        return error("Couldn’t \(action). \(completion.diagnostic)")
+        // The helper's own text (Rust errors, an output overflow) goes to the log, not on screen.
+        NSLog("Disk helper couldn’t %@ (status %d): %@", action, completion.status, completion.diagnostic)
+        return error("Couldn’t \(action). Make sure the drive that holds this VM is connected and has free space, then try again.")
     }
 
     static func error(_ message: String) -> NSError {

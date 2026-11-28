@@ -33,7 +33,9 @@ enum HvfDisplayDriverInstall {
         var leavesDriverInGuest: Bool { status != .failed }
 
         /// The guest's `detail` for `installed` is `<device name> status=<PnP status>[; restart Windows
-        /// to finish]`: the user gets what it means, not the device name and status token.
+        /// to finish]`: the user gets what it means, not the device name and status token. A restart
+        /// inside Windows cannot attach the display device (HvfDisplayDriverNotice.swift), so every
+        /// message sends the user to a shutdown and a new start, as the notice's Restart Now does.
         var message: String {
             switch status {
             case .installed:
@@ -41,12 +43,12 @@ enum HvfDisplayDriverInstall {
                 if let range = detail.range(of: "status="),
                    case let device = detail[range.upperBound...].prefix(while: { !$0.isWhitespace && $0 != ";" }),
                    !device.isEmpty, device != "OK" {
-                    text += " Windows reports a problem with the display device, so restart Windows if the display doesn’t change."
+                    text += " Windows reports a problem with the display device. If the display doesn’t change, shut down Windows and start the VM again."
                 } else if detail.contains("restart Windows to finish") {
-                    text += " Restart Windows to finish."
+                    text += " Shut down Windows and start the VM again to finish."
                 }
                 return text
-            case .staged: return "Added the display driver to Windows. It takes over the display the next time the VM starts."
+            case .staged: return "Added the display driver to Windows."
             case .failed: return "Couldn’t install the display driver. \(detail)"
             }
         }
@@ -272,7 +274,7 @@ enum HvfDisplayDriverInstall {
 
     @MainActor static func unavailableReason(_ session: HvfEngineSession) -> String? {
         guard case .connected = session.connectionState else { return "Start Windows and wait for it to connect." }
-        return session.serviceStarted ? nil : "Wait for the Windows helper to be ready."
+        return session.serviceStarted ? nil : "Wait for Guest Tools to start in Windows."
     }
 
     /// Runs one agent command, waiting at most the given time for its reply.
@@ -328,7 +330,8 @@ enum HvfDisplayDriverInstall {
         let offset = ((try? FileManager.default.attributesOfItem(atPath: log.path))?[.size] as? NSNumber)?.uint64Value ?? 0
         let reader = HvfCommandReplyReader(command: normalized, offset: offset)
         guard session.sendCtl(normalized) else {
-            return ("Couldn’t write the command to the HVF control channel: \(session.config.ctlFilePath)", -1)
+            NSLog("Guest command: couldn’t write to the control file %@", session.config.ctlFilePath)
+            return ("BridgeVM couldn’t send the command to Windows. Try again in a moment.", -1)
         }
         let deadline = session.guestNow().addingTimeInterval(timeout)
         while session.guestNow() < deadline {
@@ -391,7 +394,7 @@ struct HvfDisplayDriverInstallButton: View {
             }
             .disabled(installing || !HvfDisplayDriverInstall.agentReady(session))
             .accessibilityIdentifier("bridgevm.runtime.display-driver.install")
-            .help("Windows downloads the Red Hat virtio-win archive (about 95 MB), checks its size and SHA-256 hash, and installs the Microsoft-signed viogpudo driver.")
+            .help("Windows downloads the Microsoft-signed display driver from Red Hat (about 95 MB), checks that it’s the expected file, and installs it.")
             if !installing, !compact, let reason = HvfDisplayDriverInstall.unavailableReason(session) {
                 Text(reason).font(.caption).foregroundColor(.secondary)
             }
