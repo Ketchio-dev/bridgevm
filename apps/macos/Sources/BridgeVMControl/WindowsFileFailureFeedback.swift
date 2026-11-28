@@ -69,22 +69,9 @@ enum WindowsFileFailureFeedback {
              "This VHDX uses 4 KB logical sectors. Import Windows from a disk that uses 512-byte logical sectors.",
              "Choose a disk with a virtual size of 16 TiB or less.":
             return detail
-        // Source builds can pick up a converter packaged before the English UI.
-        case "동적 VHD는 Hyper-V에서 고정 크기 VHD 또는 VHDX로 변환한 뒤 다시 가져오세요.":
-            return "Convert the dynamic VHD to a fixed-size VHD or VHDX in Hyper-V, then import the converted disk."
-        case "이 QCOW2 압축 형식을 지원하지 않으니 원래 VM 앱에서 RAW로 변환한 뒤 다시 가져오세요.":
-            return "This QCOW2 uses unsupported compression. Export it as RAW from the original VM app and import the copy."
-        case "이 VHDX는 4K 논리 섹터 디스크라 BridgeVM에서 부팅할 수 없으니 512바이트 논리 섹터 디스크에 설치한 Windows를 가져오세요.":
-            return "This VHDX uses 4 KB logical sectors. Import Windows from a disk that uses 512-byte logical sectors."
-        case "이 디스크는 다른 디스크를 기반으로 하는 차이 디스크이니 Hyper-V에서 부모 디스크와 병합한 뒤 다시 가져오세요.":
-            return "This differencing disk depends on a parent disk. Merge the chain in Hyper-V, then import the merged disk."
-        case "이 VHDX에는 반영되지 않은 변경 기록이 남아 있으니 Windows에서 이 VHDX를 한 번 연결했다가 분리한 뒤 다시 시도하세요.":
-            return "This VHDX has pending changes. Attach it in Windows, detach it cleanly, then try again."
-        case "이 디스크는 다른 디스크를 기반으로 하니 qemu-img로 하나의 디스크로 합친 뒤 다시 가져오세요.":
-            return "This disk depends on a backing file. Export a standalone disk from the original VM app and import the copy."
-        case _ where detail.hasPrefix("This disk uses an unsupported feature (") || detail.hasPrefix("이 디스크는 지원하지 않는 형식 기능"):
+        case _ where detail.hasPrefix("This disk uses an unsupported feature ("):
             return "This disk uses an unsupported feature. Export it as RAW from the original VM app and import the copy."
-        case _ where detail.hasPrefix("The disk image is damaged (") || detail.hasPrefix("디스크 이미지가 손상되었거나 구조가 올바르지"):
+        case _ where detail.hasPrefix("The disk image is damaged ("):
             return "The disk image is damaged. Check it in the original VM app and try again."
         default:
             return sentence
