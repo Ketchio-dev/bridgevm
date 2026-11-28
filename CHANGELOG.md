@@ -73,6 +73,10 @@ All notable changes to BridgeVM are documented in this file.
   restart Windows after quitting the other app or choosing another port. The
   forward is set up only when Windows starts, so quitting the other app alone
   never brought it back.
+- Delete, Duplicate and Move work right after Windows shuts down when a setting
+  changed while it ran, such as "Start when BridgeVM opens" or the Command key.
+  Before, saving that setting at shutdown could leave them saying the VM's
+  registration changed until you chose Reload Library from Command-K.
 - A Windows app that stops answering while it holds copied text no longer
   freezes BridgeVM's helper in Windows. Reading the clipboard text now gives up
   after 20 seconds and keeps the last text, so the shared clipboard, shared
