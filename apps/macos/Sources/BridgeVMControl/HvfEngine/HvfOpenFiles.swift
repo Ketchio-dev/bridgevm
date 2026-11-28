@@ -31,6 +31,37 @@ enum HvfOpenFiles {
     }
 }
 
+/// Open With > BridgeVM while BridgeVM was closed launches it, and the files arrive before the library
+/// has loaded and before the VMs set to start with BridgeVM have started: they were refused with "Start
+/// a Windows VM". They wait for the library's startup instead (NativeRuntimeLibraryStartup).
+@MainActor
+enum HvfOpenFilesAtLaunch {
+    private(set) static var libraryStarted = false
+    private static var waiting: [URL] = []
+    /// The app's own handling (ControlAppDelegate), set at launch.
+    static var deliver: ([URL]) -> Void = { _ in }
+
+    /// True when `urls` wait for the library's startup.
+    static func hold(_ urls: [URL]) -> Bool {
+        guard !libraryStarted else { return false }
+        waiting += urls
+        return true
+    }
+
+    /// The library has loaded and auto-start has run: the files that waited go now.
+    static func libraryDidStart() {
+        guard !libraryStarted else { return }
+        libraryStarted = true
+        let urls = waiting
+        waiting = []
+        if !urls.isEmpty { deliver(urls) }
+    }
+
+    #if DEBUG
+    static func resetForTests() { libraryStarted = false; waiting = [] }
+    #endif
+}
+
 extension HvfEngineSession {
     /// Booting or running: files opened now go to this VM (while it boots, its window says the
     /// guest agent is not ready yet).

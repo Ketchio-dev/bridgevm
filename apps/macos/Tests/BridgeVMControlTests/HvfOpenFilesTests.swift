@@ -67,6 +67,24 @@ final class HvfOpenFilesTests: XCTestCase {
         XCTAssertEqual(none.told, [HvfOpenFiles.noWindowsText])
     }
 
+    /// Open With while BridgeVM was closed: the files arrived before the library had loaded (and before a
+    /// VM set to start with BridgeVM had started) and were refused with "Start a Windows VM".
+    func testFilesOpenedAtLaunchWaitForTheLibrary() {
+        HvfOpenFilesAtLaunch.resetForTests()
+        defer { HvfOpenFilesAtLaunch.resetForTests(); HvfOpenFilesAtLaunch.deliver = { _ in } }
+        var delivered: [[URL]] = []
+        HvfOpenFilesAtLaunch.deliver = { delivered.append($0) }
+        let notes = URL(fileURLWithPath: "/tmp/notes.txt"), photo = URL(fileURLWithPath: "/tmp/photo.jpg")
+        XCTAssertTrue(HvfOpenFilesAtLaunch.hold([notes]))
+        XCTAssertTrue(HvfOpenFilesAtLaunch.hold([photo]))
+        XCTAssertTrue(delivered.isEmpty, "nothing is refused before the library starts")
+        HvfOpenFilesAtLaunch.libraryDidStart()
+        XCTAssertEqual(delivered, [[notes, photo]])
+        XCTAssertFalse(HvfOpenFilesAtLaunch.hold([notes]), "afterwards files go at once")
+        HvfOpenFilesAtLaunch.libraryDidStart()
+        XCTAssertEqual(delivered.count, 1)
+    }
+
     func testTheOnlyRunningVMCopiesTwoFilesAndOpensTheirSelectedFolder() async throws {
         defer { cleanUp() }
         let stopped = session(running: false)
