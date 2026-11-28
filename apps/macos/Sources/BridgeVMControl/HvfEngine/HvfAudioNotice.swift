@@ -2,17 +2,19 @@ import SwiftUI
 
 /// Sound or the microphone the VMM could not start on the Mac. The VM runs on without them and
 /// prints one line to the run's log (hda_coreaudio.rs start_output, hda_microphone.rs supervise);
-/// until this notice nothing else said so. Cleared at each run.
+/// until this notice nothing else said so. Cleared at each run, and the microphone's once it opens.
 @MainActor
 final class HvfAudioNotice: ObservableObject {
     static let outputOffPrefix = "HDA CoreAudio output: off for this run"
     static let microphoneOffPrefix = "HDA capture: the Mac microphone did not start"
+    static let microphoneOnPrefix = "HDA capture: the Mac microphone is on again"
     @Published private(set) var soundOff = false
     @Published private(set) var microphoneOff = false
 
     func consume(_ line: String) {
         if line.hasPrefix(Self.outputOffPrefix), !soundOff { soundOff = true }
         if line.hasPrefix(Self.microphoneOffPrefix), !microphoneOff { microphoneOff = true }
+        if line.hasPrefix(Self.microphoneOnPrefix), microphoneOff { microphoneOff = false }
     }
 
     func reset() {
