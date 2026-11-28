@@ -21,7 +21,7 @@ struct HvfCommandKeyPicker: View {
         .accessibilityIdentifier("bridgevm.runtime.command-key")
         .disabled(isDisabled)
         .help("In Mac shortcuts mode (the default), Windows receives Command shortcuts such as ⌘C and ⌘V as Ctrl shortcuts. Use ⌘←/→ for line boundaries, ⌘↑/↓ for document boundaries, ⌥←/→ to move by word, and ⌥⌫ to delete a word. Hold Shift with an arrow shortcut to select text. Press and release the left Command key alone to open Start. The right Command key remains available for input switching. "
-            + "In Windows key mode, Command acts as the Windows key. For example, ⌘E opens File Explorer. In both modes, other Option combinations send Alt. macOS keeps ⌘Q, ⌘H, ⌘M, ⌘Comma, ⌃⌘F, and ⌘Tab."
+            + "In Windows key mode, Command acts as the Windows key. For example, ⌘E opens File Explorer. In both modes, other left Option combinations send Alt, and the right Option key types the character your Mac keyboard shows, as AltGr does on a PC. macOS keeps ⌘Q, ⌘H, ⌘M, ⌘Comma, ⌃⌘F, ⌃⌘Space, and ⌘Tab."
             + (session.persistsLibraryPreferences ? " Changes apply at once and are saved for future starts." : ""))
         .alert("Command key settings", isPresented: Binding(
             get: { message != nil }, set: { if !$0 { message = nil } }
