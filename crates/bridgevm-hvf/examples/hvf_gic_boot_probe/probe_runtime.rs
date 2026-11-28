@@ -40,6 +40,7 @@ use crate::guest_ram_backing::GuestRamBacking;
 use crate::hvf_setup::{create_gic, create_vm};
 use crate::probe_config::ProbeConfig;
 use crate::probe_setup::prepare_platform;
+use crate::vars_autosave::{stop_before_final_save, VarsAutosaveThread};
 use crate::wake_coordinator::ClaimTally;
 use boot_env::{BootTriggers, ExitTraces};
 use bridgevm_hvf::nvme::{NvmeIo, NvmeIoWorker};
@@ -93,12 +94,14 @@ pub(crate) fn run() -> ExitCode {
     // run.log keeps room for the disk-full pause's lines (pause_gate.rs).
     crate::pause_gate::keep_log_reserve();
     let mut probe_exit = ProbeExit::default();
-    let Some((config, mut media_lease, tpm_backend)) = media_lease::prepare() else {
+    let Some((config, media_lease, tpm_backend)) = media_lease::prepare() else {
         return ExitCode::FAILURE;
     };
+    // Shared with the UEFI vars saver until the stop-time save (vars_autosave.rs).
+    let media_lease = Arc::new(Mutex::new(media_lease));
     // SAFETY: this thread becomes vCPU0; run_vm owns the VM, vCPU0 and the
     // guest RAM they use until it returns. The lease outlives all of them.
-    unsafe { run_vm(config, &mut media_lease, tpm_backend, &mut probe_exit) };
+    unsafe { run_vm(config, &media_lease, tpm_backend, &mut probe_exit) };
     let ProbeExit {
         fatal_vcpu_run_error,
         fatal_reset_error,
@@ -113,7 +116,7 @@ pub(crate) fn run() -> ExitCode {
 /// last of all.
 unsafe fn run_vm(
     config: ProbeConfig,
-    media_lease: &mut RuntimeLease,
+    media_lease: &Arc<Mutex<RuntimeLease>>,
     tpm_backend: Option<Box<dyn Tpm2Backend>>,
     probe_exit: &mut ProbeExit,
 ) {
@@ -616,13 +619,13 @@ impl BootAutomation {
 /// Starts the probe's services and its display and HDA threads, then boots
 /// the guest until a boot stops the probe. A SYSTEM_RESET reboots in process
 /// (fresh secondaries, the same vCPU0 and platform); every other stop ends in
-/// the stop report. `media_lease` is `mut` for persist_and_report_stop!.
+/// the stop report, which takes `media_lease` back from the UEFI vars saver.
 unsafe fn run_boots(
     vm: Vm,
     config: &ProbeConfig,
     nvme_io_worker: &mut NvmeIoWorker,
     supervision: &BootSupervision,
-    mut media_lease: &mut RuntimeLease,
+    media_lease: &Arc<Mutex<RuntimeLease>>,
     probe_exit: &mut ProbeExit,
 ) {
     let Vm {
@@ -643,6 +646,12 @@ unsafe fn run_boots(
     let ramfb_display = RamfbDisplayThread::start(&platform, ram, ram_size);
     // Polls HDA DMA every 5 ms while the guest's stream runs; same lifetime.
     let hda_service_tick = HdaServiceTick::start(&platform, ram, ram_size);
+    // Saves the guest's UEFI variable changes during the run, across reboots.
+    let vars_autosave = media
+        .flash_vars
+        .write_back
+        .then(|| VarsAutosaveThread::start(&platform, media_lease))
+        .flatten();
     let mut reboot_count = 0u64;
     let mut resets_dumped = 0u64;
 
@@ -724,6 +733,8 @@ unsafe fn run_boots(
         drop(venus_work_wake);
         drop(ramfb_display);
         drop(hda_service_tick);
+        // No background vars save overlaps the stop-time one, which always runs.
+        let mut media_lease = stop_before_final_save(vars_autosave, media_lease);
         // The report's names; the agent console stays in `generation` and is
         // joined when this iteration ends, after the report.
         let BootGeneration {

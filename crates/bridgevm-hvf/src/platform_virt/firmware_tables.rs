@@ -35,6 +35,11 @@ impl VirtPlatform {
         self.flash_vars.image()
     }
 
+    /// The variable bank's change count (`P30NorFlash::changes`).
+    pub fn flash_vars_changes(&self) -> u64 {
+        self.flash_vars.changes()
+    }
+
     pub fn ramfb_config(&self) -> Option<RamfbConfig> {
         if !self.devices.ramfb_present {
             return None;

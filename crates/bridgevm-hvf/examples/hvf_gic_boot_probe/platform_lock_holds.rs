@@ -7,10 +7,11 @@
 //! and nothing said which thread held the lock. Every platform-lock site that
 //! can run while the tick does now holds the lock as a [`HeldPlatform`]: the
 //! vCPUs' pre-run drains and data-abort exits, vCPU0's automation block and
-//! UART preload, the ramfb display exporter's config copy and the agent
-//! service's drain of the guest agent's bytes. The tick counts
-//! each attempt that finds the lock held ([`PlatformHolds::note_busy`]); a hold
-//! that such an attempt fell inside is charged to its holder as it ends, still
+//! UART preload, the ramfb display exporter's config copy, the agent
+//! service's drain of the guest agent's bytes and the UEFI vars saver's
+//! bank copy. The tick counts each attempt that finds the lock held
+//! ([`PlatformHolds::note_busy`]); a hold that such an attempt fell inside
+//! is charged to its holder as it ends, still
 //! under the lock: one hold, the attempts it blocked, whether it lasted more
 //! than 20 ms (Windows' whole 20 ms cyclic buffer in T17 r92) and its length.
 //! A data-abort exit is charged by its target: NVMe, whose reads, writes and
@@ -85,6 +86,8 @@ pub(crate) enum HoldSite {
     Display,
     /// The agent service thread's drain of the guest agent's bytes.
     AgentService,
+    /// The UEFI vars saver's change check and bank copy (vars_autosave.rs).
+    VarsAutosave,
 }
 
 impl HoldSite {
@@ -99,6 +102,7 @@ impl HoldSite {
             (Self::Automation, _) => "cpu0 automation platform mutex",
             (Self::Display, _) => "ramfb display platform mutex",
             (Self::AgentService, _) => "agent service platform mutex",
+            (Self::VarsAutosave, _) => "UEFI vars autosave platform mutex",
         }
     }
 }
@@ -113,7 +117,8 @@ pub(crate) enum Holder {
     Tpm,
     Mmio,
     Automation,
-    /// The UART preload, the display exporter and the agent service.
+    /// The UART preload, the display exporter, the agent service and the
+    /// UEFI vars saver.
     Host,
 }
 
@@ -146,7 +151,10 @@ impl Holder {
             HoldSite::PreRun => Self::PreRun,
             HoldSite::Mmio(ipa) => mmio_holder(ipa, platform),
             HoldSite::Automation => Self::Automation,
-            HoldSite::UartPreload | HoldSite::Display | HoldSite::AgentService => Self::Host,
+            HoldSite::UartPreload
+            | HoldSite::Display
+            | HoldSite::AgentService
+            | HoldSite::VarsAutosave => Self::Host,
         }
     }
 }

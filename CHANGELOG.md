@@ -48,6 +48,13 @@ All notable changes to BridgeVM are documented in this file.
   developer tools" dialog, so it failed or wrongly said the app was not Apple
   Silicon native. It now uses only tools that come with macOS, and every check
   it makes is as strict as before.
+- Windows boot entries and Secure Boot settings now survive a crash, a power
+  loss or a Force Stop that runs out of time while the VM runs. BridgeVM
+  used to save the VM's UEFI settings only when the VM stopped cleanly, so
+  every change made during the run could be lost: a boot entry added by a
+  Windows update could go missing, or a Secure Boot revocation could be
+  undone. Now a change is saved to the Mac's disk about a second after
+  Windows makes it.
 - The installer no longer replaces BridgeVM while BridgeVM or one of its VMs is
   running. It stops before downloading and asks you to shut down your VMs and
   quit BridgeVM first. Before, the old app kept running on top of the new
