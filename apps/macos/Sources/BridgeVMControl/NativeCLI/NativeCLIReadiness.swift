@@ -38,7 +38,7 @@ extension NativeCLIReadiness {
                            summary: "Windows installation must finish before installed-VM launch readiness can be checked.")
         }
         guard let engine = HvfEngineConfig.libraryVM(config, rootURL: rootURL) else {
-            throw NativeCLIError.unavailable("Cannot form the saved VM's HVF launch configuration.")
+            throw NativeCLIError.unavailable("BridgeVM couldn’t use this VM’s saved settings. Check the VM in BridgeVM.")
         }
         return Self(config: config, rootURL: rootURL,
                     report: engine.readiness(repoRoot: repoRoot), engineChecksPerformed: true)

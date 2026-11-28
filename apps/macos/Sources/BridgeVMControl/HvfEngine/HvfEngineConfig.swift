@@ -279,46 +279,48 @@ extension HvfEngineConfig {
         var isDirectory: ObjCBool = false
         if !fileManager.fileExists(atPath: targetDiskPath, isDirectory: &isDirectory)
             || isDirectory.boolValue {
-            launch("target-disk-missing", "The Windows RAW disk could not be found.")
+            launch("target-disk-missing", "BridgeVM can’t find the Windows disk.")
         } else {
             if !fileManager.isReadableFile(atPath: targetDiskPath)
                 || !fileManager.isWritableFile(atPath: targetDiskPath) {
-                launch("target-disk-access", "BridgeVM needs read and write access to the Windows RAW disk.")
+                launch("target-disk-access", "BridgeVM needs read and write access to the Windows disk.")
             }
             let diskBytes = (try? fileManager.attributesOfItem(atPath: targetDiskPath)[.size] as? NSNumber)?.uint64Value ?? 0
             if diskBytes == 0 {
-                launch("target-disk-empty", "The Windows RAW disk is empty.")
+                launch("target-disk-empty", "The Windows disk is empty.")
             }
         }
 
         isDirectory = false
         if !fileManager.fileExists(atPath: uefiVarsPath, isDirectory: &isDirectory) || isDirectory.boolValue {
-            launch("uefi-vars-missing", "The UEFI variables file could not be found.")
+            launch("uefi-vars-missing", "BridgeVM can’t find the Windows boot settings file.")
         } else {
             if !fileManager.isReadableFile(atPath: uefiVarsPath)
                 || !fileManager.isWritableFile(atPath: uefiVarsPath) {
-                launch("uefi-vars-access", "BridgeVM needs read and write access to the UEFI variables file.")
+                launch("uefi-vars-access", "BridgeVM needs read and write access to the Windows boot settings file.")
             }
             let varsBytes = (try? fileManager.attributesOfItem(atPath: uefiVarsPath)[.size] as? NSNumber)?.uint64Value ?? 0
             if varsBytes != 64 * 1024 * 1024 {
-                launch("uefi-vars-size", "The UEFI variables file must be exactly 64 MiB.")
+                launch("uefi-vars-size", "The Windows boot settings file must be exactly 64 MiB.")
             }
         }
 
+        // The code (in `bridgevm app readiness --json` and the start log) names which component.
+        let reinstall = "A BridgeVM component is missing or damaged. Reinstall BridgeVM."
         let wrapper = repoRoot.appendingPathComponent("scripts/run-hvf-windows-installed-boot.sh")
         if !fileManager.isExecutableFile(atPath: wrapper.path) {
-            launch("boot-wrapper-missing", "The installed Windows HVF boot script cannot run.")
+            launch("boot-wrapper-missing", reinstall)
         }
         let runner = repoRoot.appendingPathComponent("target/release/examples/hvf_gic_boot_probe")
         if !fileManager.isExecutableFile(atPath: runner.path) {
-            launch("signed-runner-missing", "The VM runner is missing from this BridgeVM installation. Reinstall BridgeVM (in a source checkout, build and sign the release runner).")
+            launch("signed-runner-missing", reinstall)
         }
 
         if !(1024...65_536).contains(ramMiB) {
             launch("ram-range", "Set memory between 1024 and 65536 MiB.")
         }
         if !Self.supportedCPURange.contains(smpCpus) {
-            launch("cpu-range", "Choose 1 to 64 vCPUs. The current setting is \(smpCpus).")
+            launch("cpu-range", "Choose 1 to 64 CPUs in VM settings. It’s set to \(smpCpus) now.")
         }
         if let watchdogMs, watchdogMs <= 0 {
             launch("watchdog-range", "Set the diagnostic watchdog to a positive duration.")
@@ -337,10 +339,10 @@ extension HvfEngineConfig {
                 launch("vtpm-path-collision", "Choose a separate vTPM state directory from the disk, UEFI variables, diagnostic evidence and guest control file.")
             }
             if vtpmKeyID?.isEmpty != false {
-                launch("vtpm-key-id", "A stable VM ID is required for encrypted vTPM state.")
+                launch("vtpm-key-id", "BridgeVM couldn’t identify this VM’s TPM. Restore the VM settings from a backup.")
             }
             if !VTPMStateSecurity.executableAvailable(swtpmBin, fileManager: fileManager) {
-                launch("swtpm-missing", "The vTPM executable could not be found at \(swtpmBin).")
+                launch("swtpm-missing", reinstall)
             } else if let rejection = HelperCodeSignature.validate(
                 helperPath: swtpmBin,
                 appTeam: HelperCodeSignature.readTeamIdentifier(
@@ -351,7 +353,8 @@ extension HvfEngineConfig {
                 // A bundled path is not evidence: an app bundle is a directory
                 // the user can write to, so the helper can be replaced after
                 // install. The signature is what cannot be.
-                launch("swtpm-signature", rejection.message)
+                NSLog("TPM component signature check failed: %@", rejection.message)
+                launch("swtpm-signature", reinstall)
             }
             isDirectory = false
             if fileManager.fileExists(atPath: vtpmStateDir, isDirectory: &isDirectory),
@@ -370,7 +373,7 @@ extension HvfEngineConfig {
                 launch("share-invalid", "Choose the shared folder again in Settings.")
             }
         default:
-            launch("share-incomplete", "Set both the host and guest paths for the shared folder.")
+            launch("share-incomplete", "Choose both the Mac folder and the Windows folder for the shared folder.")
         }
 
         issues.append(contentsOf: Self.permanentReleaseBlockers)
@@ -386,7 +389,7 @@ extension HvfEngineConfig {
     /// v1 deliberately exposes stop/start instead of presenting the probe's
     /// single-vCPU checkpoint experiment as a durable suspend contract.
     private static let productLimitations = [
-        "Windows HVF v1 does not support suspend/resume. Shut down Windows and start it again."
+        "BridgeVM can pause Windows but can’t save it to resume later. Shut down Windows when you’re finished."
     ]
 
     private static let permanentReleaseBlockers: [HvfWindowsReadinessIssue] = [

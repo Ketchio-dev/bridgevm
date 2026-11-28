@@ -22,7 +22,7 @@ enum HvfWindowsCloneMedia {
                 // requires the complete chain before reserving a destination.
                 continue
             }
-            return "Check that the bundle, disk and UEFI variables exist at their original paths. If files are missing or linked elsewhere, import the disk as a new VM before duplicating it."
+            return "This VM’s disk or boot settings file is missing or stored outside its folder. Restore the files, or import the disk as a new VM and duplicate that VM."
         }
         return nil
     }

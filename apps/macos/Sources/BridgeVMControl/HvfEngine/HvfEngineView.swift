@@ -54,7 +54,7 @@ struct HvfEngineView: View {
 
     var body: some View {
         content
-        .navigationTitle("HVF Engine")
+        .navigationTitle("Advanced Controls")
         .focusedSceneValue(\.hvfVMSettings, { showingSettings = true })
         .sheet(isPresented: $showingSettings) { HvfVMSettingsSheet(session: session) }
         .accessibilityIdentifier("bridgevm.windows.runtime.view")
@@ -96,7 +96,7 @@ struct HvfEngineView: View {
             Text("Windows may ask for a BitLocker recovery key, and secrets sealed to TPM measurements may require recovery. BridgeVM archives the encrypted state and device-local key before starting with a new TPM.")
         }
         .alert(
-            "vTPM operation failed",
+            "TPM Action Failed",
             isPresented: Binding(
                 get: { vtpmLifecycleError != nil },
                 set: { if !$0 { vtpmLifecycleError = nil } }
@@ -180,14 +180,14 @@ struct HvfEngineView: View {
                         .textSelection(.enabled)
                 }
                 if !vtpmLifecycleAvailable {
-                    Text("Shut down the VM before changing its vTPM state.")
+                    Text("Shut down Windows before changing the TPM.")
                         .font(.caption)
                         .foregroundColor(.orange)
                 }
             }
             .padding(6)
         } label: {
-            Label("vTPM identity and recovery", systemImage: "key.horizontal")
+            Label("TPM and recovery", systemImage: "key.horizontal")
         }
     }
 
@@ -411,7 +411,7 @@ extension HvfEngineView {
                 destination: destination
             )
             vtpmRecoveryCode = result.recoveryCode
-            vtpmLifecycleMessage = "Saved the recovery package. State fingerprint: \(result.stateFingerprint)"
+            vtpmLifecycleMessage = "Saved the recovery package."
         } catch {
             vtpmLifecycleError = error.localizedDescription
         }
@@ -451,7 +451,7 @@ extension HvfEngineView {
                 recoveryCode: vtpmRecoveryCodeInput
             )
             vtpmRecoveryCodeInput = ""
-            vtpmLifecycleMessage = "Verified the VM ID and state fingerprint and restored the vTPM key to Keychain."
+            vtpmLifecycleMessage = "Restored the TPM key to your keychain."
         } catch {
             vtpmLifecycleError = error.localizedDescription
         }
@@ -471,9 +471,8 @@ extension HvfEngineView {
                 stableVMID: keyID,
                 stateDirectory: URL(fileURLWithPath: statePath, isDirectory: true)
             )
-            vtpmLifecycleMessage = result.archivedStatePath.map {
-                "Reset the TPM identity. Archived state: \($0). Receipt: \(result.receiptPath)"
-            } ?? "Reset the TPM identity. Receipt: \(result.receiptPath)"
+            vtpmLifecycleMessage = result.archivedStatePath == nil ? "Reset the TPM."
+                : "Reset the TPM. BridgeVM kept a copy of the old TPM data in the VM’s folder."
         } catch {
             vtpmLifecycleError = error.localizedDescription
         }

@@ -22,7 +22,7 @@ def check_status(binary, library, run, tree):
         assert result["sessions"][0]["configurationMatch"] == "same"
         assert b"private-key-path-must-not-be-rendered" not in output
         output, error = run(binary, args, 0)
-        assert b"Session: owned, connection: booting" in output and not error
+        assert b"State: Booting Windows" in output and not error
         missing = ["status", "removed-vm", "--library", str(library), "--json"]
         output, error = run(binary, missing, 0)
         result = json.loads(output)

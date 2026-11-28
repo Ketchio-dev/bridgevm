@@ -13,7 +13,7 @@ struct FirstRunImportFields: View {
             FirstRunImportNameField(displayName: $displayName)
             GroupBox {
                 VStack(alignment: .leading, spacing: 20) {
-                    LibraryFileField(title: "Windows disk", detail: "Choose a disk with Windows for Arm installed. BridgeVM makes a RAW copy of your RAW, QCOW2, fixed-size VHD, or VHDX disk.", accessibilityIdentifier: "bridgevm.first-run.disk", path: $diskPath)
+                    LibraryFileField(title: "Windows disk", detail: "Choose a disk with Windows 11 for Arm installed. BridgeVM makes a RAW copy of your RAW, QCOW2, fixed-size VHD, or VHDX disk.", accessibilityIdentifier: "bridgevm.first-run.disk", path: $diskPath)
                     LibraryFileField(title: "UEFI variables file (optional)",
                         detail: HvfWindowsImportNotice.varsHelp, accessibilityIdentifier: "bridgevm.first-run.vars", path: $varsPath)
                     Text(HvfWindowsImportNotice.bitLockerHelp).font(.caption).foregroundColor(.secondary)

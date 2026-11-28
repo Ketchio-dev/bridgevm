@@ -26,7 +26,7 @@ final class WindowsHVFProductPolicyTests: XCTestCase {
                                          slug: config.slug, request: request)
         try FileManager.default.removeItem(atPath: request.isoPath)
         XCTAssertEqual(plan.validationError(),
-                       "BridgeVM can’t read the Windows installation ISO. Restore the ISO used to create this VM to disks/installer.iso in the VM bundle, then retry.")
+                       "BridgeVM can’t read the Windows installation ISO. Restore the ISO used to create this VM to disks/installer.iso in the VM’s folder, then retry.")
     }
 
     func testReadyInstallAndImportStayThreeDOff() throws {

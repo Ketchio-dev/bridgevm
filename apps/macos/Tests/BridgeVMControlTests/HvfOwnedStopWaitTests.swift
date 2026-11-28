@@ -214,6 +214,8 @@ final class HvfOwnedStopWaitTests: XCTestCase {
 
         XCTAssertEqual(session.stopOwned(expectedToken: token), .requested(deadline: nil))
         XCTAssertEqual(session.stopWait, .waitingForGuestAgent)
+        XCTAssertEqual(session.stopWait?.message,
+                       "Waiting for Guest Tools to accept the shutdown request. To stop waiting, use Force Stop.")
         f.clock.value = 290; f.controller.tick()
         XCTAssertEqual(f.controller.operation?.observation.phase, .guestGrace)
         XCTAssertEqual(session.stopWait, .windowsStillRunning)

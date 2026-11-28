@@ -40,17 +40,28 @@ struct NativeCLIRuntimeStart: Encodable {
     }
 }
 
+/// Text names the result in plain words; run tokens, PIDs, operation IDs and the scope stay in --json.
 extension NativeCLIRuntimeStart {
     var text: String {
-        var lines = ["Native VM start: \(vmID)", "Observation scope: \(scope)", "Runtime startup: \(started ? "confirmed" : "not confirmed")", "Operation: \(operationID)"]
-        if let observation { lines.append("Start phase: \(observation.phase.rawValue)") }
-        if let target = observation?.target { lines.append("Owned run: \(target.token), PID \(target.processID)") }
+        // Started means the VM is running, not that Windows has finished booting.
+        var lines = [started ? "Started \(vmID). Windows may still be starting up."
+                             : "Couldn’t confirm that \(vmID) started."]
+        if !started, let status = observation?.phase.cliStatus { lines.append("Status: \(status)") }
         if let unavailableReason {
-            lines.append("Start result unavailable: "
-                + NativeCLIReason.sentence(unavailableReason, vmID: vmID, action: "starting"))
+            lines.append(NativeCLIReason.sentence(unavailableReason, vmID: vmID, action: "starting"))
         }
-        lines.append("Startup confirms the supervisor and initial helper; guest boot and display readiness remain unproven.")
         return lines.joined(separator: "\n") + "\n"
+    }
+}
+
+extension NativeRuntimeStartObservation.Phase {
+    /// Where an unfinished start got to; a finished one is named by the result line.
+    var cliStatus: String? {
+        switch self {
+        case .preparing: return "Preparing"
+        case .awaitingStartup: return "Starting"
+        case .started, .failed: return nil
+        }
     }
 }
 

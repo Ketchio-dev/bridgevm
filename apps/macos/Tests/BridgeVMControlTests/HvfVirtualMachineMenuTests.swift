@@ -16,7 +16,7 @@ final class HvfVirtualMachineMenuTests: XCTestCase {
         menu.update()
         XCTAssertEqual(menu.items.filter { !$0.isSeparatorItem }.map(\.title), [
             "Settings…", "Send Ctrl+Alt+Delete", "Open Snipping Tool", "Pause", "Restart", "Stop",
-            "Windows Apps", "Show Guest Windows…"
+            "Windows Apps", "Show Open Windows…"
         ])
         let settings = try XCTUnwrap(menu.items.first)
         XCTAssertEqual(settings.keyEquivalent, ",")
@@ -119,7 +119,7 @@ final class HvfVirtualMachineMenuTests: XCTestCase {
         XCTAssertNil(target.display, "the library window is in front")
 
         a.perform(.windows)
-        XCTAssertTrue(a.showsWindowInventory, "Show Guest Windows… opens the window's sheet")
+        XCTAssertTrue(a.showsWindowInventory, "Show Open Windows… opens the window's sheet")
         XCTAssertFalse(b.showsWindowInventory)
     }
 

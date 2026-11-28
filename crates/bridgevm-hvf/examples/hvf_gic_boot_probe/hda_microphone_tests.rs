@@ -83,7 +83,7 @@ fn a_paused_vm_lets_go_of_the_mac_microphone_and_takes_it_again_on_resume() {
     let grace = Duration::from_millis(100);
     let paused = Arc::new(AtomicBool::new(false));
     let pause = Arc::clone(&paused);
-    let mut source = MicrophoneSource::with_pause(logging_opener(&log), grace, move || {
+    let mut source = MicrophoneSource::with(logging_opener(&log), grace, STALL, move || {
         pause.load(Ordering::Acquire)
     })
     .unwrap();
@@ -94,6 +94,41 @@ fn a_paused_vm_lets_go_of_the_mac_microphone_and_takes_it_again_on_resume() {
     wait_for("close while paused", || log.lock().unwrap().len() == 2);
     paused.store(false, Ordering::Release);
     wait_for("reopen on resume", || log.lock().unwrap().len() == 3);
+    drop(source);
+    assert_eq!(*log.lock().unwrap(), ["open", "close", "open", "close"]);
+}
+
+#[test]
+fn an_input_whose_callbacks_stop_after_it_delivered_is_reopened() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let stall = Duration::from_millis(300);
+    let mut source =
+        MicrophoneSource::with(logging_opener(&log), STOP_GRACE, stall, || false).unwrap();
+    source.stream_started();
+    wait_for("open", || log.lock().unwrap().len() == 1);
+    // A queue that has not delivered yet is left open, so a silent input never loops.
+    thread::sleep(stall * 3);
+    assert_eq!(*log.lock().unwrap(), ["open"]);
+    // It delivers, then its callbacks stop (coreaudiod restarted, say).
+    source.ring.publish(&frames(0, 10));
+    wait_for("the reopen", || log.lock().unwrap().len() == 3);
+    assert_eq!(*log.lock().unwrap(), ["open", "close", "open"]);
+    assert_eq!(
+        *source.notices.lock().unwrap(),
+        ["HDA capture: the Mac microphone stopped delivering audio; BridgeVM opened it again"]
+    );
+    thread::sleep(stall * 3);
+    assert_eq!(
+        log.lock().unwrap().len(),
+        3,
+        "the new queue has not delivered yet"
+    );
+    // A queue that keeps delivering stays open.
+    for first in 0..9 {
+        source.ring.publish(&frames(first * 480, 10));
+        thread::sleep(stall / 3);
+    }
+    assert_eq!(log.lock().unwrap().len(), 3);
     drop(source);
     assert_eq!(*log.lock().unwrap(), ["open", "close", "open", "close"]);
 }

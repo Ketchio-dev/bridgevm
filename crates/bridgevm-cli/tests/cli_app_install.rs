@@ -5,18 +5,29 @@ use app_fixture::Fixture;
 #[test]
 fn install_help_exposes_saved_request_and_secret_boundaries() {
     let fixture = Fixture::new();
-    for args in [
-        &["app", "--help"][..],
-        &["app", "install", "--help"],
-        &["app", "install-status", "--help"],
-        &["app", "install-cancel", "--help"],
+    for (args, says) in [
+        (
+            &["app", "--help"][..],
+            "Passwords and recovery keys are never accepted",
+        ),
+        (
+            &["app", "install", "--help"],
+            "no paths or secrets are accepted",
+        ),
+        (
+            &["app", "install-status", "--help"],
+            "progress of the VM's Windows installation",
+        ),
+        (
+            &["app", "install-cancel", "--help"],
+            "Cancel the VM's Windows installation",
+        ),
     ] {
         let output = fixture.invoke(args);
         assert_eq!(output.status.code(), Some(0));
         assert!(output.stderr.is_empty());
         let help = String::from_utf8(output.stdout).unwrap();
-        assert!(help.contains("not accepted on argv"));
-        assert!(help.contains("pending request") || help.contains("retained"));
+        assert!(help.contains(says), "{args:?}: {help}");
     }
 }
 

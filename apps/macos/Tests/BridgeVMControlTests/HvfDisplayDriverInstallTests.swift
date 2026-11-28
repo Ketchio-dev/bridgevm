@@ -202,14 +202,14 @@ final class HvfDisplayDriverInstallProgressTests: XCTestCase {
         XCTAssertEqual(installed?.leavesDriverInGuest, true)
         XCTAssertEqual(installed?.message, "Installed the display driver.", "no device name or status token")
         XCTAssertEqual(outcome("BVDRIVER result=installed detail=Red Hat VirtIO GPU DOD controller status=OK; restart Windows to finish")?.message,
-                       "Installed the display driver. Restart Windows to finish.")
+                       "Installed the display driver. Shut down Windows and start the VM again to finish.")
         XCTAssertEqual(outcome("BVDRIVER result=installed detail=Red Hat VirtIO GPU DOD controller status=Error")?.message,
-                       "Installed the display driver. Windows reports a problem with the display device, so restart Windows if the display doesn’t change.")
+                       "Installed the display driver. Windows reports a problem with the display device. If the display doesn’t change, shut down Windows and start the VM again.")
 
         let staged = outcome("BVDRIVER result=staged detail=no 1AF4:1050 device yet; it binds on the next boot with one")
         XCTAssertEqual(staged?.status, .staged)
         XCTAssertEqual(staged?.leavesDriverInGuest, true)
-        XCTAssertEqual(staged?.message, "Added the display driver to Windows. It takes over the display the next time the VM starts.")
+        XCTAssertEqual(staged?.message, "Added the display driver to Windows.")
 
         let failed = outcome("BVDRIVER result=failed detail=download SHA-256 00AA does not match the pinned ff39")
         XCTAssertEqual(failed, .init(status: .failed, detail: "download SHA-256 00AA does not match the pinned ff39"))

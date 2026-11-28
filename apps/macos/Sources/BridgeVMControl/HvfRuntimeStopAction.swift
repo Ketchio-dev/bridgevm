@@ -9,7 +9,7 @@ enum HvfRuntimeStopAction {
         report: (String) -> Void,
         refresh: () -> Void
     ) -> Bool {
-        guard let session else { report("Couldn’t find the VM session."); return false }
+        guard let session else { report("Couldn’t find this VM. Choose Refresh, then try again."); return false }
         guard let identity = session.ownedProcessIdentity else {
             if session.hasRetainedAttachment {
                 report("Stop the VM from the app or tool that started it.")

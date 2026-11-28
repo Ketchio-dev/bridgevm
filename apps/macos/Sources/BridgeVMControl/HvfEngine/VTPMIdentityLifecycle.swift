@@ -13,15 +13,15 @@ enum VTPMIdentityLifecycleError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidRecoveryCode:
-            return "Enter the 256-bit recovery code that belongs to this vTPM package."
+            return "This isn’t a valid recovery code. Use the code BridgeVM showed when it exported this recovery package."
         case .invalidRecoveryPackage:
             return "The vTPM recovery package is damaged or the recovery code does not match."
         case let .vmIdentityMismatch(expected, package):
             return "The recovery package belongs to VM \(package). The selected VM is \(expected)."
         case .stateFingerprintMismatch:
             return "The recovery package does not match the encrypted vTPM state. Restore the matching state and key together."
-        case let .unsafeStateEntry(path):
-            return "The vTPM state contains an unsafe link or file at \(path)."
+        case .unsafeStateEntry:
+            return "The TPM data folder contains a link or a special file, so BridgeVM won’t use it. Restore the folder from a backup."
         case let .resetRollbackFailed(message):
             return "BridgeVM couldn’t roll back the vTPM reset. \(message)"
         }

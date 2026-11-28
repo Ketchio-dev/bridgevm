@@ -61,12 +61,12 @@ final class HvfWindowsSnapshotCommandTests: XCTestCase {
 
         let folder = fixture.bundle.appendingPathComponent("metadata/snapshots")
         try FileManager.default.createSymbolicLink(at: folder, withDestinationURL: fixture.root)
-        XCTAssertEqual(refusal(.create), "Check that the snapshots folder in the VM bundle is a regular directory before creating a snapshot.")
+        XCTAssertEqual(refusal(.create), "This VM’s “snapshots” folder, or a snapshot in it, was replaced by a file or link. Restore it as a normal folder, then try creating a snapshot again.")
         try FileManager.default.removeItem(at: folder)
 
         let helper = fixture.repo.appendingPathComponent("target/release/examples/snapshot_pair_cli")
         try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: helper.path)
-        XCTAssertEqual(refusal(.create), "Reinstall BridgeVM to restore the missing snapshot helper before creating a snapshot.")
+        XCTAssertEqual(refusal(.create), "Reinstall BridgeVM to restore a missing app component, then try creating a snapshot again.")
 
         let libraryOnly = "Open the VM from the BridgeVM library to use snapshots."
         fixture.config.vtpmKeyID = nil

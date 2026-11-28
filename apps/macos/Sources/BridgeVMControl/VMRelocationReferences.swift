@@ -11,12 +11,12 @@ enum VMRelocationReferences {
                 affectedPath: URL(fileURLWithPath: config.bundlePath))
             return nil
         } catch {
-            return "Another VM may use files in this bundle. Move that VM or check its registration before moving this one."
+            return "Another VM in your library may be using files in this VM’s folder. Move or delete that VM first, then try again."
         }
     }
 
     static func failureMessage(for config: VMConfig, rootURL: URL) -> String {
         refusal(for: config, rootURL: rootURL)
-            ?? "BridgeVM could not confirm the move. Check the bundles at both locations and the VM’s library entry."
+            ?? "BridgeVM couldn’t confirm that the move finished. Check the VM’s original folder and the folder you chose in Finder."
     }
 }

@@ -25,6 +25,7 @@ MISSING_KEY = "The Keychain key for this vTPM is missing. BridgeVM kept the encr
 UNREADABLE = "Couldn’t read the vTPM state key from Keychain (OSStatus -25293)."
 MISMATCH = "The current vTPM key does not match the selected recovery package."
 INVALID_PACKAGE = "The vTPM recovery package is damaged or the recovery code does not match."
+UNSAFE_STATE = "The TPM data folder contains a link or a special file, so BridgeVM won’t use it. Restore the folder from a backup."
 
 
 class Refused(Exception):
@@ -49,10 +50,10 @@ def fingerprint(state):
     if not os.path.lexists(state):
         return digest.hexdigest()
     if state.is_symlink() or not state.is_dir():
-        raise Refused(f"The vTPM state contains an unsafe link or file at {state}.")
+        raise Refused(UNSAFE_STATE)
     for path in sorted(state.rglob("*"), key=str):
         if path.is_symlink() or not (path.is_dir() or path.is_file()):
-            raise Refused(f"The vTPM state contains an unsafe link or file at {path}.")
+            raise Refused(UNSAFE_STATE)
         if path.is_file() and path.name != ".lock":
             digest.update(str(path.relative_to(state)).encode() + b"\0" + path.read_bytes() + b"\xff")
     return digest.hexdigest()

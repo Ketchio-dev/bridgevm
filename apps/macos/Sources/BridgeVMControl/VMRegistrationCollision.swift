@@ -6,7 +6,7 @@ struct VMRegistrationCollision: LocalizedError {
     let vmID: String
 
     var errorDescription: String? {
-        "Another registration already used the VM ID “\(vmID)”. BridgeVM kept the prepared files. Check your library before trying again."
+        "Another VM with the same ID was added to your library at the same time, so BridgeVM kept the files it prepared. Check your library, then try again."
     }
 }
 

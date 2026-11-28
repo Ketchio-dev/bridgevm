@@ -58,6 +58,16 @@ All notable changes to BridgeVM are documented in this file.
   a few minutes.
 - When GitHub can't be reached or rate-limits the newest-release lookup, the
   installer says so in one sentence instead of printing a Python traceback.
+- When one of a VM's virtual processors crashes in BridgeVM, the VM now stops
+  the way it does after other errors: its firmware settings are saved and its
+  disk is flushed to the Mac's drive. Before, the stop crashed too and skipped
+  that save. A crash in the middle of handling a device can still end the VM
+  without saving its firmware settings.
+- When a VM's process crashes, or Force Stop has to end it, BridgeVM now still
+  flushes the VM's disk to the Mac's drive. Before, Windows' last saved
+  changes could stay in the drive's cache and be lost if the Mac then lost
+  power. If that flush fails, BridgeVM says it couldn't finish saving the
+  Windows disk.
 - The installers accept an Apple Silicon Mac when they are run from a Rosetta
   shell, such as an Intel Homebrew bash.
 - The install guide no longer says Open Anyway is needed only once: each newly
@@ -70,6 +80,10 @@ All notable changes to BridgeVM are documented in this file.
   started in the app window. Before, status and cancel answered `targetUnavailable`, and `install`
   failed as busy and then reported that failure while Windows went on installing. The code
   `targetUnavailable` also prints as "BridgeVM isn’t installing this VM." in text output.
+- The library and VM page messages are clearer. Each VM no longer carries an
+  "HVF" label (only a VM BridgeVM can’t run names its engine), and the alerts
+  for moving, duplicating and deleting VMs no longer mention "registrations" or
+  "bundles" and say what to do next.
 - Quitting BridgeVM while it moves, duplicates or deletes a VM now asks to
   finish first and quits when it is done, as it already did while VM files were
   being prepared. Before, BridgeVM quit at once: a move cut short left the VM
@@ -89,6 +103,11 @@ All notable changes to BridgeVM are documented in this file.
   before it asks for a folder, and Show in Finder says the same. Before, Move
   asked for a folder and then said it could not confirm the move, though
   nothing had moved.
+- Messages in the VM window and VM settings now use plain English. They call
+  the in-Windows agent Guest Tools, no longer show helper output, byte counts
+  or error codes, and say that a new display driver needs Windows to shut down
+  and the VM to start again, not a restart inside Windows. The disk setting now
+  says it waits until each Windows save reaches your Mac’s disk.
 - Windows connections left idle, such as an SSH session or a database client,
   are no longer cut after 5 minutes without Windows being told. BridgeVM now
   keeps an idle connection open for at least 2 hours, as home routers do.
@@ -111,6 +130,14 @@ All notable changes to BridgeVM are documented in this file.
   refused unless the Mac had room for all 256 GiB, and then wrote all of it.
   Exporting or restoring a snapshot on another drive keeps unused space
   free the same way.
+- TPM, import and installation messages now use plain words. The TPM card in
+  Advanced Controls says "TPM" instead of "vTPM" and no longer shows
+  fingerprints, receipt paths or key sizes. The startup checklist says "Windows
+  disk" and "Windows boot settings file", and asks you to reinstall BridgeVM
+  when an app component is missing instead of naming its path. Import explains
+  how to make a recovery code file private in Finder instead of Terminal, the
+  installer says "Canceling…" and "Canceled", and the library start screen
+  says what went wrong instead of showing an internal code.
 - If BridgeVM quit while a finished Windows installation was being saved, Start
   Installation now installs again. Before, every try said BridgeVM couldn't
   recover the interrupted installation, and deleting the VM was the only way
@@ -118,6 +145,10 @@ All notable changes to BridgeVM are documented in this file.
 - A VPN tunnel or call running in Windows over UDP recovers after the Mac
   switches networks. Its traffic kept going to a connection tied to the old
   network, so it stayed dead for as long as Windows kept sending.
+- When Windows can't start because BridgeVM couldn't use the VM's key in your
+  login keychain, or because a move or installation cleanup hasn't finished,
+  the message is now one plain sentence that says what to do. Before, it said
+  "review the error below" and showed a raw system error or an internal note.
 - More Actions > Refresh on a VM's page now also reads the library again, as
   messages that say "Refresh the library" expect. Before, it only checked
   whether the VM was running.
@@ -125,10 +156,24 @@ All notable changes to BridgeVM are documented in this file.
   fills the Windows disk to zero: Windows now keeps 2 GB free, as the Mac side already does.
   Files copied in Finder also no longer pile up in Windows' Temp folder; only the current and the
   previous copy are kept, not the last four.
+- Choosing a Windows installer ISO under **Import an installed disk** in the
+  New VM sheet now says "This is a Windows installer ISO, not a disk with
+  Windows installed. Install Windows from it instead." Before, only the first
+  import screen refused it; the New VM sheet copied the ISO as a disk.
 - Command-N now opens New VM in the library window, bringing that window back
   if you closed it. Before, it opened a second library window. The Window menu
   also has a Library item that brings the library back while a VM window is
   open.
+- Starting a VM now empties its command file in the VM's folder
+  (`metadata/hvf.ctl`). Before, every command BridgeVM sent to Windows in
+  earlier runs, including the text and keys you typed, stayed in that file in a
+  readable form and grew with each run; clones, moves and backups carried it
+  along.
+- `bridgevm app start`, `stop`, `status`, `install`, `readiness` and `list` now
+  say in plain sentences what happened and what to do, instead of printing
+  internal codes, run tokens, process IDs and engineering notes. A failure code
+  the command doesn't know yet still prints a sentence. `--json` output and exit
+  codes are unchanged.
 - The Delete dialog no longer tells you to shut the VM down first. BridgeVM
   already refuses to delete a running VM and tells you why.
 - If BridgeVM can't archive a deleted VM's vTPM key, the warning now says to
@@ -137,6 +182,10 @@ All notable changes to BridgeVM are documented in this file.
 - When a running VM leaves the library, the page that keeps its controls now
   lists guest agent events as readable lines instead of internal program
   output.
+- A Windows microphone that stops getting sound from the Mac in the middle of a
+  call, for example after macOS restarts its audio service, now comes back by
+  itself within a few seconds. Before, Windows recorded silence until the call
+  app reopened the microphone.
 - When Windows Setup fails during installation, BridgeVM now says "Windows Setup
   didn't finish. Choose Try Again." instead of showing the path to a log file
   that Try Again deletes. The log's location is still in the installation log.

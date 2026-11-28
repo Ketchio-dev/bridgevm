@@ -26,7 +26,7 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
     }
 
     nonisolated static let notArm64ISO =
-        "This ISO isn’t Windows 11 for Arm, so delete this VM and create a new one with the Arm64 ISO from Microsoft."
+        "This ISO isn’t Windows 11 for Arm, so delete this VM and create a new one with the Windows 11 for Arm ISO from Microsoft."
     /// The screen shows a sentence, not the log's path (WindowsFileFailureFeedback): Try Again deletes
     /// that log, and its path stays in the log lines below the progress.
     nonisolated static let setupDidNotFinish = "Windows Setup didn’t finish. Choose Try Again."
@@ -86,7 +86,7 @@ final class HvfWindowsInstallSession: ObservableObject, ControlAppTerminationSes
         }
         stage = .cancelling
         execution.process.cancel()
-        appendLog("Installation cancelled by user.")
+        appendLog("Installation canceled by user.")
     }
 
     func prepareAttemptPresentation() {

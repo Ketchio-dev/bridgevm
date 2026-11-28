@@ -14,7 +14,7 @@ fn snapshot_export_help_is_available_without_launching_the_app() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("<ID>"));
     assert!(stdout.contains("<OUTPUT>"));
-    assert!(stdout.contains("currently selected powered-off"));
+    assert!(stdout.contains("current disk and boot settings"));
 }
 
 #[test]

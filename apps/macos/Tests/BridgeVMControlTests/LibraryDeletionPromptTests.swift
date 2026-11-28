@@ -70,8 +70,17 @@ final class LibraryDeletionPromptTests: XCTestCase {
             let prompt = LibraryDeletionPrompt(config: cfg, rootURL: root)
             XCTAssertEqual(prompt.confirmTitle, "Remove \(slug) from Library", engine)
             XCTAssertEqual(prompt.message,
-                           "This removes the VM from your library. Its virtual disk stays in the external bundle at \(external.path).", engine)
+                           "This removes the VM from your library. Its files stay in \(external.path).", engine)
         }
+    }
+
+    /// The path stays so people can find the files; under the home folder it starts with ~.
+    func testAPathInTheHomeFolderIsShownWithATilde() {
+        let (_, root) = scratch()
+        let bundle = NSHomeDirectory() + "/BridgeVM External/win/bundle.vmbridge"
+        let prompt = LibraryDeletionPrompt(config: config("win", engine: "hvf-engine", bundlePath: bundle), rootURL: root)
+        XCTAssertEqual(prompt.message,
+                       "This removes the VM from your library. Its files stay in ~/BridgeVM External/win/bundle.vmbridge.")
     }
 
     /// Fast VZ deletes the entry directly, so the named target can be checked

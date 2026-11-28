@@ -33,7 +33,7 @@ enum HvfRuntimeWorkAdmissionEntry: CaseIterable {
 final class HvfRuntimeWorkAdmissionFixture {
     static let reservationReason = "This VM is being deleted, duplicated or moved. Try again when the operation finishes."
     static let ownerReason = "The selected VM changed. Refresh the library and reopen its window."
-    static let missingReason = "This VM’s registration changed. Refresh the library and try again."
+    static let missingReason = "This VM’s settings changed on disk. Choose Refresh, then try again."
     static let expiredReason = "The VM library is unavailable. Return to the library and try again."
     static let runtimeReason = "The VM is running, starting or shutting down. Wait until it is fully stopped, then try again."
     static let installReason = "Windows is being installed. Finish or cancel installation before trying again."

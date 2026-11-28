@@ -58,7 +58,7 @@ final class HvfWindowsAgentAssetsTests: XCTestCase {
                 try FileManager.default.removeItem(at: asset)
                 let capturedWithoutAsset = plan(root: root, iso: iso)
                 XCTAssertEqual(capturedWithoutAsset.validationError(),
-                               "BridgeVM is missing an installation resource (\(relative)). Reinstall the app and retry.", relative)
+                               "BridgeVM is missing a file it needs to install Windows. Reinstall BridgeVM, then try again.", relative)
                 try write(originalBytes, to: asset)
             }
         }

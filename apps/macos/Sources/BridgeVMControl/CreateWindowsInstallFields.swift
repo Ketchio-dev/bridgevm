@@ -11,7 +11,7 @@ struct CreateWindowsInstallFields: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Windows 11 Arm installer").font(.headline)
+                Text("Windows 11 for Arm installer").font(.headline)
                 fileRow("Choose ISO…", path: isoPath, id: "iso", action: pickISO)
             }
 

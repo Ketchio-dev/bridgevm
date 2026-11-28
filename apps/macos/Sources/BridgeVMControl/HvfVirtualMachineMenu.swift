@@ -208,7 +208,7 @@ struct HvfVirtualMachineMenuItems: View {
             }
         }
         .accessibilityIdentifier("runtime.windowsApps")
-        Button("Show Guest Windows…") { perform(.windows) }.disabled(!state.listsWindows)
+        Button("Show Open Windows…") { perform(.windows) }.disabled(!state.listsWindows)
             .accessibilityIdentifier("runtime.windows.open")
     }
 }

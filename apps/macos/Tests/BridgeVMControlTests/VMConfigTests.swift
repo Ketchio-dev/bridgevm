@@ -35,10 +35,25 @@ final class VMConfigSlugifyTests: XCTestCase {
 
 final class BackendKindTests: XCTestCase {
     func testLabels() {
-        XCTAssertEqual(BackendKind.hvfEngine.shortLabel, "HVF")
-        XCTAssertEqual(BackendKind.hvfEngine.detailLabel, "Native (HVF)")
+        XCTAssertEqual(BackendKind.hvfEngine.shortLabel, "BridgeVM")
+        XCTAssertEqual(BackendKind.hvfEngine.detailLabel, "BridgeVM engine")
+        XCTAssertEqual(BackendKind.unsupported.shortLabel, "Unsupported")
+        XCTAssertEqual(BackendKind.unsupported.detailLabel, "Unsupported engine")
         XCTAssertEqual(BackendKind(savedKind: "hvf-engine"), .hvfEngine)
         XCTAssertEqual(BackendKind(savedKind: "bogus"), .unsupported)
+    }
+
+    /// Only one engine ships, so a library row names the engine only when the VM can't use it.
+    func testTheRowNamesTheEngineOnlyWhenItIsUnsupported() {
+        var config = VMConfig(id: "win", name: "win", displayName: "win", backendKind: "hvf-engine", bootMode: nil,
+                              bundlePath: "/tmp/win", runnerPath: "", launchSpecPath: "", handoffPath: "",
+                              sshKeyPath: "", sshUser: "", leasesPath: "", guestName: "win",
+                              displayWidth: 1, displayHeight: 1)
+        config.memMiB = 4096
+        config.cpuCount = 4
+        XCTAssertEqual(LibraryWorkspaceRow.resourceText(config), "4 vCPU · 4 GiB RAM")
+        config.backendKind = "fast-vz"
+        XCTAssertEqual(LibraryWorkspaceRow.resourceText(config), "4 vCPU · 4 GiB RAM · Unsupported engine")
     }
 
     /// A library saved before the Fast VZ and QEMU engines were removed must still
@@ -249,7 +264,7 @@ final class VMLibraryPersistenceTests: XCTestCase {
         let scan = VMLibrary.scan(rootURL: root)
         XCTAssertTrue(scan.configs.isEmpty)
         XCTAssertEqual(scan.issues.count, 1)
-        XCTAssertTrue(scan.issues[0].message.contains("symbolic link"))
+        XCTAssertTrue(scan.issues[0].message.contains("skipped this link"))
         XCTAssertFalse(VMLibrary.save(config(id: "linked"), rootURL: root))
     }
 
@@ -271,7 +286,7 @@ final class VMLibraryPersistenceTests: XCTestCase {
 
         XCTAssertTrue(scan.configs.isEmpty)
         XCTAssertEqual(scan.issues.count, 1)
-        XCTAssertTrue(scan.issues[0].message.contains("regular file"))
+        XCTAssertTrue(scan.issues[0].message.contains("isn’t an ordinary file"))
         XCTAssertFalse(VMLibrary.save(config(id: "linked-config"), rootURL: root))
         XCTAssertEqual(try Data(contentsOf: outside), original)
     }
@@ -292,7 +307,7 @@ final class VMLibraryPersistenceTests: XCTestCase {
 
         XCTAssertTrue(scan.configs.isEmpty)
         XCTAssertEqual(scan.issues.count, 1)
-        XCTAssertTrue(scan.issues[0].message.contains("\(VMLibrary.maximumConfigBytes) bytes"))
+        XCTAssertTrue(scan.issues[0].message.contains("too large to read"))
     }
 
     func testDeletionImpactDistinguishesManagedAndExternalBundles() {

@@ -9,7 +9,7 @@ struct RetainedRuntimeControlView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text(config.name).font(.title2.bold())
-                Text("This session is still available here after the VM left your library.")
+                Text("This VM is no longer in your library, but BridgeVM kept its controls here.")
                     .foregroundColor(.secondary)
                 Text(LibraryRetainedControlDescriptor.runtime(config: config, session: session).statusLabel)
                 RetainedRuntimeHeartbeatText(heartbeat: session.heartbeat)

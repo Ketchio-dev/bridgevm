@@ -144,7 +144,7 @@ final class LibraryNestedRelocationTests: XCTestCase {
 
         let message = try XCTUnwrap(model.moveError)
         XCTAssertTrue(message.contains("Another VM"), message)
-        XCTAssertTrue(message.contains("check its registration"), message)
+        XCTAssertTrue(message.contains("Move or delete that VM first"), message)
         try f.assertReadable(owner, id: "owner")
         try f.assertReadable(nested, id: "child")
         XCTAssertFalse(f.fm.fileExists(atPath: destination.path))

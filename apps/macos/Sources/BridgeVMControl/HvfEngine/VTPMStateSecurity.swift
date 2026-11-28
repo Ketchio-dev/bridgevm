@@ -14,8 +14,8 @@ enum VTPMStateSecurityError: LocalizedError, Equatable {
         switch self {
         case .invalidVMIdentifier:
             return "A stable VM ID is required for the vTPM key."
-        case let .invalidKeyLength(length):
-            return "The vTPM state key must be 32 bytes. Its length is \(length) bytes."
+        case .invalidKeyLength:
+            return "This VM’s TPM key in your keychain is damaged. Restore it with the VM’s TPM recovery package."
         case .missingKeyForExistingState:
             return "The Keychain key for this vTPM is missing. BridgeVM kept the encrypted state. Restore its matching recovery key, or reset the TPM identity to start with a new TPM."
         case let .randomGeneration(status):

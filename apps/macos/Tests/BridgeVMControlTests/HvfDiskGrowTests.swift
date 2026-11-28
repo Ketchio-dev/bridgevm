@@ -266,6 +266,7 @@ final class HvfDiskGrowTests: XCTestCase {
             #!/bin/sh
             echo "$@" >> "$0.args"
             [ -e "$0.in-use" ] && { echo 'grow: media is in use by a running VM' >&2; exit 3; }
+            [ -e "$0.fails" ] && { echo 'grow: Permission denied (os error 13)' >&2; exit 1; }
             [ "$1" = size ] && { printf 'disk_bytes 68719476736\\nvars_bytes 16\\n'; exit 0; }
             echo "disk_bytes $4"
             """
@@ -293,6 +294,15 @@ final class HvfDiskGrowTests: XCTestCase {
         XCTAssertTrue(FileManager.default.createFile(atPath: helper.path + ".in-use", contents: nil))
         XCTAssertThrowsError(try HvfDiskGrow.grow(plan, to: 80 * gib)) { error in
             XCTAssertEqual(error.localizedDescription, HvfDiskGrow.stopFirst)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+
+        // The helper's own text goes to the log; the user gets what to do.
+        try FileManager.default.removeItem(atPath: helper.path + ".in-use")
+        XCTAssertTrue(FileManager.default.createFile(atPath: helper.path + ".fails", contents: nil))
+        XCTAssertThrowsError(try HvfDiskGrow.grow(plan, to: 80 * gib)) { error in
+            XCTAssertEqual(error.localizedDescription, "Couldn’t expand the disk. Make sure the drive that holds "
+                + "this VM is connected and has free space, then try again.")
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
 

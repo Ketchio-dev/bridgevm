@@ -169,8 +169,8 @@ struct LibraryDashboardDetail: View {
             ownedRun3D: session?.ownedRunExperimental3D, saved3D: config.experimental3DAllowed).label
     }
 
-    private var statusText: String {
-        if config.installPending == true { return "Setup required" }
+    var statusText: String {
+        if config.installPending == true { return "Installation required" }
         if let operation = library.fileOperationTitle(for: config.slug) { return operation }
         return runtimeState?.title ?? (model.running ? "Running" : "Stopped")
     }

@@ -25,7 +25,7 @@ enum AppUIInstallCancelAXContracts {
         let actions: [(AppUIInstallCancelOperation, String, String, Int)] = [
             (.start, "Ready to install", "Start Installation", F.start),
             (.cancel, "Checking installation files", "Installing…", F.cancel),
-            (.retry, "Cancelled", "Try Again", F.start)]
+            (.retry, "Canceled", "Try Again", F.start)]
         for (operation, stage, title, button) in actions {
             let fixture = F.make(stage: stage, title: title, cancelVisible: operation == .cancel, cancelEnabled: true)
             let result = try AppUIInstallCancelAXOperations(access: fixture).perform(operation)
@@ -43,8 +43,8 @@ enum AppUIInstallCancelAXContracts {
         let cases: [(String, String, Bool, Bool, Bool, String?)] = [
             ("Ready to install", "Start Installation", true, false, false, nil),
             ("Checking installation files", "Installing…", false, true, true, nil),
-            ("Cancelling…", "Installing…", false, true, false, nil),
-            ("Cancelled", "Try Again", true, false, false, nil),
+            ("Canceling…", "Installing…", false, true, false, nil),
+            ("Canceled", "Try Again", true, false, false, nil),
             ("Failed", "Try Again", true, false, false, "Synthetic UI check complete")]
         for (stage, title, startEnabled, cancelVisible, cancelEnabled, failure) in cases {
             let fixture = F.make(stage: stage, title: title, startEnabled: startEnabled,

@@ -48,7 +48,7 @@ final class HvfRuntimeRetainedControlLifecycleTests: XCTestCase {
             XCTAssertEqual(library.selectedID, token)
             XCTAssertEqual(f.assertInstallRoute(try XCTUnwrap(observed.object), config: config, in: library), token)
             XCTAssertEqual(observed.object?.stage, .cancelled)
-            XCTAssertTrue(observed.object?.logLines.contains("Installation cancelled by user.") == true)
+            XCTAssertTrue(observed.object?.logLines.contains("Installation canceled by user.") == true)
         }
     }
 

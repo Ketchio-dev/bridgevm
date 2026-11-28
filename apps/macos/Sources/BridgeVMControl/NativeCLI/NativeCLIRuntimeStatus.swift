@@ -34,25 +34,53 @@ struct NativeCLIRuntimeStatus: Encodable {
         }
     }
 
+    /// Text names what the app reports in plain words; PIDs, run tokens and the scope stay in --json.
     var text: String {
-        var lines = ["Native VM runtime: \(vmID)", "Observation scope: \(scope)",
-                     "Runtime state: \(runtimeState)", "Saved configuration: \(savedConfiguration.state.rawValue)"]
+        var lines = ["VM status: \(vmID)"]
         if let unavailableReason {
-            lines.append("Observation unavailable: "
-                + NativeCLIReason.sentence(unavailableReason, vmID: vmID, action: "checking"))
+            lines.append(NativeCLIReason.sentence(unavailableReason, vmID: vmID, action: "checking"))
         }
-        if complete && sessions.isEmpty { lines.append("The running app has no retained session for this ID.") }
-        for session in sessions {
-            lines.append("Session: \(session.ownership.rawValue), connection: \(session.connectionState ?? "unobserved")")
-            lines.append("  Accepted configuration: \(session.configurationMatch.rawValue)")
-            lines.append("  Graphics mode: \(session.graphicsMode?.rawValue ?? "not-reported")")
-            if let process = session.ownedProcess { lines.append("  Owned child PID: \(process.processID)") }
-            if let exit = session.lastOwnedExit {
-                lines.append("  Last owned child exit: PID \(exit.process.processID), \(exit.reason), status \(exit.status)")
+        if complete {
+            if savedConfiguration.state == .missing { lines.append("No saved VM has this ID.") }
+            if savedConfiguration.state == .unreadable { lines.append("BridgeVM couldn’t read this VM’s saved settings.") }
+            if sessions.isEmpty { lines.append("BridgeVM isn’t running this VM.") }
+        }
+        for session in sessions { lines += session.cliLines }
+        return lines.joined(separator: "\n") + "\n"
+    }
+}
+
+extension NativeRuntimeSessionObservation {
+    /// The same state words as the app's VM dashboard.
+    var cliLines: [String] {
+        let state: String
+        switch connectionState {
+        case "connected"?: state = "Running"
+        case "booting"?: state = "Booting Windows"
+        case "stopping"?: state = "Shutting down"
+        case "timedOut"?: state = "Needs attention. Check the VM in BridgeVM."
+        default:
+            switch ownership {
+            case .owned: state = "Booting Windows"
+            case .attachedObservation: state = "Running"
+            case .ownedExitObserved, .notObserved: state = "Stopped"
             }
         }
-        lines.append("App-retained observations only; no guest-health or system-wide VM state is inferred.")
-        return lines.joined(separator: "\n") + "\n"
+        var lines = ["State: \(state)"]
+        if ownership == .attachedObservation { lines.append("  Started by another app or tool. Stop it there.") }
+        if configurationMatch == .different {
+            lines.append("  Its saved settings changed after it started. Restart the VM to use them.")
+        }
+        switch graphicsMode {
+        case .basic3DOff?: lines.append("  Graphics: standard display, 3D off")
+        case .experimental3D?: lines.append("  Graphics: Graphics Lab 3D")
+        case .unverified?, nil: break
+        }
+        if let exit = lastOwnedExit {
+            lines.append(exit.reason == "uncaughtSignal" ? "  Last run ended by signal \(exit.status)."
+                         : "  Last run ended with exit status \(exit.status).")
+        }
+        return lines
     }
 }
 

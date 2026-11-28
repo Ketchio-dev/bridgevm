@@ -153,6 +153,6 @@ extension HvfEngineSession {
     }
 
     private static let restartUnavailable = "Start the VM before requesting a restart."
-    private static let agentUnavailable = "Couldn’t request a restart because the Windows guest agent isn’t responding."
+    private static let agentUnavailable = "Couldn’t ask Windows to restart because Guest Tools isn’t responding."
     private static let bootChanged = "Windows already restarted. The request was canceled."
 }

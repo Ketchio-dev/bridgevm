@@ -125,6 +125,6 @@ final class VMRelocationJournalTests: XCTestCase {
         try FileManager.default.createDirectory(at: occupied.appendingPathComponent("bundle.vmbridge"),
                                                 withIntermediateDirectories: true)
         XCTAssertEqual(LibraryModel.moveDestinationRefusal(f.config, to: occupied),
-                       "“VMs” already holds a VM bundle. Choose another folder, or make a new folder for this VM.")
+                       "“VMs” already holds another VM. Choose another folder, or make a new folder for this VM.")
     }
 }

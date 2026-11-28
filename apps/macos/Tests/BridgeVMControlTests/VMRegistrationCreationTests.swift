@@ -45,7 +45,7 @@ final class VMRegistrationCreationTests: XCTestCase {
         guard case .notPublished(let error) = collision else { return XCTFail("existing registration must refuse") }
         let refusal = try XCTUnwrap(error as? VMRegistrationCollision)
         XCTAssertEqual(refusal.vmID, "café-서울")
-        XCTAssertTrue(refusal.localizedDescription.contains("already used the VM ID “café-서울”"))
+        XCTAssertEqual(refusal.localizedDescription, "Another VM with the same ID was added to your library at the same time, so BridgeVM kept the files it prepared. Check your library, then try again.")
         XCTAssertTrue(collision.preservesPreparedDestination)
         XCTAssertEqual(try Data(contentsOf: url), winner)
     }

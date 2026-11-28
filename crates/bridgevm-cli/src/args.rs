@@ -27,7 +27,7 @@ pub(crate) struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
-    /// Create and manage VMs in the native macOS app library.
+    /// Create and manage the VMs in your BridgeVM library.
     App(AppArgs),
     #[command(
         subcommand,

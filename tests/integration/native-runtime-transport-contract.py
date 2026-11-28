@@ -86,7 +86,7 @@ class Contracts(NativeRuntimeAliasCases, NativeRuntimeControlCases, NativeRuntim
             self.assertEqual(response["sessions"], [])
             denied = self.call("owner", alias, duplicate)
             self.assertNotEqual(denied.returncode, 0)
-            self.assertIn("ownerBusy", denied.stderr)
+            self.assertIn("BridgeVM is already open with this VM library.", denied.stderr)
             self.assertFalse((duplicate / "ready").exists())
         self.assertTrue((self.namespace / "owner.lock").is_file())
         self.assertFalse((self.namespace / "status.sock").exists())

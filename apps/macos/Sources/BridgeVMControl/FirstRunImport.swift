@@ -19,7 +19,7 @@ enum FirstRunImport {
     }
 
     enum ValidationError: LocalizedError, Equatable, CustomStringConvertible {
-        case emptyName, invalidName, installerISO
+        case emptyName, invalidName
         /// The Create sheet's sentence for the disk and UEFI variables files.
         case media(String)
         case unsupportedDiskFormat(String)
@@ -33,17 +33,16 @@ enum FirstRunImport {
             switch self {
             case .emptyName: return "Enter a name for the VM."
             case .invalidName: return VMLibrary.vmNameRule
-            case .installerISO: return "This is a Windows installer ISO. Use Install Windows instead."
             case .media(let sentence): return sentence
             case .unsupportedDiskFormat(let format):
                 return "To import a \(format) disk, convert it to RAW, QCOW2, fixed-size VHD, or VHDX and choose the converted file."
-            case .vtpmNotADirectory(let p): return "Choose the vTPM state folder. Check the path \(p)"
-            case .vtpmRecoveryMissing(let p): return "The vTPM recovery file is unavailable at \(p)"
-            case .vtpmRecoveryPackageRequired: return "Choose the vTPM recovery package."
-            case .vtpmRecoveryCodeRequired: return "Choose the vTPM recovery code file."
+            case .vtpmNotADirectory(let p): return "Choose the folder that holds the original TPM data. There’s no folder at \(p)."
+            case .vtpmRecoveryMissing(let p): return "BridgeVM can’t use the recovery file at \(p). Choose the original file again."
+            case .vtpmRecoveryPackageRequired: return "Choose the TPM recovery package."
+            case .vtpmRecoveryCodeRequired: return "Choose the TPM recovery code file."
             case .vtpmRecoveryCodeShared(let p):
-                return "Other accounts on this Mac can read the recovery code file at \(p). Make it private (in Terminal: chmod 600 and the file's path), then import again."
-            case .vtpmRecoveryWithoutState: return "Choose the vTPM state folder to use these recovery files."
+                return "Other accounts on this Mac can open the recovery code file at \(p). In Finder, choose File > Get Info and set everyone except you to No Access under Sharing & Permissions, then import again."
+            case .vtpmRecoveryWithoutState: return "Choose the TPM data folder to use these recovery files."
             case .badResources(let mem, let cpu):
                 return "Choose at least 2048 MiB of memory and 1 to 64 CPUs. The current settings are \(mem) MiB and \(cpu) CPUs."
             }
@@ -53,7 +52,7 @@ enum FirstRunImport {
     static let requiredVarsBytes: UInt64 = 64 * 1024 * 1024
 
     /// Validate user inputs with the Create sheet's name and file checks, plus the
-    /// first-run resource, installer ISO and vTPM checks.
+    /// first-run resource and vTPM checks.
     static func validate(
         _ inputs: Inputs,
         fileManager: FileManager = .default
@@ -68,18 +67,8 @@ enum FirstRunImport {
         if let sentence = VMLibrary.windowsHVFImportError(targetDiskPath: inputs.diskPath, varsPath: inputs.varsPath) {
             return .media(sentence)
         }
-        if isInstallerISO(inputs.diskPath) { return .installerISO }
         if let error = FirstRunImportVTPMValidation.validate(inputs, fileManager: fileManager) { return error }
         return nil
-    }
-
-    /// An ISO 9660 volume descriptor ("CD001" at byte 0x8001), as on every Windows installer ISO.
-    /// Called after the disk check, so the path is a readable regular file.
-    private static func isInstallerISO(_ path: String) -> Bool {
-        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return false }
-        defer { try? handle.close() }
-        guard (try? handle.seek(toOffset: 0x8001)) != nil else { return false }
-        return (try? handle.read(upToCount: 5)) == Data("CD001".utf8)
     }
 
     /// Bundle layout the HVF backend expects (see HvfEngineConfig).
