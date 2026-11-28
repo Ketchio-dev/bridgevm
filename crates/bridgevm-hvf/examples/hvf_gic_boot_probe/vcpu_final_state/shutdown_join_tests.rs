@@ -80,13 +80,14 @@ fn assert_all_owners_joined_before_outcome(leading_panics: &[bool]) {
     let supervisor = thread::spawn(move || {
         let outcome =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| set.shutdown_and_join()));
-        let message = outcome.err().map(|error| {
+        // Ok(whether the joined result is a fatal run error), or the panic.
+        let outcome = outcome.map(|stop| stop.run_error).map_err(|error| {
             error
                 .downcast_ref::<String>()
                 .cloned()
                 .unwrap_or_else(|| "non-string panic".into())
         });
-        let _ = outcome_tx.send(message);
+        let _ = outcome_tx.send(outcome);
     });
     let mut cleanup = Cleanup {
         release: Some(release_tx),
@@ -105,13 +106,9 @@ fn assert_all_owners_joined_before_outcome(leading_panics: &[bool]) {
     };
     assert!(parked.is_ok() && saw_shutdown == Ok(true));
     assert!(owner_finished && supervisor_joined);
-    assert_eq!(outcome.is_some(), leading_panics.contains(&true));
-    if let Some(message) = outcome {
-        assert!(
-            message.starts_with("join secondary vCPU thread"),
-            "{message}"
-        );
-    }
+    // A panicked owner stops the VM as a fatal run error; the stop path itself
+    // must not panic, or the stop save (vars, final F_FULLFSYNC) never runs.
+    assert_eq!(outcome, Ok(leading_panics.contains(&true)));
     assert!(
         !returned_early,
         "shutdown returned while a later owner was held"

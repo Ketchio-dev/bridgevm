@@ -6,6 +6,9 @@ use crate::{
     decide_restart, flush_and_write_receipt, HelperLaunch, PreparedVm, ResetCycle, RestartDecision,
     RuntimeControl, RuntimeError, RESET_EXIT_CODE,
 };
+use bridgevm_hvf::snapshot_pair::managed::LockedPair;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
 use std::path::Path;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,10 +41,13 @@ pub fn run_prepared_vm(
         }
         let tag = prepared.generation().stamp();
         let (pid, exit) = generation::run(prepared, launch, tag.value(), control)?;
+        let reset_requested = exit.status.code() == Some(RESET_EXIT_CODE);
+        if exit.cancelled || !(reset_requested || exit.status.success()) {
+            sync_after_unclean_exit(prepared, launch);
+        }
         if exit.cancelled || control.is_cancelled() {
             return Ok(cancelled(cycles));
         }
-        let reset_requested = exit.status.code() == Some(RESET_EXIT_CODE);
         if !reset_requested && !exit.status.success() {
             return Err(RuntimeError::Io {
                 context: "VM helper failed",
@@ -87,6 +93,59 @@ pub fn run_prepared_vm(
             RunTermination::Completed
         },
     })
+}
+
+/// A helper that did not end by itself through its own stop save (it was
+/// cancelled, failed or was killed) may have acknowledged a guest FLUSH after
+/// F_BARRIERFSYNC and died before the F_FULLFSYNC it owed. `sync_all` is
+/// F_FULLFSYNC on macOS. The helper used the pair's selected generation,
+/// which after a snapshot restore is not the logical path; the writer leases
+/// `prepare` holds keep a restore from changing it here. A failure is
+/// reported as the helper reports a failed final save.
+fn sync_after_unclean_exit(prepared: &PreparedVm, launch: &HelperLaunch) {
+    let manifest = prepared.manifest();
+    let logical = [Path::new(manifest.disk()), Path::new(manifest.uefi_vars())];
+    // The pair is held through the sync: its paths are valid only while it lives.
+    let selected =
+        LockedPair::open(logical[0], logical[1]).and_then(|pair| Ok((pair.paths()?, pair)));
+    let paths = match &selected {
+        Ok(((disk, vars), _pair)) => [disk.as_path(), vars.as_path()],
+        Err(error) => {
+            // F_FULLFSYNC flushes the drive's cache, which settles what the
+            // helper's barrier syncs left there on that drive.
+            eprintln!("selected VM media not resolved ({error}); syncing the logical files");
+            logical
+        }
+    };
+    let mut failed = false;
+    for path in paths {
+        if let Err(error) = File::open(path).and_then(|file| file.sync_all()) {
+            let path = path.display();
+            eprintln!("flush storage after the VM helper stopped: {path}: {error}");
+            failed = true;
+        }
+    }
+    if failed {
+        report_final_save_failed(launch);
+    }
+}
+
+/// The helper's own line for a failed final save, in the run.log the app
+/// reads (vm_process.rs), on a line of its own even after a killed helper's
+/// partial last line.
+fn report_final_save_failed(launch: &HelperLaunch) {
+    const LINE: &str = "BVSTORAGE final-save-failed";
+    let Some(surfaces) = &launch.surfaces else {
+        eprintln!("{LINE}");
+        return;
+    };
+    let written = OpenOptions::new()
+        .append(true)
+        .open(surfaces.evidence_dir.join("run.log"))
+        .and_then(|mut log| writeln!(log, "\n{LINE}"));
+    if let Err(error) = written {
+        eprintln!("{LINE} (run.log: {error})");
+    }
 }
 
 #[cfg(test)]

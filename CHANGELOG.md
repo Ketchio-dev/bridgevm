@@ -58,6 +58,16 @@ All notable changes to BridgeVM are documented in this file.
   a few minutes.
 - When GitHub can't be reached or rate-limits the newest-release lookup, the
   installer says so in one sentence instead of printing a Python traceback.
+- When one of a VM's virtual processors crashes in BridgeVM, the VM now stops
+  the way it does after other errors: its firmware settings are saved and its
+  disk is flushed to the Mac's drive. Before, the stop crashed too and skipped
+  that save. A crash in the middle of handling a device can still end the VM
+  without saving its firmware settings.
+- When a VM's process crashes, or Force Stop has to end it, BridgeVM now still
+  flushes the VM's disk to the Mac's drive. Before, Windows' last saved
+  changes could stay in the drive's cache and be lost if the Mac then lost
+  power. If that flush fails, BridgeVM says it couldn't finish saving the
+  Windows disk.
 - The installers accept an Apple Silicon Mac when they are run from a Rosetta
   shell, such as an Intel Homebrew bash.
 - The install guide no longer says Open Anyway is needed only once: each newly

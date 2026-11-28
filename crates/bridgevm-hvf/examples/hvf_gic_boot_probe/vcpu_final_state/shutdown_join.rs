@@ -26,12 +26,19 @@ impl SecondaryVcpuSet {
         outcome
     }
 
+    /// A panicked owner is a fatal run error like any other, not a panic of
+    /// the stop path: the stop save (UEFI vars, final F_FULLFSYNC) still runs.
     pub(crate) fn shutdown_and_join(mut self) -> SecondaryVcpuStopResult {
-        self.join_owners().expect("join secondary vCPU thread");
-        let run_error = self
-            .controls
-            .iter()
-            .any(|control| control.run_error.load(Ordering::SeqCst));
+        let panicked = self.join_owners().is_err();
+        if panicked {
+            // The panic hook already logged the message.
+            println!("secondary vCPU thread panicked; stopping the VM");
+        }
+        let run_error = panicked
+            || self
+                .controls
+                .iter()
+                .any(|control| control.run_error.load(Ordering::SeqCst));
         let exit_counts = self
             .controls
             .iter()
