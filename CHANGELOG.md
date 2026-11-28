@@ -59,6 +59,19 @@ All notable changes to BridgeVM are documented in this file.
 - Clearing the Mac clipboard now clears Windows too, when Windows still holds
   that Mac copy, so a Mac password manager's auto-clear no longer leaves the
   password in Windows. A copy made in Windows is never cleared this way.
+- Cells copied in Excel for Windows paste on the Mac as a table (their text
+  and HTML), not as a picture of the cells. Needs the Guest Tools update.
+- A Windows copy made while another app briefly held the clipboard (such as
+  clipboard history or Office) now still reaches the Mac. Needs the Guest
+  Tools update.
+- When the VM's disk has nothing to start, such as an imported disk with
+  Windows for Intel or AMD PCs, BridgeVM now says so instead of leaving the
+  window on the firmware's text.
+- Shared folders no longer lose a Windows save when the same file changes on the Mac before
+  BridgeVM has copied that save over. The Windows version is kept next to it as
+  "<name> (Windows copy)" and copied to the Mac, and the Mac version keeps the original name.
+- Photos copied on the Mac now paste in Windows: the clipboard image limit
+  is 128 MiB instead of 32 MiB. Needs the Guest Tools update.
 - A Mac change made just as the shared folder is renamed or deleted in
   Windows no longer makes the Windows folder again with only that file,
   after the Guest Tools update.

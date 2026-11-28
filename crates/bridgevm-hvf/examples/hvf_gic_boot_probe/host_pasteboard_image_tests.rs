@@ -46,6 +46,10 @@ fn admit_png_applies_both_limits_and_digests_the_bytes() {
             height: 2
         })
     );
+    // A 48 MP photo from Photos as PNG.
+    let mut photo = png_header(8064, 6048);
+    photo.resize(100 << 20, 0);
+    assert!(admit_png(photo).is_ok(), "a Mac photo crosses");
     let mut big = png_header(10, 10);
     big.resize(CLIP_IMAGE_MAX_BYTES + 1, 0);
     assert!(matches!(admit_png(big), Err(PngRefusal::TooLarge { .. })));

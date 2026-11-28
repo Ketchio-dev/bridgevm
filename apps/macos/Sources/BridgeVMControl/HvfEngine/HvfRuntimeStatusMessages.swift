@@ -11,6 +11,7 @@ struct HvfRuntimeStatusMessages: View {
             Text(failureText ?? "No startup error")
                 .font(.callout).foregroundColor(failureText == nil ? Color.secondary : Color.red).textSelection(.enabled)
                 .accessibilityIdentifier(HvfRuntimeAccessibilityState.failureIdentifier(failureText))
+            HvfBootFailureNoticeView(notice: session.bootFailureNotice)
             HvfSharedMemoryNoticeView(session: session)
             HvfKeepAwakeNoticeView(power: session.sleepPrevention, runtime: session.sleepPreventionID)
             HvfAgentSilenceNoticeView(notice: session.agentSilenceNotice)

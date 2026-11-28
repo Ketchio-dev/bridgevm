@@ -668,6 +668,7 @@ function Close-PutStream {
     $script:BvPutWritten = [int64]0
     $script:BvPutSeq = 0
     $script:BvPutTime = ''
+    $script:BvPutSeen = $null
 }
 
 # >>> large put
@@ -714,6 +715,23 @@ function Get-PutError($err) {
         $e = $e.InnerException
     }
     return $err.Exception.Message
+}
+
+function Save-WindowsCopy([string]$io, [string[]]$seen) {
+    # PUT, PUTBEG and LPUTBEG end with the size and listed time of the Windows file the host last
+    # synced at that name, when it knows it (as DEL). A file there that is not that version is a
+    # Windows save the Mac has not seen: it is kept as "<stem> (Windows copy)<ext>" before the Mac
+    # file takes the name, and the next listing takes it to the Mac.
+    if ($seen.Count -lt 2 -or -not [System.IO.File]::Exists($io)) { return }
+    $file = New-Object System.IO.FileInfo($io)
+    if ($file.Length -eq [int64]$seen[0] -and $file.LastWriteTimeUtc.ToString('o') -ceq $seen[1]) { return }
+    $stem = [System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName($io), [System.IO.Path]::GetFileNameWithoutExtension($io))
+    $n = 1
+    do {
+        $copy = $stem + $(if ($n -eq 1) { ' (Windows copy)' } else { " (Windows copy $n)" }) + $file.Extension
+        $n++
+    } while ([System.IO.File]::Exists($copy) -or [System.IO.Directory]::Exists($copy))
+    [System.IO.File]::Move($io, $copy)
 }
 
 function Move-Replace([string]$from, [string]$to) {
@@ -2120,17 +2138,29 @@ function Set-ClipText([string]$text) {
 # killing the channel). So the read is gated behind user32's GetClipboardSequenceNumber -
 # a cheap, never-blocking query that bumps on every clipboard change - and a cached copy
 # is served while the sequence is unchanged (idle polls open the clipboard zero times).
-# A read that fails or times out keeps the last text until the next change.
+# A read that fails or times out keeps the last text, and is tried again (Test-ClipRetry).
 function Update-ClipTextCache {
     $seq = $K::GetClipboardSequenceNumber()
     if ($seq -eq $script:BvClipSeq) { return }
-    $script:BvClipSeq = $seq
     try {
         if (Initialize-ClipText) { $script:BvClipCache = [BridgeVM.BvClipText]::Get() }
         else { $c = Get-Clipboard -Raw -ErrorAction SilentlyContinue; $script:BvClipCache = if ($null -ne $c) { [string]$c } else { '' } }
+        $script:BvClipSeq = $seq
     } catch {
         Log ('CLIP TEXT read failed, keeping the last text: ' + $_.Exception.Message)
+        if (-not (Test-ClipRetry 'text' $seq)) { $script:BvClipSeq = $seq }
     }
+}
+
+# A clipboard part whose read failed (another app holding the clipboard, as clipboard history and
+# Office do right after a copy) is read again at the next poll, at most three times for one change;
+# after that the change keeps what the failed read gave. True while a retry is left.
+$script:BvClipRetries = @{}
+function Test-ClipRetry([string]$part, [uint32]$seq) {
+    $last = $script:BvClipRetries[$part]
+    $count = if ($null -ne $last -and $last[0] -eq $seq) { $last[1] + 1 } else { 1 }
+    $script:BvClipRetries[$part] = @($seq, $count)
+    return $count -lt 3
 }
 
 $script:BvClipImageSource = @'
@@ -2145,7 +2175,7 @@ using System.Threading;
 using System.Windows.Forms;
 namespace BridgeVM {
     public static class BvClipImage {
-        public const int MaxBytes = 33554432;
+        public const int MaxBytes = 134217728;
         public const int MaxSide = 16384;
         public const int HtmlMaxBytes = 4194304;
         public const int FilesMax = 4096;
@@ -2234,6 +2264,9 @@ namespace BridgeVM {
                     }
                 }
                 if (!data.GetDataPresent(DataFormats.Bitmap, true)) { return; }
+                // Copied cells: Excel and LibreOffice offer a picture of them too, and the Mac
+                // app would paste that instead of the table their text and HTML make.
+                if (data.GetDataPresent("Biff12", false) || data.GetDataPresent("Biff8", false)) { return; }
                 using (Image image = data.GetData(DataFormats.Bitmap, true) as Image) {
                     if (image == null) { return; }
                     w = image.Width;
@@ -2349,7 +2382,7 @@ function Initialize-ClipImage {
 
 # The image part of CLIPX: <w> <h> <bytes> <sha256|-> <b64(path)|->. A readable
 # image within the limits is written to guest.png for the host's GET; the previous
-# copy's file goes first. A failed read counts as no image for that change.
+# copy's file goes first. A failed read counts as no image (Test-ClipRetry reads it again).
 function Get-ClipImageDescriptor {
     $seq = $K::GetClipboardSequenceNumber()
     if ($seq -eq $script:BvClipImgSeq) { return $script:BvClipImgDesc }
@@ -2372,6 +2405,7 @@ function Get-ClipImageDescriptor {
             }
         } catch {
             Log ('CLIPX image read failed: ' + $_.Exception.Message)
+            if (Test-ClipRetry 'image' $seq) { return '0 0 0 - -' }
             $desc = '0 0 0 - -'
         }
     }
@@ -2389,7 +2423,7 @@ function Read-ClipHtml {
     return @{ Bytes = $bytes; Size = $size }
 }
 # The HTML part of CLIPXH: <bytes> <b64(cf_html)|->, read again only after a change.
-# Over the limit it names the size only; a failed read counts as no HTML.
+# Over the limit it names the size only; a failed read counts as no HTML (and is retried).
 function Get-ClipHtmlPart {
     $seq = $K::GetClipboardSequenceNumber()
     if ($seq -eq $script:BvClipHtmlSeq) { return $script:BvClipHtmlPart }
@@ -2401,6 +2435,7 @@ function Get-ClipHtmlPart {
             elseif ($html.Size -gt 0) { $part = '{0} -' -f $html.Size }
         } catch {
             Log ('CLIPXH html read failed: ' + $_.Exception.Message)
+            if (Test-ClipRetry 'html' $seq) { return $part }
         }
     }
     $script:BvClipHtmlPart = $part
@@ -2415,7 +2450,7 @@ $script:BvClipFilesPart = '0 -'
 # 1), and below a copied folder every file and folder in it (top 0, after their folder). A folder has
 # 0 bytes and mtime 0; a file's mtime (LastWriteTimeUtc ticks) tells the host an edited file from
 # the copy it already has. Past FilesMax entries the listing stops and names the count only (FilesMax + 1). A failed
-# read counts as no files. A host whose copy is past 256 entries or 64 MiB fetches it with GETRANGE.
+# read counts as no files (and is retried). A host whose copy is past 256 entries or 64 MiB fetches it with GETRANGE.
 function Get-ClipFilesPart {
     $seq = $K::GetClipboardSequenceNumber()
     if ($seq -eq $script:BvClipFilesSeq) { return $script:BvClipFilesPart }
@@ -2451,6 +2486,7 @@ function Get-ClipFilesPart {
             }
         } catch {
             Log ('CLIPXF files read failed: ' + $_.Exception.Message)
+            if (Test-ClipRetry 'files' $seq) { return $part }
         }
     }
     $script:BvClipFilesPart = $part
@@ -2908,7 +2944,7 @@ while ($true) {
                     } catch { Write-Line $h ('ERR GETRANGE ' + $_.Exception.Message) 'ERR' }
                 }
                 'PUT' {
-                    # PUT <b64(path)> <b64(rawbytes)> [<mtime ms>] -> PUTOK <b64(path)> <bytes>.
+                    # PUT <b64(path)> <b64(rawbytes)> [<mtime ms> [<size> <time>]] -> PUTOK <b64(path)> <bytes>.
                     # Single-chunk write; the host sends the whole file in one line.
                     $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
@@ -2921,6 +2957,7 @@ while ($true) {
                             $stage.Stream.Write($data, 0, $data.Length)
                             $stage.Stream.Close()
                             if ($parts.Length -ge 3) { Set-PutTime $stage.Temp $parts[2] }
+                            Save-WindowsCopy $io $parts[3..4]
                             Move-Replace $stage.Temp $io
                         } finally {
                             $stage.Stream.Close()
@@ -2930,7 +2967,7 @@ while ($true) {
                     } catch { Write-Line $h ('ERR PUT ' + $_.Exception.Message) 'ERR' }
                 }
                 'PUTBEG' {
-                    # PUTBEG <b64(path)> <total> <nchunks> [<mtime ms>] -> OK PUTBEG.
+                    # PUTBEG <b64(path)> <total> <nchunks> [<mtime ms> [<size> <time>]] -> OK PUTBEG.
                     # Opens a staged sibling; PUTCHUNK/PUTEND publish it only when complete.
                     $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
@@ -2946,6 +2983,7 @@ while ($true) {
                         $script:BvPutWritten = [int64]0
                         $script:BvPutSeq = 0
                         if ($parts.Length -ge 4) { $script:BvPutTime = $parts[3] }
+                        $script:BvPutSeen = $parts[4..5]
                         Write-Line $h 'OK PUTBEG' 'OK'
                     } catch {
                         Close-PutStream
@@ -3013,6 +3051,7 @@ while ($true) {
                             Write-Line $h 'ERR PUTEND short' 'ERR'
                         } else {
                             Set-PutTime $script:BvPutTemp $time
+                            Save-WindowsCopy (Get-IoPath $path) $script:BvPutSeen
                             Move-Replace $script:BvPutTemp (Get-IoPath $path)
                             Write-Line $h ('PUTOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($path)) + ' ' + $written) 'PUTOK'
                         }
@@ -3021,7 +3060,7 @@ while ($true) {
                     } finally { Close-PutStream }
                 }
                 'LPUTBEG' {
-                    # LPUTBEG <b64(path)> <total> [<mtime ms>] -> OK LPUTBEG: a large file's own stream into a
+                    # LPUTBEG <b64(path)> <total> [<mtime ms> [<size> <time>]] -> OK LPUTBEG: a large file's own stream into a
                     # new temporary beside <path> (large put); ERR LPUTBEG disk-full when the volume lacks
                     # <total> bytes plus 2 GiB, the margin the Mac side keeps too (SHARE_FREE_MARGIN): a
                     # share or a copied Finder file never fills Windows to zero.
@@ -3042,7 +3081,7 @@ while ($true) {
                         $stream = $stage.Stream
                         $time = ''
                         if ($parts.Length -ge 3) { $time = $parts[2] }
-                        $script:BvLPut = @{ Stream = $stream; Path = $path; Io = $io; Temp = $temp; Total = $total; Written = [int64]0; Seq = 0; Time = $time }
+                        $script:BvLPut = @{ Stream = $stream; Path = $path; Io = $io; Temp = $temp; Total = $total; Written = [int64]0; Seq = 0; Time = $time; Seen = $parts[3..4] }
                         Write-Line $h 'OK LPUTBEG' 'OK'
                     } catch {
                         Close-LargePut
@@ -3083,6 +3122,7 @@ while ($true) {
                         $put.Stream.Flush($true)
                         $put.Stream.Close()
                         Set-PutTime $put.Temp $put.Time
+                        Save-WindowsCopy $put.Io $put.Seen
                         Move-Replace $put.Temp $put.Io
                         $script:BvLPut = $null
                         Write-Line $h ('PUTOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($put.Path)) + ' ' + $put.Written) 'PUTOK'

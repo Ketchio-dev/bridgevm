@@ -10,6 +10,33 @@ pub(crate) fn serial_reached_shell(serial: &[u8], scans: &mut SerialStopScans) -
         || scans.shell_short_prompt.contains_new(serial, b"Shell>")
 }
 
+/// The firmware found nothing to start: BdsDxe prints "No bootable option or device was found."
+/// and waits for a key, so the window shows only its lines (measured with a blank disk). One line
+/// tells the app; `loader=other-cpu` when it refused a boot loader as built for another processor
+/// (EDK2's "Unsupported": Windows for x64 PCs). A Windows restart starts a new process.
+#[derive(Default)]
+pub(crate) struct NoBootableDisk {
+    none: IncrementalSerialScan,
+    other_cpu: IncrementalSerialScan,
+}
+
+impl NoBootableDisk {
+    pub(crate) fn line(&mut self, serial: &[u8]) -> Option<&'static str> {
+        if self.none.found {
+            return None;
+        }
+        let other_cpu = self.other_cpu.contains_new(serial, b".efi: Unsupported");
+        if !self.none.contains_new(serial, b"No bootable option or device was found") {
+            return None;
+        }
+        Some(if other_cpu {
+            "BVBOOT no-bootable-disk loader=other-cpu"
+        } else {
+            "BVBOOT no-bootable-disk"
+        })
+    }
+}
+
 pub(crate) fn serial_reached_linux_early_boot(serial: &[u8], scans: &mut SerialStopScans) -> bool {
     scans
         .linux_boot_cpu
@@ -59,3 +86,7 @@ pub(crate) fn host_cntvct() -> u64 {
     unsafe { std::arch::asm!("mrs {}, cntvct_el0", out(reg) v) };
     v
 }
+
+#[cfg(test)]
+#[path = "host_support_tests.rs"]
+mod tests;

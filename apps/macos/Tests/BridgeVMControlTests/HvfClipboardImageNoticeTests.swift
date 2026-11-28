@@ -34,7 +34,7 @@ final class HvfClipboardImageNoticeTests: XCTestCase {
         feed(session, [windowsTooLarge])
         XCTAssertEqual(session.clipboardImageNotice.shown, .windowsImageTooLarge)
         XCTAssertEqual(session.clipboardImageNotice.displayed?.text, "The image copied in Windows is too large to send to your Mac.")
-        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("32 MiB, with each side up to 16,384 pixels"), true)
+        XCTAssertEqual(session.clipboardImageNotice.displayed?.help.contains("128 MiB and 16,384 pixels on each side"), true)
     }
 
     /// A file copy over the limits, either way (agent_console/clip_files.rs): the Mac copy's

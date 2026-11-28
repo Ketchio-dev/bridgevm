@@ -58,6 +58,14 @@ if ($desktop) {
     }
     function Copy-Bitmap([int]$width, [int]$height) { [Windows.Forms.Clipboard]::SetImage((New-Object Drawing.Bitmap $width, $height)) }
     function Copy-Text([string]$text) { [Windows.Forms.Clipboard]::SetText($text); $script:fakeText = $text }
+    function Copy-Cells([string]$text) {
+        $data = New-Object Windows.Forms.DataObject
+        $data.SetData('Biff12', $false, (New-Object IO.MemoryStream (,[byte[]](1, 2, 3))))
+        $data.SetData([Windows.Forms.DataFormats]::UnicodeText, $true, $text)
+        $data.SetData([Windows.Forms.DataFormats]::Bitmap, $true, (New-Object Drawing.Bitmap 4, 5))
+        [Windows.Forms.Clipboard]::SetDataObject($data, $true)
+        $script:fakeText = $text
+    }
     function Copy-Files([string[]]$paths) {
         $list = New-Object System.Collections.Specialized.StringCollection
         $list.AddRange($paths)
@@ -86,8 +94,14 @@ namespace System.Windows.Forms {
     public static class Clipboard {
         public static IDataObject Current;
         public static int Reads;
+        // Reads left that fail as when another app holds the clipboard.
+        public static int Busy;
         public static void SetDataObject(object data, bool copy, int retryTimes, int retryDelay) { Current = (IDataObject)data; BvTestSeq.Seq++; }
-        public static IDataObject GetDataObject() { Reads++; return Current; }
+        public static IDataObject GetDataObject() {
+            Reads++;
+            if (Busy > 0) { Busy--; throw new System.Runtime.InteropServices.ExternalException("Requested Clipboard operation did not succeed."); }
+            return Current;
+        }
         public static bool ContainsFileDropList() { return Current != null && Current.GetDataPresent("FileDrop", true); }
         public static System.Collections.Specialized.StringCollection GetFileDropList() {
             System.Collections.Specialized.StringCollection list = new System.Collections.Specialized.StringCollection();
@@ -133,6 +147,13 @@ public static class BvTestSeq { public static uint Seq = 1; public static uint G
         Set-Fake $data
     }
     function Copy-Text([string]$text) { $data = $TDataObject::new(); $data.SetData('UnicodeText', $true, $text); Set-Fake $data; $script:fakeText = $text }
+    function Copy-Cells([string]$text) {
+        $data = $TDataObject::new()
+        $data.SetData('Biff12', $false, (New-Object IO.MemoryStream (,[byte[]](1, 2, 3))))
+        $data.SetData('UnicodeText', $true, $text)
+        $data.SetData('Bitmap', $true, $TBitmap::new(4, 5, [byte[]](New-Png 4 5)))
+        Set-Fake $data; $script:fakeText = $text
+    }
     function Copy-Files([string[]]$paths) { $data = $TDataObject::new(); $data.SetData('FileDrop', $true, [string[]]$paths); Set-Fake $data; $script:fakeText = $null }
     function Read-ClipHtml {
         $data = $TClipboard::Current
@@ -182,12 +203,28 @@ try {
     $width = 0; $height = 0
     Assert ([BridgeVM.BvClipImage]::PngSize($bytes, [ref]$width, [ref]$height) -and $width -eq 4 -and $height -eq 5) 'guest.png is a 4x5 PNG'
 
+    # A read that fails while another app holds the clipboard is tried again at the next poll,
+    # three times at most for one copy.
+    if (-not $desktop) {
+        Copy-Bitmap 6 7
+        $TClipboard::Busy = 1
+        Assert ((Run 'CLIPX' '')[0] -clike 'CLIPX 0 0 0 - - *') 'a busy clipboard reads as no image'
+        Assert ((Run 'CLIPX' '')[0] -clike 'CLIPX 6 7 *') 'the next poll reads the image'
+        Copy-Bitmap 6 8
+        $TClipboard::Busy = 3
+        foreach ($i in 1..3) { [void](Run 'CLIPX' '') }
+        Assert ((Run 'CLIPX' '')[0] -clike 'CLIPX 0 0 0 - - *') 'after three failed reads the copy stays as read'
+    }
+
     # Over the side limit nothing is encoded; without an image the part is empty.
     Copy-Bitmap 16385 2
     Assert ((Run 'CLIPX' '')[0] -clike 'CLIPX 16385 2 0 - - *') 'an image over the limit is described, not encoded'
     Assert (-not (Test-Path -LiteralPath $guestPath)) 'and the previous file is gone'
     Copy-Text 'plain'
     Assert ((Run 'CLIPX' '')[0] -ceq ('CLIPX 0 0 0 - - ' + (B64 'plain'))) 'a text copy has no image part'
+    # Copied Excel cells come with a picture of them: they go as their text, not the picture.
+    Copy-Cells "a`tb"
+    Assert ((Run 'CLIPX' '')[0] -ceq ('CLIPX 0 0 0 - - ' + (B64 "a`tb"))) 'copied cells have no image part'
 
     # A file that is no PNG is refused and changes nothing.
     [IO.File]::WriteAllBytes($hostPath, [Text.Encoding]::ASCII.GetBytes('MZ, not a PNG at all, but longer than an IHDR'))

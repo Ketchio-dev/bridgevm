@@ -339,6 +339,27 @@ try {
     Assert ([IO.File]::GetLastWriteTimeUtc($timed) -eq $macTime) "PUTEND kept $([IO.File]::GetLastWriteTimeUtc($timed).ToString('o'))"
     $cases++
 
+    # PUT and PUTBEG end with the Windows version the host last synced: a Windows save it has not
+    # seen is kept as "(Windows copy)" (a free name) before the Mac file replaces it; that version is not.
+    $report = Join-Path $root 'report.docx'
+    [IO.File]::WriteAllText($report, 'synced')
+    $seen = ' 6 ' + [IO.File]::GetLastWriteTimeUtc($report).ToString('o')
+    [IO.File]::WriteAllText((Join-Path $root 'report (Windows copy).docx'), 'a user file')
+    [IO.File]::WriteAllText($report, 'windows save')
+    $arg = (& $b64 $report) + ' ' + [Convert]::ToBase64String([byte[]](1, 2)) + ' 1794096312123' + $seen
+    & $verbs['PUT']
+    Assert ($script:sent -clike 'PUTOK *' -and [IO.File]::ReadAllBytes($report).Length -eq 2) "PUT over an unseen save: $script:sent"
+    Assert ([IO.File]::ReadAllText((Join-Path $root 'report (Windows copy 2).docx')) -ceq 'windows save') 'PUT replaced an unseen Windows save'
+    [IO.File]::WriteAllText($report, 'windows save 2')
+    $arg = (& $b64 $report) + ' 3 1 1794096312123 2 ' + $macTime.ToString('o')
+    & $verbs['PUTBEG']; $arg = '0 ' + [Convert]::ToBase64String([byte[]](4, 5, 6)); & $verbs['PUTCHUNK']; $arg = '1'; & $verbs['PUTEND']
+    Assert ($script:sent -clike 'PUTOK *' -and [IO.File]::ReadAllBytes($report).Length -eq 3) "PUTEND over an unseen save: $script:sent"
+    Assert ([IO.File]::ReadAllText((Join-Path $root 'report (Windows copy 3).docx')) -ceq 'windows save 2') 'PUTEND replaced an unseen Windows save'
+    $arg = (& $b64 $report) + ' ' + [Convert]::ToBase64String([byte[]](7)) + ' 1794096312123 3 ' + $macTime.ToString('o')
+    & $verbs['PUT']
+    Assert ([IO.File]::ReadAllBytes($report).Length -eq 1 -and @([IO.Directory]::GetFiles($root, 'report*')).Count -eq 4) 'the version the host saw was kept as a copy'
+    $cases++
+
     # Past 260 characters: Win32 refuses the path unless it starts with \\?\. One such file used to
     # fail every listing of the folder, and its PUT failed.
     if ([IO.Path]::DirectorySeparatorChar -eq '\') {
