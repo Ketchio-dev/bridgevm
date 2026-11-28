@@ -89,7 +89,7 @@ enum A9ImportEndState {
         "The disk image at ", "To import a ", "UEFI variables file not found at ", "The UEFI variables file must be exactly ",
         "Choose the folder that holds the original TPM data.", "Choose the TPM ", "BridgeVM can’t use the recovery file at ",
         "Choose the vTPM ", "The vTPM recovery file is unavailable at ", "Choose at least 2048 MiB of memory ",
-        "That name is already in your library.", "Use 1–", "This is a Windows installer ISO.",
+        "That name is already in your library.", "Use 1–", "This is a Windows installer ISO",
         "Choose a readable disk file ", "The Windows disk is empty.", "Choose the matching UEFI variables file ",
         "Choose separate files for the Windows disk ",
         "VM 이름을 입력하세요.", "디스크 이미지를 찾을 수 없습니다:", "디스크 경로가 파일이 아닙니다:", "디스크 이미지가 비어 있습니다:",
