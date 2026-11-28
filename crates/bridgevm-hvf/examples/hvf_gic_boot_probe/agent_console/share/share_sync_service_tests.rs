@@ -47,17 +47,21 @@ const ROOT: &str = "C:\\share";
 /// Win32/NTFS as `bvagent.ps1` sees it under PowerShell 5.1: lookups ignore
 /// case but keep the stored spelling, the last component loses trailing dots
 /// and spaces, `<>:"|?*` and a bare device name such as `nul` are rejected,
-/// code points are kept as given (no normalization), and a write truncates
-/// before writing.
+/// code points are kept as given (no normalization), and a PUT lands whole or
+/// not at all, keeping a file that is not the version it names as "(Windows copy)".
 #[derive(Default)]
 struct NtfsGuest {
     files: Vec<(String, Vec<u8>, u64)>,
     clock: u64,
     puts: Vec<String>,
     gets: Vec<String>,
-    /// Names whose writes fail part-way (disk full) after truncation.
+    /// Names whose writes fail part-way (disk full, or a Windows app holds the file).
     failing: HashSet<String>,
-    stream: Option<(String, usize, usize)>,
+    /// An agent from before 2026-11-12: a PUT truncates the file and writes into it, and the
+    /// version it names is ignored.
+    old_agent: bool,
+    stream: Option<(String, usize, Vec<u8>)>,
+    stream_seen: Option<(usize, String)>,
     /// PUTDATA chunks received.
     data_chunks: usize,
     /// Modification times the host sent (ms), as the agent sets them; listed in .NET's form.
@@ -112,6 +116,26 @@ impl NtfsGuest {
     }
     fn landed(&self, rel: &str, bytes: &[u8]) -> usize {
         if self.failing.contains(rel) { bytes.len() / 2 } else { bytes.len() }
+    }
+    /// The size and listed time a PUT names: the guest copy the host last synced.
+    fn seen<'a>(mut parts: impl Iterator<Item = &'a str>) -> Option<(usize, String)> {
+        Some((parts.next()?.parse().ok()?, parts.next()?.to_string()))
+    }
+    /// As the agent before it replaces `rel`: a file there that is not `seen` keeps its bytes
+    /// and time as "<stem> (Windows copy)<ext>", or the next free number.
+    fn keep_unseen(&mut self, rel: &str, seen: Option<(usize, String)>) {
+        let (Some(i), Some((size, stamp))) = (self.find(rel), seen) else { return };
+        let (name, bytes, clock) = self.files[i].clone();
+        if self.old_agent || (bytes.len() == size && self.listed_time(&name, clock) == stamp) {
+            return;
+        }
+        let (stem, ext) = name.rsplit_once('.').map_or((name.as_str(), String::new()), |(s, e)| (s, format!(".{e}")));
+        let label = |n: u32| if n == 1 { "Windows copy".to_string() } else { format!("Windows copy {n}") };
+        let copy = (1..).map(|n| format!("{stem} ({}){ext}", label(n))).find(|c| self.find(c).is_none()).unwrap();
+        if let Some(ms) = self.stamps.remove(&name.to_uppercase()) {
+            self.stamps.insert(copy.to_uppercase(), ms);
+        }
+        self.files[i].0 = copy;
     }
     fn reply(&mut self, line: &str) -> Vec<String> {
         let line = line.trim_end();
@@ -181,7 +205,7 @@ impl NtfsGuest {
                 }
             }
             "PUT" => {
-                // As the agent: by position, ignoring the Mac time after the data.
+                // As the agent: by position, the Mac time and the version seen after the data.
                 let mut parts = arg.split(' ');
                 let (path, data) = (parts.next().unwrap(), parts.next().unwrap_or(""));
                 let rel = Self::rel(&text(path));
@@ -194,11 +218,16 @@ impl NtfsGuest {
                     return vec!["ERR PUT FileStream was asked to open a device that was not a file.".into()];
                 }
                 let bytes = base64_decode(data).unwrap();
-                self.write(&rel, &bytes[..self.landed(&rel, &bytes)]);
+                let ms = parts.next().and_then(|t| t.parse().ok());
                 if self.failing.contains(&rel) {
+                    if self.old_agent {
+                        self.write(&rel, &bytes[..self.landed(&rel, &bytes)]);
+                    }
                     return vec!["ERR PUT There is not enough space on the disk.".into()];
                 }
-                if let Some(ms) = parts.next().and_then(|t| t.parse().ok()) {
+                self.keep_unseen(&rel, Self::seen(parts));
+                self.write(&rel, &bytes);
+                if let Some(ms) = ms {
                     self.stamps.insert(rel.to_uppercase(), ms);
                 }
                 vec![format!("PUTOK {path} {}", bytes.len())]
@@ -208,9 +237,12 @@ impl NtfsGuest {
                 let rel = Self::rel(&text(parts.next().unwrap()));
                 self.puts.push(rel.clone());
                 self.root_missing = false;
-                self.write(&rel, &[]);
-                self.stream = Some((rel, parts.next().unwrap().parse().unwrap(), 0));
+                if self.old_agent {
+                    self.write(&rel, &[]);
+                }
+                self.stream = Some((rel, parts.next().unwrap().parse().unwrap(), Vec::new()));
                 self.stream_time = parts.nth(1).and_then(|t| t.parse().ok());
+                self.stream_seen = Self::seen(parts);
                 vec!["OK PUTBEG".into()]
             }
             // As the agent: the header names the payload length, the payload is its own line.
@@ -223,20 +255,28 @@ impl NtfsGuest {
             }
             "PUTCHUNK" => {
                 let (seq, data) = arg.split_once(' ').unwrap();
-                let (rel, total, written) = self.stream.take().unwrap();
+                let (rel, total, mut staged) = self.stream.take().unwrap();
                 let bytes = base64_decode(data).unwrap();
-                let landed = self.landed(&rel, &bytes);
-                self.append(&rel, &bytes[..landed]);
-                self.stream = Some((rel, total, written + landed));
+                let landed = &bytes[..self.landed(&rel, &bytes)];
+                if self.old_agent {
+                    self.append(&rel, landed);
+                }
+                staged.extend_from_slice(landed);
+                self.stream = Some((rel, total, staged));
                 vec![format!("OK PUTCHUNK {seq}")]
             }
             "PUTEND" => match self.stream.take().unwrap() {
-                (_, total, written) if written != total => vec!["ERR PUTEND short".into()],
-                (rel, _, written) => {
+                (_, total, staged) if staged.len() != total => vec!["ERR PUTEND short".into()],
+                (rel, _, staged) => {
+                    if !self.old_agent {
+                        let seen = self.stream_seen.take();
+                        self.keep_unseen(&rel, seen);
+                        self.write(&rel, &staged);
+                    }
                     if let Some(ms) = self.stream_time.take() {
                         self.stamps.insert(rel.to_uppercase(), ms);
                     }
-                    vec![format!("PUTOK {} {written}", b64(rel.as_bytes()))]
+                    vec![format!("PUTOK {} {}", b64(rel.as_bytes()), staged.len())]
                 }
             },
             "DEL" => match self.find(&Self::rel(&text(arg))) {
@@ -432,7 +472,7 @@ fn unstamped_guest_record_sends_legacy_delete_even_with_delcheck() {
     let engine = &mut rig.h.share.as_mut().unwrap().engine;
     // An acknowledged push has no guest stamp until its first matching listing.
     engine.on_put_ok("doc.txt".into(), 8, share_sync::fnv1a64(b"original"));
-    assert!(engine.delete_guest_stat("doc.txt").is_none());
+    assert!(engine.synced_guest_stat("doc.txt").is_none());
     assert!(engine.on_host_scan_normalized(Vec::new()).iter().any(|a| matches!(a, SyncAction::DeleteGuest { .. })));
     let req = ServiceReq::ShareDel { name: "doc.txt".into(), direction: ShareDelDirection::HostToGuest };
     let wire = rig.h.service_req_line(&req, rig.now).expect("unknown stamp must still send a delete").to_owned();
@@ -612,10 +652,33 @@ fn refused_put_is_sent_again_after_its_wait_and_syncs_both_ways_again() {
 }
 
 #[test]
+fn a_windows_save_the_mac_has_not_seen_is_kept_as_a_windows_copy() {
+    // Word holds report.docx, so the Mac save is refused; Word saves again, then closes it.
+    let mut rig = Rig::synced("unseen-save", "report.docx", b"synced");
+    std::fs::write(rig.dir.join("report.docx"), b"mac save").unwrap();
+    rig.guest.failing.insert("report.docx".into());
+    for _ in 0..24 {
+        if rig.guest.puts.len() == 2 {
+            break;
+        }
+        rig.run(1);
+    }
+    assert_eq!(rig.guest.puts.len(), 2, "{:?}", rig.guest.puts);
+    rig.guest.write("report.docx", b"windows save");
+    rig.guest.failing.clear();
+    rig.run(24);
+    assert_eq!(rig.guest.content("report.docx"), Some(&b"mac save"[..]));
+    assert_eq!(rig.host("report.docx").as_deref(), Some(&b"mac save"[..]));
+    assert_eq!(rig.host("report (Windows copy).docx").as_deref(), Some(&b"windows save"[..]));
+    rig.assert_settled();
+}
+
+#[test]
 fn put_failing_after_truncating_the_guest_copy_never_overwrites_the_host() {
     // 100 B uses legacy PUT (ERR PUT); 30000 B uses PUTBEG..PUTEND (ERR PUTEND short).
     for (size, label) in [(100usize, "trunc-put"), (30_000, "trunc-putend")] {
         let mut rig = Rig::synced(label, "doc.bin", &vec![b'o'; size]);
+        rig.guest.old_agent = true;
         let newer = vec![b'n'; size + 7];
         std::fs::write(rig.dir.join("doc.bin"), &newer).unwrap();
         rig.guest.failing.insert("doc.bin".into());

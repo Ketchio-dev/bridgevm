@@ -388,7 +388,9 @@ impl ShareSync {
         Some((record.size, record.host_mtime_ms?))
     }
 
-    pub fn delete_guest_stat(&self, name: &str) -> Option<(u64, &str)> {
+    /// The guest copy's size and listed time when it last synced: DEL and PUT carry it, so the
+    /// agent never deletes or replaces a Windows save the Mac has not seen.
+    pub fn synced_guest_stat(&self, name: &str) -> Option<(u64, &str)> {
         let record = self.records.get(&normalize_rel(name))?;
         Some((record.size, record.guest_mtime.as_deref()?))
     }

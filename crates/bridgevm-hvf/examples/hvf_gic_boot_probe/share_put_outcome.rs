@@ -1,10 +1,13 @@
-//! Host-to-guest PUT outcomes. The guest agent truncates a file before writing
-//! it, so from the moment a PUT is issued until its PUTOK the guest copy is
-//! unknown and the record's hash no longer describes it: the next host scan
-//! re-sends the host file even when its bytes and stat match the record (say
-//! `git checkout` or `cp -p` restored them), and the guest copy is never pulled
-//! back. A refused PUT is sent again after a wait or once its host file
-//! changes, never every tick.
+//! Host-to-guest PUT outcomes. From the moment a PUT is issued until its PUTOK
+//! the guest copy is unknown (an agent from before 2026-11-12 truncated it
+//! before writing) and the record's hash no longer describes it: the next host
+//! scan re-sends the host file even when its bytes and stat match the record
+//! (say `git checkout` or `cp -p` restored them). Nor is the guest copy pulled
+//! back meanwhile: it would replace the Mac version still on its way, as a
+//! fetch guards only against Mac edits made after its listing. A Windows save
+//! made meanwhile is kept instead by the agent, as "(Windows copy)", since the
+//! PUT carries the guest version last synced (share.rs). A refused PUT is sent
+//! again after a wait or once its host file changes, never every tick.
 
 use super::*;
 use std::time::{Duration, Instant};
@@ -105,8 +108,8 @@ impl ShareSync {
     }
 
     /// The host version is not on the guest yet (queued, refused or otherwise
-    /// unconfirmed after the guest may have truncated its copy): never pull
-    /// that copy back, nor keep it as a guest edit.
+    /// unconfirmed): never pull the guest copy back over it, nor keep it as a
+    /// guest edit.
     pub(super) fn pull_held(&self, held: &HashSet<String>, name: &str) -> bool {
         !held.is_empty() && held.contains(&share_win_names::windows_key(name))
     }
