@@ -93,10 +93,36 @@ enum HvfImportSpace {
     static func tooLittle(disk: URL, into directory: URL, available: (URL) -> Int64?) -> Bool {
         let keys: Set<URLResourceKey> = [.totalFileAllocatedSizeKey, .volumeIdentifierKey]
         guard let source = try? disk.resolvingSymlinksInPath().resourceValues(forKeys: keys),
-              let held = source.totalFileAllocatedSize, let free = available(directory) else { return false }
+              let held = source.totalFileAllocatedSize else { return false }
+        if sameVolume(source, directory) && HvfImportedDiskFormat.detect(path: disk.path) == nil { return false }
+        return tooLittle(Int64(held), into: directory, available: available)
+    }
+
+    /// Duplicate and Move to another drive copy the whole bundle, its disks and every snapshot (an APFS
+    /// clone can't cross volumes), and ended the same way. The copy keeps holes only where that drive can
+    /// hold them. On one volume they clone or rename and need none. Returns the name of the drive that
+    /// lacks the room.
+    static func shortDrive(copying bundle: URL, into directory: URL, available: (URL) -> Int64?) -> String? {
+        guard let source = try? bundle.resourceValues(forKeys: [.volumeIdentifierKey]), !sameVolume(source, directory),
+              let files = FileManager.default.enumerator(at: bundle, includingPropertiesForKeys: nil) else { return nil }
+        let target = try? directory.resourceValues(forKeys: [.volumeNameKey, .volumeSupportsSparseFilesKey])
+        let sparse = target?.volumeSupportsSparseFiles != false
+        var bytes: Int64 = 0
+        for case let file as URL in files {
+            let values = try? file.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .totalFileSizeKey])
+            bytes += Int64((sparse ? values?.totalFileAllocatedSize : values?.totalFileSize) ?? 0)
+        }
+        guard tooLittle(bytes, into: directory, available: available) else { return nil }
+        return target?.volumeName ?? directory.lastPathComponent
+    }
+
+    private static func sameVolume(_ source: URLResourceValues, _ directory: URL) -> Bool {
         let target = try? directory.resourceValues(forKeys: [.volumeIdentifierKey])
-        let sameVolume = source.volumeIdentifier.map { $0.isEqual(target?.volumeIdentifier) } ?? false
-        if sameVolume && HvfImportedDiskFormat.detect(path: disk.path) == nil { return false }
-        return Int64(held) + margin > free
+        return source.volumeIdentifier.map { $0.isEqual(target?.volumeIdentifier) } ?? false
+    }
+
+    private static func tooLittle(_ bytes: Int64, into directory: URL, available: (URL) -> Int64?) -> Bool {
+        guard let free = available(directory) else { return false }
+        return bytes + margin > free
     }
 }

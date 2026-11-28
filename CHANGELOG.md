@@ -66,6 +66,9 @@ All notable changes to BridgeVM are documented in this file.
   once, before Windows pauses. If a VM on an external drive does pause because
   that drive is full, the notice names the drive instead of saying your Mac's
   disk is full.
+- Duplicating or moving a VM to another drive now checks that drive's free
+  space first and says so in one sentence, instead of filling the drive
+  during the copy and then failing as if the move had broken something.
 - Deleting the selected VM selects the VM next to it, not the first VM
   in the library.
 - A Mac file that never reaches Windows now gets a notice: when Windows
