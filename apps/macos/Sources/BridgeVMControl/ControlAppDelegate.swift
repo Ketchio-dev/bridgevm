@@ -22,6 +22,7 @@ final class ControlAppDelegate: NSObject, NSApplicationDelegate {
     }
     /// Cmd+Q, the Dock, a Mac logout/restart/shutdown and the last window all ask here first.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        HvfVMSettingsDraft.saveOpenSheets()
         ControlDisplayClose.quitting = true
         let result = termination.shouldTerminate(reason: .current())
         if result == .terminateCancel { ControlDisplayClose.quitting = false }

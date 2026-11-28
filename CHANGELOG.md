@@ -76,6 +76,8 @@ All notable changes to BridgeVM are documented in this file.
 - When Guest Tools that worked before can no longer connect, Install
   Guest Tools is offered again and attaches the drive at the next start;
   before, the notice only said to restart Windows.
+- Quitting BridgeVM with a Settings sheet open now saves what was typed
+  there, such as a new VM name or port forwards, instead of dropping it.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.
