@@ -12,6 +12,7 @@ struct HvfRuntimeStatusMessages: View {
                 .font(.callout).foregroundColor(failureText == nil ? Color.secondary : Color.red).textSelection(.enabled)
                 .accessibilityIdentifier(HvfRuntimeAccessibilityState.failureIdentifier(failureText))
             HvfSharedMemoryNoticeView(session: session)
+            HvfKeepAwakeNoticeView(power: session.sleepPrevention, runtime: session.sleepPreventionID)
             HvfAgentSilenceNoticeView(notice: session.agentSilenceNotice)
             HvfGuestToolsAction(session: session)
             HvfShareRootNoticeView(notice: session.shareRootNotice)

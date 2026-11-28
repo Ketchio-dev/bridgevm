@@ -46,6 +46,7 @@ struct HvfWindowsInstallStatusCard: View {
                     .font(.callout).foregroundStyle(.secondary)
                     .accessibilityIdentifier("bridgevm.windows.install.source-activity")
             }
+            HvfKeepAwakeNoticeView(power: session.sleepPrevention, runtime: session.sleepPreventionID)
             if case let .failed(message) = session.stage {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")

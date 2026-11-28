@@ -28,7 +28,7 @@ final class ControlSystemPowerAssertion: ControlPowerAsserting {
 }
 
 /// One assertion for all running Windows tasks, never for a paused or exited runtime.
-/// It also knows the memory of each running VM, for the notice below.
+/// It also knows the memory of each running VM, for the notices below.
 @MainActor
 final class ControlAppPower: ObservableObject {
     static let preferenceKey = "preventIdleSleepWhileWindowsRuns"
@@ -42,8 +42,8 @@ final class ControlAppPower: ObservableObject {
     @Published private(set) var runningMemoryMiB: [UUID: Int] = [:]
     private(set) var held = false
     @Published var enabled: Bool { didSet { reconcile() } }
-    var failure: ((String) -> Void)?
-    private var failureReported = false
+    /// The running Windows tasks while the assertion could not be taken.
+    @Published private(set) var keepAwakeFailed = Set<UUID>()
 
     init(api: any ControlPowerAsserting, enabled: Bool = true) {
         self.api = api; self.enabled = enabled
@@ -64,19 +64,21 @@ final class ControlAppPower: ObservableObject {
         return "Your running VMs use \((totalMiB + 512) / 1024) GiB of memory together, more than this Mac can spare, "
             + "so Windows and your Mac may slow down. Stop one, or give the VMs less memory in Settings."
     }
+    /// Each running VM and Windows install shows it (HvfKeepAwakeNoticeView) while the Mac can't be
+    /// kept awake; it goes away once it can, the setting is off or that task ends.
+    func keepAwakeNotice(for runtime: UUID) -> String? {
+        guard keepAwakeFailed.contains(runtime) else { return nil }
+        return "BridgeVM couldn’t keep your Mac awake, so check its sleep settings before leaving Windows running unattended."
+    }
     func setEnabled(_ value: Bool, defaults: UserDefaults = .standard) {
         defaults.set(value, forKey: Self.preferenceKey)
         enabled = value
     }
     private func reconcile() {
         let needed = enabled && !runtimes.isEmpty
-        if needed && !held {
-            held = api.acquire()
-            if !held && !failureReported {
-                failureReported = true
-                failure?("BridgeVM couldn’t keep your Mac awake. Check your Mac’s sleep settings before leaving Windows running unattended.")
-            }
-        } else if !needed && held { api.release(); held = false }
+        if needed && !held { held = api.acquire() } else if !needed && held { api.release(); held = false }
+        let failed = needed && !held ? runtimes : []
+        if keepAwakeFailed != failed { keepAwakeFailed = failed }
     }
     func shutdown() {
         runtimes.removeAll(); runningMemoryMiB.removeAll()

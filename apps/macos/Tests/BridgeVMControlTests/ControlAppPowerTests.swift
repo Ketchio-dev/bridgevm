@@ -15,14 +15,6 @@ final class ControlAppPowerTests: XCTestCase {
         XCTAssertFalse(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         XCTAssertTrue(name.utf8.allSatisfy { $0 < 128 }, "pmset must print the diagnostic name: \(String(reflecting: name))")
     }
-    func testOptionalPowerFailureNeverPresentsModalAlert() throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().appendingPathComponent("Sources/BridgeVMControl/ControlAppDelegate.swift")
-        let source = try String(contentsOf: root)
-        let callback = try XCTUnwrap(source.components(separatedBy: "ControlAppPower.shared.failure = {").last?
-            .components(separatedBy: "#if DEBUG").first)
-        XCTAssertFalse(callback.contains("runModal"), "Optional sleep prevention must not block runtime startup")
-    }
     func testPauseReleasesAndResumeReacquires() {
         let power = ControlAppPower(api: API())
         let session = HvfEngineSession(config: HvfEngineView.defaultConfig(), processIsRunning: { _ in true })
@@ -80,14 +72,28 @@ final class ControlAppPowerTests: XCTestCase {
     func testAPIFailureDoesNotPretendAssertionHeldOrReleaseInvalidAssertion() {
         let api = API(); api.succeeds = false
         let power = ControlAppPower(api: api)
-        var failures = [String]()
-        power.failure = { failures.append($0) }
         power.update(UUID(), active: true)
         power.update(UUID(), active: true)
         XCTAssertFalse(power.held)
-        XCTAssertEqual(failures, ["BridgeVM couldn’t keep your Mac awake. Check your Mac’s sleep settings before leaving Windows running unattended."])
         power.shutdown()
         XCTAssertEqual(api.released, 0)
+    }
+    /// Sleep and clock audit (finding 4): the failure only went to the log, so the Mac idle-slept
+    /// mid-task without a word. The running VM's card says so until the VM stops.
+    func testKeepAwakeFailureIsShownOnTheRunningVMUntilItStops() {
+        let api = API(); api.succeeds = false
+        let power = ControlAppPower(api: api)
+        let session = HvfEngineSession(config: HvfEngineView.defaultConfig(), processIsRunning: { _ in true })
+        session.sleepPrevention = power
+        let runtime = session.sleepPreventionID
+        XCTAssertNil(power.keepAwakeNotice(for: runtime))
+        session.attachedToExistingProcess = true
+        session.connectionState = .booting
+        XCTAssertEqual(power.keepAwakeNotice(for: runtime),
+            "BridgeVM couldn’t keep your Mac awake, so check its sleep settings before leaving Windows running unattended.")
+        XCTAssertNil(power.keepAwakeNotice(for: UUID()), "A VM that isn't running shows nothing")
+        session.attachedToExistingProcess = false; session.markStopped()
+        XCTAssertNil(power.keepAwakeNotice(for: runtime))
     }
     func testRealSessionExitHandlingReleasesForGuestExitRunnerDeathAndForceStop() async throws {
         for kind in ["guest", "runner", "force"] {
