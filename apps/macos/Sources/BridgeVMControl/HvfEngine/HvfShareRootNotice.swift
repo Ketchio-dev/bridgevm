@@ -12,9 +12,13 @@ final class HvfShareRootNotice: ObservableObject {
     @Published private(set) var tooLarge: HvfShareTooLarge?
     /// Windows files left on the guest because the Mac had too little space for them, until they
     /// arrive.
-    @Published private(set) var lowSpace: HvfShareLowSpace?
+    @Published private(set) var lowSpace: HvfShareWaitingFiles?
     /// Why the Mac refused the last file from Windows, until one arrives again.
     @Published private(set) var writeRefused: HvfShareWriteRefused?
+    /// Mac files Windows refused, which the runtime sends again, until they reach Windows.
+    @Published private(set) var putFailed: HvfShareWaitingFiles?
+    /// The last Mac names reported as ones Windows can't keep apart, until one of them syncs.
+    @Published private(set) var aliased: [String]?
     /// The shared folder's name when its Mac folder was missing at Start: the VM started with the share,
     /// and the runtime shares the folder once it appears (`root-state ready`). A guest restart clears it;
     /// the next boot reports a still missing folder as blocked.
@@ -25,7 +29,11 @@ final class HvfShareRootNotice: ObservableObject {
         // A whole file's arrival; a large one logs this line too.
         if case let .shareEvent(.guestToHost, name, _, _) = event { synced(name); return arrived(name) }
         // A file skipped under the lower limit before a Guest Tools update syncs after it.
-        if case let .shareEvent(.hostToGuest, name, _, _) = event { return synced(name) }
+        if case let .shareEvent(.hostToGuest, name, _, _) = event {
+            synced(name)
+            if let putFailed, putFailed.isWaiting(for: name) { self.putFailed = putFailed.arrived(name) }
+            return
+        }
         guard case let .unknown(raw) = event else { return }
         let line = raw.hasSuffix("\r") ? String(raw.dropLast()) : raw
         switch line {
@@ -48,8 +56,12 @@ final class HvfShareRootNotice: ObservableObject {
                                             limit: skip.limit, fromWindows: skip.fromWindows)
             } else if let refusal = HvfShareWriteRefused(line: line) {
                 if writeRefused != refusal { writeRefused = refusal }
-            } else if let name = HvfShareLowSpace.name(in: line) {
-                lowSpace = lowSpace?.reported(name) ?? HvfShareLowSpace(name)
+            } else if let name = HvfShareWaitingFiles.lowSpaceName(in: line) {
+                lowSpace = lowSpace?.reported(name) ?? HvfShareWaitingFiles(name)
+            } else if let name = HvfShareWaitingFiles.putErrorName(in: line) {
+                putFailed = putFailed?.reported(name) ?? HvfShareWaitingFiles(name)
+            } else if let names = HvfShareAlias.names(in: line) {
+                if aliased != names { aliased = names }
             } else if let file = BvAgentEvent.shareFile(in: line, after: "BVAGENT SHARE transfer-done guest->host ") {
                 arrived(file.name)
             }
@@ -77,9 +89,11 @@ final class HvfShareRootNotice: ObservableObject {
         return copy.isEmpty ? nil : copy
     }
 
-    /// The file the too-large notice names was synced after all (the limit rose), so the notice is stale.
+    /// The file the too-large notice names was synced after all (the limit rose), or one of the names
+    /// Windows couldn't keep apart was (a rename ended the hold), so that notice is stale.
     private func synced(_ name: String) {
         if tooLarge?.last == name { tooLarge = nil }
+        if aliased?.contains(name) == true { aliased = nil }
     }
 
     /// `name` reached the Mac. Every synced file says so: only a waiting one changes the notice.
@@ -100,6 +114,8 @@ final class HvfShareRootNotice: ObservableObject {
         if lastRecoveredCopy != nil { lastRecoveredCopy = nil }
         if lowSpace != nil { lowSpace = nil }
         if writeRefused != nil { writeRefused = nil }
+        if putFailed != nil { putFailed = nil }
+        if aliased != nil { aliased = nil }
     }
 
     private func update(_ blocked: Bool) {

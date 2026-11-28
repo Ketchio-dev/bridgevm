@@ -65,6 +65,13 @@ extension HvfShareRootNotice {
                     return (text, "Check the folder in Finder. Sync will retry automatically.")
                 }
             }
+            if let putFailed {
+                let name = "“\(putFailed.last)”"
+                return (putFailed.count == 1 ? "\(name) couldn’t be copied from your Mac to Windows."
+                            : "Some files from your Mac couldn’t be copied to Windows, such as \(name).",
+                        "BridgeVM tries again. Close the file if a Windows app has it open, or free up space in Windows.")
+            }
+            if let aliased { return HvfShareAlias.displayed(aliased) }
             guard let tooLarge else { return nil }
             let shareLimit = HvfEngineConfig.shareMaxKiB * 1024, limit = tooLarge.limit ?? shareLimit
             let text = "Sharing skipped “\(tooLarge.last)” because the per-file limit is \(HvfShareTooLarge.sizeText(limit))."
@@ -173,11 +180,14 @@ struct HvfShareTooLarge: Equatable {
     }
 }
 
-/// Windows files the Mac had no room for and that have not reached it since
-/// (`BVAGENT SHARE skip <name> low-space <bytes>`): a large file needs its size plus 2 GiB free,
-/// and any write the Mac refuses for want of space is reported too. The runtime asks again at each
-/// guest listing and reports each version once; a file counts once until it arrives.
-struct HvfShareLowSpace: Equatable {
+/// Files reported as not synced that have not reached the other side since; a file counts once
+/// until it arrives.
+/// - Windows files the Mac had no room for (`BVAGENT SHARE skip <name> low-space <bytes>`): a large
+///   file needs its size plus 2 GiB free, and any write the Mac refuses for want of space is reported
+///   too. The runtime asks again at each guest listing and reports each version once.
+/// - Mac files Windows refused (`BVAGENT SHARE put-error <name> <reply>`, share_put.rs and
+///   share_big_put.rs), reported at each retry.
+struct HvfShareWaitingFiles: Equatable {
     /// Each waiting file, and when it was last reported (a running number).
     private var waiting: [String: Int]
     private var reports = 0
@@ -190,7 +200,27 @@ struct HvfShareLowSpace: Equatable {
         last = name
     }
 
-    static func name(in line: String) -> String? { hvfShareSkippedName(in: line, reason: "low-space") }
+    static func lowSpaceName(in line: String) -> String? { hvfShareSkippedName(in: line, reason: "low-space") }
+
+    /// The reply is the agent's `ERR <VERB> <message>`, or `PUTOK <base64> <bytes>` for a large file
+    /// cut short. The message is Windows' own, in its language, and may quote the name; a name may hold
+    /// spaces and even "ERR": the name ends at the last space a reply's start follows.
+    static func putErrorName(in line: String) -> String? {
+        let prefix = "BVAGENT SHARE put-error "
+        guard line.hasPrefix(prefix) else { return nil }
+        let rest = line.dropFirst(prefix.count)
+        var end = rest.endIndex
+        while let space = rest[..<end].lastIndex(of: " ") {
+            let reply = rest[rest.index(after: space)...]
+            let verb = reply.dropFirst("ERR ".count).prefix { $0 != " " }
+            if reply.hasPrefix("PUTOK ")
+                || (reply.hasPrefix("ERR ") && !verb.isEmpty && verb.utf8.allSatisfy { $0 >= 0x41 && $0 <= 0x5A }) {
+                return space == rest.startIndex ? nil : String(rest[..<space])
+            }
+            end = space
+        }
+        return nil
+    }
 
     func reported(_ name: String) -> Self {
         var next = self
@@ -211,6 +241,57 @@ struct HvfShareLowSpace: Equatable {
             next.last = newest.key
         }
         return next
+    }
+}
+
+/// Mac names Windows can't keep apart (`BVAGENT SHARE skip <name> alias ["<name>", ...]`, Rust's `{:?}`
+/// of the sorted names, share_win_alias.rs): Windows ignores letter case and a dot or space at the end
+/// of a name. None of them syncs until a rename on the Mac ends the hold. One name alone is below a
+/// folder whose name ends in a dot or space.
+enum HvfShareAlias {
+    static func names(in line: String) -> [String]? {
+        let prefix = "BVAGENT SHARE skip "
+        guard line.hasPrefix(prefix) else { return nil }
+        let rest = line.dropFirst(prefix.count)
+        // The name may hold the marker too: the list starts with the name itself.
+        var from = rest.startIndex
+        while let marker = rest[from...].range(of: " alias [") {
+            if marker.lowerBound > rest.startIndex, let names = debugStrings(rest[marker.upperBound...]),
+               names.first == String(rest[..<marker.lowerBound]) {
+                return names
+            }
+            from = marker.upperBound
+        }
+        return nil
+    }
+
+    static func displayed(_ names: [String]) -> (text: String, help: String) {
+        guard names.count > 1 else {
+            return ("Windows can’t use “\(names[0])”, because a folder in its path ends in a dot or space.",
+                    "Rename the folder on your Mac.")
+        }
+        let why = Set(names.map { $0.lowercased() }).count == 1
+            ? "Windows ignores letter case in names" : "Windows sees them as the same name"
+        return ("Windows can’t keep both “\(names[0])” and “\(names[1])”, because \(why).",
+                "Rename one of them on your Mac.")
+    }
+
+    /// `"a", "b"]` to the end: the strings in a Rust `{:?}` list. Only `\"` and `\\` are decoded; a name
+    /// with another escape (a control character) does not match its plain form.
+    private static func debugStrings(_ list: Substring) -> [String]? {
+        var scalars = list.unicodeScalars[...], names: [String] = []
+        while scalars.popFirst() == "\"" {
+            var name = String.UnicodeScalarView()
+            while let scalar = scalars.popFirst(), scalar != "\"" {
+                guard scalar == "\\" else { name.append(scalar); continue }
+                guard let escaped = scalars.popFirst() else { return nil }
+                name.append(escaped)
+            }
+            names.append(String(name))
+            if String(scalars) == "]" { return names }
+            guard scalars.popFirst() == ",", scalars.popFirst() == " " else { return nil }
+        }
+        return nil
     }
 }
 
