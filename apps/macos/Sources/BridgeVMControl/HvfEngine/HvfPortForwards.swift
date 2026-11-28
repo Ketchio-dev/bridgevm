@@ -132,6 +132,7 @@ struct HvfPortForwardSetting: View {
                 Text("Port forwards").frame(width: 92, alignment: .leading)
                 TextField("", text: $text, prompt: Text("8080:80, 3390:3389"))
                     .labelsHidden()
+                    .accessibilityLabel("Port forwards")
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("bridgevm.runtime.portForwards")
                     .focused($focused)
