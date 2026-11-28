@@ -452,7 +452,8 @@ final class FBLayerView: HvfFramebufferTextInput {
         }
         let fit = HvfDisplayFit(viewSize: bounds.size, imageSize: guestSize)
         let presentation = HvfGuestCursorPresentation.decide(
-            cursor: guestCursor.state, keyWindow: windowIsKey(), pointer: pointer, fit: fit, imageSize: guestSize)
+            cursor: guestCursor.state, keyWindow: windowIsKey(), pointer: pointer, fit: fit, imageSize: guestSize,
+            paused: session?.pause.holdsInput == true)
         guestCursor.apply(presentation, fit: fit, in: layer)
     }
 

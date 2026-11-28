@@ -13,12 +13,13 @@ struct HvfGuestCursorPresentation: Equatable {
     /// The macOS arrow and no sprite, exactly as without a hardware cursor.
     static let none = HvfGuestCursorPresentation(macCursor: false, sprite: nil)
 
-    /// `pointer` is the host pointer in view points, nil when it is outside the view.
+    /// `pointer` is the host pointer in view points, nil when it is outside the view. `paused`: the paused
+    /// overlay and its Resume button cover the image, so the pointer keeps the Mac arrow there.
     static func decide(cursor: HvfGuestCursorState?, keyWindow: Bool, pointer: CGPoint?,
-                       fit: HvfDisplayFit?, imageSize: CGSize) -> HvfGuestCursorPresentation {
+                       fit: HvfDisplayFit?, imageSize: CGSize, paused: Bool = false) -> HvfGuestCursorPresentation {
         // A hidden sprite (Windows drawing the pointer itself) gets the macOS arrow, as today.
         guard let cursor, cursor.visible, cursor.shapeThisBoot, let fit else { return .none }
-        if keyWindow, let pointer, fit.contains(pointer) {
+        if keyWindow, !paused, let pointer, fit.contains(pointer) {
             return HvfGuestCursorPresentation(macCursor: true, sprite: nil)
         }
         // The guest position is the sprite's top left (virtio-gpu's cursor position: WDDM's pointer
