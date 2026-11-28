@@ -40,6 +40,12 @@ impl BootGeneration {
                     std::time::Instant::now(),
                 );
             }
+            if let Some(line) = automation
+                .no_bootable_disk
+                .line(locked_platform.uart_output())
+            {
+                println!("{line}");
+            }
             if serial_reached_linux_panic(
                 locked_platform.uart_output(),
                 &mut automation.serial_stop_scans,
