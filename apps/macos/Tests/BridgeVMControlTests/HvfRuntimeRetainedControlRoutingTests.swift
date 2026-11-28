@@ -186,7 +186,7 @@ final class HvfRuntimeRetainedControlRoutingTests: XCTestCase {
         let idle = try f.work.runtime(inactive, in: library)
         XCTAssertEqual(idle.connectionState, .stopped)
         try f.removeRegistration(inactive); library.reload()
-        XCTAssertEqual(library.selectedID, library.vms.first?.slug)
+        XCTAssertEqual(library.selectedID, library.vms.last?.slug, "the VM before it in the list: it was the last")
         XCTAssertNil(library.selectedRetainedControl)
         XCTAssertEqual(library.retainedControlRecords.count, 1)
         library.selectedID = token

@@ -24,7 +24,7 @@ struct LibrarySidebar: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("bridgevm.library.overview")
-            .accessibilityAddTraits(.isSelected)
+            .accessibilityAddTraits(library.selectedRetainedControl == nil ? .isSelected : [])
             .padding(.horizontal, 12).padding(.bottom, 8)
             LibraryRetainedControlsNavigation(library: library, didSelect: didShowRetained)
             VStack(spacing: 16) {
