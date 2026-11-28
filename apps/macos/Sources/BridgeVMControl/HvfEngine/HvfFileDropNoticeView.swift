@@ -6,11 +6,24 @@ struct HvfFileDropNoticeView: View {
 
     var body: some View {
         if let notice = drops.notice {
-            Label {
-                Text(notice.text)
-            } icon: {
-                Image(systemName: notice.failed ? "exclamationmark.triangle" : "doc.on.doc")
-                    .foregroundStyle(notice.failed ? Color.orange : Color.primary)
+            HStack(spacing: 8) {
+                Label {
+                    Text(notice.text)
+                } icon: {
+                    Image(systemName: notice.failed ? "exclamationmark.triangle" : "doc.on.doc")
+                        .foregroundStyle(notice.failed ? Color.orange : Color.primary)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("bridgevm.runtime.filedrop.notice")
+                // A failed notice stays until it is closed or the next drop replaces it.
+                if notice.failed {
+                    Button { drops.dismiss() } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help("Close")
+                        .accessibilityLabel("Close")
+                        .accessibilityIdentifier("bridgevm.runtime.filedrop.close")
+                }
             }
             .font(.callout)
             .foregroundStyle(.primary)
@@ -18,8 +31,8 @@ struct HvfFileDropNoticeView: View {
             .padding(.vertical, 8)
             .background(.regularMaterial, in: Capsule())
             .padding(12)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("bridgevm.runtime.filedrop.notice")
+            // It sits over the Windows taskbar: clicks on a progress notice go to Windows.
+            .allowsHitTesting(notice.failed)
         }
     }
 }

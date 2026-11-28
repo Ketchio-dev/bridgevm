@@ -46,6 +46,11 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- Files dropped on a VM window, or opened with BridgeVM from Finder, while
+  Windows is still starting are now copied once Windows is ready. Before,
+  they were refused with a message that stayed over the Windows taskbar. A
+  failed copy's message now has a close button, and clicks go through the
+  progress message to Windows.
 - When VMs running at the same time together use more memory than your Mac can
   spare, each of them now says so in one sentence and suggests stopping one or
   giving the VMs less memory in Settings. Before, macOS just started swapping

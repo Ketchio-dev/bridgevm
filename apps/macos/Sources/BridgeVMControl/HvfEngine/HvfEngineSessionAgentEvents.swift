@@ -29,6 +29,7 @@ extension HvfEngineSession {
             applyGuestLinksSetting()
             applyPrintSetting()
             extendGrownDisk()
+            sendDropsWaitingForWindows()
             if let ownedController { ownedController.guestServiceReady() }
             else { sendGracefulStopIfReady() }
         case let .unknown(line) where HvfGuestResetRecord.matches(line):

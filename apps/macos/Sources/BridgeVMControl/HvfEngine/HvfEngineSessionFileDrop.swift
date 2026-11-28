@@ -4,12 +4,15 @@ extension HvfEngineSession {
     /// A Finder drop onto the display: stage the items next to the control file, then hand the
     /// folder to the runtime, which copies it to the guest user's Desktop (file_drop.rs); with
     /// `open` (Finder's Open With, a drop on the Dock icon, HvfOpenFiles) it then opens each item
-    /// there with its default Windows app. Returns the staging work so tests can wait for it.
+    /// there with its default Windows app. While Windows is still starting, the staged items wait for
+    /// the agent's SERVICE start. Returns the staging work so tests can wait for it.
     @discardableResult
     func copyDroppedFiles(_ items: [URL], open: Bool = false) -> Task<Void, Never>? {
         guard !items.isEmpty else { return nil }
-        guard serviceStarted, case .connected = connectionState else {
-            fileDrops.refuse(HvfFileDropQueue.notReadyText)
+        switch connectionState {
+        case .booting, .connected, .timedOut: break
+        case .stopped, .stopping:
+            fileDrops.refuse(HvfFileDropQueue.notRunningText)
             return nil
         }
         let root = URL(fileURLWithPath: (config.ctlFilePath as NSString).deletingLastPathComponent)
@@ -39,8 +42,20 @@ extension HvfEngineSession {
             append(.unknown("file drop \(id) staged: files=\(summary.files) folders=\(summary.folders) "
                 + "bytes=\(summary.bytes) cloned=\(summary.cloned) copied=\(summary.copied) skipped=\(summary.skipped)"))
             guard summary.files + summary.folders > 0 else { return fileDrops.nothingToCopy(id) }
-            let sent = sendCtl("BVDROP \(id) \(Data(staging.path.utf8).base64EncodedString())" + (open ? " open" : ""))
-            fileDrops.staged(id, summary, sent: sent)
+            // The runtime reads the control file only once the agent's service started.
+            guard serviceStarted, case .connected = connectionState else { return fileDrops.waitForWindows(id, summary) }
+            fileDrops.staged(id, summary, sent: sendDrop(id, staging: staging, open: open))
         }
+    }
+
+    /// At the agent's SERVICE start: the drops staged while Windows was starting go now, in drop order.
+    func sendDropsWaitingForWindows() {
+        for job in fileDrops.waitingForWindows() {
+            fileDrops.staged(job.id, job.summary, sent: sendDrop(job.id, staging: job.staging, open: job.open))
+        }
+    }
+
+    private func sendDrop(_ id: String, staging: URL, open: Bool) -> Bool {
+        sendCtl("BVDROP \(id) \(Data(staging.path.utf8).base64EncodedString())" + (open ? " open" : ""))
     }
 }
