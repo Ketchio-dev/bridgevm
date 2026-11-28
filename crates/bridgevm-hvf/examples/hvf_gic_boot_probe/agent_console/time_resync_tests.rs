@@ -272,3 +272,31 @@ fn an_unknown_mac_zone_sends_the_plain_resync() {
 }
 
 const ZONE_TICK: Duration = super::super::time_zone::ZONE_CHECK;
+
+/// A zone chosen in Windows was put back at every boot (and after every sleep): the resync set the
+/// Mac's zone each time. It now sets it only when the Mac's zone is not the one this VM last took.
+#[test]
+fn a_zone_chosen_in_windows_stays_across_boots_until_the_mac_moves() {
+    let sent_command = |sent: Vec<String>| {
+        let line = sent.iter().find(|line| line.starts_with("RUN ")).expect("a RUN line");
+        String::from_utf8(base64_decode(line["RUN ".len()..].trim_end()).unwrap()).unwrap()
+    };
+    let vars = std::env::temp_dir().join(format!("bv-zone-{}.fd", std::process::id()));
+    let record = format!("{}.windows-zone", vars.display());
+    let _ = std::fs::remove_file(&record);
+    let boot = |mac: &'static str| {
+        let (wall, mono) = clocks();
+        let mut h = resident((wall, mono));
+        h.clock.zone = super::time_zone::ZoneWatch::from_vars(Some(&vars.display().to_string()));
+        h.clock.zone.host = Some(Some(mac));
+        h.enqueue_boot_time_resync();
+        sent_command(send(&mut h, mono))
+    };
+    assert!(boot("Korea Standard Time").contains("$z='Korea Standard Time'"), "the first boot takes the Mac's zone");
+    assert_eq!(std::fs::read_to_string(&record).unwrap(), "Korea Standard Time");
+    // The user picks another zone in Windows; the next boots leave it, and still set the clock.
+    let next = boot("Korea Standard Time");
+    assert!(!next.contains("Set-TimeZone") && next.contains("Set-Date"), "{next}");
+    assert!(boot("Eastern Standard Time").contains("$z='Eastern Standard Time'"), "a trip still reaches Windows");
+    let _ = std::fs::remove_file(&record);
+}
