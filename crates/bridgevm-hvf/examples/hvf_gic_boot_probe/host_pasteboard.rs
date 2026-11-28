@@ -7,7 +7,7 @@
 //
 // PUBLIC API (agent_console.rs codes against exactly this):
 //   HostPasteboard::spawn(poll_ms) -> HostPasteboard
-//   try_changed_clip(&self) -> Option<HostClip>  // external changes
+//   try_changed_clip(&self) -> Option<HostClip>  // external changes; an empty one is a clear
 //   set(&self, text: String)                     // guest->host text sync
 //   set_image(&self, png, text: Option<String>)  // guest->host image (+text)
 //   set_images(&self, on: bool)                  // read images too (IMAGE_PNG)

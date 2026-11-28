@@ -1,7 +1,8 @@
 //! NSPasteboard poller state machine against a scripted backend (no real
 //! pasteboard is touched).
 
-use super::{PasteboardBackend, Poller};
+use super::poller::EMPTY_REREADS;
+use super::{HostClip, PasteboardBackend, Poller};
 
 struct MockBackend {
     count: i64,
@@ -96,6 +97,29 @@ fn empty_string_content_is_never_emitted() {
     assert_eq!(poller.on_tick(&mut backend), None);
     backend.external_change(2, Some(""));
     assert_eq!(poller.on_tick(&mut backend), None);
+}
+
+/// A password manager's auto-clear: the copy empties and stays empty. It is
+/// reported once, as an empty clip, when the re-reads end; a pasteboard empty
+/// from the start, or emptied again, never is.
+#[test]
+fn a_clear_that_stays_empty_is_reported_once() {
+    let mut poller = Poller::new();
+    let mut backend = MockBackend::new(1, None);
+    for _ in 0..=2 * EMPTY_REREADS {
+        assert_eq!(poller.on_tick_clip(&mut backend), None, "empty at startup");
+    }
+    backend.external_change(2, Some("secret"));
+    assert!(poller.on_tick_clip(&mut backend).is_some());
+    backend.external_change(3, None);
+    for _ in 0..EMPTY_REREADS {
+        assert_eq!(poller.on_tick_clip(&mut backend), None, "a copy may still be on its way");
+    }
+    assert_eq!(poller.on_tick_clip(&mut backend), Some(HostClip::default()));
+    backend.external_change(4, None);
+    for _ in 0..=2 * EMPTY_REREADS {
+        assert_eq!(poller.on_tick_clip(&mut backend), None, "empty already");
+    }
 }
 
 #[test]

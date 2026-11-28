@@ -616,6 +616,44 @@ fn pushed_image_never_bounces_back() {
     assert!(rig.mac.writes.is_empty(), "the guest's copy of the Mac image is not written back");
 }
 
+/// The Mac is cleared, then about 4 s of Mac polls (a clear settles after 3 s).
+fn clear_on_mac(rig: &mut Rig) {
+    rig.mac.copy(None, None);
+    for _ in 0..40 {
+        assert!(rig.worker.poll(&mut rig.mac));
+    }
+    rig.settle();
+    rig.settle();
+}
+
+/// A password manager's auto-clear on the Mac clears Windows too while Windows
+/// holds that Mac copy, and nothing comes back; a Windows copy stays.
+#[test]
+fn a_mac_clear_clears_only_what_the_mac_sent() {
+    for images in [true, false] {
+        let mut rig = Rig::new(images);
+        rig.mac.copy(Some("secret"), None);
+        rig.settle();
+        rig.settle();
+        assert_eq!(rig.guest.text, "secret");
+        rig.verbs();
+        clear_on_mac(&mut rig);
+        assert_eq!(rig.guest.text, "", "images={images}: the password stayed in Windows");
+        assert_eq!(rig.verbs(), verbs(&["CLIPSET"]));
+        assert!(rig.mac.writes.is_empty(), "the clear came back to the Mac");
+
+        rig.mac.copy(Some("mac copy"), None);
+        rig.settle();
+        rig.guest.text = "windows copy".into();
+        rig.settle();
+        assert_eq!(rig.mac.writes, vec![(Some("windows copy".to_owned()), None)]);
+        rig.verbs();
+        clear_on_mac(&mut rig);
+        assert_eq!(rig.guest.text, "windows copy", "images={images}: a Windows copy was cleared");
+        assert!(rig.verbs().is_empty());
+    }
+}
+
 #[test]
 fn guest_image_is_checked_then_written_once_with_its_text() {
     let mut rig = Rig::new(true);
