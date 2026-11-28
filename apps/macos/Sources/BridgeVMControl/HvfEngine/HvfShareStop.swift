@@ -51,6 +51,17 @@ extension HvfShareRootNotice {
                 return ("Your Mac needs more space to receive \(files) from Windows.",
                         "Free up space on your Mac. Sync will retry automatically.")
             }
+            if let writeRefused {
+                let text = "Files from Windows aren’t reaching the shared folder on your Mac."
+                switch writeRefused {
+                case .unsafeDrive:
+                    return (text, "BridgeVM can’t save files from Windows safely on this folder’s drive. Shut down the VM and share a folder on your Mac’s own disk instead.")
+                case .noPermission:
+                    return (text, "Check in Finder that you can write to the folder. Sync will retry automatically.")
+                case .other:
+                    return (text, "Check the folder in Finder. Sync will retry automatically.")
+                }
+            }
             guard let tooLarge else { return nil }
             let shareLimit = HvfEngineConfig.shareMaxKiB * 1024, limit = tooLarge.limit ?? shareLimit
             let text = "Sharing skipped “\(tooLarge.last)” because the per-file limit is \(HvfShareTooLarge.sizeText(limit))."
@@ -63,6 +74,31 @@ extension HvfShareRootNotice {
         }
     }
 
+}
+
+/// The Mac refused to write a file from Windows (`BVAGENT SHARE write-refused <name> <error>`,
+/// share_host_write.rs and share_big.rs). A name can hold spaces, so only the error's end is read.
+/// Out of space is HvfShareLowSpace's.
+enum HvfShareWriteRefused: Equatable {
+    /// guest_write_policy.rs: execute bits the drive keeps, or a quarantine mark it can't hold. Refused
+    /// until the file changes.
+    case unsafeDrive
+    /// EACCES, EPERM or EROFS; retried at the next guest listing.
+    case noPermission
+    case other
+
+    init?(line: String) {
+        guard line.hasPrefix("BVAGENT SHARE write-refused ") else { return nil }
+        if line.hasSuffix("(os error 28)") || line.hasSuffix("(os error 69)") { return nil }
+        if line.hasSuffix(" execute bits refused: share filesystem keeps them on guest files")
+            || line.range(of: " quarantine refused: ", options: .backwards) != nil {
+            self = .unsafeDrive
+        } else if ["(os error 1)", "(os error 13)", "(os error 30)"].contains(where: line.hasSuffix) {
+            self = .noPermission
+        } else {
+            self = .other
+        }
+    }
 }
 
 /// The guest folder's listing is over the runtime's limit (`BVAGENT SHARE paused

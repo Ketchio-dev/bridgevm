@@ -65,6 +65,10 @@ All notable changes to BridgeVM are documented in this file.
   Settings now says to wait for it instead of asking you to shut down a
   Windows that is already off. The snapshot list no longer keeps showing the
   last result, such as "Snapshot restored", after Windows starts again.
+- When the Mac refuses to save files coming from Windows through the shared
+  folder, for example because the folder is read-only or on a network drive,
+  BridgeVM now says so and what to do. Before, those files just never appeared
+  on the Mac.
 - When VMs running at the same time together use more memory than your Mac can
   spare, each of them now says so in one sentence and suggests stopping one or
   giving the VMs less memory in Settings. Before, macOS just started swapping
