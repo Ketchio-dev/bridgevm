@@ -234,7 +234,7 @@ final class HvfInputRouteSwitchTests: XCTestCase {
             let ahead = try XCTUnwrap(try fixture.commands().last)
             XCTAssertTrue(session.sendToolbarKey("ctrl+alt+delete"))
             XCTAssertTrue(session.sendKey("enter"))
-            session.cancelOrderedInputTarget() // the display window lost focus
+            session.cancelOrderedInputTarget() // Pause, Stop or the display went away
             XCTAssertEqual(session.inputDriver.router.count, 0, "nothing waits for the old target")
             try fixture.appendLog(inserted(ahead, count: 2)); session.poll()
             session.poll()

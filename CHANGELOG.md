@@ -72,6 +72,9 @@ All notable changes to BridgeVM are documented in this file.
 - When BridgeVM can't extend Windows' C: drive after you expand the disk,
   because a partition is in the way or the extend kept failing, the VM
   window now says so once. Before, only Settings said so.
+- Switching to another app while Windows is busy no longer drops what you just
+  typed: the rest still reaches the Windows app you typed it into. Keys and
+  mouse buttons you were holding down are still let go.
 - Deleting the selected VM selects the VM next to it, not the first VM
   in the library.
 - A Mac file that never reaches Windows now gets a notice: when Windows

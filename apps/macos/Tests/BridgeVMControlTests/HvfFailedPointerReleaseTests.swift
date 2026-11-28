@@ -5,14 +5,14 @@ import XCTest
 @MainActor
 final class HvfFailedPointerReleaseTests: XCTestCase {
     func testRejectedLaterTextDoesNotPreventReleasingConfirmedPointerPress() throws {
-        try checkRelease(afterTextFailure: true)
+        for focusLoss in [false, true] { try checkRelease(afterTextFailure: true, focusLoss: focusLoss) }
     }
 
     func testHealthyTargetCancellationReleasesConfirmedPointerPress() throws {
-        try checkRelease(afterTextFailure: false)
+        for focusLoss in [false, true] { try checkRelease(afterTextFailure: false, focusLoss: focusLoss) }
     }
 
-    private func checkRelease(afterTextFailure failed: Bool) throws {
+    private func checkRelease(afterTextFailure failed: Bool, focusLoss: Bool) throws {
         let fixture = try HvfRuntimeKeyboardDraftFixture()
         defer { fixture.remove() }
         try fixture.withSession { session in
@@ -32,9 +32,9 @@ final class HvfFailedPointerReleaseTests: XCTestCase {
                 XCTAssertEqual(session.sendText("must stay refused"), .refused)
             }
             let before = try fixture.commands()
-            // These are the public session paths used by mouseUp and focus/teardown.
+            // These are the public session paths used by mouseUp, focus loss and Pause, Stop or teardown.
             session.sendPointerRelease(location: point, viewSize: size, imageSize: size)
-            session.cancelOrderedInputTarget()
+            if focusLoss { session.displayLostFocus() } else { session.cancelOrderedInputTarget() }
             session.poll()
             let after = try fixture.commands()
             XCTAssertGreaterThan(after.count, before.count,

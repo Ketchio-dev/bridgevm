@@ -51,8 +51,17 @@ extension HvfEngineSession {
         while let held = heldKeys.actions.first { _ = heldKeys.release(held.keyCode); releaseHeldKey(held.action) }
     }
 
-    /// A target change (focus loss, Pause, Stop): the keys input.ctl holds go up there now; those the ordered route
-    /// pressed go up through the cleanup that cancelling its target starts (HvfPointerCleanup).
+    /// The Mac window or the display lost focus. Windows keeps its own focus, so what is queued still goes to the app it
+    /// was typed into, a clipboard paste included; only the held keys go up, each on its route (the view lifts a held
+    /// button as a mouse-up would). A failed route takes no release, and has nothing queued: there the target change
+    /// lifts what its requests may hold (HvfPointerCleanup).
+    func displayLostFocus() {
+        releaseHeldKeys()
+        if inputDriver.router.failed { inputDriver.cancelTarget() }
+    }
+
+    /// A target change (Pause, Stop, the display going away): the keys input.ctl holds go up there now; those the
+    /// ordered route pressed go up through the cleanup that cancelling its target starts (HvfPointerCleanup).
     func releaseHeldKeysForTargetChange() {
         heldKeys = HvfHeldKeys()
         for action in inputDriver.router.legacyHeldKeys { appendLiveInput("KEY " + HvfModifierChord.up + action) }

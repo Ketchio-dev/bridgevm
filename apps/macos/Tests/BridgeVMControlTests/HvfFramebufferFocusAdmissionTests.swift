@@ -66,13 +66,8 @@ final class HvfFramebufferFocusAdmissionTests: XCTestCase {
             // Do not yield: a following AppKit callback must not beat cancellation.
             NotificationCenter.default.post(name: NSWindow.didResignKeyNotification,
                 object: sameWindow ? window : other)
-            if sameWindow {
-                XCTAssertFalse(view.hasMarkedText(), "Known focus loss must invalidate local preedit immediately")
-                XCTAssertNotEqual(session.textInputTarget, target)
-            } else {
-                XCTAssertTrue(view.hasMarkedText())
-                XCTAssertEqual(session.textInputTarget, target)
-            }
+            XCTAssertEqual(view.hasMarkedText(), !sameWindow, "Known focus loss must invalidate local preedit immediately")
+            XCTAssertEqual(session.textInputTarget, target, "Windows keeps its focus when the Mac window loses it")
             view.unmarkText()
             let after = try fixture.commands()
             if sameWindow {

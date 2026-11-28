@@ -684,7 +684,8 @@ final class HvfEngineSession: ObservableObject {
         inputDriver.beginOwnedBoot(binding: inputBinding)
     }
 
-    /// Focus loss, Pause, Stop and the display's other target changes; held keys and buttons go up.
+    /// Pause, Stop, teardown and the display's other target changes (focus loss keeps queued input: displayLostFocus);
+    /// held keys and buttons go up.
     func cancelOrderedInputTarget() {
         cancelPendingPaste("input target changed")
         releaseHeldKeysForTargetChange()
