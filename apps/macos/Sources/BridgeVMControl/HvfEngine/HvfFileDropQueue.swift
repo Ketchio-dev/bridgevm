@@ -24,6 +24,7 @@ final class HvfFileDropQueue: ObservableObject {
         let open: Bool
         let itemName: String?
         var skipped = 0
+        var unreadable = 0
         /// Staged while Windows was still starting: sent at the agent's SERVICE start.
         var waiting: HvfFileDropStaging.Summary?
         var sent = false
@@ -70,6 +71,7 @@ final class HvfFileDropQueue: ObservableObject {
         jobs[index].sent = true
         jobs[index].waiting = nil
         jobs[index].skipped = summary.skipped
+        jobs[index].unreadable = summary.unreadable
         jobs[index].files.total = summary.files
         jobs[index].bytes.total = summary.bytes
         show()
@@ -87,9 +89,11 @@ final class HvfFileDropQueue: ObservableObject {
         jobs.compactMap { job in job.waiting.map { (job.id, job.staging, job.open, $0) } }
     }
 
-    func nothingToCopy(_ id: String) {
+    func nothingToCopy(_ id: String, unreadable: Bool = false) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
-        finish(index, Notice(text: "Nothing to copy. Choose regular files or folders instead of symbolic links or special files.", failed: true))
+        finish(index, Notice(text: unreadable
+            ? "Nothing was copied because the Mac isn’t allowed to read these items. Check their permissions in Finder."
+            : "Nothing to copy. Choose regular files or folders instead of symbolic links or special files.", failed: true))
     }
 
     func stagingFailed(_ id: String) {
@@ -134,7 +138,9 @@ final class HvfFileDropQueue: ObservableObject {
                 }
             }
             let skipped = job.skipped > 0 ? " Skipped \(Self.quantity(job.skipped, "unsupported item")) (symbolic links or special files)." : ""
-            finish(index, Notice(text: done.text + skipped, failed: done.failed))
+            // Not copied though the user chose them: the notice stays until it is closed.
+            let unreadable = job.unreadable > 0 ? " Skipped \(Self.quantity(job.unreadable, "item")) the Mac isn’t allowed to read." : ""
+            finish(index, Notice(text: done.text + skipped + unreadable, failed: done.failed || job.unreadable > 0))
         case "failed":
             let job = jobs[index]
             let reason = fields.count > 4 ? fields[4] : ""

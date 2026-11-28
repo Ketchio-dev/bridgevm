@@ -48,6 +48,22 @@ final class HvfFileDropQueueTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: job.staging.path))
     }
 
+    func testItemsTheMacCouldNotReadAreNamedAndTheNoticeStays() {
+        let root = scratch()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let queue = HvfFileDropQueue()
+        let job = queue.begin(in: root)
+        var staged = summary(files: 1, bytes: 0)
+        staged.unreadable = 2
+        queue.staged(job.id, staged, sent: true)
+        queue.consume(.unknown("BVAGENT DROP done \(job.id) files=1 bytes=0"))
+        XCTAssertEqual(queue.notice, .init(text: "Copied to the Windows desktop (1 file, 0 B). Skipped 2 items the Mac isn’t allowed to read.",
+                                           failed: true))
+        let none = queue.begin(in: root)
+        queue.nothingToCopy(none.id, unreadable: true)
+        XCTAssertEqual(queue.notice?.text, "Nothing was copied because the Mac isn’t allowed to read these items. Check their permissions in Finder.")
+    }
+
     func testSecondIdenticalCopyKeepsItsOwnCompletionNotice() async throws {
         let queue = HvfFileDropQueue()
         let root = scratch()

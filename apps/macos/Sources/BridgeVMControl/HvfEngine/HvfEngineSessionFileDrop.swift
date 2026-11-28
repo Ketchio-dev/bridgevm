@@ -40,8 +40,8 @@ extension HvfEngineSession {
         case let .success(summary):
             // A clone is instant and takes no space; a plain copy (another volume) reads every byte.
             append(.unknown("file drop \(id) staged: files=\(summary.files) folders=\(summary.folders) "
-                + "bytes=\(summary.bytes) cloned=\(summary.cloned) copied=\(summary.copied) skipped=\(summary.skipped)"))
-            guard summary.files + summary.folders > 0 else { return fileDrops.nothingToCopy(id) }
+                + "bytes=\(summary.bytes) cloned=\(summary.cloned) copied=\(summary.copied) skipped=\(summary.skipped) unreadable=\(summary.unreadable)"))
+            guard summary.files + summary.folders > 0 else { return fileDrops.nothingToCopy(id, unreadable: summary.unreadable > 0) }
             // The runtime reads the control file only once the agent's service started.
             guard serviceStarted, case .connected = connectionState else { return fileDrops.waitForWindows(id, summary) }
             fileDrops.staged(id, summary, sent: sendDrop(id, staging: staging, open: open))
