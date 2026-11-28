@@ -64,6 +64,10 @@ All notable changes to BridgeVM are documented in this file.
   the VM and wait for other operations to finish before creating a snapshot."
   Before, they printed the helper's lock error, including a process command
   line and pid. The helper's text is still in the JSON `detail` field.
+- The VM window now says so when the drive with the VM's disk is unplugged
+  or BridgeVM loses contact with Windows, and offers Stop or Force Stop.
+  Before, only the library said so, and the VM window, often in full screen,
+  just went black or froze.
 - Files dropped on a VM window, or opened with BridgeVM from Finder, while
   Windows is still starting are now copied once Windows is ready. Before,
   they were refused with a message that stayed over the Windows taskbar. A
