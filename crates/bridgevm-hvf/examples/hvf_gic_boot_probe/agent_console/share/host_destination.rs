@@ -216,7 +216,7 @@ impl Destination {
                 let extension = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
                 for number in 1u64.. {
                     let label = if number == 1 { "Windows copy".to_string() } else { format!("Windows copy {number}") };
-                    let conflict = CString::new(format!("{stem} ({label}){extension}")).unwrap();
+                    let conflict = CString::new(conflict_name(&stem, &label, &extension)).unwrap();
                     // SAFETY: pinned parent and two live, single-component names. linkat
                     // publishes without replacing any existing conflict (even a racing one).
                     let linked = link_at(&self.parent, temporary, &conflict);
@@ -390,6 +390,17 @@ impl Destination {
         }
         Ok(())
     }
+}
+
+/// "<stem> (<label>)<extension>" within the 255 bytes a Mac file name may hold: a long name's stem is
+/// cut at a character. Without that, a name of about 80 Korean characters had no room for the label,
+/// the copy failed (ENAMETOOLONG), and the Windows edit was lost.
+fn conflict_name(stem: &str, label: &str, extension: &str) -> String {
+    let mut end = stem.len().min(255usize.saturating_sub(label.len() + 3 + extension.len()));
+    while !stem.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{} ({label}){extension}", &stem[..end])
 }
 
 #[cfg(test)]

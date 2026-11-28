@@ -60,6 +60,21 @@ fn unsupported_links_preserve_conflicts_without_clobbering_or_retrying() {
 }
 
 #[test]
+fn a_long_names_windows_copy_is_kept_under_a_shorter_name() {
+    // 80 Korean characters: 245 bytes with ".docx", and no room for " (Windows copy)".
+    let f = Fixture::new();
+    let name = format!("{}.docx", "가".repeat(80));
+    std::fs::write(f.root().join(&name), b"newer Mac save").unwrap();
+    let result = Destination::open(&f.root(), &name, true).unwrap()
+        .write_at_unless_changed(b"Windows edit", None, Some(Some((3, 1))), false, || {});
+    assert!(result.as_ref().is_err_and(is_mac_changed));
+    assert_eq!(std::fs::read(f.root().join(&name)).unwrap(), b"newer Mac save");
+    let copy = format!("{} (Windows copy).docx", "가".repeat(78));
+    assert_eq!(copy.len(), 254);
+    assert_eq!(std::fs::read(f.root().join(&copy)).unwrap(), b"Windows edit", "the Windows edit was lost");
+}
+
+#[test]
 fn failed_conflict_copy_removes_partial_and_settles_mac_change() {
     let f = Fixture::new();
     std::fs::write(f.root().join("report.docx"), b"newer Mac save").unwrap();
