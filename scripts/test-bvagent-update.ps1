@@ -113,6 +113,7 @@ function Start-Sleep { [CmdletBinding()] param([int]$Seconds, [int]$Milliseconds
     $global:BvSleeps++
     if ($global:BvThrowAtSleep -and $global:BvSleeps -ge $global:BvThrowAtSleep) { $global:BvThrowAtSleep = 0; throw 'simulated error' }
     $global:BvNow = $global:BvNow.AddSeconds($Seconds).AddMilliseconds($Milliseconds)
+    if ($global:BvJumpAtSleep -and $global:BvSleeps -ge $global:BvJumpAtSleep) { $global:BvJumpAtSleep = 0; $global:BvNow = $global:BvNow.AddHours(1) }
     if ($global:BvVerdictAtSleep -and $global:BvSleeps -ge $global:BvVerdictAtSleep) {
         [IO.File]::WriteAllText((Join-Path $global:BvState 'result.txt'), $global:BvVerdict); $global:BvVerdictAtSleep = 0
     }
@@ -180,6 +181,7 @@ function Reset-Guest([string]$Label) {
     $global:BvSleeps = 0
     $global:BvThrowAtSleep = 0
     $global:BvConfirmAtSleep = 0
+    $global:BvJumpAtSleep = 0
     $global:BvVerdictAtSleep = 0
     $global:BvVerdict = ''
     $launcher = Join-Path $startupDir 'bvagent.bat'
@@ -358,6 +360,16 @@ try {
     $calls = $global:BvCalls -join ','
     Assert-True ($calls -ceq "register BridgeVM Guest Agent,stop BridgeVM Guest Agent,kill $oldAgentProcessId,start BridgeVM Guest Agent,register BridgeVM Guest Agent,stop BridgeVM Guest Agent,start BridgeVM Guest Agent,unregister BridgeVM Guest Tools Update") ('rollback calls: ' + $calls)
     Assert-RolledBack 'no Confirm' $version
+
+    # The clock fix after a Mac wake jumps Windows's clock an hour forward during the wait: a Confirm
+    # that comes after it still completes the update.
+    Reset-Guest 'clock-jump'
+    Add-LegacyLaunchers
+    $staged = New-Staged; $id = $staged[0]
+    [void](Invoke-ArmStep $id $staged[1])
+    $global:BvJumpAtSleep = 2; $global:BvConfirmAtSleep = 5 # sleep 1 is the pause before the switch
+    [void](Invoke-Update (Join-Path $global:BvRoot $id) @{ Guard = $true; Id = $id })
+    Assert-True ((Read-State 'result.txt') -ceq ('ok ' + $id)) ('a clock jump ended the wait for Confirm: ' + (Read-State 'result.txt'))
 
     # A failed switch rolls back at once.
     Reset-Guest 'switch-fails'

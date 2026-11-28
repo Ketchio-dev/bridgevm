@@ -62,6 +62,9 @@ All notable changes to BridgeVM are documented in this file.
 - "Guest agent response" in a VM's status no longer counts the time the Mac
   slept. Before, it showed, for example, "3600.0 s ago" for up to half a
   minute after waking from an hour's sleep.
+- A guest tools update no longer goes back to the old version when the Mac
+  sleeps while Windows is waiting to confirm it. Setting Windows's clock
+  after the wake ended the wait early.
 - Windows boot entries and Secure Boot settings now survive a crash, a power
   loss or a Force Stop that runs out of time while the VM runs. BridgeVM
   used to save the VM's UEFI settings only when the VM stopped cleanly, so
