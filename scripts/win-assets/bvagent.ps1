@@ -2711,8 +2711,9 @@ while ($true) {
                     # folders are created (an empty one too) and listed files must be there. A large
                     # PUT's temporary an agent stopped mid-file left in the copy's folders is deleted
                     # first, so it is never pasted. The n top-level items go on the clipboard
-                    # with the text in one write. Older copies' folders stay for a paste that may
-                    # still read them: the 3 put on the clipboard last; older ones are deleted.
+                    # with the text in one write. The previous copy's folder stays for a paste that
+                    # may still read it; older ones are deleted, so copies made in Finder (each pushed
+                    # at once, up to 16 GiB) don't pile up in Windows' Temp folder.
                     try {
                         if (-not (Initialize-ClipImage)) { throw 'clipboard files unavailable' }
                         $parts = $arg.Split(' ')
@@ -2750,7 +2751,7 @@ while ($true) {
                             [System.IO.Directory]::SetLastWriteTimeUtc((Get-IoPath $root $true), [DateTime]::UtcNow)
                             $olds = @([System.IO.Directory]::GetDirectories($base) | Where-Object { [System.IO.Path]::GetFileName($_) -ne $parts[0] } |
                                 Sort-Object { [System.IO.Directory]::GetLastWriteTimeUtc($_) } -Descending)
-                            for ($i = 3; $i -lt $olds.Count; $i++) { [System.IO.Directory]::Delete((Get-IoPath $olds[$i] $true), $true) }
+                            for ($i = 1; $i -lt $olds.Count; $i++) { [System.IO.Directory]::Delete((Get-IoPath $olds[$i] $true), $true) }
                         } catch { Log ('CLIPSETFILES cleanup failed: ' + $_.Exception.Message) }
                         $seq = $K::GetClipboardSequenceNumber()
                         $script:BvClipCache = $txt
@@ -3008,7 +3009,8 @@ while ($true) {
                 'LPUTBEG' {
                     # LPUTBEG <b64(path)> <total> [<mtime ms>] -> OK LPUTBEG: a large file's own stream into a
                     # new temporary beside <path> (large put); ERR LPUTBEG disk-full when the volume lacks
-                    # <total> bytes.
+                    # <total> bytes plus 2 GiB, the margin the Mac side keeps too (SHARE_FREE_MARGIN): a
+                    # share or a copied Finder file never fills Windows to zero.
                     $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
                         Close-LargePut
@@ -3020,7 +3022,7 @@ while ($true) {
                         if ($dir) { [void][System.IO.Directory]::CreateDirectory($dir) }
                         $free = [int64]::MaxValue
                         try { $free = (New-Object System.IO.DriveInfo ([System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($path)))).AvailableFreeSpace } catch { }
-                        if ($free -lt $total) { throw 'disk-full' }
+                        if ($free -lt $total + 2GB) { throw 'disk-full' }
                         $stage = New-PutStage $path
                         $temp = $stage.Temp
                         $stream = $stage.Stream

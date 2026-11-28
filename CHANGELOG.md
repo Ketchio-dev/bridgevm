@@ -91,6 +91,10 @@ All notable changes to BridgeVM are documented in this file.
 - More Actions > Refresh on a VM's page now also reads the library again, as
   messages that say "Refresh the library" expect. Before, it only checked
   whether the VM was running.
+- Copying a large file or folder in Finder, or a large file arriving in a shared folder, no longer
+  fills the Windows disk to zero: Windows now keeps 2 GB free, as the Mac side already does.
+  Files copied in Finder also no longer pile up in Windows' Temp folder; only the current and the
+  previous copy are kept, not the last four.
 - Command-N now opens New VM in the library window, bringing that window back
   if you closed it. Before, it opened a second library window. The Window menu
   also has a Library item that brings the library back while a VM window is
