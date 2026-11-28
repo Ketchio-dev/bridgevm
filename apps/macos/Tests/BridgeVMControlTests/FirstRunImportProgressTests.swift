@@ -60,6 +60,7 @@ final class FirstRunImportProgressTests: XCTestCase {
         let operation = state.begin(displayName: "Windows Studio")
         XCTAssertEqual(state.displayName, "Windows Studio")
         state.advance(.converting(.qcow2, percent: 0), operation: operation)
+        XCTAssertNil(state.stage?.conversionFraction, "the spinner until the first percent")
         state.advance(.converting(.qcow2, percent: 40), operation: operation)
         state.advance(.converting(.qcow2, percent: 12), operation: operation)
         XCTAssertEqual(state.stage, .converting(.qcow2, percent: 40))

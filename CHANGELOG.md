@@ -57,6 +57,10 @@ All notable changes to BridgeVM are documented in this file.
 - A new VM whose Guest Tools setup failed at the first Windows sign-in now
   offers Install Guest Tools after 10 minutes. Before, it said "Waiting for
   Windows to connect" on every start, with nothing to do.
+- Importing a VMware VMDK other than qemu-img's default kind, a VMDK
+  descriptor file or a Parallels disk now says to convert it, instead
+  of importing a few-KB "VM" with no boot partition; the import
+  progress shows a spinner until the converter reports a percent.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.
