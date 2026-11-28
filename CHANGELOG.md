@@ -79,6 +79,11 @@ All notable changes to BridgeVM are documented in this file.
   not be removed from disk. BridgeVM still keeps the VM's folder when it holds a
   snapshot or any file BridgeVM didn't write, and after a delete that fails the
   library now shows what is still on disk.
+- Installing the display driver no longer pins the shared folder to Quick
+  Access in Windows Explorer again after you unpinned it, and no longer leaves
+  a `BridgeVM.unlocked-…` folder in `C:\ProgramData`. Before, BridgeVM kept its
+  note that it had already pinned the folder in a place the driver install
+  moves aside.
 - Moving a VM whose files are on a disconnected drive now says "BridgeVM can't
   find this VM's files. Connect the drive that holds them, then try again."
   before it asks for a folder, and Show in Finder says the same. Before, Move
