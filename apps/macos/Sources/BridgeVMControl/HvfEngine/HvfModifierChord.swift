@@ -84,9 +84,9 @@ enum HvfModifierChord {
         return position
     }
 
-    /// macOS virtual key codes (Carbon kVK_*) of the keys that never type text.
+    /// macOS virtual key codes (Carbon kVK_*) of the keys that never type text. A PC keyboard's Insert is kVK_Help.
     private static let namedKeyCodes: [UInt16: String] = [
-        0x24: "enter", 0x4c: "enter", 0x30: "tab", 0x31: "space", 0x33: "backspace", 0x35: "esc", 0x75: "delete",
+        0x24: "enter", 0x4c: "enter", 0x30: "tab", 0x31: "space", 0x33: "backspace", 0x35: "esc", 0x75: "delete", 0x72: "insert",
         0x73: "home", 0x77: "end", 0x74: "pageup", 0x79: "pagedown", 0x7b: "left", 0x7c: "right", 0x7d: "down", 0x7e: "up",
         0x7a: "f1", 0x78: "f2", 0x63: "f3", 0x76: "f4", 0x60: "f5", 0x61: "f6",
         0x62: "f7", 0x64: "f8", 0x65: "f9", 0x6d: "f10", 0x67: "f11", 0x6f: "f12", 0x69: printScreen

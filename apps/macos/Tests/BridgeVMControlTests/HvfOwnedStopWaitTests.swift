@@ -254,6 +254,33 @@ final class HvfOwnedStopWaitTests: XCTestCase {
         XCTAssertFalse(session.sendKey("enter"), "Force Stop closes Windows' apps without asking")
     }
 
+    /// Text other than printable ASCII still reaches Windows while the Stop waits for it (a file name in a Save
+    /// dialog): the Mac's Korean or Japanese input source stays usable, the text goes on the ordered route, and where
+    /// input.ctl takes input it goes as a clipboard paste.
+    func testNonASCIITextReachesWindowsWhileTheStopWaitsForIt() throws {
+        let f = try Fixture(); defer { f.clean() }
+        let evidence = URL(fileURLWithPath: f.base.config.evidenceDir)
+        try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
+        let log = evidence.appendingPathComponent("run.log")
+        try "BVAGENT READY host=test t=1\nBVAGENT SERVICE start t=2\n".write(to: log, atomically: true, encoding: .utf8)
+        let session = bind(f)
+        session.beginOwnedInputBoot()
+        session.poll(); session.poll()
+        let request = try XCTUnwrap(try commands(f).last)
+        let id = request.split(separator: " ").last ?? "missing"
+        try append("BVAGENT CMD \(request) exit=0\nBVINPUT_CAPS \(id) 3 TEXTINPUT KEYINPUT POINTERINPUT 65536\n"
+            + "BVAGENT END \(request)\n", to: log)
+        session.poll(); session.poll()
+        f.controller.receive(.message(try f.event("ready", sequence: 1)))
+        XCTAssertEqual(session.stopOwned(expectedToken: f.controller.identity.token), .requested(deadline: nil))
+        session.poll()
+
+        XCTAssertTrue(session.guestTakesNonASCIIText, "no Roman-only input sources")
+        XCTAssertEqual(session.sendText("\u{E9}"), .acceptedForProcessing)
+        XCTAssertTrue(try XCTUnwrap(try commands(f).last).hasPrefix("TEXTINPUT "))
+        XCTAssertEqual(session.sendLegacyText("\u{E9}"), .acceptedForProcessing)
+    }
+
     /// The window stays open while Windows shows "apps are preventing shutdown": resizing it still resizes
     /// Windows, and its pointer stays the guest's.
     func testTheDisplayKeepsWorkingWhileTheStopWaitsForWindows() throws {

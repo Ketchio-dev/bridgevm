@@ -314,7 +314,7 @@ final class HvfEngineSession: ObservableObject {
             guard appendLiveInput("KEY text-hex:\(chunk)") else { return .refused }
         }
         if let base64 = plan.clipboardBase64 {
-            guard serviceStarted, case .connected = connectionState else {
+            guard serviceStarted, guestTakesInput else {
                 append(.unknown("clipboard paste refused: guest service is not connected")); return .refused
             }
             var request = clipboardPaste(base64: base64, preferRelay: draft?.multiline == true)
@@ -350,15 +350,19 @@ final class HvfEngineSession: ObservableObject {
         sendPointerAction(.rightClick, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
-    func sendPointerRightPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize, modifiers: String = "") {
+    @discardableResult func sendPointerRightPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize, modifiers: String = "") -> String {
         sendPointerAction(.rightPress, location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
     }
 
     /// Only for an agent that takes the middle button (`guestMiddleButton`).
-    func sendPointerMiddlePress(location: CGPoint, viewSize: CGSize, imageSize: CGSize, modifiers: String = "") {
-        guard guestMiddleButton else { return }
-        sendPointerAction(.middlePress, location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
+    @discardableResult func sendPointerMiddlePress(location: CGPoint, viewSize: CGSize, imageSize: CGSize, modifiers: String = "") -> String {
+        guard guestMiddleButton else { return "no-middle-button" }
+        return sendPointerAction(.middlePress, location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
     }
+
+    /// Whether a press outcome went to a route: queued for the agent or written to input.ctl. Only such a press gets
+    /// a release at its mouse-up; a refused one's would reach Windows alone, and a lone right up opens a context menu.
+    static func pressAdmitted(_ outcome: String) -> Bool { outcome == "queued" || outcome.hasPrefix("legacy-") }
 
     /// An agent that advertised SCROLL_UNITS gets raw wheel units on both axes; an older agent and the
     /// VMM's HID wheel get whole vertical notches. True when a scroll request was formed.
@@ -665,7 +669,7 @@ final class HvfEngineSession: ObservableObject {
     /// or answer Windows' "apps are preventing shutdown" screen. Force Stop or cancellation ends that.
     /// A Stop keeps an open ordered channel but never opens one: a new negotiation would write to a
     /// control file the Stop may have found replaced. Until then input uses the legacy device path.
-    private var guestTakesInput: Bool {
+    var guestTakesInput: Bool {
         if case .connected = connectionState { return true }
         return stopWaitsForWindows && inputDriver.router.activated
     }

@@ -52,6 +52,13 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver now names each notice over the VM window and its close button, and
   reads a notice aloud when it appears. Startup spinners no longer repeat the
   text beside them, and the VM display gives its size in pixels.
+- Shift+Insert and Ctrl+Insert now reach Windows (Paste and Copy). A click that
+  is refused while input is backed up no longer sends a lone mouse release, which
+  could open a context menu.
+- Ctrl+Alt+Delete reaches Windows right away after Windows stops confirming
+  input, instead of 30 seconds later, or never if you switched apps. A key or
+  button a secure desktop left down is released once input is quiet. Non-Roman
+  input sources keep working while a Shut Down waits for Windows.
 - When Windows stops confirming keyboard and mouse input, BridgeVM now switches
   to its basic keyboard and mouse (US key layout) instead of refusing every key
   and click. Restarting Windows brings full input back.
