@@ -182,6 +182,11 @@ impl TcpFlow {
                 Err(_) => break,
             }
         }
+        // A drained VecDeque keeps its allocation, which an upload grows to about 6 MB per
+        // connection; give it back, as the guest-bound direction does (tcp_send.rs).
+        if self.write_buf.is_empty() && self.write_buf.capacity() != 0 {
+            self.write_buf = VecDeque::new();
+        }
         if self.guest_fin && self.write_buf.is_empty() && !self.host_write_closed {
             let _ = self.stream.shutdown(std::net::Shutdown::Write);
             self.host_write_closed = true;

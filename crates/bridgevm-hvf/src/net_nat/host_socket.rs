@@ -19,6 +19,8 @@ pub struct HostSocketOutboundIpv4Handler {
     pub(crate) icmp_flows: HashMap<IcmpFlowKey, IcmpFlow>,
     pub(crate) pending_tcp_resets: VecDeque<PendingTcpReset>,
     pub(crate) tcp_remove_scratch: Vec<TcpFlowKey>,
+    /// DNS flows whose answer this poll queued (poll_udp closes them).
+    pub(crate) dns_answered_scratch: Vec<UdpFlowKey>,
     pub(crate) udp_recv_scratch: [u8; HOST_SOCKET_UDP_RECV_SCRATCH_LEN],
     pub(crate) tcp_read_scratch: [u8; TCP_MSS],
     pub(crate) icmp_recv_scratch: [u8; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
@@ -109,6 +111,7 @@ impl HostSocketOutboundIpv4Handler {
             icmp_flows: HashMap::new(),
             pending_tcp_resets: VecDeque::new(),
             tcp_remove_scratch: Vec::new(),
+            dns_answered_scratch: Vec::new(),
             udp_recv_scratch: [0; HOST_SOCKET_UDP_RECV_SCRATCH_LEN],
             tcp_read_scratch: [0; TCP_MSS],
             icmp_recv_scratch: [0; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
@@ -411,6 +414,7 @@ impl HostSocketOutboundIpv4Handler {
         let now = self.now_ms();
         let recv_scratch = &mut self.udp_recv_scratch;
         let dns_unreachable = &mut self.dns_unreachable;
+        let answered = &mut self.dns_answered_scratch;
         for (key, flow) in &mut self.udp_flows {
             while flow.readable && !reply_queue_full(reply_queue) {
                 match flow.socket.recv(recv_scratch) {
@@ -430,6 +434,11 @@ impl HostSocketOutboundIpv4Handler {
                             if std::mem::take(dns_unreachable) {
                                 crate::host_log::out(DNS_REACHABLE_LINE);
                             }
+                            // One answer per query: Windows asks each one from a new port, so
+                            // answered flows kept 300 s filled the flow table and pushed out
+                            // the VPN, call or game flows that were really in use.
+                            answered.push(*key);
+                            break;
                         } else {
                             stats.udp_datagrams_out = stats.udp_datagrams_out.saturating_add(1);
                         }
@@ -445,6 +454,9 @@ impl HostSocketOutboundIpv4Handler {
                     }
                 }
             }
+        }
+        for key in self.dns_answered_scratch.drain(..) {
+            self.udp_flows.remove(&key);
         }
     }
 
