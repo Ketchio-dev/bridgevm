@@ -9,6 +9,7 @@ enum HvfMediaImport {
         helper: URL, fileManager: FileManager = .default,
         converting: @escaping (HvfImportedDiskFormat, Int) -> Void = { _, _ in }
     ) throws {
+        if HvfMediaSourceHolder.othersHaveOpen(disk) { throw HvfMediaSourceHolder.InUse() }
         let workspace = try fileManager.url(
             for: .itemReplacementDirectory, in: .userDomainMask,
             appropriateFor: toDisk.deletingLastPathComponent(), create: true)

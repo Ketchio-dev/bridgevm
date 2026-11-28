@@ -36,6 +36,7 @@ enum WindowsFileFailureFeedback {
             return "The disk import tool could not start. Reinstall BridgeVM or rebuild the app if you built it from source."
         }
         if isImportOutOfSpace(error) { return importingOutOfSpace }
+        if error is HvfMediaSourceHolder.InUse { return importingInUse }
         // The helper's writer-lease refusal (snapshot_pair.rs writer_refusal), also matched by the snapshot UI.
         let ns = error as NSError
         if ns.domain == "BridgeVM.MediaImport", ns.localizedDescription.contains("media is in use by a running VM") {
