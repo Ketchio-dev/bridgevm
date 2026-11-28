@@ -94,6 +94,9 @@ All notable changes to BridgeVM are documented in this file.
 - Renaming, moving or deleting the shared folder in Windows no longer
   deletes the files in the Mac folder at the next Mac change; folder sync
   pauses and says so until the Windows folder is back.
+- Windows shows the right time from the start of each boot, at the
+  sign-in screen and during Setup too, instead of being off by the Mac's
+  time-zone offset until someone signs in.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.

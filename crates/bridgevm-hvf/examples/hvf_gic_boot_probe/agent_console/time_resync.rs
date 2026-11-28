@@ -11,10 +11,12 @@
 //! command is sent. The command is fixed text plus that one integer.
 //!
 //! The same resync runs once at each boot's first service start. Windows reads
-//! the RTC as local time, and the PL031 starts at UTC, so in any zone but UTC
+//! the RTC as local time, and the PL031 started at UTC, so in any zone but UTC
 //! (new installs take the Mac's) Windows' clock came up off by the zone offset
 //! at every boot. Measured live: Korea 9 h behind, Eastern 4 h ahead (daylight
-//! time), until a host sleep or W32Time's weekly sync.
+//! time), until a host sleep or W32Time's weekly sync. The PL031 now starts at
+//! the Mac's local time (pl031/epoch.rs); this resync still covers a Windows
+//! zone that differs from the Mac's and the time before it.
 
 use super::*;
 use std::time::{SystemTime, UNIX_EPOCH};
