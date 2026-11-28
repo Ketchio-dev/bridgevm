@@ -6,6 +6,7 @@ struct LibraryDashboardActionBar: View {
     let open: () -> Void
     let showAdvanced: () -> Void
     var showSettings: (() -> Void)?
+    /// Checks the VM process and reads the library again: "Refresh the library" messages mean this.
     let refresh: () -> Void
     var clone: (() -> Void)?
     var cloneDisabled = false

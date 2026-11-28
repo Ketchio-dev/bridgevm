@@ -16,7 +16,8 @@ struct LibraryDashboardRuntimeControls: View {
             LibraryDashboardActionBar(runtimeActive: runtimeActive,
                 lifecycleBusy: session.runtimeStartupWorkerPending || library.fileOperationTitle(for: config.slug) != nil,
                 open: { LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library) },
-                showAdvanced: showAdvanced, showSettings: showSettings, refresh: model.refresh,
+                showAdvanced: showAdvanced, showSettings: showSettings,
+                refresh: { model.refresh(); library.reload() },
                 clone: { presentation?.wrappedValue.cloneSource = library.requestWindowsClone(config) },
                 cloneDisabled: runtimeActive || library.cloningSlugs.contains(config.slug))
             HStack(alignment: .top, spacing: 8) {

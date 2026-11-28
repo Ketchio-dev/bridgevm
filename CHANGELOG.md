@@ -61,6 +61,21 @@ All notable changes to BridgeVM are documented in this file.
 - A VPN tunnel or call running in Windows over UDP recovers after the Mac
   switches networks. Its traffic kept going to a connection tied to the old
   network, so it stayed dead for as long as Windows kept sending.
+- More Actions > Refresh on a VM's page now also reads the library again, as
+  messages that say "Refresh the library" expect. Before, it only checked
+  whether the VM was running.
+- Command-N now opens New VM in the library window, bringing that window back
+  if you closed it. Before, it opened a second library window. The Window menu
+  also has a Library item that brings the library back while a VM window is
+  open.
+- The Delete dialog no longer tells you to shut the VM down first. BridgeVM
+  already refuses to delete a running VM and tells you why.
+- If BridgeVM can't archive a deleted VM's vTPM key, the warning now says to
+  give a new VM a different name, instead of asking you to choose a VM ID that
+  BridgeVM never lets you choose.
+- When a running VM leaves the library, the page that keeps its controls now
+  lists guest agent events as readable lines instead of internal program
+  output.
 - When Windows Setup fails during installation, BridgeVM now says "Windows Setup
   didn't finish. Choose Try Again." instead of showing the path to a log file
   that Try Again deletes. The log's location is still in the installation log.

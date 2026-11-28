@@ -31,7 +31,8 @@ enum LibraryDeletionKeyArchive {
         guard case let .failed(reason) = archive else { return LibraryDeletionResult(outcome: .deleted) }
         NSLog("Could not archive the deleted VM’s vTPM key: %@", reason)
         return LibraryDeletionResult(outcome: .deleted, warning: "BridgeVM deleted \(config.name) but could not archive its vTPM key. "
-            + "The key may still be attached to VM ID '\(config.slug)'. Reusing that ID could reuse the key or "
-            + "prevent a vTPM recovery import. Choose a different VM ID until the old key is archived.")
+            + "The key may still be attached to VM ID '\(config.slug)'. A new VM that gets the same ID, such as one "
+            + "with the same name, could reuse the key or prevent a vTPM recovery import. "
+            + "Give a new VM a different name until the old key is archived.")
     }
 }
