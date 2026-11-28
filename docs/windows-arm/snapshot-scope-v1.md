@@ -4,7 +4,8 @@ Status: **owner-approved for V1** (2026-07-30).
 
 In current source builds, shut down Windows and open **Settings → Snapshots**
 for the saved VM. Enter a name if you want one, then choose **Create Snapshot**
-to save the Windows disk and its matching boot settings.
+to save the Windows disk and its matching boot settings. The VM's TPM is not
+part of a snapshot, so restoring one leaves the TPM as it is now.
 
 ## Decision
 

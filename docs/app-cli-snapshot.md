@@ -9,7 +9,8 @@ bridgevm app snapshot-export dev-vm /Volumes/Backup/dev-vm.snapshot --json
 Use the exact ID from `bridgevm app list`. These commands operate only on a
 saved, installed own-HVF Windows VM. Installation-pending and unsupported VM
 entries are refused. The snapshot contains the VM's current NVMe disk and
-matching UEFI variable store as one managed pair. Create and export both resolve
+matching UEFI variable store as one managed pair; the VM's TPM state is not part
+of it, and a restore leaves it unchanged. Create and export both resolve
 the selected managed generation, so an export after restore cannot silently copy
 stale logical originals. Export atomically publishes `disk.raw`, `vars.fd`, and
 `manifest.json`, whose hashes are computed from the copied files.
