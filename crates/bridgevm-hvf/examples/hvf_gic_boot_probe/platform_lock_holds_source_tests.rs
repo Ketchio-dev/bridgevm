@@ -62,6 +62,13 @@ fn every_lock_site_beside_the_tick_holds_through_the_record() {
         (count(service, drain), count(service, "lock_platform(")),
         (1, 1)
     );
+    // The UEFI vars saver's one acquisition: the change count and bank copy.
+    let autosave = include_str!("vars_autosave.rs");
+    let copy = "lock_platform(platform, None, 0, HoldSite::VarsAutosave)";
+    assert_eq!(
+        (count(autosave, copy), count(autosave, "lock_platform(")),
+        (1, 1)
+    );
     let tick = include_str!("hda_service_tick.rs");
     let port = "service_once(&self.platform, &PLATFORM_HOLDS, &mut self.memory, now)";
     assert_eq!(count(tick, port), 1);
