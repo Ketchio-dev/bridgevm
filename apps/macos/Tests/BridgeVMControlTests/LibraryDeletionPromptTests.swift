@@ -6,7 +6,6 @@ import XCTest
 /// managed bundle behind a stale saved absolute path is the entry's
 /// `bundle.vmbridge`, never the stale path a user would check and find empty.
 final class LibraryDeletionPromptTests: XCTestCase {
-    private let guidance = "Shut down the VM before continuing."
     private let engines = [("fast-vz", "fast"), ("hvf-engine", "win")]
 
     private func scratch() -> (temp: URL, root: URL) {
@@ -29,7 +28,7 @@ final class LibraryDeletionPromptTests: XCTestCase {
         let prompt = LibraryDeletionPrompt(config: cfg, rootURL: root)
         XCTAssertEqual(prompt.confirmTitle, "Delete \(cfg.name) and Its Disk", engine)
         XCTAssertEqual(prompt.message,
-                       "\(guidance) This permanently deletes the VM settings and the virtual disk at \(path).", engine)
+                       "This permanently deletes the VM settings and the virtual disk at \(path).", engine)
     }
 
     func testStaleSavedPathNamesTheEntryBundleThatDeletionRemoves() throws {
@@ -71,7 +70,7 @@ final class LibraryDeletionPromptTests: XCTestCase {
             let prompt = LibraryDeletionPrompt(config: cfg, rootURL: root)
             XCTAssertEqual(prompt.confirmTitle, "Remove \(slug) from Library", engine)
             XCTAssertEqual(prompt.message,
-                           "\(guidance) This removes the VM from your library. Its virtual disk stays in the external bundle at \(external.path).", engine)
+                           "This removes the VM from your library. Its virtual disk stays in the external bundle at \(external.path).", engine)
         }
     }
 

@@ -22,7 +22,10 @@ struct BridgeVMControlApp: App {
         // Files opened from Finder or the Dock go to ControlAppDelegate, never to a new library window.
         .handlesExternalEvents(matching: [])
         #if canImport(AppKit)
-        .commands { HvfVirtualMachineCommands() }
+        .commands {
+            ControlLibraryCommands()
+            HvfVirtualMachineCommands()
+        }
         #endif
     }
 }

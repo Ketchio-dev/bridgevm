@@ -14,6 +14,22 @@ struct LibraryWindowPresentation {
     }
 }
 
+/// File > New VM… asks here; the library window opens Create once it is on screen.
+@MainActor
+final class LibraryWindowRequests: ObservableObject {
+    static let shared = LibraryWindowRequests()
+    @Published var createRequested = false
+
+    /// Opens Create unless a Create or Duplicate sheet is already open, so a filled-in form stays.
+    func take(into presentation: inout LibraryWindowPresentation) {
+        guard createRequested else { return }
+        createRequested = false
+        if case .create = presentation.sheet { return }
+        guard presentation.cloneSource == nil else { return }
+        presentation.sheet = .create(installer: nil)
+    }
+}
+
 private struct LibraryWindowPresentationKey: EnvironmentKey {
     static let defaultValue: Binding<LibraryWindowPresentation>? = nil
 }

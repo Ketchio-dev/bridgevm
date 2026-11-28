@@ -10,7 +10,7 @@ struct LibraryDashboardUnavailableRuntimeControls: View {
         VStack(alignment: .leading, spacing: 8) {
             LibraryDashboardActionBar(runtimeActive: model.running, lifecycleBusy: false,
                 open: { LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library) },
-                showAdvanced: showAdvanced, refresh: model.refresh)
+                showAdvanced: showAdvanced, refresh: { model.refresh(); library.reload() })
             if model.running {
                 Button("Stop", systemImage: "stop.fill") {
                     LibraryDashboardPrimaryAction.stop(config: config, model: model, library: library)

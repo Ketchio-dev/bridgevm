@@ -76,6 +76,8 @@ final class LibraryDeletionKeyArchiveTests: XCTestCase {
         let warning = try XCTUnwrap(result.warning)
         XCTAssertTrue(warning.contains("could not archive its vTPM key"), warning)
         XCTAssertTrue(warning.contains("'\(installed.slug)'"), warning)
+        // People name VMs; BridgeVM makes the ID from the name.
+        XCTAssertTrue(warning.hasSuffix("Give a new VM a different name until the old key is archived."), warning)
         XCTAssertFalse(f.fm.fileExists(atPath: f.entry.path))
         XCTAssertEqual(store.keys, [installed.slug: key])
         XCTAssertFalse(store.calls.contains("delete \(installed.slug)"))
