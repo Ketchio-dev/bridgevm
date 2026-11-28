@@ -64,7 +64,7 @@ final class HvfWindowsInstallCommittedCleanupRelocationTests: XCTestCase {
         XCTAssertTrue(library.movingSlugs.isEmpty)
         XCTAssertEqual(backend.calls, .init(), "refused before a liveness probe")
         let message = try XCTUnwrap(library.moveError)
-        XCTAssertEqual(message, "BridgeVM is still cleaning up an earlier Windows installation for this VM. Choose Refresh, then try to move it again.")
+        XCTAssertEqual(message, "BridgeVM is still cleaning up an earlier Windows installation for this VM. Press Command-K in the library window and choose Refresh Library, then try to move it again.")
         XCTAssertTrue(fm.fileExists(atPath: f.paths.journal.path))
 
         // A clone would copy the journal, which then fails validation at its new path.
@@ -73,6 +73,6 @@ final class HvfWindowsInstallCommittedCleanupRelocationTests: XCTestCase {
         XCTAssertTrue(library.cloningSlugs.isEmpty)
         XCTAssertEqual(backend.calls, .init(), "refused before a liveness probe")
         let cloneMessage = try XCTUnwrap(library.cloneError)
-        XCTAssertEqual(cloneMessage, "BridgeVM is still cleaning up an earlier Windows installation for this VM. Choose Refresh, then try to duplicate it again.")
+        XCTAssertEqual(cloneMessage, "BridgeVM is still cleaning up an earlier Windows installation for this VM. Press Command-K in the library window and choose Refresh Library, then try to duplicate it again.")
     }
 }

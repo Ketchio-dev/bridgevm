@@ -21,7 +21,7 @@ struct CommandPaletteView: View {
         var c = library.selectedPaletteCommands { dismiss() }
         c.append(.init(id: "create", title: "New Windows VM", subtitle: "Create a Windows 11 virtual machine", systemImage: "plus", action: createAction))
         c.append(.init(id: "pro-mode", title: library.proMode ? "Stop Comparing VMs" : "Compare VMs", subtitle: library.proMode ? "Return to the standard library" : "Compare VM configurations in a table", systemImage: "tablecells") { library.proMode.toggle(); dismiss() })
-        c.append(.init(id: "reload-library", title: "Reload Library", subtitle: "Refresh saved VMs from disk",
+        c.append(.init(id: "reload-library", title: "Refresh Library", subtitle: "Read saved VMs from disk again",
                        systemImage: "arrow.clockwise") {
             library.reload()
             dismiss()

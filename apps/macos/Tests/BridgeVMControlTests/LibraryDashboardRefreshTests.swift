@@ -18,7 +18,7 @@ final class LibraryDashboardRefreshTests: XCTestCase {
         XCTAssertEqual(library.selectedID, "a", "the last VM's: the one before it")
     }
 
-    /// Several messages say "Refresh the library"; More Actions > Refresh is the button they mean,
+    /// More Actions > Refresh Library has the name of the palette command that messages point to,
     /// so it reads the saved VMs again, not only the VM process.
     func testMoreActionsRefreshReadsTheLibraryAgainInBothActionBars() throws {
         let f = try LibraryDashboardNavigationFixture()

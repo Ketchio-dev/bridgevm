@@ -46,7 +46,7 @@ final class NativeCLISnapshotCancelTests: XCTestCase {
             XCTAssertEqual(json["complete"] as? Bool, false)
             XCTAssertEqual(json["cancelSignal"] as? Int, Int(number))
             XCTAssertEqual(json["unavailableReason"] as? String,
-                           "Cancelled; the VM's disk and UEFI vars are either unchanged or fully restored from the snapshot.")
+                           "Canceled; the VM's disk and UEFI vars are either unchanged or fully restored from the snapshot.")
         }
     }
 

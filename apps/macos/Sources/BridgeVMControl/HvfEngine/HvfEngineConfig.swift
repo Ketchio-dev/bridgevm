@@ -255,15 +255,14 @@ struct HvfWindowsReadinessReport: Equatable {
     let productLimitations: [String]
 
     var launchReady: Bool { !issues.contains { $0.scope == .launch } }
-    var releaseReady: Bool { launchReady && !issues.contains { $0.scope == .release } }
     var launchBlockers: [HvfWindowsReadinessIssue] { issues.filter { $0.scope == .launch } }
     var releaseBlockers: [HvfWindowsReadinessIssue] { issues.filter { $0.scope == .release } }
 }
 
 extension HvfEngineConfig {
     /// Fail-closed launch checks plus deliberately separate product-release
-    /// blockers. A development VM may launch without claiming that the custom
-    /// Windows HVF path is production ready.
+    /// blockers, which only `bridgevm app readiness` reports. A development VM
+    /// may launch without claiming that the custom Windows HVF path is production ready.
     func readiness(
         repoRoot: URL,
         fileManager: FileManager = .default
