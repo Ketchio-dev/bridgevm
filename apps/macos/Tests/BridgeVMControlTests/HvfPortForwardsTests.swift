@@ -47,6 +47,13 @@ final class HvfPortForwardsTests: XCTestCase {
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
         XCTAssertTrue(session.applyPortForwards("8080:80, 8080:8080") == ("8080:80, 8080:8080", HvfPortForwards.repeatedMessage))
         XCTAssertNil(library.latestConfiguration(for: saved).portForwards)
+        // 80:80 was saved, then the VMM couldn't open Mac port 80 and the notice blamed another app.
+        XCTAssertTrue(session.applyPortForwards("8080:80, 443:443") == ("8080:80, 443:443", HvfPortForwards.reservedMessage))
+        XCTAssertNil(library.latestConfiguration(for: saved).portForwards)
+        session.handle(.unknown("BVNET forward-off host=80 guest=80"))
+        XCTAssertEqual(session.portForwardNotice.text,
+            "Mac port 80 doesn’t reach Windows port 80 because macOS keeps ports below 1024 for itself. Choose a Mac port from 1024 up in Settings, then restart Windows.")
+        session.resetObservedRuntimeState(clearEvents: false)
 
         // The line net_nat/port_forward.rs forward_off_line writes (its test checks the same text).
         for line in ["BVNET forward-off host=8080 guest=80", "BVNET forward-off host=8080 guest=80\r"] {
