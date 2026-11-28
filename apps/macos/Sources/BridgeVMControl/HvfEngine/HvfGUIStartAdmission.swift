@@ -23,6 +23,7 @@ extension HvfEngineSession {
            let refusal = workAdmissionGate.check(workAdmission, reportRefusal: true) { return .refused(refusal) }
         let ticket = HvfGUIStartOperation(configuration: configuration)
         guiStartOperation = ticket
+        displayDriverRestartNote = nil
         guiStartCleanupOnly = false
         // Published configuration can synchronously call observers; the ticket already owns admission.
         config = configuration

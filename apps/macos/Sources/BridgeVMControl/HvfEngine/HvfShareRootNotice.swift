@@ -13,6 +13,8 @@ final class HvfShareRootNotice: ObservableObject {
     /// Windows files left on the guest because the Mac had too little space for them, until they
     /// arrive.
     @Published private(set) var lowSpace: HvfShareLowSpace?
+    /// Why the Mac refused the last file from Windows, until one arrives again.
+    @Published private(set) var writeRefused: HvfShareWriteRefused?
     /// The shared folder's name when its Mac folder was missing at Start: the VM started with the share,
     /// and the runtime shares the folder once it appears (`root-state ready`). A guest restart clears it;
     /// the next boot reports a still missing folder as blocked.
@@ -44,6 +46,8 @@ final class HvfShareRootNotice: ObservableObject {
             } else if let skip = HvfShareTooLarge.skip(in: line) {
                 tooLarge = HvfShareTooLarge(count: (tooLarge?.count ?? 0) + 1, last: skip.name,
                                             limit: skip.limit, fromWindows: skip.fromWindows)
+            } else if let refusal = HvfShareWriteRefused(line: line) {
+                if writeRefused != refusal { writeRefused = refusal }
             } else if let name = HvfShareLowSpace.name(in: line) {
                 lowSpace = lowSpace?.reported(name) ?? HvfShareLowSpace(name)
             } else if let file = BvAgentEvent.shareFile(in: line, after: "BVAGENT SHARE transfer-done guest->host ") {
@@ -80,6 +84,7 @@ final class HvfShareRootNotice: ObservableObject {
 
     /// `name` reached the Mac. Every synced file says so: only a waiting one changes the notice.
     private func arrived(_ name: String) {
+        if writeRefused != nil { writeRefused = nil }
         guard let lowSpace, lowSpace.isWaiting(for: name) else { return }
         self.lowSpace = lowSpace.arrived(name)
     }
@@ -94,6 +99,7 @@ final class HvfShareRootNotice: ObservableObject {
         if tooLarge != nil { tooLarge = nil }
         if lastRecoveredCopy != nil { lastRecoveredCopy = nil }
         if lowSpace != nil { lowSpace = nil }
+        if writeRefused != nil { writeRefused = nil }
     }
 
     private func update(_ blocked: Bool) {

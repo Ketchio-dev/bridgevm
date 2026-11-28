@@ -40,6 +40,7 @@ struct HvfSharedFolderSettings: View {
                 HStack {
                     Text("Windows folder").frame(width: 92, alignment: .leading)
                     TextField("C:\\bridgevm-share", text: $guestDir)
+                        .accessibilityLabel("Windows folder")
                         .textFieldStyle(.roundedBorder)
                         .font(.body.monospaced()).accessibilityIdentifier("bridgevm.runtime.share.guest")
                         .focused($focusedField, equals: .guest)

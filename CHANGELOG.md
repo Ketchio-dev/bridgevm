@@ -65,6 +65,19 @@ All notable changes to BridgeVM are documented in this file.
   Settings now says to wait for it instead of asking you to shut down a
   Windows that is already off. The snapshot list no longer keeps showing the
   last result, such as "Snapshot restored", after Windows starts again.
+- When the Mac refuses to save files coming from Windows through the shared
+  folder, for example because the folder is read-only or on a network drive,
+  BridgeVM now says so and what to do. Before, those files just never appeared
+  on the Mac.
+- Restart Now, shown after installing the display driver, no longer shuts
+  Windows down and leaves it off when Settings is open for that VM. It now asks
+  you to close Settings first, and if Windows still can't start again it says
+  why.
+- Windows' volume slider and mute button now change the VM's sound. Before,
+  Windows always played at full volume, and only the Mac's volume worked.
+- A VM window whose Windows has shut down, or failed to start, now has a
+  Start Windows button. Before, it offered only Close Window and Open
+  Library.
 - When VMs running at the same time together use more memory than your Mac can
   spare, each of them now says so in one sentence and suggests stopping one or
   giving the VMs less memory in Settings. Before, macOS just started swapping
