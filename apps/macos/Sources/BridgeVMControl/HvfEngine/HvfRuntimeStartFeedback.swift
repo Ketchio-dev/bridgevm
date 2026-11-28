@@ -51,8 +51,10 @@ extension HvfRuntimeStartOutcome {
         case let .refused(reason): return reason
         case let .failed(stage, detail):
             switch stage {
-            case .keyAccessDenied:
+            case .keyAccessLocked:
                 return "Unlock your login keychain and try starting Windows again."
+            case .keyAccessDenied:
+                return "BridgeVM needs permission to use this VM’s security key. Start Windows again, enter your Mac password and choose Always Allow."
             case .keyStateMissing:
                 return "To recover the missing key for this VM’s security data, restore your login keychain from a backup."
             case .keyStateInvalid:

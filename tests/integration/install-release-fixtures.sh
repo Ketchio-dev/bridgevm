@@ -26,12 +26,16 @@ write_sums() { # $1: asset dir
   (cd "$1" && shasum -a 256 "$TARBALL" "$RELEASE_MANIFEST" > SHA256SUMS)
 }
 
+make_metadata() { # $1: asset dir
+  python3 tests/integration/make-install-release-metadata.py "$1" "$VERSION" \
+    "$TARBALL" "$RELEASE_MANIFEST" "$(printf 'a%.0s' {1..40})"
+}
+
 make_assets() { # $1: asset dir, $2: dir containing BridgeVM.app
   mkdir -p "$1"; tar -czf "$1/$TARBALL" -C "$2" "BridgeVM.app"
   make_manifest "$1"
   write_sums "$1"
-  python3 tests/integration/make-install-release-metadata.py "$1" "$VERSION" \
-    "$TARBALL" "$RELEASE_MANIFEST" "$(printf 'a%.0s' {1..40})"
+  make_metadata "$1"
 }
 
 run_installer() { # $1: asset dir, $2: destination, then installer options

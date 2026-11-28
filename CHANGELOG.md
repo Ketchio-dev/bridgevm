@@ -43,6 +43,26 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- The terminal installer works on a Mac without the Xcode Command Line Tools.
+  It used to call Python and `lipo`, which on such a Mac only open the "install
+  developer tools" dialog, so it failed or wrongly said the app was not Apple
+  Silicon native. It now uses only tools that come with macOS, and every check
+  it makes is as strict as before.
+- The installer no longer replaces BridgeVM while BridgeVM or one of its VMs is
+  running. It stops before downloading and asks you to shut down your VMs and
+  quit BridgeVM first. Before, the old app kept running on top of the new
+  app's files, and `--launch` only brought that old app to the front.
+- `curl … | bash` run inside an older BridgeVM source folder no longer picks up
+  that folder's installer and fails with misleading advice. If the downloaded
+  installer does not match, the message now says so and suggests trying again in
+  a few minutes.
+- When GitHub can't be reached or rate-limits the newest-release lookup, the
+  installer says so in one sentence instead of printing a Python traceback.
+- The installers accept an Apple Silicon Mac when they are run from a Rosetta
+  shell, such as an Intel Homebrew bash.
+- The install guide no longer says Open Anyway is needed only once: each newly
+  downloaded DMG version is blocked again on its first launch. The guide now
+  also covers updating a DMG install.
 - A Windows connection that BridgeVM has to drop, because Windows opened more
   than 256 at once or a closing connection sat idle, now fails at once in the
   Windows app instead of hanging until Windows gives up on its own.
@@ -59,6 +79,11 @@ All notable changes to BridgeVM are documented in this file.
   not be removed from disk. BridgeVM still keeps the VM's folder when it holds a
   snapshot or any file BridgeVM didn't write, and after a delete that fails the
   library now shows what is still on disk.
+- Installing the display driver no longer pins the shared folder to Quick
+  Access in Windows Explorer again after you unpinned it, and no longer leaves
+  a `BridgeVM.unlocked-…` folder in `C:\ProgramData`. Before, BridgeVM kept its
+  note that it had already pinned the folder in a place the driver install
+  moves aside.
 - Moving a VM whose files are on a disconnected drive now says "BridgeVM can't
   find this VM's files. Connect the drive that holds them, then try again."
   before it asks for a folder, and Show in Finder says the same. Before, Move
@@ -71,6 +96,11 @@ All notable changes to BridgeVM are documented in this file.
   now stops too, within a few seconds. Before, the installer VM kept running
   unseen with 4 GB of memory, and trying the installation again started a
   second one next to it.
+- If you choose Deny or Cancel when macOS asks for your Mac password at Start,
+  which can happen the first time after a BridgeVM update, BridgeVM now says it
+  needs permission to use the VM's security key and to choose Always Allow
+  next time. Before, it told you to unlock your login keychain, which was
+  already unlocked. A locked keychain still asks you to unlock it.
 - A Windows VM can start again after its VM process was killed or crashed. The
   VM's TPM helper kept running on its own and held the VM's TPM state, so every
   later start failed until you restarted the Mac. Start now stops that leftover
@@ -91,6 +121,10 @@ All notable changes to BridgeVM are documented in this file.
 - More Actions > Refresh on a VM's page now also reads the library again, as
   messages that say "Refresh the library" expect. Before, it only checked
   whether the VM was running.
+- Copying a large file or folder in Finder, or a large file arriving in a shared folder, no longer
+  fills the Windows disk to zero: Windows now keeps 2 GB free, as the Mac side already does.
+  Files copied in Finder also no longer pile up in Windows' Temp folder; only the current and the
+  previous copy are kept, not the last four.
 - Command-N now opens New VM in the library window, bringing that window back
   if you closed it. Before, it opened a second library window. The Window menu
   also has a Library item that brings the library back while a VM window is

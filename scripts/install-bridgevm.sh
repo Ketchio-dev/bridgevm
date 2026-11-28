@@ -48,8 +48,11 @@ while [[ $# -gt 0 ]]; do
 done
 log() { [[ $VERBOSE -eq 1 ]] && echo "install: $*" >&2 || true; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
+# Use only tools every macOS ships with. On a Mac without the developer tools,
+# several commands in /usr/bin are stubs that open an install dialog and fail.
 if [[ -z "${BRIDGEVM_INSTALL_ASSET_DIR:-}" ]]; then
-  [[ "$(uname -s)/$(uname -m)" == "Darwin/arm64" ]] ||
+  # Unlike uname -m, this still reports Apple Silicon from a Rosetta shell.
+  [[ "$(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null)" == 1 ]] ||
     fail "BridgeVM runs Windows 11 ARM on Apple Silicon Macs only"
 fi
 work=$(mktemp -d); backup=""; install_stage=""
@@ -66,19 +69,63 @@ cleanup() {
   rm -rf "$work"
 }
 trap cleanup EXIT
+# JSON is read with JavaScript for Automation. Any unreadable or unexpected
+# JSON prints nothing, which every caller treats as a refusal.
+cat > "$work/json.js" <<'JS'
+ObjC.import("Foundation")
+const read = (path) => JSON.parse(
+  $.NSString.stringWithContentsOfFileEncodingError(path, $.NSUTF8StringEncoding, null).js)
+const assetNames = (release) => (release.assets || []).map((asset) => asset.name)
+const queries = {
+  // The newest non-draft, non-prerelease release carrying the contract.
+  newest(releases) {
+    for (const release of read(releases)) {
+      if (!release.draft && !release.prerelease &&
+          assetNames(release).includes("BridgeVM-release.json")) return release.tag_name
+    }
+    return ""
+  },
+  contract(releasePath, commitPath, manifestPath, version, tarball) {
+    const release = read(releasePath), commit = read(commitPath), manifest = read(manifestPath)
+    const assets = assetNames(release), graphics = manifest.windows_graphics || {}
+    const ok = release.tag_name === version && !release.draft && !release.prerelease &&
+      ["BridgeVM-release.json", "SHA256SUMS", tarball].every((name) => assets.includes(name)) &&
+      typeof commit.sha === "string" && /^[0-9a-f]{40}$/.test(commit.sha) &&
+      manifest.schema_version === 1 && manifest.project === "BridgeVM" &&
+      manifest.version === version && manifest.channel === "general-preview" &&
+      manifest.product_state === "ENGINEERING_PREVIEW" &&
+      manifest.source_commit === commit.sha &&
+      graphics.kernel_driver_included === false && graphics.test_signing_required === false &&
+      graphics.product_injection_available === false &&
+      graphics.install_mode === "3d-off"
+    return ok ? "ok" : ""
+  },
+}
+function run([query, ...args]) {
+  try { return queries[query](...args) } catch (error) { return "" }
+}
+JS
+json() { /usr/bin/osascript -l JavaScript "$work/json.js" "$@"; }
+# Replacing the bundle under a running app or VM would leave it running the
+# new bundle's helpers. Match any process started from inside the bundle.
+refuse_if_running() {
+  local physical processes
+  physical=$(cd "$DEST" 2>/dev/null && pwd -P) || return 0
+  processes=$(ps -axww -o command=) || fail "could not list running processes"
+  if grep -Fq -e "$final_app/Contents/" -e "$physical/$EXPECTED_APP/Contents/" <<<"$processes"; then
+    fail "BridgeVM is running. Shut down your VMs, quit BridgeVM, then run the installer again."
+  fi
+}
+[[ $DRY_RUN -eq 1 ]] || refuse_if_running
 # Resolve only a non-prerelease carrying the General Preview contract.
 if [[ -z "$VERSION" ]]; then
   if [[ -n "${BRIDGEVM_INSTALL_ASSET_DIR:-}" ]]; then
     VERSION="${BRIDGEVM_INSTALL_VERSION:?test fixture must pin a version}"
   else
-    VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=20" |
-      /usr/bin/python3 -c 'import json,sys
-for release in json.load(sys.stdin):
-    assets = {asset.get("name") for asset in release.get("assets", [])}
-    if not release.get("draft") and not release.get("prerelease") and "BridgeVM-release.json" in assets:
-        print(release["tag_name"]); break
-else:
-    raise SystemExit("no verified general-preview release is published")')
+    curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=20" -o "$work/github-releases.json" ||
+      fail "Couldn't reach GitHub to find the newest release. Check your connection, wait a few minutes, or pass --version vX.Y.Z."
+    VERSION=$(json newest "$work/github-releases.json") || VERSION=""
+    [[ -n "$VERSION" ]] || fail "no verified general-preview release is published"
   fi
 fi
 [[ "$VERSION" =~ ^v[0-9]+(\.[0-9]+){2}([.-][0-9A-Za-z]+)*$ ]] ||
@@ -113,24 +160,8 @@ verify_checksum() {
   log "checksum verified: $name $actual"
 }
 verify_checksum "$RELEASE_MANIFEST"; verify_checksum "$TARBALL"
-/usr/bin/python3 - "$release_json" "$commit_json" "$work/$RELEASE_MANIFEST" \
-  "$VERSION" "$TARBALL" <<'PY' ||
-import json, re, sys
-release, commit, manifest = (json.load(open(path)) for path in sys.argv[1:4])
-assets = {item.get("name") for item in release.get("assets", [])}
-graphics = manifest.get("windows_graphics", {})
-ok = (release.get("tag_name") == sys.argv[4] and not release.get("draft") and not release.get("prerelease") and
-      {"BridgeVM-release.json", "SHA256SUMS", sys.argv[5]} <= assets and
-      re.fullmatch(r"[0-9a-f]{40}", commit.get("sha", "")) and
-      manifest.get("schema_version") == 1 and manifest.get("project") == "BridgeVM" and
-      manifest.get("version") == sys.argv[4] and manifest.get("channel") == "general-preview" and
-      manifest.get("product_state") == "ENGINEERING_PREVIEW" and
-      manifest.get("source_commit") == commit.get("sha") and
-      graphics.get("kernel_driver_included") is False and graphics.get("test_signing_required") is False and
-      graphics.get("product_injection_available") is False and
-      graphics.get("install_mode") == "3d-off")
-raise SystemExit(0 if ok else "release is not a fail-closed general preview")
-PY
+[[ "$(json contract "$release_json" "$commit_json" "$work/$RELEASE_MANIFEST" \
+  "$VERSION" "$TARBALL")" == ok ]] ||
   fail "$VERSION is not a published, commit-bound General Preview"
 while IFS= read -r entry; do
   case "$entry" in
@@ -147,17 +178,12 @@ entries=$(find "$stage" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')
   fail "archive must contain exactly one $EXPECTED_APP bundle"
 # Symlinks may point only inside the bundle: an escaping link would turn the
 # post-install copy or a later signature check into a read/write elsewhere.
-/usr/bin/python3 - "$stage" <<'EOF' || fail "archive contains a symlink escaping the bundle"
-import os, sys
-stage = os.path.realpath(sys.argv[1])
-for root, dirs, files in os.walk(stage):
-    for name in dirs + files:
-        path = os.path.join(root, name)
-        if os.path.islink(path):
-            target = os.path.realpath(path)
-            if not (target + os.sep).startswith(stage + os.sep):
-                raise SystemExit(f"escaping symlink: {path} -> {target}")
-EOF
+# A link that does not resolve is refused too.
+stage_real=$(/bin/realpath "$stage")
+while IFS= read -r -d '' link; do
+  target=$(/bin/realpath "$link" 2>/dev/null) && [[ "$target/" == "$stage_real/"* ]] ||
+    fail "archive contains a symlink escaping the bundle"
+done < <(find "$stage" -type l -print0)
 app="$stage/$EXPECTED_APP"
 codesign --verify --deep --strict "$app" ||
   fail "code signature verification failed for $EXPECTED_APP"
@@ -169,10 +195,8 @@ executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' \
   "$app/Contents/Info.plist" 2>/dev/null) || fail "bundle declares no executable"
 [[ -x "$app/Contents/MacOS/$executable" ]] ||
   fail "bundle executable is missing: $executable"
-if command -v lipo >/dev/null 2>&1; then
-  lipo -archs "$app/Contents/MacOS/$executable" 2>/dev/null |
-    grep -Eqw 'arm64e?' || fail "bundle executable is not Apple Silicon native"
-fi
+architectures=$(/usr/bin/file -b "$app/Contents/MacOS/$executable") &&
+  grep -Eqw 'arm64e?' <<<"$architectures" || fail "bundle executable is not Apple Silicon native"
 log "bundle verified: $bundle_id / $executable"
 if [[ $DRY_RUN -eq 1 ]]; then
   echo "dry run: $TARBALL verified (checksum, archive safety, signature," \
@@ -191,17 +215,14 @@ if [[ ! -e "$lock_path" && ! -L "$lock_path" ]]; then
 fi
 [[ -f "$lock_path" && ! -L "$lock_path" ]] || fail "could not create the installer lock file"
 exec 9<"$lock_path" || fail "could not open the installer lock file"
-/usr/bin/python3 - <<'PYLOCK'
-import fcntl
-import sys
-
-try:
-    fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
-except BlockingIOError:
-    sys.exit("Another BridgeVM installer is updating this destination. Try again after it finishes.")
-except OSError as error:
-    sys.exit(f"Could not lock the installation destination ({error.strerror}).")
-PYLOCK
+# flock(2) the descriptor this shell holds open (perl already backs shasum).
+/usr/bin/perl -MFcntl=:flock -e '
+  my $lock;
+  open($lock, "<&=", 9) && flock($lock, LOCK_EX | LOCK_NB) and exit 0;
+  die($!{EWOULDBLOCK}
+    ? "Another BridgeVM installer is updating this destination. Try again after it finishes.\n"
+    : "Could not lock the installation destination ($!).\n");' || exit 1
+refuse_if_running
 # Stage in an owned directory on the destination filesystem so the last move is a rename.
 install_stage=$(mktemp -d -- "$DEST/.$EXPECTED_APP.install-XXXXXX") ||
   fail "could not stage the app in $DEST"

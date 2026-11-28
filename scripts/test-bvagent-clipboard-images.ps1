@@ -269,8 +269,8 @@ try {
     # back. The agent builds its paths with '\', which macOS keeps in names: there the folder
     # tree is flat, so the nested entries and the older copy's folder are checked on Windows only.
     $win = [IO.Path]::DirectorySeparatorChar -eq '\'
-    # Older copies' folders, each last put on the clipboard some minutes ago: the newest 3 stay
-    # for a paste that may still read them.
+    # Older copies' folders, each last put on the clipboard some minutes ago: only the newest stays,
+    # for a paste that may still read it.
     $older = @{ '6' = 1; '5' = 20; '4' = 2; '3' = 3; '2' = 4 }
     foreach ($copy in $older.Keys) {
         $dir = $script:BvClipDir + '\files\' + $copy
@@ -314,7 +314,7 @@ try {
     if ($win) {
         $list += "1|0|0|0|$root\a folder\empty`n0|0|2|$(& $mtime "$root\a folder\inner.txt")|$root\a folder\inner.txt`n"
         $kept = @('6', '5', '4', '3', '2' | Where-Object { [IO.Directory]::Exists($script:BvClipDir + '\files\' + $_) })
-        Assert (($kept -join ',') -ceq '6,4,3') "the newest 3 older copies' folders stay: $kept"
+        Assert (($kept -join ',') -ceq '6') "only the newest older copy's folder stays: $kept"
     }
     $count = $list.Split("`n").Length - 1
     $want = 'CLIPXF 0 0 0 - - 0 - {0} {1} {2}' -f $count, [Convert]::ToBase64String($u8.GetBytes($list)), (B64 $names)
