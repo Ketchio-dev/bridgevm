@@ -92,6 +92,33 @@ final class FirstRunImportTransactionTests: XCTestCase {
         try fixture.assertSources()
     }
 
+    /// Another VM app running the VM holds its disk open; only BridgeVM's own lock was checked, so the import
+    /// copied a disk that was still being written.
+    func testDiskAnotherAppHasOpenIsRefusedByBothImportForms() throws {
+        let fixture = try FirstRunImportTransactionFixture()
+        defer { fixture.remove() }
+        let own = try FileHandle(forReadingFrom: fixture.disk)
+        defer { try? own.close() }
+        XCTAssertFalse(HvfMediaSourceHolder.othersHaveOpen(fixture.disk.path), "this app's own reads don't count")
+        let holder = Process()
+        holder.executableURL = URL(fileURLWithPath: "/bin/sh")
+        holder.arguments = ["-c", "exec 3<>\"$0\"; exec sleep 30", fixture.disk.path]
+        try holder.run()
+        defer { holder.terminate(); holder.waitUntilExit() }
+        let deadline = Date().addingTimeInterval(5)
+        while !HvfMediaSourceHolder.othersHaveOpen(fixture.disk.path), Date() < deadline { usleep(20_000) }
+        let result = FirstRunImportWorker.run(fixture.inputs(), libraryRoot: fixture.library,
+            snapshotHelper: HvfMediaImportTestSupport.helper)
+        guard case .failed(let message) = result else { return XCTFail("a disk another app has open must refuse: \(result)") }
+        XCTAssertEqual(message, "Shut down the VM that uses this disk, then import again.")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.entry.path))
+        guard case .refused(let sheet)? = VMLibrary.createWindowsHVF(name: "held", targetDiskPath: fixture.disk.path,
+            varsPath: fixture.vars.path, libraryRoot: fixture.library, persist: false,
+            snapshotHelper: HvfMediaImportTestSupport.helper) else { return XCTFail("the Create sheet must say why") }
+        XCTAssertEqual(sheet, message)
+        try fixture.assertSources()
+    }
+
     func testCommittedImportPersistsIndependentPairAndConfig() throws {
         let fixture = try FirstRunImportTransactionFixture()
         defer { fixture.remove() }

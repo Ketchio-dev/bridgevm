@@ -18,8 +18,10 @@ enum FirstRunImportStage: Equatable, Sendable {
         }
     }
 
+    /// Nil (the spinner) until the converter reports its first percent: a fixed VHD's copy reports none, and
+    /// its bar sat at 0% with nothing moving for as long as the copy took.
     var conversionFraction: Double? {
-        guard case let .converting(_, percent) = self else { return nil }
+        guard case let .converting(_, percent) = self, percent > 0 else { return nil }
         return Double(percent) / 100
     }
 

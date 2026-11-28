@@ -23,7 +23,9 @@ pub use host_wake::NET_RX_HOOK;
 pub use nat_stats::*;
 pub use packet::*;
 pub(crate) use port_forward::ForwardListener;
-pub use port_forward::{forwards_from_env, PortForward};
+pub use port_forward::{
+    forwards_from_env, parse_forwards, request_forwards, take_requested_forwards, PortForward,
+};
 pub use queued_outbound::*;
 pub(crate) use raw_socket::*;
 pub(crate) use reply_queue::{

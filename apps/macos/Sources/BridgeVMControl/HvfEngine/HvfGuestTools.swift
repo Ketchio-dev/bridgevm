@@ -29,9 +29,19 @@ enum HvfGuestTools {
 }
 
 extension HvfEngineSession {
+    /// Offered while the agent is missing, and also once an agent that ran here can't connect (an antivirus
+    /// took a file, the task was deleted): only a reinstall brings that back.
+    var offersGuestToolsInstall: Bool {
+        !serviceStarted && (agentSilenceNotice.shown == .missingTools || agentSilenceNotice.shown == .notConnected
+            || guestToolsMessage != nil)
+    }
+
     func prepareGuestTools() {
         guard !guestToolsPreparing, let image = HvfGuestTools.image(config) else { return }
         guestToolsPreparing = true
+        // The drive is attached only while no agent was seen here (attachment): a reinstall brings it back,
+        // and the next SERVICE start writes the marker again.
+        try? FileManager.default.removeItem(at: agentSeenMarker)
         let root = repoRoot
         Task {
             do {
@@ -85,7 +95,7 @@ struct HvfGuestToolsAction: View {
     }
 
     var body: some View {
-        if !session.serviceStarted, notice.shown == .missingTools || session.guestToolsMessage != nil {
+        if session.offersGuestToolsInstall {
             VStack(alignment: .leading, spacing: 6) {
                 if let text = session.guestToolsMessage { Text(text).font(.callout) }
                 Button("Install Guest Tools", action: session.prepareGuestTools)

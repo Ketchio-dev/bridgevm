@@ -36,6 +36,7 @@ enum WindowsFileFailureFeedback {
             return "The disk import tool could not start. Reinstall BridgeVM or rebuild the app if you built it from source."
         }
         if isImportOutOfSpace(error) { return importingOutOfSpace }
+        if error is HvfMediaSourceHolder.InUse { return importingInUse }
         // The helper's writer-lease refusal (snapshot_pair.rs writer_refusal), also matched by the snapshot UI.
         let ns = error as NSError
         if ns.domain == "BridgeVM.MediaImport", ns.localizedDescription.contains("media is in use by a running VM") {
@@ -62,13 +63,13 @@ enum WindowsFileFailureFeedback {
              "This QCOW2 disk is encrypted. Export a decrypted disk with qemu-img and import the result.",
              "This disk depends on a backing file. Export a standalone disk from the original VM app and import the copy.",
              "This QCOW2 stores data in a separate file. Export a standalone disk with qemu-img and import the result.",
-             "This QCOW2 uses extended L2 tables. Convert it to RAW with qemu-img and import the result.",
+             "This QCOW2 uses a layout BridgeVM can’t read yet. Convert it with qemu-img convert -O qcow2 in Terminal, then import the converted disk.",
              "This QCOW2 is still in use or was closed unexpectedly. Shut down the source VM cleanly and try again.",
              "This QCOW2 is marked as corrupt. Run qemu-img check on a duplicate and import the repaired disk.",
              "This VHDX has pending changes. Attach it in Windows, detach it cleanly, then try again.",
-             "Convert the dynamic VHD to a fixed-size VHD or VHDX in Hyper-V, then import the converted disk.",
-             "This differencing disk depends on a parent disk. Merge the chain in Hyper-V, then import the merged disk.",
-             "This VHDX uses 4 KB logical sectors. Import Windows from a disk that uses 512-byte logical sectors.",
+             "BridgeVM can’t read a dynamic VHD yet. Convert it with qemu-img convert -O qcow2 in Terminal, then import the converted disk.",
+             "This disk depends on a parent disk. Keep the parent next to it and convert it with qemu-img convert -O qcow2 in Terminal, then import the converted disk.",
+             "Windows on this VHDX expects 4 KB disk sectors, which BridgeVM can’t provide yet, so choose a different disk.",
              "Choose a disk with a virtual size of 16 TiB or less.":
             return detail
         case _ where detail.hasPrefix("This disk uses an unsupported feature ("):

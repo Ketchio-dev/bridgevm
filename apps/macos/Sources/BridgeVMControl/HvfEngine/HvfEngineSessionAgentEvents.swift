@@ -53,7 +53,7 @@ extension HvfEngineSession {
         case let .commandOutput(label, body):
             displayDriverReported(body)
             guestLinksSetupReported(body)
-            if label == HvfGuestPrint.watchCommand { printWatchReported(body) }
+            if label == HvfGuestPrint.watchCommand || label == HvfGuestPrint.offCommand { printWatchReported(body) }
         case let .unknown(line) where line.hasPrefix("BVDISPLAY "):
             displayDriverReported(line)
         case let .unknown(line) where line.hasPrefix("BVAGENT re-READY "):

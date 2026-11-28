@@ -509,27 +509,33 @@ fn the_guards_verdict_ends_the_confirm() {
     }
 }
 
+/// No agent task, or (a standard Windows user's agent, which can't write Program Files) no
+/// administrator rights: the agent is left alone, with no later traffic for this version. The
+/// standard user's update used to fail at Prepare on every launch.
 #[test]
-fn an_agent_without_a_task_is_left_alone_with_no_later_traffic() {
-    let bundle = Bundle::new("no-task");
-    let mut h = resident(&bundle, "session-1");
-    let mut guest = Guest { prepare_reply: Some("BVUPDATE skipped no-task\r\n".into()), ..Guest::default() };
-    let t0 = h.start;
-    h.note_agent_ready(OLD_READY, t0);
-    run(&mut h, &mut guest, t0 + SETTLE);
-    assert_eq!(phase(&h), UpdatePhase::Done);
-    assert_eq!(guest.verbs, ["RUN"], "Prepare only");
-    assert!(guest.scripts[0].contains("'BVUPDATE skipped no-task'"));
-    assert_eq!(bundle.marker_state().as_deref(), Some("skipped"));
+fn an_agent_without_a_task_or_admin_rights_is_left_alone_with_no_later_traffic() {
+    for reason in ["no-task", "not-admin"] {
+        let bundle = Bundle::new(reason);
+        let mut h = resident(&bundle, "session-1");
+        let mut guest =
+            Guest { prepare_reply: Some(format!("BVUPDATE skipped {reason}\r\n")), ..Guest::default() };
+        let t0 = h.start;
+        h.note_agent_ready(OLD_READY, t0);
+        run(&mut h, &mut guest, t0 + SETTLE);
+        assert_eq!(phase(&h), UpdatePhase::Done, "{reason}");
+        assert_eq!(guest.verbs, ["RUN"], "Prepare only");
+        assert!(guest.scripts[0].contains(&format!("'BVUPDATE skipped {reason}'")), "{reason}");
+        assert_eq!(bundle.marker_state().as_deref(), Some("skipped"), "{reason}");
 
-    // A later app session sends nothing for this version.
-    let mut next = resident(&bundle, "session-2");
-    let mut quiet = Guest::default();
-    let t1 = next.start;
-    next.note_agent_ready(OLD_READY, t1);
-    run(&mut next, &mut quiet, t1 + SETTLE);
-    assert_eq!(phase(&next), UpdatePhase::Done);
-    assert!(quiet.verbs.is_empty(), "{:?}", quiet.verbs);
+        // A later app session sends nothing for this version.
+        let mut next = resident(&bundle, "session-2");
+        let mut quiet = Guest::default();
+        let t1 = next.start;
+        next.note_agent_ready(OLD_READY, t1);
+        run(&mut next, &mut quiet, t1 + SETTLE);
+        assert_eq!(phase(&next), UpdatePhase::Done, "{reason}");
+        assert!(quiet.verbs.is_empty(), "{reason}: {:?}", quiet.verbs);
+    }
 }
 
 fn stop_through_the_control_file(h: &mut AgentConsoleHarness) {

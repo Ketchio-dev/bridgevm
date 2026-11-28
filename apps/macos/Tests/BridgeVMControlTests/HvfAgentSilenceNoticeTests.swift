@@ -127,6 +127,10 @@ final class HvfAgentSilenceNoticeTests: XCTestCase {
             try run(session)
             if name == HvfWindowsInstallRequest.doneFileName {
                 XCTAssertEqual(session.agentSilenceNotice.shown, .awaitingFirstConnection)
+                // Ten minutes on with no agent, the first sign-in's setup failed: offer to install it.
+                clock.value += HvfAgentSilenceNotice.firstConnectionTimeout
+                try run(session)
+                XCTAssertEqual(session.agentSilenceNotice.shown, .missingTools)
             } else {
                 XCTAssertNil(session.agentSilenceNotice.shown, "an unfinished ISO install has no bootable Windows")
             }
@@ -154,6 +158,10 @@ final class HvfAgentSilenceNoticeTests: XCTestCase {
         clock.value += 121
         try run(session)
         XCTAssertEqual(session.agentSilenceNotice.shown, .notConnected, "an imported VM whose installed agent breaks keeps the old notice")
+        // That agent had no way back: no Install button, and the drive was never attached again.
+        XCTAssertTrue(session.offersGuestToolsInstall)
+        session.prepareGuestTools()
+        XCTAssertEqual(HvfGuestTools.attachment(session.config), image.path, "a reinstall attaches the drive at the next start")
     }
 
     func testAnOverdueRequestShowsUntilTheProbeRunsOnWithoutOne() throws {

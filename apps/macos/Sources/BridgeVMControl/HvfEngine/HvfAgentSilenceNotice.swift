@@ -15,6 +15,11 @@ final class HvfAgentSilenceNotice: ObservableObject {
     /// starts it again within a minute when that start fails (bvagent-task.ps1): 30 s, plus that
     /// minute, plus 30 s.
     static let readyTimeout: TimeInterval = 120
+    /// A product install's first sign-in installs the agent (unattend.xml FirstLogonCommands), well
+    /// within this. Past it, that setup most likely failed (the first sign-in was cut short, or the
+    /// script threw), and Windows runs it only once: "Waiting for Windows to connect" then stayed on
+    /// every boot with nothing to do. The Install Guest Tools strip takes over.
+    static let firstConnectionTimeout: TimeInterval = 600
     /// The probe repeats the overdue line every 20 s (SERVICE_OVERDUE_INTERVAL) while a request
     /// waits, and prints `SERVICE alive` every 30 s: an overdue line 30 s of probe time behind the
     /// newest line is over. Probe time stands still while the VM is paused and is rebuilt for each boot.
@@ -95,7 +100,10 @@ final class HvfAgentSilenceNotice: ObservableObject {
             if now - since >= Self.readyTimeout {
                 if agentSeen == nil { agentSeen = agentInstalled() }
                 if agentSeen == true { kind = .notConnected }
-                else { kind = firstConnection() }
+                else {
+                    kind = firstConnection()
+                    if kind == .awaitingFirstConnection, now - since >= Self.firstConnectionTimeout { kind = .missingTools }
+                }
             }
         }
         show(kind)

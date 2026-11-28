@@ -248,7 +248,8 @@ from a development build running with 3D off.
 The v0.1.0 download accepts RAW, QCOW2 and Hyper-V VHDX. BridgeVM copies or
 converts the disk into the library and leaves the source unchanged. Import
 needs no driver payload. Builds from current source also accept fixed-size
-Hyper-V VHD. Convert a dynamic VHD to VHDX in Hyper-V before importing.
+Hyper-V VHD. Convert a dynamic VHD with `qemu-img convert -O qcow2` before
+importing.
 
 For compressed QCOW2 in the v0.1.0 download, import a RAW copy. Builds from
 current source support QEMU's default deflate compression. Use RAW for

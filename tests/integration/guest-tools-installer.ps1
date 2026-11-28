@@ -7,6 +7,14 @@ if ($e.Count) { throw ($e | Out-String) }
 # Exercise ACL validation without requiring a Windows host.
 $definition = $ast.Find({param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'Assert-ToolsFolder'}, $true)
 Invoke-Expression $definition.Extent.Text
+$failureDefinition = $ast.Find({param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'Get-InstallFailureText'}, $true)
+Invoke-Expression $failureDefinition.Extent.Text
+$declined = New-Object ComponentModel.Win32Exception 1223
+$wrapped = New-Object InvalidOperationException 'This command cannot be run due to the error: The operation was canceled by the user.', $declined
+foreach ($exception in @($declined, $wrapped)) {
+    if ((Get-InstallFailureText $exception) -notlike 'Guest Tools need administrator approval.*') { throw 'ASSERT: a declined administrator prompt must say to approve it' }
+}
+if ((Get-InstallFailureText (New-Object IO.IOException 'disk full')) -notlike 'Guest Tools could not be installed.*') { throw 'ASSERT: other failures keep the general sentence' }
 $folderDefinition = $ast.Find({param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'New-ToolsFolder'}, $true)
 $expectedSddl = 'O:S-1-5-32-544D:PAI(A;OICI;FA;;;S-1-5-18)(A;OICI;FA;;;S-1-5-32-544)(A;OICI;0x1200a9;;;S-1-5-32-545)'
 if (-not $folderDefinition.Extent.Text.Contains($expectedSddl)) { throw 'ASSERT: tools folder must grant Users read-execute without write, matching first boot' }

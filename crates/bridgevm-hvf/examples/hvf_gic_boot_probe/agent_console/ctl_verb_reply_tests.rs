@@ -88,3 +88,26 @@ fn scripted_ping_is_completed_by_pong() {
         ReplyProgress::Complete
     ));
 }
+
+/// Port forwards set while Windows runs go to the NAT, never to Windows.
+#[test]
+fn a_port_forward_change_goes_to_the_nat_not_to_windows() {
+    use bridgevm_hvf::net_nat::{take_requested_forwards, PortForward};
+    let _ = take_requested_forwards();
+    let h = service_harness_with_ctl("netforward", b"BVNETFORWARD 8080:80, 3390:3389\nwhoami\n");
+    let queued: Vec<_> = h
+        .queue
+        .iter()
+        .map(|req| match req {
+            ServiceReq::Ctl(command) => command.as_str(),
+            _ => "another request",
+        })
+        .collect();
+    assert_eq!(queued, ["whoami"]);
+    assert_eq!(
+        take_requested_forwards(),
+        Some(vec![PortForward { host: 8080, guest: 80 }, PortForward { host: 3390, guest: 3389 }])
+    );
+    assert_eq!(resident_service::net_forward_spec("BVNETFORWARD"), Some(""), "none");
+    assert_eq!(resident_service::net_forward_spec("BVNETFORWARDS 1:2"), None);
+}

@@ -46,6 +46,36 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- In a VM whose Windows account isn't an administrator, BridgeVM no longer
+  tries to update Guest Tools at every launch and reports "Guest Tools
+  couldn't update" each time. That update can't work without administrator
+  rights, so the current Guest Tools are left as they are.
+- Port forwards can now be changed while Windows runs (with Guest
+  Tools); before, the field was disabled until Windows shut down.
+- When Windows refuses or doesn't answer a forwarded connection, such as RDP
+  turned off or a port Windows Defender Firewall blocks, BridgeVM now says
+  which Windows port and what to check. Before, the Mac app's connection
+  just closed with no explanation.
+- A new VM whose Guest Tools setup failed at the first Windows sign-in now
+  offers Install Guest Tools after 10 minutes. Before, it said "Waiting for
+  Windows to connect" on every start, with nothing to do.
+- Importing a VMware VMDK other than qemu-img's default kind, a VMDK
+  descriptor file or a Parallels disk now says to convert it, instead
+  of importing a few-KB "VM" with no boot partition; the import
+  progress shows a spinner until the converter reports a percent.
+- Turning Print to Mac off now drops the print jobs waiting for the Mac,
+  so they no longer open when printing is turned on again, and a printer
+  Windows could not remove is tried again; printing notices no longer
+  blame Microsoft Print to PDF for every failure or say "try again" when
+  the Mac is out of space.
+- A print job no longer prints twice when Windows restarts right after
+  printing.
+- Importing a disk that another app, such as another VM app, still has
+  open now asks you to shut that VM down first, instead of copying a
+  disk that is still being written.
+- When Guest Tools that worked before can no longer connect, Install
+  Guest Tools is offered again and attaches the drive at the next start;
+  before, the notice only said to restart Windows.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.

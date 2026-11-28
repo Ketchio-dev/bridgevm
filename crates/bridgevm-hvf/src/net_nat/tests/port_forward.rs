@@ -2,12 +2,15 @@
 
 #![cfg(unix)]
 
-use super::super::port_forward::{forward_off_line, parse_forwards};
+use super::super::port_forward::{
+    forward_answered_line, forward_off_line, forward_unanswered_line, parse_forwards,
+};
 use super::super::*;
 use super::helpers::*;
 use crate::virtio_net::NetBackend;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Ipv4Addr as StdIpv4Addr, TcpListener, TcpStream};
+use std::os::fd::AsRawFd;
 use std::time::{Duration, Instant};
 
 type Nat = NatBackend<HostSocketOutboundIpv4Handler>;
@@ -103,7 +106,7 @@ fn a_host_connection_to_a_forwarded_port_reaches_the_guest_port() {
 #[test]
 fn a_guest_port_that_refuses_closes_the_host_connection() {
     let (mut nat, port) = forwarding_nat();
-    let mut client = client(port);
+    let mut first = client(port);
     let (nat_port, nat_isn) = syn(&mut nat);
     nat.transmit(&tcp_guest_frame(
         GATEWAY_IP,
@@ -116,12 +119,34 @@ fn a_guest_port_that_refuses_closes_the_host_connection() {
     ));
     nat.poll_host_sockets();
     let mut buf = [0u8; 16];
-    match client.read(&mut buf) {
+    match first.read(&mut buf) {
         Ok(0) => {}
         Err(error) => assert_eq!(error.kind(), ErrorKind::ConnectionReset),
         Ok(n) => panic!("read {n} bytes from a refused forward"),
     }
     assert!(nat.outbound_ipv4_handler().tcp_flows.is_empty());
+    // Said for the app's notice (Windows isn't accepting connections there), until one opens.
+    assert!(nat.outbound_ipv4_handler().forwards[0].unanswered);
+    let _second = client(port);
+    let (nat_port, nat_isn) = syn(&mut nat);
+    nat.transmit(&tcp_guest_frame(
+        GATEWAY_IP,
+        nat_port,
+        GUEST_PORT,
+        GUEST_ISN,
+        nat_isn.wrapping_add(1),
+        TCP_FLAG_SYN | TCP_FLAG_ACK,
+        &[],
+    ));
+    assert!(!nat.outbound_ipv4_handler().forwards[0].unanswered);
+    assert_eq!(
+        forward_unanswered_line(GUEST_PORT),
+        "BVNET forward-unanswered guest=8080"
+    );
+    assert_eq!(
+        forward_answered_line(GUEST_PORT),
+        "BVNET forward-answered guest=8080"
+    );
 }
 
 #[test]
@@ -145,6 +170,10 @@ fn an_unanswered_syn_is_resent_then_the_host_connection_closes() {
         std::thread::sleep(Duration::from_millis(5));
     }
     assert!(resent >= 3, "{resent} resends");
+    assert!(
+        nat.outbound_ipv4_handler().forwards[0].unanswered,
+        "said for the app's notice"
+    );
     let mut buf = [0u8; 16];
     assert!(matches!(client.read(&mut buf), Ok(0) | Err(_)));
 }
@@ -170,6 +199,71 @@ fn a_host_port_another_app_holds_turns_only_that_forward_off() {
         }),
         "BVNET forward-off host=8080 guest=80",
         "the line HvfPortForwardNoticeTests reads"
+    );
+}
+
+/// A port no listener holds now.
+fn free_port() -> u16 {
+    let probe = TcpListener::bind((StdIpv4Addr::LOCALHOST, 0)).unwrap();
+    probe.local_addr().unwrap().port()
+}
+
+fn listening(port: u16) -> bool {
+    TcpStream::connect((StdIpv4Addr::LOCALHOST, port)).is_ok()
+}
+
+/// Forwards could only change with Windows shut down; the app now sets them while it runs.
+#[test]
+fn forwards_set_while_windows_runs_open_new_rules_close_removed_ones_and_keep_the_rest() {
+    let (first, second) = (free_port(), free_port());
+    let rule = |host, guest| PortForward { host, guest };
+    let mut handler = HostSocketOutboundIpv4Handler::with_dns_resolver(StdIpv4Addr::LOCALHOST)
+        .with_forwards(&[rule(first, 80)]);
+    let kept = handler.forwards[0].listener.as_raw_fd();
+    handler.set_forwards(&[rule(first, 80), rule(second, 81)]);
+    assert_eq!(handler.forward_host_ports(), [first, second]);
+    assert_eq!(
+        handler.forwards[0].listener.as_raw_fd(),
+        kept,
+        "a rule kept keeps its listener"
+    );
+    assert!(listening(second));
+
+    // A Mac port moved to another Windows port is closed, then opened again for the new one.
+    handler.set_forwards(&[rule(second, 82)]);
+    assert_eq!(handler.forward_host_ports(), [second]);
+    assert_eq!(handler.forwards[0].guest_port, 82);
+    assert!(!listening(first), "a rule gone closes its Mac port");
+
+    // A rule that was off, its Mac port held by another app, is tried again.
+    let held = TcpListener::bind((StdIpv4Addr::LOCALHOST, 0)).unwrap();
+    let busy = held.local_addr().unwrap().port();
+    handler.set_forwards(&[rule(second, 82), rule(busy, 83)]);
+    assert_eq!(handler.forward_host_ports(), [second]);
+    drop(held);
+    handler.set_forwards(&[rule(second, 82), rule(busy, 83)]);
+    assert_eq!(handler.forward_host_ports(), [second, busy]);
+    handler.set_forwards(&[]);
+    assert!(handler.forwards.is_empty());
+}
+
+#[test]
+fn a_requested_change_is_taken_once_by_the_live_nat() {
+    let port = free_port();
+    let mut nat = NatBackend::with_outbound_handler(
+        HostSocketOutboundIpv4Handler::with_dns_resolver(StdIpv4Addr::LOCALHOST),
+    );
+    request_forwards(vec![PortForward {
+        host: port,
+        guest: 80,
+    }]);
+    nat.poll_host_sockets();
+    assert_eq!(nat.outbound_ipv4_handler().forward_host_ports(), [port]);
+    nat.outbound_ipv4_handler_mut().set_forwards(&[]);
+    nat.poll_host_sockets();
+    assert!(
+        nat.outbound_ipv4_handler().forwards.is_empty(),
+        "taken once"
     );
 }
 

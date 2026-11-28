@@ -411,6 +411,25 @@ fn a_job_announced_again_after_its_delete_was_lost_is_deleted_not_printed_twice(
 }
 
 #[test]
+fn a_job_announced_again_after_windows_restarted_is_deleted_not_printed_twice() {
+    // Each boot has a new harness; the job's DEL was still queued behind shared-folder sync.
+    let mut rig = Rig::new("reboot", true);
+    let path = guest_path(1);
+    rig.job(&path, pdf(1000, 1));
+    rig.settle();
+    assert_eq!(take_print_lines().len(), 1);
+    rig.take_wire();
+    let done = std::sync::Arc::clone(&rig.h.print.done);
+    let mut next = Rig::new("reboot-next", true);
+    next.h.print.done = done;
+    next.job(&path, pdf(1000, 1));
+    next.settle();
+    assert_eq!(next.take_wire(), ["DEL"]);
+    assert!(take_print_lines().is_empty());
+    assert!(std::sync::Arc::ptr_eq(&process_done(), &process_done()), "one list for the whole probe");
+}
+
+#[test]
 fn a_restarted_probe_keeps_the_jobs_an_earlier_one_published_and_removes_only_its_temporaries() {
     // Windows restarted while jobs waited behind an open Mac print panel: the app still has them
     // queued and their guest copies are gone, so they are the only copies.

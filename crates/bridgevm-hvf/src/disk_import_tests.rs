@@ -289,9 +289,7 @@ fn refusals_name_what_the_user_must_do() {
     sector_4k.logical_sector = 4096;
     let image = vhdx(&sector_4k, &[(0, Block::Data(pattern(MIB, 1)))]).0;
     assert_eq!(refusal(&s, &image), Refusal::Sector4K);
-    assert!(Refusal::Sector4K
-        .to_string()
-        .contains("512-byte logical sectors"));
+    assert!(Refusal::Sector4K.to_string().contains("4 KB disk sectors"));
 }
 
 #[test]
