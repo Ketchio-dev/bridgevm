@@ -5,8 +5,9 @@ import Foundation
 /// path. Launch and relocation both wait for it; nothing here rewrites the journal.
 enum HvfWindowsInstallTransactionResidue {
     /// Clone copies the journal too, and the copy fails validation at its new path.
+    /// Refresh rescans the library, and the scan’s HvfWindowsInstallFinalization.reconcile finishes the cleanup.
     static func refusal(_ verb: String) -> String {
-        "To \(verb) this VM, let Windows installation cleanup finish and refresh the library. If cleanup is still pending, check the saved installation transaction before starting another installation."
+        "BridgeVM is still cleaning up an earlier Windows installation for this VM. Choose Refresh, then try to \(verb) it again."
     }
 
     /// Any residual entry or failed lookup counts. A missing journal inside a
