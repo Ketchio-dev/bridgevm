@@ -264,8 +264,7 @@ final class FBLayerView: HvfFramebufferTextInput {
 
     override func resignFirstResponder() -> Bool {
         guard super.resignFirstResponder() else { return false }
-        pointerCapture.cancel()
-        cancelGuestInputTarget()
+        releaseGuestInputForFocusLoss()
         pointerMoves.reset()
         return true
     }
@@ -429,16 +428,26 @@ final class FBLayerView: HvfFramebufferTextInput {
         commitTextComposition { [weak session] text in session?.displayTextPrecedesPointer(text) == true }
     }
 
-    /// Window resign, first-responder loss, teardown and display loss also drop a pending modifier tap.
+    /// Teardown, display loss and a move to another window also drop a pending modifier tap.
     private func cancelGuestInputTarget() {
         cancelModifierTap()
         cancelTextComposition()
         session?.cancelOrderedInputTarget()
     }
 
+    /// Window resign and first-responder loss: the tap and the syllable being composed are dropped, a held button
+    /// goes up as at a mouse-up and the held keys go up, but queued input still reaches Windows
+    /// (HvfEngineSession.displayLostFocus).
+    private func releaseGuestInputForFocusLoss() {
+        cancelModifierTap()
+        cancelTextComposition()
+        pointerCapture.cancel()
+        session?.displayLostFocus()
+    }
+
     /// The window is no longer key (another window or app): the arrow again.
     func windowResignedKey() {
-        cancelGuestInputTarget()
+        releaseGuestInputForFocusLoss()
         updateGuestCursor(pointer: nil)
     }
 

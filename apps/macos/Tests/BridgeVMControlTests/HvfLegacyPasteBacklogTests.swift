@@ -47,6 +47,7 @@ final class HvfLegacyPasteBacklogTests: XCTestCase, HvfLegacyPasteFixture {
             var draft = "초안"
             XCTAssertEqual(HvfKeyboardDraft.submit(&draft, to: session), .refused)
             XCTAssertEqual(draft, "초안", "The draft box still refuses and keeps its text")
+            session.displayLostFocus() // ⌘Tab away: Windows keeps its focus, so the paste and what waits behind it stay
 
             try acknowledge(first, root: root); session.poll()
             XCTAssertEqual(input(root), "KEY ctrl+v\n")
