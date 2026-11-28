@@ -64,7 +64,7 @@ final class NativeCLIStartTests: XCTestCase {
 
     /// The start path's own sentence (with the real error text) is what the CLI prints.
     func testFailureAndRefusalPrintTheAppSentence() {
-        let text = "Windows could not start, so review the error below and try again.\nThe file “hvf-runner” couldn’t be opened."
+        let text = "BridgeVM couldn’t start the VM process, so quit and reopen BridgeVM and try again.\nThe file “hvf-runner” couldn’t be opened."
         for refused in [false, true] {
             var time = 0.0
             let result = NativeCLIStartWaiter.wait(request: Fixture.request(), now: { time }, pause: { time += $0 }) { request in

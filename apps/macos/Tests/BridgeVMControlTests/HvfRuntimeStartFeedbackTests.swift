@@ -4,18 +4,18 @@ import XCTest
 
 @MainActor
 final class HvfRuntimeStartFeedbackTests: XCTestCase {
-    private let configurationSentence = "BridgeVM could not start Windows with these settings, so check the VM settings or restore them from a backup."
+    private let configurationSentence = "BridgeVM couldn’t start Windows with these settings, so check the VM settings or restore them from a backup."
     private let appSentence = "Reinstall BridgeVM to restore a missing or damaged app component."
 
     private var readinessSentences: [(String, String)] { [
         ("target-disk-missing", "To recover the missing Windows disk, reconnect its drive or restore the disk file to its original location."),
-        ("target-disk-access", "BridgeVM cannot access the Windows disk, so check its read and write permissions in Finder."),
+        ("target-disk-access", "BridgeVM can’t access the Windows disk, so check its read and write permissions in Finder."),
         ("target-disk-empty", "The Windows disk file is empty, so restore the original disk from a backup to the same location."),
         ("uefi-vars-missing", "Look for the missing Windows boot settings file in the VM folder or restore it from a backup."),
-        ("uefi-vars-access", "BridgeVM cannot access the Windows boot settings, so check the file’s read and write permissions in Finder."),
+        ("uefi-vars-access", "BridgeVM can’t access the Windows boot settings, so check the file’s read and write permissions in Finder."),
         ("uefi-vars-size", "The Windows boot settings file has the wrong size, so restore the 64 MiB file from a backup."),
         ("ram-range", "Set the VM’s memory between 1024 and 65536 MiB, then start Windows again."),
-        ("cpu-range", "Choose 1 to 64 processors in VM settings, then start Windows again."),
+        ("cpu-range", "Choose 1 to 64 CPUs in VM settings, then start Windows again."),
         ("share-invalid", "Choose the shared folder again in VM settings, then start Windows again."),
         ("share-incomplete", "To complete the shared folder setup, choose the folder again in VM settings."),
         ("boot-wrapper-missing", appSentence), ("signed-runner-missing", appSentence),
@@ -55,6 +55,26 @@ final class HvfRuntimeStartFeedbackTests: XCTestCase {
         }
     }
 
+    /// A keychain status or an internal blocker summary stays in the run's event log; only an
+    /// unexpected launch error is shown, after the sentence.
+    func testOtherFailuresShowOneSentenceWithoutTheRawError() {
+        let launch = HvfRuntimeStartOutcome.failed(.processLaunch, "The file “hvf-runner” couldn’t be opened.")
+        XCTAssertEqual(launch.failureText, "BridgeVM couldn’t start the VM process, so quit and reopen BridgeVM and try again.\nThe file “hvf-runner” couldn’t be opened.")
+        let cases: [(HvfRuntimeStartFailureStage, String, String)] = [
+            (.keyAccess, "The operation couldn’t be completed. (OSStatus -25291.)",
+             "BridgeVM couldn’t use this VM’s security key in your login keychain, so check that the keychain is unlocked and start Windows again."),
+            (.readiness(["relocation-pending"]), "The move has not finished recovering. Check both bundles.",
+             "BridgeVM couldn’t start Windows yet, so choose Refresh and try again."),
+            (.readiness(["install-cleanup-pending"]), "Windows installation cleanup is incomplete.",
+             "BridgeVM couldn’t start Windows yet, so choose Refresh and try again."),
+        ]
+        for (stage, detail, expected) in cases {
+            let text = HvfRuntimeStartOutcome.failed(stage, detail).failureText
+            XCTAssertEqual(text, expected, "\(stage)")
+            XCTAssertFalse(text?.contains(detail) ?? true, "\(stage)")
+        }
+    }
+
     func testReadinessShowsFirstActionableBlockerAndRetainsAllDiagnostics() throws {
         let f = try HvfOwnedRuntimeFixture()
         defer { f.clean() }
@@ -70,7 +90,7 @@ final class HvfRuntimeStartFeedbackTests: XCTestCase {
             let text = try XCTUnwrap(session.guiStartFailureText)
             let selected = codes.first == "cpu-range" ? "cpu-range" : "ram-range"
             XCTAssertEqual(text, readinessSentences.first { $0.0 == selected }?.1)
-            XCTAssertTrue(text.contains(selected == "ram-range" ? "1024 and 65536 MiB" : "1 to 64 processors"))
+            XCTAssertTrue(text.contains(selected == "ram-range" ? "1024 and 65536 MiB" : "1 to 64 CPUs"))
             for code in codes { XCTAssertTrue(diagnostics.contains { $0.contains("[\(code)]") }) }
         }
     }
@@ -116,7 +136,7 @@ final class HvfRuntimeStartFeedbackTests: XCTestCase {
         let ticket = try f.start()
         try await f.wait { !ticket.workerPending }
         XCTAssertEqual(f.session.guiStartFailureText,
-            "BridgeVM could not prepare the VM files, so check access to the VM folder and the available disk space.")
+            "BridgeVM couldn’t prepare the VM files, so check access to the VM folder and the available disk space.")
         XCTAssertFalse(f.session.guiStartFailureText?.contains("control path") ?? true)
         XCTAssertTrue(f.session.events.contains { event in
             if case let .unknown(line) = event { return line.contains("preparation") && line.contains("control path is not a regular file") }
