@@ -109,6 +109,11 @@ final class HvfWindowsSnapshotModel: ObservableObject {
         case .helper?, nil:
             break
         }
+        // exFAT and other drives without renamex_np(RENAME_SWAP): the first restore renames into place, and
+        // each later one must swap the VM's disk folder with the restored copy (snapshot_pair/publish.rs).
+        if operation == .restore, text.contains("cannot atomically exchange directories") {
+            return "The drive that holds this VM can’t restore a snapshot again, so move the VM to an APFS drive and try again."
+        }
         if text.contains("No space left on device")
             || (error.domain == NSCocoaErrorDomain && error.code == NSFileWriteOutOfSpaceError) {
             return "Free up space on the drive that holds the VM before \(action)."
