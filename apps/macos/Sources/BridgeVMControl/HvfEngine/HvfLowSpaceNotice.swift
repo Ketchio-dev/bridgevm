@@ -41,7 +41,8 @@ struct HvfLowSpaceNoticeView: View {
 
     var body: some View {
         if let text = notice.text {
-            HvfNoticeStrip(identifier: "bridgevm.storage.low-space", dismiss: { notice.dismiss() }) {
+            HvfNoticeStrip(identifier: "bridgevm.storage.low-space", title: "low disk space notice",
+                           announcement: text, dismiss: { notice.dismiss() }) {
                 Text(text)
             }
         }

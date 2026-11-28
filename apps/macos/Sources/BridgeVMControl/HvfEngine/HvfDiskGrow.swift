@@ -295,7 +295,8 @@ struct HvfDiskExtendNoticeView: View {
 
     var body: some View {
         if let text = session.diskExtendProblem {
-            HvfNoticeStrip(identifier: "bridgevm.storage.extend", dismiss: { session.diskExtendProblem = nil }) {
+            HvfNoticeStrip(identifier: "bridgevm.storage.extend", title: "disk resize notice",
+                           announcement: text, dismiss: { session.diskExtendProblem = nil }) {
                 Text(text)
             }
         }

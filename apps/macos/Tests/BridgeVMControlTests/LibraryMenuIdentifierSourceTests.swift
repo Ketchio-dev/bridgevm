@@ -26,7 +26,7 @@ final class LibraryMenuIdentifierSourceTests: XCTestCase {
                       "the menu bar's Windows Apps submenu sets its identifier")
         let dashboard = try String(contentsOf: sources.appendingPathComponent("LibraryDashboardActionBar.swift"), encoding: .utf8)
         XCTAssertTrue(dashboard.contains(".accessibilityIdentifier(\"bridgevm.dashboard.actions\")"),
-                      "the dashboard's 추가 작업 menu sets its identifier")
+                      "the dashboard's More Actions menu sets its identifier")
         let menu = try String(contentsOf: sources.appendingPathComponent("LibraryVMActionsMenu.swift"), encoding: .utf8)
         XCTAssertTrue(menu.contains(".accessibilityIdentifier(Self.identifier)"), "the shared menu sets its identifier")
         XCTAssertTrue(menu.contains("static let identifier = \"bridgevm.library.vm-actions\""))

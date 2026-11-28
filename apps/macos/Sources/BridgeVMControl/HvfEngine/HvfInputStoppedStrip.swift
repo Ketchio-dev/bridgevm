@@ -13,7 +13,8 @@ struct HvfInputStoppedStrip: View {
 
     var body: some View {
         if session.inputStopped, !dismissed {
-            HvfNoticeStrip(identifier: "bridgevm.display.input-stopped", dismiss: { dismissed = true }) {
+            HvfNoticeStrip(identifier: "bridgevm.display.input-stopped", title: "keyboard and mouse notice",
+                           announcement: Self.text, dismiss: { dismissed = true }) {
                 Label {
                     Text(Self.text).fixedSize(horizontal: false, vertical: true)
                 } icon: {

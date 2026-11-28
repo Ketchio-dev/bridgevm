@@ -26,7 +26,7 @@ struct CreateVMCreationFooter: View {
             }
             HStack(spacing: 10) {
                 if working {
-                    ProgressView().controlSize(.small)
+                    ProgressView().controlSize(.small).accessibilityHidden(true)
                     Text(workingLabel.isEmpty ? "Preparing VM files…" : workingLabel).font(.caption).foregroundStyle(.secondary)
                 } else if let hint {
                     Text(hint).font(.caption)

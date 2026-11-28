@@ -36,7 +36,8 @@ struct HvfBootFailureNoticeView: View {
 
     var body: some View {
         if let text = notice.text, !notice.dismissed {
-            HvfNoticeStrip(identifier: "bridgevm.runtime.boot-failure", dismiss: { notice.dismiss() }) {
+            HvfNoticeStrip(identifier: "bridgevm.runtime.boot-failure", title: "startup problem notice",
+                           announcement: text, dismiss: { notice.dismiss() }) {
                 Text(text)
             }
         }

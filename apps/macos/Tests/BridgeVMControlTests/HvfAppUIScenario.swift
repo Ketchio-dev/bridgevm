@@ -38,7 +38,7 @@ enum HvfAppUIScenario {
             }
             try capture.capture(sheetContent, name: "create-sheet")
             try capture.action("create_opened")
-            try HvfAppUIAccessibility.pressButton(label: "취소", in: sheetContent)
+            try HvfAppUIAccessibility.pressButton(label: "Cancel", in: sheetContent)
             try await HvfAppUIAccessibility.wait("creation sheet cancellation") {
                 fixture.window.sheets.isEmpty
             }

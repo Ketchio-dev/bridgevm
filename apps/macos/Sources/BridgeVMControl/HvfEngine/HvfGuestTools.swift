@@ -70,7 +70,8 @@ struct HvfGuestToolsStrip: View {
         let needsTools = !session.serviceStarted && (notice.shown == .missingTools || session.guestToolsMessage != nil)
         Group {
             if needsTools && !dismissed {
-                HvfNoticeStrip(identifier: "bridgevm.display.guest-tools", dismiss: { dismissed = true }) {
+                HvfNoticeStrip(identifier: "bridgevm.display.guest-tools", title: "Guest Tools notice",
+                               announcement: session.guestToolsMessage ?? HvfGuestTools.missing, dismiss: { dismissed = true }) {
                     VStack(alignment: .leading, spacing: 6) {
                         if session.guestToolsMessage == nil {
                             Text(HvfGuestTools.missing).fixedSize(horizontal: false, vertical: true)
