@@ -146,6 +146,10 @@ All notable changes to BridgeVM are documented in this file.
   fills the Windows disk to zero: Windows now keeps 2 GB free, as the Mac side already does.
   Files copied in Finder also no longer pile up in Windows' Temp folder; only the current and the
   previous copy are kept, not the last four.
+- Choosing a Windows installer ISO under **Import an installed disk** in the
+  New VM sheet now says "This is a Windows installer ISO, not a disk with
+  Windows installed. Install Windows from it instead." Before, only the first
+  import screen refused it; the New VM sheet copied the ISO as a disk.
 - Command-N now opens New VM in the library window, bringing that window back
   if you closed it. Before, it opened a second library window. The Window menu
   also has a Library item that brings the library back while a VM window is

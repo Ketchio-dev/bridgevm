@@ -64,8 +64,10 @@ final class FirstRunImportTests: XCTestCase {
         try bytes.write(to: iso)
         let inputs = FirstRunImport.Inputs(
             displayName: "W", diskPath: iso.path, vtpmStateDir: nil, memMiB: 6144, cpuCount: 4)
-        XCTAssertEqual(FirstRunImport.validate(inputs)?.description,
-            "This is a Windows installer ISO. Use Install Windows instead.")
+        XCTAssertEqual(FirstRunImport.validate(inputs)?.description, VMLibrary.installerISORefusal)
+        // The Create sheet's "Import an installed disk" runs the same check.
+        XCTAssertEqual(VMLibrary.windowsHVFImportError(targetDiskPath: iso.path, varsPath: ""),
+            "This is a Windows installer ISO, not a disk with Windows installed. Install Windows from it instead.")
     }
 
     func testMissingDiskRejected() throws {

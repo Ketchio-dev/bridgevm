@@ -43,6 +43,7 @@ extension VMLibrary {
         let targetBytes = ((try? fm.attributesOfItem(atPath: targetURL.path)[.size] as? NSNumber)?.uint64Value) ?? 0
         guard targetBytes > 0 else { return "The Windows disk is empty." }
         if let error = HvfImportedDiskFormat.detect(path: targetURL.path)?.importError { return error.description }
+        if isInstallerISO(targetURL.path) { return installerISORefusal }
         if varsPath.isEmpty { return nil }
         guard isReadableRegularFile(varsURL.path) else {
             return "Choose the matching UEFI variables file or leave it empty."
@@ -55,6 +56,17 @@ extension VMLibrary {
             return "The UEFI variables file must be exactly 64 MiB. Choose the one that came with this Windows disk, or leave it empty."
         }
         return nil
+    }
+
+    static let installerISORefusal = "This is a Windows installer ISO, not a disk with Windows installed. Install Windows from it instead."
+
+    /// An ISO 9660 volume descriptor ("CD001" at byte 0x8001), as on every Windows installer ISO.
+    /// Called after the disk check, so the path is a readable regular file.
+    private static func isInstallerISO(_ path: String) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return false }
+        defer { try? handle.close() }
+        guard (try? handle.seek(toOffset: 0x8001)) != nil else { return false }
+        return (try? handle.read(upToCount: 5)) == Data("CD001".utf8)
     }
 
     static func reserveDestination(
