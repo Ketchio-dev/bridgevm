@@ -88,6 +88,9 @@ All notable changes to BridgeVM are documented in this file.
 - Opening files with BridgeVM while it is closed now gives them to the
   VM that starts with BridgeVM, instead of refusing them before the
   library has loaded.
+- When Windows has no driver for the new display adapter, for example
+  after restoring an older snapshot, the notice now offers Install
+  instead of pointing at Device Manager.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.

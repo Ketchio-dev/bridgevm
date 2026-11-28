@@ -13,6 +13,20 @@ enum HvfDisplayDriverNotice: Equatable {
             .flatMap { Virtio(rawValue: String($0.dropFirst("virtio=".count))) }
     }
 
+    /// `unbound`: the VM starts with the new display adapter, but Windows has no driver for it, as after
+    /// restoring a snapshot taken before the driver was installed. Installing it again is the way back;
+    /// the notice only pointed at Device Manager.
+    var offersInstall: Bool { self != .restart }
+
+    var text: String {
+        switch self {
+        case .unbound:
+            return "Windows has no driver for the new display adapter, so the desktop doesn’t resize with this window. Choose Install to install the driver again."
+        case .install: return "Install the display driver to resize the Windows desktop when you resize this window."
+        case .restart: return "To use the new display driver, choose Restart Now to shut down Windows and start the VM again."
+        }
+    }
+
     static func shown(libraryBacked: Bool, agentReady: Bool, installed: Bool?, experimental3D: Bool,
                       dismissed: Bool, restartRequired: Bool) -> Self? {
         guard libraryBacked, agentReady, installed != true, !experimental3D, !dismissed else { return nil }
@@ -82,14 +96,11 @@ struct HvfDisplayDriverNoticeView: View {
                 if notice == .unbound { session.displayDriverUnboundDismissed = true }
                 else { session.displayDriverNoticeDismissed = true }
             }) {
-                Text(notice == .unbound
-                     ? "Windows can’t find the new display adapter. If the desktop doesn’t resize with this window, check “Display adapters” in Device Manager."
-                     : notice == .install ? "Install the display driver to resize the Windows desktop when you resize this window."
-                     : "To use the new display driver, choose Restart Now to shut down Windows and start the VM again.")
+                Text(notice.text)
                 if notice == .restart, let note = session.displayDriverRestartNote {
                     Text(note).foregroundStyle(.orange)
                 }
-                if notice == .install {
+                if notice.offersInstall {
                     HvfDisplayDriverInstallButton(session: session, onInstalled: { _ in
                         HvfDisplayDriverFlag.record(session)
                     }, compact: true)
