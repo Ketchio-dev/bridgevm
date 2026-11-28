@@ -62,6 +62,23 @@ final class HvfPortForwardsTests: XCTestCase {
         XCTAssertNil(session.portForwardNotice.text, "a new run opens the ports again")
     }
 
+    /// The lines net_nat/host_socket.rs prints when sends to the Mac's DNS server on its own network
+    /// fail as they do with Local Network access off, and when a reply comes back. Windows resolved
+    /// no names and nothing said why.
+    func testUnreachableDNSIsShownUntilAReplyComesBack() {
+        let notice = HvfPortForwardNotice()
+        notice.consume("BVNET dns-unreachable\r")
+        XCTAssertEqual(notice.text, HvfPortForwardNotice.dnsUnreachableText)
+        XCTAssertTrue(notice.text?.contains("Privacy & Security > Local Network") == true)
+        notice.consume("BVNET forward-off host=8080 guest=80")
+        XCTAssertEqual(notice.text?.hasPrefix(HvfPortForwardNotice.dnsUnreachableText + " Mac port 8080"), true)
+        notice.consume("BVNET dns-reachable")
+        XCTAssertEqual(notice.text?.hasPrefix("Mac port 8080"), true)
+        notice.consume("BVNET dns-unreachable")
+        notice.reset()
+        XCTAssertNil(notice.text)
+    }
+
     func testAHandEditedEntryThatDoesNotParseIsLeftOut() {
         XCTAssertEqual(HvfPortForwards.saved("8080:80, junk, 0:22, 2222:22"),
                        [HvfPortForward(host: 8080, guest: 80), HvfPortForward(host: 2222, guest: 22)])

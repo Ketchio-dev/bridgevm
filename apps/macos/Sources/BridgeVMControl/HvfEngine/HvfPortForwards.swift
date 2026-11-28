@@ -60,13 +60,22 @@ extension HvfEngineSession {
 
 /// Forwards the VMM could not open on the Mac (`BVNET forward-off host=<port> guest=<port>`,
 /// net_nat/port_forward.rs forward_off_line), usually a port another app holds: the VM runs
-/// without them, and until this notice nothing said so. Cleared at each run.
+/// without them, and until this notice nothing said so. Also whether Windows can reach the
+/// Mac's DNS server (`BVNET dns-unreachable` / `dns-reachable`, net_nat/host_socket.rs).
+/// Cleared at each run.
 @MainActor
 final class HvfPortForwardNotice: ObservableObject {
     @Published private(set) var off: [HvfPortForward] = []
+    @Published private(set) var dnsUnreachable = false
+    static let dnsUnreachableText = "Windows can’t reach your Mac’s DNS server, so websites won’t open. If BridgeVM is off in System Settings > Privacy & Security > Local Network, turn it on."
 
     func consume(_ line: String) {
         let line = line.hasSuffix("\r") ? String(line.dropLast()) : line
+        switch line {
+        case "BVNET dns-unreachable": if !dnsUnreachable { dnsUnreachable = true }; return
+        case "BVNET dns-reachable": if dnsUnreachable { dnsUnreachable = false }; return
+        default: break
+        }
         let prefix = "BVNET forward-off host="
         guard line.hasPrefix(prefix) else { return }
         let parts = line.dropFirst(prefix.count).split(separator: " ")
@@ -76,9 +85,17 @@ final class HvfPortForwardNotice: ObservableObject {
         if !off.contains(forward) { off.append(forward) }
     }
 
-    func reset() { if !off.isEmpty { off = [] } }
+    func reset() {
+        if !off.isEmpty { off = [] }
+        if dnsUnreachable { dnsUnreachable = false }
+    }
 
     var text: String? {
+        let parts = [dnsUnreachable ? Self.dnsUnreachableText : nil, forwardsText].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
+    private var forwardsText: String? {
         guard let first = off.first else { return nil }
         if off.count == 1 {
             return "Mac port \(first.host) is already in use, so it doesn’t reach Windows port \(first.guest). Quit the app using it, or choose another Mac port in Settings, then restart Windows."
