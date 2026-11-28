@@ -46,6 +46,8 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- "Share clipboard" can be turned off and on while Windows runs; before,
+  it was disabled until Windows shut down.
 - Port forwards changed while Windows runs stay changed after Windows
   restarts, instead of going back to the ones the VM started with.
 - Signing out of Windows and back in no longer loses the shared clipboard:

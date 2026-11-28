@@ -49,6 +49,8 @@ mod clip_operator_reply;
 mod clip_operator_reply_tests;
 #[path = "agent_console/clip_paste.rs"]
 mod clip_paste;
+#[path = "agent_console/clip_switch.rs"]
+mod clip_switch;
 #[path = "agent_console/clip_sync.rs"]
 mod clip_sync;
 #[path = "agent_console/clipboard.rs"]

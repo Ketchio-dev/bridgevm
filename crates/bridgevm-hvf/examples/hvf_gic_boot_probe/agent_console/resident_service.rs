@@ -544,10 +544,14 @@ impl AgentConsoleHarness {
         }
         self.ctl_read_scratch.clear();
         let mut stopping = false;
+        let mut clip_switch = None;
         for line in self.ctl_line_scratch.drain(..) {
             let command = line.trim();
             if let Some(request) = command.strip_prefix("BVDROP ") {
                 self.drops.submit(request);
+            } else if let Some(on) = super::clip_switch::clip_switch(command) {
+                // The app's "Share clipboard" while Windows runs; the last one read counts.
+                clip_switch = Some(on);
             } else if let Some(spec) = net_forward_spec(command) {
                 // The NAT's, not Windows': the forwards the app set while Windows runs.
                 bridgevm_hvf::net_nat::request_forwards(bridgevm_hvf::net_nat::parse_forwards(spec));
@@ -562,6 +566,9 @@ impl AgentConsoleHarness {
             } else if !command.is_empty() {
                 eprintln!("BVAGENT CTL rejected reason=queue_full");
             }
+        }
+        if let Some(on) = clip_switch {
+            self.switch_clipsync(on);
         }
         if stopping {
             self.stop_agent_update(Instant::now());
