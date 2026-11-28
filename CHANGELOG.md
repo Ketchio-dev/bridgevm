@@ -50,6 +50,8 @@ All notable changes to BridgeVM are documented in this file.
   tries to update Guest Tools at every launch and reports "Guest Tools
   couldn't update" each time. That update can't work without administrator
   rights, so the current Guest Tools are left as they are.
+- Port forwards can now be changed while Windows runs (with Guest
+  Tools); before, the field was disabled until Windows shut down.
 - When Windows refuses or doesn't answer a forwarded connection, such as RDP
   turned off or a port Windows Defender Firewall blocks, BridgeVM now says
   which Windows port and what to check. Before, the Mac app's connection

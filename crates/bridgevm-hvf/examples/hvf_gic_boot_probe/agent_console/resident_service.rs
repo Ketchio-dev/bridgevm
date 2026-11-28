@@ -5,6 +5,12 @@ use super::*;
 /// Share intervals a listing may wait behind Mac changes (12 s at the default 3 s).
 const LISTING_OVERDUE_INTERVALS: u32 = 4;
 
+/// `BVNETFORWARD <HOST:GUEST,...>` (HvfPortForwards.swift): the whole set of port forwards, empty for none.
+pub(super) fn net_forward_spec(command: &str) -> Option<&str> {
+    let rest = command.strip_prefix("BVNETFORWARD")?;
+    (rest.is_empty() || rest.starts_with(' ')).then(|| rest.trim())
+}
+
 fn is_scale(req: &ServiceReq) -> bool {
     matches!(req, ServiceReq::Ctl(c) if super::desktop_scale::is_desktop_scale_command(c))
 }
@@ -542,6 +548,9 @@ impl AgentConsoleHarness {
             let command = line.trim();
             if let Some(request) = command.strip_prefix("BVDROP ") {
                 self.drops.submit(request);
+            } else if let Some(spec) = net_forward_spec(command) {
+                // The NAT's, not Windows': the forwards the app set while Windows runs.
+                bridgevm_hvf::net_nat::request_forwards(bridgevm_hvf::net_nat::parse_forwards(spec));
             } else if !command.is_empty()
                 && super::service_queue::has_foreground_capacity(&self.queue)
             {
