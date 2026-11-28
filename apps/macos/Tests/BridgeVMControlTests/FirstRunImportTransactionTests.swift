@@ -119,6 +119,18 @@ final class FirstRunImportTransactionTests: XCTestCase {
         try fixture.assertSources()
     }
 
+    /// A RAW disk whose copy failed (its drive unplugged mid-copy) got the Create sheet's generic
+    /// "Couldn’t create the VM or save it to the library." instead of what to check.
+    func testAFailedRawCopySaysWhatToCheck() throws {
+        let fixture = try FirstRunImportTransactionFixture()
+        defer { fixture.remove() }
+        guard case .refused(let sentence)? = VMLibrary.createWindowsHVF(name: "copy fails", targetDiskPath: fixture.disk.path,
+            varsPath: fixture.vars.path, libraryRoot: fixture.library, persist: false,
+            snapshotHelper: URL(fileURLWithPath: "/usr/bin/false")) else { return XCTFail("the Create sheet must say why") }
+        XCTAssertEqual(sentence, WindowsFileFailureFeedback.importing)
+        try fixture.assertSources()
+    }
+
     /// Too little room on the library's drive was found only when the copy filled it to the last byte
     /// (pausing VMs running from it), after as long as the copy took.
     func testTooLittleFreeSpaceIsSaidBeforeCopying() throws {
