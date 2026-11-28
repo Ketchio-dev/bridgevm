@@ -71,7 +71,7 @@ final class VMLibraryCopyTests: XCTestCase {
         let movedDisk = moved.appendingPathComponent("disks/hvf-target.raw")
         let values = try movedDisk.resourceValues(forKeys: [.fileSizeKey, .totalFileAllocatedSizeKey])
         XCTAssertEqual(values.fileSize, 128 << 20)
-        XCTAssertLessThanOrEqual(try XCTUnwrap(values.totalFileAllocatedSize), 16 << 20)
+        XCTAssertGreaterThanOrEqual(16 << 20, try XCTUnwrap(values.totalFileAllocatedSize))
         XCTAssertEqual(try Data(contentsOf: movedDisk), expected)
 
         let again = try sparseBundle(named: "again.vmbridge")
