@@ -103,7 +103,7 @@ final class FirstRunImportAliasAdmissionTests: XCTestCase {
         case .wrongSize:
             try Data([9, 8, 7, 6]).write(to: target)
             targetHash = try Fingerprint(target).hash
-            expected = .media("The UEFI variables file must be exactly 64 MiB. The selected file contains 4 bytes.")
+            expected = .media("The UEFI variables file must be exactly 64 MiB. Choose the one that came with this Windows disk, or leave it empty.")
         case .dangling:
             expected = .media("Choose the matching UEFI variables file or leave it empty.")
         case .directory:

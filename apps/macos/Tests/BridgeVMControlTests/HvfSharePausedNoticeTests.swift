@@ -20,7 +20,7 @@ final class HvfSharePausedNoticeTests: XCTestCase {
         XCTAssertEqual(notice.displayed?.text, "Folder sync paused because the Windows folder has more than \(20000.formatted()) items.")
         notice.consume(.unknown("BVAGENT SHARE paused too-many-bytes limit=1048576 t=9"))
         XCTAssertEqual(notice.paused, HvfSharePaused(reason: .tooManyBytes, limit: 1_048_576))
-        XCTAssertEqual(notice.displayed?.text, "Folder sync paused because the Windows file listing exceeds \(1048576.formatted()) bytes.")
+        XCTAssertEqual(notice.displayed?.text, "Folder sync paused because the Windows folder has too many files with long names.")
     }
 
     @MainActor

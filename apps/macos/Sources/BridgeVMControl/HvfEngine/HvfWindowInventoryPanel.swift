@@ -1,7 +1,7 @@
 #if canImport(AppKit)
 import SwiftUI
 
-/// The guest's window list, opened from the Virtual Machine menu's Show Guest Windows… item.
+/// The guest's window list, opened from the Virtual Machine menu's Show Open Windows… item.
 @MainActor
 struct HvfWindowInventoryPanel: View {
     @StateObject private var model: HvfWindowInventoryController
@@ -12,7 +12,7 @@ struct HvfWindowInventoryPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Guest Windows").font(.headline)
+                Text("Open Windows").font(.headline)
                 Spacer()
                 Button("Refresh") { model.refresh() }.disabled(model.isLoading)
                 Button("Close") { dismiss() }
@@ -21,7 +21,7 @@ struct HvfWindowInventoryPanel: View {
             List(model.records) { record in
                 VStack(alignment: .leading) {
                     Text(record.title)
-                    Text("PID \(record.processID) | \(record.width) x \(record.height) | (\(record.x), \(record.y))")
+                    Text("\(record.width) × \(record.height)")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

@@ -93,6 +93,11 @@ All notable changes to BridgeVM are documented in this file.
   before it asks for a folder, and Show in Finder says the same. Before, Move
   asked for a folder and then said it could not confirm the move, though
   nothing had moved.
+- Messages in the VM window and VM settings now use plain English. They call
+  the in-Windows agent Guest Tools, no longer show helper output, byte counts
+  or error codes, and say that a new display driver needs Windows to shut down
+  and the VM to start again, not a restart inside Windows. The disk setting now
+  says it waits until each Windows save reaches your Mac’s disk.
 - Windows connections left idle, such as an SSH session or a database client,
   are no longer cut after 5 minutes without Windows being told. BridgeVM now
   keeps an idle connection open for at least 2 hours, as home routers do.

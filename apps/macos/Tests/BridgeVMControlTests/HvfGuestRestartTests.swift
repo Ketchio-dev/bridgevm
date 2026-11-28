@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import XCTest
 @testable import BridgeVMControl
 
@@ -39,6 +40,9 @@ final class HvfGuestRestartTests: XCTestCase {
 
             guard case .refused = session.requestReset() else { return XCTFail("a Reset nobody confirmed") }
             XCTAssertEqual(session.requestRestart(), .needsResetConfirmation(.agentUnavailable))
+            XCTAssertEqual(HvfRestartControl<EmptyView>.message(.agentUnavailable),
+                           "Guest Tools isn’t ready to restart Windows. "
+                           + "Reset turns the VM off and on again right away. You will lose any unsaved work.")
             XCTAssertNil(try fixture.bytes(fixture.input), "nothing before the user confirms")
 
             XCTAssertEqual(session.requestReset(), .requested(.reset))

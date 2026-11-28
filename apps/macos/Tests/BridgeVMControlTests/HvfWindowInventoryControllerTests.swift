@@ -17,6 +17,7 @@ final class HvfWindowInventoryControllerTests: XCTestCase {
             try append("BVAGENT \(command) WINEND\n", root: root)
             model.poll()
             XCTAssertEqual(model.records.map(\.id), ["42"])
+            XCTAssertEqual(model.status, "1 open window.")
             XCTAssertFalse(model.isLoading)
             XCTAssertTrue(model.refresh())
             let next = try XCTUnwrap(String(contentsOf: control, encoding: .utf8).split(separator: "\n").last)
@@ -26,6 +27,23 @@ final class HvfWindowInventoryControllerTests: XCTestCase {
             XCTAssertTrue(model.records.isEmpty)
             XCTAssertFalse(model.isLoading)
             XCTAssertEqual(model.status, "Windows restarted. Choose Refresh to reload the list.")
+            model.stop()
+        }
+    }
+
+    /// A bad reply says what to do in plain words; the error's case name stays out of the panel.
+    @MainActor
+    func testUnreadableReplyShowsAPlainMessage() throws {
+        try withSession(service: true) { session, root in
+            let model = HvfWindowInventoryController(session: session)
+            XCTAssertTrue(model.refresh())
+            let control = root.appendingPathComponent("agent.ctl")
+            let command = try String(contentsOf: control, encoding: .utf8).trimmingCharacters(in: .newlines)
+            try append("BVAGENT \(command) WIN not-a-record\n", root: root)
+            model.poll()
+            XCTAssertTrue(model.records.isEmpty)
+            XCTAssertFalse(model.isLoading)
+            XCTAssertEqual(model.status, "Couldn’t get the window list from Windows. Choose Refresh to try again.")
             model.stop()
         }
     }

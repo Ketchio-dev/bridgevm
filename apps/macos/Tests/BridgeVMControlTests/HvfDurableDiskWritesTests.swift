@@ -17,8 +17,8 @@ final class HvfDurableDiskWritesTests: XCTestCase {
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
         let toggle = HvfDurableDiskWritesToggle(session: session, isOn: Binding(
             get: { session.config.durableDiskWrites }, set: { session.config.durableDiskWrites = $0 }))
-        let ordered = "Writes stay in order. If your Mac loses power, you may lose about the last second of writes Windows has flushed."
-        let durable = "Each Windows disk flush waits for the writes to reach permanent storage. This can slow down writes."
+        let ordered = "Windows doesn’t wait, and its saved changes are stored on your Mac’s disk within about a second. If your Mac loses power, Windows may lose about the last second of saved changes, but its disk stays intact."
+        let durable = "Each time Windows asks to save its changes, it waits until they’re stored on your Mac’s disk. This is safest if your Mac loses power, but can slow Windows down."
         XCTAssertFalse(session.config.durableDiskWrites, "An absent key keeps ordered flushes")
         XCTAssertEqual(toggle.explanation, ordered)
         XCTAssertFalse(ownedArguments(session.config).contains("--nvme-durable-flush"))

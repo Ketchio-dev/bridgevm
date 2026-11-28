@@ -4,7 +4,7 @@ final class HvfRuntimeWorkAdmissionGate {
     private(set) var isChecking = false
 
     func check(_ admission: LibraryWorkAdmission?, reportRefusal: Bool) -> String? {
-        guard !isChecking else { return "Runtime admission is already being checked" }
+        guard !isChecking else { return "BridgeVM is still checking this VM. Try again in a moment." }
         isChecking = true
         defer { isChecking = false }
         return admission?(reportRefusal)

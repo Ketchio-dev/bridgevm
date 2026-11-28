@@ -71,9 +71,9 @@ struct HvfDisplayDriverNoticeView: View {
                 else { session.displayDriverNoticeDismissed = true }
             }) {
                 Text(notice == .unbound
-                     ? "Windows couldn’t find the virtio display adapter. If its resolution doesn’t follow the window size, check Device Manager."
+                     ? "Windows can’t find the new display adapter. If the desktop doesn’t resize with this window, check “Display adapters” in Device Manager."
                      : notice == .install ? "Install the display driver to resize the Windows desktop when you resize this window."
-                     : "Restart the VM to use the new display driver.")
+                     : "To use the new display driver, choose Restart Now to shut down Windows and start the VM again.")
                 if notice == .install {
                     HvfDisplayDriverInstallButton(session: session, onInstalled: { _ in
                         HvfDisplayDriverFlag.record(session)
