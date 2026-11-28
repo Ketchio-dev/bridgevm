@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 enum HvfRuntimePreparation {
@@ -40,9 +41,21 @@ enum HvfRuntimePreparation {
                     userInfo: [NSLocalizedDescriptionKey: "control path is not a regular file: \(controlURL.path)"]
                 )
             }
+            // Every command the app sent the last run, typed text and keys included (base64),
+            // would otherwise stay here and grow with each run. The new helper reads from the
+            // end, so an empty file loses nothing.
+            try clear(controlURL)
         } else {
             try Data().write(to: controlURL)
         }
         return manifest
+    }
+
+    /// Empties the file in place, without following a link that replaced it after the check.
+    private static func clear(_ url: URL) throws {
+        let descriptor = Darwin.open(url.path, O_WRONLY | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        defer { Darwin.close(descriptor) }
+        guard ftruncate(descriptor, 0) == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
     }
 }
