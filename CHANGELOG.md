@@ -73,6 +73,8 @@ All notable changes to BridgeVM are documented in this file.
   Windows down and leaves it off when Settings is open for that VM. It now asks
   you to close Settings first, and if Windows still can't start again it says
   why.
+- Windows' volume slider and mute button now change the VM's sound. Before,
+  Windows always played at full volume, and only the Mac's volume worked.
 - When VMs running at the same time together use more memory than your Mac can
   spare, each of them now says so in one sentence and suggests stopping one or
   giving the VMs less memory in Settings. Before, macOS just started swapping

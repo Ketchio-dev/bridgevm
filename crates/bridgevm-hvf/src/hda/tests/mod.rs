@@ -15,6 +15,7 @@ mod helpers;
 mod layout_dump;
 mod layout_parity;
 mod lpib_alias;
+mod output_amp;
 mod pcm_fragments;
 mod read_into;
 mod repeat_detector;
