@@ -109,7 +109,7 @@ struct HvfEngineView: View {
     }
 
     private var header: some View {
-        HvfRuntimeHeader(title: session.config.libraryContext?.config.name ?? displayWindowTitle, state: stateText, stateColor: stateColor,
+        HvfRuntimeHeader(title: session.config.libraryContext?.config.name ?? session.displayTitle, state: stateText, stateColor: stateColor,
                          ramMiB: session.config.ramMiB, cpus: session.config.smpCpus)
     }
     private var configCard: some View {
@@ -223,7 +223,7 @@ struct HvfEngineView: View {
                     }
                     Spacer()
                     Button {
-                        HvfDisplayWindowController.present(session: session, title: displayWindowTitle)
+                        HvfDisplayWindowController.present(session: session, title: session.displayTitle)
                     } label: {
                         Label("Open Display", systemImage: "macwindow")
                     }.accessibilityIdentifier("bridgevm.runtime.display.open")
@@ -273,11 +273,6 @@ struct HvfEngineView: View {
         }
     }
 
-    private var displayWindowTitle: String {
-        HvfDisplayWindowTitle.resolve(libraryName: session.config.libraryContext?.config.name,
-                                      targetDiskPath: session.config.targetDiskPath)
-    }
-
     private var displayConnectionStateText: String {
         if let pendingWorkText { return pendingWorkText }
         switch session.connectionState {
@@ -315,7 +310,7 @@ struct HvfEngineView: View {
             startRefusal = reason; return
         }
         #if canImport(AppKit)
-        HvfDisplayWindowController.present(session: session, title: displayWindowTitle)
+        HvfDisplayWindowController.present(session: session, title: session.displayTitle)
         #endif
     }
 

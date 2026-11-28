@@ -783,6 +783,7 @@ extension HvfEngineSession: ControlAppTerminationSession {
     /// A runner that already died has nothing left to cancel or confirm, so waiting for it only held
     /// Quit for two deadlines behind a shutdown question and a Force Stop that had no target.
     var blocksAppTermination: Bool { (mayHaveOwnedWork && !runnerDiedWithoutCleanup) || hasPendingRuntimeStart }
+    var terminationName: String? { displayTitle }
 
     /// This app's own run, with no stop under way yet: the Stop below, and the Virtual Machine menu's, can begin.
     var terminationStopAvailable: Bool {

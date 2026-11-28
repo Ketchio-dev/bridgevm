@@ -37,8 +37,7 @@ final class ControlAppDelegate: NSObject, NSApplicationDelegate {
         if plan.showLibrary { ControlLibraryWindow.show() }
         for index in plan.displayIndices {
             let session = sessions[index]
-            HvfDisplayWindowController.present(session: session, title: HvfDisplayWindowTitle.resolve(
-                libraryName: session.config.libraryContext?.config.name, targetDiskPath: session.config.targetDiskPath))
+            HvfDisplayWindowController.present(session: session, title: session.displayTitle)
         }
         return true
     }
@@ -48,8 +47,7 @@ final class ControlAppDelegate: NSObject, NSApplicationDelegate {
         HvfOpenFiles.open(urls, sessions: NativeRuntimeAppOwner.sessions,
             frontToBack: HvfDisplayWindowController.sessionsFrontToBack(),
             present: { session in
-                HvfDisplayWindowController.present(session: session, title: HvfDisplayWindowTitle.resolve(
-                    libraryName: session.config.libraryContext?.config.name, targetDiskPath: session.config.targetDiskPath))
+                HvfDisplayWindowController.present(session: session, title: session.displayTitle)
             },
             tell: { text in
                 // After the open event, so a launch by Open With shows it over the library window.

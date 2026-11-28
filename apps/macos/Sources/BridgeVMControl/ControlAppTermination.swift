@@ -8,6 +8,8 @@ protocol ControlAppTerminationSession: AnyObject {
     var blocksAppTermination: Bool { get }
     var isInstallation: Bool { get }
     var requiresTerminationWait: Bool { get }
+    /// The VM the deadline alert names while it is still shutting down; nil keeps the plain sentence.
+    var terminationName: String? { get }
     /// The user's Stop; repeating it joins the stop already admitted.
     func requestTerminationStop()
     /// Force Stop for a stop that is still waiting on Windows.
@@ -19,6 +21,7 @@ protocol ControlAppTerminationSession: AnyObject {
 extension ControlAppTerminationSession {
     var isInstallation: Bool { false }
     var requiresTerminationWait: Bool { false }
+    var terminationName: String? { nil }
 }
 
 /// Quitting (Cmd+Q, the Dock, the last window, or a Mac logout, restart or shutdown) stops each
@@ -39,8 +42,10 @@ final class ControlAppTermination {
     struct Presenter {
         /// The one question before any stop: true quits after Windows shuts down.
         var confirmQuit: @MainActor (_ runningCount: Int) -> Bool
-        /// Asked each time Windows has not turned off by the deadline. `afterForce` offers quitting anyway.
-        var decideAtDeadline: @MainActor (_ afterForce: Bool, _ stillRunning: @escaping @MainActor () -> Bool) -> DeadlineChoice
+        /// Asked each time Windows has not turned off by the deadline, naming the VMs still running.
+        /// `afterForce` offers quitting anyway.
+        var decideAtDeadline: @MainActor (_ afterForce: Bool, _ names: [String],
+                                          _ stillRunning: @escaping @MainActor () -> Bool) -> DeadlineChoice
         var confirmWithInstallations: (@MainActor (_ runningCount: Int, _ installCount: Int) -> Bool)? = nil
         var confirmAfterPreparation: @MainActor () -> Bool = { false }
         var revealLibrary: @MainActor () -> Void = {}
@@ -128,7 +133,7 @@ final class ControlAppTermination {
         // Publication cannot be interrupted; pre-commit cancellation keeps the normal quit choices.
         guard !running.contains(where: \.requiresTerminationWait), now() >= deadlineAt else { return }
         deciding = true
-        let choice = presenter.decideAtDeadline(forced) { [weak self] in
+        let choice = presenter.decideAtDeadline(forced, running.compactMap(\.terminationName)) { [weak self] in
             guard let self else { return false }
             self.blocking().forEach { $0.pollTerminationWait() }
             return !self.blocking().isEmpty
@@ -214,8 +219,8 @@ extension ControlAppTermination.Presenter {
             alert.addButton(withTitle: "Cancel")
             return alert.runModal() == .alertFirstButtonReturn
         },
-        decideAtDeadline: { afterForce, stillRunning in
-            let alert = shutdownDelayAlert(afterForce: afterForce)
+        decideAtDeadline: { afterForce, names, stillRunning in
+            let alert = shutdownDelayAlert(afterForce: afterForce, names: names)
             // Every run may still stop while the question is open: then the quit goes on by itself.
             let watcher = Timer(timeInterval: 0.25, repeats: true) { _ in
                 MainActor.assumeIsolated { if !stillRunning() { NSApp.abortModal() } }
@@ -251,10 +256,16 @@ extension ControlAppTermination.Presenter {
         },
         revealLibrary: { ControlLibraryWindow.show() })
 
-    static func shutdownDelayAlert(afterForce: Bool) -> NSAlert {
+    /// With two VMs running, the alert says which one Windows is still shutting down in.
+    static func shutdownDelayAlert(afterForce: Bool, names: [String] = []) -> NSAlert {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = afterForce ? "The VM is still stopping." : "Windows is still shutting down."
+        let quoted = names.map { "“\($0)”" }
+        let list = quoted.count > 1 ? quoted.dropLast().joined(separator: ", ") + " and " + quoted[quoted.count - 1]
+            : quoted.first
+        alert.messageText = afterForce
+            ? list.map { "\($0) \(quoted.count > 1 ? "are" : "is") still stopping." } ?? "The VM is still stopping."
+            : list.map { "Windows is still shutting down in \($0)." } ?? "Windows is still shutting down."
         alert.informativeText = afterForce
             ? "Quitting now stops the VM immediately. Work that Windows has not saved may be lost."
             : "A Windows app may be waiting for you to save. Choose Cancel Quit to return to the VM, or keep waiting for Windows to shut down. Forcing a stop may lose unsaved work."

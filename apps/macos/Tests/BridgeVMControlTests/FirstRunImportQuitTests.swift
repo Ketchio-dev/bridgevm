@@ -23,7 +23,7 @@ final class FirstRunImportQuitTests: XCTestCase {
         library.preparingNewVM = true
         var retries = 0
         let termination = ControlAppTermination(sessions: { [] },
-            presenter: .init(confirmQuit: { _ in false }, decideAtDeadline: { _, _ in .cancelQuit },
+            presenter: .init(confirmQuit: { _ in false }, decideAtDeadline: { _, _, _ in .cancelQuit },
                 confirmAfterPreparation: {
                     XCTAssertEqual(library.quitAfterVMPreparation?.confirmed, false)
                     library.preparingNewVM = false
@@ -49,7 +49,7 @@ final class FirstRunImportQuitTests: XCTestCase {
         var confirmations = 0, reveals = 0, quitRequests = 0
         let termination = ControlAppTermination(sessions: { library.appTerminationSessions() },
             presenter: .init(confirmQuit: { _ in XCTFail("Unexpected VM stop prompt"); return false },
-                decideAtDeadline: { _, _ in .cancelQuit }, confirmAfterPreparation: { confirmations += 1; return true },
+                decideAtDeadline: { _, _, _ in .cancelQuit }, confirmAfterPreparation: { confirmations += 1; return true },
                 revealLibrary: { reveals += 1 }), reply: { _ in XCTFail("Quit must leave the main run loop available") },
             preparationLibrary: { library }, retryQuit: { quitRequests += 1 })
 
