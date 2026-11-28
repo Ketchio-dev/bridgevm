@@ -43,7 +43,7 @@ enum VMRelocationJournal {
 
 extension VMRelocationJournal {
     static func recoveryIssue(_ config: VMConfig, rootURL: URL) -> String {
-        let fallback = "BridgeVM found an unfinished move. Check both bundles and the VM’s registration before opening it."
+        let fallback = "BridgeVM found a move that didn’t finish, so either copy of this VM may be missing files. Check both folders in Finder before you open it."
         let recordURL = url(config, rootURL: rootURL)
         guard let data = VMRelocationRecordReader.read(recordURL),
               let record = try? JSONDecoder().decode(Record.self, from: data),
@@ -52,9 +52,8 @@ extension VMRelocationJournal {
               displayable(record.original.bundlePath), displayable(record.destination.bundlePath) else {
             return fallback
         }
-        return fallback + "\nOriginal bundle: " + record.original.bundlePath +
-            "\nDestination bundle: " + record.destination.bundlePath +
-            "\nVerify the contents before using either bundle."
+        return fallback + "\nOriginal folder: " + record.original.bundlePath +
+            "\nNew folder: " + record.destination.bundlePath
     }
 
     private static func displayable(_ path: String) -> Bool {

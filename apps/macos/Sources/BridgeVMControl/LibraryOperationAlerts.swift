@@ -41,7 +41,7 @@ struct LibraryOperationAlerts: ViewModifier {
         .alert("VM Settings Reloaded", isPresented: $library.showsSettingsReloadNotice) {
             Button("OK") { }
         } message: {
-            Text("Your change was saved. The VM’s registration also changed. Reapply any other unsaved edits.")
+            Text("Your change was saved. This VM’s settings also changed on disk, so make any other unsaved changes again.")
         }
         .alert(
             "VM Action Unavailable",

@@ -6,7 +6,7 @@ typealias LibraryActionScheduler = @MainActor (@escaping LibraryActionJob) -> Vo
 enum LibraryFileAction { case deletion, clone, move }
 
 private enum LibraryBusy {
-    static let unregistered = "This VM’s registration changed. Refresh the library and try again."
+    static let unregistered = "This VM’s settings changed on disk. Choose Refresh, then try again."
     static let fileAction = "This VM is being deleted, duplicated or moved. Try again when the operation finishes."
     static let install = "Windows is being installed. Finish or cancel installation before trying again."
     static let runtime = "The VM is running, starting or shutting down. Wait until it is fully stopped, then try again."
@@ -14,7 +14,7 @@ private enum LibraryBusy {
     static let diskGrow = "This VM’s disk is being expanded. Try again when that finishes."
     static let securityChip = "This VM’s security chip is being saved, restored or reset. Try again when that finishes."
     /// A running VM keeps the control it was observed with, so its new registration waits.
-    static let staleControl = "The VM’s registration changed. When the original VM stops, press Command-K and choose Reload Library. Then try again."
+    static let staleControl = "This VM’s settings changed on disk while it was running. After it stops, press Command-K, choose Reload Library, then try again."
 }
 
 extension LibraryModel {

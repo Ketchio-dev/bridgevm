@@ -26,7 +26,7 @@ final class HvfRuntimeLibraryActionCacheIdentityTests: XCTestCase {
 
             fixture.assertRefused([entry], config: current, library: library)
             XCTAssertEqual(entry.error(in: library),
-                "The VM’s registration changed. When the original VM stops, press Command-K and choose Reload Library. Then try again.")
+                "This VM’s settings changed on disk while it was running. After it stops, press Command-K, choose Reload Library, then try again.")
 
             XCTAssertEqual(fixture.queue.count, 0)
             XCTAssertEqual(fixture.modelCreations, creations)

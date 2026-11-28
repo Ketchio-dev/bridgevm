@@ -12,6 +12,9 @@ final class LibraryInstallRowStatusTests: XCTestCase {
         let library = fixture.library()
         let row = LibraryWorkspaceRow(library: library, config: config, model: library.model(for: config), selected: true)
         XCTAssertEqual(row.status.text, "Installation required")
+        // The dashboard names the same state with the same words.
+        XCTAssertEqual(LibraryDashboardDetail(config: config, model: library.model(for: config), library: library).statusText,
+                       "Installation required")
         XCTAssertNil(library.windowsInstallSessions.record(for: config.slug))
 
         let session = library.windowsInstallSession(for: config)

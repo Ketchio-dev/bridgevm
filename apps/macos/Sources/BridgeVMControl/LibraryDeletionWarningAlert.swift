@@ -7,7 +7,7 @@ struct LibraryDeletionWarningAlert: ViewModifier {
 
     func body(content: Content) -> some View {
         content.alert(
-            "VM Deleted with a TPM Key Warning",
+            "VM Deleted",
             isPresented: Binding(
                 get: { library.deletionWarning != nil },
                 set: { if !$0 { library.deletionWarning = nil } }

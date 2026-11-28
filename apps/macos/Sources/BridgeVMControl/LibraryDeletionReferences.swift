@@ -14,7 +14,7 @@ enum LibraryDeletionReferences {
             try HvfPendingDeletionReferences.validate(config, rootURL: rootURL)
             return nil
         } catch {
-            return "Another VM may use files in this library entry. Move that VM or check its registration before deleting this one."
+            return "Another VM in your library may be using files in this VM’s folder. Move or delete that VM first, then try again."
         }
     }
 

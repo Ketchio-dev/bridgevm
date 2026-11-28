@@ -50,6 +50,10 @@ All notable changes to BridgeVM are documented in this file.
   started in the app window. Before, status and cancel answered `targetUnavailable`, and `install`
   failed as busy and then reported that failure while Windows went on installing. The code
   `targetUnavailable` also prints as "BridgeVM isn’t installing this VM." in text output.
+- The library and VM page messages are clearer. Each VM no longer carries an
+  "HVF" label (only a VM BridgeVM can’t run names its engine), and the alerts
+  for moving, duplicating and deleting VMs no longer mention "registrations" or
+  "bundles" and say what to do next.
 - Quitting BridgeVM while it moves, duplicates or deletes a VM now asks to
   finish first and quits when it is done, as it already did while VM files were
   being prepared. Before, BridgeVM quit at once: a move cut short left the VM

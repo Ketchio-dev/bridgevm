@@ -36,7 +36,7 @@ struct CloneWindowsHVFSheet: View {
                         .font(.caption).foregroundStyle(.red)
                 }
             }
-            Text("The duplicate gets its own disk, firmware settings and TPM identity. BridgeVM keeps an archive of the original TPM state and run history in the new bundle.")
+            Text("The duplicate gets its own disk, boot settings and TPM. BridgeVM also keeps a copy of the original VM’s TPM data and logs with the duplicate.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
             HStack {

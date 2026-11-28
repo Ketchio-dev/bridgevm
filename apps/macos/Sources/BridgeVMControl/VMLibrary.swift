@@ -68,7 +68,7 @@ enum VMLibrary {
                 continue
             }
             if values.isSymbolicLink == true {
-                issues.append(VMLibraryIssue(dir, message: "BridgeVM skipped this symbolic link. A VM registration must be stored in a regular folder."))
+                issues.append(VMLibraryIssue(dir, message: "BridgeVM skipped this link. Move the VM’s actual folder into the library instead."))
                 continue
             }
             guard values.isDirectory == true, !VMLibraryInternalEntries.isSourceCache(dir) else { continue }
@@ -86,14 +86,14 @@ enum VMLibrary {
                 guard fileValues.isSymbolicLink != true, fileValues.isRegularFile == true else {
                     issues.append(VMLibraryIssue(
                         dir, file: f,
-                        message: "BridgeVM skipped this registration because vm.json must be a regular file."
+                        message: "BridgeVM skipped this VM because its vm.json isn’t an ordinary file. Replace it with the original vm.json."
                     ))
                     continue
                 }
                 guard let fileSize = fileValues.fileSize, fileSize <= maximumConfigBytes else {
                     issues.append(VMLibraryIssue(
                         dir, file: f,
-                        message: "The vm.json file exceeds the limit of \(maximumConfigBytes) bytes."
+                        message: "This VM’s vm.json is too large to read. Restore it from a backup."
                     ))
                     continue
                 }
@@ -264,7 +264,7 @@ extension VMLibrary {
             let data = try encoder.encode(cfg)
             guard data.count <= maximumConfigBytes else {
                 return .notPublished(CocoaError(.fileWriteUnknown,
-                    userInfo: [NSLocalizedDescriptionKey: "The VM registration exceeds the limit of \(maximumConfigBytes) bytes."]))
+                    userInfo: [NSLocalizedDescriptionKey: "BridgeVM couldn’t save this VM’s settings because they are too large."]))
             }
             return publish(data, configURL)
         } catch {
