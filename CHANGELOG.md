@@ -48,6 +48,9 @@ All notable changes to BridgeVM are documented in this file.
   developer tools" dialog, so it failed or wrongly said the app was not Apple
   Silicon native. It now uses only tools that come with macOS, and every check
   it makes is as strict as before.
+- "Guest agent response" in a VM's status no longer counts the time the Mac
+  slept. Before, it showed, for example, "3600.0 s ago" for up to half a
+  minute after waking from an hour's sleep.
 - Windows boot entries and Secure Boot settings now survive a crash, a power
   loss or a Force Stop that runs out of time while the VM runs. BridgeVM
   used to save the VM's UEFI settings only when the VM stopped cleanly, so

@@ -59,7 +59,7 @@ extension HvfEngineSession {
             // The agent restarted (a guest tools update): the new one says what it takes.
             guestStartApps = HvfGuestStartApps.advertised(line)
         case .aliveHeartbeat:
-            lastHeartbeatDate = Date()
+            lastHeartbeatDate = hostNow()
             lastHeartbeatAge = 0
         default:
             break
