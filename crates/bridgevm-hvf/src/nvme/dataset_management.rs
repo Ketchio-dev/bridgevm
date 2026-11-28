@@ -17,7 +17,9 @@
 //! - Nothing to punch: memory disks, read-only raw files (their writes live in
 //!   the copy-on-write overlay) and file systems that cannot punch holes
 //!   (HFS+ answers ENOTTY, others ENOTSUP) complete the command and keep their
-//!   bytes. Deallocation is advisory, so the guest's data is the same.
+//!   bytes. Deallocation is advisory, so the guest's data is the same. The
+//!   first such failure prints `BVSTORAGE trim-unsupported path=<mount point>`
+//!   once, and the app says why the disk image never shrinks.
 //! - Durability: a punch changes the image file's allocation. Every FLUSH
 //!   syncs that file, inline or on the flush worker through a duplicate of
 //!   the same descriptor, and `F_BARRIERFSYNC` and `F_FULLFSYNC` commit its
@@ -240,7 +242,7 @@ fn punch_ranges(file: &File, ranges: &[(u64, u64)]) -> u64 {
         Ok(block) if block.is_power_of_two() => block,
         Ok(_) => return 0,
         Err(error) => {
-            report_unpunched(&error);
+            report_unpunched(file, &error);
             return 0;
         }
     };
@@ -251,7 +253,7 @@ fn punch_ranges(file: &File, ranges: &[(u64, u64)]) -> u64 {
             continue;
         }
         if let Err(error) = punch_hole(file, from, to - from) {
-            report_unpunched(&error);
+            report_unpunched(file, &error);
             break;
         }
         punched += to - from;
@@ -267,7 +269,7 @@ fn cannot_punch(error: &io::Error) -> bool {
             .is_some_and(|code| [libc::ENOTSUP, libc::EOPNOTSUPP, libc::ENOTTY].contains(&code))
 }
 
-fn report_unpunched(error: &io::Error) {
+fn report_unpunched(file: &File, error: &io::Error) {
     static REPORTED: AtomicBool = AtomicBool::new(false);
     if REPORTED.swap(true, Relaxed) {
         return;
@@ -277,6 +279,12 @@ fn report_unpunched(error: &io::Error) {
         crate::host_log::err(format_args!(
             "nvme: the disk image's file system cannot free blocks ({error}); \
              space Windows frees stays allocated on the Mac (APFS gives it back)"
+        ));
+        // The app's notice (HvfDiskSyncNotice.swift).
+        let volume = super::disk_full::volume_of(file).unwrap_or_default().1;
+        crate::host_log::out(format_args!(
+            "BVSTORAGE trim-unsupported path={}",
+            volume.display()
         ));
     } else {
         crate::host_log::err(format_args!(

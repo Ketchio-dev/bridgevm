@@ -252,24 +252,49 @@ fn memory_disks_and_read_only_overlays_keep_their_bytes() {
     let _ = fs::remove_file(path);
 }
 
+/// The command completes as if punched, and run.log gets one
+/// `BVSTORAGE trim-unsupported` line for the app, however many punches fail.
+/// The line is once per process, so a child process runs the commands.
 #[cfg(target_os = "macos")]
 #[test]
-fn a_file_system_that_cannot_punch_completes_the_command_unchanged() {
+fn a_file_system_that_cannot_punch_completes_the_command_and_says_so_once() {
     use super::super::dataset_management::test_punch;
-    // HFS+ answers ENOTTY; exFAT and network file systems ENOTSUP.
-    for (code, name) in [(libc::ENOTTY, "dsm-enotty"), (libc::ENOTSUP, "dsm-enotsup")] {
-        let path = image(name, 64 * MIB);
-        write_pattern(&path, 16 * MIB, 4 * MIB);
-        let before = allocated(&path);
-        let (mut ctrl, mut mem) = raw_controller(&path, true);
-        test_punch::fail_with(Some(code));
-        let status = dsm(&mut ctrl, &mut mem, 0, &[range(16 * BPM, 4 * BPM)]);
-        test_punch::fail_with(None);
-        assert_eq!(status, SC_SUCCESS, "errno {code}");
-        assert!(intact(&path, 16 * MIB, 4 * MIB));
-        assert_eq!(allocated(&path), before);
-        let _ = fs::remove_file(path);
+    const CHILD: &str = "BRIDGEVM_TEST_DSM_CANNOT_PUNCH";
+    if std::env::var_os(CHILD).is_some() {
+        // HFS+ answers ENOTTY; exFAT and network file systems ENOTSUP.
+        for (code, name) in [(libc::ENOTSUP, "dsm-enotsup"), (libc::ENOTTY, "dsm-enotty")] {
+            let path = image(name, 64 * MIB);
+            write_pattern(&path, 16 * MIB, 4 * MIB);
+            let before = allocated(&path);
+            let (mut ctrl, mut mem) = raw_controller(&path, true);
+            test_punch::fail_with(Some(code));
+            let first = dsm(&mut ctrl, &mut mem, 0, &[range(16 * BPM, 4 * BPM)]);
+            let again = dsm(&mut ctrl, &mut mem, 1, &[range(16 * BPM, 4 * BPM)]);
+            test_punch::fail_with(None);
+            assert_eq!([first, again], [SC_SUCCESS; 2], "errno {code}");
+            assert!(intact(&path, 16 * MIB, 4 * MIB));
+            assert_eq!(allocated(&path), before);
+            let _ = fs::remove_file(path);
+        }
+        return;
     }
+    let test = "nvme::tests::dataset_management::\
+                a_file_system_that_cannot_punch_completes_the_command_and_says_so_once";
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", test, "--nocapture"])
+        .env(CHILD, "1")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<_> = stdout
+        .lines()
+        .filter(|line| line.starts_with("BVSTORAGE trim-unsupported"))
+        .collect();
+    let temp = File::open(std::env::temp_dir()).unwrap();
+    let volume = super::super::disk_full::volume_of(&temp).unwrap().1;
+    let expected = format!("BVSTORAGE trim-unsupported path={}", volume.display());
+    assert_eq!(lines, [expected.as_str()], "{output:?}");
 }
 
 #[cfg(target_os = "macos")]

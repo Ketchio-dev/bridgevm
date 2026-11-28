@@ -46,6 +46,9 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- On a drive that can't give space back (exFAT, HFS+), the app now says once
+  per run that the VM's disk file won't shrink when Windows frees space, and
+  suggests moving the VM to an APFS drive. Before, this was silent.
 - Deleting the selected VM selects the VM next to it, not the first VM
   in the library.
 - A Mac file that never reaches Windows now gets a notice: when Windows

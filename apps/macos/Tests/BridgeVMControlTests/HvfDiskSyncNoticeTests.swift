@@ -50,4 +50,37 @@ final class HvfDiskSyncNoticeTests: XCTestCase {
         feed(["BVSTORAGE durability-failed"])
         XCTAssertTrue(notice.isVisible, "a new run may show it again")
     }
+
+    /// A drive that cannot punch holes (exFAT, HFS+): one dismissible sentence per run.
+    @MainActor
+    func testTrimUnsupportedLineShowsItsNoticeOncePerRun() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let config = HvfEngineConfig(targetDiskPath: root.appendingPathComponent("disk").path,
+            uefiVarsPath: root.appendingPathComponent("vars").path, evidenceDir: root.path,
+            watchdogMs: nil, ramMiB: 6144, smpCpus: 4, clipboardSync: true, shareHostDir: nil, shareGuestDir: nil,
+            virtioNet: true, virtioGpu3d: false, nvmeBufferedIO: true,
+            ctlFilePath: root.appendingPathComponent("agent.ctl").path)
+        let session = HvfEngineSession(config: config, repoRoot: root) { _ in false }
+        let notice = session.diskSyncNotice
+        func feed(_ lines: [String]) {
+            for event in BvAgentEvent.parse(lines: lines) { session.handle(event) }
+        }
+        let line = "BVSTORAGE trim-unsupported path=/Volumes/My Passport"
+        feed(["BVAGENT CMD guest-program exit=0", line, "BVAGENT END guest-program"])
+        XCTAssertFalse(notice.trimUnsupportedVisible, "guest output cannot raise it")
+        feed([line])
+        XCTAssertTrue(notice.trimUnsupportedVisible)
+        XCTAssertFalse(notice.isVisible, "not a save failure")
+        XCTAssertEqual(HvfDiskSyncNotice.trimText,
+            "The drive this VM is on can’t give back the space Windows frees, so the VM’s disk file won’t shrink. Move the VM to an APFS drive to save space.")
+        notice.dismissTrimUnsupported()
+        feed([line])
+        XCTAssertFalse(notice.trimUnsupportedVisible, "once per run")
+        session.resetObservedRuntimeState(clearEvents: true)
+        XCTAssertFalse(notice.trimUnsupportedVisible)
+        feed([line])
+        XCTAssertTrue(notice.trimUnsupportedVisible, "a new run says it again")
+        session.resetObservedRuntimeState(clearEvents: true)
+        XCTAssertFalse(notice.trimUnsupportedVisible, "a run reset clears it")
+    }
 }
