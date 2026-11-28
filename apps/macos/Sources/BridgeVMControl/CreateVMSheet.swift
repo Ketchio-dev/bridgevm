@@ -28,6 +28,8 @@ struct CreateVMSheet: View {
     @State var creationState = CreateVMCreationState()
     /// The disk container being converted, and its percent.
     @State var conversion: (format: HvfImportedDiskFormat, percent: Int)?
+    /// Set while a disk import runs: the footer's Cancel stops it.
+    @State var importCancel: HvfHelperProcess.CancelHandle?
     let resolutions = [(1280, 800), (1440, 900), (1920, 1080), (2560, 1440)]
     enum Mode: Equatable { case windowsHVF, windowsHVFInstall }
     private var maxCPU: Int { max(1, library.hostCPU - 1) }
@@ -235,7 +237,8 @@ extension CreateVMSheet {
             canCreate: canCreate, hint: footerHint,
             cancel: { dismiss() }, create: create,
             recoveryAvailable: !creationState.permitsCreation, recover: recoverCreatedVM,
-            workingLabel: conversion.map { $0.format.conversionLabel(percent: $0.percent) } ?? "")
+            workingLabel: conversion.map { $0.format.conversionLabel(percent: $0.percent) } ?? "",
+            stop: importCancel.map { handle in { handle.cancel() } })
     }
 }
 
@@ -251,11 +254,15 @@ extension CreateVMSheet {
 extension CreateVMSheet {
     func completeCreation(_ outcome: HVFCreationOutcome?) {
         conversion = nil
-        let result = creationState.complete(outcome, adopt: library.add)
+        var result = creationState.complete(outcome, adopt: library.add)
+        // Cancel is the user's own choice: back to the fields with no error, and a waiting quit goes ahead.
+        let cancelled = importCancel?.isCancelled == true && !result.dismiss && creationState.permitsCreation
+        if cancelled { result = (false, "", "") }
+        importCancel = nil
         creationFailureCode = result.code
         error = result.message
         if result.dismiss { dismiss() }
         library.preparingNewVM = false
-        library.finishVMPreparation(succeeded: result.dismiss)
+        library.finishVMPreparation(succeeded: result.dismiss || cancelled)
     }
 }

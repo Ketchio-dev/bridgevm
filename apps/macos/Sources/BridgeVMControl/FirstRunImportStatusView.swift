@@ -76,6 +76,9 @@ struct FirstRunImportStatusView: View {
                     Button("Import", action: importAction)
                         .keyboardShortcut(.defaultAction).accessibilityIdentifier("bridgevm.first-run.import.commit")
                         .disabled(!canImport || recoveryIssue != nil)
+                } else if library.firstRunImport.stage?.canCancel == true {
+                    Button("Cancel") { library.firstRunImport.cancelHandle?.cancel() }
+                        .accessibilityIdentifier("bridgevm.first-run.import.cancel")
                 }
             }
             if library.firstRunImport.publishedConfig != nil, !library.firstRunImport.savedWithNotice {

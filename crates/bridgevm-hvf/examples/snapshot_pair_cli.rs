@@ -18,7 +18,10 @@ fn main() -> ExitCode {
         return usage();
     };
     // Cancel then removes a partial copy; `lease` keeps dying of SIGTERM, which releases it.
-    if matches!(command.as_str(), "create" | "restore" | "import-disk") {
+    if matches!(
+        command.as_str(),
+        "create" | "restore" | "import-disk" | "convert-to-raw"
+    ) {
         stop_copies_on_signals();
     }
     let result = match (command.as_str(), args.len()) {

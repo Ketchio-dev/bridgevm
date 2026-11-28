@@ -26,6 +26,8 @@ extension LibraryModel {
             error = message
         case .failed(let message):
             error = message
+        case .cancelled:
+            error = nil // back to the import fields; a waiting quit may go ahead
         }
         firstRunImport.finish(error: error, publishedConfig: published, savedWithNotice: savedWithNotice)
         finishVMPreparation(succeeded: error == nil)

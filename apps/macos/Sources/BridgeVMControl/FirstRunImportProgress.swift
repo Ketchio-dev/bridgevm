@@ -18,6 +18,9 @@ enum FirstRunImportStage: Equatable, Sendable {
         }
     }
 
+    /// Cancel can stop the copy or conversion; once saving starts the import finishes.
+    var canCancel: Bool { order.0 == 1 }
+
     /// Nil (the spinner) until the converter reports its first percent: a fixed VHD's copy reports none, and
     /// its bar sat at 0% with nothing moving for as long as the copy took.
     var conversionFraction: Double? {
@@ -41,6 +44,8 @@ enum FirstRunImportResult: Sendable {
     case committed(VMConfig)
     case failed(String)
     case publishedButUnsynced(VMConfig, String)
+    /// The user chose Cancel; nothing was saved.
+    case cancelled
 }
 
 typealias FirstRunImportOperation = @Sendable (FirstRunImport.Inputs, URL, URL,
@@ -54,11 +59,14 @@ struct FirstRunImportProgress {
     private(set) var publishedConfig: VMConfig?
     private(set) var savedWithNotice = false
     private var publicationWarning: String?
+    /// Cancel stops this import's copy or conversion.
+    private(set) var cancelHandle: HvfHelperProcess.CancelHandle?
     var isBusy: Bool { operationID != nil }
 
     mutating func begin(displayName: String? = nil) -> UUID {
         self.displayName = displayName
         error = nil
+        cancelHandle = HvfHelperProcess.CancelHandle()
         stage = .validating
         let id = UUID()
         operationID = id
@@ -79,6 +87,7 @@ struct FirstRunImportProgress {
 
     mutating func finish(error: String?, publishedConfig: VMConfig? = nil, savedWithNotice: Bool = false) {
         operationID = nil
+        cancelHandle = nil
         self.error = error
         self.publishedConfig = publishedConfig
         self.savedWithNotice = savedWithNotice

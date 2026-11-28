@@ -72,6 +72,9 @@ All notable changes to BridgeVM are documented in this file.
   "<name> (Windows copy)" and copied to the Mac, and the Mac version keeps the original name.
 - Photos copied on the Mac now paste in Windows: the clipboard image limit
   is 128 MiB instead of 32 MiB. Needs the Guest Tools update.
+- Importing a Windows disk can now be cancelled while it copies or converts,
+  from the first-run import screen or the Create sheet. BridgeVM stops the
+  copy, removes the partial files and returns to the import fields.
 - A Mac change made just as the shared folder is renamed or deleted in
   Windows no longer makes the Windows folder again with only that file,
   after the Guest Tools update.
