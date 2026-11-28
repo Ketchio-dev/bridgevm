@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 enum HvfGUIStartWorker {
     private struct AdmissionChanged: Error {}
@@ -50,8 +51,11 @@ enum HvfGUIStartWorker {
             catch {
                 let stage: HvfRuntimeStartFailureStage
                 switch error as? VTPMStateSecurityError {
-                case .keychainRead(-25308), .keychainRead(-25293), .keychainRead(-128),
-                     .keychainWrite(-25308), .keychainWrite(-25293), .keychainWrite(-128):
+                case .keychainRead(errSecInteractionNotAllowed), .keychainWrite(errSecInteractionNotAllowed):
+                    stage = .keyAccessLocked
+                // Deny or Cancel on the macOS password prompt, e.g. the first start after an app update.
+                case .keychainRead(errSecAuthFailed), .keychainRead(errSecUserCanceled),
+                     .keychainWrite(errSecAuthFailed), .keychainWrite(errSecUserCanceled):
                     stage = .keyAccessDenied
                 case .missingKeyForExistingState: stage = .keyStateMissing
                 case .invalidVMIdentifier, .invalidKeyLength: stage = .keyStateInvalid

@@ -166,6 +166,14 @@ try {
     # More than the volume holds: disk-full, nothing created.
     Assert ((Put 'LPUTBEG' ((B64 $target) + ' ' + [int64]::MaxValue) $null) -ceq 'ERR LPUTBEG disk-full') 'disk-full at LPUTBEG'
     Assert ((Parts $dir).Count -eq 0) 'a temporary after disk-full'
+    # Room for the file but not for the 2 GiB the Mac side also keeps free: disk-full too.
+    $room = (New-Object IO.DriveInfo ([IO.Path]::GetPathRoot([IO.Path]::GetFullPath($target)))).AvailableFreeSpace
+    if ($room -gt 2GB) {
+        $reply = Put 'LPUTBEG' ((B64 $target) + ' ' + ($room - 1GB)) $null
+        if ($reply -ceq 'OK LPUTBEG') { [void](Put 'LPUTABORT' '' $null) }
+        Assert ($reply -ceq 'ERR LPUTBEG disk-full') "room without the margin: $reply"
+        Assert ((Parts $dir).Count -eq 0) 'a temporary after the margin refusal'
+    }
     $full = @{ Exception = (New-Object IO.IOException 'There is not enough space on the disk.', -2147024784) }
     Assert ((Get-PutError $full) -ceq 'disk-full') 'ERROR_DISK_FULL is disk-full'
     $cases++

@@ -26,8 +26,10 @@ function New-Object([string]$ComObject) {
     return $shell
 }
 $old = $env:ProgramData
+$oldLocal = $env:LOCALAPPDATA
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('bv-pin-' + [guid]::NewGuid().ToString('N'))
-$env:ProgramData = $temp
+$env:ProgramData = Join-Path $temp 'ProgramData'
+$env:LOCALAPPDATA = Join-Path $temp 'LocalAppData'
 [void][IO.Directory]::CreateDirectory($temp)
 try {
     $root = Join-Path $temp 'share'
@@ -36,10 +38,12 @@ try {
     [void][IO.Directory]::CreateDirectory($root)
     # LSR appends a separator; the marker and Shell must use the same path as a bare root.
     Pin-ShareQuickAccess ($root + [IO.Path]::DirectorySeparatorChar)
-    $marker = Join-Path $temp 'BridgeVM/share-quick-access.attempted'
+    $marker = Join-Path $env:LOCALAPPDATA 'BridgeVM/share-quick-access.attempted'
     Assert ([IO.File]::ReadAllText($marker) -ceq $root) 'trailing separator normalized in marker'
     Assert ($script:shellRoot -ceq $root) 'trailing separator normalized for Shell'
     Assert ($script:pins -eq 1 -and [IO.File]::Exists($marker)) 'pin and persistent marker'
+    # The display-driver install moves an unlocked ProgramData\BridgeVM aside, marker and all.
+    Assert (-not [IO.Directory]::Exists((Join-Path $env:ProgramData 'BridgeVM'))) 'marker kept out of ProgramData'
     Assert ($script:logs.Count -eq 1 -and $script:logs[0] -eq ('SHARE Quick Access pin attempted ' + $root)) 'one attempt log line'
     $script:BvSharePinAttempted = $false # a new agent process; user has unpinned
     Pin-ShareQuickAccess $root
@@ -53,9 +57,22 @@ try {
     $script:BvSharePinAttempted = $false
     Pin-ShareQuickAccess $root
     Assert ($script:logs.Count -eq 1) 'failed attempt also never repeated'
+    [IO.File]::Delete($marker)
+    $script:BvSharePinAttempted = $false
+    $script:fail = $false
+    $olderMarker = Join-Path $env:ProgramData 'BridgeVM/share-quick-access.attempted'
+    [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($olderMarker))
+    [IO.File]::WriteAllText($olderMarker, $root)
+    Pin-ShareQuickAccess $root
+    Assert ($script:pins -eq 1 -and $script:logs.Count -eq 1) 'an older agent marker in ProgramData is respected'
+    [IO.File]::Delete($olderMarker)
+    $script:BvSharePinAttempted = $false
+    Pin-ShareQuickAccess $root
+    Assert ($script:pins -eq 1 -and [IO.File]::Exists($marker)) 'the older marker carries over, so moving ProgramData\BridgeVM aside later changes nothing'
     Assert ($source.Contains('Pin-ShareQuickAccess $rootFull')) 'called only from sharing LSR'
-    'PASS: Quick Access contract (7 cases)'
+    'PASS: Quick Access contract (10 cases)'
 } finally {
     $env:ProgramData = $old
+    $env:LOCALAPPDATA = $oldLocal
     Remove-Item -LiteralPath $temp -Recurse -Force
 }
