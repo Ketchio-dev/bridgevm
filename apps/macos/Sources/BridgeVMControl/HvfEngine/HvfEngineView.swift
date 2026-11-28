@@ -300,6 +300,7 @@ struct HvfEngineView: View {
                 .font(.body.monospaced())
                 .accessibilityIdentifier(identifier)
             Button { choosePath(text: text, directory: chooseDirectory) } label: { Image(systemName: "folder") }
+            .accessibilityLabel("Choose \(label)")
             .accessibilityIdentifier(chooseIdentifier)
             .help("Choose \(label)")
         }

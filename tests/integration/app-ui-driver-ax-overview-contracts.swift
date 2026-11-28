@@ -9,8 +9,8 @@ extension AppUIDriverAXContracts {
         check(AppUIDriverOverviewRows.amber == amber && AppUIDriverOverviewRows.indigo == indigo,
               "driver rows use the current row label format")
         let fixture = AppUIDriverAXFixture()
-        fixture.add(50, role: "AXMenuButton", description: "Amber 작업")
-        fixture.add(51, role: "AXMenuButton", description: "Indigo 작업")
+        fixture.add(50, role: "AXMenuButton", description: "Actions for Amber")
+        fixture.add(51, role: "AXMenuButton", description: "Actions for Indigo")
         fixture.nodes[1]!.related[A.children]!.append(contentsOf: [50, 51])
         let rows = try AppUIDriverAXOperations(access: fixture).perform(.overviewCards).values
         check(rows?.amberVisible == true && rows?.indigoVisible == true, "both current rows observed once beside their menus")

@@ -14,7 +14,7 @@ struct LibraryStartupView: View {
                         Text(failure).textSelection(.enabled)
                         Button("Try Again") { Task { await startup.load() } }
                     } else {
-                        ProgressView()
+                        ProgressView().accessibilityHidden(true)
                         Text("Opening your VM library").font(.title2)
                         Text("Checking for installations to recover before showing your VMs.")
                             .foregroundStyle(.secondary)

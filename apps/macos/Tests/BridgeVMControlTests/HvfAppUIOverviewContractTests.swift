@@ -30,7 +30,7 @@ final class HvfAppUIOverviewContractTests: XCTestCase {
             return element
         }
         let amber = element(HvfAppUIOverview.amber), indigo = element(HvfAppUIOverview.indigo)
-        content.setAccessibilityChildren([amber, element("Amber 작업", role: .menuButton), indigo,
+        content.setAccessibilityChildren([amber, element("Actions for Amber", role: .menuButton), indigo,
                                           element("Indigo, HVF, stopped"), element(HvfAppUIOverview.amber, role: .staticText)])
         XCTAssertTrue(try HvfAppUIAccessibility.hasRow(HvfAppUIOverview.amber, in: content))
         XCTAssertTrue(try HvfAppUIAccessibility.hasRow(HvfAppUIOverview.indigo, in: content))

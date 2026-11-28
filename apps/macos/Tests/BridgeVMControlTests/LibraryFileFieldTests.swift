@@ -52,4 +52,12 @@ final class LibraryFileFieldTests: XCTestCase {
         folder.complete(.cancel)
         XCTAssertEqual(path, "/chosen/windows.raw")
     }
+
+    /// Voice Control finds a button by its visible title, so the spoken label starts with it.
+    func testChooseLabelStartsWithTheVisibleTitle() {
+        XCTAssertEqual(LibraryFileField.chooseTitle(directory: false), "Choose or drop file…")
+        XCTAssertEqual(LibraryFileField.chooseLabel("Windows disk", directory: false), "Choose or drop file: Windows disk")
+        XCTAssertEqual(LibraryFileField.chooseLabel("TPM data folder (optional)", directory: true),
+                       "Choose or drop folder: TPM data folder (optional)")
+    }
 }

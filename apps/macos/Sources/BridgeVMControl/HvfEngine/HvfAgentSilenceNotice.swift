@@ -153,7 +153,8 @@ struct HvfAgentSilenceStrip: View {
 
     var body: some View {
         if let text = notice.windowConnectionWarning {
-            HvfNoticeStrip(identifier: "bridgevm.display.agent-silence", dismiss: { notice.dismissInWindow() }) {
+            HvfNoticeStrip(identifier: "bridgevm.display.agent-silence", title: "Guest Tools connection notice",
+                           announcement: text, dismiss: { notice.dismissInWindow() }) {
                 Label {
                     Text(text).fixedSize(horizontal: false, vertical: true)
                 } icon: {
@@ -164,19 +165,26 @@ struct HvfAgentSilenceStrip: View {
     }
 }
 
-/// Shared presentation for actionable, dismissible notices over the VM display.
+/// Shared presentation for actionable, dismissible notices over the VM display. A dozen can stack there,
+/// so VoiceOver names each by its `title`, a short plain name such as "low disk space notice".
 struct HvfNoticeStrip<Content: View>: View {
     let identifier: String
+    let title: String
+    /// The strip's sentence, said once as the strip appears over the display (`hvfAnnouncesNotices`).
+    let announcement: String
     let dismiss: () -> Void
     @ViewBuilder var content: () -> Content
+    @Environment(\.hvfAnnouncesNotices) private var announces
+
+    static func dismissLabel(_ title: String) -> String { "Dismiss the \(title)" }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             content()
             Button(action: dismiss) { Image(systemName: "xmark") }
                 .buttonStyle(.plain)
-                .help("Dismiss notice")
-                .accessibilityLabel("Dismiss notice")
+                .help(Self.dismissLabel(title))
+                .accessibilityLabel(Self.dismissLabel(title))
                 .accessibilityIdentifier(identifier + ".close")
         }
             .font(.callout)
@@ -186,6 +194,27 @@ struct HvfNoticeStrip<Content: View>: View {
             .frame(maxWidth: 640)
             .padding(8)
             .accessibilityElement(children: .contain)
+            .accessibilityLabel(title)
             .accessibilityIdentifier(identifier)
+            .onAppear { if announces { HvfNoticeAnnouncement.post(announcement) } }
+    }
+}
+
+/// The Windows display is a picture VoiceOver can't describe, so a notice appearing over it would go
+/// unheard. The dashboard and Settings show some of the same notices in lists VoiceOver reads as usual,
+/// and stay quiet, so a notice shown in two windows is said once.
+enum HvfNoticeAnnouncement {
+    @MainActor static var post: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
+}
+
+private struct HvfAnnouncesNoticesKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// Set over the VM display (HvfLiveDisplaySurface).
+    var hvfAnnouncesNotices: Bool {
+        get { self[HvfAnnouncesNoticesKey.self] }
+        set { self[HvfAnnouncesNoticesKey.self] = newValue }
     }
 }

@@ -9,7 +9,8 @@ struct HvfWindowsInstallStatusCard: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 if session.isRunning {
-                    ProgressView().controlSize(.small)
+                    // The stage beside it says what is running.
+                    ProgressView().controlSize(.small).accessibilityHidden(true)
                 }
                 Text(installerForNewVM == nil ? session.stage.label : "Windows setup drivers required").font(.headline)
                     .accessibilityIdentifier("bridgevm.windows.install.stage")
@@ -40,6 +41,7 @@ struct HvfWindowsInstallStatusCard: View {
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Step \(current + 1) of \(HvfWindowsInstallStage.steps.count)")
+                .accessibilityValue(HvfWindowsInstallStage.steps[current])
             }
             if session.stage == .preparingSource, let activity = session.sourceActivity {
                 Text(activity)

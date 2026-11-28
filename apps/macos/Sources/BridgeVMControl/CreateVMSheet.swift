@@ -83,14 +83,18 @@ struct CreateVMSheet: View {
             if mode == .windowsHVF {
                 Text("Choose a RAW, QCOW2, fixed-size VHD, or VHDX disk with Windows 11 for Arm installed. BridgeVM creates a RAW copy in your library. If you omit the UEFI variables file, BridgeVM creates default boot settings.")
                     .font(.callout).foregroundColor(.secondary)
+                let disk = hvfTargetPath.isEmpty ? "No disk selected" : (hvfTargetPath as NSString).lastPathComponent
+                let vars = hvfVarsPath.isEmpty ? "No file selected" : (hvfVarsPath as NSString).lastPathComponent
                 HStack {
                     Button("Choose Disk…") { pickHVFTarget() }
-                    Text(hvfTargetPath.isEmpty ? "No disk selected" : (hvfTargetPath as NSString).lastPathComponent)
+                        .accessibilityValue(disk)
+                    Text(disk)
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
                 }
                 HStack {
                     Button("Choose UEFI Variables… (optional)") { pickHVFVars() }
-                    Text(hvfVarsPath.isEmpty ? "No file selected" : (hvfVarsPath as NSString).lastPathComponent)
+                        .accessibilityValue(vars)
+                    Text(vars)
                         .font(.caption).foregroundColor(.secondary).lineLimit(1)
                 }
                 Text(HvfWindowsImportNotice.varsHelp)

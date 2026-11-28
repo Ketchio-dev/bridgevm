@@ -48,7 +48,8 @@ struct HvfWindowsSnapshotCard: View {
                     }
                 }
                 .accessibilityIdentifier("bridgevm.runtime.snapshot.create")
-                if model.busy { ProgressView().controlSize(.small) }
+                // The status line below says what is under way.
+                if model.busy { ProgressView().controlSize(.small).accessibilityHidden(true) }
             }
             .disabled(session.hasActiveRuntimeWork || model.busy)
             Text(statusText)

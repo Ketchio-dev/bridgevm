@@ -67,7 +67,7 @@ final class AppUIHostOverviewStateContractTests: XCTestCase {
             return element
         }
         let amber = element(AppUIDriverOverviewRows.amber), indigo = element(AppUIDriverOverviewRows.indigo)
-        content.setAccessibilityChildren([amber, element("Amber 작업", role: .menuButton), indigo,
+        content.setAccessibilityChildren([amber, element("Actions for Amber", role: .menuButton), indigo,
                                           element("Indigo, HVF, stopped"), element(AppUIDriverOverviewRows.amber, role: .staticText)])
         XCTAssertTrue(try AppUIHostAccessibility.hasRow(AppUIDriverOverviewRows.amber, in: content))
         XCTAssertTrue(try AppUIHostAccessibility.hasRow(AppUIDriverOverviewRows.indigo, in: content))

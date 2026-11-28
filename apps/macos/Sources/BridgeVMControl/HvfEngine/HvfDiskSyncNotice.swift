@@ -38,13 +38,14 @@ struct HvfDiskSyncNoticeView: View {
 
     var body: some View {
         if notice.isVisible {
-            HvfNoticeStrip(identifier: "bridgevm.storage.durability", dismiss: { notice.dismiss() }) {
+            HvfNoticeStrip(identifier: "bridgevm.storage.durability", title: "disk save notice",
+                           announcement: HvfDiskSyncNotice.text, dismiss: { notice.dismiss() }) {
                 Text(HvfDiskSyncNotice.text)
             }
         }
         if notice.trimUnsupportedVisible {
-            HvfNoticeStrip(identifier: "bridgevm.storage.trim-unsupported",
-                           dismiss: { notice.dismissTrimUnsupported() }) {
+            HvfNoticeStrip(identifier: "bridgevm.storage.trim-unsupported", title: "disk file size notice",
+                           announcement: HvfDiskSyncNotice.trimText, dismiss: { notice.dismissTrimUnsupported() }) {
                 Text(HvfDiskSyncNotice.trimText)
             }
         }

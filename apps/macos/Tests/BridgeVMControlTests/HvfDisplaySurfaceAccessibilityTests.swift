@@ -9,7 +9,7 @@ final class HvfDisplaySurfaceAccessibilityTests: XCTestCase {
         let waiting = "Waiting for Windows to show a picture"
         XCTAssertEqual(HvfDisplaySurfaceAccessibility.value(.zero), waiting)
         XCTAssertEqual(HvfDisplaySurfaceAccessibility.value(CGSize(width: 1920, height: 0)), waiting)
-        XCTAssertEqual(HvfDisplaySurfaceAccessibility.value(CGSize(width: 1920, height: 1080)), "1920 by 1080")
+        XCTAssertEqual(HvfDisplaySurfaceAccessibility.value(CGSize(width: 1920, height: 1080)), "1920 by 1080 pixels")
     }
 
     func testFramebufferViewStartsWithoutAFrame() {
@@ -22,18 +22,24 @@ final class HvfDisplaySurfaceAccessibilityTests: XCTestCase {
         XCTAssertEqual(view.accessibilityValue() as? String, "Waiting for Windows to show a picture")
     }
 
-    /// VoiceOver reads the help aloud, so the press count is only for the end-to-end harness.
-    func testAPressOutsideTheEndToEndHarnessLeavesTheHelpEmpty() throws {
+    /// VoiceOver reads the help aloud: outside the end-to-end harness it says where input goes, and a press
+    /// never turns it into the harness's press count.
+    func testAPressOutsideTheEndToEndHarnessKeepsThePlainHelp() throws {
         let view = makeView()
         defer { view.teardown() }
+        let help = "Keys and clicks go to Windows. Use the Virtual Machine menu to pause, restart or shut down."
+        XCTAssertEqual(view.accessibilityHelp(), help)
         view.mouseDown(with: try XCTUnwrap(NSEvent.mouseEvent(
             with: .leftMouseDown, location: CGPoint(x: 10, y: 10), modifierFlags: [], timestamp: 0,
             windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
-        XCTAssertNil(view.accessibilityHelp())
+        XCTAssertEqual(view.accessibilityHelp(), help)
     }
 
+    /// The harness reads a missing help as no press yet (T17DisplayInputDiagnostic), so it gets no sentence.
     func testTheEndToEndHarnessReadsWhereThePressWent() {
         let view = NSView()
+        HvfDisplaySurfaceAccessibility.configure(view, reports: true)
+        XCTAssertNil(view.accessibilityHelp())
         HvfDisplaySurfaceAccessibility.notePress(view, count: 2, outcome: "no-guest-size", reports: true)
         XCTAssertEqual(view.accessibilityHelp(), "presses=2 last=no-guest-size")
     }

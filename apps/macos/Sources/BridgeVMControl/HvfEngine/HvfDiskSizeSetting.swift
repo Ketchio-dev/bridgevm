@@ -37,22 +37,24 @@ struct HvfDiskSizeSetting: View {
                 HStack(spacing: 10) {
                     Text("Virtual disk size")
                     Text(currentBytes.map(Self.sizeText) ?? "—")
+                        .accessibilityLabel(currentBytes.map { "Current size, \(Self.sizeText($0))" } ?? "Current size unknown")
                     if let range {
-                        Text("→")
+                        Text("→").accessibilityHidden(true)
                         TextField("New size", text: $targetText)
                             .labelsHidden().frame(width: 52)
                             .accessibilityLabel("New virtual disk size in GiB")
-                        Stepper("Virtual disk size", value: Binding(
+                        Stepper("New virtual disk size", value: Binding(
                             get: { validSize ?? range.lowerBound },
                             set: { targetText = $0.formatted(.number.locale(locale)) }
                         ), in: range).labelsHidden()
                             .fixedSize()
+                            .accessibilityValue("\((validSize ?? range.lowerBound).formatted(.number.locale(locale))) GiB")
                         Text("GiB (up to \(range.upperBound) GiB)").font(.caption).foregroundColor(.secondary)
                         Button("Expand disk") { confirmationSize = validSize }
                             .disabled(validSize == nil)
                             .accessibilityIdentifier("bridgevm.runtime.disk-grow")
                     }
-                    if busy { ProgressView().controlSize(.small) }
+                    if busy { ProgressView().controlSize(.small).accessibilityLabel("Expanding the disk") }
                     Spacer()
                 }
                 .disabled(!stopped || busy)

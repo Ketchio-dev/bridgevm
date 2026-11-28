@@ -61,7 +61,7 @@ final class HvfFramebufferRetryTests: XCTestCase {
         XCTAssertEqual(image.width, 1)
         XCTAssertEqual(image.height, 1)
         XCTAssertEqual(try XCTUnwrap(image.dataProvider?.data) as Data, pixels)
-        XCTAssertEqual(view.accessibilityValue() as? String, "1 by 1")
+        XCTAssertEqual(view.accessibilityValue() as? String, "1 by 1 pixels")
         XCTAssertEqual(providerCalls, 2)
         XCTAssertEqual(imageCalls, failingProvider ? 1 : 2)
         view.refreshFrame(at: 2)

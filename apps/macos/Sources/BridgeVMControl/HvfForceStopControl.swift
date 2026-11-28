@@ -65,7 +65,8 @@ struct HvfRunFailureStrip: View {
 
     var body: some View {
         if let text = session.displayRunFailureText, dismissed != text {
-            HvfNoticeStrip(identifier: "bridgevm.display.failure", dismiss: { dismissed = text }) {
+            HvfNoticeStrip(identifier: "bridgevm.display.failure", title: "VM problem notice",
+                           announcement: text, dismiss: { dismissed = text }) {
                 HvfForceStopControl(session: session, identifier: "bridgevm.display.failure", spacing: 6) {
                     Label(text, systemImage: "exclamationmark.triangle").font(.callout)
                         .fixedSize(horizontal: false, vertical: true)
@@ -96,8 +97,9 @@ struct HvfStopWaitStrip: View {
 
     var body: some View {
         Group {
-            if session.stopWait != nil, !dismissed {
-                HvfNoticeStrip(identifier: "bridgevm.display.stop", dismiss: { dismissed = true }) {
+            if let wait = session.stopWait, !dismissed {
+                HvfNoticeStrip(identifier: "bridgevm.display.stop", title: "shutdown notice",
+                               announcement: wait.message, dismiss: { dismissed = true }) {
                     HvfForceStopControl(session: session, identifier: "bridgevm.display", spacing: 6) { EmptyView() }
                 }
             }
