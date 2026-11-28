@@ -71,6 +71,10 @@ All notable changes to BridgeVM are documented in this file.
 - A UDP reply larger than 1,472 bytes no longer stops all networking in
   Windows until the VM restarts. Large replies, such as from VPN, voice-call
   or DNS servers, now reach Windows whole, as IPv4 fragments.
+- Busy web browsing in Windows no longer drops VPN, voice-call or game
+  connections. Each answered DNS lookup used to keep a slot in the
+  256-entry UDP table for five minutes. Upload connections now also give
+  back their buffer memory, up to about 6 MB each, once it has been sent.
 - Files dropped on a VM window, or opened with BridgeVM from Finder, while
   Windows is still starting are now copied once Windows is ready. Before,
   they were refused with a message that stayed over the Windows taskbar. A
