@@ -75,33 +75,39 @@ final class HvfRuntimeStartFeedbackTests: XCTestCase {
         }
     }
 
-    private struct LockedKeychain: VTPMStateKeyProviding {
+    private struct RefusingKeychain: VTPMStateKeyProviding {
+        let status: OSStatus
         func stateKey(for stableVMID: String, allowCreation: Bool) throws -> Data {
-            throw VTPMStateSecurityError.keychainRead(-25308)
+            throw VTPMStateSecurityError.keychainRead(status)
         }
     }
 
+    /// A locked keychain (-25308) asks for an unlock; Deny (-25293) or Cancel (-128) on the macOS
+    /// password prompt after an app update means the keychain is unlocked but access was refused.
     func testKeychainFailureIsActionableAndStatusStaysInDiagnosticLog() async throws {
-        let f = try HvfGUIStartFixture(encrypted: true, typed: true)
-        let config = f.base.config
-        let root = f.root
-        f.session.guiStartWorker = { input in
-            await HvfGUIStartWorker.run(.init(config: config, repoRoot: root, policy: input.policy,
-                keyProvider: LockedKeychain(), processIsRunning: { _ in false },
-                launch: { _ in XCTFail("key refusal must prevent launch") },
-                effectAdmission: input.effectAdmission, permit: input.permit))
+        let unlock = "Unlock your login keychain and try starting Windows again."
+        let allow = "BridgeVM needs permission to use this VM’s security key. Start Windows again, enter your Mac password and choose Always Allow."
+        for (status, sentence) in [(OSStatus(-25308), unlock), (-25293, allow), (-128, allow)] {
+            let f = try HvfGUIStartFixture(encrypted: true, typed: true)
+            let config = f.base.config
+            let root = f.root
+            f.session.guiStartWorker = { input in
+                await HvfGUIStartWorker.run(.init(config: config, repoRoot: root, policy: input.policy,
+                    keyProvider: RefusingKeychain(status: status), processIsRunning: { _ in false },
+                    launch: { _ in XCTFail("key refusal must prevent launch") },
+                    effectAdmission: input.effectAdmission, permit: input.permit))
+            }
+            let ticket = try f.start()
+            try await f.wait { !ticket.workerPending }
+            XCTAssertEqual(f.session.guiStartFailureText, sentence, "OSStatus \(status)")
+            XCTAssertFalse(f.session.guiStartFailureText?.contains("OSStatus") ?? true)
+            XCTAssertTrue(f.session.events.contains { event in
+                if case let .unknown(line) = event { return line.contains("keyAccess") && line.contains("\(status)") }
+                return false
+            })
+            XCTAssertEqual(f.effects.snapshot.launches, 0)
+            await f.clean()
         }
-        let ticket = try f.start()
-        try await f.wait { !ticket.workerPending }
-        XCTAssertEqual(f.session.guiStartFailureText,
-            "Unlock your login keychain and try starting Windows again.")
-        XCTAssertFalse(f.session.guiStartFailureText?.contains("OSStatus") ?? true)
-        XCTAssertTrue(f.session.events.contains { event in
-            if case let .unknown(line) = event { return line.contains("keyAccess") && line.contains("-25308") }
-            return false
-        })
-        XCTAssertEqual(f.effects.snapshot.launches, 0)
-        await f.clean()
     }
 
     func testPreparationFailureIsActionableAndRawDetailStaysInDiagnosticLog() async throws {

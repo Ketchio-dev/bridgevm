@@ -71,6 +71,11 @@ All notable changes to BridgeVM are documented in this file.
   now stops too, within a few seconds. Before, the installer VM kept running
   unseen with 4 GB of memory, and trying the installation again started a
   second one next to it.
+- If you choose Deny or Cancel when macOS asks for your Mac password at Start,
+  which can happen the first time after a BridgeVM update, BridgeVM now says it
+  needs permission to use the VM's security key and to choose Always Allow
+  next time. Before, it told you to unlock your login keychain, which was
+  already unlocked. A locked keychain still asks you to unlock it.
 - A Windows VM can start again after its VM process was killed or crashed. The
   VM's TPM helper kept running on its own and held the VM's TPM state, so every
   later start failed until you restarted the Mac. Start now stops that leftover
