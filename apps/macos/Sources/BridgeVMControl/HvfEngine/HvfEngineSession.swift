@@ -20,6 +20,8 @@ final class HvfEngineSession: ObservableObject {
     let heartbeat = HvfRuntimeHeartbeat() // publishes the per-poll heartbeat age apart from the session
     let shareRootNotice = HvfShareRootNotice()
     let diskSyncNotice = HvfDiskSyncNotice()
+    let lowSpaceNotice = HvfLowSpaceNotice() // the drive with the VM's disk is nearly full
+    var freeSpace: (URL) -> Int64? = HvfImportSpace.available // what lowSpaceNotice reads; tests inject it
     let bootFailureNotice = HvfBootFailureNotice()
     let snapshotModel = HvfWindowsSnapshotModel()
     let agentUpdateNotice = HvfAgentUpdateNotice()
@@ -87,8 +89,8 @@ final class HvfEngineSession: ObservableObject {
     /// the wall clock an input receipt still awaited at sleep expired on wake and stopped all input.
     lazy var hostNow: () -> Date = { [unowned self] in Date(timeIntervalSinceReferenceDate: self.ownedStartNow()) }
     var guestRunClock = HvfGuestRunClock()
-    @Published var pauseNotice: String? // a Pause or Resume that did not happen, or a full Mac disk's pause
-    var diskFullReported = false // `BVSTORAGE full`: the `BVPAUSE paused` that follows is for a full Mac disk
+    @Published var pauseNotice: String? // a Pause or Resume that did not happen, or a full drive's pause
+    var diskFullPath: String? // `BVSTORAGE full … path=`: the `BVPAUSE paused` that follows is for that full drive
     var runtimeTransitionInProgress = false
     var timer: Timer?
     var tailReader = TailOffsetReader()
@@ -508,6 +510,7 @@ final class HvfEngineSession: ObservableObject {
         expireUnacknowledgedReset()
         expireUnansweredPause()
         refreshAgentSilence()
+        refreshLowSpace()
         if let lastHeartbeatDate { // uptime, so time the Mac slept does not count
             lastHeartbeatAge = hostNow().timeIntervalSince(lastHeartbeatDate)
         }
@@ -596,6 +599,7 @@ final class HvfEngineSession: ObservableObject {
         lastHeartbeatAge = nil
         serviceStarted = false
         shareRootNotice.reset()
+        lowSpaceNotice.reset()
         agentUpdateNotice.reset()
         fileDrops.reset()
         clipboardImageNotice.reset()
@@ -634,6 +638,7 @@ final class HvfEngineSession: ObservableObject {
         portForwardNotice.reset()
         audioNotice.reset()
         diskSyncNotice.reset()
+        lowSpaceNotice.reset()
         bootFailureNotice.reset()
         agentUpdateNotice.reset()
         fileDrops.reset()
