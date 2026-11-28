@@ -58,6 +58,14 @@ if ($desktop) {
     }
     function Copy-Bitmap([int]$width, [int]$height) { [Windows.Forms.Clipboard]::SetImage((New-Object Drawing.Bitmap $width, $height)) }
     function Copy-Text([string]$text) { [Windows.Forms.Clipboard]::SetText($text); $script:fakeText = $text }
+    function Copy-Cells([string]$text) {
+        $data = New-Object Windows.Forms.DataObject
+        $data.SetData('Biff12', $false, (New-Object IO.MemoryStream (,[byte[]](1, 2, 3))))
+        $data.SetData([Windows.Forms.DataFormats]::UnicodeText, $true, $text)
+        $data.SetData([Windows.Forms.DataFormats]::Bitmap, $true, (New-Object Drawing.Bitmap 4, 5))
+        [Windows.Forms.Clipboard]::SetDataObject($data, $true)
+        $script:fakeText = $text
+    }
     function Copy-Files([string[]]$paths) {
         $list = New-Object System.Collections.Specialized.StringCollection
         $list.AddRange($paths)
@@ -133,6 +141,13 @@ public static class BvTestSeq { public static uint Seq = 1; public static uint G
         Set-Fake $data
     }
     function Copy-Text([string]$text) { $data = $TDataObject::new(); $data.SetData('UnicodeText', $true, $text); Set-Fake $data; $script:fakeText = $text }
+    function Copy-Cells([string]$text) {
+        $data = $TDataObject::new()
+        $data.SetData('Biff12', $false, (New-Object IO.MemoryStream (,[byte[]](1, 2, 3))))
+        $data.SetData('UnicodeText', $true, $text)
+        $data.SetData('Bitmap', $true, $TBitmap::new(4, 5, [byte[]](New-Png 4 5)))
+        Set-Fake $data; $script:fakeText = $text
+    }
     function Copy-Files([string[]]$paths) { $data = $TDataObject::new(); $data.SetData('FileDrop', $true, [string[]]$paths); Set-Fake $data; $script:fakeText = $null }
     function Read-ClipHtml {
         $data = $TClipboard::Current
@@ -188,6 +203,9 @@ try {
     Assert (-not (Test-Path -LiteralPath $guestPath)) 'and the previous file is gone'
     Copy-Text 'plain'
     Assert ((Run 'CLIPX' '')[0] -ceq ('CLIPX 0 0 0 - - ' + (B64 'plain'))) 'a text copy has no image part'
+    # Copied Excel cells come with a picture of them: they go as their text, not the picture.
+    Copy-Cells "a`tb"
+    Assert ((Run 'CLIPX' '')[0] -ceq ('CLIPX 0 0 0 - - ' + (B64 "a`tb"))) 'copied cells have no image part'
 
     # A file that is no PNG is refused and changes nothing.
     [IO.File]::WriteAllBytes($hostPath, [Text.Encoding]::ASCII.GetBytes('MZ, not a PNG at all, but longer than an IHDR'))

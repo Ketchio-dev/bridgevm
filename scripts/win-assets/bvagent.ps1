@@ -2234,6 +2234,9 @@ namespace BridgeVM {
                     }
                 }
                 if (!data.GetDataPresent(DataFormats.Bitmap, true)) { return; }
+                // Copied cells: Excel and LibreOffice offer a picture of them too, and the Mac
+                // app would paste that instead of the table their text and HTML make.
+                if (data.GetDataPresent("Biff12", false) || data.GetDataPresent("Biff8", false)) { return; }
                 using (Image image = data.GetData(DataFormats.Bitmap, true) as Image) {
                     if (image == null) { return; }
                     w = image.Width;
