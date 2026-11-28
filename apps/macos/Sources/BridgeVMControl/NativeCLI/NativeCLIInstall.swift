@@ -8,9 +8,15 @@ enum NativeCLIInstall {
         do {
             let library = try NativeRuntimeLibraryHandle.open(rootURL: rootURL, create: false)
             libraryPath = library.identity.canonicalPath
+            let saved = NativeCLIStatusConfiguration.read(library: library, id: id)
+            // A mistyped ID: the app would only say it isn't installing that VM.
+            if saved.state == .missing {
+                return .init(command: operation.rawValue, vmID: id, libraryPath: libraryPath, appInstanceID: nil,
+                    requestedOperationID: operationID, disposition: nil, observation: nil,
+                    unavailableReason: NativeLibraryConfigLoader.unknownID(id), complete: false)
+            }
             let statusRequest = NativeRuntimeRequest(schema: NativeRuntimeCodec.requestSchema, operation: "status",
-                requestID: UUID().uuidString, library: library.identity, vmID: id,
-                savedConfiguration: NativeCLIStatusConfiguration.read(library: library, id: id))
+                requestID: UUID().uuidString, library: library.identity, vmID: id, savedConfiguration: saved)
             let status = try NativeRuntimeClient.query(rootURL: rootURL, request: statusRequest)
             appInstanceID = status.appInstanceID
             let request = NativeInstallControlRequest(schema: NativeInstallControlCodec.requestSchema,

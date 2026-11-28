@@ -26,7 +26,7 @@ final class NativeCLICreateWindowsNameTests: XCTestCase {
             XCTAssertThrowsError(try NativeCLICreateWindowsParser.parse(
                 arguments: arguments, defaultLibrary: root, hostCPU: 8)) { error in
                 XCTAssertEqual(error.localizedDescription,
-                               "Unknown or duplicate create-windows argument. Use --cli --help.")
+                               "Unknown or duplicate create-windows argument. Run `bridgevm app create-windows --help`.")
             }
         }
     }

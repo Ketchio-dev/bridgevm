@@ -7,6 +7,11 @@ enum NativeLibraryReader {
         !id.isEmpty && id == VMConfig.slugify(id) && !id.contains("/")
     }
 
+    /// A display name, path or mistyped ID where an ID goes.
+    static func notAnID(_ text: String) -> String {
+        "“\(text)” isn’t a VM ID. Run `bridgevm app list` to find its ID."
+    }
+
     static func snapshot(rootURL: URL, id: String? = nil) throws -> NativeLibrarySnapshot {
         if let id, !isCanonicalID(id) { throw NativeCLIError.invalid("Invalid VM ID.") }
         let root = open(rootURL.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
@@ -25,7 +30,7 @@ enum NativeLibraryReader {
             var entry = stat()
             guard fstatat(root, name, &entry, AT_SYMLINK_NOFOLLOW) == 0 else {
                 if id != nil, errno == ENOENT {
-                    throw NativeCLIError.unavailable("No native VM configuration found for ID '\(name)'.")
+                    throw NativeCLIError.unavailable(NativeLibraryConfigLoader.unknownID(name))
                 }
                 issues.append(issue("entry-unavailable", path, "Cannot inspect this library entry."))
                 continue
