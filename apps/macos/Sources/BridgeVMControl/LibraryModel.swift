@@ -379,6 +379,9 @@ extension LibraryModel {
            hvfRuntimeSessions.rebind(session, from: previous, to: saved) {
             session.config = session.config.adoptingSavedPreferences(launch, previous: previous, saved: saved)
         }
+        // The save found no process on this registration's disk, so a control model still marked running
+        // from its last poll (a save at the stop) is stale; reload must not keep it as the observed VM.
+        if modelCache[saved.slug]?.config == previous { modelCache[saved.slug] = nil }
         reload()
         if hvfRuntimeSession(for: saved) !== session {
             showsSettingsReloadNotice = true

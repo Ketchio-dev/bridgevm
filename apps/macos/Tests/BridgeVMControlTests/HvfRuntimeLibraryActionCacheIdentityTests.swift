@@ -45,4 +45,30 @@ final class HvfRuntimeLibraryActionCacheIdentityTests: XCTestCase {
             XCTAssertEqual(try fixture.snapshot(), before)
         }
     }
+
+    /// A setting changed while Windows ran is saved when it stops, usually before the VM's control model
+    /// polls it as stopped. Delete, Duplicate and Move then still refused with "the VM's registration
+    /// changed" until the user reloaded the library by hand.
+    func testStopTimeSettingSaveLeavesLibraryActionsAvailable() throws {
+        let fixture = HvfRuntimeLibraryActionFixture()
+        defer { fixture.clean() }
+        let original = fixture.config()
+        fixture.save(original)
+        let library = fixture.library()
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: original))
+        let observed = fixture.cacheFake(in: library, config: original)
+        observed.running = true // its last poll saw Windows running
+        session.connectionState = .booting
+        library.setStartWithBridgeVM(true, for: original)
+        session.connectionState = .stopped
+        session.markStopped()
+        fixture.processLookups = 0 // the save checked that no process uses the disk
+        observed.running = false // its next poll
+        let saved = library.latestConfiguration(for: original)
+        XCTAssertEqual(saved.startWithBridgeVM, true)
+
+        fixture.assertAccepted(.clone, config: saved, library: library)
+        XCTAssertNil(library.cloneError)
+        XCTAssertEqual(library.model(for: saved).config, saved)
+    }
 }
