@@ -9,8 +9,7 @@ struct FirstRunView: View {
 
     private var showsImport: Bool {
         presentation?.wrappedValue.showsImportDraft == true || library.selectedID == LibraryModel.firstRunImportSelectionID
-            || library.firstRunImportBusy || library.firstRunImportError != nil
-            || library.firstRunImport.publishedConfig != nil
+            || library.firstRunImportBusy || library.firstRunImport.publishedConfig != nil
     }
 
     var body: some View {
@@ -69,15 +68,17 @@ struct FirstRunView: View {
     }
 
     func welcome(in presentation: Binding<LibraryWindowPresentation>?, diskPath: Binding<String>) -> FirstRunWelcomeView {
-        FirstRunWelcomeView(createAction: { presentation?.wrappedValue.sheet = .create(installer: nil) },
-                            importAction: { presentation?.wrappedValue.showsImportDraft = true }, dropAction: { choice, url in
+        // A new form never shows an earlier import's error.
+        let openImport = { library.discardFirstRunImportFailure(); presentation?.wrappedValue.showsImportDraft = true }
+        return FirstRunWelcomeView(createAction: { presentation?.wrappedValue.sheet = .create(installer: nil) },
+                            importAction: openImport, dropAction: { choice, url in
             guard let presentation else { return false }
             switch choice {
             case .installer:
                 presentation.wrappedValue.sheet = .create(installer: url)
             case .disk:
                 diskPath.wrappedValue = url.path
-                presentation.wrappedValue.showsImportDraft = true
+                openImport()
             }
             return true
         })

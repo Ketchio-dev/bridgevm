@@ -39,11 +39,40 @@ final class FirstRunImportTests: XCTestCase {
         XCTAssertEqual(FirstRunImport.validate(inputs), .emptyName)
     }
 
+    /// The ID becomes the library folder name; the Create sheet refuses one over 200 bytes.
+    func testNameWhoseIDExceedsTheFileNameLimitRejected() throws {
+        let root = base()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let disk = root.appendingPathComponent("win.raw")
+        try makeDisk(disk, bytes: 4096)
+        let name = String(repeating: "가", count: 100) // 100 characters, a 300-byte ID
+        let inputs = FirstRunImport.Inputs(
+            displayName: name, diskPath: disk.path, vtpmStateDir: nil, memMiB: 6144, cpuCount: 4)
+        XCTAssertEqual(FirstRunImport.validate(inputs), .invalidName)
+        XCTAssertEqual(FirstRunImport.validate(inputs)?.description, VMLibrary.vmNameRule)
+    }
+
+    func testWindowsInstallerISORejected() throws {
+        let root = base()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let iso = root.appendingPathComponent("Win11_Arm64.iso")
+        var bytes = Data(count: 0x8800)
+        bytes[0x8000] = 1 // primary volume descriptor
+        bytes.replaceSubrange(0x8001..<0x8006, with: Data("CD001".utf8))
+        try bytes.write(to: iso)
+        let inputs = FirstRunImport.Inputs(
+            displayName: "W", diskPath: iso.path, vtpmStateDir: nil, memMiB: 6144, cpuCount: 4)
+        XCTAssertEqual(FirstRunImport.validate(inputs)?.description,
+            "This is a Windows installer ISO. Use Install Windows instead.")
+    }
+
     func testMissingDiskRejected() throws {
         let inputs = FirstRunImport.Inputs(
             displayName: "W", diskPath: "/no/such/disk.raw", varsPath: "/y",
             vtpmStateDir: nil, memMiB: 6144, cpuCount: 4)
-        XCTAssertEqual(FirstRunImport.validate(inputs), .diskMissing("/no/such/disk.raw"))
+        XCTAssertEqual(FirstRunImport.validate(inputs), .media("Choose a readable disk file with Windows installed."))
     }
 
     func testDirectoryAsDiskRejected() throws {
@@ -53,7 +82,7 @@ final class FirstRunImportTests: XCTestCase {
         let inputs = FirstRunImport.Inputs(
             displayName: "W", diskPath: root.path, varsPath: "/y",
             vtpmStateDir: nil, memMiB: 6144, cpuCount: 4)
-        XCTAssertEqual(FirstRunImport.validate(inputs), .diskNotAFile(root.path))
+        XCTAssertEqual(FirstRunImport.validate(inputs), .media("Choose a readable disk file with Windows installed."))
     }
 
     func testEmptyDiskRejected() throws {
@@ -65,7 +94,7 @@ final class FirstRunImportTests: XCTestCase {
         let inputs = FirstRunImport.Inputs(
             displayName: "W", diskPath: disk.path, varsPath: "/y",
             vtpmStateDir: nil, memMiB: 6144, cpuCount: 4)
-        XCTAssertEqual(FirstRunImport.validate(inputs), .diskEmpty(disk.path))
+        XCTAssertEqual(FirstRunImport.validate(inputs), .media("The Windows disk is empty."))
     }
 
     func testWrongVarsSizeRejected() throws {
@@ -79,8 +108,8 @@ final class FirstRunImportTests: XCTestCase {
         let inputs = FirstRunImport.Inputs(
             displayName: "W", diskPath: disk.path, varsPath: vars.path,
             vtpmStateDir: nil, memMiB: 6144, cpuCount: 4)
-        XCTAssertEqual(
-            FirstRunImport.validate(inputs), .varsWrongSize(path: vars.path, bytes: 1024))
+        XCTAssertEqual(FirstRunImport.validate(inputs)?.description,
+            "The UEFI variables file must be exactly 64 MiB. The selected file contains 1024 bytes.")
     }
 
     func testVtpmFileInsteadOfDirRejected() throws {

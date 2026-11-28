@@ -30,6 +30,16 @@ final class NativeInstallOperationStore {
         records[vmID].map { .success($0) } ?? .failure(.targetUnavailable)
     }
 
+    /// An install started in the window: the CLI follows and cancels it as one of its own.
+    func adopt(vmID: String, session: HvfWindowsInstallSession,
+               now: Double = ProcessInfo.processInfo.systemUptime) {
+        guard session.stage != .idle, records[vmID]?.session !== session,
+              records[vmID]?.reservesWork != true else { return }
+        let operation = NativeInstallOperation(operationID: UUID(), acceptedUptime: now)
+        operation.adopt(session)
+        records[vmID] = operation
+    }
+
 }
 
 extension NativeInstallOperationStore {

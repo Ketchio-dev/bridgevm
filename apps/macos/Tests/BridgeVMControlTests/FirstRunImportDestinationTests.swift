@@ -22,6 +22,8 @@ final class FirstRunImportDestinationTests: XCTestCase {
                       varsPath: (sourceVars ?? vars).path,
                       vtpmStateDir: nil, memMiB: 4096, cpuCount: 2),
                 slug: slug, libraryRoot: library, fileManager: fileManager, snapshotHelper: HvfMediaImportTestSupport.helper)
+            // A saved VM, so its name is in use (a folder with no vm.json is an unfinished import).
+            XCTAssertTrue(VMLibrary.save(config, rootURL: library))
             return FirstRunImport.BundleLayout(bundleURL: URL(fileURLWithPath: config.bundlePath))
         }
 
@@ -42,6 +44,32 @@ final class FirstRunImportDestinationTests: XCTestCase {
         XCTAssertEqual(message, "That name is already in your library. Enter a different name and import again.")
         XCTAssertEqual(try Data(contentsOf: existing.diskURL), Data([1, 2, 3, 4]))
         XCTAssertEqual(try Data(contentsOf: existing.varsURL), Data([5, 6, 7, 8]))
+    }
+
+    /// An import cut off by Force Quit or a crash leaves <slug>/ with no vm.json. The next import
+    /// of that name takes the next free ID, keeps the leftover's files, and the library names it.
+    func testFolderLeftByUnfinishedImportTakesNextFreeIDAndIsExplained() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let leftover = fixture.library.appendingPathComponent("windows-11", isDirectory: true)
+        let partial = leftover.appendingPathComponent("bundle/disks/hvf-target.raw")
+        try FileManager.default.createDirectory(at: partial.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([7, 7]).write(to: partial)
+        let inputs = FirstRunImport.Inputs(displayName: "Windows 11", diskPath: fixture.disk.path,
+                                          memMiB: 4096, cpuCount: 2)
+
+        let result = FirstRunImportWorker.run(inputs, libraryRoot: fixture.library,
+            snapshotHelper: HvfMediaImportTestSupport.helper)
+
+        guard case .committed(let config) = result else { return XCTFail("Expected the import to be saved: \(result)") }
+        XCTAssertEqual(config.slug, "windows-11-2")
+        XCTAssertEqual(config.displayName, "Windows 11")
+        XCTAssertEqual(try Data(contentsOf: partial), Data([7, 7]))
+        let scan = VMLibrary.scan(rootURL: fixture.library)
+        XCTAssertEqual(scan.configs.map(\.slug), ["windows-11-2"])
+        XCTAssertEqual(scan.issues.map(\.entry.lastPathComponent), ["windows-11"])
+        XCTAssertEqual(scan.issues.first?.message, "This folder has no vm.json, so it is usually left from a VM "
+            + "setup or import that did not finish. If BridgeVM is not setting up a VM right now, you can move the folder to the Trash.")
     }
 
     func testSelfImportPreservesItsSelectedSourceFiles() throws {

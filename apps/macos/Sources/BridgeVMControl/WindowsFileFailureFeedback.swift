@@ -11,6 +11,7 @@ enum WindowsFileFailureFeedback {
     static let publication = "Could not save the VM registration. Check that the library folder is writable and has enough free space."
     static let unsynced = "BridgeVM kept the VM files but could not confirm the save. Check your library for the saved VM before creating another."
     private static let importingOutOfSpace = "No space left on device. Free space on the destination volume and try again."
+    private static let importingInUse = "Shut down the VM that uses this disk, then import again."
 
     static func diagnostic(_ stage: String, _ error: Error) -> String {
         "Windows file operation failed [\(stage)]: \(String(reflecting: error)); \(error.localizedDescription)"
@@ -32,7 +33,13 @@ enum WindowsFileFailureFeedback {
         if let error = error as? CocoaError, error.code == .executableNotLoadable {
             return "The disk import tool could not start. Reinstall BridgeVM or rebuild the app if you built it from source."
         }
-        return isImportOutOfSpace(error) ? importingOutOfSpace : nil
+        if isImportOutOfSpace(error) { return importingOutOfSpace }
+        // The helper's writer-lease refusal (snapshot_pair.rs writer_refusal), also matched by the snapshot UI.
+        let ns = error as NSError
+        if ns.domain == "BridgeVM.MediaImport", ns.localizedDescription.contains("media is in use by a running VM") {
+            return importingInUse
+        }
+        return nil
     }
 
     static func reportImport(_ stage: String, _ error: Error) -> String {

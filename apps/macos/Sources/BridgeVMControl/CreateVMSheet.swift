@@ -73,7 +73,7 @@ struct CreateVMSheet: View {
                     .accessibilityIdentifier("bridgevm.create.name")
             }
             if !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, VMLibrary.normalizedVMName(name) == nil {
-                Text("Use 1–\(VMLibrary.maximumVMNameCharacters) characters without control characters. If the name is long, shorten it to fit the file name limit.")
+                Text(VMLibrary.vmNameRule)
                     .font(.caption)
                     .foregroundColor(.red)
             }

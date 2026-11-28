@@ -206,6 +206,15 @@ extension LibraryModel {
         selectedID = LibraryModel.firstRunImportSelectionID
         return true
     }
+
+    /// Drops a finished import's failure so Get Started and the next form start clean. A running
+    /// import and a saved VM that still has to be opened keep their status.
+    @discardableResult
+    func discardFirstRunImportFailure() -> Bool {
+        guard !firstRunImportBusy, firstRunImport.publishedConfig == nil else { return false }
+        if firstRunImport.error != nil { firstRunImport.returnToInputs() }
+        return true
+    }
 }
 
 extension LibraryModel {
@@ -655,6 +664,9 @@ extension LibraryModel {
         if vms.first(where: { $0.slug == request.vmID })
             != (try? NativeCLIStatusConfigReader.read(library: library, id: request.vmID)) { reload() }
         let store = windowsInstallSessions.cliOperations
+        if let session = windowsInstallSessions.record(for: request.vmID)?.session {
+            store.adopt(vmID: request.vmID, session: session)
+        }
         switch request.operation {
         case .install:
             // Status and cancel name an operation this app already holds: a finished install has saved

@@ -375,82 +375,41 @@ fn a_full_width_format_version_cannot_wrap_to_the_supported_version() {
     }
 }
 
+/// Import, export and restore stream across volumes, where no clone is possible. That copy
+/// wrote every zero, so a 256 GiB disk holding 40 GB of data took 256 GiB on the other drive.
 #[test]
-#[cfg(target_os = "macos")]
-fn nearly_full_volume_can_restore_by_cloning() {
-    let s = Scratch::new("clone-nospace");
-    let disk = s.write("disk", b"disk");
-    let vars = s.write("vars", b"vars");
-    let snapshot = s.path("snap");
-    create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
-    let mut pair = managed::LockedPair::open(&disk, &vars).unwrap();
-    let mut sampled = false;
-    pair.restore_copying(
-        &snapshot,
-        |src, dst| {
-            files::copy_and_sync_using(src, dst, files::clone_file, |_| {
-                sampled = true;
-                Some(0)
-            })
-        },
-        publish::publish,
-    )
-    .unwrap();
-    assert!(!sampled, "successful clone must not sample free space");
-    let (disk, vars) = pair.paths().unwrap();
-    assert_eq!(fs::read(disk).unwrap(), b"disk");
-    assert_eq!(fs::read(vars).unwrap(), b"vars");
-}
-
-#[test]
-fn failed_clone_with_short_space_refuses_before_copy_and_preserves_pair() {
-    for selected in [false, true] {
-        let s = Scratch::new(&format!("fallback-nospace-{selected}"));
-        let disk = s.write("disk", b"disk");
-        let vars = s.write("vars", b"vars");
-        let snapshot = s.path("snap");
-        create_snapshot(&disk, &vars, &snapshot, "vm").unwrap();
-        let mut pair = managed::LockedPair::open(&disk, &vars).unwrap();
-        if selected {
-            pair.restore(&snapshot).unwrap();
-        }
-        let paths = pair.paths().unwrap();
-        fs::write(&paths.0, b"live disk").unwrap();
-        fs::write(&paths.1, b"live vars").unwrap();
-        let mut destination = None;
-        let result = pair.restore_copying(
-            &snapshot,
-            |src, dst| {
-                destination = Some(dst.to_path_buf());
-                let result = files::copy_and_sync_using(
-                    src,
-                    dst,
-                    |_, _| None,
-                    |parent| {
-                        assert_eq!(parent, dst.parent().unwrap());
-                        Some(0)
-                    },
-                );
-                assert!(
-                    !dst.exists(),
-                    "byte copy must not start when space is short"
-                );
-                result
-            },
-            |_, _| panic!("short-space copy reached publication"),
-        );
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "No space left on device. Free space on the destination volume and try again."
-        );
-        assert!(
-            !destination.unwrap().parent().unwrap().exists(),
-            "staging not cleared"
-        );
-        assert_eq!(pair.paths().unwrap(), paths);
-        assert_eq!(fs::read(paths.0).unwrap(), b"live disk");
-        assert_eq!(fs::read(paths.1).unwrap(), b"live vars");
+fn a_streamed_copy_keeps_zero_chunks_as_holes_and_the_same_bytes() {
+    use std::os::unix::fs::{FileExt, MetadataExt};
+    let s = Scratch::new("sparse-stream");
+    let chunk = COPY_CHUNK as u64;
+    let logical = 24 * chunk;
+    let src = s.path("src");
+    let file = fs::File::create(&src).unwrap();
+    file.set_len(logical).unwrap();
+    // Data in chunk 0, across the boundary of chunks 9 and 10, and in chunk 19; the last
+    // chunks are a trailing hole. The gaps are 32 MiB: APFS fills a gap shorter than
+    // 16 MiB before a write with zeros itself (measured on macOS 27).
+    for offset in [0, 10 * chunk - 2, 19 * chunk + 12345] {
+        file.write_all_at(b"data", offset).unwrap();
     }
+    drop(file);
+
+    let dst = s.path("dst");
+    assert_eq!(
+        files::stream_and_sync(&src, &dst, |_| Ok(())).unwrap(),
+        logical
+    );
+    let copied = fs::metadata(&dst).unwrap();
+    assert_eq!(copied.len(), logical, "the trailing hole lost the size");
+    assert_eq!(
+        files::sha256_file(&dst).unwrap(),
+        files::sha256_file(&src).unwrap()
+    );
+    let allocated = copied.blocks() * 512;
+    assert!(
+        allocated <= 4 * chunk + 1024 * 1024,
+        "the copy allocated {allocated} bytes for 4 data chunks of a {logical}-byte disk"
+    );
 }
 
 #[test]

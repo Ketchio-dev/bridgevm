@@ -2,7 +2,7 @@
 
 use sha2::{Digest, Sha256};
 use std::fs::{File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -88,43 +88,30 @@ pub(super) fn sha256_file(path: &Path) -> io::Result<String> {
 /// Streamed rather than read wholesale: a disk image is tens of gigabytes and
 /// must not be brought into memory to be copied.
 pub(super) fn copy_and_sync(src: &Path, dst: &Path) -> io::Result<u64> {
-    copy_and_sync_using(src, dst, clone_file, available_bytes)
-}
-
-pub(super) fn copy_and_sync_using(
-    src: &Path,
-    dst: &Path,
-    clone: impl FnOnce(&Path, &Path) -> Option<()>,
-    available: impl FnOnce(&Path) -> Option<u64>,
-) -> io::Result<u64> {
     // Clone first where the filesystem allows it. On APFS this is a
     // copy-on-write reference: the 64 GiB image clones in 2ms and adds no used
     // bytes, where copying it needs minutes and room for a second full copy.
     // That is what lets a restore run on a volume with less free space than
     // the image.
-    if clone(src, dst).is_some() {
+    if clone_file(src, dst).is_some() {
         let cloned = File::open(dst)?;
         // Still fsync: the clone is metadata, and the manifest is about to
         // claim these bytes are durable.
         cloned.sync_all()?;
         return Ok(cloned.metadata()?.len());
     }
-    // Only a byte copy needs room for the source's logical size. Check before
-    // creating the destination so a failed admission leaves no partial file.
-    let needed = std::fs::metadata(src)?.len();
-    let parent = dst
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    if available(parent).is_some_and(|bytes| needed > bytes) {
-        return Err(io::Error::from_raw_os_error(libc::ENOSPC));
-    }
+    // No free-space check against the logical size: the copy stays sparse, so a
+    // 256 GiB disk holding 40 GB needs about 40 GB. A volume that does fill up
+    // fails the write with ENOSPC, and every caller removes its partial copy.
     stream_and_sync(src, dst, |_| Ok(()))
 }
 
 /// The copy taken when cloning is refused, as across volumes. `after_chunk`
 /// sees the running total; production observes nothing, and tests end the
 /// copy there as a full volume or a killed process would.
+///
+/// All-zero chunks are skipped, not written, so they stay holes in the copy;
+/// holes read back as zeros, so the copy's bytes and hash match the source's.
 pub(super) fn stream_and_sync(
     src: &Path,
     dst: &Path,
@@ -139,34 +126,19 @@ pub(super) fn stream_and_sync(
         if n == 0 {
             break;
         }
-        output.write_all(&buf[..n])?;
+        if crate::disk_import::is_zero(&buf[..n]) {
+            output.seek(SeekFrom::Current(n as i64))?;
+        } else {
+            output.write_all(&buf[..n])?;
+        }
         total += n as u64;
         after_chunk(total)?;
         stop_requested()?;
     }
+    // A seek alone does not extend the file: a trailing hole needs the length set.
+    output.set_len(total)?;
     output.sync_all()?;
     Ok(total)
-}
-
-/// Free bytes on the volume holding `path`, or None if it cannot be read.
-///
-/// None means "do not block the restore": a missing statfs is not evidence
-/// that space is short, and the copy will fail loudly if it is.
-pub(crate) fn available_bytes(path: &Path) -> Option<u64> {
-    use std::os::unix::ffi::OsStrExt;
-    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
-    // SAFETY: c_path is a valid NUL-terminated string, and statfs only writes
-    // into the buffer we hand it.
-    let stat = unsafe {
-        let mut stat: libc::statfs = std::mem::zeroed();
-        if libc::statfs(c_path.as_ptr(), &mut stat) != 0 {
-            return None;
-        }
-        stat
-    };
-    // f_bsize is u32 on macOS and i64 on Linux, so neither try_from nor a
-    // plain From satisfies both targets; a cast is the portable spelling.
-    (stat.f_bavail as u64).checked_mul(stat.f_bsize as u64)
 }
 
 /// Clone `src` to `dst` with APFS copy-on-write, or None if that is not

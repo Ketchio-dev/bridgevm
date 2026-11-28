@@ -43,6 +43,13 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- A Windows connection that BridgeVM has to drop, because Windows opened more
+  than 256 at once or a closing connection sat idle, now fails at once in the
+  Windows app instead of hanging until Windows gives up on its own.
+- `bridgevm app install-status`, `install-cancel` and `install` now see a Windows installation
+  started in the app window. Before, status and cancel answered `targetUnavailable`, and `install`
+  failed as busy and then reported that failure while Windows went on installing. The code
+  `targetUnavailable` also prints as "BridgeVM isn’t installing this VM." in text output.
 - Windows connections left idle, such as an SSH session or a database client,
   are no longer cut after 5 minutes without Windows being told. BridgeVM now
   keeps an idle connection open for at least 2 hours, as home routers do.
@@ -54,6 +61,12 @@ All notable changes to BridgeVM are documented in this file.
   VM's TPM helper kept running on its own and held the VM's TPM state, so every
   later start failed until you restarted the Mac. Start now stops that leftover
   helper first; a helper that belongs to a running VM is never touched.
+- Importing a RAW Windows disk from another drive now copies only the space
+  Windows uses, and no longer asks for room for the disk's full size: a
+  256 GiB disk holding 40 GB needs about 40 GB free. Before, the import was
+  refused unless the Mac had room for all 256 GiB, and then wrote all of it.
+  Exporting or restoring a snapshot on another drive keeps unused space
+  free the same way.
 - If BridgeVM quit while a finished Windows installation was being saved, Start
   Installation now installs again. Before, every try said BridgeVM couldn't
   recover the interrupted installation, and deleting the VM was the only way
@@ -73,6 +86,15 @@ All notable changes to BridgeVM are documented in this file.
   restart Windows after quitting the other app or choosing another port. The
   forward is set up only when Windows starts, so quitting the other app alone
   never brought it back.
+- An import cut off by Force Quit, a crash or a power loss no longer blocks the
+  next import of the same name. The half-made folder kept the name, so BridgeVM
+  said "That name is already in your library" while the library was empty. The
+  new import now gets the next free ID (such as `windows-11-2`), the old folder's
+  files are left alone, and the library explains that a folder with no vm.json
+  is usually left from a setup that did not finish and can be moved to the Trash.
+- After an import fails, Virtual machines in the sidebar goes back to Get
+  Started again and clears the error. Before, the failed import form stayed with
+  no way back, and a later import form still showed the old red error.
 - A Windows app that stops answering while it holds copied text no longer
   freezes BridgeVM's helper in Windows. Reading the clipboard text now gives up
   after 20 seconds and keeps the last text, so the shared clipboard, shared
@@ -81,6 +103,20 @@ All notable changes to BridgeVM are documented in this file.
 - "Open Windows links on Mac" and "Print to Mac" can now be turned off (or on)
   while Windows runs: links stop opening and the printer goes at once, and the
   choice is saved when the VM stops.
+- A DNS lookup Windows retries over TCP, as it does when an answer is too large for UDP,
+  now reaches the Mac's DNS server. Before, the NAT dropped it without a reply and the lookup
+  hung until Windows gave up.
+- Importing a disk that a running VM is using now says "Shut down the VM that
+  uses this disk, then import again." Before, it said only that the Windows
+  files could not be imported and to check access and free space.
+- The first-run import form now checks the name and files the way Create VM
+  does, in plain sentences without file paths. A name too long for the
+  library's folder name is refused at once instead of failing later with a
+  general import error.
+- Choosing a Windows installer ISO as the disk in the first-run import form now
+  says "This is a Windows installer ISO. Use Install Windows instead." Before,
+  the ISO was copied as the VM's disk and the import ended with "This disk has
+  no UEFI boot partition."
 - Putting the Mac to sleep while a key press or click was still on its way to
   Windows no longer stops the keyboard and mouse on wake until Windows restarts:
   the time Windows has to confirm input now counts only while the Mac is awake.

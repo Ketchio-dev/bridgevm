@@ -15,6 +15,8 @@ final class A9ImportEndStateTests: XCTestCase {
 
     func testErrorsMapToFixedTokensWithoutProductText() {
         XCTAssertEqual(A9ImportEndState.errorToken("Disk image not found at /Volumes/private/disk.raw"), "validation")
+        XCTAssertEqual(A9ImportEndState.errorToken("Choose a readable disk file with Windows installed."), "validation")
+        XCTAssertEqual(A9ImportEndState.errorToken("Shut down the VM that uses this disk, then import again."), "disk-in-use")
         XCTAssertEqual(A9ImportEndState.errorToken("The saved VM could not be opened. Check the library folder and choose Open Saved VM again."), "recovery-failed")
         XCTAssertEqual(A9ImportEndState.errorToken("VM 번들을 만들지 못했습니다: The destination VM already has a vTPM key (owned fixture)."),
                        "bundle-failed/destination-key-exists")
