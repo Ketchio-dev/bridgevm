@@ -386,6 +386,36 @@ pub(crate) fn build_udp_reply_frame(
     Some(frame)
 }
 
+/// The largest Ethernet frame the guest takes: a 1500-byte IP MTU plus the 14-byte header.
+pub(crate) const ETHERNET_MAX_FRAME: usize = 14 + 1500;
+
+/// Splits an IPv4 frame with a 20-byte header (as the builders here make) into fragments that
+/// fit ETHERNET_MAX_FRAME, all with IP identification `id`.
+pub(crate) fn fragment_ipv4_frame(frame: &[u8], id: u16) -> Vec<Vec<u8>> {
+    const DATA_PER_FRAGMENT: usize = (1500 - 20) & !7;
+    let (head, data) = frame.split_at(14 + 20);
+    let chunks = data.chunks(DATA_PER_FRAGMENT);
+    let last = chunks.len().saturating_sub(1);
+    chunks
+        .enumerate()
+        .map(|(index, chunk)| {
+            let mut fragment = Vec::with_capacity(head.len() + chunk.len());
+            fragment.extend_from_slice(head);
+            fragment.extend_from_slice(chunk);
+            let ip = &mut fragment[14..34];
+            ip[2..4].copy_from_slice(&((20 + chunk.len()) as u16).to_be_bytes());
+            ip[4..6].copy_from_slice(&id.to_be_bytes());
+            let more = if index < last { 0x2000 } else { 0 };
+            let offset = (index * DATA_PER_FRAGMENT / 8) as u16;
+            ip[6..8].copy_from_slice(&(more | offset).to_be_bytes());
+            ip[10..12].copy_from_slice(&[0, 0]);
+            let checksum = ipv4_header_checksum(ip);
+            ip[10..12].copy_from_slice(&checksum.to_be_bytes());
+            fragment
+        })
+        .collect()
+}
+
 pub(crate) fn build_dhcp_reply_frame(
     dst_mac: MacAddr,
     src_mac: MacAddr,

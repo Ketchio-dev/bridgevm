@@ -9,6 +9,11 @@ struct HvfPortForward: Equatable {
 enum HvfPortForwards {
     static let invalidMessage = "Enter a Mac port and a Windows port for each rule, separated by a colon. Separate rules with commas, for example 8080:80, 3390:3389."
     static let repeatedMessage = "Use each Mac port in only one rule: a Mac port can reach only one Windows port."
+    static let reservedMessage = "Use Mac ports from 1024 up, for example 8080:80. macOS keeps lower ports for itself."
+
+    /// macOS refuses an app's listener on 127.0.0.1 below 1024 (EACCES, checked on macOS 27); only
+    /// 0.0.0.0 is allowed there, which would open the forward to the whole network.
+    static let firstOpenMacPort: UInt16 = 1024
 
     /// Forwards that name a Mac port another rule already uses: only the first of them could listen.
     static func repeatsMacPort(_ forwards: [HvfPortForward]) -> Bool {
@@ -47,6 +52,9 @@ extension HvfEngineSession {
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (text: String, message: String?) {
         guard let forwards = HvfPortForwards.parse(text) else { return (text, HvfPortForwards.invalidMessage) }
         guard !HvfPortForwards.repeatsMacPort(forwards) else { return (text, HvfPortForwards.repeatedMessage) }
+        guard !forwards.contains(where: { $0.host < HvfPortForwards.firstOpenMacPort }) else {
+            return (text, HvfPortForwards.reservedMessage)
+        }
         guard persistsLibraryPreferences else {
             config.portForwards = forwards
             return (HvfPortForwards.text(forwards), nil)
@@ -97,6 +105,10 @@ final class HvfPortForwardNotice: ObservableObject {
 
     private var forwardsText: String? {
         guard let first = off.first else { return nil }
+        // A hand-edited vm.json can still hold one; no other app is involved.
+        if let reserved = off.first(where: { $0.host < HvfPortForwards.firstOpenMacPort }) {
+            return "Mac port \(reserved.host) doesn’t reach Windows port \(reserved.guest) because macOS keeps ports below 1024 for itself. Choose a Mac port from 1024 up in Settings, then restart Windows."
+        }
         if off.count == 1 {
             return "Another app or another BridgeVM VM is using Mac port \(first.host), so it doesn’t reach Windows port \(first.guest). Quit that app or shut down that VM, or choose another Mac port in Settings, then restart Windows."
         }

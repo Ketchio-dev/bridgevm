@@ -11,6 +11,13 @@
 //! than the threshold still plays. Playback re-primes only after the guest
 //! stopped its stream and the ring ran short, which is where a span closes;
 //! an underrun inside a running stream keeps playing whatever arrives.
+//!
+//! The guest's PCM arrives on the Mac's clock and plays on the output device's,
+//! and an underrun's silence delays everything after it, so the buffered delay
+//! can only grow while a stream runs, towards the ring's half second. Above
+//! `HIGH_WATER_BYTES` the oldest audio is dropped back to the start threshold,
+//! as the microphone does (hda_microphone.rs). Live runs peaked at 86 ms (43
+//! timing records, median 53 ms), so normal playback never reaches it.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
@@ -20,6 +27,8 @@ use super::AUDIO_QUEUE_BUFFER_BYTES;
 
 /// Four callback buffers, 40 ms at 48 kHz stereo s16le.
 pub(super) const PREFILL_BYTES: usize = 4 * AUDIO_QUEUE_BUFFER_BYTES as usize;
+/// 120 ms at 48 kHz stereo s16le.
+pub(super) const HIGH_WATER_BYTES: usize = 12 * AUDIO_QUEUE_BUFFER_BYTES as usize;
 
 pub(super) struct Prefill {
     threshold: usize,
@@ -45,6 +54,9 @@ impl Prefill {
         let flush = stream_idle && !ring.is_empty();
         if !self.primed.load(Relaxed) && ring.len() < self.threshold && !flush {
             return 0;
+        }
+        if !stream_idle && ring.len() > HIGH_WATER_BYTES {
+            ring.discard(ring.len() - self.threshold);
         }
         let pcm_bytes = ring.drain_into(destination);
         self.primed
@@ -140,6 +152,43 @@ mod tests {
             0,
             "the next stream waits for the threshold again"
         );
+    }
+
+    /// A delay that crept past the high water while the stream ran (underruns, the two clocks) is
+    /// cut back to the start threshold by dropping the oldest audio: lip sync slipped towards half
+    /// a second and stayed there.
+    #[test]
+    fn a_running_stream_buffered_past_the_high_water_drops_its_oldest_audio() {
+        let prefill = Prefill::new(PREFILL_BYTES);
+        let ring = AtomicPcmRing::new(64 * FULL);
+        let frames = |first: u32, bytes: usize| -> Vec<u8> {
+            (first..first + (bytes / 4) as u32)
+                .flat_map(u32::to_le_bytes)
+                .collect()
+        };
+        let buffered = HIGH_WATER_BYTES + 8 * FULL;
+        assert!(ring
+            .producer()
+            .publish_parts(&frames(0, buffered), &[], 64 * FULL));
+        let mut consumer = ring.try_consumer().unwrap();
+        let mut destination = vec![0u8; FULL];
+        assert_eq!(prefill.drain(&mut consumer, &mut destination, false), FULL);
+        let first = u32::from_le_bytes(destination[..4].try_into().unwrap());
+        assert_eq!(
+            first as usize,
+            (buffered - PREFILL_BYTES) / 4,
+            "plays from the newest 40 ms"
+        );
+        assert_eq!(consumer.len(), PREFILL_BYTES - FULL);
+        // At the high water itself, nothing is dropped.
+        drop(consumer);
+        let ring = AtomicPcmRing::new(64 * FULL);
+        assert!(ring
+            .producer()
+            .publish_parts(&frames(0, HIGH_WATER_BYTES), &[], 64 * FULL));
+        let mut consumer = ring.try_consumer().unwrap();
+        assert_eq!(prefill.drain(&mut consumer, &mut destination, false), FULL);
+        assert_eq!(u32::from_le_bytes(destination[..4].try_into().unwrap()), 0);
     }
 
     #[test]

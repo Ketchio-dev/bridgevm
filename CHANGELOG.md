@@ -68,6 +68,27 @@ All notable changes to BridgeVM are documented in this file.
   or BridgeVM loses contact with Windows, and offers Stop or Force Stop.
   Before, only the library said so, and the VM window, often in full screen,
   just went black or froze.
+- A UDP reply larger than 1,472 bytes no longer stops all networking in
+  Windows until the VM restarts. Large replies, such as from VPN, voice-call
+  or DNS servers, now reach Windows whole, as IPv4 fragments.
+- Busy web browsing in Windows no longer drops VPN, voice-call or game
+  connections. Each answered DNS lookup used to keep a slot in the
+  256-entry UDP table for five minutes. Upload connections now also give
+  back their buffer memory, up to about 6 MB each, once it has been sent.
+- An idle connection in Windows, such as mail waiting for new messages or an
+  RDP or SSH session, whose server became unreachable after the Mac changed
+  networks or slept now fails after about two minutes, so the app can
+  reconnect. Before, it looked alive to Windows indefinitely.
+- A port forward from a Mac port below 1024, such as 80:80, is now refused
+  when you enter it, with an example of what works. macOS doesn't let apps
+  use those ports. Before, it was saved, didn't work, and the notice blamed
+  another app.
+- Windows' sound no longer drifts behind the picture during long videos or
+  calls. When more than 120 ms of sound is waiting to play, the oldest part
+  is dropped, as the microphone already does.
+- When Windows' sound can't move to a newly chosen or connected Mac output,
+  such as AirPods or AirPlay, the VM now shows a notice until sound plays
+  again. Before, Windows was just silent.
 - Files dropped on a VM window, or opened with BridgeVM from Finder, while
   Windows is still starting are now copied once Windows is ready. Before,
   they were refused with a message that stayed over the Windows taskbar. A

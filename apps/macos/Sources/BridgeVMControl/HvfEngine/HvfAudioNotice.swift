@@ -8,23 +8,34 @@ final class HvfAudioNotice: ObservableObject {
     static let outputOffPrefix = "HDA CoreAudio output: off for this run"
     static let microphoneOffPrefix = "HDA capture: the Mac microphone did not start"
     static let microphoneOnPrefix = "HDA capture: the Mac microphone is on again"
+    /// The output didn't move to a newly chosen or connected device; the VMM retries while Windows
+    /// plays and says when sound plays again (hda_coreaudio_output.rs OUTPUT_NOT_OPEN, OUTPUT_MOVED).
+    static let outputNotOpenPrefix = "HDA CoreAudio output: the Mac's current default output did not open"
+    static let outputMovedPrefix = "HDA CoreAudio output: sound now plays on the Mac's current default output"
     @Published private(set) var soundOff = false
+    @Published private(set) var soundNotMoved = false
     @Published private(set) var microphoneOff = false
 
     func consume(_ line: String) {
         if line.hasPrefix(Self.outputOffPrefix), !soundOff { soundOff = true }
+        if line.hasPrefix(Self.outputNotOpenPrefix), !soundNotMoved { soundNotMoved = true }
+        if line.hasPrefix(Self.outputMovedPrefix), soundNotMoved { soundNotMoved = false }
         if line.hasPrefix(Self.microphoneOffPrefix), !microphoneOff { microphoneOff = true }
         if line.hasPrefix(Self.microphoneOnPrefix), microphoneOff { microphoneOff = false }
     }
 
     func reset() {
         if soundOff { soundOff = false }
+        if soundNotMoved { soundNotMoved = false }
         if microphoneOff { microphoneOff = false }
     }
 
     var text: String? {
         if soundOff {
             return "Windows has no sound this time because the Mac’s audio output didn’t start. Restart the VM to try again."
+        }
+        if soundNotMoved {
+            return "Windows has no sound right now because the Mac’s current sound output didn’t open. BridgeVM keeps trying while Windows plays sound."
         }
         if microphoneOff {
             return "The Mac microphone didn’t start, so Windows recorded silence. Windows tries again the next time an app starts recording."

@@ -135,6 +135,7 @@ impl RawIcmpSocket {
 #[cfg(unix)]
 pub(crate) fn nonblocking_tcp_connect(dst: StdIpv4Addr, port: u16) -> io::Result<TcpStream> {
     let fd = raw_nonblocking_tcp_socket()?;
+    set_host_keepalive(fd);
     let connect_result = raw_connect_ipv4(fd, dst, port);
     if let Err(err) = connect_result {
         if !raw_connect_in_progress(&err) {
@@ -154,6 +155,48 @@ pub(crate) fn nonblocking_tcp_connect(dst: StdIpv4Addr, port: u16) -> io::Result
     stream.set_nonblocking(true)?;
     Ok(stream)
 }
+
+/// The NAT answers Windows' own keepalive probes itself (host_socket.rs), so a connection whose
+/// far end went away (the Mac changed networks, or slept and woke elsewhere) looked alive to
+/// Windows for as long as it stayed idle: mail stopped arriving, an RDP or SSH session froze. With
+/// the Mac's keepalive on, an idle connection that stops answering fails after about two minutes,
+/// and the guest gets a reset (TcpResetReason::HostRead) and reconnects. Best effort.
+#[cfg(target_os = "macos")]
+pub(crate) fn set_host_keepalive(fd: RawFd) {
+    for (level, name, value) in [
+        (libc::SOL_SOCKET, libc::SO_KEEPALIVE, 1),
+        (
+            libc::IPPROTO_TCP,
+            libc::TCP_KEEPALIVE,
+            HOST_KEEPALIVE_IDLE_S,
+        ),
+        (
+            libc::IPPROTO_TCP,
+            libc::TCP_KEEPINTVL,
+            HOST_KEEPALIVE_INTERVAL_S,
+        ),
+        (libc::IPPROTO_TCP, libc::TCP_KEEPCNT, HOST_KEEPALIVE_PROBES),
+    ] {
+        let value: libc::c_int = value;
+        // SAFETY: fd is a TCP socket; value is a c_int that outlives the call.
+        unsafe {
+            libc::setsockopt(
+                fd,
+                level,
+                name,
+                (&value as *const libc::c_int).cast(),
+                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+            )
+        };
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn set_host_keepalive(_fd: RawFd) {}
+
+pub(crate) const HOST_KEEPALIVE_IDLE_S: i32 = 60;
+pub(crate) const HOST_KEEPALIVE_INTERVAL_S: i32 = 10;
+pub(crate) const HOST_KEEPALIVE_PROBES: i32 = 6;
 
 #[cfg(unix)]
 pub(crate) fn raw_nonblocking_tcp_socket() -> io::Result<RawFd> {

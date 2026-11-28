@@ -16,6 +16,8 @@ pub struct VirtioNet<B: NetBackend> {
     pub(crate) descriptor_scratch: Vec<Descriptor>,
     pub(crate) tx_packet_scratch: Vec<u8>,
     pub(crate) rx_frame_scratch: Vec<u8>,
+    /// One log line for the first frame dropped as larger than the guest's receive buffer.
+    pub(crate) rx_oversize_reported: bool,
 }
 
 pub(crate) type VirtioNetQueue = VirtioPciQueue;
@@ -73,6 +75,7 @@ impl<B: NetBackend> VirtioNet<B> {
             descriptor_scratch: Vec::new(),
             tx_packet_scratch: Vec::new(),
             rx_frame_scratch: Vec::new(),
+            rx_oversize_reported: false,
         }
     }
 

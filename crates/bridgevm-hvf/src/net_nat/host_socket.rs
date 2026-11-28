@@ -19,7 +19,9 @@ pub struct HostSocketOutboundIpv4Handler {
     pub(crate) icmp_flows: HashMap<IcmpFlowKey, IcmpFlow>,
     pub(crate) pending_tcp_resets: VecDeque<PendingTcpReset>,
     pub(crate) tcp_remove_scratch: Vec<TcpFlowKey>,
-    pub(crate) udp_recv_scratch: [u8; HOST_SOCKET_UDP_RECV_SCRATCH_LEN],
+    /// DNS flows whose answer this poll queued (poll_udp closes them).
+    pub(crate) dns_answered_scratch: Vec<UdpFlowKey>,
+    pub(crate) udp_recv_scratch: Box<[u8]>,
     pub(crate) tcp_read_scratch: [u8; TCP_MSS],
     pub(crate) icmp_recv_scratch: [u8; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
     pub(crate) pending_socket_errors: u64,
@@ -55,7 +57,9 @@ pub(crate) fn watch_socket(
         .is_some_and(|wake| wake.watch(fd, writable))
 }
 
-pub(crate) const HOST_SOCKET_UDP_RECV_SCRATCH_LEN: usize = 2048;
+/// A whole UDP datagram: macOS reassembles fragmented ones, and a reply over the guest's MTU goes
+/// back as IPv4 fragments (queue_udp_reply). A 2048-byte read cut larger ones short.
+pub(crate) const HOST_SOCKET_UDP_RECV_SCRATCH_LEN: usize = 65_535;
 
 /// The lines the app turns into its notice (HvfPortForwards.swift
 /// HvfPortForwardNotice): Windows can't reach the Mac's DNS server, and later
@@ -109,7 +113,8 @@ impl HostSocketOutboundIpv4Handler {
             icmp_flows: HashMap::new(),
             pending_tcp_resets: VecDeque::new(),
             tcp_remove_scratch: Vec::new(),
-            udp_recv_scratch: [0; HOST_SOCKET_UDP_RECV_SCRATCH_LEN],
+            dns_answered_scratch: Vec::new(),
+            udp_recv_scratch: vec![0; HOST_SOCKET_UDP_RECV_SCRATCH_LEN].into_boxed_slice(),
             tcp_read_scratch: [0; TCP_MSS],
             icmp_recv_scratch: [0; HOST_SOCKET_ICMP_RECV_SCRATCH_LEN],
             pending_socket_errors: 0,
@@ -411,6 +416,7 @@ impl HostSocketOutboundIpv4Handler {
         let now = self.now_ms();
         let recv_scratch = &mut self.udp_recv_scratch;
         let dns_unreachable = &mut self.dns_unreachable;
+        let answered = &mut self.dns_answered_scratch;
         for (key, flow) in &mut self.udp_flows {
             while flow.readable && !reply_queue_full(reply_queue) {
                 match flow.socket.recv(recv_scratch) {
@@ -430,6 +436,11 @@ impl HostSocketOutboundIpv4Handler {
                             if std::mem::take(dns_unreachable) {
                                 crate::host_log::out(DNS_REACHABLE_LINE);
                             }
+                            // One answer per query: Windows asks each one from a new port, so
+                            // answered flows kept 300 s filled the flow table and pushed out
+                            // the VPN, call or game flows that were really in use.
+                            answered.push(*key);
+                            break;
                         } else {
                             stats.udp_datagrams_out = stats.udp_datagrams_out.saturating_add(1);
                         }
@@ -445,6 +456,9 @@ impl HostSocketOutboundIpv4Handler {
                     }
                 }
             }
+        }
+        for key in self.dns_answered_scratch.drain(..) {
+            self.udp_flows.remove(&key);
         }
     }
 

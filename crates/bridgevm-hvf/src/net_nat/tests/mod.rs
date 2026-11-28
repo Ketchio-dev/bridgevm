@@ -11,10 +11,12 @@ use std::{
 mod dns_over_tcp;
 mod dns_unreachable;
 mod fake_guest;
+mod flow_reclaim;
 mod helpers;
 mod host_wake_download;
 mod idle_sweep;
 mod ingress_policy;
+mod large_udp_reply;
 mod port_forward;
 mod reply_bounds;
 mod tcp_connect_failure;

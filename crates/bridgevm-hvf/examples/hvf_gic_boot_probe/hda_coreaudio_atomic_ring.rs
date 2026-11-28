@@ -171,6 +171,13 @@ impl Consumer<'_> {
         self.len() == 0
     }
 
+    /// Drops the oldest `bytes` (whole frames, at most what is buffered).
+    pub(super) fn discard(&mut self, bytes: usize) {
+        let frames = (self.len() / FRAME_BYTES).min(bytes / FRAME_BYTES);
+        self.cursor = self.cursor.wrapping_add(frames);
+        self.ring.tail.store(self.cursor, Ordering::Release);
+    }
+
     pub(super) fn drain_into(&mut self, destination: &mut [u8]) -> usize {
         let frames = (self.len() / FRAME_BYTES).min(destination.len() / FRAME_BYTES);
         for (i, chunk) in destination[..frames * FRAME_BYTES]

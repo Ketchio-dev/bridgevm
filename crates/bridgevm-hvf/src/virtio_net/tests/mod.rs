@@ -599,6 +599,32 @@ fn rx_pump_reuses_backend_receive_scratch_across_frames() {
     );
 }
 
+/// A frame larger than the guest's receive buffer can never be delivered. It was kept and retried
+/// forever, so no later frame reached the guest: all networking stopped until a restart.
+#[test]
+fn rx_drops_a_frame_larger_than_the_posted_buffer_and_delivers_the_next() {
+    let mut dev = VirtioPciNet::new_loopback();
+    let mut mem = TestMem::new(0x4000_0000, 0x20000);
+    let desc = 0x4000_1000;
+    let avail = 0x4000_2000;
+    let used = 0x4000_3000;
+    let buf = 0x4000_4000;
+
+    setup_ready_queue(&mut dev, &mut mem, 0, desc, avail, used, 0);
+    write_desc(&mut mem, desc, 0, buf, 1526, DESC_F_WRITE, 0);
+    mem.write(avail + 2, &1u16.to_le_bytes());
+    mem.write(avail + 4, &0u16.to_le_bytes());
+    dev.backend_mut().push_receive(vec![0xab; 2_090]);
+    dev.backend_mut().push_receive(b"next".to_vec());
+
+    assert!(dev.pump_receive(&mut mem), "the oversized frame is dropped");
+    assert!(!dev.stats().pending_rx_frame);
+    assert_eq!(dev.stats().rx_count, 0);
+    assert!(dev.pump_receive(&mut mem));
+    assert_eq!(dev.stats().rx_count, 1);
+    assert_eq!(&mem.read(buf + VIRTIO_NET_HDR_LEN as u64, 4), b"next");
+}
+
 #[test]
 fn rx_without_buffers_holds_one_frame_until_buffer_is_posted() {
     let mut dev = VirtioPciNet::new_loopback();

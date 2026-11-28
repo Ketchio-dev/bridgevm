@@ -152,6 +152,7 @@ impl HostSocketOutboundIpv4Handler {
         if stream.set_nonblocking(true).is_err() {
             return;
         }
+        set_host_keepalive(stream.as_raw_fd());
         let Some(source_port) = self.free_forward_source_port(guest_port) else {
             return;
         };

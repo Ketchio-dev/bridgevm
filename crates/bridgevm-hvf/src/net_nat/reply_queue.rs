@@ -3,6 +3,7 @@
 use super::*;
 
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU16, Ordering};
 
 /// Frames that may wait for guest RX buffers. QEMU v11.0.0 `net/queue.c`
 /// drops a packet once this many are queued (`nq_maxlen`).
@@ -53,7 +54,16 @@ pub(crate) fn queue_udp_reply(
     ) else {
         return;
     };
-    reply_queue.push_back(frame);
+    if frame.len() <= ETHERNET_MAX_FRAME {
+        reply_queue.push_back(frame);
+        return;
+    }
+    // Over the guest's 1500-byte MTU (a large DNS, IKE or SIP reply, say): as IPv4 fragments,
+    // which Windows reassembles. One frame too big for the guest's receive buffers would stall
+    // every later frame.
+    static NEXT_ID: AtomicU16 = AtomicU16::new(1);
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed).max(1);
+    reply_queue.extend(fragment_ipv4_frame(&frame, id));
 }
 
 pub(crate) fn queue_tcp_reply(
