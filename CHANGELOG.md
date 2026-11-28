@@ -46,6 +46,9 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- Renaming, moving or deleting the shared folder in Windows no longer
+  deletes the files in the Mac folder at the next Mac change; folder sync
+  pauses and says so until the Windows folder is back.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.

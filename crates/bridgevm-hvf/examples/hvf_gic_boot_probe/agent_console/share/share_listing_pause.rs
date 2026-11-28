@@ -11,9 +11,21 @@ use super::*;
 use crate::agent_console::share_sync::{self, ListingLimitError};
 
 impl ShareState {
-    /// The latest guest listing was refused for its size.
-    pub(in crate::agent_console) fn listing_too_large(&self) -> bool {
-        self.listing_too_large
+    /// The latest guest listing was refused for its size, or failed after files synced: no PUT and no
+    /// guest deletion goes out.
+    pub(in crate::agent_console) fn listing_held(&self) -> bool {
+        self.listing_too_large || self.listing_failed
+    }
+
+    /// A guest listing failed (`ERR LSR`) after files synced: the Windows folder was renamed, deleted
+    /// or can't be read. A PUT then made the folder again (the agent creates a file's parents), and
+    /// the next listing, without the other files, deleted them on the Mac. The share waits for a
+    /// listing instead.
+    pub(in crate::agent_console) fn note_listing_failed(&mut self) {
+        if !self.listing_failed {
+            self.listing_failed = true;
+            print_pause_line("BVAGENT SHARE paused windows-folder-unreadable".into());
+        }
     }
 
     /// A guest listing refused for its bounds; one refused for its size pauses the share.
@@ -35,7 +47,8 @@ impl ShareState {
 
     /// A guest listing is applied: a paused share goes on.
     pub(in crate::agent_console) fn note_listing_applied(&mut self) {
-        if std::mem::take(&mut self.listing_too_large) {
+        let too_large = std::mem::take(&mut self.listing_too_large);
+        if std::mem::take(&mut self.listing_failed) || too_large {
             print_pause_line("BVAGENT SHARE resumed".into());
         }
     }
