@@ -123,6 +123,10 @@ final class HvfVMSettingsSheetValueTests: XCTestCase {
         let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
         let sheet = HvfVMSettingsSheet(session: session)
         XCTAssertNil(sheet.runningNoticeText)
+        // While a snapshot runs Windows is already off: the notice says what to wait for.
+        let snapshot = try XCTUnwrap(session.reserveRuntimeMutation(kind: .snapshot))
+        XCTAssertEqual(sheet.runningNoticeText, "A snapshot of this VM is being created, restored or deleted. Try again when it finishes.")
+        session.finishRuntimeMutation(snapshot)
         session.connectionState = .booting
         defer { session.connectionState = .stopped }
         let running = sheet.settingsForm

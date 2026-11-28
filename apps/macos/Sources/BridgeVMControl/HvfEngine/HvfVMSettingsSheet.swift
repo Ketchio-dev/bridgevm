@@ -150,7 +150,7 @@ struct HvfVMSettingsSheet: View {
     }
 
     static let runningNotice = "Shut down Windows to change settings that are currently unavailable."
-    var runningNoticeText: String? { session.hasActiveRuntimeWork ? Self.runningNotice : nil }
+    var runningNoticeText: String? { session.hasActiveRuntimeWork ? session.settingsWait(Self.runningNotice) : nil }
 
     private func validationMessage(_ text: String) -> some View {
         Label {

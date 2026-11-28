@@ -43,6 +43,11 @@ final class HvfWindowsSnapshotModel: ObservableObject {
         return Confirmation(operation: operation, label: label ?? Self.dateText(snapshotDate), run: run)
     }
 
+    func clearResult() {
+        guard !busy else { return }
+        status = nil; failed = false
+    }
+
     /// The user agreed to `confirmation`, the one the dialog showed.
     @discardableResult
     func confirm(_ confirmation: Confirmation) -> Task<Void, Never>? {
