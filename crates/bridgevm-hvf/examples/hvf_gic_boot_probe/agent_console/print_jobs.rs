@@ -32,6 +32,10 @@ pub(super) const PRINT_WATCH_VERB: &str = "PRINTWATCH";
 pub(super) const MAX_PRINT_JOB_BYTES: u64 = 256 << 20;
 /// Jobs waiting or coming over at once; the agent keeps at most as many.
 pub(super) const MAX_PRINT_JOBS: usize = 8;
+/// Jobs already on the Mac, waiting for their print panels, before more are refused. Without it a
+/// guest program writing PDFs into the print folder filled the Mac's disk and kept bringing the app
+/// forward.
+pub(super) const MAX_PUBLISHED_PRINT_JOBS: usize = 32;
 /// The longest guest path taken, in UTF-8 bytes.
 const MAX_PRINT_PATH_BYTES: usize = 1024;
 /// Guest paths of jobs that ended here, kept so that one announced again is deleted, not printed twice.
@@ -168,6 +172,23 @@ impl PrintJobs {
         self.waiting.len() + usize::from(self.current.is_some())
     }
 
+    /// The `<start>-<n>.pdf` jobs in the print folder that no print panel has taken yet.
+    fn published(&self) -> usize {
+        let Some(dir) = self.dir.as_deref() else {
+            return 0;
+        };
+        let job = |name: &str| {
+            name.strip_suffix(".pdf")
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit() || b == b'-'))
+        };
+        std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|entry| entry.file_name().to_str().is_some_and(job))
+            .count()
+    }
+
     fn remember(&mut self, path: String) {
         let mut done = self.done.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if done.len() == DONE_KEPT {
@@ -278,7 +299,9 @@ impl AgentConsoleHarness {
             Some("empty")
         } else if job.bytes > MAX_PRINT_JOB_BYTES {
             Some("too-large")
-        } else if self.print.count() >= MAX_PRINT_JOBS {
+        } else if self.print.count() >= MAX_PRINT_JOBS
+            || self.print.published() >= MAX_PUBLISHED_PRINT_JOBS
+        {
             Some("too-many")
         } else {
             None
