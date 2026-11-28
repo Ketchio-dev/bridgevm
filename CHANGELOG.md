@@ -51,6 +51,9 @@ All notable changes to BridgeVM are documented in this file.
 - A Mac file that never reaches Windows now gets a notice: when Windows
   refuses the copy (for example the file is open in a Windows app), and when
   two names differ only in letter case, such as “a.txt” and “A.txt”.
+- A folder renamed or deleted on one side of a shared folder no longer
+  leaves an empty copy of its old folders on the other side. On the
+  Windows side this needs the Guest Tools update.
 - A Mac change made just as the shared folder is renamed or deleted in
   Windows no longer makes the Windows folder again with only that file,
   after the Guest Tools update.

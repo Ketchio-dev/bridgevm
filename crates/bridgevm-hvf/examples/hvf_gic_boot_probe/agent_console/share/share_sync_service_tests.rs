@@ -822,3 +822,25 @@ fn a_new_folder_beside_a_cached_puts_folder_replans_the_run() {
     rig.run(1);
     assert_eq!(rig.h.share.as_ref().unwrap().host_scans, before + 1);
 }
+
+#[test]
+fn a_folder_renamed_in_windows_leaves_no_empty_copy_on_the_mac() {
+    let mut rig = Rig::new("empty-folders");
+    rig.guest.write("old\\deep\\a.txt", b"a");
+    rig.guest.write("old\\b.txt", b"b");
+    rig.guest.write("keep\\c.txt", b"c");
+    rig.run(24);
+    assert_eq!(rig.host("old/deep/a.txt").as_deref(), Some(&b"a"[..]));
+    // Finder's own file, never synced, in the folders the user opened on the Mac.
+    std::fs::write(rig.dir.join("old/.DS_Store"), b"finder").unwrap();
+    std::fs::write(rig.dir.join("keep/.DS_Store"), b"finder").unwrap();
+    // In Windows, old is renamed to new and keep's only file is deleted.
+    for file in &mut rig.guest.files {
+        file.0 = file.0.replacen("old\\", "new\\", 1);
+    }
+    rig.guest.files.retain(|file| file.0 != "keep\\c.txt");
+    rig.run(40);
+    assert_eq!(rig.host("new/deep/a.txt").as_deref(), Some(&b"a"[..]));
+    assert_eq!(rig.host_names(), ["new"], "the folders Windows emptied stayed behind on the Mac");
+    rig.assert_settled();
+}
