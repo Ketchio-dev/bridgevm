@@ -51,6 +51,9 @@ All notable changes to BridgeVM are documented in this file.
   they were refused with a message that stayed over the Windows taskbar. A
   failed copy's message now has a close button, and clicks go through the
   progress message to Windows.
+- Dropping a folder that holds items the Mac isn't allowed to read, such as a
+  whole USB drive with its hidden .Trashes folder, now copies everything else
+  and says how many items were skipped. Before, nothing was copied.
 - When VMs running at the same time together use more memory than your Mac can
   spare, each of them now says so in one sentence and suggests stopping one or
   giving the VMs less memory in Settings. Before, macOS just started swapping

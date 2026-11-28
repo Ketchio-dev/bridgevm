@@ -14,6 +14,8 @@ enum HvfFileDropStaging {
         var copied = 0
         /// Symlinks, devices and other non-regular items, never followed.
         var skipped = 0
+        /// Folders and files the Mac may not read (a drive's .Trashes, a root-owned file), left out.
+        var unreadable = 0
     }
 
     /// Stages `items` into `root` (created here) under Windows-safe, case-insensitively unique
@@ -69,10 +71,17 @@ enum HvfFileDropStaging {
                                            isDirectory: kind == S_IFDIR, taken: &taken)
         let target = (parent as NSString).appendingPathComponent(name)
         if kind == S_IFDIR {
+            let children: [String]
+            do {
+                children = try FileManager.default.contentsOfDirectory(atPath: source).sorted()
+            } catch let error as CocoaError where error.code == .fileReadNoPermission {
+                walk.summary.unreadable += 1
+                return
+            }
             guard mkdir(target, 0o700) == 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
             walk.summary.folders += 1
             var inner = Set<String>()
-            for child in try FileManager.default.contentsOfDirectory(atPath: source).sorted() {
+            for child in children {
                 try copy((source as NSString).appendingPathComponent(child), into: target,
                          taken: &inner, walk: &walk)
             }
@@ -85,7 +94,10 @@ enum HvfFileDropStaging {
             unlink(target)
             let flags = copyfile_flags_t(COPYFILE_DATA | COPYFILE_EXCL | COPYFILE_NOFOLLOW_SRC)
             guard copyfile(source, target, nil, flags) == 0 else {
-                throw POSIXError(.init(rawValue: errno) ?? .EIO)
+                let code = errno
+                unlink(target)
+                if code == EACCES || code == EPERM { walk.summary.unreadable += 1; return }
+                throw POSIXError(.init(rawValue: code) ?? .EIO)
             }
             walk.summary.copied += 1
         }
