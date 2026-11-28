@@ -735,6 +735,9 @@ impl OutboundIpv4Handler for HostSocketOutboundIpv4Handler {
         // Windows cached as failed sends none until its cache is flushed.
         let now = self.now_ms();
         self.dns.server_at(now);
+        if let Some(forwards) = super::port_forward::take_requested_forwards() {
+            self.set_forwards(&forwards);
+        }
         self.poll_udp(guest_mac, reply_queue, stats);
         if let Some(guest_mac) = guest_mac {
             self.accept_forwarded(guest_mac, reply_queue, stats);

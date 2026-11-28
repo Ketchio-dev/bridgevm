@@ -47,6 +47,10 @@ enum HvfPortForwards {
 }
 
 extension HvfEngineSession {
+    /// While Windows runs with Guest Tools connected, forwards change at once: the VMM opens and closes its
+    /// Mac ports (`BVNETFORWARD`, net_nat/port_forward.rs), and vm.json follows at the stop.
+    var portForwardsLive: Bool { HvfHostSettingLiveSave.liveSlug(self) != nil && serviceStarted }
+
     /// vm.json's forwards for a library VM after the attempt (the visible text otherwise), plus any message.
     func applyPortForwards(_ text: String,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (text: String, message: String?) {
@@ -58,6 +62,16 @@ extension HvfEngineSession {
         guard persistsLibraryPreferences else {
             config.portForwards = forwards
             return (HvfPortForwards.text(forwards), nil)
+        }
+        if portForwardsLive, let slug = HvfHostSettingLiveSave.liveSlug(self) {
+            let text = HvfPortForwards.text(forwards)
+            guard sendCtl("BVNETFORWARD " + text) else {
+                return (text, "BridgeVM couldn’t change the port forwards while Windows runs. Shut down Windows, then try again.")
+            }
+            HvfHostSettingLiveSave.record("Port forwarding", for: slug) { $0.portForwards = forwards.isEmpty ? nil : text }
+            config.portForwards = forwards
+            portForwardNotice.forwardsChanged()
+            return (text, nil)
         }
         let message = saveLibraryPreference("Port forwarding", publish: publish) {
             $0.portForwards = forwards.isEmpty ? nil : HvfPortForwards.text(forwards)
@@ -100,6 +114,12 @@ final class HvfPortForwardNotice: ObservableObject {
               let guest = UInt16(parts[1].dropFirst("guest=".count)) else { return }
         let forward = HvfPortForward(host: host, guest: guest)
         if !off.contains(forward) { off.append(forward) }
+    }
+
+    /// New forwards: the VMM says again which of them it couldn't open.
+    func forwardsChanged() {
+        if !off.isEmpty { off = [] }
+        if !unanswered.isEmpty { unanswered = [] }
     }
 
     func reset() {
@@ -153,7 +173,9 @@ struct HvfPortForwardSetting: View {
     var commit: (() -> Void)? = nil
     @FocusState private var focused: Bool
 
-    var isDisabled: Bool { session.persistsLibraryPreferences && !session.libraryPreferencesEditable }
+    var isDisabled: Bool {
+        session.persistsLibraryPreferences && !session.libraryPreferencesEditable && !session.portForwardsLive
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -167,12 +189,14 @@ struct HvfPortForwardSetting: View {
                     .focused($focused)
                     .onSubmit(commitDraft)
             }
-            Text("Enter Mac port:Windows port pairs, separated by commas. Example: 8080:80.")
+            Text(isDisabled && session.hasActiveRuntimeWork
+                 ? "Shut down Windows to change port forwards, or install Guest Tools to change them while Windows runs."
+                 : "Enter Mac port:Windows port pairs, separated by commas. Example: 8080:80.")
                 .font(.caption).foregroundColor(.secondary)
         }
         .disabled(isDisabled)
         .onChange(of: focused) { _, active in if !active { commitDraft() } }
-        .help("Connect to 127.0.0.1 on the Mac port to reach the Windows TCP port. Shut down Windows before editing these rules.")
+        .help("Connect to 127.0.0.1 on the Mac port to reach the Windows TCP port.")
         .alert("Port forwarding", isPresented: Binding(
             get: { message != nil }, set: { if !$0 { message = nil } }
         )) {

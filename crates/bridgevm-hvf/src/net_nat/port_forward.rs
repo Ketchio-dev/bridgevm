@@ -19,6 +19,8 @@ pub struct PortForward {
 #[derive(Debug)]
 pub(crate) struct ForwardListener {
     pub(crate) listener: TcpListener,
+    /// The Mac port asked for (0 in tests: any free port).
+    pub(crate) host_port: u16,
     pub(crate) guest_port: u16,
     pub(crate) readable: bool,
     pub(crate) watched: bool,
@@ -36,8 +38,39 @@ pub fn forwards_from_env() -> Vec<PortForward> {
         .unwrap_or_default()
 }
 
+/// The forwards the app set while Windows runs (`BVNETFORWARD`, agent_console), for the NAT's next
+/// poll. A probe runs one VM; tests, each on its own thread, keep their own.
+#[cfg(not(test))]
+fn requested<R>(f: impl FnOnce(&mut Option<Vec<PortForward>>) -> R) -> R {
+    static REQUESTED: std::sync::Mutex<Option<Vec<PortForward>>> = std::sync::Mutex::new(None);
+    f(&mut REQUESTED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner))
+}
+
+#[cfg(test)]
+fn requested<R>(f: impl FnOnce(&mut Option<Vec<PortForward>>) -> R) -> R {
+    thread_local! {
+        static REQUESTED: std::cell::RefCell<Option<Vec<PortForward>>> = const { std::cell::RefCell::new(None) };
+    }
+    REQUESTED.with(|requested| f(&mut requested.borrow_mut()))
+}
+
+/// Ask the NAT to forward exactly `forwards`, and kick it so it does so without waiting for traffic.
+pub fn request_forwards(forwards: Vec<PortForward>) {
+    requested(|requested| *requested = Some(forwards));
+    if let Some(kick) = NET_RX_HOOK.get() {
+        kick();
+    }
+}
+
+/// The forwards asked for since the last call, for the NAT's poll.
+pub fn take_requested_forwards() -> Option<Vec<PortForward>> {
+    requested(Option::take)
+}
+
 /// An entry that does not parse is left out, said once in the log.
-pub(crate) fn parse_forwards(spec: &str) -> Vec<PortForward> {
+pub fn parse_forwards(spec: &str) -> Vec<PortForward> {
     let entries = spec
         .split(',')
         .map(str::trim)
@@ -102,32 +135,60 @@ impl HostSocketOutboundIpv4Handler {
     /// that forward off, said once in the log; the others and the VM go on.
     pub fn with_forwards(mut self, forwards: &[PortForward]) -> Self {
         for forward in forwards {
-            let bound = TcpListener::bind((StdIpv4Addr::LOCALHOST, forward.host))
-                .and_then(|listener| listener.set_nonblocking(true).map(|()| listener));
-            match bound {
-                Ok(listener) => {
-                    println!(
-                        "virtio-net NAT port forward 127.0.0.1:{} -> guest port {}",
-                        forward.host, forward.guest
-                    );
-                    self.forwards.push(ForwardListener {
-                        listener,
-                        guest_port: forward.guest,
-                        readable: true,
-                        watched: false,
-                        unanswered: false,
-                    });
-                }
-                Err(error) => {
-                    crate::host_log::out(forward_off_line(forward));
-                    eprintln!(
-                        "virtio-net NAT port forward 127.0.0.1:{} -> guest port {} is off: {error}",
-                        forward.host, forward.guest
-                    );
-                }
-            }
+            self.open_forward(forward);
         }
         self
+    }
+
+    /// The forwards the app set while Windows runs. A rule kept keeps its listener and its connections, a
+    /// rule gone closes its listener, and a new rule, or one that was off, is opened.
+    pub(crate) fn set_forwards(&mut self, forwards: &[PortForward]) {
+        let same = |open: &ForwardListener, forward: &PortForward| {
+            open.host_port == forward.host && open.guest_port == forward.guest
+        };
+        self.forwards.retain(|open| {
+            let kept = forwards.iter().any(|forward| same(open, forward));
+            if !kept {
+                println!(
+                    "virtio-net NAT port forward 127.0.0.1:{} -> guest port {} closed",
+                    open.host_port, open.guest_port
+                );
+            }
+            kept
+        });
+        for forward in forwards {
+            if !self.forwards.iter().any(|open| same(open, forward)) {
+                self.open_forward(forward);
+            }
+        }
+    }
+
+    fn open_forward(&mut self, forward: &PortForward) {
+        let bound = TcpListener::bind((StdIpv4Addr::LOCALHOST, forward.host))
+            .and_then(|listener| listener.set_nonblocking(true).map(|()| listener));
+        match bound {
+            Ok(listener) => {
+                println!(
+                    "virtio-net NAT port forward 127.0.0.1:{} -> guest port {}",
+                    forward.host, forward.guest
+                );
+                self.forwards.push(ForwardListener {
+                    listener,
+                    host_port: forward.host,
+                    guest_port: forward.guest,
+                    readable: true,
+                    watched: false,
+                    unanswered: false,
+                });
+            }
+            Err(error) => {
+                crate::host_log::out(forward_off_line(forward));
+                eprintln!(
+                    "virtio-net NAT port forward 127.0.0.1:{} -> guest port {} is off: {error}",
+                    forward.host, forward.guest
+                );
+            }
+        }
     }
 
     #[cfg(test)]

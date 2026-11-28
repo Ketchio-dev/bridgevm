@@ -46,6 +46,8 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- Port forwards can now be changed while Windows runs (with Guest
+  Tools); before, the field was disabled until Windows shut down.
 - When Windows refuses or doesn't answer a forwarded connection, such as RDP
   turned off or a port Windows Defender Firewall blocks, BridgeVM now says
   which Windows port and what to check. Before, the Mac app's connection
