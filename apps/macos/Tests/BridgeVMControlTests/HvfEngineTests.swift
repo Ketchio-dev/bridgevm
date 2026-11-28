@@ -32,7 +32,6 @@ final class HvfEngineConfigTests: XCTestCase {
         let report = config.readiness(repoRoot: root)
 
         XCTAssertTrue(report.launchReady, "\(report.launchBlockers)")
-        XCTAssertFalse(report.releaseReady)
         XCTAssertTrue(report.releaseBlockers.contains { $0.code == "secure-boot-live-receipt" })
         XCTAssertFalse(report.releaseBlockers.contains { $0.code == "durable-suspend" })
         XCTAssertTrue(report.releaseBlockers.contains { $0.code == "gpu-live-receipt" })

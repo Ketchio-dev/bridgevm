@@ -19,25 +19,10 @@ struct HvfWindowsReadinessCard: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                Divider()
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Release readiness").font(.subheadline.weight(.semibold))
-                    Text(report.releaseReady
-                         ? "The release checks passed."
-                         : "Release blockers (\(report.releaseBlockers.count)). These checks do not block development VM startup.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    ForEach(report.releaseBlockers) { issue in
-                        Text(issue.summary)
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
                 if !report.productLimitations.isEmpty {
                     Divider()
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Product limitations").font(.subheadline.weight(.semibold))
+                        Text("Limitations").font(.subheadline.weight(.semibold))
                         ForEach(report.productLimitations, id: \.self) { limitation in
                             Text(limitation)
                                 .font(.caption)

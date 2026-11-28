@@ -64,9 +64,9 @@ final class HvfRuntimeStartFeedbackTests: XCTestCase {
             (.keyAccess, "The operation couldn’t be completed. (OSStatus -25291.)",
              "BridgeVM couldn’t use this VM’s security key in your login keychain, so check that the keychain is unlocked and start Windows again."),
             (.readiness(["relocation-pending"]), "The move has not finished recovering. Check both bundles.",
-             "BridgeVM couldn’t start Windows yet, so choose Refresh and try again."),
+             "BridgeVM couldn’t start Windows yet. Press Command-K in the library window and choose Refresh Library, then try again."),
             (.readiness(["install-cleanup-pending"]), "Windows installation cleanup is incomplete.",
-             "BridgeVM couldn’t start Windows yet, so choose Refresh and try again."),
+             "BridgeVM couldn’t start Windows yet. Press Command-K in the library window and choose Refresh Library, then try again."),
         ]
         for (stage, detail, expected) in cases {
             let text = HvfRuntimeStartOutcome.failed(stage, detail).failureText

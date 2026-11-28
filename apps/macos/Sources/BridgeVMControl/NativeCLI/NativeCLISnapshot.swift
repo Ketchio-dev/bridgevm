@@ -18,7 +18,7 @@ struct NativeCLISnapshotResult: Encodable {
     var text: String {
         var lines = [
             "Powered-off snapshot \(command): \(vmID)",
-            "Result: \(complete ? "complete" : cancelSignal == nil ? "refused" : "cancelled")",
+            "Result: \(complete ? "complete" : cancelSignal == nil ? "refused" : "canceled")",
         ]
         if let snapshotPath { lines.append("Snapshot: \(snapshotPath)") }
         if let unavailableReason { lines.append("Reason: \(unavailableReason)") }
@@ -41,9 +41,9 @@ struct NativeCLISnapshotResult: Encodable {
                           libraryPath: String) -> Self {
         let reason: String
         switch command {
-        case "restore": reason = "Cancelled; the VM's disk and UEFI vars are either unchanged or fully restored from the snapshot."
-        case "export": reason = "Cancelled; the VM is unchanged, and the export destination holds either its previous contents or a complete export."
-        default: reason = "Cancelled; the VM's disk and UEFI vars are unchanged, and no partial snapshot was added."
+        case "restore": reason = "Canceled; the VM's disk and UEFI vars are either unchanged or fully restored from the snapshot."
+        case "export": reason = "Canceled; the VM is unchanged, and the export destination holds either its previous contents or a complete export."
+        default: reason = "Canceled; the VM's disk and UEFI vars are unchanged, and no partial snapshot was added."
         }
         return Self(command: command, vmID: vmID, libraryPath: libraryPath, snapshotPath: nil,
                     complete: false, unavailableReason: reason, cancelSignal: cancel.signal)

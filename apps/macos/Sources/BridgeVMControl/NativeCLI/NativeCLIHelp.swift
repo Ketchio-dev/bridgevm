@@ -14,15 +14,14 @@ extension NativeCLI {
       bridgevm app readiness dev-vm --json
 
     Uses the same vm.json configuration as the native app. Reads never repair,
-    migrate, create or start a VM. Inventory runtime is unobserved. Recovery records
-    are reported without interpreting or modifying them. CPU/memory are saved
-    values, not measured usage. Inventory JSON schema: bridgevm.app-library.v1.
+    migrate, create or start a VM. List and inspect don't check whether a VM is
+    running; use status. Recovery records are reported without interpreting or
+    modifying them. CPU/memory are saved values, not measured usage. Inventory
+    JSON schema: bridgevm.app-library.v1.
     Inventory exit codes: 0 complete, 1 unavailable/incomplete, 2 invalid usage.
 
-    Readiness uses the app's existing Windows VM checks. It does not
-    open Keychain, boot a VM, or prove guest behavior or release readiness.
-    Launch blockers, product release gates and limitations are separate.
-    Unexamined recovery records are reported without changing them.
+    Readiness runs the app's start checks without opening Keychain or starting
+    Windows. Unexamined recovery records are reported without changing them.
     Readiness JSON schema: bridgevm.app-readiness.v1.
     Readiness exit codes: 0 launch prerequisites ready, 1 blocked/unavailable,
     2 invalid usage. Unsupported engines and pending installation are blocked.
@@ -102,12 +101,11 @@ extension NativeCLI {
       snapshot-restore ID  Restore the newest snapshot for the powered-off VM.
       snapshot-export ID OUTPUT  Export the current verified raw pair to OUTPUT.
     The VM must be an installed BridgeVM Windows VM that is shut down. OUTPUT is
-    an absolute directory outside the VM's folder. Media and helper paths come
-    from the saved app library; disk, vars and secrets stay off argv.
+    an absolute directory outside the VM's folder. Disk and vars paths come
+    from the saved app library, not argv; secrets stay off argv too.
     JSON schema: bridgevm.app-snapshot.v1.
-    Ctrl-C or SIGTERM stops the helper and waits for it: disk, vars and OUTPUT
-    are left as before or complete, never mixed.
-    Exit codes: 0 complete, 1 refused/failed, 130/143 cancelled, 2 invalid usage.
+    Ctrl-C stops the snapshot; disk, vars and OUTPUT stay unchanged or complete.
+    Exit codes: 0 complete, 1 refused/failed, 130/143 canceled, 2 invalid usage.
     """
 }
 

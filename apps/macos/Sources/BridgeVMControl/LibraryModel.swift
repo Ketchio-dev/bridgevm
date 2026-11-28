@@ -521,7 +521,7 @@ extension LibraryModel {
         guard let launch = HvfEngineConfig.libraryVM(saved, rootURL: rootURL,
                   e2eHostDiagnosticStopAdmitted: e2eHostDiagnosticStopAdmitted),
               let session = hvfRuntimeDetailSession(for: saved) else {
-            return .refused("BridgeVM could not read the saved VM configuration. Reload the library and try again.")
+            return .refused("BridgeVM could not read the saved VM configuration. Press Command-K in the library window and choose Refresh Library, then try again.")
         }
         // No microphone prompt: nobody may be at the Mac to answer it, and the start would wait.
         switch session.requestGUIStart(configuration: launch, policy: .requireNew, microphone: nil) {

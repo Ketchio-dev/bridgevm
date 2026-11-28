@@ -63,7 +63,7 @@ extension HvfLibraryLaunchContext {
         }
         if HvfWindowsInstallTransactionResidue.isPresent(config, rootURL: rootURL) {
             issues.append(.init(code: "install-cleanup-pending", scope: .launch,
-                summary: "BridgeVM is still cleaning up the Windows installation. Choose Refresh, then start Windows again."))
+                summary: "BridgeVM is still cleaning up the Windows installation. Press Command-K in the library window and choose Refresh Library, then start Windows again."))
         }
         return issues
     }

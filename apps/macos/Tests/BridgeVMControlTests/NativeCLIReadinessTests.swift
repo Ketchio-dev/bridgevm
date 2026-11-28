@@ -54,11 +54,12 @@ final class NativeCLIReadinessTests: XCTestCase {
         XCTAssertTrue(options.showHelp)
         XCTAssertTrue(NativeCLI.help.contains("bridgevm-native-cli-v1"))
         XCTAssertTrue(NativeCLI.help.contains("bridgevm.app-readiness.v1"))
-        XCTAssertTrue(NativeCLI.help.contains("prove guest behavior or release readiness"))
+        XCTAssertTrue(NativeCLI.help.contains("Readiness runs the app's start checks without opening Keychain or starting\nWindows."))
         // Examples use the documented command, not the bundle executable that is not on PATH.
         XCTAssertTrue(NativeCLI.help.contains("\n  bridgevm app readiness dev-vm --json"))
         // Help speaks of Windows VMs and the VM BridgeVM started, not of internal parts.
-        for term in ["own-HVF", "supervisor", "owned run", "retained runner", "backend"] {
+        for term in ["own-HVF", "supervisor", "owned run", "retained runner", "backend", "helper", "unobserved",
+                     "release gate", "cancelled"] {
             XCTAssertFalse(NativeCLI.help.contains(term), term)
         }
         XCTAssertEqual(try contents(root), before)

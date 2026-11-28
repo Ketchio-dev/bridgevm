@@ -52,7 +52,7 @@ extension HvfEngineSession {
         let saved = library.latestConfiguration(for: vm)
         guard let launch = HvfEngineConfig.libraryVM(saved, rootURL: library.rootURL,
                   e2eHostDiagnosticStopAdmitted: library.e2eHostDiagnosticStopAdmitted) else {
-            return "BridgeVM couldn’t read this VM’s saved settings. Choose Refresh in the library, then try again."
+            return "BridgeVM couldn’t read this VM’s saved settings. Press Command-K in the library window and choose Refresh Library, then try again."
         }
         if case let .refused(reason) = requestGUIStart(configuration: launch) { return reason }
         return nil

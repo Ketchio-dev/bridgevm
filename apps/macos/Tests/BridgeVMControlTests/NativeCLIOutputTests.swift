@@ -51,7 +51,7 @@ final class NativeCLIOutputTests: XCTestCase {
         let snapshot = NativeLibrarySnapshot(libraryPath: "/VM library/개발", records: [try record()], issues: [])
         XCTAssertEqual(NativeCLI.render(snapshot), """
         VM library: /VM library/개발
-        Runtime state: unobserved
+        This command doesn't check whether a VM is running; use status.
         개발-vm\t"개발 Windows 👩‍💻"\thvf-engine
           Configuration: /VM library/개발-vm/vm.json
           Folder: /VM library/개발 bundle.vmbridge
@@ -61,7 +61,7 @@ final class NativeCLIOutputTests: XCTestCase {
 
         """)
         XCTAssertEqual(NativeCLI.render(NativeLibrarySnapshot(libraryPath: "/VM library", records: [], issues: [])),
-            "VM library: /VM library\nRuntime state: unobserved\nNo readable saved VMs.\n")
+            "VM library: /VM library\nThis command doesn't check whether a VM is running; use status.\nNo readable saved VMs.\n")
     }
 
     func testDisplayNameKeepsExistingJSONQuotesWithoutDoubleEscaping() throws {
@@ -75,7 +75,7 @@ final class NativeCLIOutputTests: XCTestCase {
         let text = NativeCLI.render(try inventory(payload))
         XCTAssertEqual(text, """
         VM library: \(escaped)
-        Runtime state: unobserved
+        This command doesn't check whether a VM is running; use status.
         \(escaped)\t"\(escaped)"\t\(escaped)
           Configuration: \(escaped)
           Folder: \(escaped)
@@ -91,7 +91,7 @@ final class NativeCLIOutputTests: XCTestCase {
     func testOrdinaryReadinessKeepsTextAndStaticLayout() {
         XCTAssertEqual(NativeCLI.render(readiness("개발 Windows 👩‍💻")), """
         VM readiness: 개발 Windows 👩‍💻
-        Runtime state: unobserved
+        This command doesn't check whether a VM is running; use status.
         Launch prerequisites: blocked
         Can’t start: 개발 Windows 👩‍💻
         Product release gate [개발 Windows 👩‍💻]: 개발 Windows 👩‍💻
@@ -105,7 +105,7 @@ final class NativeCLIOutputTests: XCTestCase {
         let text = NativeCLI.render(readiness(payload))
         XCTAssertEqual(text, """
         VM readiness: \(escaped)
-        Runtime state: unobserved
+        This command doesn't check whether a VM is running; use status.
         Launch prerequisites: blocked
         Can’t start: \(escaped)
         Product release gate [\(escaped)]: \(escaped)
