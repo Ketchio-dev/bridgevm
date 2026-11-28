@@ -34,7 +34,7 @@ struct AppUIInstallCancelAXOperations<Access: AppUIDriverAXAccess> {
                 stage: stage, title: title, failure: failure))
         }
         guard install != nil else { throw AppUIDriverFailure.elementNotFound }
-        let expectedStage = operation == .start ? "Ready to install" : operation == .cancel ? "Checking installation files" : "Cancelled"
+        let expectedStage = operation == .start ? "Ready to install" : operation == .cancel ? "Checking installation files" : "Canceled"
         guard AppUIInstallCancelOperationPolicy.currentLabel(stage) == expectedStage, failure == nil else { throw AppUIDriverFailure.outOfOrder }
         guard let button = operation == .cancel ? cancel : start else { throw AppUIDriverFailure.elementNotFound }
         guard try access.string(button, A.role) == "AXButton" else { throw AppUIDriverFailure.invalidElement }

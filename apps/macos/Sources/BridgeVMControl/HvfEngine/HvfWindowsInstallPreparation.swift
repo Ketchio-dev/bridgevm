@@ -16,7 +16,7 @@ final class HvfWindowsInstallPreparation: ObservableObject {
     }
 
     static let staleMessage = "The installation settings changed. Check them again before starting."
-    static let missingMessage = "Couldn’t find this VM’s installation target. Refresh the library and select the VM again."
+    static let missingMessage = "Couldn’t find this VM. Refresh the library, then select the VM again."
     static let ownerMessage = "The VM library is unavailable. Return to the library and try again."
 
     let slug: String

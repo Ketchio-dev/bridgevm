@@ -137,7 +137,7 @@ final class VMCreationRegistrationCollisionTests: XCTestCase {
                 })
             // A late conflicting registration refuses publication, and says so (it was the general sentence).
             guard case .refused(let message)? = loser else { XCTFail("expected a refusal"); return publication }
-            XCTAssertTrue(message.contains("BridgeVM kept the prepared files"), message)
+            XCTAssertTrue(message.contains("BridgeVM kept the files it prepared"), message)
             return publication
         }
         guard case .created(let winner)? = outcome else { return XCTFail("expected real winner publication") }

@@ -36,7 +36,8 @@ final class HvfEngineConfigTests: XCTestCase {
         XCTAssertTrue(report.releaseBlockers.contains { $0.code == "secure-boot-live-receipt" })
         XCTAssertFalse(report.releaseBlockers.contains { $0.code == "durable-suspend" })
         XCTAssertTrue(report.releaseBlockers.contains { $0.code == "gpu-live-receipt" })
-        XCTAssertTrue(report.productLimitations.contains { $0.contains("suspend/resume") })
+        XCTAssertEqual(report.productLimitations,
+            ["BridgeVM can pause Windows but can’t save it to resume later. Shut down Windows when you’re finished."])
     }
 
     func testReadinessFailsClosedForMutableMediaAndRunner() throws {

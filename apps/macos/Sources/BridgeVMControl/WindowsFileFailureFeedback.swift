@@ -7,10 +7,12 @@ enum WindowsFileFailureFeedback {
     static let source = "BridgeVM couldn’t use the Windows installation files. Wait for other installations to finish, check access to the VM folder, then retry."
     static let finalization = "BridgeVM couldn’t save the Windows installation. Keep the VM files, check that the drive is connected and has free space, then retry."
     static let recovery = "BridgeVM couldn’t recover the interrupted Windows installation. Keep the VM files, check that the drive is connected and writable, then retry."
-    static let importing = "Could not import the Windows files. Check access to the disk image and firmware files and make sure the destination has enough free space."
-    static let publication = "Could not save the VM registration. Check that the library folder is writable and has enough free space."
+    static let importing = "Could not import the Windows files. Check access to the disk image and UEFI variables file and make sure the destination has enough free space."
+    static let publication = "Couldn’t add the VM to your library. Check that the library folder is writable and has enough free space."
     static let unsynced = "BridgeVM kept the VM files but could not confirm the save. Check your library for the saved VM before creating another."
-    private static let importingOutOfSpace = "No space left on device. Free space on the destination volume and try again."
+    /// The disk import helper's out-of-space sentence (disk_import.rs, snapshot_pair.rs): matched, never shown.
+    private static let helperOutOfSpace = "No space left on device. Free space on the destination volume and try again."
+    private static let importingOutOfSpace = "There isn’t enough free space to copy the disk. Free up space on the drive that holds your VM library, then import again."
     private static let importingInUse = "Shut down the VM that uses this disk, then import again."
 
     static func diagnostic(_ stage: String, _ error: Error) -> String {
@@ -23,7 +25,7 @@ enum WindowsFileFailureFeedback {
         case NSCocoaErrorDomain:
             return ns.code == CocoaError.Code.fileWriteOutOfSpace.rawValue
         case "BridgeVM.MediaImport":
-            return ns.localizedDescription == importingOutOfSpace
+            return ns.localizedDescription == helperOutOfSpace
         default:
             return false
         }
@@ -52,10 +54,10 @@ enum WindowsFileFailureFeedback {
         guard ns.domain == "BridgeVM.MediaImport" else { return sentence }
         let detail = ns.localizedDescription
         switch detail {
+        case helperOutOfSpace: return importingOutOfSpace
         // These converter sentences contain fixed guidance. Match the entire sentence
         // before using it in the app, since other helper output can contain file paths.
-        case importingOutOfSpace,
-             "Choose a QCOW2, fixed-size VHD, or VHDX disk to convert.",
+        case "Choose a QCOW2, fixed-size VHD, or VHDX disk to convert.",
              "This QCOW2 uses unsupported compression. Export it as RAW from the original VM app and import the copy.",
              "This QCOW2 disk is encrypted. Export a decrypted disk with qemu-img and import the result.",
              "This disk depends on a backing file. Export a standalone disk from the original VM app and import the copy.",

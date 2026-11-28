@@ -6,7 +6,7 @@ import Foundation
 enum HvfWindowsInstallISOCheck {
     static let notDiskImage =
         "This file isn’t a Windows installer disc image. Choose the Windows 11 for Arm ISO from Microsoft."
-    static let notArm64 = "This ISO isn’t Windows 11 for Arm. Choose the Arm64 ISO from Microsoft."
+    static let notArm64 = "This ISO isn’t Windows 11 for Arm. Choose the Windows 11 for Arm ISO from Microsoft."
 
     /// The sentence to show, or nil for a Windows for Arm installer. It attaches the image, so call it
     /// off the main thread.

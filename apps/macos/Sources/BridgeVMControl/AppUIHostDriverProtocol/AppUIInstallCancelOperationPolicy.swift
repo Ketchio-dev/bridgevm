@@ -34,10 +34,10 @@ enum AppUIInstallCancelOperationPolicy {
             return stage == "Checking installation files" && !value.startEnabled
                 && value.cancelVisible && value.cancelEnabled && value.failure == nil
         case .cancelling:
-            return stage == "Cancelling…" && !value.startEnabled
+            return stage == "Canceling…" && !value.startEnabled
                 && value.cancelVisible && !value.cancelEnabled && value.failure == nil
         case .cancelled:
-            return stage == "Cancelled" && title == "Try Again" && value.startEnabled
+            return stage == "Canceled" && title == "Try Again" && value.startEnabled
                 && !value.cancelVisible && !value.cancelEnabled && value.failure == nil
         case .retryFailed:
             return stage == "Failed" && title == "Try Again" && value.startEnabled
@@ -45,13 +45,14 @@ enum AppUIInstallCancelOperationPolicy {
         }
     }
 
-    // Previous development builds exposed these action titles and stages in Korean.
+    // Previous development builds exposed these action titles and stages in Korean, and then
+    // spelled the cancel stages "Cancelling…" and "Cancelled".
     static func currentLabel(_ text: String) -> String {
         switch text {
         case "대기": return "Ready to install"
         case "설치 입력 확인": return "Checking installation files"
-        case "취소 중…": return "Cancelling…"
-        case "취소됨": return "Cancelled"
+        case "취소 중…", "Cancelling…": return "Canceling…"
+        case "취소됨", "Cancelled": return "Canceled"
         case "실패": return "Failed"
         case "설치 시작": return "Start Installation"
         case "다시 시도": return "Try Again"

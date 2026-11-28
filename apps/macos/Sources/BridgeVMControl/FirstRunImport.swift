@@ -37,13 +37,13 @@ enum FirstRunImport {
             case .media(let sentence): return sentence
             case .unsupportedDiskFormat(let format):
                 return "To import a \(format) disk, convert it to RAW, QCOW2, fixed-size VHD, or VHDX and choose the converted file."
-            case .vtpmNotADirectory(let p): return "Choose the vTPM state folder. Check the path \(p)"
-            case .vtpmRecoveryMissing(let p): return "The vTPM recovery file is unavailable at \(p)"
-            case .vtpmRecoveryPackageRequired: return "Choose the vTPM recovery package."
-            case .vtpmRecoveryCodeRequired: return "Choose the vTPM recovery code file."
+            case .vtpmNotADirectory(let p): return "Choose the folder that holds the original TPM data. There’s no folder at \(p)."
+            case .vtpmRecoveryMissing(let p): return "BridgeVM can’t use the recovery file at \(p). Choose the original file again."
+            case .vtpmRecoveryPackageRequired: return "Choose the TPM recovery package."
+            case .vtpmRecoveryCodeRequired: return "Choose the TPM recovery code file."
             case .vtpmRecoveryCodeShared(let p):
-                return "Other accounts on this Mac can read the recovery code file at \(p). Make it private (in Terminal: chmod 600 and the file's path), then import again."
-            case .vtpmRecoveryWithoutState: return "Choose the vTPM state folder to use these recovery files."
+                return "Other accounts on this Mac can open the recovery code file at \(p). In Finder, choose File > Get Info and set everyone except you to No Access under Sharing & Permissions, then import again."
+            case .vtpmRecoveryWithoutState: return "Choose the TPM data folder to use these recovery files."
             case .badResources(let mem, let cpu):
                 return "Choose at least 2048 MiB of memory and 1 to 64 CPUs. The current settings are \(mem) MiB and \(cpu) CPUs."
             }

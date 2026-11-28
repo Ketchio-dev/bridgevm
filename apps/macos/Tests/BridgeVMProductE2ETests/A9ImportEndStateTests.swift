@@ -17,6 +17,15 @@ final class A9ImportEndStateTests: XCTestCase {
         XCTAssertEqual(A9ImportEndState.errorToken("Disk image not found at /Volumes/private/disk.raw"), "validation")
         XCTAssertEqual(A9ImportEndState.errorToken("Choose a readable disk file with Windows installed."), "validation")
         XCTAssertEqual(A9ImportEndState.errorToken("Shut down the VM that uses this disk, then import again."), "disk-in-use")
+        XCTAssertEqual(A9ImportEndState.errorToken("Couldn’t add the VM to your library. Check that the library folder is writable and has enough free space."),
+                       "registration-not-saved")
+        XCTAssertEqual(A9ImportEndState.errorToken("Could not save the VM registration. Check that the library folder is writable and has enough free space."),
+                       "registration-not-saved")
+        for message in ["Choose the TPM recovery package.", "Choose the TPM data folder to use these recovery files.",
+                        "Choose the folder that holds the original TPM data. There’s no folder at /Volumes/private/vtpm.",
+                        "BridgeVM can’t use the recovery file at /Volumes/private/code.txt. Choose the original file again."] {
+            XCTAssertEqual(A9ImportEndState.errorToken(message), "validation", message)
+        }
         XCTAssertEqual(A9ImportEndState.errorToken("The saved VM could not be opened. Check the library folder and choose Open Saved VM again."), "recovery-failed")
         XCTAssertEqual(A9ImportEndState.errorToken("VM 번들을 만들지 못했습니다: The destination VM already has a vTPM key (owned fixture)."),
                        "bundle-failed/destination-key-exists")

@@ -36,5 +36,14 @@ struct NativeRuntimeResponse: Codable, Equatable, Sendable {
 enum NativeRuntimeError: String, Error, LocalizedError, Sendable {
     case ownerUnavailable, ownerBusy, invalidEndpoint, libraryChanged, peerRejected
     case timedOut, invalidMessage, snapshotUnavailable, transportFailure
-    var errorDescription: String? { "Native app runtime observation unavailable (\(rawValue))." }
+    /// The startup screen shows this sentence; the CLI's --json output and the launch log keep `rawValue`.
+    var errorDescription: String? {
+        switch self {
+        case .ownerBusy: return "BridgeVM is already open with this VM library. Switch to that BridgeVM window."
+        case .libraryChanged: return "The VM library folder was moved or replaced. Quit and reopen BridgeVM."
+        case .timedOut: return "BridgeVM didn’t answer in time. Try again."
+        case .ownerUnavailable, .invalidEndpoint, .peerRejected, .invalidMessage, .snapshotUnavailable, .transportFailure:
+            return "BridgeVM couldn’t open the VM library. Quit and reopen BridgeVM."
+        }
+    }
 }

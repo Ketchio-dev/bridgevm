@@ -35,7 +35,12 @@ final class NativeRuntimeModelCacheTests: XCTestCase {
         try FileManager.default.moveItem(at: path, to: root.appendingPathComponent("old-library"))
         try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
         var effects = 0
-        XCTAssertThrowsError(try cache.model { effects += 1; return effects })
+        XCTAssertThrowsError(try cache.model { effects += 1; return effects }) { error in
+            // The startup screen shows this sentence; the code stays out of it.
+            XCTAssertEqual(error as? NativeRuntimeError, .libraryChanged)
+            XCTAssertEqual(error.localizedDescription,
+                "The VM library folder was moved or replaced. Quit and reopen BridgeVM.")
+        }
         XCTAssertNil(cache.retainedValue)
         XCTAssertEqual(effects, 0)
     }

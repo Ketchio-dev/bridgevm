@@ -37,10 +37,8 @@ final class NativeRuntimeAppOwner {
             }
             prepared = instance
         } catch {
-            let message = (error as? NativeRuntimeError) == .ownerBusy
-                ? "This native VM library is already managed by a running BridgeVM app."
-                : error.localizedDescription
-            FileHandle.standardError.write(Data("BridgeVM: \(message)\n".utf8))
+            let code = (error as? NativeRuntimeError).map { " (\($0.rawValue))" } ?? ""
+            FileHandle.standardError.write(Data("BridgeVM: \(error.localizedDescription)\(code)\n".utf8))
             exit(1)
         }
     }

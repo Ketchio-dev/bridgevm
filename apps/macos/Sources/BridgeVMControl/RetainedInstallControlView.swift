@@ -16,7 +16,7 @@ struct RetainedInstallControlView: View {
                     Text(message).foregroundColor(.secondary)
                 }
                 if session.isRunning {
-                    Button(session.stage == .cancelling ? "Cancelling…" : "Cancel") { session.cancel() }
+                    Button(session.stage == .cancelling ? "Canceling…" : "Cancel") { session.cancel() }
                         .disabled(!session.canCancel).accessibilityIdentifier("bridgevm.retained.install.cancel")
                 } else {
                     Button("Dismiss", action: dismiss)

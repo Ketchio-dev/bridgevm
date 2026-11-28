@@ -79,7 +79,7 @@ struct CreateVMSheet: View {
             }
 
             if mode == .windowsHVF {
-                Text("Choose a RAW, QCOW2, fixed-size VHD or VHDX disk with Windows Arm installed. BridgeVM creates a RAW copy in your library. If you omit the UEFI variables file, BridgeVM creates default boot settings.")
+                Text("Choose a RAW, QCOW2, fixed-size VHD, or VHDX disk with Windows 11 for Arm installed. BridgeVM creates a RAW copy in your library. If you omit the UEFI variables file, BridgeVM creates default boot settings.")
                     .font(.callout).foregroundColor(.secondary)
                 HStack {
                     Button("Choose Disk…") { pickHVFTarget() }

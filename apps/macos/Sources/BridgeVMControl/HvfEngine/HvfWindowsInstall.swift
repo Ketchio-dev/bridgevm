@@ -148,7 +148,7 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
 
     private var isoRecoveryHint: String {
         let relativePath = WindowsHVFProductPolicy.installerISO
-        let location = request.isoPath == bundlePath + "/" + relativePath ? "\(relativePath) in the VM bundle" : "its original location"
+        let location = request.isoPath == bundlePath + "/" + relativePath ? "\(relativePath) in the VM’s folder" : "its original location"
         return "Restore the ISO used to create this VM to \(location), then retry."
     }
 
@@ -173,7 +173,8 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
         if let missing = requiredResources.first(where: {
             !fm.isReadableFile(atPath: repoRoot.appendingPathComponent($0).path)
         }) {
-            return "BridgeVM is missing an installation resource (\(missing)). Reinstall the app and retry."
+            NSLog("Windows installation resource missing: %@", missing)
+            return Self.missingInstallResource
         }
         if let error = Self.diskSizeError(request.diskGiB) { return error }
         let expectedPayloadDirectory = "\(bundlePath)/metadata/windows-guest-payload"
@@ -198,17 +199,15 @@ struct HvfWindowsInstallPlan: Equatable, Sendable {
                 return "The unattended setup file is missing from its saved location or has changed. Restore the original file and retry."
             }
         }
-        guard wimlibPath != nil else {
-            return "Reinstall BridgeVM to restore the verified wimlib-imagex installation tool."
-        }
-        guard catalogVerifierPath != nil else {
-            return "Reinstall BridgeVM to restore the verified Windows driver catalog tool."
+        guard wimlibPath != nil, catalogVerifierPath != nil else {
+            return "Reinstall BridgeVM to restore a missing installation tool."
         }
         return nil
     }
 }
 
 extension HvfWindowsInstallPlan {
+    static let missingInstallResource = "BridgeVM is missing a file it needs to install Windows. Reinstall BridgeVM, then try again."
     static let unrepresentableDiskSizeMessage = "The requested Windows disk size exceeds the supported file size."
 
     /// FileHandle truncation ultimately uses signed off_t, not the full UInt64 range.

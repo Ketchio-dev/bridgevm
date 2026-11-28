@@ -5,7 +5,7 @@ struct HvfWindowsInstallControls: View {
 
     var body: some View {
         if session.isRunning {
-            Button(session.stage == .cancelling ? "Cancelling…" : "Cancel") { session.cancel() }
+            Button(session.stage == .cancelling ? "Canceling…" : "Cancel") { session.cancel() }
                 .disabled(!session.canCancel)
                 .accessibilityIdentifier("bridgevm.windows.install.cancel")
         } else if session.stage != .done {

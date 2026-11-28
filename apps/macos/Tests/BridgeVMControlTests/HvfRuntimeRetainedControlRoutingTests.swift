@@ -76,7 +76,7 @@ final class HvfRuntimeRetainedControlRoutingTests: XCTestCase {
             XCTAssertEqual(f.assertInstallRoute(session, config: config, in: library), token)
             library.reload() // The ordinary store may prune; the terminal retained detail remains.
             XCTAssertEqual(f.assertInstallRoute(session, config: config, in: library), token)
-            XCTAssertTrue(session.logLines.contains("Installation cancelled by user."))
+            XCTAssertTrue(session.logLines.contains("Installation canceled by user."))
         }
         do {
             let f = try HvfRuntimeRetainedControlFixture(validator: .init())

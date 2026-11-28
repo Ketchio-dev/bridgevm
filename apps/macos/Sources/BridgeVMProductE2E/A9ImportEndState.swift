@@ -61,6 +61,7 @@ enum A9ImportEndState {
         "라이브러리 확인 중…": "reading-library", "라이브러리에서 VM을 확인했습니다.": "complete",
     ]
     private static let outcomes: [(prefix: String, token: String)] = [
+        ("Couldn’t add the VM to your library.", "registration-not-saved"),
         ("Could not save the VM registration.", "registration-not-saved"),
         ("BridgeVM kept the VM files but could not confirm the save.", "published-unsynced"),
         ("The VM was saved, but it did not appear in the library.", "saved-not-listed"),
@@ -86,6 +87,7 @@ enum A9ImportEndState {
     private static let validation = [
         "Enter a name for the VM.", "Disk image not found at ", "Choose a disk image file instead of the folder at ",
         "The disk image at ", "To import a ", "UEFI variables file not found at ", "The UEFI variables file must be exactly ",
+        "Choose the folder that holds the original TPM data.", "Choose the TPM ", "BridgeVM can’t use the recovery file at ",
         "Choose the vTPM ", "The vTPM recovery file is unavailable at ", "Choose at least 2048 MiB of memory ",
         "That name is already in your library.", "Use 1–", "This is a Windows installer ISO.",
         "Choose a readable disk file ", "The Windows disk is empty.", "Choose the matching UEFI variables file ",

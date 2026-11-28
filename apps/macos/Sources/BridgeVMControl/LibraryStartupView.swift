@@ -12,7 +12,7 @@ struct LibraryStartupView: View {
                         Image(systemName: "exclamationmark.triangle").font(.largeTitle)
                         Text("Couldn’t open the VM library").font(.title2)
                         Text(failure).textSelection(.enabled)
-                        Button("Try again") { Task { await startup.load() } }
+                        Button("Try Again") { Task { await startup.load() } }
                     } else {
                         ProgressView()
                         Text("Opening your VM library").font(.title2)

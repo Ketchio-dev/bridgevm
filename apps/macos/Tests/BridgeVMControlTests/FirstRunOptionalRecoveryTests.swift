@@ -93,10 +93,10 @@ final class FirstRunOptionalRecoveryTests: XCTestCase {
         defer { fixture.remove() }
         var inputs = fixture.inputs()
         inputs.vtpmStateDir = fixture.root.path
-        XCTAssertEqual(FirstRunImport.validate(inputs)?.description, "Choose the vTPM recovery package.")
+        XCTAssertEqual(FirstRunImport.validate(inputs)?.description, "Choose the TPM recovery package.")
         inputs.vtpmRecoveryPackagePath = fixture.disk.path
         inputs.vtpmRecoveryCodePath = "  "
-        XCTAssertEqual(FirstRunImport.validate(inputs)?.description, "Choose the vTPM recovery code file.")
+        XCTAssertEqual(FirstRunImport.validate(inputs)?.description, "Choose the TPM recovery code file.")
     }
 
     func testInitiallyOmittedStateStillImportsThroughActualDefaultAction() async throws {
