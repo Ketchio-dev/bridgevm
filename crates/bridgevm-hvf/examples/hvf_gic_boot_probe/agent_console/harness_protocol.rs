@@ -2,6 +2,7 @@
 
 use super::clip_paste::LEGACY_PASTE_MARKER;
 use super::*;
+use crate::guest_text::{escape_guest_text, guest_lines};
 #[cfg(test)]
 #[path = "get_bound_tests.rs"]
 mod get_bound_tests;
@@ -21,7 +22,9 @@ pub(super) const MAX_AGENT_GET_BYTES: usize = 64 * 1024 * 1024;
 pub(super) const MAX_AGENT_LINE_BYTES: usize = 32 * 1024 * 1024;
 
 /// What run.log gets for an `OUT <exit> <b64>` reply: the output between the
-/// CMD and END lines, so a line it printed (BVDISPLAY, BVDPI) starts a log line.
+/// CMD and END lines, each line it printed (BVDISPLAY, BVDPI) a log line after
+/// `| ` (guest_text.rs guest_lines), so none can end the block or pass for a
+/// host record.
 pub(super) fn command_result_text(command: &str, exit_code: i32, output: &str) -> String {
     match base64_decode(output) {
         Ok(bytes) => command_output_text(command, exit_code, &String::from_utf8_lossy(&bytes)),
@@ -38,6 +41,7 @@ pub(super) fn command_output_text(command: &str, exit_code: i32, output: &str) -
     } else {
         output
     };
+    let output = guest_lines(output);
     format!("BVAGENT CMD {command} exit={exit_code}\n{output}\nBVAGENT END {command}")
 }
 
@@ -287,10 +291,15 @@ impl AgentConsoleHarness {
         }
         if let Some(b64) = line.strip_prefix("LSOK ") {
             match base64_decode(b64) {
-                Ok(bytes) => println!(
-                    "BVAGENT LS {command}\n{}BVAGENT END {command}",
-                    String::from_utf8_lossy(&bytes)
-                ),
+                Ok(bytes) => {
+                    // One row per line; the last row's newline ends the block's last line.
+                    let rows = String::from_utf8_lossy(&bytes);
+                    let rows = rows.strip_suffix('\n').unwrap_or(&rows);
+                    println!(
+                        "BVAGENT LS {command}\n{}\nBVAGENT END {command}",
+                        guest_lines(rows)
+                    );
+                }
                 Err(error) => println!(
                     "BVAGENT LS {command}\n<base64 decode error: {error:?}>\nBVAGENT END {command}"
                 ),
@@ -301,8 +310,9 @@ impl AgentConsoleHarness {
             // PUTOK <b64(path)> <bytes>
             let (path_b64, written) = rest.split_once(' ').unwrap_or((rest, "?"));
             let path = base64_decode(path_b64)
-                .map(|b| String::from_utf8_lossy(&b).into_owned())
+                .map(|b| escape_guest_text(&b))
                 .unwrap_or_else(|_| "<?>".into());
+            let written = escape_guest_text(written.as_bytes());
             println!("BVAGENT PUT {command} -> path={path} bytes={written}");
             return ReplyProgress::Complete;
         }

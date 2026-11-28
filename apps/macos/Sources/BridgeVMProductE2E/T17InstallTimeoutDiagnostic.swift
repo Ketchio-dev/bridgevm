@@ -196,7 +196,8 @@ final class T17InstallEnvironmentSampler {
         let lines = String(decoding: tail, as: UTF8.self).split(whereSeparator: \.isNewline)
         let markers = T17InstallMarkerCounts(
             boot: lines.filter { $0.hasPrefix("BOOT_TIMER ramfb source=") }.count,
-            dism: lines.filter { $0 == "BVINSTALL DISM APPLY" }.count,
+            // Guest serial, each line after `| ` in a newer probe's report (guest_text.rs guest_lines).
+            dism: lines.filter { $0 == "BVINSTALL DISM APPLY" || $0 == "| BVINSTALL DISM APPLY" }.count,
             shutdown: lines.filter { $0 == HvfStopLine.systemOff }.count,
             watchdog: lines.filter { $0 == "stop: watchdog (CANCELED)" }.count)
         return (.present, bytes, markers)

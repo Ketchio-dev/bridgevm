@@ -49,7 +49,8 @@ struct HvfGuestCaretRequest {
             if line.hasPrefix("BVAGENT READY") || line.hasPrefix("BVAGENT re-READY") ||
                 line.hasPrefix("BVAGENT SERVICE start") || HvfGuestResetRecord.matches(line) { return Answer.none }
             if answering {
-                if line.hasPrefix("BVCARET ") { return HvfGuestCaret.parse(line).map(Answer.caret) ?? Answer.none }
+                let body = HvfGuestLine.text(line)
+                if body.hasPrefix("BVCARET ") { return HvfGuestCaret.parse(body).map(Answer.caret) ?? Answer.none }
                 if line == "BVAGENT END \(command)" { return Answer.none }
             } else if line.hasPrefix("BVAGENT CMD \(command) exit=") {
                 guard line == "BVAGENT CMD \(command) exit=0" else { return Answer.none }

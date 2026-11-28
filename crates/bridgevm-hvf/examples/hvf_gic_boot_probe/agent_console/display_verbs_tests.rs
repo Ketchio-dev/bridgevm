@@ -208,14 +208,15 @@ fn a_size_outside_the_verbs_range_goes_as_run_and_keeps_the_verb() {
 }
 
 /// The readers of run.log (vm_bench.py resize(), verify-a8-window-resize.sh)
-/// take a line that starts with BVDISPLAY or BVDPI: a verb's reply gives the
-/// same one as the RUN line's did.
+/// take a line that starts with BVDISPLAY or BVDPI after the guest line's `| `:
+/// a verb's reply gives the same one as the RUN line's did.
 #[test]
 fn run_log_gets_the_same_bvdisplay_and_bvdpi_lines_from_a_verb() {
     use super::super::harness_protocol::command_result_text;
     let lines = |text: &str| -> Vec<String> {
         text.lines()
             .map(|line| line.trim_end_matches('\r'))
+            .filter_map(|line| line.strip_prefix(crate::guest_text::GUEST_LINE_PREFIX))
             .filter(|line| line.starts_with("BVD"))
             .map(str::to_string)
             .collect()

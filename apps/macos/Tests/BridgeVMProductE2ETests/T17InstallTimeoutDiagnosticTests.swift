@@ -205,12 +205,14 @@ final class T17InstallTimeoutDiagnosticTests: XCTestCase {
         var bytes = Data("BOOT_TIMER ramfb source=old\n".utf8)
         bytes.append(Data(repeating: 65, count: 65_536))
         bytes.append(Data("untrusted DISM active\nBVINSTALL DISM APPLY fake\nBVINSTALL DISM APPLY\nstop: PSCI 0x84000008 (system off)\nprefix stop: watchdog (CANCELED)\nstop: watchdog (CANCELED) extra\nstop: watchdog (CANCELED)\n".utf8))
+        // A newer probe's serial tail: each guest line after `| `.
+        bytes.append(Data("| BVINSTALL DISM APPLY\r\n| stop: PSCI 0x84000008 (system off)\n".utf8))
         try bytes.write(to: runLog)
         XCTAssertEqual(sampler.capture().logStatus, .present)
         XCTAssertEqual(sampler.capture().logBytes, UInt64(bytes.count))
         let markers = sampler.markers()
         XCTAssertEqual(markers?.boot, 0)
-        XCTAssertEqual(markers?.dism, 1)
+        XCTAssertEqual(markers?.dism, 2)
         XCTAssertEqual(markers?.shutdown, 1)
         XCTAssertEqual(markers?.watchdog, 1)
     }

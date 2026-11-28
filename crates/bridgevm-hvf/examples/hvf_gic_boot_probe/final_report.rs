@@ -395,7 +395,8 @@ macro_rules! persist_and_report_stop {
                 machine::GIC_REDIST.base + 0x20000
             );
         }
-        let rendered = String::from_utf8_lossy(&serial);
+        // Each serial line after `| `: the guest cannot print a host record here.
+        let rendered = crate::guest_text::guest_lines(&String::from_utf8_lossy(&serial));
         println!("serial raw bytes: {} output bytes: {}", serial.len(), rendered.len());
         println!("--- serial (tail) ---\n{rendered}\n--- end ---");
     }};

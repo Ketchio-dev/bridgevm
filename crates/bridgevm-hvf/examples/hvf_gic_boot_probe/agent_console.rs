@@ -75,6 +75,9 @@ mod dns_flush;
 mod file_drop;
 #[path = "agent_console/guest_link.rs"]
 mod guest_link;
+#[cfg(test)]
+#[path = "agent_console/guest_output_tests.rs"]
+mod guest_output_tests;
 #[path = "agent_console/harness_protocol.rs"]
 mod harness_protocol;
 #[path = "agent_console/pointer_cleanup_order_tests.rs"]

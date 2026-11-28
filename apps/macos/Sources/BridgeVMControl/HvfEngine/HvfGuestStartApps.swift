@@ -153,9 +153,10 @@ struct HvfGuestStartAppsRequest {
             if HvfGuestStartApps.restarts(line) { return .failure(.restarted) }
             if answering {
                 if line == "BVAGENT END \(command)" { return .success(HvfGuestStartApps.sorted(apps)) }
-                bytes += line.utf8.count
+                let row = HvfGuestLine.text(line)
+                bytes += row.utf8.count
                 guard apps.count < HvfGuestStartApps.maximumApps, bytes <= HvfGuestStartApps.maximumBytes,
-                      let app = HvfGuestStartApp(row: line), seen.insert(app.appID.lowercased()).inserted else { continue }
+                      let app = HvfGuestStartApp(row: row), seen.insert(app.appID.lowercased()).inserted else { continue }
                 apps.append(app)
             } else if line.hasPrefix("BVAGENT CMD \(command) exit=") {
                 guard line == "BVAGENT CMD \(command) exit=0" else { return .failure(.unavailable) }

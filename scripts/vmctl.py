@@ -103,11 +103,18 @@ class Guest:
                     finish = result.find(end + b"\r\n", match.end())
                 if finish >= 0:
                     self.check()
-                    return int(match.group(1)), result[match.end():finish].decode("utf-8", "replace")
+                    output = result[match.end():finish].decode("utf-8", "replace")
+                    return int(match.group(1)), "\n".join(map(guest_line, output.split("\n")))
             if len(result) > 8 * 1024 * 1024:
                 raise ControlError("Guest reply exceeded 8 MiB; command was not retried.")
             time.sleep(0.05)
         raise ControlError("Timed out waiting for guest reply; command may still run. It was not retried.")
+
+
+def guest_line(line):
+    """A line of guest output as the guest printed it: the probe prints each after `| ` (guest_text.rs
+    guest_lines), so none can end the reply or pass for a host record; an older probe prints it bare."""
+    return line[2:] if line.startswith("| ") else line
 
 
 def regular(path, flags):

@@ -29,7 +29,8 @@ class Receipt:
                 return bytes(self.output)
             if line.startswith((b"BVAGENT CMD ", b"BVAGENT END ", b"BVAGENT SERVICE ")):
                 raise ValueError("interrupted command receipt")
-            self.output.extend(line + b"\n")
+            # Each guest line after the probe's `| ` (guest_text.rs guest_lines), or bare from an older one.
+            self.output.extend(line.removeprefix(b"| ") + b"\n")
             if len(self.output) > 65536:
                 raise ValueError("oversized command output")
         if len(self.pending) > 262144:
