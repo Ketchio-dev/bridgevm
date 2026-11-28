@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// A stopped VM's disk grows from its settings (HvfDiskSizeSetting), and C: extends into the new
 /// space at the next Windows start.
@@ -13,8 +14,10 @@ import Foundation
 /// more than 1000 MiB), so a disk whose partition table went back to before an extend, as after
 /// restoring a snapshot taken between the grow and the next boot, is extended again. The flag holds
 /// the consecutive failed reports: `maximumAttempts` of them stop the check until the next grow, and
-/// the notice then says to extend C: in Disk Management; any other report resets it to 0. The
-/// session's `diskGrowNotice` is the latest message, so the guest's report replaces the grow's.
+/// the notice then says to extend C: in Disk Management; a `blocked` report leaves `blocked`, and any
+/// other resets it to 0. The session's `diskGrowNotice` is the latest message, so the guest's report
+/// replaces the grow's. A blocked C: and the last failure also show once over the VM display
+/// (`diskExtendProblem`), since Settings is the only other place that says so.
 enum HvfDiskGrow {
     static let grownName = "metadata/disk-grown"
     static let bytesPerGiB: UInt64 = 1 << 30
@@ -116,7 +119,7 @@ enum HvfDiskGrow {
             case .already:
                 return "The C: drive already uses all available disk space."
             case .blocked:
-                return "A partition after the C: drive (usually Windows Recovery) keeps BridgeVM from extending it, so the added space stays unallocated in Disk Management."
+                return "A partition after the C: drive (usually Windows Recovery) keeps BridgeVM from extending it, so the added space stays unallocated. To use it, make a new drive from it in Disk Management."
             case let .failed(detail):
                 return Self.failedPrefix(detail) + "Open Disk Management in Windows and extend the C: volume."
             }
@@ -197,8 +200,11 @@ enum HvfDiskGrow {
 
     /// Consecutive failed reports the flag records; anything unreadable counts as none.
     static func failedAttempts(_ flag: URL) -> Int {
-        let text = (try? String(contentsOf: flag, encoding: .utf8)) ?? ""
-        return Int(text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        Int(flagText(flag)) ?? 0
+    }
+
+    static func flagText(_ flag: URL) -> String {
+        ((try? String(contentsOf: flag, encoding: .utf8)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func diskBytes(_ output: String) throws -> UInt64 {
@@ -266,9 +272,32 @@ extension HvfEngineSession {
             guard let outcome = HvfDiskGrow.outcome(reply: reply.output) else { return }
             var failures = 0
             if case .failed = outcome { failures = HvfDiskGrow.failedAttempts(flag) + 1 }
-            try? Data("\(failures)\n".utf8).write(to: flag, options: [.atomic])
+            // A blocked C: counts as no failure (each start checks again); the flag remembers it was shown.
+            var blocked = false
+            if case .blocked = outcome { blocked = true }
+            let shownBlocked = HvfDiskGrow.flagText(flag) == "blocked"
+            try? Data((blocked ? "blocked\n" : "\(failures)\n").utf8).write(to: flag, options: [.atomic])
             let retried = failures > 0 && failures < HvfDiskGrow.maximumAttempts
             diskGrowNotice = retried ? outcome.retryNotice : outcome.notice
+            // What needs the user shows over the VM display once, not only in Settings.
+            if blocked ? !shownBlocked : (failures > 0 && !retried) {
+                diskExtendProblem = outcome.notice
+            } else if !blocked {
+                diskExtendProblem = nil
+            }
+        }
+    }
+}
+
+/// A C: extend that needs the user (`diskExtendProblem`), over the VM display.
+struct HvfDiskExtendNoticeView: View {
+    @ObservedObject var session: HvfEngineSession
+
+    var body: some View {
+        if let text = session.diskExtendProblem {
+            HvfNoticeStrip(identifier: "bridgevm.storage.extend", dismiss: { session.diskExtendProblem = nil }) {
+                Text(text)
+            }
         }
     }
 }
