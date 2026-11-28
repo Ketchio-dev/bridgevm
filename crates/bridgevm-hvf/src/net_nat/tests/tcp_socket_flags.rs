@@ -33,3 +33,46 @@ fn raw_tcp_socket_adds_only_o_nonblocking_before_connect() {
         sockets.push(socket);
     }
 }
+
+/// Windows' keepalives are answered by the NAT, so only the Mac's own can notice a connection
+/// whose far end went away while it was idle (a network change, sleep): it must be on.
+#[cfg(target_os = "macos")]
+#[test]
+fn outbound_connections_use_the_macs_tcp_keepalive() {
+    use super::super::{
+        nonblocking_tcp_connect, HOST_KEEPALIVE_IDLE_S, HOST_KEEPALIVE_INTERVAL_S,
+        HOST_KEEPALIVE_PROBES,
+    };
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let stream = nonblocking_tcp_connect(std::net::Ipv4Addr::LOCALHOST, port).unwrap();
+    let option = |level, name| {
+        let mut value: libc::c_int = -1;
+        let mut len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
+        // SAFETY: value and len are valid for the call; the fd is the stream's live socket.
+        let rc = unsafe {
+            libc::getsockopt(
+                stream.as_raw_fd(),
+                level,
+                name,
+                (&mut value as *mut libc::c_int).cast(),
+                &mut len,
+            )
+        };
+        assert_eq!(rc, 0, "getsockopt: {}", std::io::Error::last_os_error());
+        value
+    };
+    assert_ne!(option(libc::SOL_SOCKET, libc::SO_KEEPALIVE), 0);
+    assert_eq!(
+        option(libc::IPPROTO_TCP, libc::TCP_KEEPALIVE),
+        HOST_KEEPALIVE_IDLE_S
+    );
+    assert_eq!(
+        option(libc::IPPROTO_TCP, libc::TCP_KEEPINTVL),
+        HOST_KEEPALIVE_INTERVAL_S
+    );
+    assert_eq!(
+        option(libc::IPPROTO_TCP, libc::TCP_KEEPCNT),
+        HOST_KEEPALIVE_PROBES
+    );
+}
