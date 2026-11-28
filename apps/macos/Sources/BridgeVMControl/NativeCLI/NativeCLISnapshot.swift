@@ -223,7 +223,7 @@ enum NativeCLISnapshotExportParser {
                 json = true
             case "--help", "-h": help = true
             default:
-                guard !argument.hasPrefix("-") else { throw invalid("Unknown option: \(argument). Use --cli --help.") }
+                guard !argument.hasPrefix("-") else { throw invalid("Unknown option: \(argument). Run `bridgevm app --help`.") }
                 positionals.append(argument)
             }
             index += 1
@@ -232,7 +232,7 @@ enum NativeCLISnapshotExportParser {
             return NativeCLIOptions(command: .snapshotExport(.init(id: "", output: URL(fileURLWithPath: "/"))), libraryRoot: library ?? defaultLibrary, json: json, showHelp: true)
         }
         guard positionals.count == 3, positionals[0] == "snapshot-export" else { throw invalid("Expected snapshot-export ID OUTPUT. Use --cli --help.") }
-        guard NativeLibraryReader.isCanonicalID(positionals[1]) else { throw invalid("Use an exact VM ID; paths and noncanonical IDs are refused.") }
+        guard NativeLibraryReader.isCanonicalID(positionals[1]) else { throw invalid(NativeLibraryReader.notAnID(positionals[1])) }
         let output = try absolute(positionals[2], label: "OUTPUT")
         guard output.path != "/" else { throw invalid("OUTPUT must name an export directory.") }
         return NativeCLIOptions(command: .snapshotExport(.init(id: positionals[1], output: output)), libraryRoot: library ?? defaultLibrary, json: json, showHelp: false)

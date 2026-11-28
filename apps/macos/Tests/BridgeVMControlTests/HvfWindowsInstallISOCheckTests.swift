@@ -28,6 +28,8 @@ final class HvfWindowsInstallISOCheckTests: XCTestCase {
 
         XCTAssertThrowsError(try NativeCLI.executeCreateWindows(options)) {
             XCTAssertEqual($0.localizedDescription, HvfWindowsInstallISOCheck.notDiskImage)
+            // Invalid media exits 2, as the help says; 1 would mean the VM may have been made.
+            guard case NativeCLIError.invalid = $0 else { return XCTFail("\($0) exits 1") }
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: library.path))
         // An ISO whose drive was ejected is not called "not a disc image".

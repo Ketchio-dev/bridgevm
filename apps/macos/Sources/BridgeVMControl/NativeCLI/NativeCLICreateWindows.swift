@@ -37,8 +37,9 @@ extension NativeCLI {
             throw NativeCLIError.invalid("Expected create-windows command.")
         }
         // Before the driver download and the copy, not at install time.
+        // Wrong or unreadable media is invalid input (exit 2): nothing was created.
         if let problem = HvfWindowsInstallISOCheck.problem(isoPath: request.isoPath) {
-            throw NativeCLIError.unavailable(problem)
+            throw NativeCLIError.invalid(problem)
         }
         if request.fetchDrivers {
             write("BridgeVM: preparing the pinned Red Hat virtio-win drivers (about 95 MB on first use)...\n", to: .standardError)
@@ -196,7 +197,7 @@ enum NativeCLICreateWindowsParser {
             case "--help", "-h": try once("help", seen: &seen); help = true
             default:
                 guard !argument.hasPrefix("-"), name == nil else {
-                    throw NativeCLIError.invalid("Unknown or duplicate create-windows argument. Use --cli --help.")
+                    throw NativeCLIError.invalid("Unknown or duplicate create-windows argument. Run `bridgevm app create-windows --help`.")
                 }
                 name = argument
             }

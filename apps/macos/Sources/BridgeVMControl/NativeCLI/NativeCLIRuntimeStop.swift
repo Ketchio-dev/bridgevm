@@ -61,6 +61,9 @@ extension NativeCLIRuntimeStop {
     static let unconfirmed = "Check the VM in BridgeVM, and choose Force Stop if it’s still running."
 
     var text: String {
+        if unavailableReason == NativeRuntimeStopRefused.targetUnavailable.reason {
+            return "\(vmID) isn’t running in BridgeVM, so there was nothing to stop.\n"
+        }
         var lines = [complete ? "Stopped \(vmID)." : "Couldn’t confirm that \(vmID) stopped."]
         if !complete, let status = observation?.phase.cliStatus { lines.append("Status: \(status)") }
         // Every stop failure the app reports (any code) ends in this phase.

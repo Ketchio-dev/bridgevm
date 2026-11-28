@@ -54,6 +54,11 @@ All notable changes to BridgeVM are documented in this file.
   work can be seen. Before, nothing was shown for up to a minute.
 - The "Mac microphone didn't start" notice now goes away once a later
   recording opens the microphone. Before, it stayed until the VM restarted.
+- `bridgevm app create-windows` with a file that isn't a Windows 11 for Arm
+  disc image now exits 2 (invalid input), as its help says, instead of 1,
+  which means the VM may have been created. `install` and `inspect` with a
+  mistyped ID, a display name used as an ID, and `stop` on a VM that isn't
+  running now say what happened and what to do.
 - Files dropped on a VM window, or opened with BridgeVM from Finder, while
   Windows is still starting are now copied once Windows is ready. Before,
   they were refused with a message that stayed over the Windows taskbar. A
