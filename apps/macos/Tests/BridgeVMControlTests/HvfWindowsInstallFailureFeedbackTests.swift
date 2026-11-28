@@ -39,7 +39,7 @@ final class HvfWindowsInstallFailureFeedbackTests: XCTestCase {
     func testImportFailurePresentationKeepsRawDetailOnlyInDiagnostics() {
         let error = HvfWindowsBootSeed.SeedError.secureBootManifestMissing
         let text = WindowsFileFailureFeedback.report("import", error, sentence: WindowsFileFailureFeedback.importing)
-        XCTAssertEqual(text, "Could not import the Windows files. Check access to the disk image and firmware files and make sure the destination has enough free space.")
+        XCTAssertEqual(text, "Could not import the Windows files. Check access to the disk image and UEFI variables file and make sure the destination has enough free space.")
         XCTAssertFalse(text.contains("SeedError"))
         XCTAssertFalse(text.contains("error 4"))
         XCTAssertTrue(WindowsFileFailureFeedback.diagnostic("import", error).contains(String(reflecting: error)))
@@ -70,7 +70,8 @@ final class HvfWindowsInstallFailureFeedbackTests: XCTestCase {
         let errors: [Error] = [cocoa, helper]
         for error in errors {
             XCTAssertTrue(WindowsFileFailureFeedback.isImportOutOfSpace(error))
-            XCTAssertEqual(WindowsFileFailureFeedback.reportImport("import", error), helperMessage)
+            XCTAssertEqual(WindowsFileFailureFeedback.reportImport("import", error),
+                "There isn’t enough free space to copy the disk. Free up space on the drive that holds your VM library, then import again.")
         }
         let unrelated = NSError(domain: "BridgeVM.MediaImport", code: 1,
                                 userInfo: [NSLocalizedDescriptionKey: helperMessage + "\n/private/test/vars.fd"])

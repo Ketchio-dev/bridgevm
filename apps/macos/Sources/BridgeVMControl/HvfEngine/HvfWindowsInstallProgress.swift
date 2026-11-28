@@ -29,8 +29,8 @@ extension HvfWindowsInstallStage {
         case .installing: return "Installing Windows"
         case .finalizing: return "Saving the VM"
         case .recovering: return "Recovering the installation"
-        case .cancelling: return "Cancelling…"
-        case .cancelled: return "Cancelled"
+        case .cancelling: return "Canceling…"
+        case .cancelled: return "Canceled"
         case .done: return "Complete"
         case .failed: return "Failed"
         }

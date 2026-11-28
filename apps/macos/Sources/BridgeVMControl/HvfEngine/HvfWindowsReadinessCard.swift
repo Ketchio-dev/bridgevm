@@ -8,7 +8,7 @@ struct HvfWindowsReadinessCard: View {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     Label(
-                        report.launchReady ? "Ready to start Windows" : "Startup blockers (\(report.launchBlockers.count))",
+                        report.launchReady ? "Ready to start Windows" : "Can’t start Windows yet (\(report.launchBlockers.count))",
                         systemImage: report.launchReady ? "checkmark.circle.fill" : "xmark.octagon.fill"
                     )
                     .foregroundColor(report.launchReady ? .green : .red)

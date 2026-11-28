@@ -26,8 +26,7 @@ final class VMCreationCollisionRetentionTests: XCTestCase {
             collideThenMoveWinner(config, root: root, archive: archive)
         })
         guard case let .failed(message) = result else { return XCTFail("collision must remain a failed import") }
-        XCTAssertTrue(message.contains("already used the VM ID “\(fixture.entry.lastPathComponent)”"), message)
-        XCTAssertTrue(message.contains("kept the prepared files"), message)
+        XCTAssertEqual(message, "Another VM with the same ID was added to your library at the same time, so BridgeVM kept the files it prepared. Check your library, then try again.")
         XCTAssertFalse(NativeLibraryReader.entryMayExist(fixture.entry.appendingPathComponent("vm.json")))
         XCTAssertEqual(try Data(contentsOf: fixture.entry.appendingPathComponent("bundle/disks/hvf-target.raw")),
             try Data(contentsOf: fixture.disk))
@@ -57,7 +56,7 @@ final class VMCreationCollisionRetentionTests: XCTestCase {
                 : fixture.createExternal(publish: publish)
             // Preservation never advertises a created VM; it says the files were kept.
             guard case .refused(let message)? = outcome else { return XCTFail("expected a refusal") }
-            XCTAssertTrue(message.contains("BridgeVM kept the prepared files"), message)
+            XCTAssertTrue(message.contains("BridgeVM kept the files it prepared"), message)
             let config = try XCTUnwrap(prepared)
             XCTAssertFalse(NativeLibraryReader.entryMayExist(fixture.library.appendingPathComponent(config.slug + "/vm.json")))
             XCTAssertTrue(FileManager.default.fileExists(atPath: config.bundlePath))

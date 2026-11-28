@@ -38,10 +38,10 @@ enum AppUIInstallCancelProtocolTestSupport {
                 cancelVisible: true, cancelEnabled: true, stage: "Checking installation files", title: "Installing…")
         case .cancelling:
             return .init(installVisible: true, startVisible: true, startEnabled: false,
-                cancelVisible: true, cancelEnabled: false, stage: "Cancelling…", title: "Installing…")
+                cancelVisible: true, cancelEnabled: false, stage: "Canceling…", title: "Installing…")
         case .cancelled:
             return .init(installVisible: true, startVisible: true, startEnabled: true,
-                cancelVisible: false, cancelEnabled: false, stage: "Cancelled", title: "Try Again")
+                cancelVisible: false, cancelEnabled: false, stage: "Canceled", title: "Try Again")
         case .retryFailed:
             return .init(installVisible: true, startVisible: true, startEnabled: true,
                 cancelVisible: false, cancelEnabled: false, stage: "Failed", title: "Try Again",

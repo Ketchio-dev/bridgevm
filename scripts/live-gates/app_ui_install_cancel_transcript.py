@@ -5,14 +5,16 @@ from app_ui_install_cancel_json import protocol_record
 PHASES = ("idle", "validating", "cancelling", "cancelled", "retryFailed")
 MUTATIONS = {"validating": "start", "cancelling": "cancel", "retryFailed": "retry"}
 FAILURE = "Synthetic UI check complete"
-LABELS = ("Ready to install", "Checking installation files", "Cancelling…", "Cancelled", "Failed")
+LABELS = ("Ready to install", "Checking installation files", "Canceling…", "Canceled", "Failed")
 
 # Old signed transcripts retain their original visible strings.
 PREVIOUS_LABELS = {
     "대기": "Ready to install",
     "설치 입력 확인": "Checking installation files",
-    "취소 중…": "Cancelling…",
-    "취소됨": "Cancelled",
+    "취소 중…": "Canceling…",
+    "취소됨": "Canceled",
+    "Cancelling…": "Canceling…",
+    "Cancelled": "Canceled",
     "실패": "Failed",
     "설치 시작": "Start Installation",
     "다시 시도": "Try Again",

@@ -33,11 +33,11 @@ struct FirstRunWelcomeView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumCardWidth), spacing: 16)],
                       alignment: .leading, spacing: 16) {
                 FirstRunChoiceCard(title: "Install Windows", symbol: "opticaldisc",
-                    description: "Drop a Windows Arm64 installer ISO here, or click to set up a new VM.",
+                    description: "Drop a Windows 11 for Arm installer ISO here, or click to set up a new VM.",
                     choice: .installer, action: createAction, dropAction: dropAction)
                     .accessibilityIdentifier("bridgevm.first-run.create")
                 FirstRunChoiceCard(title: "Import an existing disk", symbol: "externaldrive",
-                    description: "Drop a RAW, QCOW2, fixed-size VHD or VHDX disk with Windows installed, or click to set up the import.",
+                    description: "Drop a RAW, QCOW2, fixed-size VHD, or VHDX disk with Windows 11 for Arm installed, or click to set up the import.",
                     choice: .disk, action: importAction, dropAction: dropAction)
                     .accessibilityIdentifier("bridgevm.first-run.import")
             }

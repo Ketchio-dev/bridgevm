@@ -121,7 +121,7 @@ final class HvfRuntimeRetainedControlNotificationTests: XCTestCase {
                 XCTAssertEqual(library.selectedID, capturedToken)
             }
             session.cancel()
-            XCTAssertTrue(session.logLines.contains("Installation cancelled by user."))
+            XCTAssertTrue(session.logLines.contains("Installation canceled by user."))
             XCTAssertEqual(session.stage, .cancelling)
             XCTAssertEqual(observedStages, [.validating], "Cancellation stage must relay while its log stays local")
             XCTAssertEqual(f.effects, capturedEffects)
@@ -132,7 +132,7 @@ final class HvfRuntimeRetainedControlNotificationTests: XCTestCase {
         let selectedToken = try XCTUnwrap(token)
         XCTAssertEqual(library.selectedID, selectedToken)
         XCTAssertEqual(f.assertInstallRoute(session, config: config, in: library), selectedToken)
-        XCTAssertTrue(session.logLines.contains("Installation cancelled by user."))
+        XCTAssertTrue(session.logLines.contains("Installation canceled by user."))
         XCTAssertEqual(f.work.installJobCount, 0)
         XCTAssertFalse(f.work.validator.snapshot.gateTimedOut)
         XCTAssertEqual(f.effects, capturedEffects)

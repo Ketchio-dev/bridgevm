@@ -55,7 +55,7 @@ final class HvfWindowsInstallPublicationTests: XCTestCase {
                 storageDir: fixture.storage, libraryRoot: fixture.library,
                 publish: fixture.publishWithRenameRefusal)
             guard case .refused(let message)? = outcome else { return XCTFail("expected a refusal") }
-            XCTAssertTrue(message.contains("BridgeVM kept the prepared files"), message)
+            XCTAssertTrue(message.contains("BridgeVM kept the files it prepared"), message)
             try fixture.assertAmbiguousPreparationPreserved()
             XCTAssertEqual(try Data(contentsOf: sourceISO), bytes)
         }

@@ -81,6 +81,14 @@ All notable changes to BridgeVM are documented in this file.
   refused unless the Mac had room for all 256 GiB, and then wrote all of it.
   Exporting or restoring a snapshot on another drive keeps unused space
   free the same way.
+- TPM, import and installation messages now use plain words. The TPM card in
+  Advanced Controls says "TPM" instead of "vTPM" and no longer shows
+  fingerprints, receipt paths or key sizes. The startup checklist says "Windows
+  disk" and "Windows boot settings file", and asks you to reinstall BridgeVM
+  when an app component is missing instead of naming its path. Import explains
+  how to make a recovery code file private in Finder instead of Terminal, the
+  installer says "Canceling…" and "Canceled", and the library start screen
+  says what went wrong instead of showing an internal code.
 - If BridgeVM quit while a finished Windows installation was being saved, Start
   Installation now installs again. Before, every try said BridgeVM couldn't
   recover the interrupted installation, and deleting the VM was the only way

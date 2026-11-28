@@ -16,6 +16,10 @@ final class T17InstallMonitorTests: XCTestCase {
         XCTAssertNoThrow(try run(stage: { "완료" }))
         XCTAssertNoThrow(try run(installed: { true }, stage: { nil }))
     }
+    func testCancelStagesMapForCurrentAndEarlierSpellings() {
+        for stage in ["Canceling…", "Cancelling…", "취소 중…"] { XCTAssertEqual(T17InstallMonitor.phaseToken(stage), "cancelling", stage) }
+        for stage in ["Canceled", "Cancelled", "취소됨"] { XCTAssertEqual(T17InstallMonitor.phaseToken(stage), "cancelled", stage) }
+    }
     func testFailedStageRetainsBoundedMessage() {
         XCTAssertThrowsError(try run(stage: { "Failed" }, failure: { " measured failure " })) { error in
             XCTAssertEqual(error as? T17Blocker,
