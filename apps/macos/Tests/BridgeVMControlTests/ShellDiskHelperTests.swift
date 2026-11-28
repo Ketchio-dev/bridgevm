@@ -67,7 +67,7 @@ final class ShellDiskHelperTests: XCTestCase {
     }
 
     @MainActor
-    func testFileActionsWaitForTheDiskHelperWithASentence() {
+    func testFileActionsWaitForTheDiskHelperWithASentence() throws {
         let fixture = HvfRuntimeLibraryActionFixture()
         defer { fixture.clean() }
         let config = fixture.config()
@@ -75,6 +75,11 @@ final class ShellDiskHelperTests: XCTestCase {
         let library = fixture.library()
         fixture.cacheFake(in: library, config: config)
         fixture.backend(for: config).diskHelper = true
+        // The menu asks before it opens the folder panel, not after a folder was picked.
+        try FileManager.default.createDirectory(atPath: config.bundlePath, withIntermediateDirectories: true)
+        XCTAssertFalse(library.admitBundleMove(config))
+        XCTAssertEqual(library.moveError, VMDiskHelper.busy)
+        library.moveError = nil
         library.confirmDeletion(config)
         library.cloneWindowsHVF(config, name: "copy")
         library.moveWindowsHVFBundle(config, to: fixture.destination)

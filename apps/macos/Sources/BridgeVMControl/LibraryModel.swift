@@ -159,12 +159,7 @@ final class LibraryModel: ObservableObject {
     func moveWindowsHVFBundle(_ cfg: VMConfig, to destinationParent: URL) {
         guard admitLibraryAction(cfg, action: .move) else { return }
         guard !movingSlugs.contains(cfg.slug) else { return }
-        let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
-        guard !backend.isRunning() else {
-            moveError = "Shut down the VM before moving it."
-            return
-        }
-        if backend.diskHelperIsRunning() { moveError = VMDiskHelper.busy; return }
+        if let busy = moveBusyRefusal(cfg) { moveError = busy; return }
         if let refusal = Self.moveDestinationRefusal(cfg, to: destinationParent) {
             moveError = refusal
             return
@@ -206,10 +201,19 @@ extension LibraryModel {
     }
 
     /// Checked before the folder panel opens.
+    /// The context menu asks before it opens the folder panel, so a missing, running or busy VM is
+    /// refused before a folder is chosen; the move itself checks again.
     func admitBundleMove(_ cfg: VMConfig) -> Bool {
-        guard let missing = Self.missingBundleRefusal(cfg) else { return true }
-        moveError = missing
+        guard admitLibraryAction(cfg, action: .move) else { return false }
+        guard let refusal = Self.missingBundleRefusal(cfg) ?? moveBusyRefusal(cfg) else { return true }
+        moveError = refusal
         return false
+    }
+
+    private func moveBusyRefusal(_ cfg: VMConfig) -> String? {
+        let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend(libraryRoot: libraryRoot)
+        if backend.isRunning() { return "Shut down the VM before moving it." }
+        return backend.diskHelperIsRunning() ? VMDiskHelper.busy : nil
     }
 
     func revealBundleInFinder(_ cfg: VMConfig, reveal: ([URL]) -> Void) {
