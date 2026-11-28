@@ -24,6 +24,11 @@ final class HvfDriveDisconnectTests: XCTestCase {
         XCTAssertNil(session.runtimeSupervisionFailureText, "another drive")
         unmount(volume)
         XCTAssertEqual(session.runtimeSupervisionFailureText, HvfDriveDisconnect.text)
+        // The VM window says it too, until a stop is under way (its own strip then says what is happening).
+        XCTAssertEqual(session.displayRunFailureText, HvfDriveDisconnect.text)
+        session.stopWait = .waitingForGuestAgent
+        XCTAssertNil(session.displayRunFailureText)
+        session.stopWait = nil
         session.resetObservedRuntimeState(clearEvents: true)
         XCTAssertNil(session.runtimeSupervisionFailureText, "a new run starts afresh")
         HvfDriveDisconnect.watch { [] }

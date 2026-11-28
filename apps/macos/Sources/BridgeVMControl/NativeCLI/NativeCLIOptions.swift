@@ -34,7 +34,7 @@ struct NativeCLIOptions: Equatable {
             case "--help", "-h": help = true
             default:
                 guard !argument.hasPrefix("-") else {
-                    throw NativeCLIError.invalid("Unknown option: \(argument). Use --cli --help.")
+                    throw NativeCLIError.invalid("Unknown option: \(argument). Run `bridgevm app --help`.")
                 }
                 positionals.append(argument)
             }
@@ -49,11 +49,11 @@ extension NativeCLIOptions.Command {
         if positionals.isEmpty || positionals == ["list"] { return .list }
         guard let verb = positionals.first, ["inspect", "readiness", "status", "start", "stop", "install", "install-status", "install-cancel", "snapshot-create", "snapshot-restore"].contains(verb),
               positionals.count == 2 || (help && positionals.count == 1) else {
-            throw NativeCLIError.invalid("Expected a supported command and exact VM ID. Use --cli --help.")
+            throw NativeCLIError.invalid("Expected a supported command and a VM ID. Run `bridgevm app --help`.")
         }
         let id = positionals.count == 2 ? positionals[1] : ""
         guard (help && id.isEmpty && positionals.count == 1) || NativeLibraryReader.isCanonicalID(id) else {
-            throw NativeCLIError.invalid("Use an exact VM ID; paths and noncanonical IDs are refused.")
+            throw NativeCLIError.invalid(NativeLibraryReader.notAnID(id))
         }
         return make(verb: verb, id: id)
     }

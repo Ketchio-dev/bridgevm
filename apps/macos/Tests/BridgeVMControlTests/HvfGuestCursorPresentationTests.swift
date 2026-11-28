@@ -32,6 +32,9 @@ final class HvfGuestCursorPresentationTests: XCTestCase {
         XCTAssertEqual(decide(shown, pointer: CGPoint(x: 50, y: 10)), sprite, "black bar")
         XCTAssertEqual(decide(shown, pointer: nil), sprite, "outside the view")
         XCTAssertEqual(decide(shown, key: false), sprite, "the window is not key")
+        // Paused, the overlay's Resume button is over the image: the Mac arrow, not Windows' I-beam or busy shape.
+        XCTAssertEqual(HvfGuestCursorPresentation.decide(cursor: shown, keyWindow: true, pointer: CGPoint(x: 50, y: 50),
+                                                         fit: fit, imageSize: imageSize, paused: true), sprite, "paused")
     }
 
     func testNothingShowsWithoutAVisibleShapeOrOutsideTheGuestFrame() {

@@ -10,13 +10,13 @@ final class LibraryDashboardNavigationTests: XCTestCase {
         defer { f.clean() }
         let model = try XCTUnwrap(f.library.selectedModel)
         XCTAssertEqual(f.values(LibraryDashboardDetail.self, in: LibraryDashboardRoute(library: f.library).body).count, 1)
-        try f.paletteCommand("Turn on Pro mode").action()
+        try f.paletteCommand("Compare VMs").action()
         XCTAssertTrue(f.library.proMode)
         let route = try f.detailRoute()
         XCTAssertEqual(f.values(FleetTableView.self, in: route.body).count, 1)
         XCTAssertEqual(f.library.selectedID, model.config.slug)
         XCTAssertTrue(f.library.selectedModel === model)
-        try f.paletteCommand("Turn off Pro mode").action()
+        try f.paletteCommand("Stop Comparing VMs").action()
         XCTAssertFalse(f.library.proMode)
         let restored = try XCTUnwrap(f.values(LibraryDashboardDetail.self,
             in: LibraryDashboardRoute(library: f.library).body).first)
@@ -107,7 +107,7 @@ final class LibraryDashboardNavigationTests: XCTestCase {
         f.library.selectedID = LibraryModel.firstRunImportSelectionID
         let operation = f.library.firstRunImport.begin()
         f.library.firstRunImport.advance(.copying, operation: operation)
-        try f.paletteCommand("Turn on Pro mode").action()
+        try f.paletteCommand("Compare VMs").action()
         let route = try f.detailRoute()
         XCTAssertEqual(f.values(FirstRunView.self, in: route.body).count, 1)
         XCTAssertTrue(f.values(FleetTableView.self, in: route.body).isEmpty)

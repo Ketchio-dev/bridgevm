@@ -49,6 +49,8 @@ final class ControlAppTermination {
         var confirmWithInstallations: (@MainActor (_ runningCount: Int, _ installCount: Int) -> Bool)? = nil
         var confirmAfterPreparation: @MainActor () -> Bool = { false }
         var revealLibrary: @MainActor () -> Void = {}
+        /// Shows each VM Windows is shutting down in, so a Windows app asking to save is seen.
+        var showShuttingDown: @MainActor ([ControlAppTerminationSession]) -> Void = { _ in }
     }
 
     static let deadline: TimeInterval = 60
@@ -98,6 +100,7 @@ final class ControlAppTermination {
         pending = true; forced = false
         deadlineAt = now() + Self.deadline
         running.forEach { $0.requestTerminationStop() }
+        presenter.showShuttingDown(running.filter { !$0.isInstallation })
         startPolling()
         return .terminateLater
     }
@@ -254,7 +257,12 @@ extension ControlAppTermination.Presenter {
             alert.addButton(withTitle: "Keep Using BridgeVM").keyEquivalent = "\u{1b}"
             return alert.runModal() == .alertFirstButtonReturn
         },
-        revealLibrary: { ControlLibraryWindow.show() })
+        revealLibrary: { ControlLibraryWindow.show() },
+        showShuttingDown: { sessions in
+            for case let session as HvfEngineSession in sessions where !HvfDisplayWindowController.hasVisibleDisplay(for: session) {
+                HvfDisplayWindowController.present(session: session, title: session.displayTitle)
+            }
+        })
 
     /// With two VMs running, the alert says which one Windows is still shutting down in.
     static func shutdownDelayAlert(afterForce: Bool, names: [String] = []) -> NSAlert {

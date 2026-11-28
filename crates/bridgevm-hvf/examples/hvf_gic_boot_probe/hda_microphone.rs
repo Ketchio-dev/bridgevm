@@ -321,6 +321,13 @@ fn supervise(
                     Ok(running) => {
                         input = Some(running);
                         watch = StallWatch::new(ring);
+                        if std::mem::replace(&mut reported, false) {
+                            // Clears the app's notice (HvfAudioNotice.microphoneOnPrefix).
+                            notices
+                                .lock()
+                                .unwrap()
+                                .push("HDA capture: the Mac microphone is on again".into());
+                        }
                     }
                     Err(error) if !std::mem::replace(&mut reported, true) => {
                         // The app shows a notice for this line's start (HvfAudioNotice.microphoneOffPrefix).

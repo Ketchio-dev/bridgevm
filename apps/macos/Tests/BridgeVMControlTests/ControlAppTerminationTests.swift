@@ -10,6 +10,7 @@ final class ControlAppTerminationTests: XCTestCase {
         var blocksAppTermination: Bool
         var terminationName: String?
         var stops = 0, forces = 0
+        var isInstallation = false
         init(running: Bool, name: String? = nil) { blocksAppTermination = running; terminationName = name }
         func requestTerminationStop() { stops += 1 }
         func requestTerminationForceStop() { forces += 1 }
@@ -22,6 +23,7 @@ final class ControlAppTerminationTests: XCTestCase {
         var deadlines: [Bool] = [], deadlineAnswers: [ControlAppTermination.DeadlineChoice] = []
         var deadlineNames: [[String]] = []
         var replies: [Bool] = []
+        var shown: [[ObjectIdentifier]] = []
         var clock: TimeInterval = 100
         lazy var termination = ControlAppTermination(
             sessions: { [unowned self] in self.sessions },
@@ -30,7 +32,8 @@ final class ControlAppTerminationTests: XCTestCase {
                 decideAtDeadline: { [unowned self] afterForce, names, _ in
                     self.deadlines.append(afterForce); self.deadlineNames.append(names)
                     return self.deadlineAnswers.removeFirst()
-                }),
+                },
+                showShuttingDown: { [unowned self] in self.shown.append($0.map(ObjectIdentifier.init)) }),
             reply: { [unowned self] in self.replies.append($0) }, now: { [unowned self] in self.clock })
     }
 
@@ -50,6 +53,23 @@ final class ControlAppTerminationTests: XCTestCase {
         XCTAssertEqual(h.replies, [true])
         h.termination.poll()
         XCTAssertEqual(h.replies, [true], "AppKit gets one answer")
+    }
+
+    /// A VM running in the background (its window closed) gets its window back while Windows shuts
+    /// down, so a Windows app asking to save is seen instead of a quit that just waits a minute.
+    func testQuitShowsTheWindowOfEachVMWindowsIsShuttingDownIn() {
+        let h = Harness()
+        let first = FakeSession(running: true), install = FakeSession(running: true), idle = FakeSession(running: false)
+        install.isInstallation = true
+        h.sessions = [first, idle, install]
+        XCTAssertEqual(h.termination.shouldTerminate(reason: .user), .terminateLater)
+        XCTAssertEqual(h.shown, [[ObjectIdentifier(first)]], "Not the idle VM, nor an installation being cancelled")
+
+        let cancelled = Harness()
+        cancelled.sessions = [FakeSession(running: true)]
+        cancelled.confirmAnswer = false
+        XCTAssertEqual(cancelled.termination.shouldTerminate(reason: .user), .terminateCancel)
+        XCTAssertEqual(cancelled.shown, [])
     }
 
     func testNoRunningSessionTerminatesNowWithoutAlert() {

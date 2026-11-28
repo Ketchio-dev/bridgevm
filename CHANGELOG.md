@@ -46,6 +46,28 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- Move to Another Folder on a running or busy VM now says why right away.
+  Before, it first asked for a folder, and only then said the VM had to be
+  shut down.
+- Quitting BridgeVM while a VM runs with its window closed now shows that
+  VM's window while Windows shuts down, so a Windows app asking to save your
+  work can be seen. Before, nothing was shown for up to a minute.
+- The "Mac microphone didn't start" notice now goes away once a later
+  recording opens the microphone. Before, it stayed until the VM restarted.
+- `bridgevm app create-windows` with a file that isn't a Windows 11 for Arm
+  disc image now exits 2 (invalid input), as its help says, instead of 1,
+  which means the VM may have been created. `install` and `inspect` with a
+  mistyped ID, a display name used as an ID, and `stop` on a VM that isn't
+  running now say what happened and what to do.
+- `bridgevm app snapshot-create`, `snapshot-restore` and `snapshot-export` now
+  give the app's plain sentence when they're refused, for example "Shut down
+  the VM and wait for other operations to finish before creating a snapshot."
+  Before, they printed the helper's lock error, including a process command
+  line and pid. The helper's text is still in the JSON `detail` field.
+- The VM window now says so when the drive with the VM's disk is unplugged
+  or BridgeVM loses contact with Windows, and offers Stop or Force Stop.
+  Before, only the library said so, and the VM window, often in full screen,
+  just went black or froze.
 - Files dropped on a VM window, or opened with BridgeVM from Finder, while
   Windows is still starting are now copied once Windows is ready. Before,
   they were refused with a message that stayed over the Windows taskbar. A

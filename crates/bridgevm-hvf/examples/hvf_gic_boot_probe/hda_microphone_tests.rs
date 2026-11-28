@@ -252,3 +252,38 @@ fn an_input_that_cannot_open_prints_one_line_and_the_guest_records_silence() {
     thread::sleep(Duration::from_millis(50));
     assert_eq!(*opens.lock().unwrap(), 1);
 }
+
+#[test]
+fn a_microphone_that_opens_on_a_later_recording_says_so() {
+    let opens = Arc::new(Mutex::new(0));
+    let counter = Arc::clone(&opens);
+    let open: OpenInput = Box::new(move |_ring| {
+        let mut count = counter.lock().unwrap();
+        *count += 1;
+        if *count == 1 {
+            return Err("AudioQueueNewInput failed with OSStatus -50 (0xffffffce)".into());
+        }
+        Ok(Box::new(()) as RunningInput)
+    });
+    let mut source = MicrophoneSource::new(open, Duration::ZERO).unwrap();
+    source.stream_started();
+    wait_for("the failure", || !source.notices.lock().unwrap().is_empty());
+    source.notices.lock().unwrap().clear();
+    source.stream_stopped();
+    thread::sleep(Duration::from_millis(20));
+    // The next recording opens it: the app's "didn't start" notice must not stay.
+    source.stream_started();
+    wait_for("the second open", || *opens.lock().unwrap() == 2);
+    wait_for("the notice", || !source.notices.lock().unwrap().is_empty());
+    assert_eq!(
+        *source.notices.lock().unwrap(),
+        ["HDA capture: the Mac microphone is on again"]
+    );
+    // A third recording that opens again says nothing more.
+    source.stream_stopped();
+    thread::sleep(Duration::from_millis(20));
+    source.stream_started();
+    wait_for("the third open", || *opens.lock().unwrap() == 3);
+    thread::sleep(Duration::from_millis(20));
+    assert_eq!(source.notices.lock().unwrap().len(), 1);
+}

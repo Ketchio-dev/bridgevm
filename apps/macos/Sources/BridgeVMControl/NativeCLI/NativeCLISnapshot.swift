@@ -8,6 +8,8 @@ struct NativeCLISnapshotResult: Encodable {
     let snapshotPath: String?
     let complete: Bool
     let unavailableReason: String?
+    /// The helper's own error text, when the reason above is the app's sentence for it.
+    var detail: String? = nil
     /// The SIGINT or SIGTERM that cancelled the helper; the exit status is 128 plus it.
     var cancelSignal: Int32? = nil
 
@@ -22,6 +24,16 @@ struct NativeCLISnapshotResult: Encodable {
         if let unavailableReason { lines.append("Reason: \(unavailableReason)") }
         lines.append("This host operation does not prove a Windows boot or guest-visible restore.")
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// The app's sentence for a failure it knows (a running VM, no snapshot, a full drive…), with the
+    /// helper's text kept as detail; BridgeVM's own refusals and other helper text pass through.
+    static func reason(for error: Error, operation: HvfWindowsSnapshotCommand.Operation) -> (String, String?) {
+        let raw = error.localizedDescription
+        guard !(error is NativeCLIError),
+              let plain = HvfWindowsSnapshotModel.knownMessage(for: error, operation: operation), plain != raw
+        else { return (raw, nil) }
+        return (plain, raw)
     }
 
     /// What a cancelled helper leaves: its old state or its complete result, never a mix.
@@ -87,14 +99,9 @@ enum NativeCLISnapshot {
         } catch let cancel as HvfHelperProcess.Cancelled {
             return .cancelled(cancel, command: command, vmID: id, libraryPath: rootURL.path)
         } catch {
-            return NativeCLISnapshotResult(
-                command: command,
-                vmID: id,
-                libraryPath: rootURL.path,
-                snapshotPath: nil,
-                complete: false,
-                unavailableReason: error.localizedDescription
-            )
+            let (reason, detail) = NativeCLISnapshotResult.reason(for: error, operation: operation)
+            return NativeCLISnapshotResult(command: command, vmID: id, libraryPath: rootURL.path, snapshotPath: nil,
+                                           complete: false, unavailableReason: reason, detail: detail)
         }
     }
 }
@@ -158,7 +165,10 @@ enum NativeCLISnapshotExport {
         } catch let cancel as HvfHelperProcess.Cancelled {
             return .cancelled(cancel, command: "export", vmID: options.id, libraryPath: rootURL.path)
         } catch {
-            return result(rootURL, options, complete: false, reason: error.localizedDescription)
+            let (reason, detail) = NativeCLISnapshotResult.reason(for: error, operation: .create)
+            var refused = result(rootURL, options, complete: false, reason: reason)
+            refused.detail = detail
+            return refused
         }
     }
 
@@ -223,7 +233,7 @@ enum NativeCLISnapshotExportParser {
                 json = true
             case "--help", "-h": help = true
             default:
-                guard !argument.hasPrefix("-") else { throw invalid("Unknown option: \(argument). Use --cli --help.") }
+                guard !argument.hasPrefix("-") else { throw invalid("Unknown option: \(argument). Run `bridgevm app --help`.") }
                 positionals.append(argument)
             }
             index += 1
@@ -232,7 +242,7 @@ enum NativeCLISnapshotExportParser {
             return NativeCLIOptions(command: .snapshotExport(.init(id: "", output: URL(fileURLWithPath: "/"))), libraryRoot: library ?? defaultLibrary, json: json, showHelp: true)
         }
         guard positionals.count == 3, positionals[0] == "snapshot-export" else { throw invalid("Expected snapshot-export ID OUTPUT. Use --cli --help.") }
-        guard NativeLibraryReader.isCanonicalID(positionals[1]) else { throw invalid("Use an exact VM ID; paths and noncanonical IDs are refused.") }
+        guard NativeLibraryReader.isCanonicalID(positionals[1]) else { throw invalid(NativeLibraryReader.notAnID(positionals[1])) }
         let output = try absolute(positionals[2], label: "OUTPUT")
         guard output.path != "/" else { throw invalid("OUTPUT must name an export directory.") }
         return NativeCLIOptions(command: .snapshotExport(.init(id: positionals[1], output: output)), libraryRoot: library ?? defaultLibrary, json: json, showHelp: false)
