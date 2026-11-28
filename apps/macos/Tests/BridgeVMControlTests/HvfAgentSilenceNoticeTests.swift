@@ -127,6 +127,10 @@ final class HvfAgentSilenceNoticeTests: XCTestCase {
             try run(session)
             if name == HvfWindowsInstallRequest.doneFileName {
                 XCTAssertEqual(session.agentSilenceNotice.shown, .awaitingFirstConnection)
+                // Ten minutes on with no agent, the first sign-in's setup failed: offer to install it.
+                clock.value += HvfAgentSilenceNotice.firstConnectionTimeout
+                try run(session)
+                XCTAssertEqual(session.agentSilenceNotice.shown, .missingTools)
             } else {
                 XCTAssertNil(session.agentSilenceNotice.shown, "an unfinished ISO install has no bootable Windows")
             }
