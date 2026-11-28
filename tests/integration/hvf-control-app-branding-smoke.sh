@@ -5,7 +5,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 work="$(mktemp -d "${TMPDIR:-/tmp}/bridgevm-branding-test.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
-app="$work/BridgeVM Control.app"
+app="$work/BridgeVM.app"
 helper="$root/apps/macos/scripts/bundle-control-app-metadata.sh"
 mkdir -p "$app/Contents/Resources"
 if "$helper" "$app" 'invalid version' >"$work/refusal.log" 2>&1; then
@@ -29,6 +29,8 @@ with (app / 'Contents/Info.plist').open('rb') as stream:
     metadata = plistlib.load(stream)
 assert metadata['CFBundleShortVersionString'] == '2.3.4-preview.1'
 assert metadata['CFBundleIdentifier'] == 'dev.bridgevm.control'
+# The menu bar (About, Hide, Quit) uses this name; it matches the shipped BridgeVM.app.
+assert metadata['CFBundleName'] == 'BridgeVM'
 assert metadata['CFBundleIconFile'] == 'BridgeVM.icns'
 # macOS 15+ shows this when the VM's NAT reaches a LAN address (router DNS).
 assert metadata['NSLocalNetworkUsageDescription'].strip()

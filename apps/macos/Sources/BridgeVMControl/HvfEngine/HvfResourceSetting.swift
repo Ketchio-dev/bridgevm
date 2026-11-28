@@ -20,22 +20,18 @@ struct HvfResourceSetting: View {
             ? VMResourceLimits.minimumCPU...VMResourceLimits.maximumCPU : HvfEngineConfig.supportedCPURange
     }
 
-    static func memoryText(_ mib: Int) -> String {
-        mib % 1024 == 0 ? "\(mib / 1024) GiB" : String(format: "%.2f GiB", Double(mib) / 1024)
-    }
-
     var body: some View {
         HStack(spacing: 24) {
-            Stepper("Memory \(Self.memoryText(ramMiB))", value: Binding(get: { ramMiB }, set: { update(memMiB: $0, cpus: cpus) }),
+            Stepper("Memory: \(VMResourceLimits.memoryText(mib: ramMiB))", value: Binding(get: { ramMiB }, set: { update(memMiB: $0, cpus: cpus) }),
                     in: ramRange, step: 1024)
                 .accessibilityIdentifier("bridgevm.runtime.ram")
-            Stepper("CPU \(cpus)", value: Binding(get: { cpus }, set: { update(memMiB: ramMiB, cpus: $0) }),
+            Stepper("CPUs: \(cpus)", value: Binding(get: { cpus }, set: { update(memMiB: ramMiB, cpus: $0) }),
                     in: cpuRange)
                 .accessibilityIdentifier("bridgevm.runtime.cpu")
         }
         .disabled(isDisabled)
         .help(session.persistsLibraryPreferences ? "Changes apply the next time this VM starts." : "")
-        .alert("Memory and CPU", isPresented: Binding(
+        .alert("Memory and CPUs", isPresented: Binding(
             get: { message != nil }, set: { if !$0 { message = nil } }
         )) {
             Button("OK") { message = nil }
@@ -54,7 +50,7 @@ struct HvfResourceSetting: View {
 
 extension HvfEngineSession {
     static func resourceLimitsMessage(memoryMiB: ClosedRange<Int>) -> String {
-        "Choose \(memoryMiB.lowerBound / 1024)–\(memoryMiB.upperBound / 1024) GiB of memory and \(VMResourceLimits.minimumCPU)–\(VMResourceLimits.maximumCPU) CPUs."
+        "Choose \(memoryMiB.lowerBound / 1024)–\(memoryMiB.upperBound / 1024) GB of memory and \(VMResourceLimits.minimumCPU)–\(VMResourceLimits.maximumCPU) CPUs."
     }
 
     /// What the steppers show afterwards: vm.json's values for a library VM, plus any message. Only a
@@ -69,7 +65,7 @@ extension HvfEngineSession {
             || (cpuChanges && !(VMResourceLimits.minimumCPU...VMResourceLimits.maximumCPU).contains(cpus)) {
             message = Self.resourceLimitsMessage(memoryMiB: memoryRange)
         } else {
-            message = saveLibraryPreference("Memory and CPU", publish: publish) {
+            message = saveLibraryPreference("Memory and CPUs", publish: publish) {
                 if memoryChanges { $0.memMiB = memMiB }
                 if cpuChanges { $0.cpuCount = cpus }
             }

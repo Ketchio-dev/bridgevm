@@ -87,7 +87,7 @@ extension HvfRuntimeStartOutcome {
                     case "uefi-vars-size":
                         return "The Windows boot settings file has the wrong size, so restore the 64 MiB file from a backup."
                     case "ram-range":
-                        return "Set the VM’s memory between 1024 and 65536 MiB, then start Windows again."
+                        return "Set the VM’s memory between 1 GB and 64 GB in Settings, then start Windows again."
                     case "cpu-range":
                         return "Choose 1 to 64 CPUs in VM settings, then start Windows again."
                     case "share-invalid":

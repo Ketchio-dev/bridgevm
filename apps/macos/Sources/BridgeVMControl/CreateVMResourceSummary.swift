@@ -8,7 +8,7 @@ struct CreateVMResourceSummary: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("VM resources").font(.caption.weight(.medium))
-            Text("\(cpuCount) vCPU · \(ramMiB / 1024) GiB memory"
+            Text("\(VMResourceLimits.cpuText(cpuCount)) · \(VMResourceLimits.memoryText(mib: ramMiB)) memory"
                  + (diskGiB.map { " · \($0) GiB disk" } ?? ""))
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)

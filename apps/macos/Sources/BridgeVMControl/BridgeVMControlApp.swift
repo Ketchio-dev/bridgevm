@@ -12,7 +12,7 @@ struct BridgeVMControlApp: App {
         #if DEBUG && BRIDGEVM_APP_UI_HOST
         AppUIHost.prepared?.lifecycle.record(.appBodyEvaluated)
         #endif
-        return WindowGroup("BridgeVM Control") {
+        return WindowGroup("BridgeVM") {
             BridgeVMControlAppContent(library: library)
                 .frame(minWidth: 480, minHeight: 250)
                 .background(ControlLibraryWindow())

@@ -44,7 +44,7 @@ enum FirstRunImport {
                 return "Other accounts on this Mac can open the recovery code file at \(p). In Finder, choose File > Get Info and set everyone except you to No Access under Sharing & Permissions, then import again."
             case .vtpmRecoveryWithoutState: return "Choose the TPM data folder to use these recovery files."
             case .badResources(let mem, let cpu):
-                return "Choose at least 2048 MiB of memory and 1 to 64 CPUs. The current settings are \(mem) MiB and \(cpu) CPUs."
+                return "Choose at least 2 GB of memory and 1 to 64 CPUs. The current settings are \(VMResourceLimits.memoryText(mib: mem)) and \(VMResourceLimits.cpuText(cpu))."
             }
         }
     }

@@ -88,7 +88,7 @@ enum A9ImportEndState {
         "Enter a name for the VM.", "Disk image not found at ", "Choose a disk image file instead of the folder at ",
         "The disk image at ", "To import a ", "UEFI variables file not found at ", "The UEFI variables file must be exactly ",
         "Choose the folder that holds the original TPM data.", "Choose the TPM ", "BridgeVM can’t use the recovery file at ",
-        "Choose the vTPM ", "The vTPM recovery file is unavailable at ", "Choose at least 2048 MiB of memory ",
+        "Choose the vTPM ", "The vTPM recovery file is unavailable at ", "Choose at least 2 GB of memory ",
         "That name is already in your library.", "Use 1–", "This is a Windows installer ISO",
         "Choose a readable disk file ", "The Windows disk is empty.", "Choose the matching UEFI variables file ",
         "Choose separate files for the Windows disk ",

@@ -23,7 +23,8 @@ final class A9ImportEndStateTests: XCTestCase {
                        "registration-not-saved")
         for message in ["Choose the TPM recovery package.", "Choose the TPM data folder to use these recovery files.",
                         "Choose the folder that holds the original TPM data. There’s no folder at /Volumes/private/vtpm.",
-                        "BridgeVM can’t use the recovery file at /Volumes/private/code.txt. Choose the original file again."] {
+                        "BridgeVM can’t use the recovery file at /Volumes/private/code.txt. Choose the original file again.",
+                        "Choose at least 2 GB of memory and 1 to 64 CPUs. The current settings are 1 GB and 4 CPUs."] {
             XCTAssertEqual(A9ImportEndState.errorToken(message), "validation", message)
         }
         XCTAssertEqual(A9ImportEndState.errorToken("The saved VM could not be opened. Check the library folder and choose Open Saved VM again."), "recovery-failed")

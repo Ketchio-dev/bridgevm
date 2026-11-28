@@ -123,13 +123,13 @@ struct CreateVMSheet: View {
                     HStack {
                         Text("Memory").frame(width: 64, alignment: .leading)
                         Picker("Memory", selection: $ramMiB) {
-                            ForEach(CreateVMMemoryOptions.current.choicesMiB, id: \.self) { Text("\($0 / 1024) GiB").tag($0) }
+                            ForEach(CreateVMMemoryOptions.current.choicesMiB, id: \.self) { Text("\($0 / 1024) GB").tag($0) }
                         }.labelsHidden().frame(width: 150)
                         Spacer()
                     }
                     HStack {
                         Text("CPU").frame(width: 64, alignment: .leading)
-                        Stepper(cpuCount == 1 ? "1 CPU core" : "\(cpuCount) CPU cores", value: $cpuCount, in: 1...maxCPU)
+                        Stepper(VMResourceLimits.cpuText(cpuCount), value: $cpuCount, in: 1...maxCPU)
                             .frame(width: 150)
                         Spacer()
                     }
@@ -143,7 +143,7 @@ struct CreateVMSheet: View {
                         }
                     }
                     Toggle("Shared network (NAT)", isOn: $hvfNetwork).font(.callout)
-                    Text("This Mac has \(String(format: "%.0f", library.hostMemGiB)) GiB of memory and \(library.hostCPU) CPU cores.")
+                    Text("This Mac has \(String(format: "%.0f", library.hostMemGiB)) GB of memory and \(VMResourceLimits.cpuText(library.hostCPU)).")
                         .font(.caption).foregroundColor(.secondary)
                 }
                 .padding(.top, 8)

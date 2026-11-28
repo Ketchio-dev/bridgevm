@@ -51,9 +51,9 @@ final class BackendKindTests: XCTestCase {
                               displayWidth: 1, displayHeight: 1)
         config.memMiB = 4096
         config.cpuCount = 4
-        XCTAssertEqual(LibraryWorkspaceRow.resourceText(config), "4 vCPU · 4 GiB RAM")
+        XCTAssertEqual(LibraryWorkspaceRow.resourceText(config), "4 CPUs · 4 GB memory")
         config.backendKind = "fast-vz"
-        XCTAssertEqual(LibraryWorkspaceRow.resourceText(config), "4 vCPU · 4 GiB RAM · Unsupported engine")
+        XCTAssertEqual(LibraryWorkspaceRow.resourceText(config), "4 CPUs · 4 GB memory · Unsupported engine")
     }
 
     /// A library saved before the Fast VZ and QEMU engines were removed must still

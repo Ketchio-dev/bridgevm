@@ -317,7 +317,7 @@ extension HvfEngineConfig {
         }
 
         if !(1024...65_536).contains(ramMiB) {
-            launch("ram-range", "Set memory between 1024 and 65536 MiB.")
+            launch("ram-range", "Set memory between 1 GB and 64 GB.")
         }
         if !Self.supportedCPURange.contains(smpCpus) {
             launch("cpu-range", "Choose 1 to 64 CPUs in VM settings. It’s set to \(smpCpus) now.")
