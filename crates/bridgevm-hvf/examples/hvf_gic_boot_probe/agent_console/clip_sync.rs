@@ -84,6 +84,11 @@ impl AgentConsoleHarness {
         let Some(pasteboard) = self.pasteboard.as_ref() else {
             return;
         };
+        if !self.clipsync {
+            // Sharing switched off while Windows runs (clip_switch.rs).
+            while pasteboard.try_changed_clip().is_some() {}
+            return;
+        }
         let Some(clip) = std::iter::from_fn(|| pasteboard.try_changed_clip()).last() else {
             return;
         };

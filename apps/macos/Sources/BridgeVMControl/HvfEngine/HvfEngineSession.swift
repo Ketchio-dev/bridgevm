@@ -238,9 +238,10 @@ final class HvfEngineSession: ObservableObject {
         return true
     }
 
-    /// Sends a setting's control line now and again after each Windows restart (liveControlLines).
+    /// Sends a setting's control line now, or at the service start when the agent hasn't started yet, and
+    /// again after each Windows restart (liveControlLines).
     func sendLiveControl(_ line: String, verb: String) -> Bool {
-        guard sendCtl(line) else { return false }
+        if serviceStarted { guard sendCtl(line) else { return false } }
         liveControlLines[verb] = line
         return true
     }
@@ -773,6 +774,15 @@ extension HvfEngineSession {
     func applyClipboardSyncToggle(_ enabled: Bool,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (isOn: Bool, message: String?) {
         guard persistsLibraryPreferences else { return (enabled, nil) }
+        // While Windows runs the probe switches at once, and vm.json is saved at the stop.
+        if let slug = HvfHostSettingLiveSave.liveSlug(self) {
+            guard sendLiveControl("BVCLIPSYNC " + (enabled ? "on" : "off"), verb: "BVCLIPSYNC") else {
+                return (config.clipboardSync, "BridgeVM couldn’t change clipboard sharing while Windows runs. Shut down Windows, then try again.")
+            }
+            HvfHostSettingLiveSave.record("Share clipboard", for: slug) { $0.clipboardSyncEnabled = enabled ? nil : false }
+            config.clipboardSync = enabled
+            return (enabled, nil)
+        }
         let message = saveClipboardSyncPreference(enabled, publish: publish)
         return (config.libraryContext?.config.clipboardSyncEnabled ?? true, message)
     }

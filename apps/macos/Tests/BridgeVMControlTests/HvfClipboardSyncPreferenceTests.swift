@@ -112,25 +112,41 @@ final class HvfClipboardSyncPreferenceTests: XCTestCase {
         XCTAssertEqual(probe.sessions, 1); XCTAssertEqual(probe.lookups.count, 2)
     }
 
-    func testToggleIsDisabledAndSaveRefusedWhileRunningOrBusy() throws {
-        for state in [HvfConnectionState.booting, .connected(host: "fixture"), .stopping, .timedOut] {
-            let fixture = try HvfRuntimeSessionStoreFixture()
-            defer { fixture.clean() }
-            let saved = fixture.config(); fixture.save(saved)
-            let url = fixture.registration(saved), original = try Data(contentsOf: url)
-            let library = fixture.library()
-            let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
-            let toggle = HvfClipboardSyncToggle(session: session, isOn: .constant(true))
-            XCTAssertFalse(toggle.isDisabled)
-            session.connectionState = state
-            XCTAssertTrue(toggle.isDisabled, "\(state)")
-            XCTAssertNotNil(session.saveClipboardSyncPreference(false), "\(state)")
-            XCTAssertTrue(session.applyClipboardSyncToggle(false).isOn, "\(state)")
-            XCTAssertEqual(try Data(contentsOf: url), original)
-            XCTAssertNil(library.latestConfiguration(for: saved).clipboardSyncEnabled)
-            XCTAssertTrue(library.hvfRuntimeDetailSession(for: saved) === session)
-            XCTAssertTrue(session.config.clipboardSync)
-        }
+    /// The toggle only took effect at the next start: to stop sharing before copying a password on the Mac,
+    /// Windows had to shut down. It now switches the running VM at once and is saved at the stop.
+    func testSharingSwitchesWhileWindowsRunsAndIsSavedAtTheStop() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
+        defer { fixture.clean() }
+        let saved = fixture.config(); fixture.save(saved)
+        let url = fixture.registration(saved), original = try Data(contentsOf: url)
+        let library = fixture.library(probe: probe)
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+        let toggle = HvfClipboardSyncToggle(session: session, isOn: .constant(true))
+        let control = URL(fileURLWithPath: session.config.ctlFilePath)
+        try FileManager.default.createDirectory(at: control.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let sent = { ((try? String(contentsOf: control, encoding: .utf8)) ?? "").split(separator: "\n").filter { $0.hasPrefix("BVCLIPSYNC") } }
+        session.connectionState = .booting
+        XCTAssertFalse(toggle.isDisabled)
+        XCTAssertTrue(session.applyClipboardSyncToggle(false) == (false, nil))
+        XCTAssertEqual(sent(), [], "before the agent starts")
+        session.handle(.serviceStart(tMs: 1))
+        XCTAssertEqual(sent(), ["BVCLIPSYNC off"])
+        XCTAssertTrue(session.applyClipboardSyncToggle(true) == (true, nil))
+        XCTAssertTrue(session.applyClipboardSyncToggle(false) == (false, nil))
+        XCTAssertEqual(sent(), ["BVCLIPSYNC off", "BVCLIPSYNC on", "BVCLIPSYNC off"])
+        XCTAssertFalse(session.config.clipboardSync)
+        XCTAssertEqual(try Data(contentsOf: url), original, "vm.json waits for the stop")
+        // Windows restarts: the new VM process starts with the start's setting, so it goes again.
+        session.handle(.unknown(HvfGuestResetRecord.processRecreation))
+        session.handle(.serviceStart(tMs: 2))
+        XCTAssertEqual(sent().last, "BVCLIPSYNC off")
+        session.connectionState = .stopped
+        session.markStopped()
+        XCTAssertEqual(library.latestConfiguration(for: saved).clipboardSyncEnabled, false)
+        XCTAssertNil(library.operationError)
+    }
+
+    func testToggleIsDisabledDuringAnotherChange() throws {
         let fixture = try HvfRuntimeSessionStoreFixture()
         defer { fixture.clean() }
         let saved = fixture.config(); fixture.save(saved)
@@ -140,10 +156,6 @@ final class HvfClipboardSyncPreferenceTests: XCTestCase {
         XCTAssertTrue(HvfClipboardSyncToggle(session: session, isOn: .constant(true)).isDisabled)
         XCTAssertNotNil(session.saveClipboardSyncPreference(false))
         session.finishRuntimeMutation(reservation)
-        session.attachedToExistingProcess = true
-        XCTAssertTrue(HvfClipboardSyncToggle(session: session, isOn: .constant(true)).isDisabled)
-        XCTAssertNotNil(session.saveClipboardSyncPreference(false), "An attached VM is not stopped")
-        session.attachedToExistingProcess = false
         XCTAssertNil(library.latestConfiguration(for: saved).clipboardSyncEnabled)
     }
 

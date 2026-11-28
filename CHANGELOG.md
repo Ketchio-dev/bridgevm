@@ -65,6 +65,13 @@ All notable changes to BridgeVM are documented in this file.
 - Copying the same thing again now sends it again. If Windows refused or lost
   a Mac copy, press Command-C again. If files copied in Windows did not arrive,
   copy them again in Explorer.
+- "Share clipboard" can be turned off and on while Windows runs; before,
+  it was disabled until Windows shut down.
+- Port forwards changed while Windows runs stay changed after Windows
+  restarts, instead of going back to the ones the VM started with.
+- Signing out of Windows and back in no longer loses the shared clipboard:
+  the Mac's copy is sent to Windows again, so Ctrl+V pastes it without
+  copying it once more on the Mac.
 - In a VM whose Windows account isn't an administrator, BridgeVM no longer
   tries to update Guest Tools at every launch and reports "Guest Tools
   couldn't update" each time. That update can't work without administrator

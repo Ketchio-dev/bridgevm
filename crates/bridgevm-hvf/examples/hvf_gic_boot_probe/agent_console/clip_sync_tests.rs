@@ -71,6 +71,9 @@ impl ClipRig {
     fn answer(&mut self, line: &str) {
         let reply = if line == "CLIPGET\n" {
             format!("CLIP {}", base64_encode(self.guest.as_bytes()))
+        } else if line == "PING\n" {
+            // The keepalive while sharing is off (clip_switch.rs).
+            "PONG".to_owned()
         } else if line == "CLIPCAPS PUSH\n" {
             // A text-only agent: bvagent.ps1 before CLIPCAPS.
             format!("OUT 255 {}", base64_encode(b"unknown token: CLIPCAPS"))
