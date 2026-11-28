@@ -21,12 +21,17 @@
 //! closes the queue, its callbacks ended, and while the guest captures opens a
 //! new one on the new default. The ring keeps its audio and the guest's stream
 //! carries on. A burst of changes makes one reopen.
+//!
+//! A queue that delivered input and then delivers nothing for STALL (its
+//! callbacks stopped, as after a coreaudiod restart) is reopened the same way.
+//! A queue that never delivered is left alone, so an input that opens but
+//! stays silent does not reopen in a loop.
 
 use super::hda_coreaudio_atomic_ring::PcmQueue;
 use super::hda_coreaudio_atomic_ring::{AtomicPcmRing, Consumer};
 use super::hda_coreaudio_output::{DefaultDeviceListener, DEFAULT_INPUT};
 use bridgevm_hvf::hda::HdaPcmSource;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::thread::{self, JoinHandle, Thread};
 use std::time::{Duration, Instant};
@@ -41,6 +46,8 @@ const RING_BYTES: usize = 200 * BYTES_PER_MS;
 const PRIME_BYTES: usize = 30 * BYTES_PER_MS;
 const HIGH_WATER_BYTES: usize = 120 * BYTES_PER_MS;
 pub(crate) const STOP_GRACE: Duration = Duration::from_secs(1);
+/// An input queue delivers a buffer every 10 ms; this long without one means it stopped.
+const STALL: Duration = Duration::from_secs(2);
 
 /// A started input queue; dropping it stops and disposes the queue.
 pub(crate) type RunningInput = Box<dyn Send>;
@@ -49,11 +56,14 @@ pub(crate) type OpenInput = Box<dyn FnMut(Arc<CaptureRing>) -> Result<RunningInp
 
 pub(crate) struct CaptureRing {
     ring: AtomicPcmRing,
+    /// Input callbacks so far; the supervisor's stall check reads it.
+    published: AtomicU64,
 }
 
 impl CaptureRing {
     /// The input callback's publish: whole frames, dropped when the ring is full.
     pub(crate) fn publish(&self, pcm: &[u8]) {
+        self.published.fetch_add(1, Ordering::Relaxed);
         let whole = pcm.len() / FRAME_BYTES * FRAME_BYTES;
         let _ = self
             .ring
@@ -99,17 +109,19 @@ pub(crate) struct MicrophoneSource {
 
 impl MicrophoneSource {
     pub(crate) fn new(open: OpenInput, grace: Duration) -> Result<Self, String> {
-        Self::with_pause(open, grace, || crate::pause_gate::GATE.paused())
+        Self::with(open, grace, STALL, || crate::pause_gate::GATE.paused())
     }
 
     /// `paused` is the VM's pause (pause_gate.rs): a paused VM does not hold the Mac microphone.
-    fn with_pause(
+    fn with(
         open: OpenInput,
         grace: Duration,
+        stall: Duration,
         paused: impl Fn() -> bool + Send + 'static,
     ) -> Result<Self, String> {
         let ring = Arc::new(CaptureRing {
             ring: AtomicPcmRing::new(RING_BYTES),
+            published: AtomicU64::new(0),
         });
         let control = Arc::new(Control::default());
         let notices = Arc::new(Mutex::new(Vec::new()));
@@ -117,7 +129,7 @@ impl MicrophoneSource {
             let (ring, control, notices) = (ring.clone(), control.clone(), notices.clone());
             thread::Builder::new()
                 .name("hda-microphone".into())
-                .spawn(move || supervise(&control, &ring, open, grace, &notices, paused))
+                .spawn(move || supervise(&control, &ring, open, grace, stall, &notices, paused))
                 .map_err(|error| format!("supervisor thread: {error}"))?
         };
         Ok(Self {
@@ -232,17 +244,50 @@ fn discard(consumer: &mut Consumer<'_>, mut bytes: usize) {
 
 const PAUSE_POLL: Duration = Duration::from_millis(250);
 
+/// Whether an open queue's callbacks stopped after it had delivered input.
+struct StallWatch {
+    seen: u64,
+    since: Instant,
+    delivered: bool,
+}
+
+impl StallWatch {
+    fn new(ring: &CaptureRing) -> Self {
+        Self {
+            seen: ring.published.load(Ordering::Relaxed),
+            since: Instant::now(),
+            delivered: false,
+        }
+    }
+
+    fn stalled(&mut self, ring: &CaptureRing, stall: Duration) -> bool {
+        let published = ring.published.load(Ordering::Relaxed);
+        if published != self.seen {
+            *self = Self {
+                seen: published,
+                since: Instant::now(),
+                delivered: true,
+            };
+            return false;
+        }
+        self.delivered && self.since.elapsed() >= stall
+    }
+}
+
 fn supervise(
     control: &Control,
     ring: &Arc<CaptureRing>,
     mut open: OpenInput,
     grace: Duration,
+    stall: Duration,
     notices: &Mutex<Vec<String>>,
     paused: impl Fn() -> bool,
 ) {
     let mut input: Option<RunningInput> = None;
+    let mut watch = StallWatch::new(ring);
     let mut tried = false; // this capture stream already tried to open a queue
     let mut reported = false;
+    let mut stall_reported = false;
     let mut idle_since: Option<Instant> = None;
     while !control.shutdown.load(Ordering::Acquire) {
         if control.input_changed.swap(false, Ordering::AcqRel) {
@@ -259,9 +304,24 @@ fn supervise(
         let wanted = control.capturing.load(Ordering::Acquire);
         if wanted && !paused() {
             idle_since = None;
+            if input.is_some() && watch.stalled(ring, stall) {
+                // Dropping the stopped queue ends its callbacks before a new one opens.
+                input = None;
+                tried = false;
+                if !std::mem::replace(&mut stall_reported, true) {
+                    notices.lock().unwrap().push(
+                        "HDA capture: the Mac microphone stopped delivering audio; \
+                         BridgeVM opened it again"
+                            .into(),
+                    );
+                }
+            }
             if input.is_none() && !std::mem::replace(&mut tried, true) {
                 match open(Arc::clone(ring)) {
-                    Ok(running) => input = Some(running),
+                    Ok(running) => {
+                        input = Some(running);
+                        watch = StallWatch::new(ring);
+                    }
                     Err(error) if !std::mem::replace(&mut reported, true) => {
                         // The app shows a notice for this line's start (HvfAudioNotice.microphoneOffPrefix).
                         notices.lock().unwrap().push(format!(
@@ -272,7 +332,7 @@ fn supervise(
                     Err(_) => {}
                 }
             }
-            thread::park_timeout(PAUSE_POLL);
+            thread::park_timeout(PAUSE_POLL.min(stall));
             continue;
         }
         tried = false;
