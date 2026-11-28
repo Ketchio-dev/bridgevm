@@ -75,6 +75,9 @@ All notable changes to BridgeVM are documented in this file.
   changes could stay in the drive's cache and be lost if the Mac then lost
   power. If that flush fails, BridgeVM says it couldn't finish saving the
   Windows disk.
+- A VM's folder no longer grows by tens of megabytes each time Windows starts:
+  the boot screenshots BridgeVM keeps for diagnostics are now replaced at the
+  next start instead of piling up.
 - The installers accept an Apple Silicon Mac when they are run from a Rosetta
   shell, such as an Intel Homebrew bash.
 - The install guide no longer says Open Anyway is needed only once: each newly
