@@ -36,7 +36,7 @@ extension HvfEngineSession {
             return "Another process is using this VM’s disk. Shut down the VM and try again."
         }
         guard VMLibrary.isCurrentRegistration(context.config, rootURL: context.rootURL) else {
-            return "The VM registration changed. Refresh the library and try again."
+            return "This VM’s settings changed on disk. Choose Refresh, then try again."
         }
         switch VMLibrary.saveOutcome(updated, rootURL: context.rootURL, publish: publish) {
         case .notPublished:

@@ -43,7 +43,7 @@ extension LibraryDashboardPrimaryAction {
                         attach: (HvfEngineSession) -> Bool,
                         present: (HvfEngineSession) -> Void,
                         report: (String) -> Void) {
-        guard let session else { report("Couldn’t prepare the VM session."); return }
+        guard let session else { report("Couldn’t open this VM. Choose Refresh, then try again."); return }
         if session.hasActiveRuntimeWork && !session.runnerDiedWithoutCleanup { present(session); return }
         if !observedRunning {
             switch requestStart(session) {

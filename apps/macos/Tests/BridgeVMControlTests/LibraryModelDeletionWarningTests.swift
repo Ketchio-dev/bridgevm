@@ -37,7 +37,7 @@ final class LibraryModelDeletionWarningTests: XCTestCase {
         store.failsReplace = { $0.contains(".deleted.") }
         let library = try await deleteThroughLibrary(f, store: store)
         let warning = try XCTUnwrap(library.deletionWarning)
-        XCTAssertTrue(warning.contains("'\(installed.slug)'"), warning)
+        XCTAssertTrue(warning.contains("couldn’t remove its TPM key"), warning)
         XCTAssertEqual(store.keys, [installed.slug: key])
     }
 

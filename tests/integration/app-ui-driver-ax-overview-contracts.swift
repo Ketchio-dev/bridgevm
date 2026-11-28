@@ -5,7 +5,7 @@ extension AppUIDriverAXContracts {
     /// label (SwiftUI exposes it as AXDescription), exactly once each.
     static func overviewRowContracts() throws {
         typealias A = AppUIDriverAXAttribute
-        let amber = "Amber, Stopped, 4 vCPU  ·  4 GiB RAM  ·  HVF", indigo = "Indigo, Stopped, 4 vCPU  ·  8 GiB RAM  ·  HVF"
+        let amber = "Amber, Stopped, 4 vCPU · 4 GiB RAM", indigo = "Indigo, Stopped, 4 vCPU · 8 GiB RAM"
         check(AppUIDriverOverviewRows.amber == amber && AppUIDriverOverviewRows.indigo == indigo,
               "driver rows use the current row label format")
         let fixture = AppUIDriverAXFixture()
@@ -20,7 +20,7 @@ extension AppUIDriverAXContracts {
                   "an exact title is the same row")
 
         // A stale or different label never stands in for a seeded row.
-        for label in ["Amber, HVF, stopped", "Amber, Running, 4 vCPU  ·  4 GiB RAM  ·  HVF", "Amber, Stopped", "Amber"] {
+        for label in ["Amber, HVF, stopped", "Amber, Stopped, 4 vCPU  ·  4 GiB RAM  ·  HVF", "Amber, Running, 4 vCPU · 4 GiB RAM", "Amber, Stopped", "Amber"] {
             let stale = AppUIDriverAXFixture()
             stale.nodes[7]!.strings[A.description] = label
             let values = try AppUIDriverAXOperations(access: stale).perform(.overviewCards).values

@@ -17,11 +17,11 @@ struct LibraryVMContextMenu: View {
         }
         if config.engineKind == .hvfEngine, config.installPending != true {
             Button { presentation?.wrappedValue.cloneSource = library.requestWindowsClone(config) } label: {
-                Label("Duplicate with a new TPM identity…", systemImage: "plus.square.on.square")
+                Label("Duplicate…", systemImage: "plus.square.on.square")
             }
             .disabled(library.cloningSlugs.contains(config.slug))
             Button { chooseMoveDestination() } label: {
-                Label("Move bundle, keeping VM identity…", systemImage: "folder.badge.gearshape")
+                Label("Move to Another Folder…", systemImage: "folder.badge.gearshape")
             }
             .disabled(library.movingSlugs.contains(config.slug))
         }

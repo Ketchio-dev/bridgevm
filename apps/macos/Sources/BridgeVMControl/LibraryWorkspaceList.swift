@@ -13,7 +13,6 @@ struct LibraryWorkspaceList: View {
         return library.vms.filter {
             $0.name.localizedStandardContains(term)
                 || $0.displayName.localizedStandardContains(term)
-                || $0.engineShortLabel.localizedStandardContains(term)
                 || $0.slug.localizedStandardContains(term)
         }
     }
@@ -49,7 +48,7 @@ struct LibraryWorkspaceList: View {
                         ContentUnavailableView {
                             Label("No results", systemImage: "magnifyingglass")
                         } description: {
-                            Text("Try a different VM name, ID, or engine.")
+                            Text("Try a different VM name or ID.")
                         }
                         .accessibilityIdentifier("bridgevm.library.search.no-results")
                     }
@@ -190,10 +189,13 @@ struct LibraryWorkspaceRow: View {
         return model.running ? ("Running", .green) : ("Stopped", .secondary)
     }
 
-    private var resourceText: String {
+    private var resourceText: String { Self.resourceText(config) }
+
+    nonisolated static func resourceText(_ config: VMConfig) -> String {
         let cpu = config.cpuCount.map { "\($0) vCPU" } ?? "CPU: Automatic"
         let memory = config.memMiB.map { $0.isMultiple(of: 1024) ? "\($0 / 1024) GiB RAM" : "\($0) MiB RAM" } ?? "Memory: Automatic"
-        return "\(cpu)  ·  \(memory)  ·  \(config.engineShortLabel)"
+        // Only one engine ships, so the row names it only when the VM can't use it.
+        return "\(cpu) · \(memory)" + (config.engineKind == .hvfEngine ? "" : " · \(config.engineDetailLabel)")
     }
 }
 

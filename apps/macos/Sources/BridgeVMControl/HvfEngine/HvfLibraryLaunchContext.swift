@@ -59,11 +59,11 @@ extension HvfLibraryLaunchContext {
         var issues: [HvfWindowsReadinessIssue] = []
         if VMRelocationJournal.isPending(config, rootURL: rootURL) {
             issues.append(.init(code: "relocation-pending", scope: .launch,
-                summary: "The move has not finished recovering. Check both bundles and the library entry before starting the VM."))
+                summary: "This VM’s last move didn’t finish. Check both of its folders in Finder before you start it."))
         }
         if HvfWindowsInstallTransactionResidue.isPresent(config, rootURL: rootURL) {
             issues.append(.init(code: "install-cleanup-pending", scope: .launch,
-                summary: "Windows installation cleanup is incomplete. Refresh the library. If startup is still blocked, check the retained installation record. Do not reinstall Windows."))
+                summary: "BridgeVM is still cleaning up the Windows installation. Choose Refresh, then start Windows again."))
         }
         return issues
     }

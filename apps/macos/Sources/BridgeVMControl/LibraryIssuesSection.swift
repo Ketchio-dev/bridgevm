@@ -24,7 +24,7 @@ struct LibraryIssuesSection: View {
 
     private var section: some View {
         Section("Library warnings") {
-            Label("Unreadable VM configurations: \(issues.count)", systemImage: "exclamationmark.triangle.fill")
+            Label("Library items needing attention: \(issues.count)", systemImage: "exclamationmark.triangle.fill")
                 .foregroundColor(.orange)
             ForEach(Array(issues.prefix(3))) { issue in
                 VStack(alignment: .leading, spacing: 2) {

@@ -27,7 +27,7 @@ final class HvfCloneSourceAdmissionTests: XCTestCase {
         let registration = libraryRoot.appendingPathComponent("source/vm.json")
         let saved = try Data(contentsOf: registration)
         XCTAssertNil(library.requestWindowsClone(source))
-        XCTAssertTrue(library.cloneError?.contains("import") == true)
+        XCTAssertTrue(library.cloneError?.contains("Import that disk as a new VM") == true)
         library.cloneError = nil
         library.cloneWindowsHVF(source, name: "Copy", operation: { _, _, _ in
             XCTFail("Refused source must not reach copy or key custody")
@@ -35,7 +35,7 @@ final class HvfCloneSourceAdmissionTests: XCTestCase {
         })
         XCTAssertEqual(queue.count, 0)
         XCTAssertTrue(library.cloningSlugs.isEmpty)
-        XCTAssertTrue(library.cloneError?.contains("import") == true)
+        XCTAssertTrue(library.cloneError?.contains("Import that disk as a new VM") == true)
         XCTAssertEqual(backend.calls, calls)
         XCTAssertEqual(try Data(contentsOf: registration), saved)
         XCTAssertEqual(try Data(contentsOf: builtin), Data("bundled disk".utf8))

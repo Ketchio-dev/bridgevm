@@ -75,8 +75,8 @@ final class AppUIHostOverviewStateContractTests: XCTestCase {
         XCTAssertFalse(try AppUIHostAccessibility.hasRow(AppUIDriverOverviewRows.amber, in: content), "stale card label")
         content.setAccessibilityChildren([amber, indigo, element(AppUIDriverOverviewRows.amber)])
         XCTAssertThrowsError(try AppUIHostAccessibility.hasRow(AppUIDriverOverviewRows.amber, in: content), "two lists")
-        XCTAssertEqual(AppUIDriverOverviewRows.amber, "Amber, Stopped, 4 vCPU  ·  4 GiB RAM  ·  HVF")
-        XCTAssertEqual(AppUIDriverOverviewRows.indigo, "Indigo, Stopped, 4 vCPU  ·  8 GiB RAM  ·  HVF")
+        XCTAssertEqual(AppUIDriverOverviewRows.amber, "Amber, Stopped, 4 vCPU · 4 GiB RAM")
+        XCTAssertEqual(AppUIDriverOverviewRows.indigo, "Indigo, Stopped, 4 vCPU · 8 GiB RAM")
     }
 
     private func values<T>(_ type: T.Type, in value: Any) -> [T] {

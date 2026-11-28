@@ -24,7 +24,7 @@ final class LibraryDashboardRuntimeOwnershipTests: XCTestCase {
             requestStart: { _ in XCTFail("started duplicate"); return .refused("duplicate") },
             attach: { _ in false }, present: { _ in XCTFail("presented") },
             report: { messages.append($0) })
-        XCTAssertEqual(messages, ["Couldn’t prepare the VM session.",
+        XCTAssertEqual(messages, ["Couldn’t open this VM. Choose Refresh, then try again.",
                                   "Couldn’t open the display for the running VM."])
     }
 
