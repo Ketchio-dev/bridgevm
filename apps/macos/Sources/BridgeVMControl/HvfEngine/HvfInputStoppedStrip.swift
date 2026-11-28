@@ -1,13 +1,15 @@
 import SwiftUI
 
-/// Over the display while keyboard and mouse refuse input: a key or click Windows never confirmed
-/// (a receipt deadline, a failed send or a rejected request) stops both routes, so they cannot repeat or
-/// reorder it, until the agent restarts or Windows restarts. Keys only beeped and clicks did nothing.
+/// Over the display while keyboard and mouse are basic: a key or click Windows never confirmed (a receipt deadline,
+/// a failed send, a rejected or partly inserted request) ends the agent's route, which is never asked to repeat it,
+/// and input goes through the VMM's keyboard and mouse until the agent or Windows restarts. Those type characters at
+/// US key positions (xhci_hid_input/setup_input/actions.rs), take other text only through the Windows clipboard, have
+/// no middle button and scroll in whole vertical notches.
 struct HvfInputStoppedStrip: View {
     @ObservedObject var session: HvfEngineSession
     @State private var dismissed = false
 
-    static let text = "Keyboard and mouse stopped because Windows didn’t confirm your input in time. Choose Virtual Machine > Restart to use them again."
+    static let text = "Windows stopped confirming input, so BridgeVM switched to basic keyboard and mouse, which types as a US keyboard; restart Windows to get full input back."
 
     var body: some View {
         if session.inputStopped, !dismissed {

@@ -46,6 +46,9 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- When Windows stops confirming keyboard and mouse input, BridgeVM now switches
+  to its basic keyboard and mouse (US key layout) instead of refusing every key
+  and click. Restarting Windows brings full input back.
 - The Insert key of a PC keyboard works in Windows, and Num Lock and F14-F19
   no longer type a junk character.
 - Windows' text looks sharp on a Retina screen when Retina resolution is

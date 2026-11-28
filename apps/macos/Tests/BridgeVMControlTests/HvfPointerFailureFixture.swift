@@ -59,6 +59,15 @@ struct HvfPointerFailureFixture {
         }
     }
 
+    /// A request Windows never confirmed: the ordered route stays failed and input takes input.ctl (basic keyboard and
+    /// mouse) until an agent restart or a guest reset.
+    mutating func assertBasicInput() {
+        XCTAssertEqual(router.failure, .requestFailed)
+        XCTAssertEqual(router.state, .failed)
+        XCTAssertEqual(router.route(.text("basic"), binding: binding, now: now), .legacy)
+        XCTAssertTrue(router.allowLegacyWrite("KEY enter", binding: binding, now: now))
+    }
+
     mutating func assertFailedClosed() {
         XCTAssertTrue(router.failed)
         XCTAssertEqual(router.state, .failed)
