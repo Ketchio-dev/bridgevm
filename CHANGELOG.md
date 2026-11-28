@@ -99,6 +99,10 @@ All notable changes to BridgeVM are documented in this file.
   finish first and quits when it is done, as it already did while VM files were
   being prepared. Before, BridgeVM quit at once: a move cut short left the VM
   hidden from the library at the next launch.
+- The Duplicate sheet now says that the duplicate starts with a new TPM, so
+  on its first start you sign in to Windows with your password (your PIN won't
+  work there) and, if BitLocker or device encryption is on, need the recovery
+  key. Before, it only said the duplicate gets its own TPM.
 - A VM whose disk and firmware settings files were removed outside BridgeVM
   (in Finder, say) can now be deleted. Every try said its library entry could
   not be removed from disk. BridgeVM still keeps the VM's folder when it holds a
