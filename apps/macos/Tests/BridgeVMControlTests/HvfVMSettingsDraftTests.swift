@@ -146,6 +146,25 @@ final class HvfVMSettingsDraftTests: XCTestCase {
         XCTAssertEqual(try NativeLibraryReader.readConfig(rootURL: f.root, id: saved.slug).name, "Work PC")
     }
 
+    /// ⌘Q with Settings open: the typed name and port forwards were dropped (they save on Return, Done,
+    /// or a focus change, and the sheet's onDisappear doesn't run at quit).
+    func testQuitSavesWhatOpenSettingsSheetsHold() throws {
+        let f = try HvfRuntimeSessionStoreFixture()
+        defer { f.clean() }
+        let saved = f.config(); f.save(saved)
+        let library = f.library(probe: HvfClipboardSyncProbe())
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+        let sheet = HvfVMSettingsDraft(session: session)
+        sheet.didAppear()
+        sheet.name = "Work PC"
+        sheet.forwards = "8080:80"
+        HvfVMSettingsDraft.saveOpenSheets()
+        let file = try NativeLibraryReader.readConfig(rootURL: f.root, id: saved.slug)
+        XCTAssertEqual(file.name, "Work PC")
+        XCTAssertEqual(file.portForwards, "8080:80")
+        sheet.didDisappear()
+    }
+
     /// Turning sharing on only reveals the fields. Before: it saved at once with an empty Mac folder,
     /// which showed a warning before the user could type anything.
     func testTurningSharingOnWithoutAFolderWaitsForDone() throws {
