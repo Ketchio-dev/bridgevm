@@ -48,6 +48,7 @@ struct LibraryDashboardRuntimeControls: View {
             if let unsaved = session.hostSettingsSaveMessage {
                 Label(unsaved, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
             }
+            HvfSharedMemoryNoticeView(session: session)
             HvfAgentSilenceNoticeView(notice: session.agentSilenceNotice)
             HvfGuestToolsAction(session: session)
             HvfShareRootNoticeView(notice: session.shareRootNotice)
