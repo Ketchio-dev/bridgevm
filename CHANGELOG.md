@@ -54,6 +54,9 @@ All notable changes to BridgeVM are documented in this file.
   turned off or a port Windows Defender Firewall blocks, BridgeVM now says
   which Windows port and what to check. Before, the Mac app's connection
   just closed with no explanation.
+- A new VM whose Guest Tools setup failed at the first Windows sign-in now
+  offers Install Guest Tools after 10 minutes. Before, it said "Waiting for
+  Windows to connect" on every start, with nothing to do.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.
