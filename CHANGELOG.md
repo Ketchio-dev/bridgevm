@@ -46,6 +46,9 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- When Guest Tools that worked before can no longer connect, Install
+  Guest Tools is offered again and attaches the drive at the next start;
+  before, the notice only said to restart Windows.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.
