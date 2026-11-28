@@ -56,6 +56,10 @@ All notable changes to BridgeVM are documented in this file.
   and says how many items were skipped. Before, nothing was copied.
 - BridgeVM no longer freezes for a moment when a drop of a large folder, such
   as thousands of photos, finishes copying to Windows.
+- Restoring a snapshot a second time for a VM on an exFAT drive now says that
+  this drive can't do it and that moving the VM to an APFS drive fixes it.
+  Before, it said only "Try restoring the snapshot again.", which could never
+  work.
 - When VMs running at the same time together use more memory than your Mac can
   spare, each of them now says so in one sentence and suggests stopping one or
   giving the VMs less memory in Settings. Before, macOS just started swapping

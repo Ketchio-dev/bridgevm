@@ -89,6 +89,10 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
              "This snapshot is damaged, so create a new snapshot."),
             (try helper("unusable snapshot manifest: unknown format_version 9"), .create,
              "The new snapshot failed verification, so create it again."),
+            (try helper("/Volumes/USB/vm/bundle.vmbridge/disks/.bridgevm-pair-v2-0a1b/current is on a volume of type exfat "
+                        + "that cannot atomically exchange directories (renamex_np RENAME_SWAP: Operation not supported "
+                        + "(os error 45)); it was left unchanged"), .restore,
+             "The drive that holds this VM can’t restore a snapshot again, so move the VM to an APFS drive and try again."),
             (try helper("Operation not permitted (os error 1)"), .create,
              "Try creating a snapshot again."),
             (try helper(nil), .restore,
@@ -206,6 +210,46 @@ final class HvfWindowsSnapshotModelTests: XCTestCase {
         XCTAssertTrue(model.failed)
         XCTAssertEqual(HvfWindowsSnapshotStore.list(bundle: bundle), before)
         XCTAssertFalse(session.hasActiveRuntimeWork)
+    }
+
+    /// BRIDGEVM_TEST_EXFAT_VOLUME names a folder on an exFAT drive, which has no renamex_np(RENAME_SWAP). With the
+    /// shipped helper, the first restore there works and the next one cannot; the card says to move the VM.
+    func testASecondRestoreOnAnExFATDriveSaysToMoveTheVM() async throws {
+        guard let volume = ProcessInfo.processInfo.environment["BRIDGEVM_TEST_EXFAT_VOLUME"] else {
+            throw XCTSkip("set BRIDGEVM_TEST_EXFAT_VOLUME to a folder on an exFAT drive")
+        }
+        let root = URL(fileURLWithPath: volume).appendingPathComponent("snapshot-exfat-" + UUID().uuidString)
+        let repo = FileManager.default.temporaryDirectory.appendingPathComponent("snapshot-exfat-repo-" + UUID().uuidString)
+        defer { [root, repo].forEach { try? FileManager.default.removeItem(at: $0) } }
+        let library = root.appendingPathComponent("library")
+        let bundle = library.appendingPathComponent("snapshot-vm/bundle.vmbridge")
+        let disk = bundle.appendingPathComponent("disks/hvf-target.raw")
+        let vars = bundle.appendingPathComponent("metadata/hvf-vars.fd")
+        let helper = repo.appendingPathComponent("target/release/examples/snapshot_pair_cli")
+        for directory in [disk, vars, helper].map({ $0.deletingLastPathComponent() }) {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try Data(repeating: 7, count: 128).write(to: disk)
+        try Data(repeating: 9, count: 16).write(to: vars)
+        try FileManager.default.copyItem(at: HvfMediaImportTestSupport.helper, to: helper)
+        let config = try XCTUnwrap(HvfEngineConfig.libraryVM(VMConfig(
+            id: "snapshot-vm", name: "Snapshot VM", displayName: "Snapshot VM", backendKind: "hvf-engine",
+            bootMode: "windows-hvf", bundlePath: bundle.path, runnerPath: "", launchSpecPath: "",
+            handoffPath: "", sshKeyPath: "", sshUser: "", leasesPath: "", guestName: "Windows",
+            displayWidth: 1280, displayHeight: 800, installPending: false, memMiB: 6144,
+            cpuCount: 4, experimental3DAllowed: false), rootURL: library))
+        let session = HvfEngineSession(config: config, repoRoot: repo) { _ in false }
+        let model = HvfWindowsSnapshotModel()
+        await model.create { try await session.runSnapshot($0, configuration: config) }?.value
+        XCTAssertEqual(model.status, "Snapshot created", session.events.last?.displayText ?? "")
+        let snapshot = try XCTUnwrap(HvfWindowsSnapshotStore.list(bundle: bundle).first)
+        let restore: HvfWindowsSnapshotModel.Run = { try await session.runSnapshot($0, configuration: config, target: snapshot.url) }
+        for expected in ["Snapshot restored",
+                         "The drive that holds this VM can’t restore a snapshot again, so move the VM to an APFS drive and try again."] {
+            let confirmation = try XCTUnwrap(model.confirmation(for: .restore, snapshotDate: snapshot.date, label: snapshot.label, run: restore))
+            await model.confirm(confirmation)?.value
+            XCTAssertEqual(model.status, expected, session.events.last?.displayText ?? "")
+        }
     }
 
     private func assertRefused(_ session: HvfEngineSession, _ configuration: HvfEngineConfig,
