@@ -85,7 +85,20 @@ final class HvfVMSettingsDraft: ObservableObject {
         return nameOK && shareOK && forwardsOK
     }
 
-    func didAppear() { session.openSettingsSheets.insert(ObjectIdentifier(self)) }
+    /// The Settings sheets open now, in any window.
+    private static let open = NSHashTable<HvfVMSettingsDraft>.weakObjects()
+
+    func didAppear() {
+        session.openSettingsSheets.insert(ObjectIdentifier(self))
+        Self.open.add(self)
+    }
+
+    /// At Quit: the edits typed in open sheets are saved as Done would save them. A field saved only on
+    /// Return or when it lost focus (the name, a folder, the port forwards) was dropped, and the sheet's
+    /// onDisappear does not run when the app quits.
+    static func saveOpenSheets() {
+        for draft in open.allObjects { _ = draft.finish() }
+    }
 
     /// The sheet can also close without Done (another VM gets selected, say). Its edits are still
     /// saved, and what could not be saved is shown in the library window.
@@ -95,5 +108,6 @@ final class HvfVMSettingsDraft: ObservableObject {
             library.operationError = messages.compactMap { $0 }.joined(separator: "\n")
         }
         session.openSettingsSheets.remove(ObjectIdentifier(self))
+        Self.open.remove(self)
     }
 }

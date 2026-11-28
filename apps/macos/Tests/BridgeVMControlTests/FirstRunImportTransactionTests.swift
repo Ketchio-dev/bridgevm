@@ -119,6 +119,30 @@ final class FirstRunImportTransactionTests: XCTestCase {
         try fixture.assertSources()
     }
 
+    /// Too little room on the library's drive was found only when the copy filled it to the last byte
+    /// (pausing VMs running from it), after as long as the copy took.
+    func testTooLittleFreeSpaceIsSaidBeforeCopying() throws {
+        let fixture = try FirstRunImportTransactionFixture()
+        defer { fixture.remove() }
+        let (image, _) = HvfQCOW2TestImage.make()
+        try image.write(to: fixture.disk)
+        let none: (URL) -> Int64? = { _ in 0 }
+        XCTAssertTrue(HvfImportSpace.tooLittle(disk: fixture.disk, into: fixture.root, available: none),
+                      "a converted disk needs room, even on its own drive")
+        XCTAssertFalse(HvfImportSpace.tooLittle(disk: fixture.disk, into: fixture.root, available: { _ in 1 << 40 }))
+        XCTAssertThrowsError(try HvfMediaImport.copy(disk: fixture.disk.path, vars: "",
+            toDisk: fixture.root.appendingPathComponent("copy/disk.raw"),
+            toVars: fixture.root.appendingPathComponent("copy/vars.fd"),
+            helper: HvfMediaImportTestSupport.helper, available: none)) { error in
+            XCTAssertEqual(WindowsFileFailureFeedback.importRemedy(for: error),
+                "There isn’t enough free space to copy the disk. Free up space on the drive that holds your VM library, then import again.")
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("copy").path))
+        try Data(repeating: 7, count: 4096).write(to: fixture.disk)
+        XCTAssertFalse(HvfImportSpace.tooLittle(disk: fixture.disk, into: fixture.root, available: none),
+                       "a RAW disk on its own drive is cloned and needs no room")
+    }
+
     func testCommittedImportPersistsIndependentPairAndConfig() throws {
         let fixture = try FirstRunImportTransactionFixture()
         defer { fixture.remove() }

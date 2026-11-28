@@ -70,12 +70,27 @@ All notable changes to BridgeVM are documented in this file.
   the Mac is out of space.
 - A print job no longer prints twice when Windows restarts right after
   printing.
+- Importing a disk onto a drive without enough free space now says so
+  before copying, instead of filling the drive and failing at the end.
 - Importing a disk that another app, such as another VM app, still has
   open now asks you to shut that VM down first, instead of copying a
   disk that is still being written.
 - When Guest Tools that worked before can no longer connect, Install
   Guest Tools is offered again and attaches the drive at the next start;
   before, the notice only said to restart Windows.
+- Quitting BridgeVM with a Settings sheet open now saves what was typed
+  there, such as a new VM name or port forwards, instead of dropping it.
+- A VM that alone uses more memory than this Mac can spare, such as one
+  made on a Mac with more memory, now says so, as two VMs together
+  already did.
+- Print jobs from Windows waiting on the Mac are now limited to 32, so a
+  Windows program can no longer fill the Mac's disk with them.
+- Opening files with BridgeVM while it is closed now gives them to the
+  VM that starts with BridgeVM, instead of refusing them before the
+  library has loaded.
+- When Windows has no driver for the new display adapter, for example
+  after restoring an older snapshot, the notice now offers Install
+  instead of pointing at Device Manager.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.

@@ -329,6 +329,27 @@ fn guest_announcements_are_bounded_and_each_refusal_is_one_line() {
     assert_eq!(rig.guest.deleted.iter().filter(|path| **path == guest_path(99)).count(), 1);
 }
 
+/// Jobs already on the Mac count too: a guest program writing PDFs into the print folder had no bound.
+#[test]
+fn jobs_waiting_on_the_mac_for_their_print_panels_bound_new_ones() {
+    let mut rig = Rig::new("published", true);
+    std::fs::create_dir_all(&rig.dir).unwrap();
+    for n in 0..MAX_PUBLISHED_PRINT_JOBS {
+        std::fs::write(rig.dir.join(format!("1762880000000-{n}.pdf")), b"%PDF-").unwrap();
+    }
+    rig.job(&guest_path(1), pdf(500, 1));
+    assert_eq!(take_print_lines(), ["BVPRINT refused reason=too-many bytes=500"]);
+    rig.settle();
+    assert_eq!(rig.guest.deleted.iter().filter(|path| **path == guest_path(1)).count(), 1);
+    // The panels took one: the next job comes over.
+    std::fs::remove_file(rig.dir.join("1762880000000-0.pdf")).unwrap();
+    rig.job(&guest_path(2), pdf(500, 2));
+    rig.settle();
+    let lines = take_print_lines();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(lines[0].starts_with("BVPRINT job "), "{lines:?}");
+}
+
 #[test]
 fn a_partial_or_changed_job_is_never_published_and_ends_in_one_line() {
     type Spoil = fn(&mut Guest);

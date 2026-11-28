@@ -71,7 +71,9 @@ struct LibraryDashboardDetail: View {
             .frame(maxWidth: .infinity, alignment: .top)
         }
         .background(LibraryAppearance.canvas)
-        .navigationTitle(config.name)
+        // The VM window has the VM's name: two windows of that name in the Window menu and Mission Control.
+        .navigationTitle("Library")
+        .navigationSubtitle(config.name)
     }
 
     private var hero: some View {

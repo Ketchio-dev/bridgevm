@@ -24,6 +24,11 @@ final class HvfDisplayDriverNoticeTests: XCTestCase {
         XCTAssertNil(session.displayDriverNotice)
         report("virtio=none")
         XCTAssertEqual(session.displayDriverNotice, .unbound, "Installed flag plus virtio=none must explain the unbound driver")
+        // As after restoring a snapshot from before the driver: only Device Manager was named.
+        XCTAssertTrue(HvfDisplayDriverNotice.unbound.offersInstall)
+        XCTAssertFalse(HvfDisplayDriverNotice.restart.offersInstall)
+        XCTAssertEqual(HvfDisplayDriverNotice.unbound.text,
+            "Windows has no driver for the new display adapter, so the desktop doesn’t resize with this window. Choose Install to install the driver again.")
         report("")
         report("virtio=future")
         XCTAssertEqual(session.displayDriverNotice, .unbound, "Absent or unknown fields must not clear the notice")

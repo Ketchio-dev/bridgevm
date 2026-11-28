@@ -22,6 +22,7 @@ final class ControlAppDelegate: NSObject, NSApplicationDelegate {
     }
     /// Cmd+Q, the Dock, a Mac logout/restart/shutdown and the last window all ask here first.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        HvfVMSettingsDraft.saveOpenSheets()
         ControlDisplayClose.quitting = true
         let result = termination.shouldTerminate(reason: .current())
         if result == .terminateCancel { ControlDisplayClose.quitting = false }
@@ -44,6 +45,11 @@ final class ControlAppDelegate: NSObject, NSApplicationDelegate {
     /// Finder's Open With > BridgeVM and files dropped on the Dock icon (CFBundleDocumentTypes,
     /// rank Alternate): copied to the running Windows and opened there (HvfOpenFiles).
     func application(_ application: NSApplication, open urls: [URL]) {
+        HvfOpenFilesAtLaunch.deliver = { [weak self] in self?.openFiles($0) }
+        if HvfOpenFilesAtLaunch.hold(urls) { return }
+        openFiles(urls)
+    }
+    private func openFiles(_ urls: [URL]) {
         HvfOpenFiles.open(urls, sessions: NativeRuntimeAppOwner.sessions,
             frontToBack: HvfDisplayWindowController.sessionsFrontToBack(),
             present: { session in
