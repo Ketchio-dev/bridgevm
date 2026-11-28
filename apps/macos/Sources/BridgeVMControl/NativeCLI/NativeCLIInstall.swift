@@ -46,24 +46,25 @@ struct NativeCLIInstallResult: Encodable {
     let unavailableReason: String?
     let complete: Bool
 
+    /// Text names the result in plain words; operation IDs and the scope stay in --json.
     var text: String {
-        var lines = ["Native Windows install: \(vmID)", "Command: \(command)",
-                     "Observation scope: \(scope)", "Control exchange: \(complete ? "complete" : "unavailable")"]
-        if let requestedOperationID { lines.append("Requested operation: \(requestedOperationID)") }
-        if let disposition { lines.append("Disposition: \(disposition.rawValue)") }
+        var lines = ["Windows installation: \(vmID)"]
+        switch disposition {
+        case .accepted?: lines.append("Installation started.")
+        case .existing?: lines.append("An installation is already running.")
+        case .cancelAccepted?: lines.append("Cancel requested.")
+        case .status?, .refused?, nil: break
+        }
         if let observation {
-            lines.append("Install operation: \(observation.operationID)")
-            lines.append("Install phase: \(observation.phase.rawValue)")
-            lines.append("Cancellation available: \(observation.canCancel ? "yes" : "no")")
-            if let failure = observation.failure { lines.append("Install failure: \(failure)") }
+            lines.append("Status: \(observation.phase.cliStatus)")
+            if let failure = observation.failure { lines.append(failure) }
             if !observation.logTail.isEmpty { lines.append("Recent log:\n" + observation.logTail.joined(separator: "\n")) }
             lines.append(observation.cliNextAction(vmID: vmID))
+            if observation.canCancel { lines.append("To cancel, run `bridgevm app install-cancel \(vmID)`.") }
         }
         if let unavailableReason {
-            lines.append("Install control unavailable: "
-                + NativeCLIReason.sentence(unavailableReason, vmID: vmID, action: "installing"))
+            lines.append(NativeCLIReason.sentence(unavailableReason, vmID: vmID, action: "installing"))
         }
-        lines.append("This reports app-owned host installation state; it does not prove guest boot or display readiness.")
         return lines.joined(separator: "\n") + "\n" }
 }
 
@@ -71,14 +72,32 @@ extension NativeInstallObservation {
     func cliNextAction(vmID: String) -> String {
         switch phase {
         case .done:
-            return "Next action: check readiness for exact VM ID \(vmID), then start only if ready."
+            return "Next: run `bridgevm app readiness \(vmID)`, and start the VM only if it’s ready."
         case .failed where failure == HvfWindowsInstallPlan.missingDriverFiles:
-            return "Next action: retrying can’t help: " + NativeCLICreateWindowsGuidance.setup
+            return "Trying again won’t help. " + NativeCLICreateWindowsGuidance.setup
         case .failed, .cancelled:
-            return "Next action: explicitly retry installation for exact VM ID \(vmID)."
+            return "To try again, run `bridgevm app install \(vmID)`."
         case .preparingPlan, .validating, .preparingSource, .installing, .finalizing,
              .recovering, .cancelling:
-            return "Next action: inspect installation status for exact VM ID \(vmID)."
+            return "To follow progress, run `bridgevm app install-status \(vmID)`."
+        }
+    }
+}
+
+extension NativeInstallObservation.Phase {
+    /// The app's installation step names, with the CLI's “canceled” spelling.
+    var cliStatus: String {
+        switch self {
+        case .preparingPlan: return "Preparing the installation"
+        case .validating: return "Checking installation files"
+        case .preparingSource: return "Preparing installation media"
+        case .installing: return "Installing Windows"
+        case .finalizing: return "Saving the VM"
+        case .recovering: return "Recovering the installation"
+        case .cancelling: return "Canceling"
+        case .done: return "Complete"
+        case .failed: return "Failed"
+        case .cancelled: return "Canceled"
         }
     }
 }

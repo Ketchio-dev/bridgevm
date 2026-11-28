@@ -95,6 +95,11 @@ All notable changes to BridgeVM are documented in this file.
   if you closed it. Before, it opened a second library window. The Window menu
   also has a Library item that brings the library back while a VM window is
   open.
+- `bridgevm app start`, `stop`, `status`, `install`, `readiness` and `list` now
+  say in plain sentences what happened and what to do, instead of printing
+  internal codes, run tokens, process IDs and engineering notes. A failure code
+  the command doesn't know yet still prints a sentence. `--json` output and exit
+  codes are unchanged.
 - The Delete dialog no longer tells you to shut the VM down first. BridgeVM
   already refuses to delete a running VM and tells you why.
 - If BridgeVM can't archive a deleted VM's vTPM key, the warning now says to

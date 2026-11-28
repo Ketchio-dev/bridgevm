@@ -75,7 +75,7 @@ final class NativeCLIStartTests: XCTestCase {
             XCTAssertEqual(result.failure, text)
             let output = NativeCLIRuntimeStart(vmID: "vm", libraryPath: "/l", appInstanceID: nil, operationID: "op",
                 started: false, observation: result.response?.observation, unavailableReason: result.failure)
-            XCTAssertTrue(output.text.contains("Start result unavailable: " + text))
+            XCTAssertEqual(output.text, "Couldn’t confirm that vm started.\n" + text + "\n")
         }
     }
 
@@ -84,10 +84,49 @@ final class NativeCLIStartTests: XCTestCase {
         let output = NativeCLIRuntimeStart(vmID: "vm", libraryPath: "/l", appInstanceID: nil, operationID: "op",
             started: false, observation: nil, unavailableReason: "ownerUnavailable")
         XCTAssertTrue(output.text.contains(
-            "Start result unavailable: BridgeVM isn’t open for this library. Open BridgeVM, then try again."), output.text)
+            "\nBridgeVM isn’t open for this library. Open BridgeVM, then try again."), output.text)
         XCTAssertTrue(String(decoding: try JSONEncoder().encode(output), as: UTF8.self).contains("ownerUnavailable"))
         XCTAssertEqual(NativeCLIReason.sentence("deadlineExceeded", vmID: "vm", action: "starting"),
                        "BridgeVM is still starting the VM. Run `bridgevm app status vm` to follow it.")
+    }
+
+    /// The transport, the app and the waiter report codes; text prints a sentence for every one,
+    /// including a code added later. App sentences pass through unchanged.
+    func testEveryFailureCodePrintsASentence() {
+        for code in ["transportFailure", "invalidEndpoint", "peerRejected", "invalidMessage", "ownerChanged",
+                     "ambiguousTarget", "startupFailed", "ledgerFull", "refused", "aCodeAddedLater"] {
+            let text = NativeCLIReason.sentence(code, vmID: "vm", action: "starting")
+            XCTAssertFalse(text.contains(code), text)
+            XCTAssertTrue(text.hasPrefix("BridgeVM ") && text.hasSuffix("."), text)
+        }
+        XCTAssertEqual(NativeCLIReason.sentence("transportFailure", vmID: "vm", action: "starting"),
+                       "BridgeVM didn’t answer correctly. Quit and reopen BridgeVM, then try again.")
+        XCTAssertEqual(NativeCLIReason.sentence("aCodeAddedLater", vmID: "vm", action: "starting"),
+                       "BridgeVM couldn’t finish this request. Check the VM in BridgeVM, then try again.")
+        XCTAssertEqual(NativeCLIReason.sentence("This VM is already running.", vmID: "vm", action: "starting"),
+                       "This VM is already running.")
+    }
+
+    /// Text names the result in plain words; the run token, PIDs, operation and scope stay in JSON.
+    func testStartTextIsPlainAndJSONKeepsTheRunIdentity() throws {
+        let request = Fixture.request()
+        let started = NativeCLIRuntimeStart(vmID: "vm", libraryPath: "/l", appInstanceID: Fixture.app,
+            operationID: request.operationID, started: true, observation: Self.started(request), unavailableReason: nil)
+        XCTAssertEqual(started.text, "Started vm. Windows may still be starting up.\n")
+        let json = String(decoding: try JSONEncoder().encode(started), as: UTF8.self)
+        for value in [Fixture.target.token, request.operationID, NativeRuntimeStartCodec.scope, "\"started\"", "456"] {
+            XCTAssertTrue(json.contains(value), value)
+        }
+        let pending = NativeCLIRuntimeStart(vmID: "vm", libraryPath: "/l", appInstanceID: Fixture.app,
+            operationID: request.operationID, started: false,
+            observation: Fixture.observation(request, phase: .awaitingStartup, target: Fixture.target),
+            unavailableReason: "deadlineExceeded")
+        XCTAssertEqual(pending.text, """
+        Couldn’t confirm that vm started.
+        Status: Starting
+        BridgeVM is still starting the VM. Run `bridgevm app status vm` to follow it.
+
+        """)
     }
 
     func testPendingLateFailureAndOwnerLossCannotSucceed() {

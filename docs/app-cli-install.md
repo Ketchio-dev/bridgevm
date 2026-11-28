@@ -40,7 +40,7 @@ installation media, the existing recovery rules decide what must be preserved;
 the CLI cannot force-delete media or journals.
 
 The initial `install` command returns after the running app accepts or finds the operation;
-`Control exchange: complete` never means Windows installation finished. Repeating the same
+`Installation started.` never means Windows installation finished. Repeating the same
 internal operation ID is idempotent, and concurrent clients observe the retained operation.
 A later explicit invocation creates a retry only after the previous operation is terminal
 and the VM is still pending installation.

@@ -56,18 +56,31 @@ struct NativeCLIRuntimeStop: Encodable {
     }
 }
 
+/// Text names the result in plain words; run tokens, PIDs, operation IDs and the scope stay in --json.
 extension NativeCLIRuntimeStop {
+    static let unconfirmed = "Check the VM in BridgeVM, and choose Force Stop if it’s still running."
+
     var text: String {
-        var lines = ["Native VM stop: \(vmID)", "Observation scope: \(scope)",
-                     "Owned runtime cleanup: \(complete ? "confirmed" : "not confirmed")"]
-        if let operationID { lines.append("Operation: \(operationID)") }
-        if let target { lines.append("Owned run: \(target.runToken), PID \(target.processID)") }
-        if let observation { lines.append("Stop phase: \(observation.phase.rawValue)") }
-        if let unavailableReason {
-            lines.append("Stop result unavailable: "
-                + NativeCLIReason.sentence(unavailableReason, vmID: vmID, action: "stopping"))
+        var lines = [complete ? "Stopped \(vmID)." : "Couldn’t confirm that \(vmID) stopped."]
+        if !complete, let status = observation?.phase.cliStatus { lines.append("Status: \(status)") }
+        // Every stop failure the app reports (any code) ends in this phase.
+        if observation?.phase == .unconfirmed {
+            lines.append(Self.unconfirmed)
+        } else if let unavailableReason {
+            lines.append(NativeCLIReason.sentence(unavailableReason, vmID: vmID, action: "stopping"))
         }
-        lines.append("Completion requires supervisor cleanup and retained runner exit; normal guest shutdown is unproven.")
         return lines.joined(separator: "\n") + "\n"
+    }
+}
+
+extension NativeRuntimeStopObservation.Phase {
+    /// Where an unfinished stop got to; a finished one is named by the result line.
+    var cliStatus: String? {
+        switch self {
+        case .guestGrace: return "Waiting for Windows to shut down"
+        case .cancelling: return "Turning off the VM"
+        case .awaitingRunnerExit: return "Waiting for the VM to close"
+        case .completed, .unconfirmed: return nil
+        }
     }
 }
