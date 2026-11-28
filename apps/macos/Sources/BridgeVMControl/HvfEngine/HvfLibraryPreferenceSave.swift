@@ -20,7 +20,7 @@ extension HvfEngineSession {
                                change: (inout VMConfig) -> Void) -> String? {
         guard let context = config.libraryContext else { return nil }
         let stopFirst = "Shut down Windows before changing this setting."
-        guard libraryPreferencesEditable else { return stopFirst }
+        guard libraryPreferencesEditable else { return settingsWait(stopFirst) }
         var current = context.config
         current.id = context.config.slug
         var updated = current
@@ -30,7 +30,7 @@ extension HvfEngineSession {
             return "The VM library is unavailable. Return to the library and try again."
         }
         if let refusal = workAdmissionGate.check(workAdmission, reportRefusal: false) { return refusal }
-        guard libraryPreferencesEditable else { return stopFirst }
+        guard libraryPreferencesEditable else { return settingsWait(stopFirst) }
         // As for clone and move, a VM process this app is not attached to still owns the disk.
         guard !diskProcessIsRunning(context) else {
             return "Another process is using this VM’s disk. Shut down the VM and try again."

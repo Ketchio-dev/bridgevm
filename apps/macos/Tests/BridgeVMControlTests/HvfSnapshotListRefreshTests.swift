@@ -16,13 +16,17 @@ final class HvfSnapshotListRefreshTests: XCTestCase {
 
         XCTAssertEqual(card.statusText, "Create a snapshot to save the Windows disk and boot settings.")
         session.connectionState = .booting
-        XCTAssertEqual(card.statusText, "Snapshots are available when Windows is shut down and other VM operations have finished.")
+        XCTAssertEqual(card.statusText, "To create or restore a snapshot, shut down Windows and wait for other VM operations to finish.")
         session.connectionState = .stopped
 
         let work = try XCTUnwrap(session.snapshotModel.create { _ in nil })
         XCTAssertEqual(card.statusText, "Creating snapshot…")
         await work.value
         XCTAssertEqual(card.statusText, "Snapshot created")
+        session.connectionState = .booting
+        XCTAssertEqual(card.statusText, "To create or restore a snapshot, shut down Windows and wait for other VM operations to finish.",
+                       "a start ends the last result")
+        session.connectionState = .stopped
         await session.snapshotModel.create { _ in throw HvfWindowsSnapshotCommand.notStopped() }?.value
         XCTAssertEqual(card.statusText, "Shut down the VM and wait for other operations to finish before creating a snapshot.")
     }

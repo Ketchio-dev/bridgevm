@@ -46,6 +46,11 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- A snapshot can now be deleted while Windows is running, to free space
+  without shutting it down. While a snapshot is being made or restored,
+  Settings now says to wait for it instead of asking you to shut down a
+  Windows that is already off. The snapshot list no longer keeps showing the
+  last result, such as "Snapshot restored", after Windows starts again.
 - When VMs running at the same time together use more memory than your Mac can
   spare, each of them now says so in one sentence and suggests stopping one or
   giving the VMs less memory in Settings. Before, macOS just started swapping

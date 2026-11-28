@@ -10,7 +10,7 @@ private enum LibraryBusy {
     static let fileAction = "This VM is being deleted, duplicated or moved. Try again when the operation finishes."
     static let install = "Windows is being installed. Finish or cancel installation before trying again."
     static let runtime = "The VM is running, starting or shutting down. Wait until it is fully stopped, then try again."
-    static let snapshot = "A snapshot of this VM is being created, restored or deleted. Try again when it finishes."
+    static let snapshot = HvfEngineSession.snapshotBusy
     static let diskGrow = "This VM’s disk is being expanded. Try again when that finishes."
     static let securityChip = "This VM’s security chip is being saved, restored or reset. Try again when that finishes."
     /// A running VM keeps the control it was observed with, so its new registration waits.

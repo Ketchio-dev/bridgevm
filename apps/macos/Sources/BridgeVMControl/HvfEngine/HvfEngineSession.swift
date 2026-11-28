@@ -10,7 +10,13 @@ import AppKit
 @MainActor
 final class HvfEngineSession: ObservableObject {
     @Published var config: HvfEngineConfig { didSet { runtimeConfigurationChanged() } }
-    @Published var connectionState: HvfConnectionState = .stopped { didSet { updateSleepPrevention() } }
+    @Published var connectionState: HvfConnectionState = .stopped {
+        didSet {
+            updateSleepPrevention()
+            // The snapshot card's last result is about the VM as it was before this start.
+            if oldValue == .stopped, connectionState != .stopped { snapshotModel.clearResult() }
+        }
+    }
     let heartbeat = HvfRuntimeHeartbeat() // publishes the per-poll heartbeat age apart from the session
     let shareRootNotice = HvfShareRootNotice()
     let diskSyncNotice = HvfDiskSyncNotice()
@@ -42,6 +48,7 @@ final class HvfEngineSession: ObservableObject {
     var guiStartCleanupOnly = false
     var guiStartWorker: HvfGUIStartExecution.Worker = HvfGUIStartWorker.run
     var mutationReservation: HvfRuntimeMutationReservation?
+    var snapshotDeletions = 0 // HvfWindowsSnapshotExecution.deleteSnapshot, which needs no reservation
     var ownedStartNow: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     let workAdmissionGate = HvfRuntimeWorkAdmissionGate()
     /// Keyboard and mouse refuse input until an agent restart or guest reset (HvfSessionInputDriver);
