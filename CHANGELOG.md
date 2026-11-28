@@ -61,6 +61,10 @@ All notable changes to BridgeVM are documented in this file.
   window switches the Mac to a Roman layout, as a Mac password field does, and
   switches back afterwards. Before, the keys became Hangul syllables that
   Windows refused with a beep, or that went through the Windows clipboard.
+- Switching the Mac's input source with ⌘Space (for example between Korean and
+  English) in a VM window no longer opens the Windows Start menu, and ⌃⌘Space
+  now opens the Mac's Emoji & Symbols picker instead of sending Ctrl+Space to
+  Windows.
 - The installer no longer replaces BridgeVM while BridgeVM or one of its VMs is
   running. It stops before downloading and asks you to shut down your VMs and
   quit BridgeVM first. Before, the old app kept running on top of the new

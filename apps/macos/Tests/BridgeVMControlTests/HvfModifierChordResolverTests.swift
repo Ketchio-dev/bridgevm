@@ -132,7 +132,8 @@ final class HvfModifierChordResolverTests: XCTestCase {
         for mapping in [mac, windows] {
             for (keyCode, characters, modifiers) in [(UInt16(0x0c), "q", EventModifiers.command), (0x0c, "ㅂ", .command), (0x04, "h", .command),
                                                      (0x2e, "m", .command), (0x2b, ",", .command), (0x03, "f", [.command, .control]),
-                                                     (0x30, "\t", .command), (0x30, "\t", [.command, .shift])] {
+                                                     (0x30, "\t", .command), (0x30, "\t", [.command, .shift]),
+                                                     (0x31, " ", [.command, .control])] { // ⌃⌘Space: Emoji & Symbols
                 XCTAssertEqual(chord(keyCode, characters, modifiers, mapping), .ignored, "\(characters) \(modifiers)")
             }
             // Only those exact chords: their other variants reach Windows.
@@ -140,6 +141,7 @@ final class HvfModifierChordResolverTests: XCTestCase {
             XCTAssertNotEqual(chord(0x03, "f", .command, mapping), .ignored)
             XCTAssertNotEqual(chord(0x04, "h", [.command, .option], mapping), .ignored)
             XCTAssertNotEqual(chord(0x0c, "q", .control, mapping), .ignored)
+            XCTAssertNotEqual(chord(0x31, " ", .control, mapping), .ignored)
         }
         XCTAssertEqual(chord(0x03, "f", .command, mac), .key("ctrl+f"))
         XCTAssertEqual(chord(0x2b, ",", .control, mac), .key("ctrl+comma"))

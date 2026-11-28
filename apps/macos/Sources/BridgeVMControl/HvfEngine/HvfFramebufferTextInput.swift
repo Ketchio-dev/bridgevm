@@ -27,6 +27,25 @@ class HvfFramebufferTextInput: NSView, @preconcurrency NSTextInputClient {
     /// The input source in use before the view kept it to Roman layouts, given back afterwards.
     private var inputSourceBeforeRoman: NSTextInputSourceIdentifier?
 
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        observeInputSourceChanges()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        observeInputSourceChanges()
+    }
+
+    /// ⌘Space (or another shortcut) switching the Mac's input source: macOS takes the key, so the view sees
+    /// only Command go down and up, a bare Command tap that would open Start in Windows.
+    private func observeInputSourceChanges() {
+        NotificationCenter.default.addObserver(self, selector: #selector(inputSourceChanged(_:)),
+            name: NSTextInputContext.keyboardSelectionDidChangeNotification, object: nil)
+    }
+
+    @objc private func inputSourceChanged(_ notification: Notification) { cancelModifierTap() }
+
     var guestInputAvailable: Bool { false }
     var guestInputIdentity: HvfTextInputTargetIdentity? { nil }
     /// Whether the guest takes generic chords now (HvfHostKeyMapping.modifierChords).
