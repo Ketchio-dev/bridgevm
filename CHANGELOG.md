@@ -51,6 +51,9 @@ All notable changes to BridgeVM are documented in this file.
   and click. Restarting Windows brings full input back.
 - The app does less work while Windows sits idle, with fewer redraws and file
   checks on each tick. The last Guest Tools response time now shows whole seconds.
+- The shared-folder notice now says when Windows can't open its shared folder
+  (and names it), when a conflict lost a file's Windows version, and that a
+  renamed or moved Mac folder can't be found, instead of "can't verify" it.
 - The Insert key of a PC keyboard works in Windows, and Num Lock and F14-F19
   no longer type a junk character.
 - Windows' text looks sharp on a Retina screen when Retina resolution is

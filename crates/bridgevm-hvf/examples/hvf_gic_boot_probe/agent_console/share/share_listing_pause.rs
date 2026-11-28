@@ -20,11 +20,12 @@ impl ShareState {
     /// A guest listing failed (`ERR LSR`) after files synced: the Windows folder was renamed, deleted
     /// or can't be read. A PUT then made the folder again (the agent creates a file's parents), and
     /// the next listing, without the other files, deleted them on the Mac. The share waits for a
-    /// listing instead.
+    /// listing instead. Or it still fails after the host made the folder, before a first listing
+    /// (share_listing_reply.rs). The line ends with the Windows folder, which the app names.
     pub(in crate::agent_console) fn note_listing_failed(&mut self) {
         if !self.listing_failed {
             self.listing_failed = true;
-            print_pause_line("BVAGENT SHARE paused windows-folder-unreadable".into());
+            print_pause_line(format!("BVAGENT SHARE paused windows-folder-unreadable {}", self.guest_dir));
         }
     }
 

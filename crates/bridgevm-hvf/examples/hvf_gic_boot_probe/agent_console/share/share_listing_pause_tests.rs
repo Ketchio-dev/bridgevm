@@ -155,6 +155,7 @@ fn an_applied_listing_after_a_too_large_one_adopts_the_copies_both_sides_hold() 
 #[test]
 fn a_fresh_guest_without_the_folder_gets_it_and_then_every_mac_file() {
     let mut rig = Rig::new("fresh-guest");
+    let _ = ShareState::take_pause_lines();
     rig.guest.root_missing = true;
     std::fs::write(rig.dir.join("a.txt"), b"alpha").unwrap();
     std::fs::write(rig.dir.join("b.txt"), b"beta").unwrap();
@@ -162,6 +163,24 @@ fn a_fresh_guest_without_the_folder_gets_it_and_then_every_mac_file() {
     assert!(!rig.guest.root_missing, "the guest folder was not created");
     assert_eq!(sorted(&rig.guest.puts), ["a.txt", "b.txt"]);
     rig.assert_settled();
+    assert_eq!(ShareState::take_pause_lines(), [] as [String; 0], "the app said sync paused");
+}
+
+#[test]
+fn a_fresh_guest_that_can_not_list_its_folder_says_so_once_until_a_listing_is_applied() {
+    // A folder Windows denies access to: making it changes nothing, and each poll only added an
+    // ls-error line to run.log while every Mac file waited.
+    let mut rig = Rig::new("fresh-guest-denied");
+    let _ = ShareState::take_pause_lines();
+    rig.guest.ls_error = true;
+    std::fs::write(rig.dir.join("a.txt"), b"alpha").unwrap();
+    rig.run(12);
+    assert!(rig.guest.puts.is_empty(), "{:?}", rig.guest.puts);
+    assert_eq!(ShareState::take_pause_lines(), ["BVAGENT SHARE paused windows-folder-unreadable C:\\share"]);
+    rig.guest.ls_error = false;
+    rig.run(8);
+    assert_eq!(ShareState::take_pause_lines(), ["BVAGENT SHARE resumed"]);
+    assert_eq!(rig.guest.puts, ["a.txt"]);
 }
 
 #[test]
@@ -195,7 +214,7 @@ fn a_windows_folder_that_went_away_holds_the_share_instead_of_emptying_the_mac_f
     rig.run(12);
     assert_eq!(rig.host("b.txt").as_deref(), Some(&b"two"[..]), "the other Mac files stay");
     assert!(rig.guest.root_missing, "nothing made the Windows folder again");
-    assert_eq!(ShareState::take_pause_lines(), ["BVAGENT SHARE paused windows-folder-unreadable"]);
+    assert_eq!(ShareState::take_pause_lines(), ["BVAGENT SHARE paused windows-folder-unreadable C:\\share"]);
     // Renamed back: the share goes on and the Mac edit is sent.
     rig.guest.files = renamed;
     rig.guest.root_missing = false;

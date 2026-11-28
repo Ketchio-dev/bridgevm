@@ -34,6 +34,23 @@ thread_local! {
     pub(super) static CONFLICT_COPY_FAULT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
     /// The errno the final rename fails with, after staging, sync and the mark (tests).
     pub(super) static RENAME_FAULT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+    static NOT_KEPT_LINES: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// A Windows version lost: the newer Mac version goes over it in Windows (on_host_copy_kept). The
+/// app names the file (HvfShareStop.swift): the name may hold spaces, so it ends the line, after
+/// the error, the Mac's own, which never holds the marker.
+fn print_windows_copy_not_kept(error: &io::Error, original: &str) {
+    let line = format!("BVAGENT SHARE conflict windows-copy-not-kept {error} kept-mac={original}");
+    println!("{line}");
+    #[cfg(test)]
+    NOT_KEPT_LINES.with(|lines| lines.borrow_mut().push(line));
+}
+
+/// The lines `print_windows_copy_not_kept` printed on this test thread since the previous call.
+#[cfg(test)]
+fn take_not_kept_lines() -> Vec<String> {
+    NOT_KEPT_LINES.with(|lines| std::mem::take(&mut *lines.borrow_mut()))
 }
 
 /// The Mac file a preferred guest copy is to replace, as the session's first scan saw it: size
@@ -229,21 +246,17 @@ impl Destination {
                     if error.kind() == io::ErrorKind::AlreadyExists { continue; }
                     let preserved = if matches!(error.raw_os_error(), Some(libc::ENOTSUP) | Some(libc::EPERM) | Some(libc::EXDEV)) {
                         match self.copy_conflict(temporary, &conflict, file) {
-                            Ok(()) => true,
                             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
-                            Err(e) => {
-                                println!("BVAGENT SHARE conflict windows-copy-not-kept={} {e}", original);
-                                if recovery { return Err(e); }
-                                false
-                            }
+                            copied => copied,
                         }
                     } else {
-                        println!("BVAGENT SHARE conflict windows-copy-not-kept={} {error}", original);
-                        if recovery { return Err(error); }
-                        false
+                        Err(error)
                     };
-                    if preserved {
-                        println!("BVAGENT SHARE conflict kept-mac={} windows-copy={}", original, conflict.to_string_lossy());
+                    match preserved {
+                        Ok(()) => println!("BVAGENT SHARE conflict kept-mac={} windows-copy={}", original, conflict.to_string_lossy()),
+                        // A recovery's original is unchanged: a write failure (write-refused), retried.
+                        Err(error) if recovery => return Err(error),
+                        Err(error) => print_windows_copy_not_kept(&error, &original),
                     }
                     // Real conflicts remain best effort: never retry over a newer Mac save.
                     // Recovery reaches here only after preservation succeeded.

@@ -35,7 +35,8 @@ extension HvfShareRootNotice {
                     return ("Folder sync paused because the Windows folder has too many files with long names.",
                             "Shorten some file names or move items out of the Windows folder to resume syncing.")
                 case .windowsFolderUnreadable:
-                    return ("Folder sync paused because Windows can’t open its shared folder.",
+                    let folder = paused.folder.map { " (\($0))" } ?? ""
+                    return ("Folder sync paused because Windows can’t open its shared folder\(folder).",
                             "If you renamed, moved or deleted the folder in Windows, put it back. Sync resumes on its own.")
                 }
             }
@@ -43,9 +44,11 @@ extension HvfShareRootNotice {
                 return ("The shared folder “\(missingFolder)” was unavailable when Windows started.",
                         "Reconnect the folder to your Mac. Sharing will resume automatically.")
             }
+            // The folder is gone from its path, renamed, moved or on a disconnected drive, or another
+            // one took its name (share_root.rs); the runtime goes on once the path is that folder again.
             if isBlocked {
-                return ("Some changes are waiting because BridgeVM can’t verify the shared folder.",
-                        "Reconnect the original folder, or shut down the VM and choose another folder.")
+                return ("Some changes are waiting because BridgeVM can’t find the shared folder on your Mac.",
+                        "If you renamed or moved it, put it back and sync resumes on its own. Otherwise, shut down the VM and choose another folder.")
             }
             if let lowSpace {
                 let name = "“\(lowSpace.last)”"
@@ -72,6 +75,11 @@ extension HvfShareRootNotice {
                         "BridgeVM tries again. Close the file if a Windows app has it open, or free up space in Windows.")
             }
             if let aliased { return HvfShareAlias.displayed(aliased) }
+            if let windowsCopyLost {
+                let file = windowsCopyLost.name.map { "“\($0)”" } ?? "a file"
+                return ("BridgeVM couldn’t keep the Windows version of \(file) next to the Mac version, so the Mac version replaces it in Windows.",
+                        "Check your Mac’s free space so BridgeVM can keep both versions next time.")
+            }
             guard let tooLarge else { return nil }
             let shareLimit = HvfEngineConfig.shareMaxKiB * 1024, limit = tooLarge.limit ?? shareLimit
             let text = "Sharing skipped “\(tooLarge.last)” because the per-file limit is \(HvfShareTooLarge.sizeText(limit))."
@@ -113,17 +121,21 @@ enum HvfShareWriteRefused: Equatable {
 
 /// The guest folder's listing is over the runtime's limit (`BVAGENT SHARE paused
 /// too-many-entries limit=<entries>`, or `too-many-bytes limit=<bytes>`), or Windows can't list the
-/// folder after files synced (`paused windows-folder-unreadable`, no limit): without a listing the
-/// runtime cannot tell a newer Windows edit, so it sends, deletes and fetches nothing until
-/// `BVAGENT SHARE resumed` (a listing applied).
+/// folder after files synced, or before any did once the runtime made it (`paused
+/// windows-folder-unreadable <folder>`, no limit): without a listing the runtime cannot tell a newer
+/// Windows edit, so it sends, deletes and fetches nothing until `BVAGENT SHARE resumed` (a listing
+/// applied).
 struct HvfSharePaused: Equatable {
     enum Reason: Equatable { case tooManyEntries, tooManyBytes, windowsFolderUnreadable }
     let reason: Reason
     let limit: Int
+    /// The Windows folder, which ends the unreadable line; an older runtime's line has none.
+    var folder: String? = nil
 
-    init(reason: Reason, limit: Int) {
+    init(reason: Reason, limit: Int, folder: String? = nil) {
         self.reason = reason
         self.limit = limit
+        self.folder = folder
     }
 
     init?(line: String) {
@@ -133,6 +145,8 @@ struct HvfSharePaused: Equatable {
         if words.first == "windows-folder-unreadable" {
             reason = .windowsFolderUnreadable
             limit = 0
+            let folder = line.dropFirst(prefix.count + "windows-folder-unreadable ".count)
+            if !folder.isEmpty, hvfShareShowable(folder) { self.folder = String(folder) }
             return
         }
         // Words after the limit are ignored (a later runtime may add some).
@@ -293,6 +307,28 @@ enum HvfShareAlias {
         }
         return nil
     }
+}
+
+/// The Windows version of a file changed on both sides, which the Mac couldn't keep beside the
+/// newer Mac version (`BVAGENT SHARE conflict windows-copy-not-kept <error> kept-mac=<name>`,
+/// host_destination.rs): the Mac version goes over it in Windows. Not for a recovery copy, which is
+/// retried as a refused write. The error is the Mac's own and never holds the marker; the name,
+/// which may, runs to the end. `name` is nil when it can't be shown as it is.
+struct HvfShareWindowsCopyLost: Equatable {
+    let name: String?
+
+    init?(line: String) {
+        guard line.hasPrefix("BVAGENT SHARE conflict windows-copy-not-kept "),
+              let marker = line.range(of: " kept-mac=") else { return nil }
+        let name = line[marker.upperBound...]
+        self.name = !name.isEmpty && hvfShareShowable(name) ? String(name) : nil
+    }
+}
+
+/// Text from a share line shown as it is: no line break, control or bidi character.
+func hvfShareShowable(_ text: Substring) -> Bool {
+    !text.contains(where: \.isNewline)
+        && !text.unicodeScalars.contains { $0.properties.generalCategory == .control || $0.properties.isBidiControl }
 }
 
 /// The name in `BVAGENT SHARE skip <name> <reason> <ASCII digits>`.
