@@ -199,7 +199,8 @@ final class HvfEngineSession: ObservableObject {
         resumeBeforeStop()
         connectionState = .stopping
         cancelOrderedInputTarget()
-        stopDeadline = Date().addingTimeInterval(180)
+        // Uptime, like the owned path: a Mac asleep during the shutdown must not use up the 180 s.
+        stopDeadline = hostNow().addingTimeInterval(180)
         sendGracefulStopIfReady()
         if timer == nil { startPolling() }
         return .requested(deadline: stopDeadline)
@@ -506,7 +507,7 @@ final class HvfEngineSession: ObservableObject {
         sendDueGuestCaret()
         if ownedController == nil, case .stopping = connectionState {
             sendGracefulStopIfReady()
-            if let stopDeadline, Date() >= stopDeadline {
+            if let stopDeadline, hostNow() >= stopDeadline {
                 append(.unknown("graceful shutdown timed out; terminating the wrapper"))
                 if let process {
                     process.terminate()

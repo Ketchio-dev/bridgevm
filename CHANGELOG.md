@@ -70,6 +70,10 @@ All notable changes to BridgeVM are documented in this file.
   started in the app window. Before, status and cancel answered `targetUnavailable`, and `install`
   failed as busy and then reported that failure while Windows went on installing. The code
   `targetUnavailable` also prints as "BridgeVM isn’t installing this VM." in text output.
+- Stopping a VM that BridgeVM reconnected to after a relaunch no longer ends
+  Windows mid-shutdown when the Mac sleeps during that shutdown. Its 180-second
+  grace counted the time the Mac was asleep, so on wake the VM was ended at
+  once.
 - Quitting BridgeVM while it moves, duplicates or deletes a VM now asks to
   finish first and quits when it is done, as it already did while VM files were
   being prepared. Before, BridgeVM quit at once: a move cut short left the VM
