@@ -18,7 +18,7 @@ import Foundation
 enum HvfDiskGrow {
     static let grownName = "metadata/disk-grown"
     static let bytesPerGiB: UInt64 = 1 << 30
-    /// Free space the largest offered size still leaves on the Mac volume.
+    /// Free space the largest offered size still leaves on the drive that holds the VM.
     static let safetyMarginBytes: UInt64 = 10 << 30
     /// Exit status of `snapshot_pair_cli grow` while a runtime holds the media.
     static let inUseExitStatus: Int32 = 3

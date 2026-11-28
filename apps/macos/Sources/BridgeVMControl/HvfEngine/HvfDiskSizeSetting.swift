@@ -82,7 +82,7 @@ struct HvfDiskSizeSetting: View {
         if let notice = session.diskGrowNotice { return notice }
         if !stopped { return session.settingsWait(HvfDiskGrow.stopFirst) }
         if currentBytes != nil, range == nil {
-            return "To expand the disk, free up more than 10 GiB on the Mac volume."
+            return "To expand the disk, free up more than 10 GiB on the drive that holds this VM."
         }
         return HvfDiskGrow.sparseHelp
     }
@@ -93,9 +93,8 @@ struct HvfDiskSizeSetting: View {
         Task {
             let measured = await Task.detached { () -> (UInt64, UInt64)? in
                 guard let current = try? HvfDiskGrow.currentBytes(plan) else { return nil }
-                let values = try? plan.disk.deletingLastPathComponent()
-                    .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
-                let available = values?.volumeAvailableCapacityForImportantUsage.map { UInt64(max(0, $0)) } ?? 0
+                let available = HvfImportSpace.available(plan.disk.deletingLastPathComponent())
+                    .map { UInt64(max(0, $0)) } ?? 0
                 return (current, available)
             }.value
             guard let (current, available) = measured else { return }
