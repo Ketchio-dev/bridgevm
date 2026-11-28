@@ -8,8 +8,9 @@ import XCTest
 final class ControlAppTerminationTests: XCTestCase {
     @MainActor final class FakeSession: ControlAppTerminationSession {
         var blocksAppTermination: Bool
+        var terminationName: String?
         var stops = 0, forces = 0
-        init(running: Bool) { blocksAppTermination = running }
+        init(running: Bool, name: String? = nil) { blocksAppTermination = running; terminationName = name }
         func requestTerminationStop() { stops += 1 }
         func requestTerminationForceStop() { forces += 1 }
         func pollTerminationWait() {}
@@ -19,14 +20,16 @@ final class ControlAppTerminationTests: XCTestCase {
         var sessions: [FakeSession] = []
         var confirmations: [Int] = [], confirmAnswer = true
         var deadlines: [Bool] = [], deadlineAnswers: [ControlAppTermination.DeadlineChoice] = []
+        var deadlineNames: [[String]] = []
         var replies: [Bool] = []
         var clock: TimeInterval = 100
         lazy var termination = ControlAppTermination(
             sessions: { [unowned self] in self.sessions },
             presenter: .init(
                 confirmQuit: { [unowned self] count in self.confirmations.append(count); return self.confirmAnswer },
-                decideAtDeadline: { [unowned self] afterForce, _ in
-                    self.deadlines.append(afterForce); return self.deadlineAnswers.removeFirst()
+                decideAtDeadline: { [unowned self] afterForce, names, _ in
+                    self.deadlines.append(afterForce); self.deadlineNames.append(names)
+                    return self.deadlineAnswers.removeFirst()
                 }),
             reply: { [unowned self] in self.replies.append($0) }, now: { [unowned self] in self.clock })
     }
@@ -85,6 +88,29 @@ final class ControlAppTerminationTests: XCTestCase {
             XCTAssertTrue(alert.buttons[1].hasDestructiveAction)
             XCTAssertEqual(alert.buttons[2].keyEquivalent, "\u{1b}")
         }
+    }
+
+    /// With two VMs running, the deadline question says which one Windows is still shutting down in.
+    func testDeadlineAlertNamesTheVMsStillShuttingDown() {
+        let h = Harness()
+        let work = FakeSession(running: true, name: "Work"), games = FakeSession(running: true, name: "Games")
+        let install = FakeSession(running: true)
+        h.sessions = [work, games, install]
+        XCTAssertEqual(h.termination.shouldTerminate(reason: .logoutRestartOrShutdown), .terminateLater)
+        work.blocksAppTermination = false
+        h.deadlineAnswers = [.keepWaiting]
+        h.clock += ControlAppTermination.deadline; h.termination.poll()
+        XCTAssertEqual(h.deadlineNames, [["Games"]], "A VM that already stopped isn't named")
+
+        typealias P = ControlAppTermination.Presenter
+        XCTAssertEqual(P.shutdownDelayAlert(afterForce: false, names: ["Games"]).messageText,
+                       "Windows is still shutting down in “Games”.")
+        XCTAssertEqual(P.shutdownDelayAlert(afterForce: false, names: ["Work", "Games", "Dev"]).messageText,
+                       "Windows is still shutting down in “Work”, “Games” and “Dev”.")
+        XCTAssertEqual(P.shutdownDelayAlert(afterForce: true, names: ["Games"]).messageText, "“Games” is still stopping.")
+        XCTAssertEqual(P.shutdownDelayAlert(afterForce: true, names: ["Work", "Games"]).messageText,
+                       "“Work” and “Games” are still stopping.")
+        XCTAssertEqual(P.shutdownDelayAlert(afterForce: false).messageText, "Windows is still shutting down.")
     }
 
     func testDeadlineOffersForceStopThenQuitAnyway() {

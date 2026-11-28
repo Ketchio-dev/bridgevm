@@ -14,7 +14,7 @@ final class InstallAppTerminationRegressionTests: XCTestCase {
             var questions = 0, deadlines = 0, replies: [Bool] = [], clock: TimeInterval = 100
             let termination = ControlAppTermination(sessions: { library.appTerminationSessions() },
                 presenter: .init(confirmQuit: { _ in questions += 1; return true },
-                    decideAtDeadline: { _, _ in deadlines += 1; return .quitAnyway }),
+                    decideAtDeadline: { _, _, _ in deadlines += 1; return .quitAnyway }),
                 reply: { replies.append($0) }, now: { clock })
             XCTAssertEqual(termination.shouldTerminate(reason: .user), .terminateLater)
             XCTAssertEqual(questions, 1)
@@ -39,7 +39,7 @@ final class InstallAppTerminationRegressionTests: XCTestCase {
         var replies: [Bool] = []
         let termination = ControlAppTermination(sessions: { library.appTerminationSessions() },
             presenter: .init(confirmQuit: { _ in XCTFail("System quit must not ask"); return false },
-                decideAtDeadline: { _, _ in .keepWaiting }), reply: { replies.append($0) })
+                decideAtDeadline: { _, _, _ in .keepWaiting }), reply: { replies.append($0) })
         XCTAssertEqual(termination.shouldTerminate(reason: .logoutRestartOrShutdown), .terminateLater)
         XCTAssertTrue(session.cancelled)
         XCTAssertEqual(replies, [])
