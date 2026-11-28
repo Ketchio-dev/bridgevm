@@ -133,12 +133,24 @@ final class FBLayerView: HvfFramebufferTextInput {
         return frame.width > 0 && frame.height > 0 && frame == backing ? .center : .resizeAspect
     }
 
+    /// A frame the screen shows at a whole multiple of its size, as a desktop in points is on a Retina
+    /// screen, gets each pixel repeated: smoothing it (the layer's default) made Windows' text soft.
+    static func magnificationFilter(frame: CGSize, view: CGSize, scale: CGFloat) -> CALayerContentsFilter {
+        let backing = CGSize(width: (view.width * scale).rounded(), height: (view.height * scale).rounded())
+        guard frame.width > 0, frame.height > 0 else { return .linear }
+        let factor = backing.width / frame.width
+        let whole = factor >= 2 && factor == factor.rounded() && backing.height == frame.height * factor
+        return whole ? .nearest : .linear
+    }
+
     private func placeContents() {
         guard let layer else { return }
         let scale = window?.backingScaleFactor ?? 1
         let gravity = Self.contentsGravity(frame: guestSize, view: bounds.size, scale: scale)
         if gravity == .center, layer.contentsScale != scale { layer.contentsScale = scale }
         if layer.contentsGravity != gravity { layer.contentsGravity = gravity }
+        let filter = Self.magnificationFilter(frame: guestSize, view: bounds.size, scale: scale)
+        if layer.magnificationFilter != filter { layer.magnificationFilter = filter }
     }
 
     override func updateTrackingAreas() {

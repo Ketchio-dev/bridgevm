@@ -89,6 +89,21 @@ final class HvfRetinaResolutionTests: XCTestCase {
         XCTAssertFalse(HvfRetinaResolutionToggle.helpText(persists: false).contains("apply at once"))
     }
 
+    /// A desktop in points on a Retina screen is shown at twice its size: each pixel repeated, not
+    /// smoothed (the layer's default made Windows' text soft). Any other fit stays smoothed.
+    func testAWholeMultipleRepeatsPixelsAndAnyOtherFitSmooths() {
+        func filter(_ frame: CGSize, _ view: CGSize, _ scale: CGFloat) -> CALayerContentsFilter {
+            FBLayerView.magnificationFilter(frame: frame, view: view, scale: scale)
+        }
+        let window = CGSize(width: 1280, height: 800)
+        XCTAssertEqual(filter(window, window, 2), .nearest)
+        XCTAssertEqual(filter(CGSize(width: 640, height: 400), window, 2), .nearest, "4x")
+        XCTAssertEqual(filter(CGSize(width: 2560, height: 1600), window, 2), .linear, "1:1, Retina resolution")
+        XCTAssertEqual(filter(window, window, 1), .linear, "1:1")
+        XCTAssertEqual(filter(CGSize(width: 1024, height: 768), window, 2), .linear, "letterboxed while Windows switches modes")
+        XCTAssertEqual(filter(.zero, window, 2), .linear)
+    }
+
     func testAFrameOfTheBackingSizeIsShownOneToOne() {
         func gravity(_ frame: CGSize, _ view: CGSize, _ scale: CGFloat) -> CALayerContentsGravity {
             FBLayerView.contentsGravity(frame: frame, view: view, scale: scale)
