@@ -47,6 +47,54 @@ final class VMLibraryCopyTests: XCTestCase {
         XCTAssertEqual(mode, 0o600)
     }
 
+    /// Moving a VM to another drive keeps its disk's holes and removes the source afterwards.
+    /// BRIDGEVM_TEST_SECOND_VOLUME names a folder on another volume than the temporary folder, to
+    /// make it a real move across volumes; otherwise the across-volume path runs on one volume.
+    func testMoveAcrossVolumesKeepsTheDiskSparseAndRemovesTheSource() throws {
+        let source = try sparseBundle(named: "source.vmbridge")
+        let disk = source.appendingPathComponent("disks/hvf-target.raw")
+        let expected = try Data(contentsOf: disk)
+        let parent: URL
+        if let other = ProcessInfo.processInfo.environment["BRIDGEVM_TEST_SECOND_VOLUME"] {
+            parent = URL(fileURLWithPath: other).appendingPathComponent("bv-move-\(UUID().uuidString)")
+            addTeardownBlock { try? FileManager.default.removeItem(at: parent) }
+        } else {
+            parent = root.appendingPathComponent("other")
+        }
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        let moved = parent.appendingPathComponent("bundle.vmbridge")
+
+        let forced: Bool? = ProcessInfo.processInfo.environment["BRIDGEVM_TEST_SECOND_VOLUME"] == nil ? true : nil
+        try VMLibrary.relocateItem(at: source, to: moved, fileManager: .default, acrossVolumes: forced)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+        let movedDisk = moved.appendingPathComponent("disks/hvf-target.raw")
+        let values = try movedDisk.resourceValues(forKeys: [.fileSizeKey, .totalFileAllocatedSizeKey])
+        XCTAssertEqual(values.fileSize, 128 << 20)
+        XCTAssertLessThanOrEqual(try XCTUnwrap(values.totalFileAllocatedSize), 16 << 20)
+        XCTAssertEqual(try Data(contentsOf: movedDisk), expected)
+
+        let again = try sparseBundle(named: "again.vmbridge")
+        XCTAssertThrowsError(try VMLibrary.relocateItem(at: again, to: moved, fileManager: .default, acrossVolumes: true))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: again.appendingPathComponent("disks/hvf-target.raw").path),
+                      "A refused move keeps the source")
+    }
+
+    private func sparseBundle(named name: String) throws -> URL {
+        let bundle = root.appendingPathComponent(name)
+        let disks = bundle.appendingPathComponent("disks")
+        try FileManager.default.createDirectory(at: disks, withIntermediateDirectories: true)
+        let disk = disks.appendingPathComponent("hvf-target.raw")
+        XCTAssertTrue(FileManager.default.createFile(atPath: disk.path, contents: nil))
+        let handle = try FileHandle(forWritingTo: disk)
+        try handle.write(contentsOf: Data(repeating: 0xa5, count: 1 << 20))
+        try handle.seek(toOffset: UInt64(64 << 20))
+        try handle.write(contentsOf: Data(repeating: 0x5a, count: 1 << 20))
+        try handle.truncate(atOffset: UInt64(128 << 20))
+        try handle.close()
+        return bundle
+    }
+
     func testCopyNeverWritesIntoAnExistingDestination() throws {
         let source = root.appendingPathComponent("source")
         try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)

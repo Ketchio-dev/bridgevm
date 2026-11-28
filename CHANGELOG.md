@@ -75,6 +75,8 @@ All notable changes to BridgeVM are documented in this file.
 - Duplicating a VM stored on another drive no longer writes the full size of
   its virtual disk to the library: the copy keeps the disk's unused space
   empty, as the original has it.
+- Moving a VM to another drive no longer writes the full size of its virtual
+  disk there, so the move takes less time and space.
 - When one of a VM's virtual processors crashes in BridgeVM, the VM now stops
   the way it does after other errors: its firmware settings are saved and its
   disk is flushed to the Mac's drive. Before, the stop crashed too and skipped
