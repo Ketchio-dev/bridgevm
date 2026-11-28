@@ -17,12 +17,14 @@ struct LibraryFileField: View {
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel(title).accessibilityIdentifier("\(accessibilityIdentifier).path")
                     .help(path.isEmpty ? detail : path)
-                Button(chooseDirectory ? "Choose or drop folder…" : "Choose or drop file…") {
+                Button(Self.chooseTitle(directory: chooseDirectory)) {
                     dropRejected = false
                     Self.choose(with: NSOpenPanel(), directory: chooseDirectory, path: $path)
                 }
                 .fixedSize()
-                .accessibilityLabel("Choose \(title)").accessibilityIdentifier("\(accessibilityIdentifier).choose")
+                // Starts with the visible title so Voice Control finds the button by what it shows.
+                .accessibilityLabel(Self.chooseLabel(title, directory: chooseDirectory))
+                .accessibilityIdentifier("\(accessibilityIdentifier).choose")
                 .accessibilityHint(chooseDirectory ? "You can also drop a folder here from Finder." : "You can also drop a file here from Finder.")
                 .overlay {
                     if isDropTarget {
@@ -49,6 +51,15 @@ struct LibraryFileField: View {
             return accepted
         } isTargeted: { isDropTarget = $0 }
         .onChange(of: path) { _, _ in dropRejected = false }
+    }
+
+    static func chooseTitle(directory: Bool) -> String {
+        directory ? "Choose or drop folder…" : "Choose or drop file…"
+    }
+
+    /// The visible title without its ellipsis, then what the field is for.
+    static func chooseLabel(_ title: String, directory: Bool) -> String {
+        "\(chooseTitle(directory: directory).dropLast()): \(title)"
     }
 
     static func selectDrop(_ urls: [URL], directory: Bool, path: Binding<String>) -> Bool {

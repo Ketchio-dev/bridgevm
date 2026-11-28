@@ -26,6 +26,7 @@ struct LibraryDashboardDetail: View {
     var runtimeState: LibraryDashboardRuntimeState? = nil
     @State private var showingAdvanced = false
     @State private var showingSettings = false
+    @State private var announcedStatus: String?
 
     var body: some View {
         Group {
@@ -34,6 +35,13 @@ struct LibraryDashboardDetail: View {
             } else {
                 dashboard
             }
+        }
+        // VoiceOver hears when the VM settles in a new state; the state it opened in stays quiet.
+        .onAppear { announcedStatus = Self.announcedStatuses.contains(statusText) ? statusText : nil }
+        .onChange(of: statusText) { _, status in
+            guard let message = Self.statusAnnouncement(name: config.name, status: status, after: announcedStatus) else { return }
+            announcedStatus = status
+            AccessibilityNotification.Announcement(message).post()
         }
         .focusedSceneValue(\.hvfVMSettings, settingsSession == nil ? nil : { showingSettings = true })
         .sheet(isPresented: $showingSettings) { settingsSheet }
@@ -176,6 +184,13 @@ struct LibraryDashboardDetail: View {
         if config.installPending == true { return "Installation required" }
         if let operation = library.fileOperationTitle(for: config.slug) { return operation }
         return runtimeState?.title ?? (model.running ? "Running" : "Stopped")
+    }
+
+    /// Passing states (starting, booting, shutting down, working) are not announced.
+    static let announcedStatuses: Set<String> = ["Running", "Paused", "Stopped", "Needs attention"]
+
+    static func statusAnnouncement(name: String, status: String, after previous: String?) -> String? {
+        announcedStatuses.contains(status) && status != previous ? "\(name): \(status)" : nil
     }
 
     var visibleStatusNote: String? {

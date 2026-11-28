@@ -402,7 +402,7 @@ struct HvfDisplayDriverInstallButton: View {
                 else { Label("Install display driver", systemImage: "arrow.down.circle") }
             }
             .disabled(installing || !HvfDisplayDriverInstall.agentReady(session))
-            .accessibilityLabel("Install display driver")
+            .accessibilityLabel(installing ? "Installing display driver" : compact ? "Install Driver" : "Install display driver")
             .accessibilityIdentifier("bridgevm.runtime.display-driver.install")
             .help("Windows downloads the Microsoft-signed display driver from Red Hat (about 95 MB), checks that it’s the expected file, and installs it.")
             if !installing, !compact, let reason = HvfDisplayDriverInstall.unavailableReason(session) {
