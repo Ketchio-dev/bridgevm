@@ -75,6 +75,8 @@ All notable changes to BridgeVM are documented in this file.
 - Importing a RAW disk whose copy fails says to check the disk image and
   free space, instead of "Couldn't create the VM or save it to the
   library."
+- Windows no longer shuts itself down when the Mac's battery gets low (it
+  did at 5 %, losing unsaved work); the Mac handles its own low battery.
 - In a VM whose Windows account isn't an administrator, BridgeVM no longer
   tries to update Guest Tools at every launch and reports "Guest Tools
   couldn't update" each time. That update can't work without administrator
