@@ -47,7 +47,8 @@ pub(crate) enum SystemResetDecision {
 }
 
 /// The exit code by which this process tells its supervisor that the guest
-/// requested SYSTEM_RESET. Contract shared with hvf-runner --supervise.
+/// requested SYSTEM_RESET. Contract shared with the runtime's
+/// `run_prepared_vm` (bridgevm-hvf-runtime controlled_run.rs).
 pub(crate) const RESET_EXIT_CODE: u8 = 42;
 
 pub(crate) fn decide_system_reset(reboot_count: u64, plan: RebootPlan) -> SystemResetDecision {

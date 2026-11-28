@@ -3,13 +3,24 @@
 #[path = "controlled_generation.rs"]
 mod generation;
 use crate::{
-    decide_restart, flush_and_write_receipt, HelperLaunch, PreparedVm, ResetCycle, RestartDecision,
-    RuntimeControl, RuntimeError, RESET_EXIT_CODE,
+    decide_restart, flush_and_write_receipt, HelperLaunch, PreparedVm, RestartDecision,
+    RuntimeControl, RuntimeError,
 };
 use bridgevm_hvf::snapshot_pair::managed::LockedPair;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
+
+/// Exit code by which the helper reports a guest-requested SYSTEM_RESET.
+/// The other side of this contract is the probe's `RESET_EXIT_CODE`.
+const RESET_EXIT_CODE: i32 = 42;
+
+/// One completed helper generation.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ResetCycle {
+    pub pid: u32,
+    pub generation: u64,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunTermination {
@@ -78,7 +89,7 @@ pub fn run_prepared_vm(
         if control.is_cancelled() {
             return Ok(cancelled(cycles));
         }
-        match decide_restart(true, receipt, prepared.generation()) {
+        match decide_restart(receipt, prepared.generation()) {
             RestartDecision::Restart => {}
             RestartDecision::Stop { reason } => {
                 return Err(RuntimeError::RestartRefused { reason })

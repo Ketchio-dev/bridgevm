@@ -39,9 +39,9 @@ A15's gate is **100 consecutive** cycles. 3 cycles prove the machinery,
 not the endurance; the A1 stall class (14/40 boot success in soaks) will
 interrupt long chains until it is fixed — cycle failures there are A1
 evidence, not A15 regressions. `CYCLES=100` runs the full gate when A1
-stabilizes. The receipt in this harness is script-side; the typed
-supervisor (`hvf-runner --supervise`) exists and is proven with stub
-helpers, and switching the harness to it is the remaining A14/A15 seam.
+stabilizes. The receipt in this harness is script-side; moving the
+lifecycle into the typed runtime is the remaining A14/A15 seam (closed by
+`--launch-spec`, below).
 
 ## 10-cycle attempt, same day: 3 cycles + intermediate-reset handling, then an A1 stall
 

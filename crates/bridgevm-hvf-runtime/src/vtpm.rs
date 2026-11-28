@@ -86,15 +86,6 @@ pub(crate) fn unique_runtime_dir_name() -> String {
     )
 }
 
-/// Start swtpm for one run and wait until both sockets exist.
-///
-/// The socket directory is fresh and private (0700 via tempdir semantics);
-/// the state directory is created if missing, like the wrapper's
-/// `install -d -m 700`.
-pub fn start_swtpm(config: &VtpmConfig) -> Result<SwtpmProcess, RuntimeError> {
-    start_swtpm_controlled(config, &RuntimeControl::default())
-}
-
 pub use controlled::start_swtpm_controlled;
 
 #[cfg(test)]
