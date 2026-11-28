@@ -176,6 +176,12 @@ All notable changes to BridgeVM are documented in this file.
   earlier runs, including the text and keys you typed, stayed in that file in a
   readable form and grew with each run; clones, moves and backups carried it
   along.
+- Moving or duplicating a VM while BridgeVM is still cleaning up its Windows
+  installation now says "BridgeVM is still cleaning up an earlier Windows
+  installation for this VM. Choose Refresh, then try to move it again."
+  instead of asking you to check "the saved installation transaction". The
+  command palette names the Advanced Controls page by that name, not "HVF
+  Engine".
 - `bridgevm app start`, `stop`, `status`, `install`, `readiness` and `list` now
   say in plain sentences what happened and what to do, instead of printing
   internal codes, run tokens, process IDs and engineering notes. A failure code

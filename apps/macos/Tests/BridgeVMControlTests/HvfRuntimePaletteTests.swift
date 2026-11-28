@@ -180,11 +180,11 @@ final class HvfRuntimePaletteTests: XCTestCase {
         }
         XCTAssertEqual(fixture.creations, [0, 0, 0])
         library.selectedID = LibraryModel.hvfEngineSelectionID
-        assertNavigation(library, fixture: fixture, slug: LibraryModel.hvfEngineSelectionID, name: "HVF Engine")
+        assertNavigation(library, fixture: fixture, slug: LibraryModel.hvfEngineSelectionID, name: "Advanced Controls")
         XCTAssertEqual(fixture.runtimeCreations, 0)
         let session = library.experimentalHvfRuntimeSession()
         let accepted = session.config
-        assertNavigation(library, fixture: fixture, slug: LibraryModel.hvfEngineSelectionID, name: "HVF Engine")
+        assertNavigation(library, fixture: fixture, slug: LibraryModel.hvfEngineSelectionID, name: "Advanced Controls")
         XCTAssertTrue(library.experimentalHvfRuntimeSession() === session)
         XCTAssertEqual(session.config, accepted)
         XCTAssertEqual(session.connectionState, .stopped)
