@@ -91,6 +91,10 @@ All notable changes to BridgeVM are documented in this file.
   "HVF" label (only a VM BridgeVM can’t run names its engine), and the alerts
   for moving, duplicating and deleting VMs no longer mention "registrations" or
   "bundles" and say what to do next.
+- Stopping a VM that BridgeVM reconnected to after a relaunch no longer ends
+  Windows mid-shutdown when the Mac sleeps during that shutdown. Its 180-second
+  grace counted the time the Mac was asleep, so on wake the VM was ended at
+  once.
 - Quitting BridgeVM while it moves, duplicates or deletes a VM now asks to
   finish first and quits when it is done, as it already did while VM files were
   being prepared. Before, BridgeVM quit at once: a move cut short left the VM
