@@ -79,6 +79,10 @@ All notable changes to BridgeVM are documented in this file.
   RDP or SSH session, whose server became unreachable after the Mac changed
   networks or slept now fails after about two minutes, so the app can
   reconnect. Before, it looked alive to Windows indefinitely.
+- A port forward from a Mac port below 1024, such as 80:80, is now refused
+  when you enter it, with an example of what works. macOS doesn't let apps
+  use those ports. Before, it was saved, didn't work, and the notice blamed
+  another app.
 - Files dropped on a VM window, or opened with BridgeVM from Finder, while
   Windows is still starting are now copied once Windows is ready. Before,
   they were refused with a message that stayed over the Windows taskbar. A
