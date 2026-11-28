@@ -66,6 +66,8 @@ All notable changes to BridgeVM are documented in this file.
   Windows could not remove is tried again; printing notices no longer
   blame Microsoft Print to PDF for every failure or say "try again" when
   the Mac is out of space.
+- A print job no longer prints twice when Windows restarts right after
+  printing.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.

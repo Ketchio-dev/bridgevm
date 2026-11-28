@@ -18,6 +18,7 @@ use sha2::{Digest, Sha256};
 use std::io::Write as _;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::{Arc, Mutex, OnceLock};
 
 #[cfg(test)]
 #[path = "print_jobs_tests.rs"]
@@ -35,6 +36,13 @@ pub(super) const MAX_PRINT_JOBS: usize = 8;
 const MAX_PRINT_PATH_BYTES: usize = 1024;
 /// Guest paths of jobs that ended here, kept so that one announced again is deleted, not printed twice.
 const DONE_KEPT: usize = 32;
+
+/// This process's jobs that ended, for every harness: one is made per boot, and a job's DEL waits behind
+/// shared-folder sync, so a Windows restart can lose it and the new agent announces the job again.
+fn process_done() -> Arc<Mutex<VecDeque<String>>> {
+    static DONE: OnceLock<Arc<Mutex<VecDeque<String>>>> = OnceLock::new();
+    Arc::clone(DONE.get_or_init(Arc::default))
+}
 
 /// The Mac files' names: this process's start (Unix ms) and a counter (harnesses are re-created per
 /// boot), so a job an earlier probe published, still waiting for its print panel, keeps its name.
@@ -127,7 +135,7 @@ pub(super) struct PrintJobs {
     pub(super) agent: bool,
     waiting: VecDeque<GuestJob>,
     current: Option<JobIn>,
-    done: VecDeque<String>,
+    done: Arc<Mutex<VecDeque<String>>>,
 }
 
 impl PrintJobs {
@@ -145,7 +153,7 @@ impl PrintJobs {
                 clear_jobs(dir);
             }
         }
-        Self::new(dir)
+        Self { done: process_done(), ..Self::new(dir) }
     }
 
     fn taking(&self) -> bool {
@@ -161,10 +169,15 @@ impl PrintJobs {
     }
 
     fn remember(&mut self, path: String) {
-        if self.done.len() == DONE_KEPT {
-            self.done.pop_front();
+        let mut done = self.done.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if done.len() == DONE_KEPT {
+            done.pop_front();
         }
-        self.done.push_back(path);
+        done.push_back(path);
+    }
+
+    fn ended(&self, path: &str) -> bool {
+        self.done.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().any(|done| done == path)
     }
 
     /// Drop the job under way: its file goes, nothing is published.
@@ -253,7 +266,7 @@ impl AgentConsoleHarness {
                 return true;
             }
         };
-        if self.print.done.contains(&job.path) {
+        if self.print.ended(&job.path) {
             // Ended here already; its DEL was lost with an agent restart.
             self.queue.push_back(ServiceReq::PrintDel { path: job.path });
             return true;
