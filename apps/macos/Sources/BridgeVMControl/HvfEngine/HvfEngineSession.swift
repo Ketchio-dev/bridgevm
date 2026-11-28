@@ -122,8 +122,10 @@ final class HvfEngineSession: ObservableObject {
     var textInputTarget: HvfTextInputTargetIdentity { .init(owner: ObjectIdentifier(self), generation: inputDriver.textInputGeneration, binding: inputBinding) }
     var stopCommandSent = false
     var stopDeadline: Date?
-    var attachedToExistingProcess = false
+    var attachedToExistingProcess = false { didSet { attachedLivenessGeneration &+= 1 } }
     var nextAttachedLivenessCheck = Date.distantPast
+    private var attachedLivenessGeneration: UInt64 = 0 // a late lookup answers for an earlier attachment
+    private var attachedLivenessLookupInFlight = false
     private let liveInputFile = HvfLiveInputFile()
     var liveInputWriteFailureReported = false
     var displayResize = HvfDisplayResizeRequest() // the display window size the guest display should follow
@@ -480,8 +482,8 @@ final class HvfEngineSession: ObservableObject {
         expireUnacknowledgedReset()
         expireUnansweredPause()
         refreshAgentSilence()
-        if let lastHeartbeatDate {
-            lastHeartbeatAge = Date().timeIntervalSince(lastHeartbeatDate)
+        if let lastHeartbeatDate { // uptime, so time the Mac slept does not count
+            lastHeartbeatAge = hostNow().timeIntervalSince(lastHeartbeatDate)
         }
         if let controller = ownedController {
             controller.tick()
@@ -489,13 +491,10 @@ final class HvfEngineSession: ObservableObject {
         } else if let process, !process.isRunning {
             markStopped(); return
         }
-        if attachedToExistingProcess,
+        if attachedToExistingProcess, !attachedLivenessLookupInFlight,
            HvfAttachedLivenessSchedule.isDue(now: Date(), next: nextAttachedLivenessCheck) {
             nextAttachedLivenessCheck = HvfAttachedLivenessSchedule.next(after: Date())
-            if !processIsRunning(config.targetDiskPath) {
-                markStopped()
-                return
-            }
+            lookUpAttachedLiveness()
         }
         flushDisplayResize()
         inputDriver.poll(binding: inputBinding, serviceReady: serviceStarted && guestTakesInput,
@@ -517,6 +516,24 @@ final class HvfEngineSession: ObservableObject {
                 self.stopDeadline = nil
             }
         }
+    }
+
+    /// An attached VM has no Process handle: the lookup reads the disk's writer lock and waits for pgrep
+    /// (tens of ms), which hitched the VM window every second on the main actor. One runs at a time.
+    private func lookUpAttachedLiveness() {
+        attachedLivenessLookupInFlight = true
+        let generation = attachedLivenessGeneration, disk = config.targetDiskPath, isRunning = processIsRunning
+        Task.detached { [weak self] in
+            let running = isRunning(disk)
+            await self?.finishAttachedLivenessLookup(running: running, generation: generation)
+        }
+    }
+
+    private func finishAttachedLivenessLookup(running: Bool, generation: UInt64) {
+        attachedLivenessLookupInFlight = false
+        guard !running, generation == attachedLivenessGeneration else { return }
+        markStopped()
+        updateSleepPrevention()
     }
 
     func markStopped() {

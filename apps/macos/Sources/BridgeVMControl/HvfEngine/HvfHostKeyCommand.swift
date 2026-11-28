@@ -127,6 +127,21 @@ extension HvfHostKeyCommand {
                          charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "", modifiers: modifiers(event))
     }
 
+    /// Right Option alone (Shift allowed) on a key that types a character is AltGr, as on a Windows keyboard:
+    /// the key goes to the Mac's input method and its character is typed (€ is ⌥E on a German keyboard, ⌥E
+    /// starts an accent on a US one). Left Option stays Alt; Space, Return, Tab, arrows and other named keys
+    /// keep their Option chords on either side.
+    static func isAltGr(_ event: NSEvent) -> Bool {
+        let raw = event.modifierFlags.rawValue
+        guard event.modifierFlags.intersection([.command, .control, .option]) == .option,
+              raw & rightOptionDown != 0, raw & leftOptionDown == 0,
+              let base = event.charactersIgnoringModifiers?.unicodeScalars.first else { return false }
+        return base.value > 0x20 && base.value != 0x7f && !(0xf700...0xf8ff).contains(base.value)
+    }
+
+    /// NX_DEVICELALTKEYMASK and NX_DEVICERALTKEYMASK (IOLLEvent.h): which Option key is down.
+    private static let leftOptionDown: UInt = 0x20, rightOptionDown: UInt = 0x40
+
     static func resolve(event: NSEvent, mapping: HvfHostKeyMapping = HvfHostKeyMapping()) -> Self {
         let modifiers = modifiers(event)
         if let chord = resolveChord(keyCode: event.keyCode, charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",

@@ -30,6 +30,24 @@ final class HvfEngineSessionPublishTests: XCTestCase {
         session.markStopped()
     }
 
+    /// The age counts time the Mac was awake, like the agent-silence notice: after a night asleep it does not
+    /// read "28800 s ago" until the next heartbeat arrives.
+    func testHeartbeatAgeLeavesOutTimeTheMacSlept() throws {
+        let root = try Self.root(); defer { try? FileManager.default.removeItem(at: root) }
+        let session = HvfEngineSession(config: Self.config(root), repoRoot: root) { _ in true }
+        var uptime: TimeInterval = 1_000
+        session.ownedStartNow = { uptime }
+        try Self.append(Self.boot + "BVAGENT SERVICE alive t=3\n", root)
+        XCTAssertTrue(session.attachToRunningVM())
+        session.timer?.invalidate(); session.timer = nil // the test drives every poll itself
+        session.poll()
+        XCTAssertEqual(session.lastHeartbeatAge, 0)
+        uptime += 2.5
+        session.poll()
+        XCTAssertEqual(session.lastHeartbeatAge, 2.5)
+        session.markStopped()
+    }
+
     func testRuntimeStateChangesStillPublishTheSessionAtOnce() throws {
         let root = try Self.root(); defer { try? FileManager.default.removeItem(at: root) }
         let session = HvfEngineSession(config: Self.config(root), repoRoot: root) { _ in true }

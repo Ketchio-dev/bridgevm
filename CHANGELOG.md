@@ -50,11 +50,21 @@ All notable changes to BridgeVM are documented in this file.
   spare, each of them now says so in one sentence and suggests stopping one or
   giving the VMs less memory in Settings. Before, macOS just started swapping
   and Windows and the Mac slowed down with no explanation. Nothing is refused.
+- The VM window no longer stutters once a second while it shows a VM that
+  BridgeVM did not start itself, such as one still running after the app was
+  quit and reopened. The check that this VM is still running now happens in
+  the background instead of pausing the window each time.
 - The terminal installer works on a Mac without the Xcode Command Line Tools.
   It used to call Python and `lipo`, which on such a Mac only open the "install
   developer tools" dialog, so it failed or wrongly said the app was not Apple
   Silicon native. It now uses only tools that come with macOS, and every check
   it makes is as strict as before.
+- "Guest agent response" in a VM's status no longer counts the time the Mac
+  slept. Before, it showed, for example, "3600.0 s ago" for up to half a
+  minute after waking from an hour's sleep.
+- A guest tools update no longer goes back to the old version when the Mac
+  sleeps while Windows is waiting to confirm it. Setting Windows's clock
+  after the wake ended the wait early.
 - Windows boot entries and Secure Boot settings now survive a crash, a power
   loss or a Force Stop that runs out of time while the VM runs. BridgeVM
   used to save the VM's UEFI settings only when the VM stopped cleanly, so
@@ -72,6 +82,11 @@ All notable changes to BridgeVM are documented in this file.
   English) in a VM window no longer opens the Windows Start menu, and ⌃⌘Space
   now opens the Mac's Emoji & Symbols picker instead of sending Ctrl+Space to
   Windows.
+- The right Option key now types the character your Mac keyboard shows in a VM
+  window, as AltGr does on a PC, for example € with ⌥E on a German keyboard.
+  Before, every Option key combination that did not type a plain ASCII
+  character went to Windows as Alt, so those characters could not be typed.
+  The left Option key is still Alt.
 - The installer no longer replaces BridgeVM while BridgeVM or one of its VMs is
   running. It stops before downloading and asks you to shut down your VMs and
   quit BridgeVM first. Before, the old app kept running on top of the new

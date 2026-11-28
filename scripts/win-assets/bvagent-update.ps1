@@ -284,8 +284,9 @@ function Invoke-Guard {
     # runs the guard again.
     $settled = $false
     try {
-        $deadline = (Get-Date).AddSeconds($ConfirmSeconds)
-        while ((Get-Date) -lt $deadline) {
+        # Counted in sleeps, not read from the clock: the clock fix after the
+        # Mac wakes (Set-Date) jumps it forward and would end the wait at once.
+        for ($waited = 0; $waited -lt $ConfirmSeconds; $waited += 2) {
             if ((Read-StateFile 'confirmed.txt') -ceq $Id) { $settled = $true; Complete-Update; return }
             Start-Sleep -Seconds 2
         }

@@ -10,7 +10,7 @@ final class NativeCLIUnknownIDTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         XCTAssertThrowsError(try NativeLibraryReader.readConfig(rootURL: root, id: "dev-mv")) { error in
             XCTAssertEqual(error.localizedDescription,
-                           "No VM has the ID ‘dev-mv’ in this library. Run `bridgevm app list` to find its ID.")
+                           "No VM has the ID “dev-mv” in this library. Run `bridgevm app list` to find its ID.")
         }
     }
 }
