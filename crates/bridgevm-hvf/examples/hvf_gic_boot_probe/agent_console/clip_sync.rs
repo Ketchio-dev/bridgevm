@@ -34,6 +34,9 @@ pub(super) struct ClipBaseline {
     /// went to the guest (clip_files_push.rs), that copy's digest until the
     /// guest lists it.
     pub(super) files: Option<[u8; 32]>,
+    /// The `files` whose fetch failed. Copied again in Explorer they read the
+    /// same, so the guest's next CLIPCHANGED makes them a new copy.
+    pub(super) files_failed: Option<[u8; 32]>,
     /// The PNG last synced either way, reused while it is `image`: a caption
     /// change needs no second transfer.
     pub(super) png: Option<host_pasteboard::PngImage>,

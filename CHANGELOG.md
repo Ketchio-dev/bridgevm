@@ -62,6 +62,9 @@ All notable changes to BridgeVM are documented in this file.
   instead of leaving it ahead until the next restart.
 - Port forwards changed while Windows runs stay changed after Windows
   restarts, instead of going back to the ones the VM started with.
+- Copying the same thing again now sends it again. If Windows refused or lost
+  a Mac copy, press Command-C again. If files copied in Windows did not arrive,
+  copy them again in Explorer.
 - In a VM whose Windows account isn't an administrator, BridgeVM no longer
   tries to update Guest Tools at every launch and reports "Guest Tools
   couldn't update" each time. That update can't work without administrator

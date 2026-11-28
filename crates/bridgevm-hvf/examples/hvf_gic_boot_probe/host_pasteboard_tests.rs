@@ -74,14 +74,17 @@ fn apply_set_does_not_echo_on_following_tick() {
     assert_eq!(poller.on_tick(&mut backend), None);
 }
 
+/// The user copied on the Mac the text Windows sent: a copy all the same, which
+/// clip_sync.rs skips while Windows still holds it.
 #[test]
-fn external_same_text_after_apply_set_does_not_reemit() {
+fn external_same_text_after_apply_set_is_reported() {
     let mut poller = Poller::new();
     let mut backend = MockBackend::new(0, None);
 
     poller.apply_set(&mut backend, "same");
     backend.external_change(backend.count + 1, Some("same"));
 
+    assert_eq!(poller.on_tick(&mut backend), Some("same".to_owned()));
     assert_eq!(poller.on_tick(&mut backend), None);
 }
 

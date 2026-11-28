@@ -225,6 +225,31 @@ fn a_same_size_edit_copied_again_is_fetched_again() {
 }
 
 #[test]
+fn a_guest_file_copy_that_failed_is_fetched_when_copied_again() {
+    let mut rig = rig();
+    let file = r"C:\s\a.txt";
+    // Not there to GET: the fetch fails.
+    rig.guest.listing = Some(listing(&[(0, 1, 3, file)]));
+    rig.settle();
+    assert_eq!(gets(&mut rig), [file]);
+    assert!(rig.mac.file_writes.is_empty());
+    take_lines(&mut Vec::new());
+    // Unchanged polls do not fetch it again.
+    rig.guest.files.insert(file.into(), b"abc".to_vec());
+    rig.settle();
+    assert!(gets(&mut rig).is_empty(), "fetched again without a new copy");
+    // Copied again in Explorer: the agent says CLIPCHANGED, and the copy reads the same.
+    rig.h.handle_service_reply_with_sender("CLIPCHANGED", rig.now, &mut |_| {});
+    rig.settle();
+    assert_eq!(gets(&mut rig), [file], "copying again did not fetch it again");
+    assert_eq!(rig.mac.file_writes.len(), 1);
+    rig.settle();
+    assert!(rig.verbs().is_empty(), "neither fetched again nor pushed back");
+    take_lines(&mut Vec::new());
+    std::fs::remove_dir_all(&rig.h.clip_files_stage.dir).unwrap();
+}
+
+#[test]
 fn a_long_listing_edited_in_the_middle_stages_apart_from_the_published_copy() {
     let mut rig = rig();
     // Over 8 KiB of listing, so the edit is far from both ends of it.
