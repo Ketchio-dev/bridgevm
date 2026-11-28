@@ -150,6 +150,11 @@ All notable changes to BridgeVM are documented in this file.
   if you closed it. Before, it opened a second library window. The Window menu
   also has a Library item that brings the library back while a VM window is
   open.
+- Starting a VM now empties its command file in the VM's folder
+  (`metadata/hvf.ctl`). Before, every command BridgeVM sent to Windows in
+  earlier runs, including the text and keys you typed, stayed in that file in a
+  readable form and grew with each run; clones, moves and backups carried it
+  along.
 - The Delete dialog no longer tells you to shut the VM down first. BridgeVM
   already refuses to delete a running VM and tells you why.
 - If BridgeVM can't archive a deleted VM's vTPM key, the warning now says to

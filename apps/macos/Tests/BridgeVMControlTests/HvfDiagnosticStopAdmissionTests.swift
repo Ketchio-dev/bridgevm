@@ -63,4 +63,32 @@ final class HvfRuntimeDiagnosticStopAdmissionTests: XCTestCase {
         XCTAssertThrowsError(try FileManager.default.destinationOfSymbolicLink(atPath: request.path))
         XCTAssertThrowsError(try FileManager.default.destinationOfSymbolicLink(atPath: pending.path))
     }
+
+    /// The last run's commands, typed text included, do not survive into the next start.
+    func testPreparationEmptiesTheLastRunsControlFile() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ctl-preparation-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let vm = VMConfig(id: "windows", name: "windows", displayName: "windows",
+            backendKind: "hvf-engine", bootMode: "windows-hvf",
+            bundlePath: root.appendingPathComponent("bundle.vmbridge").path,
+            runnerPath: "", launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
+            leasesPath: "", guestName: "windows", displayWidth: 1280, displayHeight: 720,
+            installPending: false)
+        let config = try XCTUnwrap(HvfEngineConfig.libraryVM(vm, rootURL: root))
+        let control = URL(fileURLWithPath: config.ctlFilePath)
+        try FileManager.default.createDirectory(at: control.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("TEXTB64 c2VjcmV0\n".utf8).write(to: control)
+        let before = try FileManager.default.attributesOfItem(atPath: control.path)[.systemFileNumber] as? Int
+        _ = try HvfRuntimePreparation.prepare(config: config)
+        XCTAssertEqual(try Data(contentsOf: control), Data())
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: control.path)[.systemFileNumber] as? Int, before,
+            "emptied in place")
+        // A link put in its place is still refused, not followed.
+        let elsewhere = root.appendingPathComponent("elsewhere")
+        try Data("keep\n".utf8).write(to: elsewhere)
+        try FileManager.default.removeItem(at: control)
+        try FileManager.default.createSymbolicLink(at: control, withDestinationURL: elsewhere)
+        XCTAssertThrowsError(try HvfRuntimePreparation.prepare(config: config))
+        XCTAssertEqual(try Data(contentsOf: elsewhere), Data("keep\n".utf8))
+    }
 }
