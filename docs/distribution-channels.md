@@ -20,9 +20,14 @@ Its contract is:
 - Windows-HVF ISO install and installed-disk import are 3D-off;
 - the app does not enable Windows TESTSIGNING or weaken Secure Boot policy;
 - users bring their own licensed Windows 11 Arm ISO;
-- ISO installation also requires a user-supplied signed ARM64
-  storage/serial/network payload and external SHA-256 manifest; these inputs
-  are sealed into the VM bundle but are not redistributed in the app;
+- ISO installation also needs signed ARM64 storage, serial and network
+  drivers: **Download Drivers** fetches the pinned, Microsoft-signed Red Hat
+  virtio-win archive and refuses it unless its length and SHA-256 match, or
+  the user chooses a payload folder with an external SHA-256 manifest; either
+  way the payload is sealed into the VM bundle and is not redistributed in the
+  app;
+- after setup, the app installs the Microsoft-signed virtio-win display
+  driver, which Windows downloads itself;
 - the Mac app is ad-hoc signed, not Developer ID signed or notarized;
 - the release carries `BridgeVM-release.json` and `SHA256SUMS` beside the app
   archives.

@@ -61,10 +61,12 @@ Windows restored its original file in ten independent VMs. Disk-full and
 process-interruption checks preserved complete disk and UEFI vars pairs.
 [Measurements and recovery limits](evidence/a19-snapshot-interruption-20261123.md#designated-build-on-november-24)
 
-## Historical evidence boundary (2026-09-17)
+## Historical evidence boundary (2026-09-17; superseded)
 
-A19 remains OPEN. Use its generated entry in [current status](../../STATUS.md)
-for capability wording and known defects.
+Superseded: A19 has been PROVEN since the designated build on November 24,
+2026 (above). This section records the state on 2026-09-17, when A19 was
+still open. Use its generated entry in [current status](../../STATUS.md) for
+capability wording and known defects.
 
 The previous claim that interrupted restore satisfied item 6 was retracted
 following an [eight-byte mixed-pair counterexample](evidence/a19-restore-atomicity-defect-20260912.md).
@@ -82,7 +84,8 @@ The native app CLI now exposes the existing managed-pair create, verify and
 restore path for one exact saved VM ID. Its deterministic checkpoint is recorded
 in the [native app snapshot CLI evidence](../history/windows-hvf/native-app-snapshot-cli-deterministic-20260917.md).
 This closes a command-surface gap only: no Windows boot, guest marker,
-interrupted-operation sample or raw export was added, so A19 remains OPEN.
+interrupted-operation sample or raw export was added, so A19 remained OPEN at
+that point.
 
 ## Historical assessment (2026-08-04; superseded)
 
