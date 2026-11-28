@@ -61,6 +61,9 @@ All notable changes to BridgeVM are documented in this file.
   password in Windows. A copy made in Windows is never cleared this way.
 - Cells copied in Excel for Windows paste on the Mac as a table (their text
   and HTML), not as a picture of the cells. Needs the Guest Tools update.
+- A Windows copy made while another app briefly held the clipboard (such as
+  clipboard history or Office) now still reaches the Mac. Needs the Guest
+  Tools update.
 - A Mac change made just as the shared folder is renamed or deleted in
   Windows no longer makes the Windows folder again with only that file,
   after the Guest Tools update.
