@@ -55,7 +55,7 @@ struct ContentView: View {
             CloneWindowsHVFSheet(library: library, config: cfg)
         }
         .confirmationDialog(
-            "Remove this virtual machine?",
+            presentation.deletionTarget.map { LibraryDeletionPrompt(config: $0, rootURL: library.rootURL).title } ?? "",
             isPresented: Binding(
                 get: { presentation.deletionTarget != nil },
                 set: { if !$0 { presentation.deletionTarget = nil } }

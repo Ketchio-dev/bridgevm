@@ -6,7 +6,7 @@ import Foundation
 @MainActor
 enum HvfOpenFiles {
     static let noWindowsText = "Start a Windows VM, then open the selection again."
-    static let whichWindowsText = "Bring the Windows VM you want to the front, then open the selection again."
+    static let whichWindowsText = "Several Windows VMs are running. Click the window of the one that should get the files, then open them again."
 
     /// The only running VM, else the running one whose display window is frontmost.
     static func target(sessions: [HvfEngineSession], frontToBack: [HvfEngineSession]) -> HvfEngineSession? {

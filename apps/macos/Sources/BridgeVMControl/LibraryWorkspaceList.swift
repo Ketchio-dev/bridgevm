@@ -164,6 +164,7 @@ struct LibraryWorkspaceRow: View {
         .buttonStyle(.plain)
         .accessibilityLabel("\(accessibleName), \(status.text), \(resourceText)")
         .accessibilityHint("Show VM details")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func select() {
