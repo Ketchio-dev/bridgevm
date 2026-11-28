@@ -46,6 +46,9 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- A fast trackpad scroll no longer fills Windows' input queue: scrolls waiting
+  to be sent are combined into one, so keys and clicks after it are not refused,
+  and a mouse-button release is always taken, so the button is not left down.
 - Deleting the selected VM selects the VM next to it, not the first VM
   in the library.
 - A Mac file that never reaches Windows now gets a notice: when Windows

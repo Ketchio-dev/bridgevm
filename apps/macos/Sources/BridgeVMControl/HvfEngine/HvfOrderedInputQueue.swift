@@ -38,20 +38,21 @@ struct HvfOrderedInputQueue {
     /// False means the caller must surface rejection; existing input is retained.
     mutating func enqueue(_ event: Event, now: Date) -> Bool {
         let bytes = event.byteCount
-        if active != nil, event.isPointerMove, let last = entries.last, last.ticket.event.isPointerMove,
-           last.ticket.generation == generation {
-            // Behind an awaited receipt the newest unsent move takes the newer position in place:
-            // no new slot, a fresh id and the original deadline. A sent ticket is never modified.
+        if active != nil, let last = entries.last, last.ticket.generation == generation,
+           let merged = last.ticket.event.absorbing(event) {
+            // Behind an awaited receipt the newest unsent move or scroll absorbs the newer one in place
+            // (Event.absorbing): no new slot, a fresh id and the original deadline. A sent ticket is never modified.
             let others = byteCount - last.ticket.event.byteCount
-            guard bytes <= Self.maximumBytes - others else { return false }
-            entries[entries.count - 1] = Entry(ticket: Ticket(id: UUID(), generation: generation, event: event),
+            guard merged.byteCount <= Self.maximumBytes - others else { return false }
+            entries[entries.count - 1] = Entry(ticket: Ticket(id: UUID(), generation: generation, event: merged),
                                                deadline: last.deadline)
-            byteCount = others + bytes
+            byteCount = others + merged.byteCount
             return true
         }
-        // A held key's release is never refused for room, or Windows would keep the key down: there is one per key
-        // held (HvfHeldKeys, at most six), so releases add only a few short events beyond the limits.
-        guard bytes > 0, event.isKeyRelease || (count < Self.maximumEvents && bytes <= Self.maximumBytes - byteCount)
+        // A release is never refused for room, or Windows would keep the key or button down: a key's comes once per
+        // key held (HvfHeldKeys, at most six) and a button's once per mouse-up, so they add only a few short
+        // events beyond the limits.
+        guard bytes > 0, event.isRelease || (count < Self.maximumEvents && bytes <= Self.maximumBytes - byteCount)
         else { return false }
         let ticket = Ticket(id: UUID(), generation: generation, event: event)
         entries.append(Entry(ticket: ticket, deadline: now.addingTimeInterval(30)))
