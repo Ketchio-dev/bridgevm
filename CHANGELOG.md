@@ -46,6 +46,9 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- Clearing the Mac clipboard now clears Windows too, when Windows still holds
+  that Mac copy, so a Mac password manager's auto-clear no longer leaves the
+  password in Windows. A copy made in Windows is never cleared this way.
 - A Mac change made just as the shared folder is renamed or deleted in
   Windows no longer makes the Windows folder again with only that file,
   after the Guest Tools update.

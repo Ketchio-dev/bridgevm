@@ -56,6 +56,9 @@ pub(super) struct ClipBaseline {
     /// A push just completed: the next changed guest reply that shows its pair
     /// is that Mac copy coming back, not a new guest copy.
     pub(super) echo: bool,
+    /// The guest's last copy was a push coming back: the guest still holds what
+    /// the Mac sent, so a clear on the Mac clears it too.
+    pub(super) from_host: bool,
 }
 
 impl ClipBaseline {
@@ -92,6 +95,15 @@ impl AgentConsoleHarness {
         let Some(clip) = std::iter::from_fn(|| pasteboard.try_changed_clip()).last() else {
             return;
         };
+        if clip == host_pasteboard::HostClip::default() {
+            // Cleared, by a password manager say: Windows clears too while it holds
+            // what the Mac sent, never a copy made in Windows.
+            if self.last_synced.echo || self.last_synced.from_host || self.clip_push_pending() {
+                self.last_synced.host_copy = self.last_synced.next_copy();
+                self.enqueue_clip_push(String::new(), None);
+            }
+            return;
+        }
         self.last_synced.host_copy = self.last_synced.next_copy();
         // File copies arrive only while the agent advertises CLIPSETFILES. Over
         // this agent's limits, or with a file that cannot be read, the copy goes
@@ -256,6 +268,8 @@ impl AgentConsoleHarness {
         if changed {
             self.last_synced.guest_reply = Some(reply);
             self.last_synced.guest_copy = self.last_synced.next_copy();
+            // A guest copy, unless it shows the push (set again where it does).
+            self.last_synced.from_host = false;
         }
         if clipx {
             let Some((image, html, _, _, files, files_part, b64)) = parsed else {
@@ -279,8 +293,9 @@ impl AgentConsoleHarness {
         };
         // Adopt only genuinely-new content (normalized compare) so a value
         // we pushed host->guest doesn't bounce straight back.
-        if let Some(normalized) = guest_clip_decision(&self.last_synced.text, &text) {
-            self.publish_guest_text(normalized, now);
+        match guest_clip_decision(&self.last_synced.text, &text) {
+            Some(normalized) => self.publish_guest_text(normalized, now),
+            None => self.last_synced.from_host |= echo,
         }
     }
     /// The guest's text with its HTML onto the Mac, or the text alone when the
@@ -333,7 +348,8 @@ impl AgentConsoleHarness {
         if line.starts_with("OK") {
             let mut html_note = String::new();
             if let Some((ServiceReq::ClipPush(text, html), _)) = self.in_flight.take() {
-                self.last_synced.text = Some(normalize_clip(&text));
+                // Empty when the Mac was cleared.
+                self.last_synced.text = Some(normalize_clip(&text)).filter(|text| !text.is_empty());
                 // CLIPSET and CLIPSETH replace the whole guest clipboard.
                 self.last_synced.image = None;
                 self.last_synced.files = None;
