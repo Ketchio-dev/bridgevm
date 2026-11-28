@@ -86,8 +86,14 @@ namespace System.Windows.Forms {
     public static class Clipboard {
         public static IDataObject Current;
         public static int Reads;
+        // Reads left that fail as when another app holds the clipboard.
+        public static int Busy;
         public static void SetDataObject(object data, bool copy, int retryTimes, int retryDelay) { Current = (IDataObject)data; BvTestSeq.Seq++; }
-        public static IDataObject GetDataObject() { Reads++; return Current; }
+        public static IDataObject GetDataObject() {
+            Reads++;
+            if (Busy > 0) { Busy--; throw new System.Runtime.InteropServices.ExternalException("Requested Clipboard operation did not succeed."); }
+            return Current;
+        }
         public static bool ContainsFileDropList() { return Current != null && Current.GetDataPresent("FileDrop", true); }
         public static System.Collections.Specialized.StringCollection GetFileDropList() {
             System.Collections.Specialized.StringCollection list = new System.Collections.Specialized.StringCollection();
@@ -181,6 +187,19 @@ try {
     Assert ($poll[1] -eq '4' -and $poll[2] -eq '5' -and $poll[3] -eq [string]$bytes.Length -and $poll[4] -ceq [BridgeVM.BvClipImage]::Sha256Hex($bytes) -and $poll[5] -ceq (B64 $guestPath)) "CLIPX for a bitmap copy: $poll"
     $width = 0; $height = 0
     Assert ([BridgeVM.BvClipImage]::PngSize($bytes, [ref]$width, [ref]$height) -and $width -eq 4 -and $height -eq 5) 'guest.png is a 4x5 PNG'
+
+    # A read that fails while another app holds the clipboard is tried again at the next poll,
+    # three times at most for one copy.
+    if (-not $desktop) {
+        Copy-Bitmap 6 7
+        $TClipboard::Busy = 1
+        Assert ((Run 'CLIPX' '')[0] -clike 'CLIPX 0 0 0 - - *') 'a busy clipboard reads as no image'
+        Assert ((Run 'CLIPX' '')[0] -clike 'CLIPX 6 7 *') 'the next poll reads the image'
+        Copy-Bitmap 6 8
+        $TClipboard::Busy = 3
+        foreach ($i in 1..3) { [void](Run 'CLIPX' '') }
+        Assert ((Run 'CLIPX' '')[0] -clike 'CLIPX 0 0 0 - - *') 'after three failed reads the copy stays as read'
+    }
 
     # Over the side limit nothing is encoded; without an image the part is empty.
     Copy-Bitmap 16385 2

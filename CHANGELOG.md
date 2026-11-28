@@ -46,6 +46,9 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- A Windows copy made while another app briefly held the clipboard (such as
+  clipboard history or Office) now still reaches the Mac. Needs the Guest
+  Tools update.
 - A Mac change made just as the shared folder is renamed or deleted in
   Windows no longer makes the Windows folder again with only that file,
   after the Guest Tools update.

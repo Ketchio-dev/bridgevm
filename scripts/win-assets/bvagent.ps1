@@ -2120,17 +2120,29 @@ function Set-ClipText([string]$text) {
 # killing the channel). So the read is gated behind user32's GetClipboardSequenceNumber -
 # a cheap, never-blocking query that bumps on every clipboard change - and a cached copy
 # is served while the sequence is unchanged (idle polls open the clipboard zero times).
-# A read that fails or times out keeps the last text until the next change.
+# A read that fails or times out keeps the last text, and is tried again (Test-ClipRetry).
 function Update-ClipTextCache {
     $seq = $K::GetClipboardSequenceNumber()
     if ($seq -eq $script:BvClipSeq) { return }
-    $script:BvClipSeq = $seq
     try {
         if (Initialize-ClipText) { $script:BvClipCache = [BridgeVM.BvClipText]::Get() }
         else { $c = Get-Clipboard -Raw -ErrorAction SilentlyContinue; $script:BvClipCache = if ($null -ne $c) { [string]$c } else { '' } }
+        $script:BvClipSeq = $seq
     } catch {
         Log ('CLIP TEXT read failed, keeping the last text: ' + $_.Exception.Message)
+        if (-not (Test-ClipRetry 'text' $seq)) { $script:BvClipSeq = $seq }
     }
+}
+
+# A clipboard part whose read failed (another app holding the clipboard, as clipboard history and
+# Office do right after a copy) is read again at the next poll, at most three times for one change;
+# after that the change keeps what the failed read gave. True while a retry is left.
+$script:BvClipRetries = @{}
+function Test-ClipRetry([string]$part, [uint32]$seq) {
+    $last = $script:BvClipRetries[$part]
+    $count = if ($null -ne $last -and $last[0] -eq $seq) { $last[1] + 1 } else { 1 }
+    $script:BvClipRetries[$part] = @($seq, $count)
+    return $count -lt 3
 }
 
 $script:BvClipImageSource = @'
@@ -2349,7 +2361,7 @@ function Initialize-ClipImage {
 
 # The image part of CLIPX: <w> <h> <bytes> <sha256|-> <b64(path)|->. A readable
 # image within the limits is written to guest.png for the host's GET; the previous
-# copy's file goes first. A failed read counts as no image for that change.
+# copy's file goes first. A failed read counts as no image (Test-ClipRetry reads it again).
 function Get-ClipImageDescriptor {
     $seq = $K::GetClipboardSequenceNumber()
     if ($seq -eq $script:BvClipImgSeq) { return $script:BvClipImgDesc }
@@ -2372,6 +2384,7 @@ function Get-ClipImageDescriptor {
             }
         } catch {
             Log ('CLIPX image read failed: ' + $_.Exception.Message)
+            if (Test-ClipRetry 'image' $seq) { return '0 0 0 - -' }
             $desc = '0 0 0 - -'
         }
     }
@@ -2389,7 +2402,7 @@ function Read-ClipHtml {
     return @{ Bytes = $bytes; Size = $size }
 }
 # The HTML part of CLIPXH: <bytes> <b64(cf_html)|->, read again only after a change.
-# Over the limit it names the size only; a failed read counts as no HTML.
+# Over the limit it names the size only; a failed read counts as no HTML (and is retried).
 function Get-ClipHtmlPart {
     $seq = $K::GetClipboardSequenceNumber()
     if ($seq -eq $script:BvClipHtmlSeq) { return $script:BvClipHtmlPart }
@@ -2401,6 +2414,7 @@ function Get-ClipHtmlPart {
             elseif ($html.Size -gt 0) { $part = '{0} -' -f $html.Size }
         } catch {
             Log ('CLIPXH html read failed: ' + $_.Exception.Message)
+            if (Test-ClipRetry 'html' $seq) { return $part }
         }
     }
     $script:BvClipHtmlPart = $part
@@ -2415,7 +2429,7 @@ $script:BvClipFilesPart = '0 -'
 # 1), and below a copied folder every file and folder in it (top 0, after their folder). A folder has
 # 0 bytes and mtime 0; a file's mtime (LastWriteTimeUtc ticks) tells the host an edited file from
 # the copy it already has. Past FilesMax entries the listing stops and names the count only (FilesMax + 1). A failed
-# read counts as no files. A host whose copy is past 256 entries or 64 MiB fetches it with GETRANGE.
+# read counts as no files (and is retried). A host whose copy is past 256 entries or 64 MiB fetches it with GETRANGE.
 function Get-ClipFilesPart {
     $seq = $K::GetClipboardSequenceNumber()
     if ($seq -eq $script:BvClipFilesSeq) { return $script:BvClipFilesPart }
@@ -2451,6 +2465,7 @@ function Get-ClipFilesPart {
             }
         } catch {
             Log ('CLIPXF files read failed: ' + $_.Exception.Message)
+            if (Test-ClipRetry 'files' $seq) { return $part }
         }
     }
     $script:BvClipFilesPart = $part
