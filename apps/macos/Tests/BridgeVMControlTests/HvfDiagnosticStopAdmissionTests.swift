@@ -91,4 +91,29 @@ final class HvfRuntimeDiagnosticStopAdmissionTests: XCTestCase {
         XCTAssertThrowsError(try HvfRuntimePreparation.prepare(config: config))
         XCTAssertEqual(try Data(contentsOf: elsewhere), Data("keep\n".utf8))
     }
+
+    /// The helper writes boot screenshots and the 3D trace afresh each run: the last run's go at
+    /// the next start instead of piling up in the bundle.
+    func testPreparationRemovesTheLastRunsScreenshotsAndGPUTrace() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ramfb-preparation-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let vm = VMConfig(id: "windows", name: "windows", displayName: "windows",
+            backendKind: "hvf-engine", bootMode: "windows-hvf",
+            bundlePath: root.appendingPathComponent("bundle.vmbridge").path,
+            runnerPath: "", launchSpecPath: "", handoffPath: "", sshKeyPath: "", sshUser: "",
+            leasesPath: "", guestName: "windows", displayWidth: 1280, displayHeight: 720,
+            installPending: false)
+        let config = try XCTUnwrap(HvfEngineConfig.libraryVM(vm, rootURL: root))
+        let evidence = URL(fileURLWithPath: config.evidenceDir, isDirectory: true)
+        let frames = evidence.appendingPathComponent("ramfb", isDirectory: true)
+        try FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
+        try Data(count: 64).write(to: frames.appendingPathComponent("ramfb-checkpoint-ramfb-sample-5000ms-0000.ppm"))
+        try Data("{}\n".utf8).write(to: evidence.appendingPathComponent("virtio-gpu.jsonl"))
+        let kept = evidence.appendingPathComponent("guest-agent-seen")
+        try Data().write(to: kept)
+        _ = try HvfRuntimePreparation.prepare(config: config)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: frames.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: evidence.appendingPathComponent("virtio-gpu.jsonl").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: kept.path), "Other evidence stays")
+    }
 }

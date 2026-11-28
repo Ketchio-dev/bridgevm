@@ -13,9 +13,14 @@ enum HvfRuntimePreparation {
         // run.log is removed too: the wrapper recreates it, and a stale log
         // would otherwise replay old BVAGENT/BOOT_TIMER lines into this
         // session (false attach, false 3D-injection confirmation).
+        // ramfb/ (the helper's boot screenshots, about 7 MB a frame, three or more
+        // each boot) and the 3D command trace are written anew by every run and were
+        // never removed, so a VM's bundle grew with each start. The last run's stay
+        // until the next start, for diagnostics.
         for name in [
             "display.ppm", "display.ppm.tmp", "display.fb", "display.fb.tmp",
-            "display.fb.iosurface", "display.cursor", "input.ctl", "run.log", "diagnostic-stop.request", "diagnostic-stop.request.pending"
+            "display.fb.iosurface", "display.cursor", "input.ctl", "run.log", "diagnostic-stop.request", "diagnostic-stop.request.pending",
+            "ramfb", "virtio-gpu.jsonl"
         ] {
             let url = evidenceDirectory.appendingPathComponent(name)
             if fileManager.fileExists(atPath: url.path) || (try? fileManager.destinationOfSymbolicLink(atPath: url.path)) != nil {

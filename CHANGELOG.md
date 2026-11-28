@@ -89,6 +89,9 @@ All notable changes to BridgeVM are documented in this file.
   Windows disk.
 - When quitting BridgeVM waits for more than one VM to shut down, the
   "still shutting down" question now names the VMs it is still waiting for.
+- A VM's folder no longer grows by tens of megabytes each time Windows starts:
+  the boot screenshots BridgeVM keeps for diagnostics are now replaced at the
+  next start instead of piling up.
 - The installers accept an Apple Silicon Mac when they are run from a Rosetta
   shell, such as an Intel Homebrew bash.
 - The install guide no longer says Open Anyway is needed only once: each newly
