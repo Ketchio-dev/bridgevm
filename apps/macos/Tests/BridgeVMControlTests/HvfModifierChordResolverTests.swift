@@ -128,6 +128,25 @@ final class HvfModifierChordResolverTests: XCTestCase {
         XCTAssertEqual(chord(0x0e, "ㄷ", .command, windows), .key("win+e"))
     }
 
+    /// Punctuation follows the Mac layout like letters do: on a German Mac '-' sits on the US '/' key (0x2c) and '+'
+    /// on the US ']' key (0x1e), and ⌘- / ⌘+ must zoom. Shift and the digit row keep the key position.
+    func testPunctuationFollowsTheMacLayoutWithoutShift() {
+        let rows: [(UInt16, String, EventModifiers, String)] = [
+            (0x2c, "-", .command, "ctrl+minus"),              // German
+            (0x1e, "+", .command, "ctrl+equal"),              // German '+' is Windows' Ctrl+Plus (VK_OEM_PLUS)
+            (0x1b, "+", .command, "ctrl+equal"),              // Swedish '+' on the US '-' key
+            (0x2c, "-", .control, "ctrl+minus"),
+            (0x2c, "-", .option, "alt+minus"),
+            (0x2c, "_", [.command, .shift], "ctrl+shift+slash"),
+            (0x15, "'", .command, "ctrl+4"),                  // French digit row
+            (0x12, "+", .control, "ctrl+1")                   // Czech digit row
+        ]
+        for (keyCode, characters, modifiers, action) in rows {
+            XCTAssertEqual(chord(keyCode, characters, modifiers, mac), .key(action), "\(characters) \(action)")
+        }
+        XCTAssertEqual(chord(0x2c, "-", .command, windows), .key("win+minus"))
+    }
+
     func testMacAppShortcutsStayWithTheMacInBothModes() {
         for mapping in [mac, windows] {
             for (keyCode, characters, modifiers) in [(UInt16(0x0c), "q", EventModifiers.command), (0x0c, "ㅂ", .command), (0x04, "h", .command),

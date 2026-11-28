@@ -12,9 +12,10 @@ enum HvfModifierChord {
     /// Keys that never type text.
     static let named = navigation.union(["backspace", "tab", "enter", "esc", "escape", "space", "insert", "delete"])
         .union((1...12).map { "f\($0)" })
-    /// The US-layout punctuation keys, by name.
-    static let punctuation: Set<String> = ["minus", "equal", "lbracket", "rbracket", "backslash", "semicolon",
-                                           "quote", "grave", "comma", "period", "slash"]
+    /// The US-layout punctuation keys: the character each types without Shift, and its name.
+    static let punctuation: [String: String] = ["-": "minus", "=": "equal", "[": "lbracket", "]": "rbracket",
+                                               "\\": "backslash", ";": "semicolon", "'": "quote", "`": "grave",
+                                               ",": "comma", ".": "period", "/": "slash"]
     /// The Print Screen key (the Mac's F13). The VMM builds it; an agent only after its
     /// `BVINPUT_KEYS <uuid> PRINTSCREEN` marker (HvfInputCapabilityReceipt).
     static let printScreen = "printscreen"
@@ -62,20 +63,25 @@ enum HvfModifierChord {
     }
 
     private static func isCharacter(_ key: String) -> Bool {
-        guard key.utf8.count == 1, let byte = key.utf8.first else { return punctuation.contains(key) }
+        guard key.utf8.count == 1, let byte = key.utf8.first else { return punctuation.values.contains(key) }
         return (0x61...0x7a).contains(byte) || (0x30...0x39).contains(byte)
     }
 
-    /// A key's chord name. Named keys, digits and punctuation go by key code (Shift changes their
-    /// characters); a letter by its Latin character, so Dvorak or AZERTY letters stay themselves,
-    /// and otherwise (Korean and other non-Latin input sources) by its ANSI key position.
-    static func keyName(keyCode: UInt16, charactersIgnoringModifiers: String) -> String? {
+    /// A key's chord name. Named keys and the digit row go by key code (Windows keeps VK_0–VK_9 there on
+    /// AZERTY and Czech too); a letter by its Latin character, so Dvorak or AZERTY letters stay themselves;
+    /// without Shift, a US punctuation character by its name, so German ⌘- is Ctrl+Minus, not the US '/' key
+    /// it sits on. '+' is Windows' Ctrl+Plus, VK_OEM_PLUS: the US '=' key, and the key a German PC's '+'
+    /// sends. Anything else (Shift held, ß, Korean) goes by its ANSI key position.
+    static func keyName(keyCode: UInt16, charactersIgnoringModifiers: String, shift: Bool) -> String? {
         if let name = namedKeyCodes[keyCode] { return name }
         let scalars = charactersIgnoringModifiers.lowercased().unicodeScalars
         if scalars.count == 1, let value = scalars.first?.value, (0x61...0x7a).contains(value) {
             return String(UnicodeScalar(UInt8(value)))
         }
-        return HvfControlChordKeys.letterPositions[keyCode] ?? characterKeyCodes[keyCode]
+        let position = HvfControlChordKeys.letterPositions[keyCode] ?? characterKeyCodes[keyCode]
+        if !shift, position?.first?.isNumber != true,
+           let name = punctuation[charactersIgnoringModifiers == "+" ? "=" : charactersIgnoringModifiers] { return name }
+        return position
     }
 
     /// macOS virtual key codes (Carbon kVK_*) of the keys that never type text.
