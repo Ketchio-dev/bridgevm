@@ -26,6 +26,7 @@ pub(crate) struct PasteboardWorker {
     pub(super) images: Arc<AtomicBool>,
     pub(super) html: Arc<AtomicBool>,
     pub(super) files: Arc<AtomicBool>,
+    pub(super) report_again: Arc<AtomicBool>,
 }
 
 impl PasteboardWorker {
@@ -103,7 +104,11 @@ impl PasteboardWorker {
             if !html && self.poller.html {
                 self.poller.rich_text_off();
             }
-            self.poller.on_tick_clip(backend)
+            if self.report_again.swap(false, Ordering::AcqRel) {
+                self.poller.report_current(backend)
+            } else {
+                self.poller.on_tick_clip(backend)
+            }
         };
         match change {
             Some(clip) => self.report_clip(clip),

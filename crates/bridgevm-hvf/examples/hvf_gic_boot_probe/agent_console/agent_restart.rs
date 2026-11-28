@@ -84,6 +84,13 @@ impl AgentConsoleHarness {
         if self.clipsync {
             self.queue.retain(|req| !matches!(req, ServiceReq::ClipCaps));
             self.queue.push_front(ServiceReq::ClipCaps);
+            // A Windows sign-out ends the agent and empties the clipboard. Start over as
+            // at startup: nothing is known of the guest's, and the Mac's copy goes again.
+            let synced = &mut self.last_synced;
+            (synced.text, synced.image, synced.html, synced.files) = (None, None, None, None);
+            if let Some(pasteboard) = self.pasteboard.as_ref() {
+                pasteboard.report_again();
+            }
         }
         self.resume_link_watch();
         self.resume_print_watch();
