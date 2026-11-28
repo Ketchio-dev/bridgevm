@@ -56,11 +56,17 @@ final class ControlAppPower: ObservableObject {
     }
     /// Guest memory is ordinary swappable Mac memory with no balloon: VMs that together use more than
     /// one VM may (CreateVMMemoryOptions) make macOS swap. Each of them says so; nothing is refused.
+    /// One VM alone says so too: one made on a Mac with more memory keeps its amount (Settings keeps
+    /// the saved value selectable).
     func sharedMemoryNotice(for runtime: UUID,
                             hostBytes: UInt64 = ProcessInfo.processInfo.physicalMemory) -> String? {
         let totalMiB = runningMemoryMiB.values.reduce(0, +)
-        guard runningMemoryMiB[runtime] != nil, runningMemoryMiB.count > 1,
+        guard runningMemoryMiB[runtime] != nil,
               totalMiB > CreateVMMemoryOptions.ceilingMiB(hostBytes: hostBytes) else { return nil }
+        guard runningMemoryMiB.count > 1 else {
+            return "This VM uses \((totalMiB + 512) / 1024) GiB of memory, more than this Mac can spare, "
+                + "so Windows and your Mac may slow down. Give it less memory in Settings."
+        }
         return "Your running VMs use \((totalMiB + 512) / 1024) GiB of memory together, more than this Mac can spare, "
             + "so Windows and your Mac may slow down. Stop one, or give the VMs less memory in Settings."
     }

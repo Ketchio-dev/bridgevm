@@ -78,6 +78,9 @@ All notable changes to BridgeVM are documented in this file.
   before, the notice only said to restart Windows.
 - Quitting BridgeVM with a Settings sheet open now saves what was typed
   there, such as a new VM name or port forwards, instead of dropping it.
+- A VM that alone uses more memory than this Mac can spare, such as one
+  made on a Mac with more memory, now says so, as two VMs together
+  already did.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.
