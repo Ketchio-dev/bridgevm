@@ -62,6 +62,10 @@ All notable changes to BridgeVM are documented in this file.
   window still resizes the Windows desktop and keeps Windows' own pointer. A VM
   window that is starting now shows "Starting Windows…" until Windows draws its
   first picture, instead of staying black.
+- When the drive with a running VM gets below 5 GB free, BridgeVM now warns
+  once, before Windows pauses. If a VM on an external drive does pause because
+  that drive is full, the notice names the drive instead of saying your Mac's
+  disk is full.
 - Deleting the selected VM selects the VM next to it, not the first VM
   in the library.
 - A Mac file that never reaches Windows now gets a notice: when Windows

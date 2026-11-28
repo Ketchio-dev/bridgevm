@@ -4,8 +4,8 @@ import Foundation
 /// `RESUME` runs them again, with guest time continuing where it stopped (the probe's pause_gate).
 /// The probe answers on run.log (`BVPAUSE paused`, `BVPAUSE resumed …`, `BVPAUSE refused: …`), and
 /// the session shows what it last said, so a reattached app reads the helper's real state too.
-/// A full Mac disk pauses the VM on its own (`BVSTORAGE full …` first): Windows' writes wait instead
-/// of failing, and a Resume while the disk is still full is answered paused again.
+/// A full drive under the VM's disk pauses the VM on its own (`BVSTORAGE full …` first): Windows' writes
+/// wait instead of failing, and a Resume while the drive is still full is answered paused again.
 enum HvfPauseState: Equatable {
     case running
     /// `PAUSE` sent at `sentAt` (`ownedStartNow`); the probe has not answered yet.
@@ -62,6 +62,10 @@ extension HvfEngineSession {
     /// helper without Pause, or one that ended) is dropped after this long.
     static let pauseAnswerTimeout: TimeInterval = 5
     static let diskFullNotice = "Windows is paused because your Mac’s disk is full. Free up space on your Mac, then choose Resume."
+    /// The same for a VM on another drive (`path=` is not the startup disk): that is the one to free up.
+    static func fullDriveNotice(_ drive: String) -> String {
+        "Windows is paused because “\(drive)”, the drive with this VM, is full. Free up space on it, then choose Resume."
+    }
 
     /// The clock for the app's deadlines on guest answers (HvfGuestRunClock).
     func guestNow() -> Date { guestRunClock.now(host: hostNow()) }
@@ -124,17 +128,18 @@ extension HvfEngineSession {
         let words = line.split(separator: " ", maxSplits: 2)
         guard words.count >= 2, words[0] == "BVPAUSE" else { return }
         switch words[1] {
-        case "paused" where diskFullReported: // also the answer to a RESUME while the disk is still full
-            diskFullReported = false
+        case "paused" where diskFullPath != nil: // also the answer to a RESUME while the drive is still full
+            let drive = diskFullPath.flatMap(HvfVMDrive.name(mountPoint:))
+            diskFullPath = nil
             pause = .paused
-            pauseNotice = Self.diskFullNotice
+            pauseNotice = drive.map(Self.fullDriveNotice) ?? Self.diskFullNotice
         case "paused":
             if case .resuming = pause { return } // a RESUME already went after it
             pause = .paused
         case "resumed":
             pause = .running
         case "refused:":
-            diskFullReported = false
+            diskFullPath = nil
             pause = .running
             pauseNotice = "The VM couldn’t pause and is still running."
         default:
@@ -142,14 +147,15 @@ extension HvfEngineSession {
         }
     }
 
-    /// `BVSTORAGE full errno=… free=… path=…`: the probe pauses the VM for a full Mac disk next.
+    /// `BVSTORAGE full errno=… free=… path=<mount point>`: the probe pauses the VM for that full drive next.
     func storageReported(_ line: String) {
-        if line.hasPrefix("BVSTORAGE full ") { diskFullReported = true }
+        guard line.hasPrefix("BVSTORAGE full ") else { return }
+        diskFullPath = line.range(of: " path=").map { String(line[$0.upperBound...]) } ?? ""
     }
 
     /// A guest reset or a run's start or end: nothing is paused any more.
     func pauseEnded() {
-        diskFullReported = false
+        diskFullPath = nil
         if pause != .running { pause = .running }
         if pauseNotice != nil { pauseNotice = nil }
     }

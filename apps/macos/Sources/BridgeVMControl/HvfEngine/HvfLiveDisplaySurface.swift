@@ -27,6 +27,7 @@ struct HvfLiveDisplaySurface: View {
                     HvfGuestToolsStrip(session: session)
                     HvfDisplayDriverNoticeView(session: session)
                     HvfDiskSyncNoticeView(notice: session.diskSyncNotice)
+                    HvfLowSpaceNoticeView(notice: session.lowSpaceNotice)
                 }
             }
             .overlay(alignment: .bottom) { HvfFileDropNoticeView(drops: session.fileDrops) }
