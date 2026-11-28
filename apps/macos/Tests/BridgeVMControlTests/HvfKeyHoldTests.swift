@@ -96,24 +96,50 @@ final class HvfKeyHoldTests: XCTestCase {
 
     func testFocusLossReleasesEveryHeldKeyOnTheRouteItWentDown() throws {
         try withClockedSession(hold: nil) { session, fixture, _ in
+            let view = FBLayerView(session: session)
+            defer { view.teardown() }
             try press(left, session)
             try press(right, session, flags: .control)
-            session.cancelOrderedInputTarget() // the display window lost key focus
+            view.windowResignedKey() // the display window lost key focus
             try release(left, session)
             try release(right, session, flags: .control)
             XCTAssertEqual(try legacy(fixture), ["KEY down:left", "KEY down:ctrl+right", "KEY up:left", "KEY up:ctrl+right"],
                            "input.ctl's keys go up there at once, and their later key-ups send nothing")
         }
         try withClockedSession(hold: true) { session, fixture, _ in
+            let view = FBLayerView(session: session)
+            defer { view.teardown() }
             try press(left, session)
             try insert(fixture, session, count: 1)
-            session.cancelOrderedInputTarget()
+            view.windowResignedKey()
             session.poll()
-            XCTAssertEqual(try payloads(fixture).last, "KEYINPUT up:left", "the agent's go up through the cleanup")
+            XCTAssertEqual(try payloads(fixture).last, "KEYINPUT up:left", "the agent's go up there too")
             try insert(fixture, session, count: 1)
             try release(left, session)
             session.poll()
             XCTAssertEqual(try payloads(fixture), ["KEYINPUT down:left", "KEYINPUT up:left"])
+            XCTAssertNil(try fixture.bytes(fixture.input))
+        }
+    }
+
+    /// Windows keeps its focus when the Mac window loses it (⌘Tab, a click in another app): what is still queued goes
+    /// in after the request in flight, in order, and the held key goes up after it.
+    func testFocusLossKeepsQueuedInputForWindowsAndStillReleasesAHeldKey() throws {
+        try withClockedSession(hold: true) { session, fixture, _ in
+            let view = FBLayerView(session: session)
+            defer { view.teardown() }
+            try press(left, session)
+            try insert(fixture, session, count: 1)
+            XCTAssertEqual(session.sendText("Hello "), .acceptedForProcessing) // in flight
+            XCTAssertEqual(session.sendText("world"), .acceptedForProcessing)
+            XCTAssertTrue(session.sendKey("enter"))
+            view.windowResignedKey()
+            XCTAssertEqual(try payloads(fixture), ["KEYINPUT down:left", "TEXTINPUT Hello "], "nothing overtakes it")
+            for count in [12, 10, 2, 1] { try insert(fixture, session, count: count) }
+            try release(left, session)
+            session.poll()
+            XCTAssertEqual(try payloads(fixture), ["KEYINPUT down:left", "TEXTINPUT Hello ", "TEXTINPUT world", "KEYINPUT enter",
+                                                   "KEYINPUT up:left"], "nothing discarded, and the key goes up once")
             XCTAssertNil(try fixture.bytes(fixture.input))
         }
     }

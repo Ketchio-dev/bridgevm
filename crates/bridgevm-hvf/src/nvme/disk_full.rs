@@ -162,7 +162,7 @@ impl NvmeController {
 
 /// The free bytes and mount point of the volume holding `file`.
 #[cfg(target_os = "macos")]
-fn volume_of(file: &std::fs::File) -> Option<(u64, PathBuf)> {
+pub(super) fn volume_of(file: &std::fs::File) -> Option<(u64, PathBuf)> {
     use std::os::fd::AsRawFd;
     use std::os::unix::ffi::OsStrExt;
     // statfs, not statvfs: macOS statvfs counts blocks in 32 bits.
@@ -182,7 +182,7 @@ fn volume_of(file: &std::fs::File) -> Option<(u64, PathBuf)> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn volume_of(_file: &std::fs::File) -> Option<(u64, PathBuf)> {
+pub(super) fn volume_of(_file: &std::fs::File) -> Option<(u64, PathBuf)> {
     None
 }
 

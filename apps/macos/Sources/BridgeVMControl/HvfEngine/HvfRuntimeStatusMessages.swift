@@ -18,6 +18,7 @@ struct HvfRuntimeStatusMessages: View {
             HvfGuestToolsAction(session: session)
             HvfShareRootNoticeView(notice: session.shareRootNotice)
             HvfDiskSyncNoticeView(notice: session.diskSyncNotice)
+            HvfLowSpaceNoticeView(notice: session.lowSpaceNotice)
             HvfMicrophoneNoticeView(session: session)
             HvfAgentUpdateNoticeView(notice: session.agentUpdateNotice)
             HvfClipboardImageNoticeView(notice: session.clipboardImageNotice)

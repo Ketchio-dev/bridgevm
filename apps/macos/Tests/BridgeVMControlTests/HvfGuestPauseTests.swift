@@ -85,14 +85,16 @@ final class HvfGuestPauseTests: XCTestCase {
 
     /// A full Mac disk pauses the VM (`BVSTORAGE full …`, then `BVPAUSE paused`) and the app says so in
     /// one sentence. A Resume while the disk is still full is answered the same way and stays paused;
-    /// once there is space it runs again. A plain Pause says nothing.
+    /// once there is space it runs again. A full external drive is named, as it is the one to free up
+    /// (the line's `path=` is the statfs mount point: `/System/Volumes/Data` for the Mac's startup disk).
+    /// A plain Pause says nothing.
     func testAFullMacDiskPauseSaysSoAndAPlainPauseDoesNot() throws {
         let fixture = try HvfRuntimeKeyboardDraftFixture()
         defer { fixture.remove() }
         try fixture.withSession { session in
             session.beginOwnedInputBoot()
             session.connectionState = .booting
-            let full = "BVSTORAGE full errno=28 free=0 path=/Volumes/Mac SSD\nBVPAUSE paused\n"
+            let full = "BVSTORAGE full errno=28 free=0 path=/System/Volumes/Data\nBVPAUSE paused\n"
             try fixture.appendLog(full)
             session.poll()
             XCTAssertEqual(session.pause, .paused)
@@ -110,6 +112,15 @@ final class HvfGuestPauseTests: XCTestCase {
             session.poll()
             XCTAssertEqual(session.pause, .running)
             XCTAssertNil(session.pauseNotice)
+
+            try fixture.appendLog("BVSTORAGE full errno=28 free=4096 path=/Volumes/Mac SSD\nBVPAUSE paused\n")
+            session.poll()
+            XCTAssertEqual(session.pause, .paused)
+            XCTAssertEqual(session.pauseNotice, "Windows is paused because “Mac SSD”, the drive with this VM, is full. Free up space on it, then choose Resume.")
+            XCTAssertEqual(session.requestResume(), .requested)
+            try fixture.appendLog("BVPAUSE resumed paused_ms=9000 vtimer_offset=0x2b\n")
+            session.poll()
+            XCTAssertEqual(session.pause, .running)
 
             XCTAssertEqual(session.requestPause(), .requested)
             try fixture.appendLog("BVPAUSE paused\n")

@@ -23,6 +23,8 @@ enum BvAgentEvent: Equatable, Identifiable {
     /// Structured host storage diagnostic, not the human-readable error log.
     case diskDurabilityFailed
     case diskFinalSaveFailed
+    /// `BVSTORAGE trim-unsupported path=…`: the disk file's drive cannot punch holes.
+    case diskTrimUnsupported
     case unknown(String)
 
     var id: String { "\(Date().timeIntervalSince1970)-\(displayText)" }
@@ -41,6 +43,7 @@ enum BvAgentEvent: Equatable, Identifiable {
         case let .commandOutput(label, body): return "CMD \(label)\n\(body)"
         case .diskDurabilityFailed: return "BVSTORAGE durability-failed"
         case .diskFinalSaveFailed: return "BVSTORAGE final-save-failed"
+        case .diskTrimUnsupported: return "BVSTORAGE trim-unsupported"
         case let .unknown(line): return line
         }
     }
@@ -91,6 +94,7 @@ enum BvAgentEvent: Equatable, Identifiable {
         if line == "BVSTORAGE final-save-failed" || line == "BVSTORAGE final-save-failed\r" {
             return .diskFinalSaveFailed
         }
+        if line.hasPrefix("BVSTORAGE trim-unsupported") { return .diskTrimUnsupported }
         guard line.hasPrefix("BVAGENT ") else { return .unknown(line) }
         if line.hasPrefix("BVAGENT READY host="), let tMs = tMs(in: line) {
             let prefix = "BVAGENT READY host="
