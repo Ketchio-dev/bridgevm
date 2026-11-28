@@ -75,6 +75,10 @@ All notable changes to BridgeVM are documented in this file.
   connections. Each answered DNS lookup used to keep a slot in the
   256-entry UDP table for five minutes. Upload connections now also give
   back their buffer memory, up to about 6 MB each, once it has been sent.
+- An idle connection in Windows, such as mail waiting for new messages or an
+  RDP or SSH session, whose server became unreachable after the Mac changed
+  networks or slept now fails after about two minutes, so the app can
+  reconnect. Before, it looked alive to Windows indefinitely.
 - Files dropped on a VM window, or opened with BridgeVM from Finder, while
   Windows is still starting are now copied once Windows is ready. Before,
   they were refused with a message that stayed over the Windows taskbar. A
