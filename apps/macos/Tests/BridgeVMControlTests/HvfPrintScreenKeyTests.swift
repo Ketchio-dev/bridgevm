@@ -34,6 +34,41 @@ final class HvfPrintScreenKeyTests: XCTestCase {
         XCTAssertEqual(HvfHostKeyCommand.resolve(characters: "a"), .text("a"))
     }
 
+    /// Shift+Insert is Paste and Ctrl+Insert Copy in Windows; with a modifier the Help key used to send nothing.
+    func testInsertKeepsItsModifiers() {
+        XCTAssertEqual(HvfHostKeyCommand.resolve(characters: "\u{f746}", modifiers: .shift), .key("shift+insert"))
+        XCTAssertEqual(HvfHostKeyCommand.resolve(characters: "\u{f727}", modifiers: .shift), .key("shift+insert"))
+        let mac = HvfHostKeyMapping(commandKey: .mac, modifierChords: true)
+        for (modifiers, action) in [(EventModifiers.control, "ctrl+insert"), (.command, "ctrl+insert"),
+                                    ([.control, .shift], "ctrl+shift+insert"), (.option, "alt+insert")] {
+            XCTAssertEqual(HvfHostKeyCommand.resolveChord(keyCode: 0x72, charactersIgnoringModifiers: "\u{f746}",
+                                                          modifiers: modifiers, mapping: mac), .key(action), action)
+        }
+    }
+
+    /// Through the display's key path, Shift+Help and Ctrl+Help reach the VMM as held Insert chords.
+    func testModifiedInsertReachesTheLegacyRoute() throws {
+        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("insert-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let config = HvfEngineConfig(targetDiskPath: "synthetic-disk", uefiVarsPath: "synthetic-vars",
+            evidenceDir: root.path, watchdogMs: nil, ramMiB: 6144, smpCpus: 4, clipboardSync: true,
+            shareHostDir: nil, shareGuestDir: nil, virtioNet: false, virtioGpu3d: false, nvmeBufferedIO: false,
+            ctlFilePath: root.appendingPathComponent("agent.ctl").path)
+        let session = HvfEngineSession(config: config, repoRoot: root) { _ in false }
+        for flags: NSEvent.ModifierFlags in [[.function, .shift], [.function, .control]] {
+            for type: NSEvent.EventType in [.keyDown, .keyUp] {
+                let event = try XCTUnwrap(NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags,
+                    timestamp: 0, windowNumber: 0, context: nil, characters: "\u{f746}",
+                    charactersIgnoringModifiers: "\u{f746}", isARepeat: false, keyCode: 0x72))
+                XCTAssertTrue(HvfFramebufferKeyInput.send(event, to: session, refused: { XCTFail("refused") }))
+            }
+        }
+        XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("input.ctl"), encoding: .utf8),
+                       "KEY down:shift+insert\nKEY up:shift+insert\nKEY down:ctrl+insert\nKEY up:ctrl+insert\n")
+    }
+
     /// The pressed key, through the display's key path, reaches the VMM as Print Screen, held until its key-up.
     func testF13ReachesTheLegacyRouteAsPrintScreen() throws {
         let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()

@@ -43,6 +43,26 @@ final class HvfPointerModifierInputTests: XCTestCase {
         }
     }
 
+    /// A press refused for room (a full queue behind a request in flight) sends no release at its mouse-up: Windows
+    /// would get it alone, and a lone right up opens a context menu. A click after the queue drains goes through whole.
+    func testAPressRefusedForRoomSendsNoRelease() throws {
+        try withOrderedDisplay(pointer: ["MIDDLE"]) { view, session, fixture in
+            for _ in 0..<HvfOrderedInputQueue.maximumEvents { XCTAssertTrue(session.sendDisplayInput(.key("enter"))) }
+            view.rightMouseDown(with: PointerEvent(button: 1))
+            view.rightMouseUp(with: PointerEvent(button: 1))
+            view.mouseDown(with: PointerEvent())
+            view.mouseUp(with: PointerEvent())
+            view.otherMouseDown(with: PointerEvent(button: 2))
+            view.otherMouseUp(with: PointerEvent(button: 2))
+            XCTAssertEqual(try deliver(fixture, session),
+                           Array(repeating: "KEYINPUT enter", count: HvfOrderedInputQueue.maximumEvents))
+            negotiated = try fixture.commands().count
+            view.rightMouseDown(with: PointerEvent(button: 1))
+            view.rightMouseUp(with: PointerEvent(button: 1))
+            XCTAssertEqual(try deliver(fixture, session), ["rightpress:16384x16384", "rightrelease:16384x16384"])
+        }
+    }
+
     /// Shift+click extends a selection only when the press and release carry Shift.
     func testAShiftClickReachesTheGuestWithShiftHeldOnItsPressAndRelease() throws {
         try withOrderedDisplay(pointer: ["MODIFIERS"]) { view, session, fixture in

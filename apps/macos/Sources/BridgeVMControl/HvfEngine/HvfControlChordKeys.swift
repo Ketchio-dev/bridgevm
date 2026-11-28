@@ -7,11 +7,12 @@ enum HvfControlChordKeys {
     static let token = "CTRL_SHIFT_CHORDS"
     static let extended: Set<String> = Set("bdefghijklmnopqrstuw".map { "ctrl+\($0)" } + (1...12).map { "shift+f\($0)" }
         + ["ctrl+enter", "ctrl+tab", "ctrl+shift+tab", "shift+delete"])
-    /// NSEvent private-use function-key scalars plus forward delete, as Shift chord names.
+    /// NSEvent private-use function-key scalars plus forward delete and Insert (a PC keyboard's Insert is the Mac's
+    /// Help, U+F746), as Shift chord names. Shift+Insert is Paste in Windows.
     static let shiftKeys: [String: String] = [
         "\u{f704}": "f1", "\u{f705}": "f2", "\u{f706}": "f3", "\u{f707}": "f4", "\u{f708}": "f5", "\u{f709}": "f6",
         "\u{f70a}": "f7", "\u{f70b}": "f8", "\u{f70c}": "f9", "\u{f70d}": "f10", "\u{f70e}": "f11", "\u{f70f}": "f12",
-        "\u{f728}": "delete"
+        "\u{f728}": "delete", "\u{f746}": "insert", "\u{f727}": "insert"
     ]
     /// macOS ANSI virtual key positions (Carbon kVK_ANSI_A...kVK_ANSI_Z) for non-Latin input sources.
     static let letterPositions: [UInt16: String] = [

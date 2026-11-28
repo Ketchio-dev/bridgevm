@@ -296,13 +296,21 @@ final class FBLayerView: HvfFramebufferTextInput {
             return notePress(session == nil ? "no-session" : "no-guest-size")
         }
 
-        notePress(session.sendPointerPress(
+        let outcome = session.sendPointerPress(
             location: point(event),
             viewSize: bounds.size,
             imageSize: guestSize,
             modifiers: guestModifiers(event)
-        ))
-        if let release = pointerRelease(at: point(event)) { pointerCapture.arm(window: window, release: release) }
+        )
+        notePress(outcome)
+        armRelease(after: outcome, at: point(event), button: 0)
+    }
+
+    /// Only a press that went to a route (HvfEngineSession.pressAdmitted) arms its button's release. A refused one
+    /// (a full queue behind a request in flight) arms nothing, so its mouse-up sends no lone release to Windows.
+    private func armRelease(after outcome: String, at location: CGPoint, button: Int) {
+        guard HvfEngineSession.pressAdmitted(outcome), let release = pointerRelease(at: location, button: button) else { return }
+        pointerCapture.arm(window: window, button: button, release: release)
     }
 
     private func notePress(_ outcome: String) {
@@ -316,6 +324,8 @@ final class FBLayerView: HvfFramebufferTextInput {
 
     private func releasePointer(with event: NSEvent, button: Int) {
         pointerMoves.reset()
+        // Nothing armed: its press was refused or never sent, or a focus loss already released it.
+        guard pointerCapture.isArmed(button: button) else { return }
         if let release = pointerRelease(at: point(event), modifiers: guestModifiers(event), button: button) {
             pointerCapture.disarm(button: button)
             release()
@@ -334,13 +344,13 @@ final class FBLayerView: HvfFramebufferTextInput {
             return
         }
 
-        session.sendPointerRightPress(
+        let outcome = session.sendPointerRightPress(
             location: point(event),
             viewSize: bounds.size,
             imageSize: guestSize,
             modifiers: guestModifiers(event)
         )
-        if let release = pointerRelease(at: point(event), button: 1) { pointerCapture.arm(window: window, button: 1, release: release) }
+        armRelease(after: outcome, at: point(event), button: 1)
     }
 
     override func rightMouseUp(with event: NSEvent) {
@@ -357,9 +367,9 @@ final class FBLayerView: HvfFramebufferTextInput {
         settleCompositionForClick()
         window?.makeFirstResponder(self)
         pointerMoves.reset()
-        session.sendPointerMiddlePress(location: point(event), viewSize: bounds.size, imageSize: guestSize,
-                                       modifiers: guestModifiers(event))
-        if let release = pointerRelease(at: point(event), button: 2) { pointerCapture.arm(window: window, button: 2, release: release) }
+        let outcome = session.sendPointerMiddlePress(location: point(event), viewSize: bounds.size, imageSize: guestSize,
+                                                     modifiers: guestModifiers(event))
+        armRelease(after: outcome, at: point(event), button: 2)
     }
 
     override func otherMouseUp(with event: NSEvent) {

@@ -21,6 +21,8 @@ final class HvfPointerCapture: NSObject {
         }
     }
 
+    func isArmed(button: Int) -> Bool { pendingReleases[button] != nil }
+
     func updateRelease(_ release: @escaping () -> Void, button: Int = 0) {
         if pendingReleases[button] != nil { pendingReleases[button] = release }
     }
