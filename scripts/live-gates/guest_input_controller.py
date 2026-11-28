@@ -29,7 +29,10 @@ def completed_reply(lines, label, expected):
         return False
     if len(ends) != 1 or ends[0] <= starts[0]:
         raise ValueError("invalid command completion envelope")
-    body = [line for line in lines[starts[0] + 1:ends[0]] if line != ""]
+    # The probe prints each guest line after `| ` (guest_text.rs guest_lines), an older one bare;
+    # an empty one is `| `, so the prefix goes first.
+    guest = (line[2:] if line.startswith("| ") else line for line in lines[starts[0] + 1:ends[0]])
+    body = [line for line in guest if line != ""]
     choices = (expected,) if isinstance(expected, str) else expected
     if len(body) != 1 or body[0] not in choices:
         raise ValueError("unexpected command receipt body")

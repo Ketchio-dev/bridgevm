@@ -147,7 +147,7 @@ check() {   # boot, request (WxH or WxH@P)
   local boot=$1 request=$2 mode=${2%@*} scale="" pattern n deadline size="none" guest="none" verdict=FAIL t0 settle
   local line="" dpi="none" monitor="none" m re=' after=([^ ]*) .*result=([^ ]*)' mre=' dpi=([0-9]+) '
   [[ "$request" != *@* ]] || scale=${request#*@}
-  pattern="^BVDISPLAY target=$mode .*after=$mode .*result=0"
+  pattern="^([|] )?BVDISPLAY target=$mode .*after=$mode .*result=0"
   n=$(count "$pattern"); n=${n:-0}
   t0=$(now_ms)
   printf 'RESIZE %s\n' "$request" >> "$INPUT"
@@ -164,17 +164,17 @@ check() {   # boot, request (WxH or WxH@P)
     # after this request's BVDISPLAY answers it.
     deadline=$((SECONDS + STEP_TIMEOUT))
     while [[ "$guest" == "$mode" ]] && (( SECONDS < deadline )); do
-      line=$(first_after "$pattern" $((n + 1)) '^BVDPI '); [[ -z "$line" ]] || break
+      line=$(first_after "$pattern" $((n + 1)) '^([|] )?BVDPI '); [[ -z "$line" ]] || break
       sleep 0.3
     done
     if [[ "$line" =~ $re ]]; then
       dpi=${BASH_REMATCH[1]}; [[ "${BASH_REMATCH[2]}" == 0 ]] || dpi+="/result=${BASH_REMATCH[2]}"
     fi
     if [[ "$dpi" == "$scale" ]]; then
-      m=$(count '^BVMONDPI '); m=${m:-0}
+      m=$(count '^([|] )?BVMONDPI '); m=${m:-0}
       printf '%s\n' "$MONITOR_DPI_CMD" >> "$CTL"
-      if wait_for '^BVMONDPI ' $((m + 1)) "$STEP_TIMEOUT"; then
-        line=$(log | grep -E '^BVMONDPI ' | tail -1 || true)
+      if wait_for '^([|] )?BVMONDPI ' $((m + 1)) "$STEP_TIMEOUT"; then
+        line=$(log | grep -E '^([|] )?BVMONDPI ' | tail -1 || true)
         [[ "$line" =~ $mre ]] && monitor=${BASH_REMATCH[1]}
       fi
     fi
@@ -256,7 +256,7 @@ else
 fi
 trap - EXIT
 cleanup || shutdown=vm-still-running
-log | grep -aE '^(BVDISPLAY|BVDPI|BVMONDPI|live input accepted: resize=|BVAGENT SERVICE start)' > "$OUT/display-lines.txt" || true
+log | grep -aE '^(([|] )?(BVDISPLAY|BVDPI|BVMONDPI)|live input accepted: resize=|BVAGENT SERVICE start)' > "$OUT/display-lines.txt" || true
 passed=$(grep -c ' PASS$' "$RESULTS" || true); total=$(wc -l < "$RESULTS" | tr -d ' ')
 echo "BVA8 summary $passed/$total shutdown=$shutdown"
 [[ "$passed" == "$total" && "$total" -gt 0 && "$shutdown" == clean ]]

@@ -64,6 +64,12 @@ final class HvfGuestStartAppsTests: XCTestCase {
 
         var empty = HvfGuestStartAppsRequest(now: now)
         XCTAssertEqual(try XCTUnwrap(empty.consume(lines: ["BVAGENT CMD \(empty.command) exit=0", "", "BVAGENT END \(empty.command)"], now: now)).get(), [])
+
+        // The probe prints the rows after `| ` (guest_text.rs guest_lines); a printed END ends nothing.
+        var prefixed = HvfGuestStartAppsRequest(now: now)
+        let listed = try XCTUnwrap(prefixed.consume(lines: ["BVAGENT CMD \(prefixed.command) exit=0", "| " + row("Calculator", calculator) + "\r",
+                                                             "| BVAGENT END \(prefixed.command)", "| ", "BVAGENT END \(prefixed.command)"], now: now)).get()
+        XCTAssertEqual(listed.map(\.appID), [calculator])
     }
 
     func testAFailedOldRestartedOrSilentAgentEndsTheQuestion() {

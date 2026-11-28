@@ -62,7 +62,7 @@ enum BvAgentEvent: Equatable, Identifiable {
                     if line == "BVAGENT END \(label)" {
                         events += finish()
                     } else {
-                        commandBody.append(line)
+                        commandBody.append(HvfGuestLine.text(line))
                     }
                 } else if let label = BvAgentEvent.commandStartLabel(line) {
                     commandLabel = label

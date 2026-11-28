@@ -14,6 +14,13 @@ final class HvfClipboardPasteTests: XCTestCase {
         XCTAssertNil(request.consume(lines: ["BVAGENT END \(request.command)"], now: now))
     }
 
+    /// The probe prints the echoed marker after `| ` (guest_text.rs guest_lines).
+    func testMarkerAfterTheGuestLinePrefixAcknowledgesThePaste() {
+        var request = HvfClipboardPaste(base64: "YWJj", now: now)
+        XCTAssertEqual(request.consume(lines: ["BVAGENT CMD \(request.marker) exit=0", "| " + request.marker + "\r",
+                                               "BVAGENT END \(request.marker)"], now: now), true)
+    }
+
     func testOldRequestAndAutomaticSyncDoNotAcknowledgeNewPaste() {
         let old = HvfClipboardPaste(base64: "YWJj", now: now)
         var fresh = HvfClipboardPaste(base64: "YWJj", now: now)

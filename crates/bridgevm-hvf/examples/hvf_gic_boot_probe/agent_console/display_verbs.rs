@@ -19,6 +19,7 @@ use std::ops::RangeInclusive;
 use super::desktop_scale::{desktop_scale_run_command, DESKTOP_SCALES};
 use super::desktop_switch::desktop_switch_run_command;
 use super::*;
+use crate::guest_text::escape_guest_text;
 
 pub(super) const MODE_VERB: &str = "DISPLAYMODE";
 pub(super) const SCALE_VERB: &str = "DISPLAYSCALE";
@@ -58,10 +59,11 @@ impl AgentConsoleHarness {
             return false;
         }
         let verb = command.split(' ').next().unwrap_or("");
+        // Guest text, kept inside this one host record.
         let refusal = match parse_out_line(line) {
             Some((255, output)) => base64_decode(output)
-                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                .unwrap_or_else(|_| line.to_string()),
+                .map(|bytes| escape_guest_text(&bytes))
+                .unwrap_or_else(|_| escape_guest_text(line.as_bytes())),
             Some(_) => return false,
             None => {
                 let error = line
@@ -70,7 +72,7 @@ impl AgentConsoleHarness {
                 if !error.is_some_and(|rest| rest.is_empty() || rest.starts_with(' ')) {
                     return false;
                 }
-                line.to_string()
+                escape_guest_text(line.as_bytes())
             }
         };
         println!(

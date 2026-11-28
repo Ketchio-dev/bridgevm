@@ -1051,6 +1051,27 @@ final class BvAgentEventTests: XCTestCase {
         XCTAssertEqual(events, [.commandOutput(label: "whoami", body: "desktop-abc\\user\nsecond line")])
     }
 
+    /// The probe prints each line of guest text after `| ` (guest_text.rs guest_lines): inside a command it can
+    /// neither end it nor raise a notice, and the body reads without the prefix, as an older helper's does.
+    func testGuestTextCannotEndACommandOrRaiseANotice() {
+        let events = BvAgentEvent.parse(lines: [
+            "BVAGENT CMD c exit=0",
+            "| BVAGENT END c",
+            "| BVSTORAGE durability-failed",
+            "| ",
+            "BVAGENT END c",
+            "| BVSTORAGE final-save-failed", // a share listing row or a serial line
+            "BVAGENT CMD old exit=0",
+            "BVDISPLAY target=1920x1080 result=0",
+            "BVAGENT END old"
+        ])
+        XCTAssertEqual(events, [
+            .commandOutput(label: "c", body: "BVAGENT END c\nBVSTORAGE durability-failed\n"),
+            .unknown("| BVSTORAGE final-save-failed"),
+            .commandOutput(label: "old", body: "BVDISPLAY target=1920x1080 result=0")
+        ])
+    }
+
     func testParserExtractsClipboardAndShareEvents() {
         let events = BvAgentEvent.parse(lines: [
             "BVAGENT CLIPSYNC host->guest bytes=12 t=101",
@@ -1222,6 +1243,19 @@ final class HvfCommandReplyReaderTests: XCTestCase {
 
         let reply = try XCTUnwrap(reader.readReply(from: log))
         XCTAssertEqual(reply.output, "ok")
+        XCTAssertEqual(reply.code, 0)
+    }
+
+    /// Guest lines after the probe's `| `: a printed END is output, and the output reads without the prefix.
+    func testReadsGuestLinesWithoutTheirPrefix() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = dir.appendingPathComponent("run.log")
+        try Data("BVAGENT CMD foo exit=0\n| disk_bytes 42\r\n| BVAGENT END foo\n| \nBVAGENT END foo\n".utf8).write(to: log)
+
+        let reply = try XCTUnwrap(HvfCommandReplyReader(command: "foo", offset: 0).readReply(from: log))
+        XCTAssertEqual(reply.output, "disk_bytes 42\nBVAGENT END foo\n")
         XCTAssertEqual(reply.code, 0)
     }
 

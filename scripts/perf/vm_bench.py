@@ -56,6 +56,12 @@ SHUTDOWN_TIMEOUT_S = 240
 APP_HW_CURSOR = ROOT / "apps/macos/Sources/BridgeVMControl/HvfEngine/HvfDisplayDriverHardwareCursor.swift"
 
 
+def guest_line(line: str) -> str:
+    """A line of guest output as the guest printed it: the probe prints each after `| ` (guest_text.rs
+    guest_lines), so none can end a reply or pass for a host record; an older probe prints it bare."""
+    return line[2:] if line.startswith("| ") else line
+
+
 def clone(src: Path, dst: Path) -> None:
     libc = ctypes.CDLL("libc.dylib", use_errno=True)
     if libc.clonefile(os.fsencode(str(src)), os.fsencode(str(dst)), 0) != 0:
@@ -251,7 +257,7 @@ class BridgeVM(Engine):
             elif body is not None and line == f"BVAGENT END {label}":
                 return code, "\n".join(body)
             elif body is not None:
-                body.append(line)
+                body.append(guest_line(line))
         raise TimeoutError(command[:60])
 
     def request_shutdown(self) -> None:
@@ -275,7 +281,7 @@ class BridgeVM(Engine):
         with open(self.input_ctl, "a") as handle:
             handle.write(f"RESIZE {request}\n")
         seen = {}
-        for line in self._lines(deadline):
+        for line in map(guest_line, self._lines(deadline)):
             if "display" not in seen and line.startswith(f"BVDISPLAY target={mode} "):
                 seen["display"] = line.strip()
             elif "display" in seen and scale and line.startswith("BVDPI "):

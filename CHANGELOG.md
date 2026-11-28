@@ -81,6 +81,9 @@ All notable changes to BridgeVM are documented in this file.
 - With Retina resolution on, a VM window you minimise on one display and
   restore on a display with another scale now gets the right Windows size,
   instead of staying soft until you resize it.
+- Text a Windows program prints (command output, shared-folder listings,
+  the serial log) can no longer pose as BridgeVM's own status lines, so it
+  cannot show false disk-save or disk-full notices or stall typing and pasting.
 - Deleting the selected VM selects the VM next to it, not the first VM
   in the library.
 - A Mac file that never reaches Windows now gets a notice: when Windows

@@ -125,6 +125,6 @@ launcher_status=0; wait "$LAUNCHER" || launcher_status=$?
 trap - EXIT
 stop_vm || fail "this lane VM is still running"
 rm -rf "${WORK:?}/bin"
-tr -d '\r' < "$RUN_LOG" | grep -aE '^(secure_boot=|BVPNP |BVDISP |BVCLEAN |BVERR)' | head -60
+tr -d '\r' < "$RUN_LOG" | grep -aE '^([|] )?(secure_boot=|BVPNP |BVDISP |BVCLEAN |BVERR)' | head -60
 logged 'BVPNP (after|rebooted) .*VirtIO GPU DOD.*status=OK' || fail "viogpudo is not running on the virtio-gpu device"
 echo "prepared: $WORK/disk.raw $WORK/vars.fd"

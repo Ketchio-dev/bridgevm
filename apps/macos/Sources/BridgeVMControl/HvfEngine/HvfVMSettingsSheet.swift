@@ -92,7 +92,7 @@ struct HvfVMSettingsSheet: View {
             Section("Display") {
                 if session.config.offersRetinaResolution && !session.config.virtioGpu3d {
                     HvfRetinaResolutionToggle(session: session, setting: binding(\.retinaResolution))
-                    help("Render at the Retina display’s native resolution. This can increase CPU usage.")
+                    help("Experimental: on a Retina display, Windows uses the window’s native pixels with 200% scaling. This can increase CPU usage.")
                 }
                 HvfGuestResolutionPicker(session: session, selection: binding(\.guestResolution))
                 help("With the display driver installed, Windows adjusts its resolution to fit the window after startup.")
