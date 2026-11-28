@@ -26,11 +26,10 @@ curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.s
 **[Current status](STATUS.md)** · **[Contribute](CONTRIBUTING.md)**
 
 <p align="center">
-  <a href="docs/media/windows-hvf-desktop-20261116.webp">
-    <img src="docs/media/windows-hvf-desktop-20261116.webp" alt="Windows 11 Arm desktop on BridgeVM's native HVF engine, captured on an M5 development Mac at 2560×1600 on November 16, 2026; experimental test-signed display driver enabled" width="960">
+  <a href="docs/media/windows-hvf-import-20261126.webp">
+    <img src="docs/media/windows-hvf-import-20261126.webp" alt="Windows 11 Arm desktop with the taskbar, Recycle Bin and Microsoft Edge icons, running on BridgeVM's native HVF engine with 3D off after an installed-disk import, captured at 1280×800 on an M5 development Mac on November 26, 2026" width="960">
   </a><br>
-  <sub>Actual development VM · November 16, 2026 · 2560×1600 lossless capture · <a href="docs/media/windows-hvf-desktop-20261116.webp">Open full resolution</a></sub><br>
-  <sub>The visible Windows Test Mode watermark belongs to this VM's experimental display driver; this is not a public release screenshot.</sub>
+  <sub>Actual development VM · November 26, 2026 · installed-disk import on a development build with 3D off · 1280×800 lossless capture · <a href="docs/media/windows-hvf-import-20261126.webp">Open full resolution</a></sub>
 </p>
 
 ## What you can try
@@ -40,8 +39,8 @@ curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.s
 | Windows desktop | Windows 11 Arm on BridgeVM's native HVF engine; create a VM from an ISO or import an installed disk. |
 | VM library | In source builds, choose **Compare VMs** in the toolbar to sort saved VMs by name, engine, CPU count or memory. Select a row and choose **Show VM** to open its dashboard. |
 | Display and input | A native Mac window, keyboard and mouse, local text composition, and configurable Command-key mapping. Window-following resolution needs the guest display driver and a VM restart (shut down, then start). |
-| Mac integration | Clipboard sharing, shared folders, networking and audio output. Known defects: the display window was choppy in recent runs and its smoothness has not been measured since; Windows audio stuttered audibly, and no listening check has confirmed the stutter is gone. |
-| VM lifecycle | Start, shut down and restart. In current source builds, **Stop** waits for Windows to close its apps. **Force Stop** asks for confirmation because unsaved work may be lost. Persistent storage, TPM/Secure Boot workflows and [powered-off snapshots](docs/windows-arm/snapshot-scope-v1.md) are available. Running-state suspend is outside v1. |
+| Mac integration | Clipboard text in both directions, a shared folder, networking and audio output. Also available, not yet release-verified: clipboard images up to 128 MiB and files copied in Finder, dropping files on the VM window to copy them to the Windows desktop, **Print to Mac** (on by default), **Open Windows links on Mac**, port forwards on the Mac's 127.0.0.1, and an opt-in microphone. Known defects: the display window was choppy in recent runs and its smoothness has not been measured since; Windows audio stuttered audibly, and no listening check has confirmed the stutter is gone. |
+| VM lifecycle | Start, shut down and restart. In current source builds, **Stop** waits for Windows to close its apps. **Force Stop** asks for confirmation because unsaved work may be lost. Persistent storage, TPM/Secure Boot workflows and [powered-off snapshots](docs/windows-arm/snapshot-scope-v1.md) are available. Also available, not yet release-verified: **Pause VM** and **Resume**, **Duplicate**, **Expand disk** and, in current source builds, **Move to Another Folder…**. A paused VM stays in memory; saving a running VM to disk is outside v1. |
 
 These are preview capabilities. ISO installation and installed-disk import on
 a clean Mac remain the open release criterion. The
@@ -70,6 +69,13 @@ installed disk from Finder onto the matching card to open its setup form.
 | --- | --- |
 | **Install Windows** | Choose your licensed Windows 11 Arm ISO ([download from Microsoft](https://www.microsoft.com/en-us/software-download/windows11arm64); an x64 ISO is refused). Use **Download Drivers** to fetch and verify the signed Red Hat storage, serial and network drivers (about 95 MB), or choose your own signed Arm64 driver folder and SHA-256 manifest. Choose **Create**, then **Start Installation** in the VM detail view, and leave the Mac awake until installation finishes. When it does, choose **Start** and finish Windows setup in the VM window. In the v0.1.0 download, these four buttons read **드라이버 자동 준비**, **생성**, **설치 시작** and **시작**, respectively. |
 | **Import an existing disk** | Choose your installed Windows 11 Arm disk, select **Import**, then choose **Start** in the library. In v0.1.0, the file picker and these two actions read **선택…**, **가져오기** and **시작**. The download accepts RAW, QCOW2 and Hyper-V VHDX. Current source also supports fixed-size VHD and lets you drop a file on the disk field. Disk import needs no driver payload, but Windows on that disk must already have the VirtIO Serial driver (for the guest tools) and the NetKVM driver (for networking). After the first start, choose **Install Guest Tools** (**게스트 도구 설치** in v0.1.0), shut down Windows and start it again, then run **install.cmd** from the new drive in Windows to enable clipboard sharing and shared folders. |
+
+If BitLocker protected an imported disk with another TPM, have your BitLocker
+recovery key ready before the first start. In current source builds, every new
+VM shares the Mac folder `~/BridgeVM Shared Folders/<VM name>` as
+`C:\bridgevm-share` in Windows. To share another folder, shut down Windows and
+change it in the VM's **Settings** under **Sharing**. Files you drop on the VM
+window are copied to the Windows desktop.
 
 To rename a saved Windows VM in a current source build, shut down Windows,
 open **Settings**, edit **VM name** under **General**, and click **Done**. The VM keeps its disk, snapshots and TPM identity.
@@ -101,24 +107,17 @@ Windows**, and click **Send**. In v0.1.0, choose **고급** (Advanced),
 then **부팅 구성** (Boot configuration). Type in **Windows에 입력할 텍스트**
 (Text to send to Windows) and click **입력** (Send).
 
-Current source builds keep the draft in the field while awaiting an input
-receipt or a clipboard paste. Editors such as Notepad and WinForms RichTextBox
-support queued text dispatch. If the Windows agent lacks this feature or the
-editor declines it, BridgeVM sends a multiline draft by verifying the text on
-the Windows clipboard and pressing **Ctrl+V** once. The legacy keyboard route
-also uses the clipboard for characters it cannot type. Both clipboard routes
-replace the previous Windows clipboard contents.
+If Windows can't take the text as typing, BridgeVM pastes it through the
+Windows clipboard instead, which replaces what was on the Windows clipboard.
 
-Single-line drafts can use per-character input with some editors and older
-agents. For long passages in v0.1.0, or if typing loses text, enable clipboard
-sharing while the VM is stopped. The setting is **Share clipboard** in current
-source builds and **클립보드 공유** in the v0.1.0 download. After the Windows
-agent connects, copy the text on your Mac and press **Ctrl+V** in the Windows
-editor. Builds from current source show a notice when text is too large to
-share in either direction. Copy it in smaller sections or transfer it as a
-file through a shared folder.
-The application readback, saved-file and Undo checks for WPF and Edge are
-recorded in [#665](https://github.com/Ketchio-dev/bridgevm/issues/665).
+For long passages, or if typing loses text, use clipboard sharing: copy the
+text on your Mac and press **Ctrl+V** in the Windows editor once the Windows
+agent connects. Clipboard sharing is on by default. Its setting is **Share
+clipboard** under **Sharing** in the VM's **Settings** (**클립보드 공유** in the
+v0.1.0 download). Current source builds let you switch it while Windows runs;
+v0.1.0 changes it only while the VM is stopped. Builds from current source show
+a notice when text is too large to share in either direction. Copy it in
+smaller sections or transfer it as a file through a shared folder.
 
 ## Engineering Preview
 
@@ -205,16 +204,8 @@ supported, with its files untouched, and can be deleted from there.
 
 Windows HVF uses a QEMU `virt`-compatible guest contract with
 [documented deviations](docs/machine-contract/qemu-virt-deviations.json).
-BridgeVM imports RAW, QCOW2 and VHDX disks with its bundled converter.
-Builds from current source also import fixed-size Hyper-V VHD. Convert a
-dynamic VHD with `qemu-img convert -O qcow2` before importing.
-The v0.1.0 download imports uncompressed QCOW2. Builds from current source also
-read QEMU's default deflate compression. Use RAW for compressed QCOW2 in v0.1.0
-or for zstd-compressed QCOW2 in either build.
-[RAW conversion steps](docs/install.md#what-you-need-after-installing)
-
-Convert encrypted images to RAW first, and merge disks that depend on a backing
-file in their original VM app.
+Supported disk formats and conversion steps are in the install guide's
+[disk import section](docs/install.md#import-an-installed-windows-disk).
 
 ## More information
 

@@ -75,14 +75,25 @@ even when an archive checksum is valid.
 
 General Preview is the user-facing channel: 3D-off, no bundled Windows kernel
 package, no TESTSIGNING requirement, and no weakening of Secure Boot policy.
-Users supply licensed Windows media and the required signed ARM64 driver
-payload. Graphics Lab is a separate test-signed workflow on disposable guests;
-it cannot satisfy A9. Windows rejection of test mode remains an explicit error.
+Users supply licensed Windows media. For ISO installation, the app's
+**Download Drivers** fetches the pinned, Microsoft-signed Red Hat storage,
+serial and network drivers and refuses them unless their length and SHA-256
+match; users can choose their own signed ARM64 payload instead. After setup,
+the app installs the display driver, which Windows downloads itself. Graphics
+Lab is a separate test-signed workflow on disposable guests; it cannot satisfy
+A9. Windows rejection of test mode remains an explicit error.
 See the [distribution channel contract](docs/distribution-channels.md).
 
-On November 24, 2026, a development Mac used the app's driver download with an
-empty cache and a Windows 11 Arm ISO. The app checked the archive and sealed its
-driver files into the VM. Driver preflight accepted all three catalogs. The
+On November 26, 2026, a development Mac ran a development-signed build of
+commit c6c938ca through both supported 3D-off journeys in the Mac app: ISO
+installation and installed-disk import. Both passed keyboard and pointer,
+clipboard, shared folder, network, audio, shutdown and powered-off snapshot
+restore checks. Neither ran on a clean Mac, so A9 stays open; the
+[capability registry](capabilities/windows-hvf.json) links both receipts.
+
+Earlier, on November 24, 2026, a development Mac used the app's driver
+download with an empty cache and a Windows 11 Arm ISO. The app checked the
+archive and sealed its driver files into the VM. Driver preflight accepted all three catalogs. The
 installed system reached its first interactive desktop with the guest agent,
 VirtioSerial and NetKVM running. Windows used NVMe for its system drive, and DNS
 and an HTTP request succeeded over the guest network. The run used an unattended
@@ -99,7 +110,10 @@ update/rollback UX and stronger artifact provenance remain development work.
 The Engineering Preview boundary is the proven evidence set, not universal
 compatibility:
 
-- driver setup and recovery remain developer-oriented;
+- BridgeVM bundles no Windows drivers: ISO setup downloads the signed storage,
+  serial and network drivers (or uses a folder you supply), and Windows
+  downloads the display driver itself, so both steps need an internet
+  connection;
 - ad-hoc Mac distribution requires an Open Anyway override for each DMG
   version downloaded in a browser;
 - clean-machine coverage is smaller than a mature VM product needs, and the
