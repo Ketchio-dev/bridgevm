@@ -27,8 +27,8 @@
 //! A queue that never delivered is left alone, so an input that opens but
 //! stays silent does not reopen in a loop.
 
+use super::hda_coreaudio_atomic_ring::AtomicPcmRing;
 use super::hda_coreaudio_atomic_ring::PcmQueue;
-use super::hda_coreaudio_atomic_ring::{AtomicPcmRing, Consumer};
 use super::hda_coreaudio_output::{DefaultDeviceListener, DEFAULT_INPUT};
 use bridgevm_hvf::hda::HdaPcmSource;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -185,7 +185,7 @@ impl HdaPcmSource for MicrophoneSource {
         };
         let buffered = consumer.len();
         if buffered > HIGH_WATER_BYTES {
-            discard(&mut consumer, buffered - PRIME_BYTES);
+            consumer.discard(buffered - PRIME_BYTES);
         }
         if !self.primed {
             if consumer.len() < PRIME_BYTES {
@@ -203,7 +203,7 @@ impl HdaPcmSource for MicrophoneSource {
     fn stream_started(&mut self) {
         if let Some(mut consumer) = self.ring.ring.try_consumer() {
             let stale = consumer.len();
-            discard(&mut consumer, stale);
+            consumer.discard(stale);
         }
         self.primed = false;
         self.control.capturing.store(true, Ordering::Release);
@@ -228,17 +228,6 @@ impl Drop for MicrophoneSource {
             supervisor.thread().unpark();
             let _ = supervisor.join();
         }
-    }
-}
-
-fn discard(consumer: &mut Consumer<'_>, mut bytes: usize) {
-    let mut scratch = [0u8; 4096];
-    while bytes >= FRAME_BYTES {
-        let drained = consumer.drain_into(&mut scratch[..bytes.min(4096)]);
-        if drained == 0 {
-            break;
-        }
-        bytes -= drained;
     }
 }
 

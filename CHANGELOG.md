@@ -83,6 +83,9 @@ All notable changes to BridgeVM are documented in this file.
   when you enter it, with an example of what works. macOS doesn't let apps
   use those ports. Before, it was saved, didn't work, and the notice blamed
   another app.
+- Windows' sound no longer drifts behind the picture during long videos or
+  calls. When more than 120 ms of sound is waiting to play, the oldest part
+  is dropped, as the microphone already does.
 - Files dropped on a VM window, or opened with BridgeVM from Finder, while
   Windows is still starting are now copied once Windows is ready. Before,
   they were refused with a message that stayed over the Windows taskbar. A
