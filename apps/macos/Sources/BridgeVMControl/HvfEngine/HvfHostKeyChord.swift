@@ -62,15 +62,16 @@ extension HvfHostKeyCommand {
         "opt+shift+left": "ctrl+shift+left", "opt+shift+right": "ctrl+shift+right"
     ]
 
-    /// App shortcuts the Mac keeps in both modes: Quit, Hide, Minimize, Settings, Full Screen and the
-    /// app switcher (which the system takes anyway).
+    /// App shortcuts the Mac keeps in both modes: Quit, Hide, Minimize, Settings, Full Screen, Emoji &
+    /// Symbols (whose picks are typed into Windows like other text) and the app switcher (which the
+    /// system takes anyway).
     static func isReservedForMac(_ key: String, flags: EventModifiers) -> Bool {
         guard flags.contains(.command) else { return false }
         let others = flags.intersection([.control, .option, .shift])
         switch key {
         case "tab": return true
         case "q", "h", "m", "comma": return others.isEmpty
-        case "f": return others == .control
+        case "f", "space": return others == .control
         default: return false
         }
     }
