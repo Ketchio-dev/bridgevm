@@ -520,7 +520,9 @@ final class HvfEngineSession: ObservableObject {
                 if let process {
                     process.terminate()
                 } else if attachedToExistingProcess {
-                    Shell.killProcesses(matching: config.targetDiskPath)
+                    // pgrep, waited for: off the main actor, like the liveness lookup below.
+                    let disk = config.targetDiskPath
+                    Task.detached { Shell.killProcesses(matching: disk) }
                 }
                 self.stopDeadline = nil
             }
