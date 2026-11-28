@@ -241,6 +241,44 @@ try {
     Assert ($script:sent -ceq 'OK DEL' -and -not [IO.File]::Exists($guarded)) 'unchanged version must delete'
     $cases++
 
+    # A DEL takes the folders it left empty with it, up to but never the shared folder. A folder
+    # that still holds a file stays, and so does a folder link, whatever it points to.
+    [void](List)
+    $solo = $root + '-solo'
+    $outside = $root + '-outside'
+    [void][IO.Directory]::CreateDirectory((Join-Path $root 'gone/deep'))
+    [void][IO.Directory]::CreateDirectory((Join-Path $root 'kept'))
+    [void][IO.Directory]::CreateDirectory($solo)
+    [void][IO.Directory]::CreateDirectory($outside)
+    $linkType = if ([IO.Path]::DirectorySeparatorChar -eq '\') { 'Junction' } else { 'SymbolicLink' }
+    [void](New-Item -ItemType $linkType -Path (Join-Path $root 'linked') -Value $outside)
+    try {
+        [IO.File]::WriteAllText((Join-Path $root 'kept/desktop.ini'), 'x')
+        foreach ($file in @('gone/deep/only.txt', 'kept/last.txt', 'linked/only.txt')) {
+            [IO.File]::WriteAllText((Join-Path $root $file), 'x')
+            $arg = & $b64 (Join-Path $root $file)
+            & $verbs['DEL']
+            Assert ($script:sent -ceq 'OK DEL') "DEL $file reply: $script:sent"
+        }
+        Assert (-not [IO.Directory]::Exists((Join-Path $root 'gone'))) 'a DEL left the folders it emptied'
+        Assert ([IO.File]::Exists((Join-Path $root 'kept/desktop.ini'))) 'a DEL removed a folder that still holds a file'
+        Assert ([IO.Directory]::Exists((Join-Path $root 'linked'))) 'a DEL removed a folder link'
+        # The shared folder itself, left empty, stays.
+        $script:BvShareRoot = $solo + [IO.Path]::DirectorySeparatorChar
+        [IO.File]::WriteAllText((Join-Path $solo 'last.txt'), 'x')
+        $arg = & $b64 (Join-Path $solo 'last.txt')
+        & $verbs['DEL']
+        Assert ($script:sent -ceq 'OK DEL' -and [IO.Directory]::Exists($solo)) 'a DEL removed the shared folder'
+    } finally {
+        # The link alone, never what it points to.
+        if (Test-Path -LiteralPath (Join-Path $root 'linked')) { [IO.Directory]::Delete((Join-Path $root 'linked')) }
+        foreach ($dir in @((Join-Path $root 'kept'), $solo, $outside)) {
+            if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
+        }
+        [void](List)
+    }
+    $cases++
+
     # An interrupted ordinary transfer must leave the old published bytes intact.
     $atomic = Join-Path $root 'atomic.bin'
     [IO.File]::WriteAllBytes($atomic, [byte[]](1, 2, 3))

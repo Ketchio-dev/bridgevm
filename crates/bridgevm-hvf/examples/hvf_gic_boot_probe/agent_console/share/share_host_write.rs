@@ -182,7 +182,7 @@ impl AgentConsoleHarness {
         };
         share.forget_host_walk();
         let expected = share.engine.delete_host_stat(name);
-        match Destination::from_root(root, name, false).and_then(|d| match expected {
+        match root.try_clone().and_then(|dir| Destination::from_root(dir, name, false)).and_then(|d| match expected {
             Some(expected) => d.delete_unless_changed(expected),
             None => {
                 println!("BVAGENT SHARE del-unchecked {name} host-version-unknown");
@@ -201,6 +201,8 @@ impl AgentConsoleHarness {
                 return;
             }
         }
+        // A folder renamed or deleted in Windows leaves no empty copy of its tree on the Mac.
+        Destination::remove_empty_folders(root, name);
         share.engine.on_host_deleted(name);
         println!("BVAGENT SHARE del guest->host {name} t={}", self.t_ms(now));
     }
