@@ -55,6 +55,8 @@ final class NativeCLIReadinessTests: XCTestCase {
         XCTAssertTrue(NativeCLI.help.contains("bridgevm-native-cli-v1"))
         XCTAssertTrue(NativeCLI.help.contains("bridgevm.app-readiness.v1"))
         XCTAssertTrue(NativeCLI.help.contains("prove guest behavior or release readiness"))
+        // Examples use the documented command, not the bundle executable that is not on PATH.
+        XCTAssertTrue(NativeCLI.help.contains("\n  bridgevm app readiness dev-vm --json"))
         XCTAssertEqual(try contents(root), before)
     }
 
