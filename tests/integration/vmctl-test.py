@@ -56,6 +56,28 @@ class FrameTests(unittest.TestCase):
                 capture(io.BytesIO(data))
 
 
+
+class FailureTextTests(unittest.TestCase):
+    """A failed query printed the status JSON or an internal phrase instead of what to do."""
+
+    def test_a_failed_json_query_says_what_the_plain_command_says(self):
+        options = SimpleNamespace(bridgevm="bridgevm", library=None)
+        failed = SimpleNamespace(returncode=1, stdout='{\n  "unavailableReason" : "ownerUnavailable"\n}', stderr="")
+        plain = SimpleNamespace(returncode=1, stdout="BridgeVM isn't open. Open BridgeVM, then try again.\n", stderr="")
+        with patch.object(vmctl.subprocess, "run", side_effect=[failed, plain]) as run:
+            with self.assertRaises(vmctl.ControlError) as raised:
+                vmctl.native(options, "status", "work", query=True)
+        self.assertEqual(str(raised.exception), "BridgeVM isn't open. Open BridgeVM, then try again.")
+        self.assertEqual(run.call_args_list[1].args[0], ["bridgevm", "app", "status", "work"])
+
+    def test_a_vm_that_is_not_running_says_how_to_start_it(self):
+        guest = vmctl.Guest.__new__(vmctl.Guest)
+        guest.options = SimpleNamespace(vm="work", command="exec")
+        with patch.object(vmctl, "native", return_value={"sessions": []}):
+            with self.assertRaises(vmctl.ControlError) as raised:
+                guest.current()
+        self.assertIn("Start it with: vmctl.py start work", str(raised.exception))
+
 class GuestTests(unittest.TestCase):
     def test_resize_updates_the_vmm_then_waits_for_its_guest_mode_reply(self):
         with tempfile.TemporaryDirectory() as directory:

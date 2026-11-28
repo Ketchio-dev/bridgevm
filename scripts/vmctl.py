@@ -31,7 +31,12 @@ def native(options, command, *operands, query=False):
     if not query:
         return result.returncode
     if result.returncode:
-        raise ControlError(result.stderr.strip() or result.stdout.strip())
+        # A failed --json query puts its sentence on stderr, or only JSON on stdout (status: the
+        # whole report); the plain command says what happened in words.
+        if result.stderr.strip():
+            raise ControlError(result.stderr.strip())
+        plain = subprocess.run([arg for arg in args if arg != "--json"], capture_output=True, text=True, check=False)
+        raise ControlError((plain.stderr.strip() or plain.stdout.strip()) or f"bridgevm app {command} failed.")
     return json.loads(result.stdout)
 
 
@@ -51,7 +56,8 @@ class Guest:
         value = native(self.options, "status", self.options.vm, query=True)
         sessions = [s for s in value["sessions"] if s["ownership"] == "owned"]
         if len(sessions) != 1 or sessions[0].get("configurationMatch") != "same":
-            raise ControlError("No unique app-owned run with matching saved configuration.")
+            raise ControlError(f"{self.options.vm} isn't running in BridgeVM, or runs with settings changed since "
+                               f"it started. Start it with: vmctl.py start {self.options.vm}")
         session = sessions[0]
         if self.options.command != "screenshot" and session.get("connectionState") != "connected":
             raise ControlError("Guest agent is not connected yet; wait and query status.")
