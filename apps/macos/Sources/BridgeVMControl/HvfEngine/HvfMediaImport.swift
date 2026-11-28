@@ -7,9 +7,14 @@ enum HvfMediaImport {
     static func copy(
         disk: String, vars: String, toDisk: URL, toVars: URL,
         helper: URL, fileManager: FileManager = .default,
+        available: (URL) -> Int64? = HvfImportSpace.available,
         converting: @escaping (HvfImportedDiskFormat, Int) -> Void = { _, _ in }
     ) throws {
         if HvfMediaSourceHolder.othersHaveOpen(disk) { throw HvfMediaSourceHolder.InUse() }
+        if HvfImportSpace.tooLittle(disk: URL(fileURLWithPath: disk), into: toDisk.deletingLastPathComponent(),
+                                    available: available) {
+            throw CocoaError(.fileWriteOutOfSpace)
+        }
         let workspace = try fileManager.url(
             for: .itemReplacementDirectory, in: .userDomainMask,
             appropriateFor: toDisk.deletingLastPathComponent(), create: true)
@@ -66,5 +71,30 @@ enum HvfMediaImport {
             try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: member.path)
             try fileManager.moveItem(atPath: member.path, toPath: target.path)
         }
+    }
+}
+
+/// Whether the drive that will hold the imported disk lacks the room for it, checked before the copy: it
+/// used to run for as long as the copy took, fill the drive to the last byte (pausing VMs running from
+/// it), and only then fail. The copy stays sparse, so it needs about the bytes the source holds, not
+/// its size; a RAW disk cloned on its own APFS volume needs none.
+enum HvfImportSpace {
+    /// Left free after the copy, so the drive is not filled to the last byte.
+    static let margin: Int64 = 1 << 30
+
+    static func available(_ directory: URL) -> Int64? {
+        let values = try? directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey,
+                                                             .volumeAvailableCapacityKey])
+        return values?.volumeAvailableCapacityForImportantUsage ?? values?.volumeAvailableCapacity.map(Int64.init)
+    }
+
+    static func tooLittle(disk: URL, into directory: URL, available: (URL) -> Int64?) -> Bool {
+        let keys: Set<URLResourceKey> = [.totalFileAllocatedSizeKey, .volumeIdentifierKey]
+        guard let source = try? disk.resolvingSymlinksInPath().resourceValues(forKeys: keys),
+              let held = source.totalFileAllocatedSize, let free = available(directory) else { return false }
+        let target = try? directory.resourceValues(forKeys: [.volumeIdentifierKey])
+        let sameVolume = source.volumeIdentifier.map { $0.isEqual(target?.volumeIdentifier) } ?? false
+        if sameVolume && HvfImportedDiskFormat.detect(path: disk.path) == nil { return false }
+        return Int64(held) + margin > free
     }
 }

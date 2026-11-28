@@ -70,6 +70,8 @@ All notable changes to BridgeVM are documented in this file.
   the Mac is out of space.
 - A print job no longer prints twice when Windows restarts right after
   printing.
+- Importing a disk onto a drive without enough free space now says so
+  before copying, instead of filling the drive and failing at the end.
 - Importing a disk that another app, such as another VM app, still has
   open now asks you to shut that VM down first, instead of copying a
   disk that is still being written.
