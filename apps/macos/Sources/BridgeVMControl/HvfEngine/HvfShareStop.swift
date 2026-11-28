@@ -34,6 +34,9 @@ extension HvfShareRootNotice {
                 case .tooManyBytes:
                     return ("Folder sync paused because the Windows folder has too many files with long names.",
                             "Shorten some file names or move items out of the Windows folder to resume syncing.")
+                case .windowsFolderUnreadable:
+                    return ("Folder sync paused because Windows can’t open its shared folder.",
+                            "If you renamed, moved or deleted the folder in Windows, put it back. Sync resumes on its own.")
                 }
             }
             if let missingFolder {
@@ -102,11 +105,12 @@ enum HvfShareWriteRefused: Equatable {
 }
 
 /// The guest folder's listing is over the runtime's limit (`BVAGENT SHARE paused
-/// too-many-entries limit=<entries>`, or `too-many-bytes limit=<bytes>`): without a listing the
+/// too-many-entries limit=<entries>`, or `too-many-bytes limit=<bytes>`), or Windows can't list the
+/// folder after files synced (`paused windows-folder-unreadable`, no limit): without a listing the
 /// runtime cannot tell a newer Windows edit, so it sends, deletes and fetches nothing until
-/// `BVAGENT SHARE resumed` (a listing within the limit).
+/// `BVAGENT SHARE resumed` (a listing applied).
 struct HvfSharePaused: Equatable {
-    enum Reason: Equatable { case tooManyEntries, tooManyBytes }
+    enum Reason: Equatable { case tooManyEntries, tooManyBytes, windowsFolderUnreadable }
     let reason: Reason
     let limit: Int
 
@@ -119,6 +123,11 @@ struct HvfSharePaused: Equatable {
         let prefix = "BVAGENT SHARE paused "
         guard line.hasPrefix(prefix) else { return nil }
         let words = line.dropFirst(prefix.count).split(separator: " ", omittingEmptySubsequences: false)
+        if words.first == "windows-folder-unreadable" {
+            reason = .windowsFolderUnreadable
+            limit = 0
+            return
+        }
         // Words after the limit are ignored (a later runtime may add some).
         guard words.count >= 2, words[1].hasPrefix("limit=") else { return nil }
         let digits = words[1].dropFirst("limit=".count)

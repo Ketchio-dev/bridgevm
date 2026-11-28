@@ -21,6 +21,13 @@ final class HvfSharePausedNoticeTests: XCTestCase {
         notice.consume(.unknown("BVAGENT SHARE paused too-many-bytes limit=1048576 t=9"))
         XCTAssertEqual(notice.paused, HvfSharePaused(reason: .tooManyBytes, limit: 1_048_576))
         XCTAssertEqual(notice.displayed?.text, "Folder sync paused because the Windows folder has too many files with long names.")
+        // The Windows folder renamed or deleted after files synced (agent_console share_listing_pause.rs).
+        notice.consume(.unknown("BVAGENT SHARE paused windows-folder-unreadable\r"))
+        XCTAssertEqual(notice.paused, HvfSharePaused(reason: .windowsFolderUnreadable, limit: 0))
+        XCTAssertEqual(notice.displayed?.text, "Folder sync paused because Windows can’t open its shared folder.")
+        XCTAssertEqual(notice.displayed?.help, "If you renamed, moved or deleted the folder in Windows, put it back. Sync resumes on its own.")
+        notice.consume(.unknown("BVAGENT SHARE resumed"))
+        XCTAssertNil(notice.displayed)
     }
 
     @MainActor

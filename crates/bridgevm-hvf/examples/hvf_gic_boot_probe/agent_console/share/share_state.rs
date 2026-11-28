@@ -35,6 +35,9 @@ pub(in crate::agent_console) struct ShareState {
     pub(in crate::agent_console) guest_root_create_sent: bool,
     /// The latest guest listing was refused for its size: the share is paused (share_listing_pause.rs).
     listing_too_large: bool,
+    /// The latest guest listing failed after files had synced (the Windows folder renamed, deleted or
+    /// unreadable): the share is paused too.
+    listing_failed: bool,
     /// The last applied listing, for an LSSAME reply (share_listing_same.rs).
     pub(in crate::agent_console) listing_same: listing_same::ListingSame,
     /// Windows key of a share key -> the name the last listing showed for it,
@@ -98,6 +101,7 @@ impl ShareState {
             root_blocked: false,
             guest_root_create_sent: false,
             listing_too_large: false,
+            listing_failed: false,
             listing_same: listing_same::ListingSame::default(),
             guest_names: std::collections::HashMap::new(),
             host_actions: VecDeque::new(),

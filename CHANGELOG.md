@@ -91,6 +91,9 @@ All notable changes to BridgeVM are documented in this file.
 - When Windows has no driver for the new display adapter, for example
   after restoring an older snapshot, the notice now offers Install
   instead of pointing at Device Manager.
+- Renaming, moving or deleting the shared folder in Windows no longer
+  deletes the files in the Mac folder at the next Mac change; folder sync
+  pauses and says so until the Windows folder is back.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.
