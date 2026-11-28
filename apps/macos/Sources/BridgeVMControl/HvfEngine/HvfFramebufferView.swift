@@ -22,7 +22,10 @@ final class FBLayerView: HvfFramebufferTextInput {
     private(set) weak var session: HvfEngineSession?
     var framebufferMapping: HvfFramebufferMapping?
     private var guestSize: CGSize = .zero {
-        didSet { if guestSize != oldValue { HvfDisplaySurfaceAccessibility.update(self, guestSize: guestSize) } }
+        didSet {
+            if guestSize != oldValue { HvfDisplaySurfaceAccessibility.update(self, guestSize: guestSize) }
+            if hasGuestSize, let session, !session.displayShowedFrame { session.displayShowedFrame = true }
+        }
     }
     var lastProcessedSeq: UInt64 = .max
     private let imageFactory: HvfFramebufferImageFactory
@@ -447,7 +450,7 @@ final class FBLayerView: HvfFramebufferTextInput {
     /// so a stopped VM gives the arrow back.
     func updateGuestCursor(pointer: CGPoint?, reload: Bool = false) {
         if reload {
-            let live = session?.connectionState.guestCursorIsLive == true && hasGuestSize
+            let live = session?.guestCursorIsLive == true && hasGuestSize
             guestCursor.refresh(path: live ? guestCursorPath : nil)
         }
         let fit = HvfDisplayFit(viewSize: bounds.size, imageSize: guestSize)

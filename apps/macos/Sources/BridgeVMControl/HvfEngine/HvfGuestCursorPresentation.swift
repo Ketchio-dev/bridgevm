@@ -36,12 +36,18 @@ struct HvfGuestCursorPresentation: Equatable {
 }
 
 extension HvfConnectionState {
-    /// The helper is running, so display.cursor is this boot's: hidden or shown by the guest.
-    var guestCursorIsLive: Bool {
+    /// The helper is running, so display.cursor is this boot's: hidden or shown by the guest. While
+    /// stopping, only during a Stop that waits for Windows, which still draws its pointer.
+    func guestCursorIsLive(stopWaitsForWindows: Bool) -> Bool {
         switch self {
         case .booting, .connected: return true
-        case .stopped, .stopping, .timedOut: return false
+        case .stopping: return stopWaitsForWindows
+        case .stopped, .timedOut: return false
         }
     }
+}
+
+extension HvfEngineSession {
+    var guestCursorIsLive: Bool { connectionState.guestCursorIsLive(stopWaitsForWindows: stopWaitsForWindows) }
 }
 #endif

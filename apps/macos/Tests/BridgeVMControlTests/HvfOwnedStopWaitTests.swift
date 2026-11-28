@@ -254,6 +254,31 @@ final class HvfOwnedStopWaitTests: XCTestCase {
         XCTAssertFalse(session.sendKey("enter"), "Force Stop closes Windows' apps without asking")
     }
 
+    /// The window stays open while Windows shows "apps are preventing shutdown": resizing it still resizes
+    /// Windows, and its pointer stays the guest's.
+    func testTheDisplayKeepsWorkingWhileTheStopWaitsForWindows() throws {
+        let f = try Fixture(); defer { f.clean() }
+        let evidence = URL(fileURLWithPath: f.base.config.evidenceDir)
+        try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
+        let session = bind(f)
+        session.beginOwnedInputBoot() // binds this run's input channel, as an owned boot does
+        f.controller.receive(.message(try f.event("ready", sequence: 1)))
+        XCTAssertEqual(session.stopOwned(expectedToken: f.controller.identity.token), .requested(deadline: nil))
+        XCTAssertEqual(session.connectionState, .stopping)
+        XCTAssertTrue(session.guestCursorIsLive)
+
+        session.displayViewResized(to: CGSize(width: 1600, height: 900), settled: true)
+        let input = { (try? String(contentsOf: evidence.appendingPathComponent("input.ctl"), encoding: .utf8)) ?? "" }
+        XCTAssertTrue(input().contains("RESIZE 1600x900"), input())
+
+        let target = try XCTUnwrap(session.forceStopTarget)
+        XCTAssertEqual(session.requestForceStop(target), .requested)
+        session.poll()
+        XCTAssertFalse(session.guestCursorIsLive, "Force Stop ends the wait")
+        session.displayViewResized(to: CGSize(width: 1280, height: 800), settled: true)
+        XCTAssertFalse(input().contains("RESIZE 1280x800"), "Windows is being forced off: nothing more is sent")
+    }
+
     func testAStopNeverOpensANewInputNegotiation() throws {
         let f = try Fixture(); defer { f.clean() }
         let evidence = URL(fileURLWithPath: f.base.config.evidenceDir)

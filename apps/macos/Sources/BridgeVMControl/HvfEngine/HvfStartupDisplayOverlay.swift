@@ -8,11 +8,12 @@ struct HvfStartupDisplayOverlay: View {
     @State private var startRefusal: String?
 
     var body: some View {
-        if session.hasPendingRuntimeStart || session.guiStartFailureText != nil || !session.hasActiveRuntimeWork {
+        let spinnerText = session.startupDisplaySpinnerText
+        if spinnerText != nil || session.guiStartFailureText != nil || !session.hasActiveRuntimeWork {
             VStack(spacing: 16) {
-                if session.hasPendingRuntimeStart {
+                if let spinnerText {
                     ProgressView()
-                    Text(session.runtimePendingWorkText ?? "Preparing to start Windows…")
+                    Text(spinnerText)
                 } else {
                     Image(systemName: session.runtimeFailureText == nil ? "power" : "exclamationmark.triangle")
                         .font(.largeTitle)
@@ -46,6 +47,14 @@ struct HvfStartupDisplayOverlay: View {
 }
 
 extension HvfEngineSession {
+    /// The display window's spinner text, nil for none: a start being prepared, or Windows starting before
+    /// its first frame, which would otherwise leave a plain black window while the firmware runs.
+    var startupDisplaySpinnerText: String? {
+        if hasPendingRuntimeStart { return runtimePendingWorkText ?? "Preparing to start Windows…" }
+        guard connectionState == .booting, !displayShowedFrame, guiStartFailureText == nil else { return nil }
+        return "Starting Windows…"
+    }
+
     /// The stopped VM window's Start: the saved settings, as the library's Start uses them. Returns why it
     /// was refused, or nil once admitted.
     func startFromStoppedWindow(_ vm: VMConfig, in library: LibraryModel) -> String? {
