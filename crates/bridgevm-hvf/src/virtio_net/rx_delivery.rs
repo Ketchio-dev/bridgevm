@@ -26,6 +26,20 @@ impl<B: NetBackend> VirtioNet<B> {
             self.descriptor_scratch = descs;
             return false;
         }
+        // A frame larger than the buffer the guest posted can never be delivered: drop it, or it
+        // waits for a bigger buffer forever and every later frame waits behind it.
+        let capacity: usize = descs.iter().map(|desc| desc.len as usize).sum();
+        if capacity < VIRTIO_NET_HDR_LEN + frame.len() {
+            if !std::mem::replace(&mut self.rx_oversize_reported, true) {
+                crate::host_log::out(format_args!(
+                    "virtio-net: dropped a {}-byte frame larger than the guest's {}-byte receive buffer",
+                    frame.len(),
+                    capacity
+                ));
+            }
+            self.descriptor_scratch = descs;
+            return true;
+        }
         let mut hdr = [0u8; VIRTIO_NET_HDR_LEN];
         hdr[10..12].copy_from_slice(&1u16.to_le_bytes());
         if !Self::scatter_write_slices(mem, &descs, &[&hdr, frame]) {
