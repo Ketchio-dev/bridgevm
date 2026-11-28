@@ -52,6 +52,8 @@ final class FBLayerView: HvfFramebufferTextInput {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     private var pointerPresses = 0
+    private typealias DisplayFiles = (evidenceDir: String, framebuffer: String, cursor: String, iosurface: URL)
+    private var cachedDisplayFiles: DisplayFiles?
 
     func updateSession(_ next: HvfEngineSession) {
         synchronizeTextInputTarget()
@@ -493,16 +495,22 @@ final class FBLayerView: HvfFramebufferTextInput {
         }
     }
 
-    var framebufferPath: String? {
-        session.map { $0.config.evidenceDir + "/display.fb" }
-    }
+    var framebufferPath: String? { displayFiles?.framebuffer }
 
-    var guestCursorPath: String? {
-        session.map { HvfGuestCursorFile.path(evidenceDir: $0.config.evidenceDir) }
-    }
+    var guestCursorPath: String? { displayFiles?.cursor }
 
-    private var iosurfaceSidecarURL: URL? {
-        framebufferPath.map { URL(fileURLWithPath: $0 + ".iosurface") }
+    private var iosurfaceSidecarURL: URL? { displayFiles?.iosurface }
+
+    /// The display files of the session's evidence folder, made again only when that folder changes (a start or
+    /// a settings save can give the same session another one), not on every display tick.
+    private var displayFiles: DisplayFiles? {
+        guard let evidenceDir = session?.config.evidenceDir else { return nil }
+        if cachedDisplayFiles?.evidenceDir != evidenceDir {
+            let framebuffer = evidenceDir + "/display.fb"
+            cachedDisplayFiles = (evidenceDir, framebuffer, HvfGuestCursorFile.path(evidenceDir: evidenceDir),
+                                  URL(fileURLWithPath: framebuffer + ".iosurface", isDirectory: false))
+        }
+        return cachedDisplayFiles
     }
 
     private var hasGuestSize: Bool {
