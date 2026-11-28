@@ -2,7 +2,7 @@
 
 use super::super::PngImage;
 use super::super::composed_path;
-use super::{html_digest, PasteboardBackend, Poller};
+use super::{PasteboardBackend, Poller};
 use crate::agent_console::clip_guest_admission::GUEST_CLIP_MAX_BYTES;
 use std::path::PathBuf;
 
@@ -20,10 +20,6 @@ impl Poller {
         if text.len() <= GUEST_CLIP_MAX_BYTES && backend.set_string(text) {
             self.empty_rereads = 0;
             self.last_seen = Some(text.to_owned());
-            self.last_image = None;
-            self.last_oversized = false;
-            self.last_html = None;
-            self.last_files = None;
             self.last_count = backend.change_count();
         }
     }
@@ -37,10 +33,6 @@ impl Poller {
         if text.len() <= GUEST_CLIP_MAX_BYTES && backend.set_text_html(text, html) {
             self.empty_rereads = 0;
             self.last_seen = Some(text.to_owned());
-            self.last_image = None;
-            self.last_oversized = false;
-            self.last_html = Some(html_digest(html));
-            self.last_files = None;
             self.last_count = backend.change_count();
         }
     }
@@ -60,10 +52,6 @@ impl Poller {
         if backend.set_image(&png.bytes, text) {
             self.empty_rereads = 0;
             self.last_seen = text.map(str::to_owned);
-            self.last_image = Some(png.digest);
-            self.last_oversized = false;
-            self.last_html = None;
-            self.last_files = None;
             self.last_count = backend.change_count();
         }
     }
@@ -78,10 +66,6 @@ impl Poller {
         if backend.set_files(files) {
             self.empty_rereads = 0;
             self.last_seen = None;
-            self.last_image = None;
-            self.last_oversized = false;
-            self.last_html = None;
-            self.last_files = None;
             self.own_files = files.iter().map(|file| composed_path(file)).collect();
             self.last_count = backend.change_count();
         }
@@ -93,10 +77,6 @@ impl Poller {
     fn owns_pasteboard<B: PasteboardBackend>(&mut self, backend: &mut B) -> bool {
         if self.last_count != -1 && backend.change_count() != self.last_count {
             self.last_seen = None;
-            self.last_image = None;
-            self.last_oversized = false;
-            self.last_html = None;
-            self.last_files = None;
             return false;
         }
         true

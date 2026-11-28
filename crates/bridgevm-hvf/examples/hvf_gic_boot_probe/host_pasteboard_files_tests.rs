@@ -375,7 +375,7 @@ fn a_finder_copy_reports_its_files_and_names_once_never_its_icon_or_our_own_writ
     assert_eq!(entries(clip.files), [("a.txt".to_owned(), Some(b"a".to_vec()))]);
     assert_eq!(finder.image_reads, 0, "the files win over the icon: never read");
     finder.count += 1;
-    assert_eq!(poller.on_tick_clip(&mut finder), None, "the same copy again is a re-copy");
+    assert!(poller.on_tick_clip(&mut finder).is_some_and(|clip| clip.files.is_some()), "the same copy again goes again");
     std::fs::write(dir.join("a.txt"), b"edited").unwrap();
     finder.count += 1;
     assert!(poller.on_tick_clip(&mut finder).is_some_and(|clip| clip.files.is_some()), "new bytes are a new copy");

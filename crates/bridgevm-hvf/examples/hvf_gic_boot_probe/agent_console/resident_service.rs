@@ -585,6 +585,12 @@ impl AgentConsoleHarness {
         // between replies, before it reads our next request, so a poll already
         // queued or on the wire sees the change.
         if line == "CLIPCHANGED" {
+            // A file copy that failed reads the same when copied again: a new copy.
+            let failed = self.last_synced.files_failed.take();
+            if failed.is_some() && failed == self.last_synced.files {
+                self.last_synced.files = None;
+                self.last_synced.guest_reply = None;
+            }
             if self.clipsync && !self.any_pending(|req| matches!(req, ServiceReq::ClipPoll)) {
                 self.queue.push_back(ServiceReq::ClipPoll);
             }

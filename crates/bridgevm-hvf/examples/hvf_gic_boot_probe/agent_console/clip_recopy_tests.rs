@@ -89,11 +89,39 @@ fn ready() -> (ClipRig, MemoryPasteboard) {
 }
 
 #[test]
-fn no_conflict_recopy_stays_suppressed_and_later_guest_still_applies() {
+fn a_refused_mac_copy_goes_again_when_copied_again() {
+    let (mut rig, mut mac) = ready();
+    // Windows refuses the Mac copy (ERR CLIPSET) and keeps its text.
+    rig.fail_set = true;
+    mac.text = "mac-new".into();
+    mac.count += 1;
+    assert!(rig.pasteboard.poll(&mut mac));
+    rig.settle();
+    rig.settle();
+    assert_eq!(rig.guest, "baseline");
+    // The user copies the same selection on the Mac again.
+    rig.fail_set = false;
+    mac.count += 1;
+    assert!(rig.pasteboard.poll(&mut mac));
+    rig.settle();
+    assert_eq!(rig.guest, "mac-new", "copying again did not send it again");
+    // Nothing bounces back to the Mac, and nothing is sent again.
+    rig.settle();
+    assert!(rig.pasteboard.apply_pending(&mut mac));
+    assert!(mac.writes.is_empty(), "the Mac copy came back from Windows");
+    assert!(rig.pasteboard.poll(&mut mac));
+    assert_eq!(rig.h.pasteboard.as_ref().unwrap().try_changed(), None);
+    rig.enqueue();
+    assert!(!rig.h.clip_push_pending());
+}
+
+#[test]
+fn no_conflict_recopy_is_not_sent_again_and_later_guest_still_applies() {
     let (mut rig, mut mac) = ready();
     mac.count += 1;
     assert!(rig.pasteboard.poll(&mut mac));
-    assert_eq!(rig.h.pasteboard.as_ref().unwrap().try_changed(), None);
+    rig.enqueue();
+    assert!(!rig.h.clip_push_pending(), "text Windows holds was sent again");
     rig.guest = "later-guest".into();
     rig.settle();
     assert!(rig.pasteboard.apply_pending(&mut mac));
@@ -103,12 +131,14 @@ fn no_conflict_recopy_stays_suppressed_and_later_guest_still_applies() {
 }
 
 #[test]
-fn stale_then_fresh_guest_fifo_keeps_later_guest_without_host_rereport() {
+fn stale_guest_write_never_applies_after_a_mac_recopy() {
     let (mut rig, mut mac) = ready();
     rig.guest = "stale-guest".into();
     rig.settle();
     mac.count += 1;
     assert!(rig.pasteboard.poll(&mut mac));
+    rig.settle();
+    assert_eq!(rig.guest, "baseline", "the recopy goes to Windows as any Mac copy");
     rig.guest = "fresh-guest".into();
     rig.settle();
     assert!(rig.pasteboard.apply_pending(&mut mac));

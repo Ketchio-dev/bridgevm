@@ -505,10 +505,11 @@ impl AgentConsoleHarness {
 
     pub(super) fn fail_files_pull(&mut self, reason: &str, now: Instant) {
         let pull = self.clip_files_stage.pull.as_ref();
-        let Some((copy, entries, bytes)) = pull.map(|pull| (pull.copy, pull.entries, pull.bytes)) else {
+        let Some((copy, entries, bytes, digest)) = pull.map(|pull| (pull.copy, pull.entries, pull.bytes, pull.digest)) else {
             return;
         };
         self.abandon_files_pull();
+        self.last_synced.files_failed = Some(digest);
         clip_line(guest_files_refusal_line(reason, entries, bytes, copy, self.t_ms(now)));
     }
 
