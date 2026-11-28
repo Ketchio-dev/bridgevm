@@ -143,7 +143,7 @@ final class ControlAppPowerTests: XCTestCase {
         }
         let first = sessions[0].sleepPreventionID, eightGB: UInt64 = 8 << 30
         XCTAssertEqual(power.sharedMemoryNotice(for: first, hostBytes: eightGB),
-            "Your running VMs use 8 GiB of memory together, more than this Mac can spare, so Windows and your Mac may slow down. Shut one down, or give the VMs less memory in Settings.")
+            "Your running VMs use 8 GB of memory together, more than this Mac can spare, so Windows and your Mac may slow down. Shut one down, or give the VMs less memory in Settings.")
         XCTAssertNil(power.sharedMemoryNotice(for: first, hostBytes: 16 << 30), "8 GiB fits what a 16 GB Mac can spare")
         sessions[1].attachedToExistingProcess = false; sessions[1].markStopped()
         XCTAssertNil(power.sharedMemoryNotice(for: first, hostBytes: eightGB), "One VM alone stays within its own limit")
@@ -159,7 +159,7 @@ final class ControlAppPowerTests: XCTestCase {
         session.attachedToExistingProcess = true
         session.connectionState = .booting
         XCTAssertEqual(power.sharedMemoryNotice(for: session.sleepPreventionID, hostBytes: 16 << 30),
-            "This VM uses 16 GiB of memory, more than this Mac can spare, so Windows and your Mac may slow down. Give it less memory in Settings.")
+            "This VM uses 16 GB of memory, more than this Mac can spare, so Windows and your Mac may slow down. Give it less memory in Settings.")
         XCTAssertNil(power.sharedMemoryNotice(for: session.sleepPreventionID, hostBytes: 32 << 30))
         session.attachedToExistingProcess = false; session.markStopped()
     }

@@ -51,7 +51,7 @@ struct FleetTableView: View {
             .width(min: 115, ideal: compact ? 142 : 240)
             TableColumn("Engine", value: \.engine)
                 .width(min: 64, ideal: compact ? 68 : 110)
-            TableColumn("vCPUs", value: \.cpus) { vm in
+            TableColumn("CPUs", value: \.cpus) { vm in
                 Text(vm.config.cpuCount.map(String.init) ?? "Auto").monospacedDigit()
             }
             .width(min: 62, ideal: compact ? 64 : 78)
@@ -85,6 +85,6 @@ private struct FleetVM: Identifiable {
 
     var memoryLabel: String {
         guard let mib = config.memMiB else { return "Auto" }
-        return mib.isMultiple(of: 1024) ? "\(mib / 1024) GiB" : "\(mib) MiB"
+        return VMResourceLimits.memoryText(mib: mib)
     }
 }

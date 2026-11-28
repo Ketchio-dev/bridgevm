@@ -64,10 +64,10 @@ final class ControlAppPower: ObservableObject {
         guard runningMemoryMiB[runtime] != nil,
               totalMiB > CreateVMMemoryOptions.ceilingMiB(hostBytes: hostBytes) else { return nil }
         guard runningMemoryMiB.count > 1 else {
-            return "This VM uses \((totalMiB + 512) / 1024) GiB of memory, more than this Mac can spare, "
+            return "This VM uses \((totalMiB + 512) / 1024) GB of memory, more than this Mac can spare, "
                 + "so Windows and your Mac may slow down. Give it less memory in Settings."
         }
-        return "Your running VMs use \((totalMiB + 512) / 1024) GiB of memory together, more than this Mac can spare, "
+        return "Your running VMs use \((totalMiB + 512) / 1024) GB of memory together, more than this Mac can spare, "
             + "so Windows and your Mac may slow down. Shut one down, or give the VMs less memory in Settings."
     }
     /// Each running VM and Windows install shows it (HvfKeepAwakeNoticeView) while the Mac can't be

@@ -23,13 +23,13 @@ struct LibraryHostSummary: View {
             Label("Mac hardware", systemImage: "desktopcomputer")
                 .font(.callout.weight(.semibold))
             HStack(spacing: 18) {
-                LibraryMetadataLabel(title: "Memory", value: "\(Int(library.hostMemGiB.rounded())) GiB", symbol: "memorychip")
-                LibraryMetadataLabel(title: "CPU", value: "\(library.hostCPU) cores", symbol: "cpu")
+                LibraryMetadataLabel(title: "Memory", value: "\(Int(library.hostMemGiB.rounded())) GB", symbol: "memorychip")
+                LibraryMetadataLabel(title: "CPUs", value: "\(library.hostCPU)", symbol: "cpu")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .modifier(LibraryCardSurface())
-        .help("Total memory and processor cores available on this Mac.")
+        .help("Total memory and CPUs available on this Mac.")
     }
 }

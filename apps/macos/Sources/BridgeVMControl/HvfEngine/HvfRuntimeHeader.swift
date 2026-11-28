@@ -27,17 +27,13 @@ struct HvfRuntimeHeader: View {
             }
             Divider()
             HStack(spacing: 32) {
-                LibraryMetadataLabel(title: "Processors", value: "\(cpus) vCPU", symbol: "cpu")
-                LibraryMetadataLabel(title: "Memory", value: memory, symbol: "memorychip")
+                LibraryMetadataLabel(title: "CPUs", value: "\(cpus)", symbol: "cpu")
+                LibraryMetadataLabel(title: "Memory", value: VMResourceLimits.memoryText(mib: ramMiB), symbol: "memorychip")
                 Spacer(minLength: 0)
             }
         }
         .padding(24)
         .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(LibraryCardSurface())
-    }
-
-    private var memory: String {
-        ramMiB.isMultiple(of: 1024) ? "\(ramMiB / 1024) GiB" : "\(ramMiB) MiB"
     }
 }
