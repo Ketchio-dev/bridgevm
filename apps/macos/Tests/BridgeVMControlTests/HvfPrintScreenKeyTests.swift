@@ -23,6 +23,17 @@ final class HvfPrintScreenKeyTests: XCTestCase {
         XCTAssertEqual(HvfGuestInputEncoding(.key("alt+printscreen"))?.insertedEventCount, 4)
     }
 
+    /// A PC keyboard's Insert reaches macOS as Help: it is Insert in Windows. Other function keys
+    /// Windows has no key for here (Num Lock as Clear, F14 and up) type nothing; the Apple logo is text.
+    func testInsertIsInsertAndOtherFunctionKeysTypeNothing() {
+        XCTAssertEqual(HvfHostKeyCommand.resolve(characters: "\u{f746}"), .key("insert"))
+        XCTAssertEqual(HvfHostKeyCommand.resolve(characters: "\u{f727}"), .key("insert"))
+        for junk in ["\u{f739}", "\u{f711}", "\u{f714}"] {
+            XCTAssertEqual(HvfHostKeyCommand.resolve(characters: junk), .ignored, junk)
+        }
+        XCTAssertEqual(HvfHostKeyCommand.resolve(characters: "a"), .text("a"))
+    }
+
     /// The pressed key, through the display's key path, reaches the VMM as Print Screen, held until its key-up.
     func testF13ReachesTheLegacyRouteAsPrintScreen() throws {
         let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
