@@ -2,7 +2,9 @@
 
 #![cfg(unix)]
 
-use super::super::port_forward::{forward_off_line, parse_forwards};
+use super::super::port_forward::{
+    forward_answered_line, forward_off_line, forward_unanswered_line, parse_forwards,
+};
 use super::super::*;
 use super::helpers::*;
 use crate::virtio_net::NetBackend;
@@ -103,7 +105,7 @@ fn a_host_connection_to_a_forwarded_port_reaches_the_guest_port() {
 #[test]
 fn a_guest_port_that_refuses_closes_the_host_connection() {
     let (mut nat, port) = forwarding_nat();
-    let mut client = client(port);
+    let mut first = client(port);
     let (nat_port, nat_isn) = syn(&mut nat);
     nat.transmit(&tcp_guest_frame(
         GATEWAY_IP,
@@ -116,12 +118,34 @@ fn a_guest_port_that_refuses_closes_the_host_connection() {
     ));
     nat.poll_host_sockets();
     let mut buf = [0u8; 16];
-    match client.read(&mut buf) {
+    match first.read(&mut buf) {
         Ok(0) => {}
         Err(error) => assert_eq!(error.kind(), ErrorKind::ConnectionReset),
         Ok(n) => panic!("read {n} bytes from a refused forward"),
     }
     assert!(nat.outbound_ipv4_handler().tcp_flows.is_empty());
+    // Said for the app's notice (Windows isn't accepting connections there), until one opens.
+    assert!(nat.outbound_ipv4_handler().forwards[0].unanswered);
+    let _second = client(port);
+    let (nat_port, nat_isn) = syn(&mut nat);
+    nat.transmit(&tcp_guest_frame(
+        GATEWAY_IP,
+        nat_port,
+        GUEST_PORT,
+        GUEST_ISN,
+        nat_isn.wrapping_add(1),
+        TCP_FLAG_SYN | TCP_FLAG_ACK,
+        &[],
+    ));
+    assert!(!nat.outbound_ipv4_handler().forwards[0].unanswered);
+    assert_eq!(
+        forward_unanswered_line(GUEST_PORT),
+        "BVNET forward-unanswered guest=8080"
+    );
+    assert_eq!(
+        forward_answered_line(GUEST_PORT),
+        "BVNET forward-answered guest=8080"
+    );
 }
 
 #[test]
@@ -145,6 +169,10 @@ fn an_unanswered_syn_is_resent_then_the_host_connection_closes() {
         std::thread::sleep(Duration::from_millis(5));
     }
     assert!(resent >= 3, "{resent} resends");
+    assert!(
+        nat.outbound_ipv4_handler().forwards[0].unanswered,
+        "said for the app's notice"
+    );
     let mut buf = [0u8; 16];
     assert!(matches!(client.read(&mut buf), Ok(0) | Err(_)));
 }

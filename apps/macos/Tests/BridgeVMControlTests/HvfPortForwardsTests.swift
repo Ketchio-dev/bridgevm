@@ -67,6 +67,14 @@ final class HvfPortForwardsTests: XCTestCase {
             "Other apps or other BridgeVM VMs are using Mac ports 8080, 3390, so they don’t reach Windows. Quit those apps or shut down those VMs, or choose other Mac ports in Settings, then restart Windows.")
         session.resetObservedRuntimeState(clearEvents: false)
         XCTAssertNil(session.portForwardNotice.text, "a new run opens the ports again")
+
+        // A forward whose Windows port refuses or never answers (net_nat/port_forward.rs): the Mac
+        // client only saw its connection close.
+        session.handle(.unknown("BVNET forward-unanswered guest=3389"))
+        XCTAssertEqual(session.portForwardNotice.text,
+            "Windows isn’t accepting forwarded connections on port 3389. Start the app that should listen there, or allow it in Windows Defender Firewall.")
+        session.handle(.unknown("BVNET forward-answered guest=3389"))
+        XCTAssertNil(session.portForwardNotice.text, "a connection that opens clears it")
     }
 
     /// The lines net_nat/host_socket.rs prints when sends to the Mac's DNS server on its own network

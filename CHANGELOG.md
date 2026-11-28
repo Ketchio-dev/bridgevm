@@ -50,6 +50,10 @@ All notable changes to BridgeVM are documented in this file.
   tries to update Guest Tools at every launch and reports "Guest Tools
   couldn't update" each time. That update can't work without administrator
   rights, so the current Guest Tools are left as they are.
+- When Windows refuses or doesn't answer a forwarded connection, such as RDP
+  turned off or a port Windows Defender Firewall blocks, BridgeVM now says
+  which Windows port and what to check. Before, the Mac app's connection
+  just closed with no explanation.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.
