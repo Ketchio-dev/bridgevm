@@ -256,6 +256,25 @@ final class HvfInputRouteSwitchTests: XCTestCase {
         }
     }
 
+    /// A click Windows never confirms counts its button down: its expiry turns input basic and sends the cleanup's
+    /// release to the same agent. The chord held behind the click, and the Enter after it, reach input.ctl at that
+    /// failure, and losing focus right after it discards neither.
+    func testCtrlAltDeleteBehindAnExpiredClickSurvivesFocusLoss() throws {
+        try withClockedSession(negotiated: true) { session, fixture, clock in
+            session.sendPointerClick(location: point, viewSize: size, imageSize: size)
+            XCTAssertEqual(try payload(try fixture.commands().last), "POINTERINPUT click:16384x16384")
+            XCTAssertTrue(session.sendToolbarKey("ctrl+alt+delete"))
+            XCTAssertTrue(session.sendKey("enter"))
+            clock.advance(31); session.poll()
+            XCTAssertTrue(session.inputStopped)
+            session.displayLostFocus() // ⌘Tab away
+            session.poll()
+            XCTAssertEqual(try legacy(fixture), ["KEY ctrl+alt+delete", "KEY enter"])
+            XCTAssertEqual(try payload(try fixture.commands().last), "POINTERINPUT release:16384x16384",
+                           "the cleanup's release goes to the agent")
+        }
+    }
+
     func testAKeyAfterAMoveDoesNotStandInForTheMovesBarrier() {
         var activity = HvfLegacyInputActivity()
         let start = Date(timeIntervalSince1970: 1000)

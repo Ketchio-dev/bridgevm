@@ -53,11 +53,10 @@ extension HvfEngineSession {
 
     /// The Mac window or the display lost focus. Windows keeps its own focus, so what is queued still goes to the app it
     /// was typed into, a clipboard paste included; only the held keys go up, each on its route (the view lifts a held
-    /// button as a mouse-up would). A failed route takes no release, and has nothing queued: there the target change
-    /// lifts what its requests may hold (HvfPointerCleanup).
+    /// button as a mouse-up would). A route a request failure stopped takes no release: the cleanup that failure
+    /// started lifts what its requests may hold, and the router retries one Windows refused (HvfSessionInputRouter.poll).
     func displayLostFocus() {
         releaseHeldKeys()
-        if inputDriver.router.failed { inputDriver.cancelTarget() }
     }
 
     /// A target change (Pause, Stop, the display going away): the keys input.ctl holds go up there now; those the
