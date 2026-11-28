@@ -234,7 +234,7 @@ restored file against its original SHA-256 before preparing Windows.
    choose **Start** (v0.1.0: **시작**) to boot it.
 4. After the first start, choose **Install Guest Tools** (v0.1.0: **게스트 도구
    설치**) when BridgeVM offers it. Shut down Windows and start it again, then run
-   **install.cmd** from the new drive in Windows and approve the administrator
+   **install.cmd** from the **BVTOOLS** drive in Windows and approve the administrator
    prompt. This enables clipboard sharing and shared folders.
 
 Windows on the imported disk must already have the Red Hat VirtIO Serial
@@ -268,8 +268,8 @@ Choose `Windows.raw` in the import wizard.
 The General Preview bundles no Windows driver and accepts no graphics-driver
 package at creation; Windows is created with the standard display and 3D
 acceleration off. Once Windows runs and BridgeVM is connected, open **Settings**
-→ **Display** and choose **Install display driver**, or choose **Install** in the
-notice over the Windows display. Windows downloads the Microsoft-signed Red Hat
+→ **Display** and choose **Install display driver**, or choose **Install Driver** in
+the notice over the Windows display. Windows downloads the Microsoft-signed Red Hat
 virtio-win display driver itself (about 95 MB). Then choose **Restart Now** in
 the notice, or shut down the VM and start it again. Restarting Windows inside
 the VM is not enough: it cannot attach the new display. After that the display

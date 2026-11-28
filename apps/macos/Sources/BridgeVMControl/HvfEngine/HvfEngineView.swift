@@ -255,7 +255,7 @@ struct HvfEngineView: View {
             .foregroundColor(Color(white: 0.9))
             .cornerRadius(6)
         } label: {
-            Label("Guest agent events", systemImage: "list.bullet.rectangle")
+            Label("Guest Tools activity", systemImage: "list.bullet.rectangle")
         }
     }
 

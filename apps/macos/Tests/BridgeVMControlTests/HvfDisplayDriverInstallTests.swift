@@ -85,7 +85,7 @@ final class HvfDisplayDriverInstallScriptTests: XCTestCase {
         XCTAssertEqual(HvfDisplayDriverInstall.progress(output: "BVDRIVER ready\r\n", code: 0), .running)
         XCTAssertEqual(HvfDisplayDriverInstall.progress(
             output: "BVDRIVER result=failed detail=C:\\ProgramData\\BridgeVM is a reparse point (a junction or link); remove it and install again", code: 0),
-            .finished(.init(status: .failed, detail: "C:\\ProgramData\\BridgeVM is a reparse point (a junction or link); remove it and install again")))
+            .finished(.init(status: .failed, detail: HvfDisplayDriverInstall.windowsFailure)))
     }
 
     /// Each launch writes a new random token before it starts Run; a result counts only under that
@@ -212,9 +212,11 @@ final class HvfDisplayDriverInstallProgressTests: XCTestCase {
         XCTAssertEqual(staged?.message, "Added the display driver to Windows.")
 
         let failed = outcome("BVDRIVER result=failed detail=download SHA-256 00AA does not match the pinned ff39")
-        XCTAssertEqual(failed, .init(status: .failed, detail: "download SHA-256 00AA does not match the pinned ff39"))
+        XCTAssertEqual(failed?.status, .failed)
         XCTAssertEqual(failed?.leavesDriverInGuest, false)
-        XCTAssertEqual(failed?.message.contains("download SHA-256 00AA"), true)
+        // The installer's detail (or Windows' localized exception text) stays in the log.
+        XCTAssertEqual(failed?.message,
+                       "Couldn’t install the display driver. Check that Windows can reach the internet, then choose Install Driver again.")
     }
 
     func testMissingOrUnknownLineIsAFailure() {
@@ -230,7 +232,7 @@ final class HvfDisplayDriverInstallProgressTests: XCTestCase {
         XCTAssertEqual(outcome("BVDRIVER result=maybe detail=x")?.status, .failed)
         XCTAssertFalse(outcome("BVDRIVER result=maybe detail=x")?.message.contains("BVDRIVER") ?? true)
         XCTAssertEqual(outcome("BVDRIVER pending")?.status, .failed)
-        XCTAssertEqual(outcome("BVDRIVER result=failed detail=curl.exe missing"), .init(status: .failed, detail: "curl.exe missing"))
+        XCTAssertEqual(outcome("BVDRIVER result=failed detail=Zugriff verweigert"), .init(status: .failed, detail: HvfDisplayDriverInstall.windowsFailure))
     }
 }
 
@@ -335,7 +337,7 @@ final class HvfDisplayDriverInstallSessionTests: XCTestCase {
             return ("BVDRIVER result=failed detail=\(refusal)\r\n", 0)
         }, pollInterval: 0.01, timeout: 30)
         XCTAssertEqual(sent, [Install.prepareCommand])
-        XCTAssertEqual(outcome, .init(status: .failed, detail: refusal))
+        XCTAssertEqual(outcome, .init(status: .failed, detail: Install.windowsFailure))
     }
 
     private struct Fixture {

@@ -187,7 +187,9 @@ final class HvfFileDropQueue: ObservableObject {
     static func failureText(_ reason: String) -> String {
         switch reason {
         case "agent-too-old":
-            return "Update Guest Tools in Windows to copy files from the Mac."
+            // BridgeVM updates Guest Tools itself about 20 s after it starts in Windows, once per app
+            // launch (HvfAgentUpdate.swift): a drop sent before that, or after a failed update, gets this.
+            return "This version of Guest Tools can’t receive files. Quit and reopen BridgeVM, then start Windows to update it."
         case "guest-error":
             return "Windows couldn’t save the files. Check free disk space and write access to the Windows desktop."
         case "stalled", "agent-restarted":
