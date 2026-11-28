@@ -505,7 +505,7 @@ extension LibraryModel {
         if current == nil || (try? NativeRuntimeLibraryHandle.open(rootURL: rootURL, create: false))
             .flatMap({ try? NativeCLIStatusConfigReader.read(library: $0, id: vmID) }) != current { reload() }
         guard let saved = vms.first(where: { $0.slug == vmID }) else {
-            return .refused("No VM has the ID “\(vmID)” in this library. Run `bridgevm app list` to find its ID.")
+            return .refused(NativeLibraryConfigLoader.unknownID(vmID))
         }
         guard saved.engineKind == .hvfEngine else {
             return .refused("The start command supports Windows VMs that use the BridgeVM engine.")

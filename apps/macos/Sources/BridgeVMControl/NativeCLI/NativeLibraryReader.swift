@@ -134,7 +134,7 @@ struct NativeLibrarySnapshot: Encodable {
 
 enum NativeLibraryConfigLoader {
     static func unknownID(_ id: String) -> String {
-        "No VM has the ID ‘\(id)’ in this library. Run `bridgevm app list` to find its ID."
+        "No VM has the ID “\(id)” in this library. Run `bridgevm app list` to find its ID."
     }
 
     static func readConfig(rootDescriptor: Int32, id: String) throws -> VMConfig {
