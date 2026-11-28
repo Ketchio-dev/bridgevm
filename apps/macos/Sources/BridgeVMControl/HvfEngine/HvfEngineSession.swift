@@ -50,7 +50,7 @@ final class HvfEngineSession: ObservableObject {
     let sleepPreventionID = UUID()
     var sleepPrevention = ControlAppPower.shared
     func updateSleepPrevention() {
-        sleepPrevention.update(sleepPreventionID, active: needsMacAwake)
+        sleepPrevention.update(sleepPreventionID, active: needsMacAwake, ramMiB: config.ramMiB)
     }
     /// Cleanup can remain unconfirmed after a dead runner, but no Windows task is using the Mac.
     var needsMacAwake: Bool {

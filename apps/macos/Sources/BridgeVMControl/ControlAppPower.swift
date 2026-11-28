@@ -28,6 +28,7 @@ final class ControlSystemPowerAssertion: ControlPowerAsserting {
 }
 
 /// One assertion for all running Windows tasks, never for a paused or exited runtime.
+/// It also knows the memory of each running VM, for the notice below.
 @MainActor
 final class ControlAppPower: ObservableObject {
     static let preferenceKey = "preventIdleSleepWhileWindowsRuns"
@@ -38,6 +39,7 @@ final class ControlAppPower: ObservableObject {
     }()
     private let api: any ControlPowerAsserting
     private var runtimes = Set<UUID>()
+    @Published private(set) var runningMemoryMiB: [UUID: Int] = [:]
     private(set) var held = false
     @Published var enabled: Bool { didSet { reconcile() } }
     var failure: ((String) -> Void)?
@@ -46,9 +48,21 @@ final class ControlAppPower: ObservableObject {
     init(api: any ControlPowerAsserting, enabled: Bool = true) {
         self.api = api; self.enabled = enabled
     }
-    func update(_ runtime: UUID, active: Bool) {
+    func update(_ runtime: UUID, active: Bool, ramMiB: Int? = nil) {
         if active { runtimes.insert(runtime) } else { runtimes.remove(runtime) }
+        let memory = active ? ramMiB : nil
+        if runningMemoryMiB[runtime] != memory { runningMemoryMiB[runtime] = memory }
         reconcile()
+    }
+    /// Guest memory is ordinary swappable Mac memory with no balloon: VMs that together use more than
+    /// one VM may (CreateVMMemoryOptions) make macOS swap. Each of them says so; nothing is refused.
+    func sharedMemoryNotice(for runtime: UUID,
+                            hostBytes: UInt64 = ProcessInfo.processInfo.physicalMemory) -> String? {
+        let totalMiB = runningMemoryMiB.values.reduce(0, +)
+        guard runningMemoryMiB[runtime] != nil, runningMemoryMiB.count > 1,
+              totalMiB > CreateVMMemoryOptions.ceilingMiB(hostBytes: hostBytes) else { return nil }
+        return "Your running VMs use \((totalMiB + 512) / 1024) GiB of memory together, more than this Mac can spare, "
+            + "so Windows and your Mac may slow down. Stop one, or give the VMs less memory in Settings."
     }
     func setEnabled(_ value: Bool, defaults: UserDefaults = .standard) {
         defaults.set(value, forKey: Self.preferenceKey)
@@ -65,7 +79,7 @@ final class ControlAppPower: ObservableObject {
         } else if !needed && held { api.release(); held = false }
     }
     func shutdown() {
-        runtimes.removeAll()
+        runtimes.removeAll(); runningMemoryMiB.removeAll()
         if held { api.release(); held = false }
     }
 }

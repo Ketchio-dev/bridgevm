@@ -43,6 +43,10 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- When VMs running at the same time together use more memory than your Mac can
+  spare, each of them now says so in one sentence and suggests stopping one or
+  giving the VMs less memory in Settings. Before, macOS just started swapping
+  and Windows and the Mac slowed down with no explanation. Nothing is refused.
 - The terminal installer works on a Mac without the Xcode Command Line Tools.
   It used to call Python and `lipo`, which on such a Mac only open the "install
   developer tools" dialog, so it failed or wrongly said the app was not Apple

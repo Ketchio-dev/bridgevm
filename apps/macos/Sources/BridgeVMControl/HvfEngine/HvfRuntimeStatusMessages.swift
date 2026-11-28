@@ -12,6 +12,7 @@ struct HvfRuntimeStatusMessages: View {
                 .font(.callout).foregroundColor(failureText == nil ? Color.secondary : Color.red).textSelection(.enabled)
                 .accessibilityIdentifier("bridgevm.windows.runtime.start.failure")
                 .accessibilityValue(failureText ?? "none")
+            HvfSharedMemoryNoticeView(session: session)
             HvfAgentSilenceNoticeView(notice: session.agentSilenceNotice)
             HvfGuestToolsAction(session: session)
             HvfShareRootNoticeView(notice: session.shareRootNotice)
