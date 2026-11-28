@@ -207,7 +207,7 @@ Windows HVF uses a QEMU `virt`-compatible guest contract with
 [documented deviations](docs/machine-contract/qemu-virt-deviations.json).
 BridgeVM imports RAW, QCOW2 and VHDX disks with its bundled converter.
 Builds from current source also import fixed-size Hyper-V VHD. Convert a
-dynamic VHD to VHDX in Hyper-V before importing.
+dynamic VHD with `qemu-img convert -O qcow2` before importing.
 The v0.1.0 download imports uncompressed QCOW2. Builds from current source also
 read QEMU's default deflate compression. Use RAW for compressed QCOW2 in v0.1.0
 or for zstd-compressed QCOW2 in either build.
