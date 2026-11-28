@@ -116,7 +116,8 @@ final class LibraryModel: ObservableObject {
     }
 
     func cloneWindowsHVF(_ cfg: VMConfig, name: String,
-                         operation: @escaping LibraryCloneOperation = { HvfProtectedTransfers.clone(name: $0, template: $1, libraryRoot: $2) }) {
+                         operation: @escaping LibraryCloneOperation = { HvfProtectedTransfers.clone(name: $0, template: $1, libraryRoot: $2) },
+                         available: @escaping @Sendable (URL) -> Int64? = { HvfImportSpace.available($0) }) {
         guard admitLibraryAction(cfg, action: .clone), !cloningSlugs.contains(cfg.slug) else { return }
         let backend = modelCache[cfg.slug]?.backend ?? cfg.makeBackend(libraryRoot: self.libraryRoot)
         guard !backend.isRunning() else {
@@ -128,7 +129,9 @@ final class LibraryModel: ObservableObject {
         let libraryRoot = self.libraryRoot
         let selectionAtAdmission = selectedID
         actionScheduler {
-            let clone = operation(name, cfg, libraryRoot)
+            let full = HvfImportSpace.shortDrive(copying: URL(fileURLWithPath: cfg.bundlePath, isDirectory: true),
+                                                 into: libraryRoot, available: available)
+            let clone = full == nil ? operation(name, cfg, libraryRoot) : nil
             await MainActor.run {
                 self.cloningConfigurations[cfg.slug] = nil
                 if let clone {
@@ -136,7 +139,8 @@ final class LibraryModel: ObservableObject {
                 } else {
                     // The copy's half-made bundle is already gone; say what the source is missing, if
                     // that is why, and show a copy whose vm.json was written but not confirmed.
-                    self.cloneError = (cfg.engineKind == .hvfEngine ? HvfWindowsCloneSource.refusal(for: cfg, phase: .copy) : nil)
+                    self.cloneError = full.map { "“\($0)” doesn’t have enough free space for a copy of this VM. Free up space, then try again." }
+                        ?? (cfg.engineKind == .hvfEngine ? HvfWindowsCloneSource.refusal(for: cfg, phase: .copy) : nil)
                         ?? "BridgeVM couldn’t duplicate “\(cfg.name)”. Check that your Mac has enough free space for a copy of its disk, then try again."
                     self.reload()
                 }
@@ -157,7 +161,8 @@ final class LibraryModel: ObservableObject {
         return "“\(parent.lastPathComponent)” already holds another VM. Choose another folder, or make a new folder for this VM."
     }
 
-    func moveWindowsHVFBundle(_ cfg: VMConfig, to destinationParent: URL) {
+    func moveWindowsHVFBundle(_ cfg: VMConfig, to destinationParent: URL,
+                              available: @escaping @Sendable (URL) -> Int64? = { HvfImportSpace.available($0) }) {
         guard admitLibraryAction(cfg, action: .move) else { return }
         guard !movingSlugs.contains(cfg.slug) else { return }
         if let busy = moveBusyRefusal(cfg) { moveError = busy; return }
@@ -169,10 +174,12 @@ final class LibraryModel: ObservableObject {
         let libraryRoot = self.libraryRoot
         let selectionAtAdmission = selectedID
         actionScheduler {
-            let moved = HvfProtectedTransfers.move(cfg,
+            let full = HvfImportSpace.shortDrive(copying: URL(fileURLWithPath: cfg.bundlePath, isDirectory: true),
+                                                 into: destinationParent, available: available)
+            let moved = full == nil ? HvfProtectedTransfers.move(cfg,
                 to: destinationParent,
                 rootURL: libraryRoot
-            )
+            ) : nil
             await MainActor.run {
                 self.movingSlugs.remove(cfg.slug)
                 if let moved {
@@ -182,7 +189,8 @@ final class LibraryModel: ObservableObject {
                     // A drive pulled after the folder was chosen. A bundle that left but could not be
                     // committed or put back keeps its unfinished-move record, and the old sentence.
                     let pending = VMRelocationJournal.isPending(cfg, rootURL: self.libraryRoot)
-                    self.moveError = (pending ? nil : Self.missingBundleRefusal(cfg))
+                    self.moveError = full.map { "“\($0)” doesn’t have enough free space for this VM. Free up space, or choose another drive." }
+                        ?? (pending ? nil : Self.missingBundleRefusal(cfg))
                         ?? VMRelocationReferences.failureMessage(for: cfg, rootURL: self.libraryRoot)
                     self.reload() // It may have committed: replace stale idle handles with the persisted registration.
                 }
