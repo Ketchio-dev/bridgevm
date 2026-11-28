@@ -93,6 +93,10 @@ All notable changes to BridgeVM are documented in this file.
   not be removed from disk. BridgeVM still keeps the VM's folder when it holds a
   snapshot or any file BridgeVM didn't write, and after a delete that fails the
   library now shows what is still on disk.
+- When a Mac port for port forwarding is taken, the notice now says another
+  app or another BridgeVM VM may hold it, and to quit that app or shut down that
+  VM. Two VMs set to the same Mac port (a duplicate keeps none, but a second VM
+  set up the same way does) used to get only "Quit the app using it".
 - Installing the display driver no longer pins the shared folder to Quick
   Access in Windows Explorer again after you unpinned it, and no longer leaves
   a `BridgeVM.unlocked-…` folder in `C:\ProgramData`. Before, BridgeVM kept its
