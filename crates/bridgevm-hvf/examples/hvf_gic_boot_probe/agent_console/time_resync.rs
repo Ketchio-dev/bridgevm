@@ -5,10 +5,11 @@
 //! clock falls behind by every host sleep. Windows reads the RTC only at boot
 //! and W32Time syncs about weekly on a workgroup machine. `SystemTime` keeps
 //! counting through a sleep and `Instant` (CLOCK_UPTIME_RAW) does not, so a
-//! tick whose wall-clock step exceeds its monotonic step by more than
-//! `RESYNC_GAP` saw a suspension. Once the agent service runs, one `Set-Date`
-//! puts the guest on the host's UTC time, read from the host clock when the
-//! command is sent. The command is fixed text plus that one integer.
+//! tick whose wall-clock step differs from its monotonic step by more than
+//! `RESYNC_GAP` saw a suspension or a Mac clock set forward or back. Once the
+//! agent service runs, one `Set-Date` puts the guest on the host's UTC time,
+//! read from the host clock when the command is sent. The command is fixed
+//! text plus that one integer.
 //!
 //! The same resync runs once at each boot's first service start. Windows reads
 //! the RTC as local time, and the PL031 starts at UTC, so in any zone but UTC
@@ -36,10 +37,14 @@ const TEST_SUSPEND_ENV: &str = "BRIDGEVM_TEST_SUSPEND_GAP_MS";
 #[derive(Default)]
 pub(super) struct HostClock {
     last: Option<(SystemTime, Instant)>,
-    /// Suspension (ms) no sent resync has covered yet; 0 when none is due.
+    /// Suspension or clock step (ms) no sent resync has covered yet; 0 when
+    /// none is due.
     pub(super) pending_gap_ms: u64,
     /// The synthetic gap and when it appears.
     pub(super) test_suspend: Option<(Duration, Duration)>,
+    /// The synthetic gap once it appeared: as after a real sleep, the wall
+    /// clock stays that far ahead.
+    test_offset: Duration,
     /// BRIDGEVM_GUEST_RTC_EPOCH: the guest's fixed start time, and the host
     /// time it was taken at.
     pub(super) rtc_epoch: Option<(SystemTime, SystemTime)>,
@@ -80,32 +85,32 @@ impl HostClock {
     }
 
     /// One tick: the clock pair, plus the test gap once it is due.
-    pub(super) fn tick(&mut self, mut wall: SystemTime, mono: Instant, elapsed: Duration) -> bool {
+    pub(super) fn tick(&mut self, wall: SystemTime, mono: Instant, elapsed: Duration) -> bool {
         if let Some((gap, at)) = self.test_suspend {
             if elapsed >= at && self.last.is_some() {
                 self.test_suspend = None;
-                wall += gap;
+                self.test_offset = gap;
             }
         }
-        self.observe(wall, mono)
+        self.observe(wall + self.test_offset, mono)
     }
 
-    /// Fold in one tick's clock pair; true when it shows a host suspension.
+    /// Fold in one tick's clock pair; true when it shows a host suspension
+    /// or a host clock step in either direction.
     pub(super) fn observe(&mut self, wall: SystemTime, mono: Instant) -> bool {
         let Some((last_wall, last_mono)) = self.last.replace((wall, mono)) else {
             return false;
         };
-        let gap = wall
-            .duration_since(last_wall)
-            .ok()
-            .and_then(|step| step.checked_sub(mono.saturating_duration_since(last_mono)));
-        match gap {
-            Some(gap) if gap > RESYNC_GAP => {
-                self.pending_gap_ms = self.pending_gap_ms.saturating_add(gap.as_millis() as u64);
-                true
-            }
-            _ => false,
+        let mono_step = mono.saturating_duration_since(last_mono);
+        let gap = match wall.duration_since(last_wall) {
+            Ok(step) => step.abs_diff(mono_step),
+            Err(back) => back.duration() + mono_step,
+        };
+        if gap <= RESYNC_GAP {
+            return false;
         }
+        self.pending_gap_ms = self.pending_gap_ms.saturating_add(gap.as_millis() as u64);
+        true
     }
 }
 
