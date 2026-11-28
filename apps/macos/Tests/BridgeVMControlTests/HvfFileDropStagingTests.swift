@@ -59,6 +59,32 @@ final class HvfFileDropStagingTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: staging.appendingPathComponent("video.mov")), Data("abc".utf8))
     }
 
+    /// A whole USB drive holds root-only .Trashes and .Spotlight-V100 folders; a project folder can hold a
+    /// root-owned file. Those are left out and counted; the rest is copied, cloned or not.
+    func testFoldersAndFilesTheMacCannotReadAreSkippedAndTheRestIsCopied() throws {
+        let base = try scratch()
+        let folder = base.appendingPathComponent("USB")
+        let locked = folder.appendingPathComponent(".Trashes"), secret = folder.appendingPathComponent("secret.txt")
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        try Data("t".utf8).write(to: locked.appendingPathComponent("old.txt"))
+        try Data("s".utf8).write(to: secret)
+        try Data("ok".utf8).write(to: folder.appendingPathComponent("photo.jpg"))
+        chmod(locked.path, 0); chmod(secret.path, 0)
+        defer {
+            chmod(locked.path, 0o700); chmod(secret.path, 0o600)
+            try? FileManager.default.removeItem(at: base)
+        }
+        for clone in [true, false] {
+            let staging = base.appendingPathComponent("staging-\(clone)")
+            let summary = clone ? try HvfFileDropStaging.stage([folder], into: staging)
+                : try HvfFileDropStaging.stage([folder], into: staging, clone: { _, _ in false })
+            XCTAssertEqual(summary.files, 1, "clone \(clone)")
+            XCTAssertEqual(summary.folders, 1)
+            XCTAssertEqual(summary.unreadable, 2)
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: staging.appendingPathComponent("USB").path), ["photo.jpg"])
+        }
+    }
+
     func testTwoDroppedItemsWithOneWindowsNameBothLand() throws {
         let base = try scratch()
         defer { try? FileManager.default.removeItem(at: base) }

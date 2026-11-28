@@ -1,7 +1,12 @@
 import Foundation
 
 extension HvfEngineSession {
-    var preparingSnapshot: Bool { mutationReservation?.kind == .snapshot }
+    var preparingSnapshot: Bool { mutationReservation?.kind == .snapshot || snapshotDeletions > 0 }
+
+    static let snapshotBusy = "A snapshot of this VM is being created, restored or deleted. Try again when it finishes."
+
+    /// Why a setting can't change now. During a snapshot Windows is already off, so not `stopFirst`.
+    func settingsWait(_ stopFirst: String) -> String { mutationReservation?.kind == .snapshot ? Self.snapshotBusy : stopFirst }
 
     /// Creates or restores the stopped VM's powered-off snapshot under a runtime-mutation
     /// reservation, rechecked before every file and helper effect. A failure's technical detail goes
@@ -10,6 +15,7 @@ extension HvfEngineSession {
     func runSnapshot(_ operation: HvfWindowsSnapshotCommand.Operation, configuration: HvfEngineConfig,
                      target: URL? = nil, name: String? = nil) async throws -> String? {
         do {
+            if operation == .delete { return try await deleteSnapshot(configuration: configuration, target: target) }
             return try await snapshotUnderReservation(operation, configuration: configuration, target: target, name: name)
         } catch {
             let detail = error as NSError
@@ -17,6 +23,18 @@ extension HvfEngineSession {
                 + detail.localizedDescription))
             throw error
         }
+    }
+
+    /// A delete removes only that snapshot's folder, which a running VM never reads (it runs from its own
+    /// disk, or a restored copy elsewhere in the bundle), so Windows may be running. A Quit waits for it.
+    private func deleteSnapshot(configuration: HvfEngineConfig, target: URL?) async throws -> String? {
+        let plan = try HvfWindowsSnapshotCommand.plan(config: configuration, repoRoot: repoRoot, operation: .delete, target: target)
+        snapshotDeletions += 1
+        defer {
+            snapshotDeletions -= 1
+            library?.finishVMPreparation(succeeded: true)
+        }
+        return try await HvfWindowsSnapshotCommand.run(.delete, plan: plan)
     }
 
     private func snapshotUnderReservation(_ operation: HvfWindowsSnapshotCommand.Operation,

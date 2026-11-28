@@ -48,6 +48,50 @@ final class HvfFileDropQueueTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: job.staging.path))
     }
 
+    func testItemsTheMacCouldNotReadAreNamedAndTheNoticeStays() {
+        let root = scratch()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let queue = HvfFileDropQueue()
+        let job = queue.begin(in: root)
+        var staged = summary(files: 1, bytes: 0)
+        staged.unreadable = 2
+        queue.staged(job.id, staged, sent: true)
+        queue.consume(.unknown("BVAGENT DROP done \(job.id) files=1 bytes=0"))
+        XCTAssertEqual(queue.notice, .init(text: "Copied to the Windows desktop (1 file, 0 B). Skipped 2 items the Mac isn’t allowed to read.",
+                                           failed: true))
+        let none = queue.begin(in: root)
+        queue.nothingToCopy(none.id, unreadable: true)
+        XCTAssertEqual(queue.notice?.text, "Nothing was copied because the Mac isn’t allowed to read these items. Check their permissions in Finder.")
+    }
+
+    /// A finished drop's staged tree leaves its place at once and is deleted in the background (20,000
+    /// cloned files took 0.6 s to delete on the main actor). The first drop of a run also deletes what an
+    /// earlier run left aside.
+    func testStagingIsRenamedAsideAndDeletedInTheBackground() async throws {
+        let base = scratch()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let fm = FileManager.default
+        let root = base.appendingPathComponent("drops")
+        let leftover = base.appendingPathComponent("drops.0000.discarded/photos")
+        try fm.createDirectory(at: leftover, withIntermediateDirectories: true)
+        try Data("old".utf8).write(to: leftover.appendingPathComponent("a.jpg"))
+        try fm.createDirectory(at: root.appendingPathComponent("from-a-crash"), withIntermediateDirectories: true)
+        let queue = HvfFileDropQueue()
+        let job = queue.begin(in: root)
+        XCTAssertFalse(fm.fileExists(atPath: root.path), "an earlier run's drops folder is moved aside")
+        try fm.createDirectory(at: job.staging, withIntermediateDirectories: true)
+        try Data("new".utf8).write(to: job.staging.appendingPathComponent("b.jpg"))
+        queue.staged(job.id, summary(files: 1, bytes: 0), sent: true)
+        queue.consume(.unknown("BVAGENT DROP done \(job.id) files=1 bytes=0"))
+        XCTAssertFalse(fm.fileExists(atPath: job.staging.path))
+        let deadline = Date().addingTimeInterval(5)
+        while (try fm.contentsOfDirectory(atPath: base.path)) != ["drops"], Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: base.path), ["drops"])
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: root.path), [])
+    }
+
     func testSecondIdenticalCopyKeepsItsOwnCompletionNotice() async throws {
         let queue = HvfFileDropQueue()
         let root = scratch()
@@ -143,17 +187,37 @@ final class HvfFileDropQueueTests: XCTestCase {
         XCTAssertEqual(queue.notice?.text, "Starting the copy to Windows…")
     }
 
-    func testADropBeforeTheAgentIsReadyIsRefusedWithANotice() {
+    /// Finder's Open With sends files to a VM that is still booting (HvfOpenFiles), and a drop can come
+    /// before Guest Tools runs: the files are staged now and handed over at the agent's SERVICE start.
+    func testADropWhileWindowsStartsIsSentWhenTheAgentServiceStarts() async throws {
         let root = scratch()
         defer { try? FileManager.default.removeItem(at: root) }
         let session = session(root: root)
-        XCTAssertNil(session.copyDroppedFiles([root.appendingPathComponent("a.txt")]))
-        XCTAssertEqual(session.fileDrops.notice, .init(text: HvfFileDropQueue.notReadyText, failed: true))
+        session.connectionState = .booting
+        let source = root.appendingPathComponent("source/a.txt")
+        try FileManager.default.createDirectory(at: source.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("a".utf8).write(to: source)
+
+        await session.copyDroppedFiles([source], open: true)?.value
+        XCTAssertEqual(session.fileDrops.notice, .init(text: "The copy starts when Windows is ready…", failed: false))
         XCTAssertFalse(FileManager.default.fileExists(atPath: session.config.ctlFilePath))
+
+        session.handle(.ready(host: "WIN", tMs: 1))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: session.config.ctlFilePath), "the runtime reads it after SERVICE start")
+        session.handle(.serviceStart(tMs: 2))
+        let lines = try String(contentsOfFile: session.config.ctlFilePath, encoding: .utf8).split(separator: "\n")
+        let drop = try XCTUnwrap(lines.first { $0.hasPrefix("BVDROP ") }).split(separator: " ").map(String.init)
+        XCTAssertEqual(drop.count, 4)
+        XCTAssertEqual(drop[3], "open")
+        XCTAssertTrue(session.fileDrops.isPending(drop[1]))
+        XCTAssertEqual(session.fileDrops.notice?.text, "Starting the copy to Windows…")
+        session.handle(.serviceStart(tMs: 3))
+        let again = try String(contentsOfFile: session.config.ctlFilePath, encoding: .utf8)
+        XCTAssertEqual(again.components(separatedBy: "BVDROP ").count - 1, 1, "sent once")
     }
 
     #if canImport(AppKit)
-    func testFramebufferRefusesTheDragWhenTheGuestIsNotReady() {
+    func testFramebufferRefusesTheDragWhenWindowsIsNotRunning() {
         let root = scratch()
         let session = session(root: root)
         let surface = FBLayerView(session: session)
@@ -162,8 +226,10 @@ final class HvfFileDropQueueTests: XCTestCase {
         XCTAssertTrue(pasteboard.writeObjects([root.appendingPathComponent("example.txt") as NSURL]))
 
         XCTAssertFalse(surface.acceptFileDrop(from: pasteboard))
-        XCTAssertEqual(session.fileDrops.notice, .init(text: HvfFileDropQueue.notReadyText, failed: true))
+        XCTAssertEqual(session.fileDrops.notice, .init(text: HvfFileDropQueue.notRunningText, failed: true))
         XCTAssertFalse(FileManager.default.fileExists(atPath: session.config.ctlFilePath))
+        session.fileDrops.dismiss()
+        XCTAssertNil(session.fileDrops.notice, "a failed notice closes")
     }
     #endif
 

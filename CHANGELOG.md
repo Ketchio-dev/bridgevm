@@ -46,6 +46,25 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- Files dropped on a VM window, or opened with BridgeVM from Finder, while
+  Windows is still starting are now copied once Windows is ready. Before,
+  they were refused with a message that stayed over the Windows taskbar. A
+  failed copy's message now has a close button, and clicks go through the
+  progress message to Windows.
+- Dropping a folder that holds items the Mac isn't allowed to read, such as a
+  whole USB drive with its hidden .Trashes folder, now copies everything else
+  and says how many items were skipped. Before, nothing was copied.
+- BridgeVM no longer freezes for a moment when a drop of a large folder, such
+  as thousands of photos, finishes copying to Windows.
+- Restoring a snapshot a second time for a VM on an exFAT drive now says that
+  this drive can't do it and that moving the VM to an APFS drive fixes it.
+  Before, it said only "Try restoring the snapshot again.", which could never
+  work.
+- A snapshot can now be deleted while Windows is running, to free space
+  without shutting it down. While a snapshot is being made or restored,
+  Settings now says to wait for it instead of asking you to shut down a
+  Windows that is already off. The snapshot list no longer keeps showing the
+  last result, such as "Snapshot restored", after Windows starts again.
 - When VMs running at the same time together use more memory than your Mac can
   spare, each of them now says so in one sentence and suggests stopping one or
   giving the VMs less memory in Settings. Before, macOS just started swapping

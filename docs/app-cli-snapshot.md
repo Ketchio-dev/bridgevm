@@ -45,6 +45,11 @@ A restore gives back the disk space of the disk it replaces: the VM's original
 disk file keeps its size but no longer holds data, because BridgeVM always uses
 the restored copy from then on.
 
+A VM on an exFAT drive can restore a snapshot only once. Each later restore
+must swap the folder that holds the restored copy in one step, which exFAT
+can't do, so it is refused and the VM is left as it was. Move the VM to an
+APFS drive to restore again.
+
 Exit codes are 0 for a completed host operation, 1 for refusal or failure,
 130 or 143 when cancelled, and 2 for invalid usage. Success does not prove
 Windows boots after restore, a guest marker survived, or A19 is complete. Those claims require the live sample and

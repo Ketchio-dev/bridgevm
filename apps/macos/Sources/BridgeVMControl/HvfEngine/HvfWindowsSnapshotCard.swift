@@ -24,7 +24,7 @@ struct HvfWindowsSnapshotCard: View {
     var statusText: String {
         if let status = model.status { return status }
         return session.hasActiveRuntimeWork
-            ? "Snapshots are available when Windows is shut down and other VM operations have finished."
+            ? "To create or restore a snapshot, shut down Windows and wait for other VM operations to finish."
             : "Create a snapshot to save the Windows disk and boot settings."
     }
 
@@ -82,11 +82,13 @@ struct HvfWindowsSnapshotCard: View {
                     Button("Restore") { request(.restore, entry) }
                         .accessibilityLabel("Restore \(label)")
                         .accessibilityIdentifier(identifier("restore", entry, entries))
+                        .disabled(session.hasActiveRuntimeWork)
+                    // Deleting frees space while Windows runs (HvfWindowsSnapshotExecution.deleteSnapshot).
                     Button("Delete", role: .destructive) { request(.delete, entry) }
                         .accessibilityLabel("Delete \(label)")
                         .accessibilityIdentifier(identifier("delete", entry, entries))
                 }
-                .disabled(session.hasActiveRuntimeWork || model.busy)
+                .disabled(model.busy)
             }
         }
         .padding(.vertical, 4)

@@ -11,7 +11,7 @@ final class HvfFileDropQueue: ObservableObject {
         let failed: Bool
     }
 
-    static let notReadyText = "Windows isn’t ready to receive files. Try again after Guest Tools connects."
+    static let notRunningText = "Windows isn’t running, so the files weren’t copied."
 
     @Published private(set) var notice: Notice?
     /// How long a finished drop's notice stays up.
@@ -24,6 +24,9 @@ final class HvfFileDropQueue: ObservableObject {
         let open: Bool
         let itemName: String?
         var skipped = 0
+        var unreadable = 0
+        /// Staged while Windows was still starting: sent at the agent's SERVICE start.
+        var waiting: HvfFileDropStaging.Summary?
         var sent = false
         var started = false
         var files = (done: 0, total: 0)
@@ -40,12 +43,19 @@ final class HvfFileDropQueue: ObservableObject {
         notice = Notice(text: text, failed: true)
     }
 
+    /// The close button on a failed notice. A finished drop's notice goes by itself.
+    func dismiss() {
+        guard notice?.failed == true else { return }
+        notice = nil
+    }
+
     /// A new job and its staging folder below `root`. With no other job in flight, whatever an
     /// earlier run left in `root` goes first.
     func begin(in root: URL, open: Bool = false, itemName: String? = nil) -> (id: String, staging: URL) {
         if jobs.isEmpty {
             earlierIssue = nil
-            try? FileManager.default.removeItem(at: root)
+            Self.discard(root, root: root)
+            Self.sweep(beside: root)
         }
         let id = UUID().uuidString
         let staging = root.appendingPathComponent(id, isDirectory: true)
@@ -60,15 +70,31 @@ final class HvfFileDropQueue: ObservableObject {
             return finish(index, Notice(text: "Couldn’t start the copy. Try again in a moment.", failed: true))
         }
         jobs[index].sent = true
+        jobs[index].waiting = nil
         jobs[index].skipped = summary.skipped
+        jobs[index].unreadable = summary.unreadable
         jobs[index].files.total = summary.files
         jobs[index].bytes.total = summary.bytes
         show()
     }
 
-    func nothingToCopy(_ id: String) {
+    /// Staged before Windows can take the files: they wait for `waitingForWindows()`.
+    func waitForWindows(_ id: String, _ summary: HvfFileDropStaging.Summary) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
-        finish(index, Notice(text: "Nothing to copy. Choose regular files or folders instead of symbolic links or special files.", failed: true))
+        jobs[index].waiting = summary
+        show()
+    }
+
+    /// The drops waiting for Windows, in drop order. Each one then gets `staged(_:_:sent:)`.
+    func waitingForWindows() -> [(id: String, staging: URL, open: Bool, summary: HvfFileDropStaging.Summary)] {
+        jobs.compactMap { job in job.waiting.map { (job.id, job.staging, job.open, $0) } }
+    }
+
+    func nothingToCopy(_ id: String, unreadable: Bool = false) {
+        guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
+        finish(index, Notice(text: unreadable
+            ? "Nothing was copied because the Mac isn’t allowed to read these items. Check their permissions in Finder."
+            : "Nothing to copy. Choose regular files or folders instead of symbolic links or special files.", failed: true))
     }
 
     func stagingFailed(_ id: String) {
@@ -113,7 +139,9 @@ final class HvfFileDropQueue: ObservableObject {
                 }
             }
             let skipped = job.skipped > 0 ? " Skipped \(Self.quantity(job.skipped, "unsupported item")) (symbolic links or special files)." : ""
-            finish(index, Notice(text: done.text + skipped, failed: done.failed))
+            // Not copied though the user chose them: the notice stays until it is closed.
+            let unreadable = job.unreadable > 0 ? " Skipped \(Self.quantity(job.unreadable, "item")) the Mac isn’t allowed to read." : ""
+            finish(index, Notice(text: done.text + skipped + unreadable, failed: done.failed || job.unreadable > 0))
         case "failed":
             let job = jobs[index]
             let reason = fields.count > 4 ? fields[4] : ""
@@ -126,10 +154,34 @@ final class HvfFileDropQueue: ObservableObject {
 
     /// The VM stopped: nothing is in flight any more, and no notice outlives the run.
     func reset() {
-        for job in jobs { try? FileManager.default.removeItem(at: job.staging) }
+        for job in jobs { Self.discard(job.staging) }
         jobs = []
         earlierIssue = nil
         if notice != nil { notice = nil }
+    }
+
+    /// A staged tree, or the whole drops folder, is renamed aside next to that folder at once and deleted
+    /// off the main actor: 20,000 cloned files took 0.6 s to delete. Whatever a quit or crash leaves
+    /// aside goes with the next first drop (sweep).
+    /// `url` is a job's staging folder inside `root` (the drops folder), or `root` itself.
+    nonisolated static func discard(_ url: URL, root: URL? = nil) {
+        let root = root ?? url.deletingLastPathComponent()
+        let aside = root.deletingLastPathComponent().appendingPathComponent("\(root.lastPathComponent).\(UUID().uuidString).discarded")
+        guard rename(url.path, aside.path) == 0 else {
+            if errno != ENOENT { try? FileManager.default.removeItem(at: url) }
+            return
+        }
+        Task.detached(priority: .utility) { try? FileManager.default.removeItem(at: aside) }
+    }
+
+    nonisolated static func sweep(beside root: URL) {
+        let parent = root.deletingLastPathComponent(), prefix = root.lastPathComponent + "."
+        Task.detached(priority: .utility) {
+            for name in (try? FileManager.default.contentsOfDirectory(atPath: parent.path)) ?? []
+            where name.hasPrefix(prefix) && name.hasSuffix(".discarded") {
+                try? FileManager.default.removeItem(at: parent.appendingPathComponent(name))
+            }
+        }
     }
 
     static func failureText(_ reason: String) -> String {
@@ -149,14 +201,14 @@ final class HvfFileDropQueue: ObservableObject {
 
     private func abandon(_ text: String) {
         guard jobs.contains(where: \.sent) else { return }
-        for job in jobs where job.sent { try? FileManager.default.removeItem(at: job.staging) }
+        for job in jobs where job.sent { Self.discard(job.staging) }
         jobs.removeAll(where: \.sent)
         notice = Notice(text: text, failed: true)
     }
 
     private func finish(_ index: Int, _ result: Notice) {
         let job = jobs.remove(at: index)
-        try? FileManager.default.removeItem(at: job.staging)
+        Self.discard(job.staging)
         guard jobs.isEmpty else {
             if result.failed {
                 if earlierIssue != nil {
@@ -191,7 +243,9 @@ final class HvfFileDropQueue: ObservableObject {
         guard let job = jobs.first else { return }
         let waiting = jobs.count > 1 ? " · \(jobs.count - 1) queued" : ""
         let text: String
-        if !job.sent {
+        if job.waiting != nil {
+            text = "The copy starts when Windows is ready…"
+        } else if !job.sent {
             text = "Preparing to copy…"
         } else if !job.started {
             text = "Starting the copy to Windows…"

@@ -43,6 +43,11 @@ final class HvfWindowsSnapshotModel: ObservableObject {
         return Confirmation(operation: operation, label: label ?? Self.dateText(snapshotDate), run: run)
     }
 
+    func clearResult() {
+        guard !busy else { return }
+        status = nil; failed = false
+    }
+
     /// The user agreed to `confirmation`, the one the dialog showed.
     @discardableResult
     func confirm(_ confirmation: Confirmation) -> Task<Void, Never>? {
@@ -108,6 +113,11 @@ final class HvfWindowsSnapshotModel: ObservableObject {
                 : "This snapshot no longer exists, so choose another one."
         case .helper?, nil:
             break
+        }
+        // exFAT and other drives without renamex_np(RENAME_SWAP): the first restore renames into place, and
+        // each later one must swap the VM's disk folder with the restored copy (snapshot_pair/publish.rs).
+        if operation == .restore, text.contains("cannot atomically exchange directories") {
+            return "The drive that holds this VM can’t restore a snapshot again, so move the VM to an APFS drive and try again."
         }
         if text.contains("No space left on device")
             || (error.domain == NSCocoaErrorDomain && error.code == NSFileWriteOutOfSpaceError) {

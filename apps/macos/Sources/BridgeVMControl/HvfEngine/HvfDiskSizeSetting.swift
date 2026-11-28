@@ -80,7 +80,7 @@ struct HvfDiskSizeSetting: View {
             return "Enter a whole number from \(range.lowerBound.formatted(.number.locale(locale))) to \(range.upperBound.formatted(.number.locale(locale))) GiB."
         }
         if let notice = session.diskGrowNotice { return notice }
-        if !stopped { return HvfDiskGrow.stopFirst }
+        if !stopped { return session.settingsWait(HvfDiskGrow.stopFirst) }
         if currentBytes != nil, range == nil {
             return "To expand the disk, free up more than 10 GiB on the Mac volume."
         }
