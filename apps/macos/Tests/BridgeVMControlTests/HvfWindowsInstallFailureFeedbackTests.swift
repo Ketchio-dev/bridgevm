@@ -47,8 +47,8 @@ final class HvfWindowsInstallFailureFeedbackTests: XCTestCase {
 
     func testImportShowsFixedVHDXGuidanceWithoutPublishingDiagnosticDetails() {
         let guidance = [
-            "This VHDX uses 4 KB logical sectors. Import Windows from a disk that uses 512-byte logical sectors.",
-            "This differencing disk depends on a parent disk. Merge the chain in Hyper-V, then import the merged disk.",
+            "Windows on this VHDX expects 4 KB disk sectors, which BridgeVM can’t provide yet, so choose a different disk.",
+            "This disk depends on a parent disk. Keep the parent next to it and convert it with qemu-img convert -O qcow2 in Terminal, then import the converted disk.",
             "This VHDX has pending changes. Attach it in Windows, detach it cleanly, then try again."
         ]
         for detail in guidance {
