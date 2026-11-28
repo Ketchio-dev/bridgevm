@@ -25,7 +25,8 @@ extension HvfHostKeyCommand {
                              modifiers: EventModifiers, mapping: HvfHostKeyMapping) -> Self? {
         let flags = modifiers.intersection([.command, .control, .option, .shift])
         guard mapping.modifierChords, !flags.isDisjoint(with: [.command, .control, .option]) else { return nil }
-        guard let key = HvfModifierChord.keyName(keyCode: keyCode, charactersIgnoringModifiers: charactersIgnoringModifiers),
+        guard let key = HvfModifierChord.keyName(keyCode: keyCode, charactersIgnoringModifiers: charactersIgnoringModifiers,
+                                                 shift: flags.contains(.shift)),
               !isReservedForMac(key, flags: flags) else { return .ignored }
         // Ctrl+Option+Delete (the Mac's Backspace) stays the secure attention sequence.
         if key == "backspace", flags.isSuperset(of: [.control, .option]), !flags.contains(.command) { return .key("ctrl+alt+delete") }

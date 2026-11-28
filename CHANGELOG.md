@@ -50,6 +50,9 @@ All notable changes to BridgeVM are documented in this file.
   no longer type a junk character.
 - Windows' text looks sharp on a Retina screen when Retina resolution is
   off: each Windows pixel is shown as a 2x2 block instead of being smoothed.
+- Shortcuts with - + / , . and other punctuation now reach Windows as the key
+  your Mac keyboard types. On a German keyboard, ⌘- and ⌘+ now zoom in Edge,
+  and ⌘- no longer toggles a comment in VS Code.
 - Deleting the selected VM selects the VM next to it, not the first VM
   in the library.
 - A Mac file that never reaches Windows now gets a notice: when Windows
