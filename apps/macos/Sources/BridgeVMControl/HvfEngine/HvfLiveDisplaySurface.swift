@@ -30,6 +30,7 @@ struct HvfLiveDisplaySurface: View {
                     HvfLowSpaceNoticeView(notice: session.lowSpaceNotice)
                     HvfDiskExtendNoticeView(session: session)
                 }
+                .environment(\.hvfAnnouncesNotices, true)
             }
             .overlay(alignment: .bottom) { HvfFileDropNoticeView(drops: session.fileDrops) }
             .sheet(isPresented: $window.showsSettings) { HvfVMSettingsSheet(session: session) }

@@ -92,7 +92,8 @@ struct HvfDisplayDriverNoticeView: View {
 
     var body: some View {
         if let notice = session.displayDriverNotice {
-            HvfNoticeStrip(identifier: "bridgevm.display.display-driver", dismiss: {
+            HvfNoticeStrip(identifier: "bridgevm.display.display-driver", title: "display driver notice",
+                           announcement: notice.text, dismiss: {
                 if notice == .unbound { session.displayDriverUnboundDismissed = true }
                 else { session.displayDriverNoticeDismissed = true }
             }) {

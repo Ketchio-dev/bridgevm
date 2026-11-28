@@ -4,9 +4,10 @@ import Foundation
 /// The display letterboxes the guest image, so a spot on the guest screen maps
 /// through the aspect-fitted image rectangle, not the whole surface.
 enum T17DisplayImageRect {
-    /// The guest size from the surface's accessibility value, `<width> by <height>`.
+    /// The guest size from the surface's accessibility value, `<width> by <height> pixels`.
     static func guestSize(_ value: String?) -> CGSize? {
-        guard let parts = value?.components(separatedBy: " by "), parts.count == 2,
+        let size = value.map { $0.hasSuffix(" pixels") ? String($0.dropLast(" pixels".count)) : $0 }
+        guard let parts = size?.components(separatedBy: " by "), parts.count == 2,
               let width = Int(parts[0]), let height = Int(parts[1]), width > 0, height > 0 else { return nil }
         return CGSize(width: width, height: height)
     }

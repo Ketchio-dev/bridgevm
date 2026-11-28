@@ -21,7 +21,7 @@ struct HvfFileDropNoticeView: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                         .help("Close")
-                        .accessibilityLabel("Close")
+                        .accessibilityLabel("Dismiss the file copy notice")
                         .accessibilityIdentifier("bridgevm.runtime.filedrop.close")
                 }
             }

@@ -12,11 +12,11 @@ struct HvfStartupDisplayOverlay: View {
         if spinnerText != nil || session.guiStartFailureText != nil || !session.hasActiveRuntimeWork {
             VStack(spacing: 16) {
                 if let spinnerText {
-                    ProgressView()
+                    ProgressView().accessibilityHidden(true)
                     Text(spinnerText)
                 } else {
                     Image(systemName: session.runtimeFailureText == nil ? "power" : "exclamationmark.triangle")
-                        .font(.largeTitle)
+                        .font(.largeTitle).accessibilityHidden(true)
                     Text(session.runtimeFailureText ?? "Windows has shut down.")
                         .multilineTextAlignment(.center).textSelection(.enabled)
                     if let startRefusal {

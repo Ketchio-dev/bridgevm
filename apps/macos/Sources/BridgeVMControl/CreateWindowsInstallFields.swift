@@ -45,7 +45,7 @@ struct CreateWindowsInstallFields: View {
             Text("If you already have the Arm64 drivers, choose their folder and SHA-256 manifest (.tsv).")
         case .preparing:
             HStack {
-                ProgressView().controlSize(.small)
+                ProgressView().controlSize(.small).accessibilityHidden(true)
                 Text(drivers.downloadPercent.map { "Downloading the drivers… \($0)%" } ?? "Preparing the drivers…")
             }
         case .prepared:
