@@ -78,3 +78,25 @@ fn observed_mac_copy_before_guest_reply_is_preserved() {
 fn observed_mac_copy_after_queued_guest_reply_is_preserved() {
     observed_mac_copy_survives_guest_reply(true);
 }
+
+#[test]
+fn mac_copy_reaches_windows_again_after_a_sign_out_and_in() {
+    let mut rig = ClipRig::new("");
+    let mut mac = MemoryPasteboard {
+        text: "mac-copy".into(),
+        count: 1,
+    };
+    assert!(rig.pasteboard.poll(&mut mac));
+    rig.settle();
+    rig.settle();
+    assert_eq!(rig.guest, "mac-copy");
+    // Signing out ends the agent with the session's clipboard; the next
+    // sign-in starts a new agent with an empty one.
+    rig.guest.clear();
+    rig.h.handle_service_reply("READY GUEST", None, None, rig.now);
+    assert!(rig.pasteboard.poll(&mut mac));
+    rig.settle();
+    rig.settle();
+    assert_eq!(rig.guest, "mac-copy", "the Mac copy did not reach the new session");
+    assert!(rig.mac_sets().is_empty());
+}

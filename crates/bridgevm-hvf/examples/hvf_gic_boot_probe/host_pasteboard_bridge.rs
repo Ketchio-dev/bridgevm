@@ -22,6 +22,7 @@ pub struct HostPasteboard {
     images: Arc<AtomicBool>,
     html: Arc<AtomicBool>,
     files: Arc<AtomicBool>,
+    report_again: Arc<AtomicBool>,
 }
 
 /// One Mac pasteboard change: its text and, while images are on, its image;
@@ -77,6 +78,7 @@ impl HostPasteboard {
         let images = Arc::new(AtomicBool::new(false));
         let html = Arc::new(AtomicBool::new(false));
         let files = Arc::new(AtomicBool::new(false));
+        let report_again = Arc::new(AtomicBool::new(false));
         (
             Self {
                 events,
@@ -86,6 +88,7 @@ impl HostPasteboard {
                 images: Arc::clone(&images),
                 html: Arc::clone(&html),
                 files: Arc::clone(&files),
+                report_again: Arc::clone(&report_again),
             },
             PasteboardWorker {
                 events: event_tx,
@@ -97,6 +100,7 @@ impl HostPasteboard {
                 images,
                 html,
                 files,
+                report_again,
             },
         )
     }
@@ -157,6 +161,11 @@ impl HostPasteboard {
     /// Read the Mac pasteboard's file URLs too: the agent can take file copies.
     pub fn set_file_copies(&self, on: bool) {
         self.files.store(on, Ordering::Release);
+    }
+
+    /// Report the Mac's copy once more, as at startup, even if unchanged.
+    pub fn report_again(&self) {
+        self.report_again.store(true, Ordering::Release);
     }
 
     fn write(&self, text: String, image: Option<PngImage>, html: Option<String>, files: Vec<PathBuf>) {
