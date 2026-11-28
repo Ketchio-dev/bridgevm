@@ -72,6 +72,9 @@ All notable changes to BridgeVM are documented in this file.
   "(Windows copy)" with a shortened name, instead of losing it.
 - A time zone chosen in Windows stays after a restart or a Mac sleep;
   BridgeVM sets Windows' zone only when the Mac's zone has changed.
+- Importing a RAW disk whose copy fails says to check the disk image and
+  free space, instead of "Couldn't create the VM or save it to the
+  library."
 - In a VM whose Windows account isn't an administrator, BridgeVM no longer
   tries to update Guest Tools at every launch and reports "Guest Tools
   couldn't update" each time. That update can't work without administrator

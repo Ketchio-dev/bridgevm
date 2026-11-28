@@ -117,8 +117,10 @@ final class HvfCurrentGenerationImportTests: XCTestCase {
                 XCTAssertEqual($0.localizedDescription, withoutVarsMessage)
             }
         let library = fixture.root.appendingPathComponent("ordinary-library")
-        XCTAssertNil(VMLibrary.createWindowsHVF(name: "ordinary", targetDiskPath: fixture.disk.path,
-            varsPath: "", libraryRoot: library, persist: false, snapshotHelper: helper))
+        guard case .refused(_)? = VMLibrary.createWindowsHVF(name: "ordinary", targetDiskPath: fixture.disk.path,
+            varsPath: "", libraryRoot: library, persist: false, snapshotHelper: helper) else {
+            return XCTFail("the Create sheet says why")
+        }
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("first-library/first").path))
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: library.path), [])
         try assertOriginals(fixture)
@@ -190,8 +192,10 @@ final class HvfCurrentGenerationImportTests: XCTestCase {
         XCTAssertThrowsError(try FirstRunImport.register(fixture.inputs("first"), slug: "first",
             libraryRoot: fixture.root.appendingPathComponent("first-library"), snapshotHelper: helper))
         let ordinaryLibrary = fixture.root.appendingPathComponent("ordinary-library")
-        XCTAssertNil(VMLibrary.createWindowsHVF(name: "ordinary", targetDiskPath: fixture.disk.path,
-            varsPath: fixture.vars.path, libraryRoot: ordinaryLibrary, persist: false, snapshotHelper: helper))
+        guard case .refused(_)? = VMLibrary.createWindowsHVF(name: "ordinary", targetDiskPath: fixture.disk.path,
+            varsPath: fixture.vars.path, libraryRoot: ordinaryLibrary, persist: false, snapshotHelper: helper) else {
+            return XCTFail("the Create sheet says why")
+        }
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: fixture.root.appendingPathComponent("first-library/first").path))
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: ordinaryLibrary.path), [])
