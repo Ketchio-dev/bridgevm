@@ -558,7 +558,7 @@ extension LibraryModel {
 extension LibraryModel {
     func selectedPaletteCommands(dismiss: @escaping () -> Void) -> [PaletteCommand] {
         if selectedID == Self.hvfEngineSelectionID {
-            return [paletteControlNavigation(id: Self.hvfEngineSelectionID, name: "HVF Engine", dismiss: dismiss)]
+            return [paletteControlNavigation(id: Self.hvfEngineSelectionID, name: "Advanced Controls", dismiss: dismiss)]
         }
         guard let id = selectedID, let config = vms.first(where: { $0.slug == id }) else { return [] }
         return [paletteControlNavigation(id: id, name: config.name, dismiss: dismiss)]

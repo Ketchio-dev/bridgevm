@@ -48,6 +48,13 @@ All notable changes to BridgeVM are documented in this file.
   developer tools" dialog, so it failed or wrongly said the app was not Apple
   Silicon native. It now uses only tools that come with macOS, and every check
   it makes is as strict as before.
+- Windows boot entries and Secure Boot settings now survive a crash, a power
+  loss or a Force Stop that runs out of time while the VM runs. BridgeVM
+  used to save the VM's UEFI settings only when the VM stopped cleanly, so
+  every change made during the run could be lost: a boot entry added by a
+  Windows update could go missing, or a Secure Boot revocation could be
+  undone. Now a change is saved to the Mac's disk about a second after
+  Windows makes it.
 - The installer no longer replaces BridgeVM while BridgeVM or one of its VMs is
   running. It stops before downloading and asks you to shut down your VMs and
   quit BridgeVM first. Before, the old app kept running on top of the new
@@ -84,6 +91,10 @@ All notable changes to BridgeVM are documented in this file.
   "HVF" label (only a VM BridgeVM can’t run names its engine), and the alerts
   for moving, duplicating and deleting VMs no longer mention "registrations" or
   "bundles" and say what to do next.
+- Stopping a VM that BridgeVM reconnected to after a relaunch no longer ends
+  Windows mid-shutdown when the Mac sleeps during that shutdown. Its 180-second
+  grace counted the time the Mac was asleep, so on wake the VM was ended at
+  once.
 - Quitting BridgeVM while it moves, duplicates or deletes a VM now asks to
   finish first and quits when it is done, as it already did while VM files were
   being prepared. Before, BridgeVM quit at once: a move cut short left the VM
@@ -169,6 +180,12 @@ All notable changes to BridgeVM are documented in this file.
   earlier runs, including the text and keys you typed, stayed in that file in a
   readable form and grew with each run; clones, moves and backups carried it
   along.
+- Moving or duplicating a VM while BridgeVM is still cleaning up its Windows
+  installation now says "BridgeVM is still cleaning up an earlier Windows
+  installation for this VM. Choose Refresh, then try to move it again."
+  instead of asking you to check "the saved installation transaction". The
+  command palette names the Advanced Controls page by that name, not "HVF
+  Engine".
 - `bridgevm app start`, `stop`, `status`, `install`, `readiness` and `list` now
   say in plain sentences what happened and what to do, instead of printing
   internal codes, run tokens, process IDs and engineering notes. A failure code

@@ -44,6 +44,8 @@ pub struct P30NorFlash {
     block_size: usize,
     bytes: Vec<u8>,
     mode: Mode,
+    /// Guest program or erase operations that changed the bank, and restores.
+    changes: u64,
 }
 
 impl P30NorFlash {
@@ -54,7 +56,15 @@ impl P30NorFlash {
             block_size,
             bytes: vec![0xff; size],
             mode: Mode::ReadArray,
+            changes: 0,
         }
+    }
+
+    /// Counts changes since the bank was set up from the vars file; a new
+    /// count means bytes the file does not hold yet. Setup edits made before
+    /// the guest runs (`load`, `bank_mut`) are not counted.
+    pub fn changes(&self) -> u64 {
+        self.changes
     }
 
     pub fn load(&mut self, data: &[u8]) {
@@ -178,16 +188,24 @@ impl P30NorFlash {
     }
 
     fn program(&mut self, offset: usize, size: u8, value: u64) {
+        let mut changed = false;
         for i in 0..usize::from(size) {
             if let Some(byte) = self.bytes.get_mut(offset + i) {
-                *byte &= ((value >> (i * 8)) & 0xff) as u8;
+                let programmed = *byte & ((value >> (i * 8)) & 0xff) as u8;
+                changed |= programmed != *byte;
+                *byte = programmed;
             }
         }
+        self.changes += u64::from(changed);
     }
 
     fn erase_block(&mut self, block_base: usize) {
         let end = (block_base + self.block_size).min(self.bytes.len());
-        self.bytes[block_base..end].fill(0xff);
+        let block = &mut self.bytes[block_base..end];
+        if block.iter().any(|&byte| byte != 0xff) {
+            block.fill(0xff);
+            self.changes += 1;
+        }
     }
 
     fn block_base(&self, offset: usize) -> usize {
@@ -206,6 +224,7 @@ impl P30NorFlash {
         );
         self.bytes.copy_from_slice(data);
         self.mode = Mode::ReadArray;
+        self.changes += 1;
     }
 }
 
