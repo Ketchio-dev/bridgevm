@@ -75,6 +75,9 @@ extension HvfEngineSession {
 final class HvfPortForwardNotice: ObservableObject {
     @Published private(set) var off: [HvfPortForward] = []
     @Published private(set) var dnsUnreachable = false
+    /// Windows ports whose forwarded connections Windows refused or never answered, until one opens
+    /// (`BVNET forward-unanswered guest=<port>` / `forward-answered`).
+    @Published private(set) var unanswered: [UInt16] = []
     static let dnsUnreachableText = "Windows can’t reach your Mac’s DNS server, so websites won’t open. If BridgeVM is off in System Settings > Privacy & Security > Local Network, turn it on."
 
     func consume(_ line: String) {
@@ -83,6 +86,12 @@ final class HvfPortForwardNotice: ObservableObject {
         case "BVNET dns-unreachable": if !dnsUnreachable { dnsUnreachable = true }; return
         case "BVNET dns-reachable": if dnsUnreachable { dnsUnreachable = false }; return
         default: break
+        }
+        for (prefix, answered) in [("BVNET forward-unanswered guest=", false), ("BVNET forward-answered guest=", true)]
+            where line.hasPrefix(prefix) {
+            guard let port = UInt16(line.dropFirst(prefix.count)) else { return }
+            if answered { unanswered.removeAll { $0 == port } } else if !unanswered.contains(port) { unanswered.append(port) }
+            return
         }
         let prefix = "BVNET forward-off host="
         guard line.hasPrefix(prefix) else { return }
@@ -96,11 +105,19 @@ final class HvfPortForwardNotice: ObservableObject {
     func reset() {
         if !off.isEmpty { off = [] }
         if dnsUnreachable { dnsUnreachable = false }
+        if !unanswered.isEmpty { unanswered = [] }
     }
 
     var text: String? {
-        let parts = [dnsUnreachable ? Self.dnsUnreachableText : nil, forwardsText].compactMap { $0 }
+        let parts = [dnsUnreachable ? Self.dnsUnreachableText : nil, forwardsText, unansweredText].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
+    private var unansweredText: String? {
+        guard !unanswered.isEmpty else { return nil }
+        let ports = unanswered.map(String.init).joined(separator: ", ")
+        let port = unanswered.count == 1 ? "port \(ports)" : "ports \(ports)"
+        return "Windows isn’t accepting forwarded connections on \(port). Start the app that should listen there, or allow it in Windows Defender Firewall."
     }
 
     private var forwardsText: String? {

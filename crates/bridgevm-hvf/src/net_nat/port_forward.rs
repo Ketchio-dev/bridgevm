@@ -22,6 +22,8 @@ pub(crate) struct ForwardListener {
     pub(crate) guest_port: u16,
     pub(crate) readable: bool,
     pub(crate) watched: bool,
+    /// forward-unanswered was printed and no connection opened since.
+    pub(crate) unanswered: bool,
 }
 
 /// The gateway ports forwarded connections come from, as the guest sees them.
@@ -65,7 +67,37 @@ pub(crate) fn forward_off_line(forward: &PortForward) -> String {
     )
 }
 
+/// The lines the app turns into its notice (HvfPortForwardNotice.swift): Windows refused, or never
+/// answered, a forwarded connection on `guest`, so the Mac client got only a closed connection; and
+/// a later one opened.
+pub(crate) fn forward_unanswered_line(guest: u16) -> String {
+    format!("BVNET forward-unanswered guest={guest}")
+}
+
+pub(crate) fn forward_answered_line(guest: u16) -> String {
+    format!("BVNET forward-answered guest={guest}")
+}
+
 impl HostSocketOutboundIpv4Handler {
+    /// A forwarded connection to `guest_port` opened (`answered`) or was refused or given up:
+    /// said once each way, so the notice shows while connections fail and goes when one works.
+    pub(crate) fn note_forward_answer(&mut self, guest_port: u16, answered: bool) {
+        for forward in self
+            .forwards
+            .iter_mut()
+            .filter(|f| f.guest_port == guest_port)
+        {
+            if forward.unanswered == answered {
+                forward.unanswered = !answered;
+                crate::host_log::out(if answered {
+                    forward_answered_line(guest_port)
+                } else {
+                    forward_unanswered_line(guest_port)
+                });
+            }
+        }
+    }
+
     /// Listens on 127.0.0.1 for each forward. A port another app holds turns
     /// that forward off, said once in the log; the others and the VM go on.
     pub fn with_forwards(mut self, forwards: &[PortForward]) -> Self {
@@ -83,6 +115,7 @@ impl HostSocketOutboundIpv4Handler {
                         guest_port: forward.guest,
                         readable: true,
                         watched: false,
+                        unanswered: false,
                     });
                 }
                 Err(error) => {
