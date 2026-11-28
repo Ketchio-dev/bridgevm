@@ -32,6 +32,8 @@ final class HvfEngineSession: ObservableObject {
     @Published var displayDriverUnbound = false
     @Published var displayDriverUnboundDismissed = false
     @Published var displayDriverRestarting = false
+    /// Why Restart Now didn't restart: refused before the shutdown, or the start after it refused.
+    @Published var displayDriverRestartNote: String?
     var repoRoot: URL
     weak var library: LibraryModel?
     var workAdmission: LibraryWorkAdmission?

@@ -46,6 +46,10 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- Restart Now, shown after installing the display driver, no longer shuts
+  Windows down and leaves it off when Settings is open for that VM. It now asks
+  you to close Settings first, and if Windows still can't start again it says
+  why.
 - When VMs running at the same time together use more memory than your Mac can
   spare, each of them now says so in one sentence and suggests stopping one or
   giving the VMs less memory in Settings. Before, macOS just started swapping

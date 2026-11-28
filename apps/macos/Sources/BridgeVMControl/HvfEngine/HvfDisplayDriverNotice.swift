@@ -45,6 +45,12 @@ extension HvfEngineSession {
     func restartForDisplayDriver() -> Task<Void, Never>? {
         guard !displayDriverRestarting, terminationStopAvailable,
               let identity = ownedProcessIdentity else { return nil }
+        // requestGUIStart refuses while a Settings sheet is open: Windows would shut down and stay off.
+        guard openSettingsSheets.isEmpty else {
+            displayDriverRestartNote = "Close Settings, then choose Restart Now."
+            return nil
+        }
+        displayDriverRestartNote = nil
         displayDriverRestarting = true
         return Task { @MainActor in
             defer { displayDriverRestarting = false }
@@ -55,8 +61,14 @@ extension HvfEngineSession {
             }
             guard lastOwnedExit?.identity == identity, connectionState == .stopped else { return }
             HvfDisplayDriverFlag.saveIfStopped(self)
-            guard config.libraryContext?.config.virtioDisplayDriverInstalled == true else { return }
-            _ = requestGUIStart(configuration: config, policy: .requireNew)
+            guard config.libraryContext?.config.virtioDisplayDriverInstalled == true else {
+                displayDriverRestartNote = displayDriverFlagMessage
+                    ?? "BridgeVM couldn’t save the display driver setting, so start Windows again from the library."
+                return
+            }
+            if case let .refused(reason) = requestGUIStart(configuration: config, policy: .requireNew) {
+                displayDriverRestartNote = "Windows shut down for the display driver but didn’t start again. \(reason)"
+            }
         }
     }
 }
@@ -74,6 +86,9 @@ struct HvfDisplayDriverNoticeView: View {
                      ? "Windows can’t find the new display adapter. If the desktop doesn’t resize with this window, check “Display adapters” in Device Manager."
                      : notice == .install ? "Install the display driver to resize the Windows desktop when you resize this window."
                      : "To use the new display driver, choose Restart Now to shut down Windows and start the VM again.")
+                if notice == .restart, let note = session.displayDriverRestartNote {
+                    Text(note).foregroundStyle(.orange)
+                }
                 if notice == .install {
                     HvfDisplayDriverInstallButton(session: session, onInstalled: { _ in
                         HvfDisplayDriverFlag.record(session)

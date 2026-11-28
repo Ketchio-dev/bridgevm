@@ -174,6 +174,53 @@ final class HvfDisplayDriverNoticeTests: XCTestCase {
         while session.hasPendingGUIStart { try await Task.sleep(nanoseconds: 5_000_000) }
     }
 
+    /// requestGUIStart refuses while any Settings sheet for the VM is open, so Restart Now shut Windows
+    /// down and left it off with nothing said. Open before: nothing stops. Opened during the shutdown: the
+    /// stopped window says why Windows didn't come back.
+    func testRestartNowWithSettingsOpenKeepsWindowsOnOrSaysWhyItStayedOff() async throws {
+        for openedDuringShutdown in [false, true] {
+            let owned = try HvfOwnedRuntimeControllerTests.Fixture()
+            defer { owned.clean() }
+            let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
+            defer { fixture.clean() }
+            let saved = fixture.config("notice-restart-settings"); fixture.save(saved)
+            let library = fixture.library(probe: probe)
+            let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+            session.guiStartWorker = { _ in HvfGUIStartWorkerOutput(result: .refused("fixture: launch suppressed")) }
+            session.process = owned.process
+            session.ownedProcessIdentity = owned.controller.identity
+            session.ownedController = owned.controller
+            let token = owned.controller.identity.token
+            owned.controller.onChange = { [weak session] in session?.ownedRuntimeChanged(token: token) }
+            owned.controller.receive(.message(try owned.event("ready", sequence: 1)))
+            owned.controller.guestServiceReady()
+            HvfDisplayDriverFlag.record(session)
+            let sheet = ObjectIdentifier(owned)
+
+            if !openedDuringShutdown {
+                session.openSettingsSheets.insert(sheet)
+                XCTAssertNil(session.restartForDisplayDriver())
+                XCTAssertEqual(session.displayDriverRestartNote, "Close Settings, then choose Restart Now.")
+                XCTAssertNil(owned.controller.operation, "Windows keeps running")
+                XCTAssertFalse(session.displayDriverRestarting)
+                continue
+            }
+            let restart = try XCTUnwrap(session.restartForDisplayDriver())
+            XCTAssertNil(session.displayDriverRestartNote)
+            let deadline = Date().addingTimeInterval(2)
+            while owned.controller.operation == nil, Date() < deadline { try await Task.sleep(nanoseconds: 5_000_000) }
+            session.openSettingsSheets.insert(sheet)
+            owned.controller.receive(.message(try owned.event("complete-not-admitted", sequence: 2, success: true)))
+            try await owned.exit()
+            owned.controller.receive(.eof)
+            await restart.value
+            XCTAssertNil(session.guiStartOperation)
+            let expected = "Windows shut down for the display driver but didn’t start again. Close Settings before starting Windows."
+            XCTAssertEqual(session.displayDriverRestartNote, expected)
+            XCTAssertEqual(session.runtimeFailureText, expected, "the stopped window shows it")
+        }
+    }
+
     private func shown(libraryBacked: Bool = true, agentReady: Bool = true, installed: Bool? = false,
                        experimental3D: Bool = false, dismissed: Bool = false, restartRequired: Bool = false) -> HvfDisplayDriverNotice? {
         HvfDisplayDriverNotice.shown(libraryBacked: libraryBacked, agentReady: agentReady, installed: installed,
