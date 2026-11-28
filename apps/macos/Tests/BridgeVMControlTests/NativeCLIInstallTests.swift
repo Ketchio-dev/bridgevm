@@ -28,7 +28,7 @@ final class NativeCLIInstallTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
     }
 
-    func testTextStatesHostScopeAndDoesNotClaimGuestCompletion() {
+    func testTextShowsThePlainStepAndDoesNotClaimCompletion() {
         let observation = NativeInstallObservation(operationID: UUID().uuidString,
             phase: .installing, acceptedUptime: 1, workerPending: false,
             sessionRunning: true, canCancel: true, logTail: ["bounded line"], failure: nil)
@@ -36,8 +36,9 @@ final class NativeCLIInstallTests: XCTestCase {
             libraryPath: "/library", appInstanceID: UUID().uuidString,
             requestedOperationID: nil, disposition: .status, observation: observation,
             unavailableReason: nil, complete: true)
-        XCTAssertTrue(result.text.contains("Install phase: installing"))
-        XCTAssertTrue(result.text.contains("does not prove guest boot"))
+        XCTAssertTrue(result.text.contains("Status: Installing Windows"))
+        XCTAssertTrue(result.text.contains("Recent log:\nbounded line"))
+        XCTAssertFalse(result.text.contains("Complete"))
         XCTAssertFalse(result.text.contains("guest boot confirmed"))
     }
 }

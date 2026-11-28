@@ -24,14 +24,17 @@ enum NativeCLIError: LocalizedError {
     }
 }
 
-/// Text output names the common failures in a sentence (the most common, BridgeVM not open, printed
-/// `ownerUnavailable`); --json keeps the codes. Other reasons, including app sentences, pass through.
+/// Text output turns failure codes into a sentence; --json keeps the codes. App sentences pass through,
+/// and a code without its own sentence (a future one, say) still gets a readable one.
 enum NativeCLIReason {
     static func sentence(_ reason: String, vmID: String, action: String) -> String {
         switch reason {
         case "ownerUnavailable": return "BridgeVM isn’t open for this library. Open BridgeVM, then try again."
         case "ownerBusy": return "BridgeVM is busy with another request. Try again in a moment."
         case "timedOut": return "BridgeVM didn’t answer in time. Try again."
+        case "transportFailure", "invalidEndpoint", "peerRejected", "invalidMessage":
+            return "BridgeVM didn’t answer correctly. Quit and reopen BridgeVM, then try again."
+        case "ownerChanged": return "BridgeVM restarted while this command was running. Run it again."
         case "libraryChanged", "configurationChanged": return "The VM library changed meanwhile. Try again."
         case "deadlineExceeded":
             return "BridgeVM is still \(action) the VM. Run `bridgevm app status \(vmID)` to follow it."
@@ -40,7 +43,11 @@ enum NativeCLIReason {
         case "unsupportedTarget": return "This VM isn’t waiting to be installed."
         case "targetUnavailable": return "BridgeVM isn’t installing this VM."
         case "cancellationUnavailable": return "The installation can no longer be canceled."
-        default: return reason
+        case "ambiguousTarget": return "BridgeVM found more than one VM with this ID. Check the library in BridgeVM."
+        case "startupFailed": return "BridgeVM couldn’t start Windows. Check the VM in BridgeVM, then try again."
+        default:
+            return reason.contains(" ") ? reason
+                : "BridgeVM couldn’t finish this request. Check the VM in BridgeVM, then try again."
         }
     }
 }
@@ -114,36 +121,35 @@ extension NativeCLI {
 
     static func render(_ snapshot: NativeCLIReadiness) -> String {
         let value = NativeCLITextValue.escaped
-        var lines = ["Native VM readiness: \(value(snapshot.id))", "Runtime state: \(value(snapshot.runtimeState))",
+        var lines = ["VM readiness: \(value(snapshot.id))", "Runtime state: \(value(snapshot.runtimeState))",
                      "Launch prerequisites: \(snapshot.launchReady ? "ready" : "blocked")"]
         if !snapshot.engineChecksPerformed {
             lines.append("Engine prerequisite and product release checks were not evaluated.")
         }
         for issue in snapshot.launchBlockers {
-            lines.append("Launch blocker [\(value(issue.code))]: \(value(issue.summary))")
+            lines.append("Can’t start: \(value(issue.summary))")
         }
         for issue in snapshot.releaseBlockers {
             lines.append("Product release gate [\(value(issue.code))]: \(value(issue.summary))")
         }
         for limitation in snapshot.productLimitations { lines.append("Limitation: \(value(limitation))") }
         for observation in snapshot.recoveryObservations { lines.append("Recovery: \(value(observation))") }
-        lines.append("Prerequisite query only; no VM boot or product release result was observed.")
         return lines.joined(separator: "\n") + "\n"
     }
 
     static func render(_ snapshot: NativeLibrarySnapshot) -> String {
         let value = NativeCLITextValue.escaped
-        var lines = ["Native VM library: \(value(snapshot.libraryPath))", "Runtime state: unobserved"]
+        var lines = ["VM library: \(value(snapshot.libraryPath))", "Runtime state: unobserved"]
         if snapshot.records.isEmpty { lines.append("No readable saved VMs.") }
         for record in snapshot.records {
             lines.append("\(value(record.id))\t\(NativeCLITextValue.quoted(record.displayName))\t\(value(record.backendKind))")
             lines.append("  Configuration: \(value(record.configPath))")
-            lines.append("  Bundle: \(value(record.bundlePath))")
+            lines.append("  Folder: \(value(record.bundlePath))")
             lines.append("  Saved resources: \(record.cpuCount.map(String.init) ?? "default") CPU, \(record.memoryMiB.map(String.init) ?? "default") MiB")
             lines.append("  Installation pending: \(record.installPending.map(String.init) ?? "unspecified")")
             for observation in record.recoveryObservations { lines.append("  Recovery: \(value(observation))") }
         }
-        for issue in snapshot.issues { lines.append("Issue [\(value(issue.code))]: \(value(issue.path)): \(value(issue.message))") }
+        for issue in snapshot.issues { lines.append("Needs attention: \(value(issue.path)): \(value(issue.message))") }
         return lines.joined(separator: "\n") + "\n"
     }
 

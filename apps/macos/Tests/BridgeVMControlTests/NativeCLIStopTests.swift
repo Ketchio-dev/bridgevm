@@ -70,4 +70,34 @@ final class NativeCLIStopTests: XCTestCase {
             XCTAssertNotNil(result.failure, variant)
         }
     }
+
+    /// Text names the result in plain words; the run token, PID, operation and scope stay in JSON.
+    /// Every stop failure the app reports, its own missed deadline included, ends unconfirmed.
+    func testStopTextIsPlainAndEveryUnconfirmedStopPointsToForceStop() throws {
+        let request = Fixture.request()
+        func stop(_ phase: NativeRuntimeStopObservation.Phase, _ reason: String?) -> NativeCLIRuntimeStop {
+            NativeCLIRuntimeStop(vmID: "vm", libraryPath: "/l", target: Fixture.target, operationID: request.operationID,
+                complete: reason == nil, observation: Fixture.observation(request, phase: phase, proof: true, exit: true),
+                unavailableReason: reason)
+        }
+        let stopped = stop(.completed, nil)
+        XCTAssertEqual(stopped.text, "Stopped vm.\n")
+        let json = String(decoding: try JSONEncoder().encode(stopped), as: UTF8.self)
+        for value in [Fixture.token, request.operationID, NativeRuntimeControlCodec.scope, "\"processID\":123"] {
+            XCTAssertTrue(json.contains(value), value)
+        }
+        for failure in ["cleanupUnconfirmed", "channelFailed", "runnerExitedWithoutComplete", "deadlineExceeded"] {
+            XCTAssertEqual(stop(.unconfirmed, failure).text, """
+            Couldn’t confirm that vm stopped.
+            Check the VM in BridgeVM, and choose Force Stop if it’s still running.
+
+            """, failure)
+        }
+        XCTAssertEqual(stop(.guestGrace, "deadlineExceeded").text, """
+        Couldn’t confirm that vm stopped.
+        Status: Waiting for Windows to shut down
+        BridgeVM is still stopping the VM. Run `bridgevm app status vm` to follow it.
+
+        """)
+    }
 }

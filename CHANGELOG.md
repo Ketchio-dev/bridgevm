@@ -155,6 +155,11 @@ All notable changes to BridgeVM are documented in this file.
   earlier runs, including the text and keys you typed, stayed in that file in a
   readable form and grew with each run; clones, moves and backups carried it
   along.
+- `bridgevm app start`, `stop`, `status`, `install`, `readiness` and `list` now
+  say in plain sentences what happened and what to do, instead of printing
+  internal codes, run tokens, process IDs and engineering notes. A failure code
+  the command doesn't know yet still prints a sentence. `--json` output and exit
+  codes are unchanged.
 - The Delete dialog no longer tells you to shut the VM down first. BridgeVM
   already refuses to delete a running VM and tells you why.
 - If BridgeVM can't archive a deleted VM's vTPM key, the warning now says to

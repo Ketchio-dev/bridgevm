@@ -50,18 +50,18 @@ final class NativeCLIOutputTests: XCTestCase {
     func testOrdinaryInventoryKeepsPathsUnicodeQuotesAndLayout() throws {
         let snapshot = NativeLibrarySnapshot(libraryPath: "/VM library/개발", records: [try record()], issues: [])
         XCTAssertEqual(NativeCLI.render(snapshot), """
-        Native VM library: /VM library/개발
+        VM library: /VM library/개발
         Runtime state: unobserved
         개발-vm\t"개발 Windows 👩‍💻"\thvf-engine
           Configuration: /VM library/개발-vm/vm.json
-          Bundle: /VM library/개발 bundle.vmbridge
+          Folder: /VM library/개발 bundle.vmbridge
           Saved resources: 4 CPU, 6144 MiB
           Installation pending: false
           Recovery: relocation-record-present-or-unreadable
 
         """)
         XCTAssertEqual(NativeCLI.render(NativeLibrarySnapshot(libraryPath: "/VM library", records: [], issues: [])),
-            "Native VM library: /VM library\nRuntime state: unobserved\nNo readable saved VMs.\n")
+            "VM library: /VM library\nRuntime state: unobserved\nNo readable saved VMs.\n")
     }
 
     func testDisplayNameKeepsExistingJSONQuotesWithoutDoubleEscaping() throws {
@@ -74,15 +74,15 @@ final class NativeCLIOutputTests: XCTestCase {
     func testInventoryEscapesEveryExternalTextFieldWithoutForgedLines() throws {
         let text = NativeCLI.render(try inventory(payload))
         XCTAssertEqual(text, """
-        Native VM library: \(escaped)
+        VM library: \(escaped)
         Runtime state: unobserved
         \(escaped)\t"\(escaped)"\t\(escaped)
           Configuration: \(escaped)
-          Bundle: \(escaped)
+          Folder: \(escaped)
           Saved resources: 4 CPU, 6144 MiB
           Installation pending: false
           Recovery: \(escaped)
-        Issue [\(escaped)]: \(escaped): \(escaped)
+        Needs attention: \(escaped): \(escaped)
 
         """)
         assertLayout(text, lines: 9, tabs: 2)
@@ -90,14 +90,13 @@ final class NativeCLIOutputTests: XCTestCase {
 
     func testOrdinaryReadinessKeepsTextAndStaticLayout() {
         XCTAssertEqual(NativeCLI.render(readiness("개발 Windows 👩‍💻")), """
-        Native VM readiness: 개발 Windows 👩‍💻
+        VM readiness: 개발 Windows 👩‍💻
         Runtime state: unobserved
         Launch prerequisites: blocked
-        Launch blocker [개발 Windows 👩‍💻]: 개발 Windows 👩‍💻
+        Can’t start: 개발 Windows 👩‍💻
         Product release gate [개발 Windows 👩‍💻]: 개발 Windows 👩‍💻
         Limitation: 개발 Windows 👩‍💻
         Recovery: 개발 Windows 👩‍💻
-        Prerequisite query only; no VM boot or product release result was observed.
 
         """)
     }
@@ -105,17 +104,16 @@ final class NativeCLIOutputTests: XCTestCase {
     func testReadinessEscapesIDsIssuesRecoveryAndLimitations() {
         let text = NativeCLI.render(readiness(payload))
         XCTAssertEqual(text, """
-        Native VM readiness: \(escaped)
+        VM readiness: \(escaped)
         Runtime state: unobserved
         Launch prerequisites: blocked
-        Launch blocker [\(escaped)]: \(escaped)
+        Can’t start: \(escaped)
         Product release gate [\(escaped)]: \(escaped)
         Limitation: \(escaped)
         Recovery: \(escaped)
-        Prerequisite query only; no VM boot or product release result was observed.
 
         """)
-        assertLayout(text, lines: 8, tabs: 0)
+        assertLayout(text, lines: 7, tabs: 0)
     }
 
     func testInventoryJSONPreservesOriginalValuesAcrossTextRendering() throws {

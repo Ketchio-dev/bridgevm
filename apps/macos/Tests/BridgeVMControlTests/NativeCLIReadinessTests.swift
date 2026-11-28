@@ -57,6 +57,10 @@ final class NativeCLIReadinessTests: XCTestCase {
         XCTAssertTrue(NativeCLI.help.contains("prove guest behavior or release readiness"))
         // Examples use the documented command, not the bundle executable that is not on PATH.
         XCTAssertTrue(NativeCLI.help.contains("\n  bridgevm app readiness dev-vm --json"))
+        // Help speaks of Windows VMs and the VM BridgeVM started, not of internal parts.
+        for term in ["own-HVF", "supervisor", "owned run", "retained runner", "backend"] {
+            XCTAssertFalse(NativeCLI.help.contains(term), term)
+        }
         XCTAssertEqual(try contents(root), before)
     }
 
@@ -85,8 +89,11 @@ final class NativeCLIReadinessTests: XCTestCase {
         XCTAssertEqual(object["launchReady"] as? Bool, false)
         XCTAssertNil(object["releaseReady"])
         XCTAssertNil(object["raw_config"])
+        // Text says what blocks the start in a sentence; the issue code stays in the JSON above.
         let text = NativeCLI.render(result)
-        XCTAssertTrue(text.contains("Launch blocker [target-disk-missing]"))
+        let disk = try XCTUnwrap(result.launchBlockers.first { $0.code == "target-disk-missing" })
+        XCTAssertTrue(text.contains("Can’t start: " + disk.summary), text)
+        XCTAssertFalse(text.contains("target-disk-missing"), text)
         XCTAssertTrue(text.contains("Product release gate [secure-boot-live-receipt]"))
     }
 
