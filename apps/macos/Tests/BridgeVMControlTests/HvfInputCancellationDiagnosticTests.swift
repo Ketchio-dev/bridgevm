@@ -28,8 +28,8 @@ final class HvfInputCancellationDiagnosticTests: XCTestCase {
         }
     }
 
-    /// A request Windows never confirmed stops keyboard and mouse until the agent restarts; the session
-    /// is told both ways, so the display can say so (only beeps before).
+    /// A request Windows never confirmed leaves basic keyboard and mouse (input.ctl) until the agent restarts; the
+    /// session is told both ways, so the display can say so.
     func testStoppedInputIsReportedAndClearsWhenTheAgentRestarts() throws {
         try withDriver { driver, _ in
             var reports: [Bool] = []
@@ -40,7 +40,7 @@ final class HvfInputCancellationDiagnosticTests: XCTestCase {
             driver.poll(binding: binding, serviceReady: true, lines: []) { first = $0; return true }
             driver.poll(binding: binding, serviceReady: true, lines: receipt(first)) { _ in false }
             XCTAssertEqual(driver.router.failure, .requestFailed)
-            XCTAssertEqual(driver.route(.key("a"), binding: binding), .refused)
+            XCTAssertEqual(driver.route(.key("a"), binding: binding), .legacy)
             XCTAssertEqual(reports, [true], "reported once")
             driver.poll(binding: binding, serviceReady: true, lines: ["BVAGENT SERVICE start"]) { _ in true }
             XCTAssertNil(driver.router.failure)

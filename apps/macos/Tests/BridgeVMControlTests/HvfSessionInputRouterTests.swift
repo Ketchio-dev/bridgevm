@@ -204,7 +204,7 @@ final class HvfSessionInputRouterTests: XCTestCase {
         XCTAssertEqual(poll(&router, at: 0.1, lines: shortfall(click, inserted: 1)), .cancelled(.transportFailed, discarded: 2))
         XCTAssertTrue(router.failed)
         XCTAssertEqual(router.takeLegacyReplay(), [])
-        XCTAssertEqual(router.route(.key("enter"), binding: binding, now: now), .refused)
+        XCTAssertEqual(router.route(.key("enter"), binding: binding, now: now), .legacy, "later input takes basic input")
     }
 
     func testCtrlAltDeleteTakesTheVMMKeyboardWhateverTheRouteAndNothingOvertakesIt() {
@@ -265,7 +265,7 @@ final class HvfSessionInputRouterTests: XCTestCase {
         }
     }
 
-    func testTransportFailureDoesNotFallBackOrReplay() {
+    func testTransportFailureFallsBackToBasicInputWithoutAReplay() {
         var router = HvfSessionInputRouter()
         router.beginOwnedBoot(binding: binding)
         negotiate(&router)
@@ -273,7 +273,8 @@ final class HvfSessionInputRouterTests: XCTestCase {
         XCTAssertEqual(router.poll(binding: binding, serviceReady: true, lines: [], now: now) { _ in false },
                        .cancelled(.transportFailed, discarded: 1))
         XCTAssertTrue(router.failed)
-        XCTAssertEqual(router.route(.text("do not replay"), binding: binding, now: now), .refused)
-        XCTAssertFalse(router.allowLegacyWrite("KEY enter", binding: binding, now: now))
+        XCTAssertEqual(router.takeLegacyReplay(), [])
+        XCTAssertEqual(router.route(.text("later"), binding: binding, now: now), .legacy)
+        XCTAssertTrue(router.allowLegacyWrite("KEY enter", binding: binding, now: now))
     }
 }

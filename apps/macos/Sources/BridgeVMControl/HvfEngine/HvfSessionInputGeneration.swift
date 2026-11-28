@@ -11,7 +11,8 @@ enum HvfSessionInputFailure: Equatable {
     /// READY, re-READY or SERVICE start without a reset record; re-armed in the same batch.
     case agentRestarted
     case serviceLost
-    /// Transport failure, expiry, guest rejection or an invalid receipt; the request may still run.
+    /// Transport failure, expiry, guest rejection or an invalid receipt; the request may still run. Until it ends,
+    /// input takes input.ctl (the router's `fallback`: basic keyboard and mouse).
     case requestFailed
     case unavailable
 

@@ -13,8 +13,8 @@ final class HvfSessionInputDriver {
     var onLegacyReplay: (([HvfOrderedInputQueue.Event]) -> Void)?
     /// Writes one input.ctl line the switch waits on (HvfLegacyInputActivity.barrier), after any replay.
     var onLegacyBarrier: ((String) -> Void)?
-    /// Keyboard and mouse stopped (Windows never confirmed a request, so both routes refuse until an
-    /// agent restart or guest reset re-arms the router) or came back. Observing never changes routing.
+    /// Keyboard and mouse went basic (Windows never confirmed a request, so input takes input.ctl until an agent
+    /// restart or guest reset re-arms the ordered route) or came back in full. Observing never changes routing.
     var onInputStoppedChange: ((Bool) -> Void)?
     private var reportedStopped = false
     /// The clock of the receipt deadlines; the session's leaves paused time out (HvfGuestRunClock).

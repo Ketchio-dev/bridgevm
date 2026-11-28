@@ -57,8 +57,8 @@ final class HvfEngineSession: ObservableObject {
     var snapshotDeletions = 0 // HvfWindowsSnapshotExecution.deleteSnapshot, which needs no reservation
     var ownedStartNow: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     let workAdmissionGate = HvfRuntimeWorkAdmissionGate()
-    /// Keyboard and mouse refuse input until an agent restart or guest reset (HvfSessionInputDriver);
-    /// the display says so (HvfInputStoppedStrip) instead of only beeping.
+    /// Keyboard and mouse are basic (input.ctl only) until an agent restart or guest reset (HvfSessionInputDriver);
+    /// the display says so (HvfInputStoppedStrip).
     @Published var inputStopped = false
     let sleepPreventionID = UUID()
     var sleepPrevention = ControlAppPower.shared

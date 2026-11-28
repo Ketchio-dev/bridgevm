@@ -68,7 +68,7 @@ final class HvfGuestPauseInputDeadlineTests: XCTestCase {
             XCTAssertNotEqual(session.inputDriver.router.state, .failed, "the key went in")
             XCTAssertFalse(session.inputStopped)
 
-            // 30 s of uptime with no answer still expire a key and stop input.
+            // 30 s of uptime with no answer still expire a key and leave basic input (the strip shows).
             XCTAssertTrue(session.sendKey("tab"))
             uptime += 30
             session.poll()

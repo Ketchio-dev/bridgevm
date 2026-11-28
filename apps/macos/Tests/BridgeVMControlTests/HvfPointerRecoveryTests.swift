@@ -53,7 +53,7 @@ final class HvfPointerRecoveryTests: XCTestCase {
         XCTAssertTrue(next.hasPrefix("KEYINPUT "), "input resumes after cleanup without renegotiation")
     }
 
-    func testCleanupFailureRefusesFurtherInputAndLegacyFallback() {
+    func testCleanupFailureFailsTheOrderedRouteAndLeavesBasicInput() {
         var router = ready()
         _ = router.route(.pointer("press:0x0"), binding: binding, now: now)
         _ = router.poll(binding: binding, serviceReady: true, lines: [], now: now) { _ in true }
@@ -64,8 +64,8 @@ final class HvfPointerRecoveryTests: XCTestCase {
             _ in XCTFail("cleanup replay"); return true
         }, .cancelled(.transportFailed, discarded: 1))
         XCTAssertTrue(router.failed)
-        XCTAssertFalse(router.allowLegacyWrite("KEY enter", binding: binding, now: now))
-        XCTAssertEqual(router.route(.text("blocked"), binding: binding, now: now), .refused)
+        XCTAssertTrue(router.allowLegacyWrite("KEY enter", binding: binding, now: now))
+        XCTAssertEqual(router.route(.text("later"), binding: binding, now: now), .legacy)
     }
 
     /// On a Windows secure desktop the agent inserts nothing, the cleanup's release included: it stays owed for the

@@ -174,8 +174,47 @@ final class HvfInputRouteSwitchTests: XCTestCase {
             XCTAssertTrue(session.sendKey("enter"))
             let failed = try XCTUnwrap(try fixture.commands().last)
             try fixture.appendLog(notInserted(failed, verb: "InsertKey", inserted: 1)); session.poll()
-            XCTAssertFalse(session.sendKey("tab"))
-            XCTAssertNil(try fixture.bytes(fixture.input), "a partly inserted key is never replayed")
+            XCTAssertTrue(session.sendKey("tab"), "later input takes basic keyboard and mouse")
+            XCTAssertEqual(try legacy(fixture), ["KEY tab"], "a partly inserted key is never replayed")
+            XCTAssertEqual(try fixture.commands().last, failed)
+        }
+    }
+
+    /// Keyboard and mouse audit, finding 1: a key Windows never confirmed in time refused every later key and click
+    /// until Windows restarted, so the user could not even save their work. Later input now takes the VMM's keyboard
+    /// and mouse, the expired key is sent again on neither route, the strip says input is basic, and an agent restart
+    /// brings the ordered route back.
+    func testAnExpiredKeyLeavesBasicKeyboardAndMouseUntilTheAgentRestarts() throws {
+        try withClockedSession(negotiated: true) { session, fixture, clock in
+            XCTAssertTrue(session.sendKey("tab"))
+            let expired = try XCTUnwrap(try fixture.commands().last)
+            XCTAssertEqual(try payload(expired), "KEYINPUT tab")
+            clock.advance(31); session.poll()
+            XCTAssertTrue(session.inputStopped)
+            XCTAssertEqual(HvfInputStoppedStrip.text, "Windows stopped confirming input, so BridgeVM switched to basic "
+                + "keyboard and mouse, which types as a US keyboard; restart Windows to get full input back.")
+            XCTAssertTrue(session.sendKey("enter"), "a later key is not refused")
+            session.sendPointerClick(location: point, viewSize: size, imageSize: size)
+            XCTAssertEqual(try legacy(fixture), ["KEY enter", "POINTER click:16384x16384"])
+            XCTAssertFalse(session.guestTakesNonASCIIText, "Roman input sources, as on a secure desktop")
+            try fixture.probeTakes(); session.poll()
+            clock.advance(5); session.poll()
+            XCTAssertTrue(session.sendKey("esc"), "a quiet input.ctl does not bring the ordered route back")
+            XCTAssertEqual(try legacy(fixture).last, "KEY esc")
+            XCTAssertEqual(try fixture.commands().last, expired, "nothing more went to the agent, the expired key included")
+
+            try fixture.appendLog("BVAGENT re-READY BRIDGEVM t=40\n"); session.poll()
+            XCTAssertFalse(session.inputStopped)
+            session.poll()
+            let query = try XCTUnwrap(try fixture.commands().last)
+            XCTAssertTrue(query.hasPrefix("INPUTCAPS "), "the restarted agent is asked again")
+            try answer(query, fixture); session.poll()
+            try fixture.probeTakes(); session.poll()
+            clock.advance(1); session.poll()
+            XCTAssertTrue(session.sendKey("left"))
+            XCTAssertEqual(try payload(try fixture.commands().last), "KEYINPUT left", "the ordered route is back")
+            XCTAssertEqual(try fixture.commands().filter { $0.hasPrefix("KEYINPUT ") }.count, 2, "tab once, then left")
+            XCTAssertEqual(try legacy(fixture).count, 3, "nothing typed twice")
         }
     }
 
