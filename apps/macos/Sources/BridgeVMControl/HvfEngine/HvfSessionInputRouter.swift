@@ -11,8 +11,8 @@ import Foundation
 /// route (it may still run), and the router stays in `fallback` (basic keyboard and mouse) until an agent restart or a
 /// guest reset re-arms it (HvfSessionInputGeneration.swift). Ctrl+Alt+Delete always takes the VMM keyboard, and on an
 /// active route nothing overtakes it there: input after it follows it on input.ctl (`fallback`), and behind ordered
-/// input still going in it waits, with input after it, until that input has gone in (`takeSecureAttention`). An agent
-/// restart within the boot (re-READY, a new SERVICE start) starts the owned boot over: the new agent instance
+/// input still going in it waits, with input after it, until that input has gone in or failed (`takeSecureAttention`).
+/// An agent restart within the boot (re-READY, a new SERVICE start) starts the owned boot over: the new agent instance
 /// negotiates again (HvfSessionInputGeneration.swift). A held key (`down:<key>` until `up:<key>`, HvfModifierChord.down) goes up on the
 /// route it went down (`routeKeyUp`): on input.ctl while the VMM holds it, which also keeps the switch waiting; on the
 /// ordered route, or through its cleanup (HvfPointerCleanup) like a held button.
@@ -30,7 +30,7 @@ struct HvfSessionInputRouter {
     private var replay: [HvfOrderedInputQueue.Event] = []
     private var barrier: String?
     /// Ctrl+Alt+Delete routed behind ordered input still going in, and input routed after it; then, once that input
-    /// has gone in, the same events for input.ctl.
+    /// has gone in or failed, the same events for input.ctl.
     private var held: [HvfOrderedInputQueue.Event] = [], heldOut: [HvfOrderedInputQueue.Event] = []
     var state: HvfNegotiatedInputStream.State { failed ? .failed : stream.state }
     var count: Int { stream.count + held.count }
@@ -119,6 +119,14 @@ struct HvfSessionInputRouter {
     mutating func poll(binding: [String], serviceReady: Bool, lines: [String], now: Date, legacyPending: Bool = false,
                        send: (String) -> Bool) -> HvfAcknowledgedInputStream.Update? {
         legacy.observe(lines, now: now)
+        let quiet = !legacyPending && legacy.quiescent(now: now)
+        // An ordered press Windows inserted may still be held (its release inserted nothing, and the HID re-send
+        // cannot release a SendInput press): leaving the fallback sends that release first, the HID route stays
+        // until Windows inserted it, and one that inserts nothing again is retried after the next quiet second, a
+        // request failure's cleanup release included (that fallback lasts until a re-arm).
+        if fallback, !failed || failure == .requestFailed, quiet, !stream.isRecovering, stream.owesRelease {
+            stream.releaseOwed(now: now)
+        }
         guard matches(binding), eligible, !failed || (failure == .requestFailed && stream.isRecovering) else { return nil }
         let reset = lines.contains { HvfGuestResetRecord.matches($0) }
         if activated, let reason = HvfSessionInputFailure(reset: reset, serviceReady: serviceReady, lines: lines) {
@@ -132,11 +140,6 @@ struct HvfSessionInputRouter {
             }
             return fail(reason)
         }
-        let quiet = !legacyPending && legacy.quiescent(now: now)
-        // An ordered press Windows inserted may still be held (its release inserted nothing, and the HID re-send
-        // cannot release a SendInput press): leaving the fallback sends that release first, the HID route stays
-        // until Windows inserted it, and one that inserts nothing again is retried after the next quiet second.
-        if fallback, quiet, !stream.isRecovering, stream.owesRelease { stream.releaseOwed(now: now) }
         var update = stream.poll(serviceReady: serviceReady, legacyQuiescent: quiet,
                                  lines: lines, now: now, send: send)
         if fallback, !failed, quiet, !stream.isRecovering, !stream.owesRelease { fallback = false }
@@ -156,7 +159,9 @@ struct HvfSessionInputRouter {
         }
         // A boot that never activated stays owned and legacy: the stream asks the next agent instance again.
         if stream.state == .unavailable, activated { failure = .unavailable }
-        if !held.isEmpty, stream.count == 0 { // the ordered input ahead of the chord has gone in or was handed back
+        // The ordered input ahead of the chord has gone in or was handed back, or a request failed: then the chord
+        // waits for nothing more, the cleanup's release that failure started included.
+        if !held.isEmpty, stream.count == 0 || failure == .requestFailed {
             if activated, !failed, stream.state == .ready { fallback = true; legacy.restart(now: now) }
             heldOut += held
             held.removeAll()
@@ -173,8 +178,8 @@ struct HvfSessionInputRouter {
         return barrier
     }
 
-    /// Ctrl+Alt+Delete and the input routed after it, once the ordered input ahead of it has gone in: for input.ctl
-    /// in this order, after any `takeLegacyReplay`, before any later input.
+    /// Ctrl+Alt+Delete and the input routed after it, once the ordered input ahead of it has gone in or failed: for
+    /// input.ctl in this order, after any `takeLegacyReplay`, before any later input.
     mutating func takeSecureAttention() -> [HvfOrderedInputQueue.Event] {
         defer { heldOut.removeAll() }
         return heldOut

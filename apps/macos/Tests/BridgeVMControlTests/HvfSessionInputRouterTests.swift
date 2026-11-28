@@ -6,13 +6,14 @@ final class HvfSessionInputRouterTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 2_000)
     private let binding = ["disk", "vars", "evidence", "control"]
 
-    private func negotiate(_ router: inout HvfSessionInputRouter, at time: Date? = nil) {
+    /// `hold`: the agent's HOLD marker (keys held from press to release).
+    private func negotiate(_ router: inout HvfSessionInputRouter, at time: Date? = nil, hold: Bool = false) {
         let time = time ?? now
         var command = ""
         _ = router.poll(binding: binding, serviceReady: true, lines: [], now: time) { command = $0; return true }
         let id = command.split(separator: " ").last ?? "missing"
-        let lines = ["BVAGENT CMD \(command) exit=0", "BVINPUT_CAPS \(id) 3 TEXTINPUT KEYINPUT POINTERINPUT 65536",
-                     "BVAGENT END \(command)"]
+        let lines = ["BVAGENT CMD \(command) exit=0", "BVINPUT_CAPS \(id) 3 TEXTINPUT KEYINPUT POINTERINPUT 65536"]
+            + (hold ? ["BVINPUT_KEYS \(id) HOLD"] : []) + ["BVAGENT END \(command)"]
         _ = router.poll(binding: binding, serviceReady: true, lines: lines, now: time) { _ in false }
         _ = router.poll(binding: binding, serviceReady: true, lines: [], now: time) { _ in false }
     }
@@ -232,6 +233,53 @@ final class HvfSessionInputRouterTests: XCTestCase {
         wrote(&router, "KEY ctrl+alt+delete")
         XCTAssertFalse(router.fallback, "a failed route stays failed")
         XCTAssertEqual(router.route(.key("ctrl+alt+delete"), binding: ["other"], now: now), .refused, "never another VM's")
+    }
+
+    /// A click Windows never confirms counts its button down, so its expiry sends the cleanup's release to the same
+    /// agent. A Ctrl+Alt+Delete held behind the click goes to input.ctl at that failure, with the input routed after
+    /// it, not only once that release expires too; later input takes input.ctl directly.
+    func testCtrlAltDeleteHeldBehindARequestThatFailsGoesToInputCtlAtTheFailure() {
+        var router = HvfSessionInputRouter()
+        router.beginOwnedBoot(binding: binding)
+        negotiate(&router)
+        XCTAssertEqual(router.route(.pointer("click:1x2"), binding: binding, now: now), .queued)
+        _ = poll(&router, at: 0) { _ in }
+        XCTAssertEqual(router.route(.key("ctrl+alt+delete"), binding: binding, now: now), .queued)
+        XCTAssertEqual(router.route(.key("enter"), binding: binding, now: now), .queued)
+        _ = poll(&router, at: 31)
+        XCTAssertEqual(router.failure, .requestFailed)
+        XCTAssertEqual(router.takeSecureAttention(), [.key("ctrl+alt+delete"), .key("enter")], "at the failure")
+        XCTAssertEqual(router.route(.key("tab"), binding: binding, now: now), .legacy)
+        var cleanup = ""
+        _ = poll(&router, at: 31) { cleanup = $0 }
+        XCTAssertEqual(payload(cleanup), "POINTERINPUT release:1x2", "the cleanup's release still goes to the agent")
+    }
+
+    /// A request failure's cleanup release Windows inserted nothing of (a secure desktop) is still owed: it is sent
+    /// again after the next quiet second, as when a fallback ends, while the failure keeps later input on input.ctl.
+    func testARefusedCleanupReleaseAfterARequestFailureIsRetriedOnceInputCtlIsQuiet() {
+        var router = HvfSessionInputRouter()
+        router.beginOwnedBoot(binding: binding)
+        negotiate(&router, hold: true)
+        XCTAssertEqual(router.route(.key("down:left"), binding: binding, now: now), .queued)
+        var down = ""
+        _ = poll(&router, at: 0) { down = $0 }
+        _ = poll(&router, at: 0.25, lines: inserted(down))
+        XCTAssertEqual(router.route(.key("tab"), binding: binding, now: now), .queued)
+        _ = poll(&router, at: 0.25) { _ in }
+        _ = poll(&router, at: 31)
+        XCTAssertEqual(router.failure, .requestFailed)
+        var release = ""
+        _ = poll(&router, at: 31) { release = $0 }
+        XCTAssertEqual(payload(release), "KEYINPUT up:left")
+        XCTAssertEqual(poll(&router, at: 31.25, lines: shortfall(release)), .cancelled(.notInserted, discarded: 0))
+        _ = poll(&router, at: 32)
+        var again = ""
+        _ = poll(&router, at: 32.25) { again = $0 }
+        XCTAssertEqual(payload(again), "KEYINPUT up:left", "retried after the next quiet second")
+        guard case .inserted = poll(&router, at: 32.5, lines: inserted(again)) else { return XCTFail("not inserted") }
+        XCTAssertEqual(router.count, 0)
+        XCTAssertEqual(router.route(.key("esc"), binding: binding, now: now), .legacy, "the failure still holds")
     }
 
     func testTargetChangeCancelsPendingInputKeepsNegotiationAndNeverFallsBackToHID() {

@@ -46,6 +46,10 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- Ctrl+Alt+Delete reaches Windows right away after Windows stops confirming
+  input, instead of 30 seconds later, or never if you switched apps. A key or
+  button a secure desktop left down is released once input is quiet. Non-Roman
+  input sources keep working while a Shut Down waits for Windows.
 - When Windows stops confirming keyboard and mouse input, BridgeVM now switches
   to its basic keyboard and mouse (US key layout) instead of refusing every key
   and click. Restarting Windows brings full input back.

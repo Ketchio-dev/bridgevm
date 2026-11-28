@@ -314,7 +314,7 @@ final class HvfEngineSession: ObservableObject {
             guard appendLiveInput("KEY text-hex:\(chunk)") else { return .refused }
         }
         if let base64 = plan.clipboardBase64 {
-            guard serviceStarted, case .connected = connectionState else {
+            guard serviceStarted, guestTakesInput else {
                 append(.unknown("clipboard paste refused: guest service is not connected")); return .refused
             }
             var request = clipboardPaste(base64: base64, preferRelay: draft?.multiline == true)
@@ -665,7 +665,7 @@ final class HvfEngineSession: ObservableObject {
     /// or answer Windows' "apps are preventing shutdown" screen. Force Stop or cancellation ends that.
     /// A Stop keeps an open ordered channel but never opens one: a new negotiation would write to a
     /// control file the Stop may have found replaced. Until then input uses the legacy device path.
-    private var guestTakesInput: Bool {
+    var guestTakesInput: Bool {
         if case .connected = connectionState { return true }
         return stopWaitsForWindows && inputDriver.router.activated
     }
