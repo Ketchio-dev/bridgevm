@@ -133,7 +133,8 @@ final class HvfVMSettingsSheetValueTests: XCTestCase {
         XCTAssertEqual(sheet.runningNoticeText, "Shut down Windows to change settings that are currently unavailable.")
         XCTAssertTrue(try XCTUnwrap(values(HvfResourceSetting.self, in: running).first).isDisabled)
         XCTAssertTrue(try XCTUnwrap(values(HvfNetworkToggle.self, in: running).first).isDisabled)
-        XCTAssertTrue(try XCTUnwrap(values(HvfClipboardSyncToggle.self, in: running).first).isDisabled)
+        XCTAssertFalse(try XCTUnwrap(values(HvfClipboardSyncToggle.self, in: running).first).isDisabled,
+                       "it switches the running VM (BVCLIPSYNC) and is saved when the VM stops")
         XCTAssertTrue(try XCTUnwrap(values(HvfSharedFolderSettings.self, in: running).first).isDisabled)
         XCTAssertTrue(try XCTUnwrap(values(HvfGuestResolutionPicker.self, in: running).first).isDisabled)
         XCTAssertFalse(try XCTUnwrap(values(HvfRetinaResolutionToggle.self, in: running).first).isDisabled,
