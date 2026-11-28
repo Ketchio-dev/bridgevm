@@ -5,11 +5,13 @@
 //!
 //! New installs take the Mac's zone once, from the answer file; after that
 //! Windows kept it, so after a trip the guest showed the old zone's time.
-//! The clock resync (time_resync.rs) sets this zone first at every boot and
-//! when the Mac's zone changes. The mapped ID comes from the app's table,
-//! never from the guest.
+//! The clock resync (time_resync.rs) sets this zone first when the Mac's zone
+//! differs from the one this VM last took (`<vars>.windows-zone`), at a boot
+//! or while Windows runs. Setting it at every boot and after every sleep put
+//! back a zone the user had chosen in Windows. The mapped ID comes from the
+//! app's table, never from the guest.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -40,6 +42,11 @@ pub(super) fn windows_zone(iana: &str) -> Option<&'static str> {
         .map(|(windows, _)| *windows)
 }
 
+/// A Windows ID of the app's table, as `<vars>.windows-zone` holds it.
+fn table_zone(id: &str) -> Option<&'static str> {
+    rows().iter().find(|(windows, _)| *windows == id).map(|(windows, _)| *windows)
+}
+
 /// The IANA name `/etc/localtime` points at (`.../zoneinfo/Asia/Seoul`).
 pub(super) fn iana_from_localtime(link: &Path) -> Option<String> {
     let target = std::fs::read_link(link).ok()?;
@@ -58,8 +65,10 @@ pub(super) fn host_windows_zone() -> Option<&'static str> {
 /// What the resync has set and when the Mac's zone was last read.
 #[derive(Default)]
 pub(super) struct ZoneWatch {
-    /// The zone the last resync command carried.
+    /// The zone the last resync command carried, in this run or an earlier one (`record`).
     pub(super) applied: Option<&'static str>,
+    /// `<vars>.windows-zone`: the zone this VM last took, kept across runs.
+    pub(super) record: Option<PathBuf>,
     /// The Mac's zone moved away from `applied`: a resync is due.
     pub(super) changed: bool,
     checked: Option<Instant>,
@@ -69,6 +78,26 @@ pub(super) struct ZoneWatch {
 }
 
 impl ZoneWatch {
+    /// The VM's record beside its UEFI vars, and the zone it holds.
+    pub(super) fn from_vars(vars: Option<&str>) -> Self {
+        let record = vars.filter(|vars| !vars.is_empty()).map(|vars| PathBuf::from(format!("{vars}.windows-zone")));
+        let applied = record
+            .as_ref()
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|id| table_zone(id.trim()));
+        Self { applied, record, ..Self::default() }
+    }
+
+    /// The zone a resync sets: the Mac's, when it is not the one this VM last took.
+    pub(super) fn zone_to_set(&mut self) -> Option<&'static str> {
+        let zone = self.host_zone().filter(|zone| Some(*zone) != self.applied)?;
+        self.applied = Some(zone);
+        if let Some(path) = &self.record {
+            let _ = std::fs::write(path, zone);
+        }
+        Some(zone)
+    }
+
     pub(super) fn host_zone(&self) -> Option<&'static str> {
         // Tests never read the Mac's own zone.
         #[cfg(test)]
