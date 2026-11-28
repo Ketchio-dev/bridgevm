@@ -58,6 +58,10 @@ All notable changes to BridgeVM are documented in this file.
 - A fast trackpad scroll no longer fills Windows' input queue: scrolls waiting
   to be sent are combined into one, so keys and clicks after it are not refused,
   and a mouse-button release is always taken, so the button is not left down.
+- While "Shut down Windows" waits for Windows to close its apps, the open VM
+  window still resizes the Windows desktop and keeps Windows' own pointer. A VM
+  window that is starting now shows "Starting Windows…" until Windows draws its
+  first picture, instead of staying black.
 - Deleting the selected VM selects the VM next to it, not the first VM
   in the library.
 - A Mac file that never reaches Windows now gets a notice: when Windows

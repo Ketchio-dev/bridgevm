@@ -48,6 +48,18 @@ final class HvfDisplayResizeRequestTests: XCTestCase {
         XCTAssertNil(request.take(at: 20), "one request per settled size")
     }
 
+    func testARefusedWriteStaysPendingForTheNextTry() {
+        var request = Request()
+        let size = Request.Size(width: 1600, height: 900)
+        request.viewResized(to: view(1600, 900), at: 0)
+        request.settle()
+        XCTAssertEqual(request.take(at: 0), size)
+        request.sendFailed()
+        XCTAssertEqual(request.take(at: 0.1), size, "the refused size goes out at the next flush")
+        request.didSend(size)
+        XCTAssertNil(request.take(at: 0.2))
+    }
+
     func testDuplicatesAreDroppedUntilTheDeviceRestarts() {
         var request = Request()
         let size = Request.Size(width: 1517, height: 931)

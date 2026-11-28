@@ -29,7 +29,7 @@ class DisplayClick(unittest.TestCase):
         self.assertIsNotNone(view_initializer)
         initializer_body = view[view_initializer.end():].split("\n    }\n", 1)[0]
         self.assertIn("HvfDisplaySurfaceAccessibility.configure(self)", initializer_body)
-        self.assertIn("didSet { if guestSize != oldValue { HvfDisplaySurfaceAccessibility.update(self, guestSize: guestSize) } }", view)
+        self.assertIn("if guestSize != oldValue { HvfDisplaySurfaceAccessibility.update(self, guestSize: guestSize) }", view)
         down = view.split("override func mouseDown(with event: NSEvent) {", 1)[1].split("\n    }\n", 1)[0]
         self.assertIn("guard let session, hasGuestSize else {", down)
         self.assertIn("guestSize.width > 0 && guestSize.height > 0", view)

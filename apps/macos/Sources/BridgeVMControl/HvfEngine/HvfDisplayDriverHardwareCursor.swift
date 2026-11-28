@@ -56,7 +56,7 @@ extension HvfEngineSession {
     ///   value that differs and otherwise prints `already`.
     func applyGuestHardwareCursorSetting() {
         #if canImport(AppKit)
-        guard config.virtioGpu2d, connectionState.guestCursorIsLive else { return }
+        guard config.virtioGpu2d, guestCursorIsLive else { return }
         let wanted = guestHardwareCursorWanted
         if wanted {
             hardwareCursorOffSent = false
