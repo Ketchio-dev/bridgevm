@@ -43,6 +43,13 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- VoiceOver no longer reads internal codes such as "hvf-import-invalid",
+  "timed-out" or "none" after the error on the New VM sheet and the state and
+  startup error on the VM status card. It reads only the text on screen.
+- When VMs running at the same time together use more memory than your Mac can
+  spare, each of them now says so in one sentence and suggests stopping one or
+  giving the VMs less memory in Settings. Before, macOS just started swapping
+  and Windows and the Mac slowed down with no explanation. Nothing is refused.
 - The terminal installer works on a Mac without the Xcode Command Line Tools.
   It used to call Python and `lipo`, which on such a Mac only open the "install
   developer tools" dialog, so it failed or wrongly said the app was not Apple
@@ -55,6 +62,16 @@ All notable changes to BridgeVM are documented in this file.
   Windows update could go missing, or a Secure Boot revocation could be
   undone. Now a change is saved to the Mac's disk about a second after
   Windows makes it.
+- Typing a Windows password with a Korean, Japanese or Chinese input source
+  selected on the Mac now works at the sign-in screen after Windows starts and
+  on the lock screen: while Windows can only take plain letters there, the VM
+  window switches the Mac to a Roman layout, as a Mac password field does, and
+  switches back afterwards. Before, the keys became Hangul syllables that
+  Windows refused with a beep, or that went through the Windows clipboard.
+- Switching the Mac's input source with ⌘Space (for example between Korean and
+  English) in a VM window no longer opens the Windows Start menu, and ⌃⌘Space
+  now opens the Mac's Emoji & Symbols picker instead of sending Ctrl+Space to
+  Windows.
 - The installer no longer replaces BridgeVM while BridgeVM or one of its VMs is
   running. It stops before downloading and asks you to shut down your VMs and
   quit BridgeVM first. Before, the old app kept running on top of the new
@@ -65,6 +82,11 @@ All notable changes to BridgeVM are documented in this file.
   a few minutes.
 - When GitHub can't be reached or rate-limits the newest-release lookup, the
   installer says so in one sentence instead of printing a Python traceback.
+- Duplicating a VM stored on another drive no longer writes the full size of
+  its virtual disk to the library: the copy keeps the disk's unused space
+  empty, as the original has it.
+- Moving a VM to another drive no longer writes the full size of its virtual
+  disk there, so the move takes less time and space.
 - When one of a VM's virtual processors crashes in BridgeVM, the VM now stops
   the way it does after other errors: its firmware settings are saved and its
   disk is flushed to the Mac's drive. Before, the stop crashed too and skipped
@@ -75,6 +97,11 @@ All notable changes to BridgeVM are documented in this file.
   changes could stay in the drive's cache and be lost if the Mac then lost
   power. If that flush fails, BridgeVM says it couldn't finish saving the
   Windows disk.
+- When quitting BridgeVM waits for more than one VM to shut down, the
+  "still shutting down" question now names the VMs it is still waiting for.
+- A VM's folder no longer grows by tens of megabytes each time Windows starts:
+  the boot screenshots BridgeVM keeps for diagnostics are now replaced at the
+  next start instead of piling up.
 - The installers accept an Apple Silicon Mac when they are run from a Rosetta
   shell, such as an Intel Homebrew bash.
 - The install guide no longer says Open Anyway is needed only once: each newly
@@ -99,11 +126,19 @@ All notable changes to BridgeVM are documented in this file.
   finish first and quits when it is done, as it already did while VM files were
   being prepared. Before, BridgeVM quit at once: a move cut short left the VM
   hidden from the library at the next launch.
+- The Duplicate sheet now says that the duplicate starts with a new TPM, so
+  on its first start you sign in to Windows with your password (your PIN won't
+  work there) and, if BitLocker or device encryption is on, need the recovery
+  key. Before, it only said the duplicate gets its own TPM.
 - A VM whose disk and firmware settings files were removed outside BridgeVM
   (in Finder, say) can now be deleted. Every try said its library entry could
   not be removed from disk. BridgeVM still keeps the VM's folder when it holds a
   snapshot or any file BridgeVM didn't write, and after a delete that fails the
   library now shows what is still on disk.
+- When a Mac port for port forwarding is taken, the notice now says another
+  app or another BridgeVM VM may hold it, and to quit that app or shut down that
+  VM. Two VMs set to the same Mac port (a duplicate keeps none, but a second VM
+  set up the same way does) used to get only "Quit the app using it".
 - Installing the display driver no longer pins the shared folder to Quick
   Access in Windows Explorer again after you unpinned it, and no longer leaves
   a `BridgeVM.unlocked-…` folder in `C:\ProgramData`. Before, BridgeVM kept its

@@ -188,13 +188,35 @@ extension VMLibrary {
                                      rootURL: URL, fileManager: FileManager) {
         let source = URL(fileURLWithPath: original.bundlePath, isDirectory: true)
         let destination = URL(fileURLWithPath: moved.bundlePath, isDirectory: true)
-        try? fileManager.moveItem(at: destination, to: source)
+        try? relocateItem(at: destination, to: source, fileManager: fileManager)
         if let observed = VMRelocationRecovery.configuration(original: original, moved: moved,
                                                              fileManager: fileManager) {
             if save(observed, rootURL: rootURL) {
                 try? fileManager.removeItem(at: pending)
             }
         }
+    }
+
+    /// Within a volume a move is a rename. Across volumes FileManager copies every byte, so a sparse
+    /// 2 GiB file holding 4 MiB of data arrived as 2 GiB (measured) and moving a VM to another drive
+    /// wrote its disk's whole size there. This copies with the holes kept, then removes the source,
+    /// which is what FileManager does too, in that order.
+    static func relocateItem(at source: URL, to destination: URL, fileManager fm: FileManager,
+                             acrossVolumes: Bool? = nil) throws {
+        let across = acrossVolumes ?? isOnAnotherVolume(source, than: destination.deletingLastPathComponent())
+        guard across else { return try fm.moveItem(at: source, to: destination) }
+        guard cloneOrCopyFile(from: source.path, to: destination.path) else {
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: destination.path])
+        }
+        try fm.removeItem(at: source)
+    }
+
+    /// Unknown counts as the same volume: FileManager's move then decides, as before.
+    private static func isOnAnotherVolume(_ item: URL, than directory: URL) -> Bool {
+        let key = URLResourceKey.volumeIdentifierKey
+        guard let a = (try? item.resourceValues(forKeys: [key]))?.allValues[key] as? NSObject,
+              let b = (try? directory.resourceValues(forKeys: [key]))?.allValues[key] as? NSObject else { return false }
+        return !a.isEqual(b)
     }
 }
 
@@ -318,7 +340,7 @@ extension VMLibrary {
             return nil
         }
         do {
-            try fm.moveItem(at: source, to: destination)
+            try relocateItem(at: source, to: destination, fileManager: fm)
         } catch {
             // Nothing moved (a folder BridgeVM can't write to, for one): the bundle is where vm.json
             // says, so the record of an unfinished move goes too. Kept, it hid the VM from the library

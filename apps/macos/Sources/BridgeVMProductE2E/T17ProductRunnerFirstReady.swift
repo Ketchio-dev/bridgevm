@@ -16,7 +16,7 @@ extension T17ProductRunner {
         }, diagnostic: { T17FirstBootDiagnostic.capture(log) }, timeoutDiagnostic: {
             T17FirstReadyStopCapture.capture(log: log, laneRoot: URL(fileURLWithPath: self.request.laneRoot),
                 applicationRunning: { self.application?.isRunning == true },
-                ownedRuntimeState: { try? ui.text("bridgevm.windows.runtime.state", timeout: 1) })
+                ownedRuntimeState: { T17FirstReadyObservation.runtimeState(ui) })
                 + "; " + T17FirstBootDiagnostic.capture(log)
         })
     }
@@ -27,6 +27,6 @@ extension T17ProductRunner {
     func freezeAfterFirstReady() -> String {
         T17FirstReadyStopCapture.capture(log: bundle.appendingPathComponent("logs/hvf/run.log"),
             laneRoot: URL(fileURLWithPath: request.laneRoot), applicationRunning: { self.application?.isRunning == true },
-            ownedRuntimeState: { try? self.ui?.text("bridgevm.windows.runtime.state", timeout: 1) })
+            ownedRuntimeState: { self.ui.flatMap(T17FirstReadyObservation.runtimeState) })
     }
 }

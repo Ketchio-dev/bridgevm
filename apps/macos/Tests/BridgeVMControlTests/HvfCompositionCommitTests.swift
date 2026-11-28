@@ -34,6 +34,20 @@ final class HvfCompositionCommitTests: XCTestCase {
         }
     }
 
+    /// ⌘Space set to switch the Mac's input source (한/영): macOS takes the Space, so the view sees Command
+    /// go down and up with no key between. The input source change ends that tap: Start stays shut.
+    func testSwitchingTheMacInputSourceWithCommandSpaceSendsNoWindowsKey() throws {
+        try withOrderedDisplay { view, session, fixture in
+            view.flagsChanged(with: try modifier(0x37, flags: .command))
+            NotificationCenter.default.post(name: NSTextInputContext.keyboardSelectionDidChangeNotification,
+                                            object: view.inputContext)
+            view.flagsChanged(with: try modifier(0x37, flags: []))
+            view.flagsChanged(with: try modifier(0x37, flags: .command))
+            view.flagsChanged(with: try modifier(0x37, flags: []))
+            XCTAssertEqual(try deliver(fixture, session), ["KEYINPUT win"], "only the later, plain tap")
+        }
+    }
+
     /// ⌥L is @ on a German Mac keyboard, ⌥5 is [: Windows (en-US) has no other key for them, so they
     /// are typed, not sent as Alt+L. A US ⌥S (ß) is still Alt+S.
     func testAnOptionCharacterInASCIIIsTypedAndAUSOptionLetterIsAlt() throws {

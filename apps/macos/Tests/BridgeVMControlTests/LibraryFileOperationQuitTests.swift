@@ -11,7 +11,7 @@ final class LibraryFileOperationQuitTests: XCTestCase {
         var confirmations = 0, retries = 0
         let termination = ControlAppTermination(sessions: { f.library.appTerminationSessions() },
             presenter: .init(confirmQuit: { _ in XCTFail("No VM is running"); return false },
-                decideAtDeadline: { _, _ in .cancelQuit },
+                decideAtDeadline: { _, _, _ in .cancelQuit },
                 confirmAfterPreparation: { confirmations += 1; return true }),
             reply: { _ in XCTFail("Unexpected modal quit") }, preparationLibrary: { f.library },
             retryQuit: { retries += 1 })

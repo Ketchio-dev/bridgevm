@@ -17,3 +17,11 @@ enum HvfDisplayWindowTitle {
         return vm
     }
 }
+
+extension HvfEngineSession {
+    /// The VM's name in the library, as its display window and the quit alerts show it.
+    var displayTitle: String {
+        HvfDisplayWindowTitle.resolve(libraryName: config.libraryContext?.config.name,
+                                      targetDiskPath: config.targetDiskPath)
+    }
+}

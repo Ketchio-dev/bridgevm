@@ -10,8 +10,8 @@ struct HvfRuntimeStatusMessages: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(failureText ?? "No startup error")
                 .font(.callout).foregroundColor(failureText == nil ? Color.secondary : Color.red).textSelection(.enabled)
-                .accessibilityIdentifier("bridgevm.windows.runtime.start.failure")
-                .accessibilityValue(failureText ?? "none")
+                .accessibilityIdentifier(HvfRuntimeAccessibilityState.failureIdentifier(failureText))
+            HvfSharedMemoryNoticeView(session: session)
             HvfAgentSilenceNoticeView(notice: session.agentSilenceNotice)
             HvfGuestToolsAction(session: session)
             HvfShareRootNoticeView(notice: session.shareRootNotice)

@@ -68,6 +68,9 @@ final class CreateVMPrerequisitePresentationTests: XCTestCase {
             let footer = try footer(of: sheet)
             XCTAssertEqual(footer.error, "Owned publication refusal")
             XCTAssertEqual(footer.failureCode, "vm-publication-unconfirmed")
+            XCTAssertEqual(CreateVMCreationFooter.errorIdentifier(footer.failureCode),
+                           "bridgevm.create.error.vm-publication-unconfirmed")
+            XCTAssertEqual(CreateVMCreationFooter.errorIdentifier(""), "bridgevm.create.error")
         }
     }
 

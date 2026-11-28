@@ -18,7 +18,9 @@ enum T17OptionalTextSnapshot {
             throw failure
         }
         var values: [String: String] = [:]
-        for (identifier, node) in projection.matches { values[identifier] = try text(node) }
+        for (key, node) in projection.matches {
+            values[key] = try T17CodedIdentifier.code(identifier(node)) ?? text(node)
+        }
         return values
     }
 

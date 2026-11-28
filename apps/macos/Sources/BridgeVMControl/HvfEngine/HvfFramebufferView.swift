@@ -52,6 +52,7 @@ final class FBLayerView: HvfFramebufferTextInput {
 
     func updateSession(_ next: HvfEngineSession) {
         synchronizeTextInputTarget()
+        defer { refreshAllowedInputSources() }
         guard session !== next else {
             if window != nil, next.connectionState != .stopped { startDisplayLink() }
             return
@@ -416,6 +417,7 @@ final class FBLayerView: HvfFramebufferTextInput {
         } ?? false
     }
     override var guestModifierChords: Bool { session?.keyMapping.modifierChords ?? false }
+    override var guestTakesNonASCIIText: Bool { session?.guestTakesNonASCIIText ?? true }
     override func releaseGuestHeldKeys() { session?.releaseHeldKeys() }
     override func sendGuestModifierTap(_ action: String) {
         if let session { HvfFramebufferKeyInput.sendTap(action, to: session) }

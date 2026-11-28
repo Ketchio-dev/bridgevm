@@ -36,7 +36,7 @@ struct CloneWindowsHVFSheet: View {
                         .font(.caption).foregroundStyle(.red)
                 }
             }
-            Text("The duplicate gets its own disk, boot settings and TPM. BridgeVM also keeps a copy of the original VM’s TPM data and logs with the duplicate.")
+            Text("The duplicate gets its own disk, boot settings and a new TPM. When it first starts, sign in to Windows with your password, because your PIN won’t work there, and if BitLocker or device encryption is on, have the recovery key ready. The original VM doesn’t change.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
             HStack {

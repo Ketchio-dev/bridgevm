@@ -25,10 +25,15 @@ struct CreateVMMemoryOptions {
     var recommendedMiB: Int { choicesMiB.contains(6144) ? 6144 : 4096 }
 
     init(hostBytes: UInt64) {
-        // Preserve 4 GiB for macOS on larger hosts and offer 4 GiB on an 8 GiB Mac.
-        let ceilingMiB = max(4096, Int(hostBytes / (1024 * 1024)) - 4096)
+        let ceilingMiB = Self.ceilingMiB(hostBytes: hostBytes)
         choicesMiB = [2048, 4096, 6144, 8192, 12288, 16384, 24576, 32768]
             .filter { $0 <= ceilingMiB }
+    }
+
+    /// Preserve 4 GiB for macOS on larger hosts and offer 4 GiB on an 8 GiB Mac.
+    /// Running VMs together are measured against the same amount (ControlAppPower.sharedMemoryNotice).
+    static func ceilingMiB(hostBytes: UInt64) -> Int {
+        max(4096, Int(hostBytes / (1024 * 1024)) - 4096)
     }
 
     /// Settings offers the same range, widened so a VM's saved value stays selectable.

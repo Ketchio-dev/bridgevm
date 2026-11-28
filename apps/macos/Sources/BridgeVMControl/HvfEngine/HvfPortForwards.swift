@@ -98,10 +98,10 @@ final class HvfPortForwardNotice: ObservableObject {
     private var forwardsText: String? {
         guard let first = off.first else { return nil }
         if off.count == 1 {
-            return "Mac port \(first.host) is already in use, so it doesn’t reach Windows port \(first.guest). Quit the app using it, or choose another Mac port in Settings, then restart Windows."
+            return "Another app or another BridgeVM VM is using Mac port \(first.host), so it doesn’t reach Windows port \(first.guest). Quit that app or shut down that VM, or choose another Mac port in Settings, then restart Windows."
         }
         let ports = off.map { String($0.host) }.joined(separator: ", ")
-        return "Mac ports \(ports) are already in use, so they don’t reach Windows. Quit the apps using them, or choose other Mac ports in Settings, then restart Windows."
+        return "Other apps or other BridgeVM VMs are using Mac ports \(ports), so they don’t reach Windows. Quit those apps or shut down those VMs, or choose other Mac ports in Settings, then restart Windows."
     }
 }
 

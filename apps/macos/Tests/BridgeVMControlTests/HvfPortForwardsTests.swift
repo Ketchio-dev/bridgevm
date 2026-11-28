@@ -53,11 +53,11 @@ final class HvfPortForwardsTests: XCTestCase {
             session.handle(.unknown(line))
         }
         XCTAssertEqual(session.portForwardNotice.text,
-            "Mac port 8080 is already in use, so it doesn’t reach Windows port 80. Quit the app using it, or choose another Mac port in Settings, then restart Windows.")
+            "Another app or another BridgeVM VM is using Mac port 8080, so it doesn’t reach Windows port 80. Quit that app or shut down that VM, or choose another Mac port in Settings, then restart Windows.")
         session.handle(.unknown("BVNET forward-off host=3390 guest=3389"))
         session.handle(.unknown("BVNET forward-off host=x guest=1"))
         XCTAssertEqual(session.portForwardNotice.text,
-            "Mac ports 8080, 3390 are already in use, so they don’t reach Windows. Quit the apps using them, or choose other Mac ports in Settings, then restart Windows.")
+            "Other apps or other BridgeVM VMs are using Mac ports 8080, 3390, so they don’t reach Windows. Quit those apps or shut down those VMs, or choose other Mac ports in Settings, then restart Windows.")
         session.resetObservedRuntimeState(clearEvents: false)
         XCTAssertNil(session.portForwardNotice.text, "a new run opens the ports again")
     }
@@ -71,9 +71,9 @@ final class HvfPortForwardsTests: XCTestCase {
         XCTAssertEqual(notice.text, HvfPortForwardNotice.dnsUnreachableText)
         XCTAssertTrue(notice.text?.contains("Privacy & Security > Local Network") == true)
         notice.consume("BVNET forward-off host=8080 guest=80")
-        XCTAssertEqual(notice.text?.hasPrefix(HvfPortForwardNotice.dnsUnreachableText + " Mac port 8080"), true)
+        XCTAssertEqual(notice.text?.hasPrefix(HvfPortForwardNotice.dnsUnreachableText + " Another app or another BridgeVM VM is using Mac port 8080"), true)
         notice.consume("BVNET dns-reachable")
-        XCTAssertEqual(notice.text?.hasPrefix("Mac port 8080"), true)
+        XCTAssertEqual(notice.text?.hasPrefix("Another app or another BridgeVM VM is using Mac port 8080"), true)
         notice.consume("BVNET dns-unreachable")
         notice.reset()
         XCTAssertNil(notice.text)

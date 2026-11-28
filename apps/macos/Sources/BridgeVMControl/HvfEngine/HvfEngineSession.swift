@@ -50,7 +50,7 @@ final class HvfEngineSession: ObservableObject {
     let sleepPreventionID = UUID()
     var sleepPrevention = ControlAppPower.shared
     func updateSleepPrevention() {
-        sleepPrevention.update(sleepPreventionID, active: needsMacAwake)
+        sleepPrevention.update(sleepPreventionID, active: needsMacAwake, ramMiB: config.ramMiB)
     }
     /// Cleanup can remain unconfirmed after a dead runner, but no Windows task is using the Mac.
     var needsMacAwake: Bool {
@@ -783,6 +783,7 @@ extension HvfEngineSession: ControlAppTerminationSession {
     /// A runner that already died has nothing left to cancel or confirm, so waiting for it only held
     /// Quit for two deadlines behind a shutdown question and a Force Stop that had no target.
     var blocksAppTermination: Bool { (mayHaveOwnedWork && !runnerDiedWithoutCleanup) || hasPendingRuntimeStart }
+    var terminationName: String? { displayTitle }
 
     /// This app's own run, with no stop under way yet: the Stop below, and the Virtual Machine menu's, can begin.
     var terminationStopAvailable: Bool {

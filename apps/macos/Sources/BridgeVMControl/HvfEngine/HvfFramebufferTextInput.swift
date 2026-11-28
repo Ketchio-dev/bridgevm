@@ -24,11 +24,34 @@ class HvfFramebufferTextInput: NSView, @preconcurrency NSTextInputClient {
     private var caretEpoch = 0
     private var compositionTarget: HvfTextInputTargetIdentity?
     private var modifierTap = HvfModifierTap()
+    /// The input source in use before the view kept it to Roman layouts, given back afterwards.
+    private var inputSourceBeforeRoman: NSTextInputSourceIdentifier?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        observeInputSourceChanges()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        observeInputSourceChanges()
+    }
+
+    /// ⌘Space (or another shortcut) switching the Mac's input source: macOS takes the key, so the view sees
+    /// only Command go down and up, a bare Command tap that would open Start in Windows.
+    private func observeInputSourceChanges() {
+        NotificationCenter.default.addObserver(self, selector: #selector(inputSourceChanged(_:)),
+            name: NSTextInputContext.keyboardSelectionDidChangeNotification, object: nil)
+    }
+
+    @objc private func inputSourceChanged(_ notification: Notification) { cancelModifierTap() }
 
     var guestInputAvailable: Bool { false }
     var guestInputIdentity: HvfTextInputTargetIdentity? { nil }
     /// Whether the guest takes generic chords now (HvfHostKeyMapping.modifierChords).
     var guestModifierChords: Bool { false }
+    /// Whether Windows takes text other than printable ASCII now (HvfEngineSession.guestTakesNonASCIIText).
+    var guestTakesNonASCIIText: Bool { true }
     /// A key-down, or the key-up of a key held down on the guest (HvfFramebufferKeyInput).
     func sendGuestKeyEvent(_ event: NSEvent) -> Bool { false }
     /// Command came down: the Mac sends no key-up for a key released while it is down, so held keys go up now.
@@ -68,6 +91,7 @@ class HvfFramebufferTextInput: NSView, @preconcurrency NSTextInputClient {
 
     override func keyDown(with event: NSEvent) {
         cancelModifierTap()
+        refreshAllowedInputSources()
         // A key that leaves nothing composed may have moved the guest caret (a commit, an arrow key).
         defer { if !hasMarkedText() { forgetCaret() } }
         guard guestInputAvailable else { super.keyDown(with: event); return }
@@ -184,6 +208,31 @@ class HvfFramebufferTextInput: NSView, @preconcurrency NSTextInputClient {
         cancelModifierTap()
         cancelTextComposition()
         return true
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        guard super.becomeFirstResponder() else { return false }
+        refreshAllowedInputSources()
+        return true
+    }
+
+    /// Where Windows takes only printable ASCII (no agent yet: the sign-in screen after a boot; a secure
+    /// desktop: the lock screen or a UAC prompt), the Mac's input source is kept to Roman layouts while this
+    /// view has focus, as in a Mac password field. A Korean, Japanese or Chinese input source would otherwise
+    /// turn a typed password into text Windows refuses there, or that goes through the Windows clipboard.
+    /// Measured on macOS 27: 2-Set Korean switched to ABC, and came back once the view gave it back.
+    func refreshAllowedInputSources() {
+        let allowed = guestInputAvailable && !guestTakesNonASCIIText ? [NSAllRomanInputSourcesLocaleIdentifier] : nil
+        guard let context = inputContext, context.allowedInputSourceLocales != allowed else { return }
+        if allowed != nil { inputSourceBeforeRoman = context.selectedKeyboardInputSource }
+        context.allowedInputSourceLocales = allowed
+        // An active context applies the change when it is activated again.
+        if NSTextInputContext.current === context { context.deactivate(); context.activate() }
+        // Lifting the limit alone leaves the Roman layout selected.
+        if allowed == nil, let previous = inputSourceBeforeRoman {
+            inputSourceBeforeRoman = nil
+            context.selectedKeyboardInputSource = previous
+        }
     }
 
     override func viewDidMoveToWindow() {

@@ -115,11 +115,19 @@ extension VMLibrary {
         }
     }
 
-    /// FileManager clones on APFS (no space used, measured) and copies otherwise, with no time limit. The
-    /// `cp -c` it replaces ran under Shell.run's 30 s limit, and across volumes cp copies: a Windows ISO on
-    /// another drive was cut off after 30 s and then copied again from the start.
-    static func cloneOrCopyFile(from source: String, to destination: String) -> Bool {
-        (try? FileManager.default.copyItem(atPath: source, toPath: destination)) != nil
+    /// Clones on APFS (no space used, measured) and copies otherwise, with no time limit and keeping a
+    /// sparse disk's holes. FileManager's copy across volumes wrote a 2 GiB file holding 4 MiB of data
+    /// as 2 GiB (measured), so duplicating a VM stored on another drive wrote the disk's whole size to
+    /// the library volume. `clone: false` forces the copy path, as across volumes.
+    static func cloneOrCopyFile(from source: String, to destination: String, clone: Bool = true) -> Bool {
+        guard (try? FileManager.default.attributesOfItem(atPath: destination)) == nil else { return false }
+        var flags = COPYFILE_ALL | COPYFILE_RECURSIVE | COPYFILE_DATA_SPARSE
+        if clone { flags |= COPYFILE_CLONE }
+        guard copyfile(source, destination, nil, copyfile_flags_t(flags)) == 0 else {
+            try? FileManager.default.removeItem(atPath: destination)
+            return false
+        }
+        return true
     }
 
     static func cloneOrCopyDirectory(from source: String, to destination: String) -> Bool {
