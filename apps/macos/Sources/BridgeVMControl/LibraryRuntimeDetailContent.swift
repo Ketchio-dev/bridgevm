@@ -25,7 +25,9 @@ struct LibraryUnavailableRuntimeDetail: View {
         } actions: {
             Button("Reload Library", action: library.reload)
         }
-        .navigationTitle(config.name)
+        // The VM window has the VM's name: two windows of that name in the Window menu and Mission Control.
+        .navigationTitle("Library")
+        .navigationSubtitle(config.name)
         .accessibilityIdentifier("bridgevm.runtime.unavailable")
     }
 }
