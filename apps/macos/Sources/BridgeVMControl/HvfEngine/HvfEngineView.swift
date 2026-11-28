@@ -295,6 +295,7 @@ struct HvfEngineView: View {
             Text(label).frame(width: 92, alignment: .leading)
             TextField("", text: text, prompt: Text("\(label) path"))
                 .labelsHidden()
+                .accessibilityLabel(label)
                 .textFieldStyle(.roundedBorder)
                 .font(.body.monospaced())
                 .accessibilityIdentifier(identifier)
