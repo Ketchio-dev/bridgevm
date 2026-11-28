@@ -79,7 +79,7 @@ final class HvfClipboardImageNotice: ObservableObject {
     }
 
     var displayed: (text: String, help: String, symbol: String)? {
-        let imageHelp = "Clipboard PNGs can be up to 32 MiB, with each side up to 16,384 pixels. You can still paste the original where you copied it."
+        let imageHelp = "Clipboard images can be up to 128 MiB and 16,384 pixels on each side. For a larger image, save it to a shared folder."
         let textHelp = "Copy the text in smaller sections, or save it as a file and move it through a shared folder."
         let limits = "Each copy can contain up to \(fileLimits.files) items and \(Self.size(fileLimits.bytes)) in total."
         let windowsFilesHelp = "\(limits) Use a shared folder for larger selections, up to 16 GiB per file."

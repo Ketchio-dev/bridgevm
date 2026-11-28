@@ -11,8 +11,10 @@ use sha2::{Digest, Sha256};
 use std::ffi::CString;
 use std::os::raw::{c_char, c_void};
 
-/// Largest clipboard PNG, in bytes, moved in either direction.
-pub const CLIP_IMAGE_MAX_BYTES: usize = 32 * 1024 * 1024;
+/// Largest clipboard PNG, in bytes, moved in either direction: a 48 MP photo from Photos or
+/// Preview, which reaches the pasteboard as TIFF and is converted to PNG here, takes about 100 MB.
+/// It crosses in chunks (PUTDATA, GET), never in one agent line; the side limit bounds memory.
+pub const CLIP_IMAGE_MAX_BYTES: usize = 128 * 1024 * 1024;
 /// Largest clipboard image side, in pixels, moved in either direction.
 pub const CLIP_IMAGE_MAX_SIDE: u32 = 16384;
 
