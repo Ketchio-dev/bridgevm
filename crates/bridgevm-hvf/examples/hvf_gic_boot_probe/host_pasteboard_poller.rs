@@ -1,7 +1,6 @@
 //! Pasteboard observation and self-write suppression without native API access.
 
-use super::{host_files, host_image, HostClip, HostFiles, HostImage, PasteboardBackend};
-use sha2::{Digest, Sha256};
+use super::{host_files, host_image, HostClip, PasteboardBackend};
 use std::path::PathBuf;
 
 /// Ticks to keep reading a pasteboard that a new changeCount showed empty: a
@@ -14,14 +13,6 @@ pub(super) const EMPTY_REREADS: u8 = 30;
 pub struct Poller {
     last_count: i64,
     last_seen: Option<String>,
-    /// Digest of the image last reported or written (images on only).
-    last_image: Option<[u8; 32]>,
-    /// The last report held an image or files over the limits (no digest).
-    last_oversized: bool,
-    /// Digest of the `public.html` last reported or written (rich text on only).
-    last_html: Option<[u8; 32]>,
-    /// Digest of the file copy last reported (file copies on only).
-    last_files: Option<[u8; 32]>,
     /// The files apply_set_files put on the pasteboard (composed): never a Mac copy.
     own_files: Vec<PathBuf>,
     pub(super) observed_suppressed_change: bool,
@@ -42,10 +33,6 @@ impl Poller {
             // startup content is emitted once (host wins at startup).
             last_count: -1,
             last_seen: None,
-            last_image: None,
-            last_oversized: false,
-            last_html: None,
-            last_files: None,
             own_files: Vec::new(),
             observed_suppressed_change: false,
             images: false,
@@ -56,14 +43,14 @@ impl Poller {
     }
 
     /// One poll step: Some(text) iff the pasteboard changed externally to a
-    /// non-empty text we haven't already emitted or set ourselves.
+    /// non-empty text, the same text copied again too.
     #[cfg(test)]
     pub fn on_tick<B: PasteboardBackend>(&mut self, backend: &mut B) -> Option<String> {
         self.on_tick_clip(backend).and_then(|clip| clip.text)
     }
 
     /// One poll step: the change iff the pasteboard changed externally to a
-    /// non-empty text or (images on) an image we haven't already emitted or set.
+    /// non-empty text or (images on) an image. Our own writes never come back.
     pub fn on_tick_clip<B: PasteboardBackend>(&mut self, backend: &mut B) -> Option<HostClip> {
         self.observe(backend, false)
     }
@@ -111,18 +98,14 @@ impl Poller {
 
     pub(super) fn images_off(&mut self) {
         self.images = false;
-        self.last_image = None;
-        self.last_oversized = false;
     }
 
     pub(super) fn rich_text_off(&mut self) {
         self.html = false;
-        self.last_html = None;
     }
 
     pub(super) fn file_copies_off(&mut self) {
         self.files = false;
-        self.last_files = None;
     }
 
     fn observe<B: PasteboardBackend>(&mut self, backend: &mut B, force: bool) -> Option<HostClip> {
@@ -160,45 +143,16 @@ impl Poller {
             // A changed owner is newer even when no transferable content exists.
             // Preserve initial empty-startup behavior and never send a clear.
             self.last_seen = None;
-            self.last_image = None;
-            self.last_oversized = false;
-            self.last_html = None;
-            self.last_files = None;
             self.observed_suppressed_change = changed && !force;
             return None;
         }
         self.empty_rereads = 0;
-        let digest = match &image {
-            Some(HostImage::Png(png)) => Some(png.digest),
-            _ => None,
-        };
-        // A too-large image is reported once per copy so its skip is logged,
-        // and so is its going away (the copy that replaced it).
-        let files_digest = match &files {
-            Some(HostFiles::Read(copy)) => Some(copy.digest),
-            _ => None,
-        };
-        let oversized = matches!(image, Some(HostImage::TooLarge { .. }))
-            || matches!(files, Some(HostFiles::TooLarge { .. } | HostFiles::Unreadable { .. }));
-        let new_image =
-            digest != self.last_image || files_digest != self.last_files || oversized || self.last_oversized;
-        let html_digest = html.as_deref().map(html_digest);
-        if !force && self.last_seen == text && !new_image && self.last_html == html_digest {
-            self.observed_suppressed_change = true;
-            return None;
-        }
+        // Every Mac copy is reported, the same content copied again too: a copy
+        // Windows refused or lost goes again. clip_sync.rs skips what Windows
+        // already holds (ClipBaseline::holds).
         self.last_seen = text.clone();
-        self.last_image = digest;
-        self.last_oversized = oversized;
-        self.last_html = html_digest;
-        self.last_files = files_digest;
         Some(HostClip { text, image, html, files })
     }
-}
-
-/// What the poller remembers of a Mac HTML document.
-pub(super) fn html_digest(html: &str) -> [u8; 32] {
-    Sha256::digest(html.as_bytes()).into()
 }
 
 #[path = "host_pasteboard_write.rs"]

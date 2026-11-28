@@ -5,13 +5,17 @@ struct HvfClipboardSyncToggle: View {
     @Binding var isOn: Bool
     @State private var message: String?
 
-    var isDisabled: Bool { session.persistsLibraryPreferences && !session.libraryPreferencesEditable }
+    /// It changes while Windows runs too (HvfEngineSession.applyClipboardSyncToggle), not during a start or
+    /// another change.
+    var isDisabled: Bool {
+        session.persistsLibraryPreferences && !session.libraryPreferencesEditable && HvfHostSettingLiveSave.liveSlug(session) == nil
+    }
 
     var body: some View {
         Toggle("Share clipboard", isOn: Binding(get: { isOn }, set: update))
             .accessibilityIdentifier("bridgevm.runtime.clipboard")
             .disabled(isDisabled)
-            .help(session.persistsLibraryPreferences ? "Changes made while the VM is stopped are saved for future starts." : "")
+            .help(session.persistsLibraryPreferences ? "Saved for future starts. While Windows runs, it takes effect at once." : "")
             .alert("Clipboard sharing", isPresented: Binding(
                 get: { message != nil }, set: { if !$0 { message = nil } }
             )) {

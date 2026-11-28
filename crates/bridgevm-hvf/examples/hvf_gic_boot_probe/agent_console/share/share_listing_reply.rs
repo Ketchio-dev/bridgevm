@@ -26,6 +26,9 @@ impl AgentConsoleHarness {
         } else if line.starts_with("ERR") {
             if let Some(share) = self.share.as_mut() {
                 share.listing_same.forget();
+                if share.engine.has_synced() {
+                    share.note_listing_failed();
+                }
             }
             // A folder that is there but cannot be listed may hold newer Windows copies: the
             // waiting Mac files stay back. A missing one is created; its empty listing ends the wait.

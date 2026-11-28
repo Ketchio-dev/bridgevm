@@ -119,3 +119,10 @@ An existing but empty library returns an empty complete inventory. A missing
 library also returns an empty `list` result without creating a directory;
 `inspect` for a missing ID reports failure. JSON success is a query result, not
 evidence that a VM is running.
+
+With `--json`, a command that can't run at all, such as `inspect` or `readiness`
+with an unknown ID, or any invalid usage, prints no JSON: its sentence goes to
+standard error and the exit code says which kind it was.
+`status`, `start`, `stop` and `install` print their JSON result whenever they
+reach the app, success or not. Scripts read standard output only after checking
+the exit code.

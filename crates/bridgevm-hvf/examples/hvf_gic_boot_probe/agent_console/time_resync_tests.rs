@@ -80,6 +80,24 @@ fn a_ten_second_gap_sends_exactly_one_resync_at_host_time() {
     assert!(h.in_flight.is_none());
 }
 
+/// A Mac clock set back while the VM runs left Windows ahead until the next
+/// boot. A small step back still queues nothing.
+#[test]
+fn a_mac_clock_set_back_queues_one_resync() {
+    let (wall, mono) = clocks();
+    let mut h = resident((wall, mono));
+    let back = Duration::from_millis(1_500);
+    assert!(!h.clock.observe(wall + TICK - back, mono + TICK));
+    h.enqueue_time_resync();
+    assert_eq!(resyncs(&h), 0, "1.5 s back is under the threshold");
+
+    let back = back + Duration::from_secs(10);
+    assert!(h.clock.observe(wall + TICK * 2 - back, mono + TICK * 2));
+    h.enqueue_time_resync();
+    assert_eq!(resyncs(&h), 1);
+    assert_eq!(h.clock.pending_gap_ms, 10_000);
+}
+
 #[test]
 fn repeated_gaps_coalesce_and_one_in_flight_gets_one_follow_up() {
     let (wall, mono) = clocks();

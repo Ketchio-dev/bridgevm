@@ -82,8 +82,9 @@ impl AgentConsoleHarness {
         // change notices until it has.
         self.clip_push = false;
         if self.clipsync {
-            self.queue.retain(|req| !matches!(req, ServiceReq::ClipCaps));
-            self.queue.push_front(ServiceReq::ClipCaps);
+            // A Windows sign-out ends the agent and empties the clipboard. Start over as
+            // at startup: nothing is known of the guest's, and the Mac's copy goes again.
+            self.restart_clip_sync();
         }
         self.resume_link_watch();
         self.resume_print_watch();

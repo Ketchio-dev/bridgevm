@@ -215,6 +215,7 @@ extension HvfEngineSession {
             return
         }
         if line.hasPrefix(HvfGuestPrint.refusedPrefix) {
+            guard !readingRunLogBacklog else { return } // reported to the app that saw it happen
             let kind: HvfGuestPrintNotice.Kind = line.contains(" reason=too-large ") ? .tooLarge
                 : line.contains(" reason=write-error ") ? .notSaved : .notReceived
             return printNotice.show(kind)

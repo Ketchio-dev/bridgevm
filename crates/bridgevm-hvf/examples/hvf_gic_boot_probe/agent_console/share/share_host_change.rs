@@ -80,7 +80,7 @@ impl AgentConsoleHarness {
                 SyncAction::Get { name } => {
                     // Nor while the guest listing is refused for its size (share_listing_pause.rs):
                     // the scan goes on, so the next applied listing knows the Mac changes.
-                    if share.listing_too_large() || share.engine.waits_for_first_listing(&name) {
+                    if share.listing_held() || share.engine.waits_for_first_listing(&name) {
                         continue;
                     }
                     let snapshot = match read_share_snapshot_or_skip(share, &name, streams, &mut read) {
@@ -122,7 +122,7 @@ impl AgentConsoleHarness {
                 SyncAction::DeleteGuest { name } => {
                     // The scan may be older than this step: a file back on the Mac (an undo)
                     // keeps its guest copy, and the next scan sees it again.
-                    if share.listing_too_large()
+                    if share.listing_held()
                         || std::fs::symlink_metadata(share.host_dir.join(&name)).is_ok()
                     {
                         continue;

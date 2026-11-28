@@ -126,10 +126,9 @@ fn poller_reports_an_image_copy_once_and_never_its_own_write() {
     (board.text, board.png) = (None, Some(png_header(4, 3)));
     assert_eq!(image_of(poller.on_tick_clip(&mut board)), Some((4, 3)));
     assert_eq!(poller.on_tick_clip(&mut board), None);
-    // The same image copied again is a re-copy, not a new report.
+    // The same image copied again is a copy too.
     board.count += 1;
-    assert_eq!(poller.on_tick_clip(&mut board), None);
-    assert!(poller.observed_suppressed_change);
+    assert_eq!(image_of(poller.on_tick_clip(&mut board)), Some((4, 3)));
     // A guest image written by us does not come back.
     let guest = admit_png(png_header(9, 9)).unwrap();
     poller.apply_set_image(&mut board, &guest, Some("cells"));

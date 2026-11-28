@@ -177,3 +177,30 @@ fn a_listing_too_large_in_bytes_pauses_too() {
     rig.run(8);
     assert_eq!(rig.guest.content("a.txt"), Some(&b"one"[..]));
 }
+
+#[test]
+fn a_windows_folder_that_went_away_holds_the_share_instead_of_emptying_the_mac_folder() {
+    // Renamed in Explorer after files synced, its listing failed, then a Mac edit: its PUT made the
+    // folder again (the agent creates a file's parents), and the next listing, with only that file,
+    // deleted every other file on the Mac.
+    let mut rig = Rig::synced("folder-gone", "a.txt", b"one");
+    std::fs::write(rig.dir.join("b.txt"), b"two").unwrap();
+    rig.run(8);
+    assert_eq!(rig.guest.content("b.txt"), Some(&b"two"[..]));
+    let _ = ShareState::take_pause_lines();
+    let renamed = std::mem::take(&mut rig.guest.files);
+    rig.guest.root_missing = true;
+    rig.run(4);
+    std::fs::write(rig.dir.join("a.txt"), b"mac edit").unwrap();
+    rig.run(12);
+    assert_eq!(rig.host("b.txt").as_deref(), Some(&b"two"[..]), "the other Mac files stay");
+    assert!(rig.guest.root_missing, "nothing made the Windows folder again");
+    assert_eq!(ShareState::take_pause_lines(), ["BVAGENT SHARE paused windows-folder-unreadable"]);
+    // Renamed back: the share goes on and the Mac edit is sent.
+    rig.guest.files = renamed;
+    rig.guest.root_missing = false;
+    rig.run(12);
+    assert_eq!(ShareState::take_pause_lines(), ["BVAGENT SHARE resumed"]);
+    assert_eq!(rig.guest.content("a.txt"), Some(&b"mac edit"[..]));
+    assert_eq!(rig.host("b.txt").as_deref(), Some(&b"two"[..]));
+}

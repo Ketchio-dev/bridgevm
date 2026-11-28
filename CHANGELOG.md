@@ -46,6 +46,27 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- A Mac change made just as the shared folder is renamed or deleted in
+  Windows no longer makes the Windows folder again with only that file,
+  after the Guest Tools update.
+- Reopening BridgeVM while Windows runs no longer repeats an old "print
+  job didn't reach your Mac" notice.
+- Signing out of Windows and back in no longer loses the shared clipboard:
+  the Mac's copy is sent to Windows again, so Ctrl+V pastes it without
+  copying it once more on the Mac.
+- "Keep Mac awake" no longer fails silently: when macOS refuses it, the
+  library card of each running VM or Windows install says so and asks
+  you to check the Mac's sleep settings.
+- Setting the Mac's clock back by more than a couple of seconds while
+  Windows runs now sets Windows' clock back too (through Guest Tools),
+  instead of leaving it ahead until the next restart.
+- Port forwards changed while Windows runs stay changed after Windows
+  restarts, instead of going back to the ones the VM started with.
+- Copying the same thing again now sends it again. If Windows refused or lost
+  a Mac copy, press Command-C again. If files copied in Windows did not arrive,
+  copy them again in Explorer.
+- "Share clipboard" can be turned off and on while Windows runs; before,
+  it was disabled until Windows shut down.
 - In a VM whose Windows account isn't an administrator, BridgeVM no longer
   tries to update Guest Tools at every launch and reports "Guest Tools
   couldn't update" each time. That update can't work without administrator
@@ -91,6 +112,12 @@ All notable changes to BridgeVM are documented in this file.
 - When Windows has no driver for the new display adapter, for example
   after restoring an older snapshot, the notice now offers Install
   instead of pointing at Device Manager.
+- Renaming, moving or deleting the shared folder in Windows no longer
+  deletes the files in the Mac folder at the next Mac change; folder sync
+  pauses and says so until the Windows folder is back.
+- Windows shows the right time from the start of each boot, at the
+  sign-in screen and during Setup too, instead of being off by the Mac's
+  time-zone offset until someone signs in.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.

@@ -91,10 +91,18 @@ final class HvfEngineSession: ObservableObject {
     var runtimeTransitionInProgress = false
     var timer: Timer?
     var tailReader = TailOffsetReader()
+    /// run.log's size when this app attached to a VM already running: the lines up to there are read
+    /// again from the start, and a notice about one past event (a refused print job) is not shown again.
+    var runLogBacklogEnd: UInt64?
+    var readingRunLogBacklog: Bool { runLogBacklogEnd.map { tailReader.offset <= $0 } ?? false }
     var agentEvents = BvAgentEvent.Stream() // run.log's lines across polls, with tailReader
     var lastHeartbeatDate: Date?
     var openSettingsSheets = Set<ObjectIdentifier>()
     var serviceStarted = false
+    /// Control lines for settings changed while Windows runs (port forwards), by verb. Each Windows
+    /// restart starts a new VM process with the settings of the start (hvf-runner), so they go again
+    /// at each service start until the VM stops.
+    var liveControlLines: [String: String] = [:]
     var guestStartApps = false // the agent's last READY carried `startapps` (HvfGuestStartApps)
     var hardwareCursorOffSent = false // HWCursor=0 went to the guest after the setting was turned off
     // Windows links (HvfGuestLinks.swift): the registration's removal went to the guest after the setting was
@@ -227,6 +235,14 @@ final class HvfEngineSession: ObservableObject {
         runtimeTransitionInProgress = true
         defer { runtimeTransitionInProgress = false }
         adoptObservedAttachment(reportDuplicateLaunch: reportDuplicateLaunch)
+        return true
+    }
+
+    /// Sends a setting's control line now, or at the service start when the agent hasn't started yet, and
+    /// again after each Windows restart (liveControlLines).
+    func sendLiveControl(_ line: String, verb: String) -> Bool {
+        if serviceStarted { guard sendCtl(line) else { return false } }
+        liveControlLines[verb] = line
         return true
     }
 
@@ -551,6 +567,7 @@ final class HvfEngineSession: ObservableObject {
         guard !runtimeTransitionInProgress, !mayHaveOwnedWork else { return }
         runtimeTransitionInProgress = true
         resetPendingPrintJobs()
+        liveControlLines = [:]
         appPacing.end(evidenceDir: config.evidenceDir)
         if let process, let identity = ownedProcessIdentity, !process.isRunning {
             lastOwnedExit = HvfOwnedRuntimeExit(identity: identity, process: process)
@@ -598,12 +615,14 @@ final class HvfEngineSession: ObservableObject {
 
     func resetObservedRuntimeState(clearEvents: Bool) {
         resetPendingPrintJobs()
+        liveControlLines = [:]
         if !hasPendingGUIStart { guiStartOperation = nil }
         appPacing.begin()
         legacyPaste = HvfLegacyPasteState()
         heldKeys = HvfHeldKeys()
         inputDriver.attachUnknown(binding: inputBinding)
         tailReader = TailOffsetReader()
+        runLogBacklogEnd = nil
         agentEvents = BvAgentEvent.Stream()
         displayDriverUnboundDismissed = false
         displayDriverUnbound = false
@@ -737,6 +756,8 @@ extension HvfEngineSession {
         attachedToExistingProcess = true
         nextAttachedLivenessCheck = HvfAttachedLivenessSchedule.next(after: Date())
         resetObservedRuntimeState(clearEvents: true)
+        let log = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log").path
+        runLogBacklogEnd = (try? FileManager.default.attributesOfItem(atPath: log)[.size] as? NSNumber)?.uint64Value
         connectionState = .booting
         startPolling() // reads run.log from the start
         resumeAfterReattach()
@@ -753,6 +774,15 @@ extension HvfEngineSession {
     func applyClipboardSyncToggle(_ enabled: Bool,
         publish: RegistrationPublish = { VMRegistrationWriter.commit($0, to: $1) }) -> (isOn: Bool, message: String?) {
         guard persistsLibraryPreferences else { return (enabled, nil) }
+        // While Windows runs the probe switches at once, and vm.json is saved at the stop.
+        if let slug = HvfHostSettingLiveSave.liveSlug(self) {
+            guard sendLiveControl("BVCLIPSYNC " + (enabled ? "on" : "off"), verb: "BVCLIPSYNC") else {
+                return (config.clipboardSync, "BridgeVM couldn’t change clipboard sharing while Windows runs. Shut down Windows, then try again.")
+            }
+            HvfHostSettingLiveSave.record("Share clipboard", for: slug) { $0.clipboardSyncEnabled = enabled ? nil : false }
+            config.clipboardSync = enabled
+            return (enabled, nil)
+        }
         let message = saveClipboardSyncPreference(enabled, publish: publish)
         return (config.libraryContext?.config.clipboardSyncEnabled ?? true, message)
     }

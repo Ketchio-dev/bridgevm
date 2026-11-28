@@ -544,10 +544,14 @@ impl AgentConsoleHarness {
         }
         self.ctl_read_scratch.clear();
         let mut stopping = false;
+        let mut clip_switch = None;
         for line in self.ctl_line_scratch.drain(..) {
             let command = line.trim();
             if let Some(request) = command.strip_prefix("BVDROP ") {
                 self.drops.submit(request);
+            } else if let Some(on) = super::clip_switch::clip_switch(command) {
+                // The app's "Share clipboard" while Windows runs; the last one read counts.
+                clip_switch = Some(on);
             } else if let Some(spec) = net_forward_spec(command) {
                 // The NAT's, not Windows': the forwards the app set while Windows runs.
                 bridgevm_hvf::net_nat::request_forwards(bridgevm_hvf::net_nat::parse_forwards(spec));
@@ -562,6 +566,9 @@ impl AgentConsoleHarness {
             } else if !command.is_empty() {
                 eprintln!("BVAGENT CTL rejected reason=queue_full");
             }
+        }
+        if let Some(on) = clip_switch {
+            self.switch_clipsync(on);
         }
         if stopping {
             self.stop_agent_update(Instant::now());
@@ -585,6 +592,12 @@ impl AgentConsoleHarness {
         // between replies, before it reads our next request, so a poll already
         // queued or on the wire sees the change.
         if line == "CLIPCHANGED" {
+            // A file copy that failed reads the same when copied again: a new copy.
+            let failed = self.last_synced.files_failed.take();
+            if failed.is_some() && failed == self.last_synced.files {
+                self.last_synced.files = None;
+                self.last_synced.guest_reply = None;
+            }
             if self.clipsync && !self.any_pending(|req| matches!(req, ServiceReq::ClipPoll)) {
                 self.queue.push_back(ServiceReq::ClipPoll);
             }

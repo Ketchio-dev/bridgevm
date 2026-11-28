@@ -7,7 +7,7 @@
 //
 // PUBLIC API (agent_console.rs codes against exactly this):
 //   HostPasteboard::spawn(poll_ms) -> HostPasteboard
-//   try_changed_clip(&self) -> Option<HostClip>  // deduped external changes
+//   try_changed_clip(&self) -> Option<HostClip>  // external changes
 //   set(&self, text: String)                     // guest->host text sync
 //   set_image(&self, png, text: Option<String>)  // guest->host image (+text)
 //   set_images(&self, on: bool)                  // read images too (IMAGE_PNG)
@@ -17,8 +17,8 @@
 //   set_file_copies(&self, on: bool)             // read file URLs too (CLIPSETFILES)
 //
 // Echo suppression contract: content written via set()/set_image()/set_files() must NOT
-// come back out of try_changed_clip(), and neither must content equal to the
-// last one emitted/set. A refused queued write may re-report that content to
+// come back out of try_changed_clip(). A Mac copy of the same content again is
+// reported: clip_sync.rs skips what the guest already holds. A refused queued write may re-report that content to
 // restore host ownership. The first poll after spawn reports the pasteboard's
 // current content (host wins at startup); so does the first poll after images
 // are switched on, when the pasteboard holds an image.

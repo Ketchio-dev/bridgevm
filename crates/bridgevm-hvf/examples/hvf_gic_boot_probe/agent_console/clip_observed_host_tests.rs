@@ -78,3 +78,57 @@ fn observed_mac_copy_before_guest_reply_is_preserved() {
 fn observed_mac_copy_after_queued_guest_reply_is_preserved() {
     observed_mac_copy_survives_guest_reply(true);
 }
+
+#[test]
+fn mac_copy_reaches_windows_again_after_a_sign_out_and_in() {
+    let mut rig = ClipRig::new("");
+    let mut mac = MemoryPasteboard {
+        text: "mac-copy".into(),
+        count: 1,
+    };
+    assert!(rig.pasteboard.poll(&mut mac));
+    rig.settle();
+    rig.settle();
+    assert_eq!(rig.guest, "mac-copy");
+    // Signing out ends the agent with the session's clipboard; the next
+    // sign-in starts a new agent with an empty one.
+    rig.guest.clear();
+    rig.h.handle_service_reply("READY GUEST", None, None, rig.now);
+    assert!(rig.pasteboard.poll(&mut mac));
+    rig.settle();
+    rig.settle();
+    assert_eq!(rig.guest, "mac-copy", "the Mac copy did not reach the new session");
+    assert!(rig.mac_sets().is_empty());
+}
+
+#[test]
+fn sharing_switched_off_while_windows_runs_stops_both_ways_until_it_is_on_again() {
+    let mut rig = ClipRig::new("");
+    let mut mac = MemoryPasteboard { text: "mac-copy".into(), count: 1 };
+    assert!(rig.pasteboard.poll(&mut mac));
+    rig.settle();
+    rig.settle();
+    assert_eq!(rig.guest, "mac-copy");
+    let ctl = std::env::temp_dir().join(format!("bv-clip-switch-{}", std::process::id()));
+    std::fs::write(&ctl, b"BVCLIPSYNC off\n").unwrap();
+    rig.h.ctl_path = Some(ctl.display().to_string());
+    rig.h.ingest_ctl();
+    // A password copied on the Mac, and one in Windows: neither crosses.
+    (mac.text, mac.count) = ("mac password".into(), mac.count + 1);
+    rig.pasteboard.poll(&mut mac);
+    rig.guest = "windows password".into();
+    rig.settle();
+    rig.settle();
+    assert_eq!(rig.guest, "windows password", "the Mac copy reached Windows");
+    assert!(rig.mac_sets().is_empty(), "the Windows copy reached the Mac");
+    // On again: as at the start, the Mac's copy goes.
+    std::fs::write(&ctl, b"BVCLIPSYNC off\nBVCLIPSYNC on\n").unwrap();
+    rig.h.ingest_ctl();
+    assert!(rig.pasteboard.poll(&mut mac));
+    rig.settle();
+    rig.settle();
+    assert_eq!(rig.guest, "mac password");
+    assert!(rig.mac_sets().is_empty());
+    let _ = std::fs::remove_file(&ctl);
+    assert_eq!(super::clip_switch::clip_switch("BVCLIPSYNC maybe"), None);
+}

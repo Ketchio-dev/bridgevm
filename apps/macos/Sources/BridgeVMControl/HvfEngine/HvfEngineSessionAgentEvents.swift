@@ -28,6 +28,7 @@ extension HvfEngineSession {
             applyGuestHardwareCursorSetting()
             applyGuestLinksSetting()
             applyPrintSetting()
+            for verb in liveControlLines.keys.sorted() { sendCtl(liveControlLines[verb]!) }
             extendGrownDisk()
             sendDropsWaitingForWindows()
             if let ownedController { ownedController.guestServiceReady() }
