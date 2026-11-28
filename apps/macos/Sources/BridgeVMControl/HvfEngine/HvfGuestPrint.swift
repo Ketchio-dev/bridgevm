@@ -14,6 +14,8 @@ enum HvfGuestPrint {
     static let refusedPrefix = "BVPRINT refused "
     /// The agent's PRINTWATCH output when it could not make the printer.
     static let printerFailed = "BVPRINT printer=failed"
+    /// The agent's `PRINTWATCH off` output when it could not remove the printer.
+    static let removeFailed = "BVPRINT printer=remove-failed"
     /// agent_console/print_jobs.rs MAX_PRINT_JOB_BYTES.
     static let maxJobBytes = 256 << 20
 
@@ -131,8 +133,9 @@ final class HvfPDFPrintPresenter: NSObject, HvfPrintPresenter {
 /// The last thing about Windows printing the user should know; cleared by the next job printed.
 @MainActor
 final class HvfGuestPrintNotice: ObservableObject {
-    /// `printerFailed` carries the agent's `detail=` (a Windows error, often a stopped Print Spooler).
-    enum Kind: Equatable { case printerFailed(detail: String?), tooLarge, notReceived, notOpened }
+    /// The agent's `detail=` for a printer it could not make stays in the run log: it may be any Windows
+    /// error, in Windows' language.
+    enum Kind: Equatable { case printerFailed, notRemoved, tooLarge, notReceived, notSaved, notOpened }
 
     @Published private(set) var shown: Kind?
 
@@ -143,11 +146,12 @@ final class HvfGuestPrintNotice: ObservableObject {
     var text: String? {
         switch shown {
         case nil: return nil
-        case .printerFailed(let detail?):
-            return "Windows couldn’t create the Mac (BridgeVM) printer (\(detail)), so check that Microsoft Print to PDF is on in Windows Features and restart the VM."
-        case .printerFailed(nil): return "Turn on Microsoft Print to PDF in Windows Features and restart the VM to create the Mac (BridgeVM) printer."
-        case .tooLarge: return "The Windows print job exceeds the 256 MiB limit, so try printing fewer pages at a time."
+        case .printerFailed:
+            return "Windows couldn’t add the Mac (BridgeVM) printer, so restart Windows, and if that doesn’t help, turn on Microsoft Print to PDF in Windows Features."
+        case .notRemoved: return "Windows couldn’t remove the Mac (BridgeVM) printer, so BridgeVM will try again the next time Windows starts."
+        case .tooLarge: return "The Windows print job is larger than 256 MB, so try printing fewer pages at a time."
         case .notReceived: return "The print job from Windows didn’t reach your Mac, so try printing again."
+        case .notSaved: return "Your Mac couldn’t save the print job from Windows, so check that your Mac has free space and print again."
         case .notOpened: return "Your Mac couldn’t open the print job from Windows, so try printing again."
         }
     }
@@ -164,39 +168,56 @@ extension HvfEngineSession {
 
     /// At `BVAGENT SERVICE start`. On: the agent makes the printer (only what is missing) and watches it, every
     /// boot, and jobs an earlier probe left join the print panels. Turned off: the printer's removal once per app
-    /// session.
+    /// session, and the jobs still waiting for a print panel go, so none opens when printing is turned on again.
     func applyPrintSetting() {
         if printToMacWanted {
             printOffSent = false
             _ = sendCtl(HvfGuestPrint.watchCommand)
             HvfGuestPrint.leftovers(in: printDirectory).forEach(queuePrintJob)
             presentNextPrintJob()
-        } else if printToMacSetting == false, !printOffSent {
-            printOffSent = sendCtl(HvfGuestPrint.offCommand)
+        } else if printToMacSetting == false {
+            if !printOffSent { printOffSent = sendCtl(HvfGuestPrint.offCommand) }
+            printQueue.removeAll()
+            HvfGuestPrint.leftovers(in: printDirectory).map(\.url).filter { $0 != printShowing }.forEach(removePrintJob)
         }
     }
 
     /// The agent's PRINTWATCH output: a printer it could not make is one notice per run, until a
     /// later PRINTWATCH (the next boot) makes it.
+    /// A printer Windows could not remove is asked again at the next agent start.
     func printWatchReported(_ output: String) {
-        guard printToMacWanted else { return }
-        if output.contains("BVPRINT printer=ready") {
-            if case .printerFailed? = printNotice.shown { printNotice.show(nil) }
+        guard printToMacWanted else {
+            guard printToMacSetting == false else { return }
+            if output.contains(HvfGuestPrint.removeFailed) {
+                printOffSent = false
+                printNotice.show(.notRemoved)
+            } else if printNotice.shown == .notRemoved, output.contains("BVPRINT printer=") {
+                printNotice.show(nil) // removed, or already absent
+            }
             return
         }
-        guard let line = output.split(whereSeparator: \.isNewline).first(where: { $0.contains(HvfGuestPrint.printerFailed) }),
-              !printSetupFailureShown else { return }
+        if output.contains("BVPRINT printer=ready") {
+            if printNotice.shown == .printerFailed || printNotice.shown == .notRemoved { printNotice.show(nil) }
+            return
+        }
+        guard output.contains(HvfGuestPrint.printerFailed), !printSetupFailureShown else { return }
         printSetupFailureShown = true
-        let rest = line.components(separatedBy: HvfGuestPrint.printerFailed + " detail=").dropFirst().first
-        let detail = rest.map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200)) }
-        printNotice.show(.printerFailed(detail: detail?.isEmpty == false ? detail : nil))
+        printNotice.show(.printerFailed)
     }
 
     /// A probe `BVPRINT ...` line: a job joins the queue of print panels, a refusal is a notice.
     func printLineReported(_ line: String) {
-        guard printToMacWanted else { return }
+        guard printToMacWanted else {
+            // A job that came over just before the printer went: not printed, not kept.
+            if printToMacSetting == false, let job = HvfGuestPrint.job(from: line, directory: printDirectory) {
+                removePrintJob(job.url)
+            }
+            return
+        }
         if line.hasPrefix(HvfGuestPrint.refusedPrefix) {
-            return printNotice.show(line.contains(" reason=too-large ") ? .tooLarge : .notReceived)
+            let kind: HvfGuestPrintNotice.Kind = line.contains(" reason=too-large ") ? .tooLarge
+                : line.contains(" reason=write-error ") ? .notSaved : .notReceived
+            return printNotice.show(kind)
         }
         guard let job = HvfGuestPrint.job(from: line, directory: printDirectory), HvfGuestPrint.exists(job) else { return }
         queuePrintJob(job)
@@ -257,7 +278,7 @@ extension HvfEngineSession {
         guard printShowing == url, printPanelPresented else { return }
         printPanelPresented = false
         printShowing = nil
-        if case .printerFailed? = printNotice.shown {} else { printNotice.show(nil) }
+        if printNotice.shown != .printerFailed { printNotice.show(nil) }
         // A stopped run has no work to present; a new agent may have queued jobs
         // behind this old panel while it was still open.
         if printGeneration == generation || serviceStarted { presentNextPrintJob() }

@@ -61,6 +61,11 @@ All notable changes to BridgeVM are documented in this file.
   descriptor file or a Parallels disk now says to convert it, instead
   of importing a few-KB "VM" with no boot partition; the import
   progress shows a spinner until the converter reports a percent.
+- Turning Print to Mac off now drops the print jobs waiting for the Mac,
+  so they no longer open when printing is turned on again, and a printer
+  Windows could not remove is tried again; printing notices no longer
+  blame Microsoft Print to PDF for every failure or say "try again" when
+  the Mac is out of space.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.

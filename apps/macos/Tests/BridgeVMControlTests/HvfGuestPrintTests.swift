@@ -4,7 +4,7 @@ import Foundation
 import XCTest
 @testable import BridgeVMControl
 
-/// "Mac으로 인쇄" (HvfGuestPrint.swift): the setting, the agent's PRINTWATCH, and the path from a probe
+/// "Print to Mac" (HvfGuestPrint.swift): the setting, the agent's PRINTWATCH, and the path from a probe
 /// `BVPRINT job` line to the Mac's print panel.
 @MainActor
 final class HvfGuestPrintTests: XCTestCase {
@@ -280,32 +280,34 @@ final class HvfGuestPrintTests: XCTestCase {
 
     /// A printer Windows could not make, a job the probe refused, a job the panel cannot open: one notice
     /// each, and the VM goes on.
-    func testFailuresAreOneKoreanNoticeEach() async throws {
+    func testFailuresAreOneNoticeEach() async throws {
         let fixture = try HvfRuntimeSessionStoreFixture()
         defer { fixture.clean() }
         let (session, presenter, _, _) = try session(fixture)
         session.handle(.commandOutput(label: "PRINTWATCH", body: "BVPRINT printer=ready"))
         XCTAssertNil(session.printNotice.shown)
-        session.handle(.commandOutput(label: "PRINTWATCH", body: "BVPRINT printer=failed detail=The spooler service is not reachable"))
-        XCTAssertEqual(session.printNotice.shown, .printerFailed(detail: "The spooler service is not reachable"))
-        XCTAssertEqual(session.printNotice.text, "Windows couldn’t create the Mac (BridgeVM) printer (The spooler service is not reachable), so check that Microsoft Print to PDF is on in Windows Features and restart the VM.")
+        session.handle(.commandOutput(label: "PRINTWATCH", body: "BVPRINT printer=failed detail=Der Druckspoolerdienst wird nicht ausgeführt."))
+        XCTAssertEqual(session.printNotice.shown, .printerFailed)
+        // Any Windows error, in Windows' language, stays in the run log; the sentence fits every cause.
+        XCTAssertEqual(session.printNotice.text, "Windows couldn’t add the Mac (BridgeVM) printer, so restart Windows, and if that doesn’t help, turn on Microsoft Print to PDF in Windows Features.")
         session.printNotice.show(nil)
         session.handle(.commandOutput(label: "PRINTWATCH", body: "BVPRINT printer=failed detail=again"))
         XCTAssertNil(session.printNotice.shown, "once per run")
         session.handle(.commandOutput(label: "PRINTWATCH", body: "BVPRINT printer=failed"))
         session.resetObservedRuntimeState(clearEvents: false)
         session.handle(.commandOutput(label: "PRINTWATCH", body: "BVPRINT printer=failed"))
-        XCTAssertEqual(session.printNotice.shown, .printerFailed(detail: nil), "a new run reports it again")
-        let text = try XCTUnwrap(session.printNotice.text)
-        XCTAssertTrue(text.contains("Microsoft Print to PDF") && text.hasSuffix("Mac (BridgeVM) printer."), text)
-        XCTAssertEqual(text.filter { $0 == "." }.count, 1, "one sentence")
+        XCTAssertEqual(session.printNotice.shown, .printerFailed, "a new run reports it again")
         session.handle(.commandOutput(label: "PRINTWATCH", body: "BVPRINT printer=ready"))
         XCTAssertNil(session.printNotice.shown, "Windows made the printer after all (Print to PDF turned on, Windows restarted)")
 
         session.handle(.unknown("BVPRINT refused reason=too-large bytes=300000000"))
         XCTAssertEqual(session.printNotice.shown, .tooLarge)
+        XCTAssertEqual(session.printNotice.text, "The Windows print job is larger than 256 MB, so try printing fewer pages at a time.")
         session.handle(.unknown("BVPRINT refused reason=short bytes=3000"))
         XCTAssertEqual(session.printNotice.shown, .notReceived)
+        // The Mac's own disk: printing again from Windows would fail the same way.
+        session.handle(.unknown("BVPRINT refused reason=write-error bytes=3000"))
+        XCTAssertEqual(session.printNotice.text, "Your Mac couldn’t save the print job from Windows, so check that your Mac has free space and print again.")
 
         presenter.succeeds = false
         let (url, line) = try job(session, 1, pdf("one"))
@@ -320,7 +322,7 @@ final class HvfGuestPrintTests: XCTestCase {
         XCTAssertEqual(presenter.shown.last, next, "the next job still opens")
         presenter.finish()
         XCTAssertNil(session.printNotice.shown, "a printed job clears the notice")
-        for kind in [HvfGuestPrintNotice.Kind.tooLarge, .notReceived, .notOpened] {
+        for kind in [HvfGuestPrintNotice.Kind.printerFailed, .notRemoved, .tooLarge, .notReceived, .notSaved, .notOpened] {
             session.printNotice.show(kind)
             XCTAssertEqual(session.printNotice.text?.filter { $0 == "." }.count, 1, "\(kind): one sentence")
         }
@@ -357,7 +359,8 @@ final class HvfGuestPrintTests: XCTestCase {
         session.handle(.unknown(line))
         session.handle(.commandOutput(label: "PRINTWATCH", body: "BVPRINT printer=failed detail=x"))
         XCTAssertTrue(presenter.shown.isEmpty && session.printNotice.shown == nil, "off: nothing opens, nothing is said")
-        XCTAssertTrue(exists(url))
+        // A job that came over as the printer went is not printed weeks later, when printing is on again.
+        XCTAssertFalse(exists(url))
         change(true)
         XCTAssertEqual(library.latestConfiguration(for: saved).printToMac, true)
         agentStarts()
@@ -369,12 +372,42 @@ final class HvfGuestPrintTests: XCTestCase {
         let (late, lateLine) = try job(session, 2, pdf("late"))
         session.handle(.unknown(lateLine))
         XCTAssertTrue(presenter.shown.isEmpty, "off while running: nothing opens")
-        XCTAssertTrue(exists(late))
+        XCTAssertFalse(exists(late))
         XCTAssertEqual(library.latestConfiguration(for: saved).printToMac, true, "vm.json waits for the stop")
         session.connectionState = .stopped
         session.markStopped()
         XCTAssertEqual(library.latestConfiguration(for: saved).printToMac, false)
         XCTAssertNil(library.operationError)
+    }
+
+    /// Off: the jobs an earlier run left for a print panel go at the agent start (they opened, out of nowhere,
+    /// when printing was turned on again), and a printer Windows could not remove is asked again.
+    func testPrintingOffDropsWaitingJobsAndAsksAgainForARemovalThatFailed() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        let (session, presenter, library, saved) = try session(fixture)
+        let control = URL(fileURLWithPath: session.config.ctlFilePath)
+        try FileManager.default.createDirectory(at: control.deletingLastPathComponent(), withIntermediateDirectories: true)
+        func offSent() -> Int {
+            ((try? String(contentsOf: control, encoding: .utf8)) ?? "").split(separator: "\n").filter { $0 == "PRINTWATCH off" }.count
+        }
+        func agentStarts() { session.connectionState = .connected(host: "guest"); session.handle(.serviceStart(tMs: 1)) }
+        session.connectionState = .stopped
+        XCTAssertTrue(session.applyPrintToggle(false) == (false, nil))
+        let (left, _) = try job(session, 1, pdf("left"))
+        agentStarts()
+        XCTAssertEqual(offSent(), 1)
+        XCTAssertFalse(exists(left), "a job left for the print panel goes when printing is off")
+        session.handle(.commandOutput(label: "PRINTWATCH off", body: "BVPRINT printer=remove-failed detail=x"))
+        XCTAssertEqual(session.printNotice.shown, .notRemoved)
+        agentStarts()
+        XCTAssertEqual(offSent(), 2, "asked again at the next agent start")
+        session.handle(.commandOutput(label: "PRINTWATCH off", body: "BVPRINT printer=removed"))
+        XCTAssertNil(session.printNotice.shown)
+        agentStarts()
+        XCTAssertEqual(offSent(), 2, "once removed, once per app session")
+        XCTAssertTrue(presenter.shown.isEmpty)
+        XCTAssertEqual(library.latestConfiguration(for: saved).printToMac, false)
     }
 }
 #endif
