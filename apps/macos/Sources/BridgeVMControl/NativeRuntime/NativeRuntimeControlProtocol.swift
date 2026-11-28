@@ -49,8 +49,8 @@ struct NativeRuntimeStopRefused: Error, Equatable, Sendable {
     static let operationUnavailable = Self(reason: "The app is still accepting this stop; run the command again.")
     static let modelUnavailable = Self(reason: "The app's VM library is not open yet; open the library window and try again.")
     static let targetUnavailable = Self(reason: "This VM is not running in the app; check `bridgevm app status`.")
-    static let ambiguousTarget = Self(reason: "The app keeps more than one run of this VM; stop it from the app's VM window.")
-    static let unsupportedRuntime = Self(reason: "The app only observes this VM and cannot stop it; stop it from the app's VM window.")
+    static let ambiguousTarget = Self(reason: "The app keeps more than one run of this VM; shut it down from the app's VM window.")
+    static let unsupportedRuntime = Self(reason: "The app only observes this VM and cannot stop it; shut it down from the app's VM window.")
     static let stopInProgress = Self(reason: "Another stop of this VM is in progress; wait for it to finish.")
     static let notOwned = Self(reason: "The app no longer owns this run; check `bridgevm app status`.")
 }

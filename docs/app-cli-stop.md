@@ -29,7 +29,7 @@ If the guest control file was replaced, the app requests runner cancellation
 without writing to the replacement. Each retained helper and TPM process gets a
 TERM grace period, then KILL and reap observation if needed; on TERM the HVF
 helper stops its vCPUs and saves the UEFI vars and disk before it exits. If the
-app's own Stop is already waiting for Windows, the command joins that operation,
+app's own Shut Down is already waiting for Windows, the command joins that operation,
 which does not end by itself after 180 seconds: the app offers Force Stop instead. While cleanup is unconfirmed, an exhausted deadline blocks another launch or
 destructive library work. A later fully validated cleanup can release ownership,
 but the original operation keeps its missed-deadline failure.

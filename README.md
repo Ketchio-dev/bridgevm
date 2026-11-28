@@ -41,7 +41,7 @@ curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.s
 | VM library | In source builds, choose **Compare VMs** in the toolbar to sort saved VMs by name, engine, CPU count or memory. Select a row and choose **Show VM** to open its dashboard. |
 | Display and input | A native Mac window, keyboard and mouse, local text composition, and configurable Command-key mapping. Window-following resolution needs the guest display driver and a VM restart (shut down, then start). |
 | Mac integration | Clipboard sharing, shared folders, networking and audio output. Known defects: the display window was choppy in recent runs and its smoothness has not been measured since; Windows audio stuttered audibly, and no listening check has confirmed the stutter is gone. |
-| VM lifecycle | Start, shut down and restart. In current source builds, **Stop** waits for Windows to close its apps. **Force Stop** asks for confirmation because unsaved work may be lost. Persistent storage, TPM/Secure Boot workflows and [powered-off snapshots](docs/windows-arm/snapshot-scope-v1.md) are available. Running-state suspend is outside v1. |
+| VM lifecycle | Start, shut down and restart. In current source builds, **Shut Down** waits for Windows to close its apps. **Force Stop** asks for confirmation because unsaved work may be lost. Persistent storage, TPM/Secure Boot workflows and [powered-off snapshots](docs/windows-arm/snapshot-scope-v1.md) are available. Running-state suspend is outside v1. |
 
 These are preview capabilities. ISO installation and installed-disk import on
 a clean Mac remain the open release criterion. The

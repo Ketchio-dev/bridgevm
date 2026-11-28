@@ -14,7 +14,7 @@ enum HvfRuntimeStopAction {
             if session.hasRetainedAttachment {
                 report("Stop the VM from the app or tool that started it.")
             } else if session.hasPendingRuntimeStart {
-                report("Wait for startup to finish, then stop the VM.")
+                report("Wait for startup to finish, then shut down the VM.")
             } else {
                 report("Couldn’t find a running VM started by this app.")
             }

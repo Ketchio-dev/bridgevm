@@ -121,7 +121,7 @@ when the stop is admitted, the app first presses the guest's ACPI power button o
 (`POWERBUTTON` in `input.ctl`); the grace, the Force Stop offer and the later agent
 request are unchanged. A confirmed Force Stop may add
 one `shutdown.exe /p /f` and cancels the runner 30 seconds later. The CLI's stop
-requests runner cancellation when the grace ends; the app's Stop and quit keep
+requests runner cancellation when the grace ends; the app's Shut Down and quit keep
 waiting and offer Force Stop instead. The worker rechecks both the
 path and descriptor; replacement, symlink, hard link or failed delivery leads to
 owned runner cancellation. It never recreates or reopens a replacement control file.

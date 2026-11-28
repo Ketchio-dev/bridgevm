@@ -57,7 +57,7 @@ final class HvfRuntimeStopActionTests: XCTestCase {
             refresh: { XCTFail("Refusal must not refresh after a stop") })
 
         XCTAssertEqual(stopCalls, 0)
-        XCTAssertEqual(message, "Wait for startup to finish, then stop the VM.")
+        XCTAssertEqual(message, "Wait for startup to finish, then shut down the VM.")
     }
 
     func testOwnershipRaceReportsNotOwnedForCapturedIdentity() throws {

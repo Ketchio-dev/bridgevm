@@ -12,7 +12,7 @@ struct LibraryDashboardUnavailableRuntimeControls: View {
                 open: { LibraryDashboardPrimaryAction.perform(config: config, model: model, library: library) },
                 showAdvanced: showAdvanced, refresh: { model.refresh(); library.reload() })
             if model.running {
-                Button("Stop", systemImage: "stop.fill") {
+                Button("Shut Down", systemImage: "stop.fill") {
                     LibraryDashboardPrimaryAction.stop(config: config, model: model, library: library)
                 }
             }
