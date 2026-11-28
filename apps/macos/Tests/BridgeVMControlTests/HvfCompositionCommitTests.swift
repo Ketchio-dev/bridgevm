@@ -48,6 +48,23 @@ final class HvfCompositionCommitTests: XCTestCase {
         }
     }
 
+    /// Right Option is AltGr: ⌥E is € on a German Mac keyboard and Windows (en-US) has no key for it, so the
+    /// character is typed; with Shift too. Left Option stays Alt, and right Option still is on Space and arrows.
+    func testRightOptionTypesTheCharacterAndLeftOptionStaysAlt() throws {
+        let right = NSEvent.ModifierFlags(rawValue: NSEvent.ModifierFlags.option.rawValue | 0x40)
+        let left = NSEvent.ModifierFlags(rawValue: NSEvent.ModifierFlags.option.rawValue | 0x20)
+        try withOrderedDisplay { view, session, fixture in
+            view.keyDown(with: try key("€", ignoring: "e", code: 0x0e, flags: right))
+            view.keyDown(with: try key("’", ignoring: "E", code: 0x0e, flags: right.union(.shift)))
+            view.keyDown(with: try key("€", ignoring: "e", code: 0x0e, flags: left))
+            view.keyDown(with: try key("€", ignoring: "e", code: 0x0e, flags: left.union(right)))
+            view.keyDown(with: try key("\u{a0}", ignoring: " ", code: 0x31, flags: right))
+            view.keyDown(with: try key("\u{f702}", code: 0x7b, flags: right.union([.numericPad, .function])))
+            XCTAssertEqual(try deliver(fixture, session), ["TEXTINPUT €", "TEXTINPUT ’", "KEYINPUT alt+e", "KEYINPUT alt+e",
+                                                           "KEYINPUT alt+space", "KEYINPUT ctrl+left"])
+        }
+    }
+
     /// ⌥L is @ on a German Mac keyboard, ⌥5 is [: Windows (en-US) has no other key for them, so they
     /// are typed, not sent as Alt+L. A US ⌥S (ß) is still Alt+S.
     func testAnOptionCharacterInASCIIIsTypedAndAUSOptionLetterIsAlt() throws {

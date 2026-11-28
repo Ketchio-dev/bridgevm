@@ -104,8 +104,10 @@ class HvfFramebufferTextInput: NSView, @preconcurrency NSTextInputClient {
         }
         // Keep existing host shortcuts and guest physical chords. Text, Option dead keys and
         // navigation during preedit must first be offered to the input method, unless the guest
-        // takes generic chords: then Option is Alt for every key but one typing ASCII (above).
-        let chordFlags: NSEvent.ModifierFlags = guestModifierChords ? [.command, .control, .option] : [.command, .control]
+        // takes generic chords: then Option is Alt for every key but one typing ASCII (above) and
+        // right Option as AltGr.
+        let optionIsAlt = guestModifierChords && !HvfHostKeyCommand.isAltGr(event)
+        let chordFlags: NSEvent.ModifierFlags = optionIsAlt ? [.command, .control, .option] : [.command, .control]
         if !flags.intersection(chordFlags).isEmpty {
             commitTextComposition()
             if !sendGuestKeyEvent(event) { super.keyDown(with: event) }

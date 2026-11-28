@@ -76,6 +76,11 @@ All notable changes to BridgeVM are documented in this file.
   English) in a VM window no longer opens the Windows Start menu, and ⌃⌘Space
   now opens the Mac's Emoji & Symbols picker instead of sending Ctrl+Space to
   Windows.
+- The right Option key now types the character your Mac keyboard shows in a VM
+  window, as AltGr does on a PC, for example € with ⌥E on a German keyboard.
+  Before, every Option key combination that did not type a plain ASCII
+  character went to Windows as Alt, so those characters could not be typed.
+  The left Option key is still Alt.
 - The installer no longer replaces BridgeVM while BridgeVM or one of its VMs is
   running. It stops before downloading and asks you to shut down your VMs and
   quit BridgeVM first. Before, the old app kept running on top of the new
