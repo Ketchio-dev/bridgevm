@@ -103,6 +103,10 @@ All notable changes to BridgeVM are documented in this file.
 - When a running VM leaves the library, the page that keeps its controls now
   lists guest agent events as readable lines instead of internal program
   output.
+- A Windows microphone that stops getting sound from the Mac in the middle of a
+  call, for example after macOS restarts its audio service, now comes back by
+  itself within a few seconds. Before, Windows recorded silence until the call
+  app reopened the microphone.
 - When Windows Setup fails during installation, BridgeVM now says "Windows Setup
   didn't finish. Choose Try Again." instead of showing the path to a log file
   that Try Again deletes. The log's location is still in the installation log.
