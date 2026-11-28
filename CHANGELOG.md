@@ -46,6 +46,9 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- The shared-folder notice now says when Windows can't open its shared folder
+  (and names it), when a conflict lost a file's Windows version, and that a
+  renamed or moved Mac folder can't be found, instead of "can't verify" it.
 - The Insert key of a PC keyboard works in Windows, and Num Lock and F14-F19
   no longer type a junk character.
 - Windows' text looks sharp on a Retina screen when Retina resolution is

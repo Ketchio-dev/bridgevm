@@ -19,6 +19,8 @@ final class HvfShareRootNotice: ObservableObject {
     @Published private(set) var putFailed: HvfShareWaitingFiles?
     /// The last Mac names reported as ones Windows can't keep apart, until one of them syncs.
     @Published private(set) var aliased: [String]?
+    /// The last file whose Windows version was lost in a conflict, this run.
+    @Published private(set) var windowsCopyLost: HvfShareWindowsCopyLost?
     /// The shared folder's name when its Mac folder was missing at Start: the VM started with the share,
     /// and the runtime shares the folder once it appears (`root-state ready`). A guest restart clears it;
     /// the next boot reports a still missing folder as blocked.
@@ -47,6 +49,8 @@ final class HvfShareRootNotice: ObservableObject {
         default:
             if let copy = Self.recoveredCopy(in: line) {
                 lastRecoveredCopy = copy
+            } else if let lost = HvfShareWindowsCopyLost(line: line) {
+                if windowsCopyLost != lost { windowsCopyLost = lost }
             } else if stopped == nil, let stop = HvfShareStop(line: line) {
                 stopped = stop
             } else if let pause = HvfSharePaused(line: line) {
@@ -73,9 +77,7 @@ final class HvfShareRootNotice: ObservableObject {
         let prefix = "BVAGENT SHARE conflict kept-mac="
         guard line.hasPrefix(prefix) else { return nil }
         let names = line.dropFirst(prefix.count)
-        guard !names.contains("/"), !names.contains("\\"), !names.contains(where: \.isNewline),
-              !names.unicodeScalars.contains(where: { $0.properties.generalCategory == .control || $0.properties.isBidiControl })
-        else { return nil }
+        guard !names.contains("/"), !names.contains("\\"), hvfShareShowable(names) else { return nil }
 
         // A literal field separator in the original name also occurs in the copy's name.
         // The host only inserts " (Windows copy...)" before the extension, so the middle
@@ -116,6 +118,7 @@ final class HvfShareRootNotice: ObservableObject {
         if writeRefused != nil { writeRefused = nil }
         if putFailed != nil { putFailed = nil }
         if aliased != nil { aliased = nil }
+        if windowsCopyLost != nil { windowsCopyLost = nil }
     }
 
     private func update(_ blocked: Bool) {

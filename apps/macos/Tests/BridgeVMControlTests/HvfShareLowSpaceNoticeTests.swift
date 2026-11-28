@@ -49,7 +49,7 @@ final class HvfShareLowSpaceNoticeTests: XCTestCase {
         let notice = HvfShareRootNotice()
         notice.consume(.unknown("BVAGENT SHARE skip a.bin low-space 99999999999"))
         notice.consume(.unknown("BVAGENT SHARE root-state blocked"))
-        XCTAssertEqual(notice.displayed?.text, "Some changes are waiting because BridgeVM can’t verify the shared folder.")
+        XCTAssertEqual(notice.displayed?.text, "Some changes are waiting because BridgeVM can’t find the shared folder on your Mac.")
         notice.consume(.unknown("BVAGENT SHARE root-state ready"))
         XCTAssertNotNil(notice.lowSpace)
         notice.consume(.unknown(HvfGuestResetRecord.processRecreation))
