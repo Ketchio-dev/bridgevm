@@ -380,6 +380,27 @@ final class HvfGuestPrintTests: XCTestCase {
         XCTAssertNil(library.operationError)
     }
 
+    /// Reopening BridgeVM while Windows runs reads run.log again from its start: a job refused hours ago
+    /// showed "didn't reach your Mac" again.
+    func testAReattachedAppDoesNotRepeatAnOldRefusal() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        let (session, _, library, _) = try session(fixture)
+        let log = URL(fileURLWithPath: session.config.evidenceDir).appendingPathComponent("run.log")
+        let refused = Data("BVPRINT refused reason=short bytes=3000\n".utf8)
+        try refused.write(to: log)
+        session.runLogBacklogEnd = UInt64(refused.count)
+        session.poll()
+        XCTAssertNil(session.printNotice.shown, "the app that saw it happen said so")
+        let handle = try FileHandle(forWritingTo: log)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: refused)
+        try handle.close()
+        session.poll()
+        XCTAssertEqual(session.printNotice.shown, .notReceived, "a new refusal is said")
+        XCTAssertNil(library.operationError)
+    }
+
     /// Off: the jobs an earlier run left for a print panel go at the agent start (they opened, out of nowhere,
     /// when printing was turned on again), and a printer Windows could not remove is asked again.
     func testPrintingOffDropsWaitingJobsAndAsksAgainForARemovalThatFailed() throws {
