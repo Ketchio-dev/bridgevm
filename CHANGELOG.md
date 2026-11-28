@@ -75,6 +75,9 @@ All notable changes to BridgeVM are documented in this file.
   why.
 - Windows' volume slider and mute button now change the VM's sound. Before,
   Windows always played at full volume, and only the Mac's volume worked.
+- A VM window whose Windows has shut down, or failed to start, now has a
+  Start Windows button. Before, it offered only Close Window and Open
+  Library.
 - When VMs running at the same time together use more memory than your Mac can
   spare, each of them now says so in one sentence and suggests stopping one or
   giving the VMs less memory in Settings. Before, macOS just started swapping
