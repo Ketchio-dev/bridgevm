@@ -350,15 +350,19 @@ final class HvfEngineSession: ObservableObject {
         sendPointerAction(.rightClick, location: location, viewSize: viewSize, imageSize: imageSize)
     }
 
-    func sendPointerRightPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize, modifiers: String = "") {
+    @discardableResult func sendPointerRightPress(location: CGPoint, viewSize: CGSize, imageSize: CGSize, modifiers: String = "") -> String {
         sendPointerAction(.rightPress, location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
     }
 
     /// Only for an agent that takes the middle button (`guestMiddleButton`).
-    func sendPointerMiddlePress(location: CGPoint, viewSize: CGSize, imageSize: CGSize, modifiers: String = "") {
-        guard guestMiddleButton else { return }
-        sendPointerAction(.middlePress, location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
+    @discardableResult func sendPointerMiddlePress(location: CGPoint, viewSize: CGSize, imageSize: CGSize, modifiers: String = "") -> String {
+        guard guestMiddleButton else { return "no-middle-button" }
+        return sendPointerAction(.middlePress, location: location, viewSize: viewSize, imageSize: imageSize, modifiers: modifiers)
     }
+
+    /// Whether a press outcome went to a route: queued for the agent or written to input.ctl. Only such a press gets
+    /// a release at its mouse-up; a refused one's would reach Windows alone, and a lone right up opens a context menu.
+    static func pressAdmitted(_ outcome: String) -> Bool { outcome == "queued" || outcome.hasPrefix("legacy-") }
 
     /// An agent that advertised SCROLL_UNITS gets raw wheel units on both axes; an older agent and the
     /// VMM's HID wheel get whole vertical notches. True when a scroll request was formed.

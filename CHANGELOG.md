@@ -46,6 +46,9 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- Shift+Insert and Ctrl+Insert now reach Windows (Paste and Copy). A click that
+  is refused while input is backed up no longer sends a lone mouse release, which
+  could open a context menu.
 - When Windows stops confirming keyboard and mouse input, BridgeVM now switches
   to its basic keyboard and mouse (US key layout) instead of refusing every key
   and click. Restarting Windows brings full input back.
