@@ -291,17 +291,16 @@ fn supervise(queue: &Mutex<OutputQueue>, shared: &Arc<Shared>, test_rebuild: Opt
             .or(retry);
         if let Some(reason) = reason {
             match rebuild(queue, shared, playing) {
+                // Both lines start with "HDA ", which the app reads: the second shows a notice
+                // until the first (HvfAudioNotice.outputNotOpenPrefix / outputMovedPrefix).
                 Ok(()) => {
-                    control.notice(format!(
-                        "hda CoreAudio output: {}; sound now plays on the Mac's current default output",
-                        reason.label()
-                    ));
+                    control.notice(format!("{OUTPUT_MOVED} ({})", reason.label()));
                     retry = None;
                 }
                 Err(error) => {
                     if retry.is_none() {
                         control.notice(format!(
-                            "hda CoreAudio output: {}, and the current default output did not open ({error}); trying again while the guest plays",
+                            "{OUTPUT_NOT_OPEN} after {} ({error}); trying again while the guest plays",
                             reason.label()
                         ));
                     }
@@ -321,6 +320,11 @@ fn supervise(queue: &Mutex<OutputQueue>, shared: &Arc<Shared>, test_rebuild: Opt
         }
     }
 }
+
+pub(super) const OUTPUT_MOVED: &str =
+    "HDA CoreAudio output: sound now plays on the Mac's current default output";
+pub(super) const OUTPUT_NOT_OPEN: &str =
+    "HDA CoreAudio output: the Mac's current default output did not open";
 
 /// Replace the queue with a new one on the current default output, keeping
 /// the ring (hda_coreaudio_rebuild.rs::replace).
