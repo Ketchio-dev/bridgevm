@@ -89,8 +89,8 @@ and an HTTP request succeeded over the guest network. The run used an unattended
 test account on the development Mac, so it is not clean-machine evidence for A9.
 
 The Mac app uses ad-hoc signing, without Developer ID signing or Apple
-notarization. A DMG downloaded in a browser needs the one-time Open Anyway
-step; the copy the terminal installer fetches does not. Windows driver
+notarization. A DMG downloaded in a browser needs the Open Anyway step once
+for each version; the copy the terminal installer fetches does not. Windows driver
 trust is a separate constraint; owning an ISO does not establish it. Packaging,
 update/rollback UX and stronger artifact provenance remain development work.
 
@@ -100,8 +100,8 @@ The Engineering Preview boundary is the proven evidence set, not universal
 compatibility:
 
 - driver setup and recovery remain developer-oriented;
-- ad-hoc Mac distribution requires a one-time Open Anyway override for a DMG
-  downloaded in a browser;
+- ad-hoc Mac distribution requires an Open Anyway override for each DMG
+  version downloaded in a browser;
 - clean-machine coverage is smaller than a mature VM product needs, and the
   declared host matrix (B8) covers only the M4 and M5 Apple-silicon
   generations this project can run on; M1, M2 and M3 are uncovered, not
