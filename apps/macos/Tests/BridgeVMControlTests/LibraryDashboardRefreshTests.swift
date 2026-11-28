@@ -3,6 +3,21 @@ import XCTest
 
 @MainActor
 final class LibraryDashboardRefreshTests: XCTestCase {
+    /// Deleting (or moving away) the selected VM jumped the selection to the first VM in the list.
+    func testAVMThatGoesAwayLeavesTheSelectionOnItsNeighbour() throws {
+        let fixture = try HvfRuntimeSessionStoreFixture()
+        defer { fixture.clean() }
+        let (a, b, c) = (fixture.config("a"), fixture.config("b"), fixture.config("c"))
+        for config in [a, b, c] { fixture.save(config) }
+        let library = fixture.library()
+        XCTAssertEqual(library.vms.map(\.slug), ["a", "b", "c"])
+        library.selectedID = "b"
+        try fixture.removeRegistration(b); library.reload()
+        XCTAssertEqual(library.selectedID, "c", "the VM after it")
+        try fixture.removeRegistration(c); library.reload()
+        XCTAssertEqual(library.selectedID, "a", "the last VM's: the one before it")
+    }
+
     /// Several messages say "Refresh the library"; More Actions > Refresh is the button they mean,
     /// so it reads the saved VMs again, not only the VM process.
     func testMoreActionsRefreshReadsTheLibraryAgainInBothActionBars() throws {
