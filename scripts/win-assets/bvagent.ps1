@@ -1794,13 +1794,17 @@ function Pin-ShareQuickAccess([string]$root) {
     while ($root.Length -gt $volumeRoot.Length -and ($root.EndsWith('\') -or $root.EndsWith('/'))) {
         $root = $root.Substring(0, $root.Length - 1)
     }
-    $marker = Join-Path $env:ProgramData 'BridgeVM\share-quick-access.attempted'
+    # Quick Access is per user, so the marker is too. Older agents kept it in ProgramData\BridgeVM,
+    # which the display-driver install locks by moving an unlocked folder aside.
+    $marker = Join-Path $env:LOCALAPPDATA 'BridgeVM\share-quick-access.attempted'
+    $olderMarker = Join-Path $env:ProgramData 'BridgeVM\share-quick-access.attempted'
     if ([IO.File]::Exists($marker) -or $script:BvSharePinAttempted) { return }
     $script:BvSharePinAttempted = $true
     try {
         [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($marker))
         # Record the attempt first: never override a later manual unpin, even after a failure.
         [IO.File]::WriteAllText($marker, $root)
+        if ([IO.File]::Exists($olderMarker)) { return }
         $shell = New-Object -ComObject Shell.Application
         $folder = $shell.Namespace($root)
         if ($null -eq $folder) { throw 'Shell folder unavailable' }
