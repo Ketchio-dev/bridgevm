@@ -49,6 +49,7 @@ struct LibraryDashboardRuntimeControls: View {
                 Label(unsaved, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
             }
             HvfSharedMemoryNoticeView(session: session)
+            HvfKeepAwakeNoticeView(power: session.sleepPrevention, runtime: session.sleepPreventionID)
             HvfAgentSilenceNoticeView(notice: session.agentSilenceNotice)
             HvfGuestToolsAction(session: session)
             HvfShareRootNoticeView(notice: session.shareRootNotice)
