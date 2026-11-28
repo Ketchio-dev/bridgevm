@@ -48,6 +48,8 @@ All notable changes to BridgeVM are documented in this file.
   startup error on the VM status card. It reads only the text on screen.
 - The Insert key of a PC keyboard works in Windows, and Num Lock and F14-F19
   no longer type a junk character.
+- Windows' text looks sharp on a Retina screen when Retina resolution is
+  off: each Windows pixel is shown as a 2x2 block instead of being smoothed.
 - Deleting the selected VM selects the VM next to it, not the first VM
   in the library.
 - A Mac file that never reaches Windows now gets a notice: when Windows
