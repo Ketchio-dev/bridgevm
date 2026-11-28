@@ -69,6 +69,9 @@ All notable changes to BridgeVM are documented in this file.
 - Duplicating or moving a VM to another drive now checks that drive's free
   space first and says so in one sentence, instead of filling the drive
   during the copy and then failing as if the move had broken something.
+- When BridgeVM can't extend Windows' C: drive after you expand the disk,
+  because a partition is in the way or the extend kept failing, the VM
+  window now says so once. Before, only Settings said so.
 - Deleting the selected VM selects the VM next to it, not the first VM
   in the library.
 - A Mac file that never reaches Windows now gets a notice: when Windows

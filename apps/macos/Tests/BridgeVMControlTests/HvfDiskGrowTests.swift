@@ -179,6 +179,37 @@ final class HvfDiskGrowTests: XCTestCase {
         XCTAssertEqual(sent, 4, "a new grow checks again")
     }
 
+    /// A blocked C: (a partition after it) and the last failed try also show over the VM display, once:
+    /// Settings was the only place that said the added space stayed unused.
+    func testABlockedOrFinallyFailedExtendShowsOnceOverTheDisplay() async throws {
+        let fixture = try HvfRuntimeSessionStoreFixture(), probe = HvfClipboardSyncProbe()
+        defer { fixture.clean() }
+        let saved = fixture.config()
+        fixture.save(saved)
+        let library = fixture.library(probe: probe)
+        let session = try XCTUnwrap(library.hvfRuntimeDetailSession(for: saved))
+        let flag = try XCTUnwrap(HvfDiskGrow.grownFlag(config: session.config))
+        try Data("0\n".utf8).write(to: flag)
+        let blocked: HvfDisplayDriverInstall.Runner = { _, _ in ("BVDISK result=blocked size=68412243968\n", 0) }
+        await session.extendGrownDisk(runner: blocked)?.value
+        XCTAssertEqual(session.diskExtendProblem, HvfDiskGrow.Outcome.blocked(bytes: nil).notice)
+        XCTAssertTrue(session.diskExtendProblem?.contains("make a new drive from it in Disk Management") == true)
+        session.diskExtendProblem = nil // dismissed
+        await session.extendGrownDisk(runner: blocked)?.value
+        XCTAssertNil(session.diskExtendProblem, "the next start checks again but does not show it again")
+        XCTAssertEqual(session.diskGrowNotice, HvfDiskGrow.Outcome.blocked(bytes: nil).notice, "Settings still says it")
+
+        try Data("0\n".utf8).write(to: flag) // a new grow
+        let failed: HvfDisplayDriverInstall.Runner = { _, _ in ("BVDISK result=failed detail=busy\n", 0) }
+        for _ in 1...2 {
+            await session.extendGrownDisk(runner: failed)?.value
+            XCTAssertNil(session.diskExtendProblem, "a try that is retried stays in Settings")
+        }
+        await session.extendGrownDisk(runner: failed)?.value
+        XCTAssertEqual(session.diskExtendProblem, HvfDiskGrow.Outcome.failed(detail: "busy").notice)
+        _ = library
+    }
+
     /// A session booting a managed bundle under `fixture.root`, whose bundled helper reports any grow.
     private func grownBundleSession(_ fixture: HvfOwnedRuntimeFixture) throws -> HvfEngineSession {
         let bundle = fixture.root.appendingPathComponent("vm/bundle")

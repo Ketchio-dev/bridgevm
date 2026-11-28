@@ -62,7 +62,7 @@ extension HvfEngineSession {
         // waiting for it goes ahead.
         succeeded = true
         // The restored disk is not the one a grow expanded, so its report no longer applies.
-        if operation == .restore { diskGrowNotice = nil }
+        if operation == .restore { diskGrowNotice = nil; diskExtendProblem = nil }
         return notice
     }
 }

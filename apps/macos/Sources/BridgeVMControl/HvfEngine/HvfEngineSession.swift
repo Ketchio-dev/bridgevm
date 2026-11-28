@@ -132,6 +132,7 @@ final class HvfEngineSession: ObservableObject {
     var printPresenter: any HvfPrintPresenter = HvfPDFPrintPresenter()
     let printNotice = HvfGuestPrintNotice()
     @Published var diskGrowNotice: String? // the guest's report on extending C: after a disk grow (HvfDiskGrow)
+    @Published var diskExtendProblem: String? // that report when it needs the user: blocked, or failed for good
     var diskExtendInFlight = false
     var legacyPaste = HvfLegacyPasteState() // a pending clipboard paste and display input held behind it
     weak var submittedKeyboardDraft: HvfTextDraftDelivery?
