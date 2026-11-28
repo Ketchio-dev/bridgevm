@@ -385,7 +385,8 @@ impl AgentConsoleHarness {
     /// CLIPXH a text's HTML too. Whenever it differs from what was last
     /// synced, the Mac gets exactly that: the text (with its HTML) at once, the
     /// image from the cache when its digest matches or else fetched and
-    /// written with that text. An empty clipboard never clears the Mac.
+    /// written with that text. An empty clipboard never clears the Mac: some
+    /// Windows apps empty it on their own, before the copy was pasted on the Mac.
     pub(super) fn handle_guest_clip(
         &mut self,
         b64: &str,
@@ -425,6 +426,7 @@ impl AgentConsoleHarness {
             if echo && held {
                 // A completed push back from the guest: still the Mac's copy.
                 self.last_synced.guest_copy = self.last_synced.host_copy;
+                self.last_synced.from_host = true;
             } else if later {
                 // A later copy that leaves the Mac as it is: one line, so the
                 // app knows a later copy came (HvfClipboardImageNotice.swift).

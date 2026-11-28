@@ -47,6 +47,10 @@ final class NativeCLISnapshotTests: XCTestCase {
             ]
         )
 
+        // This app session already updated the Guest Tools, or skipped them; the snapshot's may be older.
+        let marker = fixture.disk.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("metadata/agent-update.json")
+        try Data(#"{"state":"ok"}"#.utf8).write(to: marker)
         let restored = NativeCLISnapshot.run(
             rootURL: fixture.library,
             id: fixture.id,
@@ -54,6 +58,7 @@ final class NativeCLISnapshotTests: XCTestCase {
             repoRoot: fixture.repo
         )
         XCTAssertTrue(restored.complete, restored.unavailableReason ?? ""); XCTAssertEqual(try fixture.invocations().count, 2)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), "the restored Windows' Guest Tools are checked again")
         XCTAssertEqual(
             try fixture.invocations().last,
             ["restore", fixture.snapshot.path, fixture.disk.path, fixture.vars.path]

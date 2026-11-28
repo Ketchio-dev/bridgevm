@@ -24,6 +24,8 @@ pub struct Poller {
     pub(super) files: bool,
     /// Reads left for a copy that may still be between clear and write.
     pub(super) empty_rereads: u8,
+    /// The last read found content, so a clear that stays empty is reported.
+    held: bool,
 }
 
 impl Poller {
@@ -39,6 +41,7 @@ impl Poller {
             html: false,
             files: false,
             empty_rereads: 0,
+            held: false,
         }
     }
 
@@ -50,7 +53,8 @@ impl Poller {
     }
 
     /// One poll step: the change iff the pasteboard changed externally to a
-    /// non-empty text or (images on) an image. Our own writes never come back.
+    /// non-empty text or (images on) an image, or was cleared (an empty clip).
+    /// Our own writes never come back.
     pub fn on_tick_clip<B: PasteboardBackend>(&mut self, backend: &mut B) -> Option<HostClip> {
         self.observe(backend, false)
     }
@@ -141,12 +145,15 @@ impl Poller {
                 self.empty_rereads = EMPTY_REREADS;
             }
             // A changed owner is newer even when no transferable content exists.
-            // Preserve initial empty-startup behavior and never send a clear.
             self.last_seen = None;
             self.observed_suppressed_change = changed && !force;
-            return None;
+            // Still empty when the re-reads end: a clear (a password manager's, say), reported
+            // once. Never at startup, nor for a pasteboard that was empty already.
+            let cleared = !force && self.empty_rereads == 0 && std::mem::take(&mut self.held);
+            return cleared.then(HostClip::default);
         }
         self.empty_rereads = 0;
+        self.held = true;
         // Every Mac copy is reported, the same content copied again too: a copy
         // Windows refused or lost goes again. clip_sync.rs skips what Windows
         // already holds (ClipBaseline::holds).

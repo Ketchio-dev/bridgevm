@@ -3192,7 +3192,8 @@ while ($true) {
                     $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
                         $parts = $arg.Split(' ')
-                        $path = Get-IoPath ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0])))
+                        $delName = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($parts[0]))
+                        $path = Get-IoPath $delName
                         if (Test-Path -LiteralPath $path -PathType Container) {
                             Write-Line $h 'ERR DEL is-dir' 'ERR'
                         } elseif (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
@@ -3204,6 +3205,20 @@ while ($true) {
                                 Write-Line $h 'OK DEL changed' 'OK'
                             } else {
                                 Remove-Item -LiteralPath $path -Force -ErrorAction Stop
+                                # Then the folders it left empty, up to but never the shared folder: a folder
+                                # renamed or deleted on the Mac leaves no empty copy of its tree here.
+                                # Directory.Delete without recursion removes only an empty folder, but a
+                                # junction or link whatever it points to, so the walk stops at one.
+                                $shareRoot = $script:BvShareRoot
+                                try {
+                                    $emptyDir = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($delName))
+                                    while ($shareRoot -and $emptyDir.Length -gt $shareRoot.Length -and $emptyDir.StartsWith($shareRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                                        $emptyIo = Get-IoPath $emptyDir
+                                        if ([System.IO.File]::GetAttributes($emptyIo) -band [System.IO.FileAttributes]::ReparsePoint) { break }
+                                        [System.IO.Directory]::Delete($emptyIo)
+                                        $emptyDir = [System.IO.Path]::GetDirectoryName($emptyDir)
+                                    }
+                                } catch { }
                                 Write-Line $h 'OK DEL' 'OK'
                             }
                         }

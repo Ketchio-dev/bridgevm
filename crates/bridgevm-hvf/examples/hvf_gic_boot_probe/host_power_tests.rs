@@ -188,3 +188,18 @@ extern "C" {
         value_callbacks: *const [usize; 5],
     ) -> *const c_void;
 }
+
+#[test]
+fn windows_is_never_shown_its_critical_battery_level() {
+    // Measured: 8 s after the battery showed 3 %, Windows ran its critical action and powered off.
+    let mac = |percent, ac_online| HostPower {
+        ac_online,
+        battery: Some(HostBattery { percent, charging: false, minutes_to_empty: Some(9), minutes_to_full: None }),
+    };
+    for (agent, ac) in [(true, false), (false, false), (true, true)] {
+        let shown = for_guest(mac(3, ac), agent).battery.unwrap();
+        assert_eq!(shown.percent, GUEST_BATTERY_FLOOR, "agent={agent} ac={ac}");
+    }
+    assert_eq!(for_guest(mac(3, false), true).battery.unwrap().minutes_to_empty, Some(9), "the Mac's estimate stays");
+    assert_eq!(for_guest(mac(57, false), true).battery.unwrap().percent, 57);
+}

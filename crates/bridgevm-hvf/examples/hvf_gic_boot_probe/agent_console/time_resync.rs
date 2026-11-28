@@ -70,6 +70,7 @@ impl HostClock {
                     let start = UNIX_EPOCH + Duration::from_secs(seconds.into());
                     (start, SystemTime::now())
                 }),
+            zone: super::time_zone::ZoneWatch::from_vars(std::env::var("BRIDGEVM_AARCH64_UEFI_VARS").ok().as_deref()),
             ..Self::default()
         }
     }
@@ -209,8 +210,7 @@ impl AgentConsoleHarness {
             self.t_ms(now)
         );
         self.clock.pending_gap_ms = 0;
-        let zone = self.clock.zone.host_zone();
-        self.clock.zone.applied = zone.or(self.clock.zone.applied);
+        let zone = self.clock.zone.zone_to_set();
         self.clock.zone.changed = false;
         let ticks = UNIX_EPOCH_TICKS + (set.as_nanos() / 100) as u64;
         write_command_wire_line_into(&time_resync_command(ticks, zone), &mut self.service_line_scratch);

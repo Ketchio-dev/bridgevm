@@ -46,6 +46,19 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- Deleting the selected VM selects the VM next to it, not the first VM
+  in the library.
+- A Mac file that never reaches Windows now gets a notice: when Windows
+  refuses the copy (for example the file is open in a Windows app), and when
+  two names differ only in letter case, such as “a.txt” and “A.txt”.
+- A folder renamed or deleted on one side of a shared folder no longer
+  leaves an empty copy of its old folders on the other side. On the
+  Windows side this needs the Guest Tools update.
+- Windows restored from a snapshot gets the Guest Tools update at its
+  next start instead of only after BridgeVM is reopened.
+- Clearing the Mac clipboard now clears Windows too, when Windows still holds
+  that Mac copy, so a Mac password manager's auto-clear no longer leaves the
+  password in Windows. A copy made in Windows is never cleared this way.
 - A Mac change made just as the shared folder is renamed or deleted in
   Windows no longer makes the Windows folder again with only that file,
   after the Guest Tools update.
@@ -67,6 +80,16 @@ All notable changes to BridgeVM are documented in this file.
   copy them again in Explorer.
 - "Share clipboard" can be turned off and on while Windows runs; before,
   it was disabled until Windows shut down.
+- A shared file with a long name (about 80 Korean or Chinese characters)
+  edited on both sides at once keeps its Windows version as a
+  "(Windows copy)" with a shortened name, instead of losing it.
+- A time zone chosen in Windows stays after a restart or a Mac sleep;
+  BridgeVM sets Windows' zone only when the Mac's zone has changed.
+- Importing a RAW disk whose copy fails says to check the disk image and
+  free space, instead of "Couldn't create the VM or save it to the
+  library."
+- Windows no longer shuts itself down when the Mac's battery gets low (it
+  did at 5 %, losing unsaved work); the Mac handles its own low battery.
 - In a VM whose Windows account isn't an administrator, BridgeVM no longer
   tries to update Guest Tools at every launch and reports "Guest Tools
   couldn't update" each time. That update can't work without administrator

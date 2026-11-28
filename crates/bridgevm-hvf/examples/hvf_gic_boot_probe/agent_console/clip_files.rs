@@ -352,6 +352,7 @@ impl AgentConsoleHarness {
             self.last_synced.rebaseline = false;
             if echo {
                 self.last_synced.guest_copy = self.last_synced.host_copy;
+                self.last_synced.from_host = true;
             }
             return true;
         }

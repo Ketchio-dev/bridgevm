@@ -71,6 +71,7 @@ final class LibraryModel: ObservableObject {
     func reload() { applyScan(VMLibrary.scan(rootURL: libraryRoot)) }
 
     private func applyScan(_ scan: VMLibraryScan) {
+        let previous = vms.map(\.slug)
         vms = scan.configs
         libraryIssues = scan.issues
         captureRetainedControls()
@@ -78,7 +79,7 @@ final class LibraryModel: ObservableObject {
         hvfRuntimeSessions.reconcile(with: vms)
         let configsBySlug = Dictionary(vms.map { ($0.slug, $0) }, uniquingKeysWith: { first, _ in first })
         modelCache = LibraryControlModelReconciliation.reconcile(modelCache, configurations: configsBySlug)
-        reconcileLibrarySelection(configsBySlug: configsBySlug)
+        reconcileLibrarySelection(configsBySlug: configsBySlug, previous: previous)
     }
 
     func model(for cfg: VMConfig) -> ControlModel {
@@ -589,7 +590,10 @@ extension LibraryModel {
         if selectedID == nil { selectedID = vms.first?.slug }
     }
 
-    func reconcileLibrarySelection(configsBySlug: [String: VMConfig]) {
+    /// `previous`: the library's VMs before this scan, in list order. A VM that went away (deleted, moved
+    /// out) leaves the selection on the VM after it in the list, else the one before it: it jumped to the
+    /// first VM, maybe far from where the user was.
+    func reconcileLibrarySelection(configsBySlug: [String: VMConfig], previous: [String] = []) {
         if selectedRetainedControl != nil { return }
         if let sel = selectedID,
            ![Self.hvfEngineSelectionID, Self.firstRunImportSelectionID].contains(sel),
@@ -598,7 +602,10 @@ extension LibraryModel {
             return
         }
         if let sel = selectedID, ![Self.hvfEngineSelectionID, Self.firstRunImportSelectionID].contains(sel), configsBySlug[sel] == nil {
-            selectedID = vms.first?.slug
+            let at = previous.firstIndex(of: sel)
+            let after = at.flatMap { previous[($0 + 1)...].first { configsBySlug[$0] != nil } }
+            let before = at.flatMap { previous[..<$0].last { configsBySlug[$0] != nil } }
+            selectedID = after ?? before ?? vms.first?.slug
         }
     }
 

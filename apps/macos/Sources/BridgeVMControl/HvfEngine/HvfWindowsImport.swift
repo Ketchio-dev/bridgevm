@@ -40,8 +40,7 @@ extension VMLibrary {
             toDisk: URL(fileURLWithPath: disk), toVars: URL(fileURLWithPath: vars), helper: snapshotHelper,
             converting: converting)
         } catch {
-            guard WindowsFileFailureFeedback.importRemedy(for: error) != nil
-                || HvfImportedDiskFormat.detect(path: sourceDisk.path) != nil else { return nil }
+            // A RAW copy that failed (its drive unplugged, say) said only "Couldn’t create the VM".
             return .refused(WindowsFileFailureFeedback.reportImport("media-import", error))
         }
         let minimumDiskBytes = minimumImportedWindowsHVFDiskGiB * 1024 * 1024 * 1024

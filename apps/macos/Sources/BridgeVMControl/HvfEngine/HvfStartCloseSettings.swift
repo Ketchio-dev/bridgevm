@@ -19,7 +19,7 @@ struct HvfStartCloseSettings: View {
             }
             Toggle("Keep Mac awake while Windows is running or installing", isOn: Binding(
                 get: { power.enabled }, set: { power.setEnabled($0) }))
-            Text("Applies to all VMs. The Mac display can still turn off.")
+            Text("Applies to all VMs. The display can still turn off, and closing the lid still puts the Mac to sleep.")
                 .font(.caption).foregroundStyle(.secondary)
             Picker("When the VM window closes", selection: $closeChoice) {
                 Text("Ask each time").tag("")
