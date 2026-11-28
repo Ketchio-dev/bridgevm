@@ -482,8 +482,8 @@ final class HvfEngineSession: ObservableObject {
         expireUnacknowledgedReset()
         expireUnansweredPause()
         refreshAgentSilence()
-        if let lastHeartbeatDate {
-            lastHeartbeatAge = Date().timeIntervalSince(lastHeartbeatDate)
+        if let lastHeartbeatDate { // uptime, so time the Mac slept does not count
+            lastHeartbeatAge = hostNow().timeIntervalSince(lastHeartbeatDate)
         }
         if let controller = ownedController {
             controller.tick()
