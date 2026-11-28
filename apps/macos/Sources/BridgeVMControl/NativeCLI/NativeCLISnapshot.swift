@@ -83,10 +83,7 @@ enum NativeCLISnapshot {
             } else if operation == .delete {
                 try HvfWindowsSnapshotStore.delete(plan.snapshot, bundle: plan.bundle)
             } else {
-                _ = try HvfWindowsSnapshotCommand.invoke(
-                    plan.executable,
-                    plan.arguments(for: operation)
-                )
+                try HvfWindowsSnapshotCommand.restore(plan: plan, arguments: plan.arguments(for: operation))
             }
             return NativeCLISnapshotResult(
                 command: command,

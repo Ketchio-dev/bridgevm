@@ -113,9 +113,17 @@ enum HvfWindowsSnapshotCommand {
                 try await checkAdmission()
                 return nameCreated(created)
             }
-            _ = try invoke(plan.executable, arguments)
+            try restore(plan: plan, arguments: arguments)
             return nil
         }.value
+    }
+
+    /// Shared by the session and native CLI. The restored Windows may run older Guest Tools than the
+    /// app's, and this app session already tried (or skipped) their update, which the probe tries once
+    /// per session: forgetting that attempt updates them at the next start.
+    static func restore(plan: Plan, arguments: [String]) throws {
+        _ = try invoke(plan.executable, arguments)
+        try? FileManager.default.removeItem(at: plan.bundle.appendingPathComponent("metadata/agent-update.json"))
     }
 
     /// Shared by the session and native CLI: mkdir claims an empty destination exclusively.
