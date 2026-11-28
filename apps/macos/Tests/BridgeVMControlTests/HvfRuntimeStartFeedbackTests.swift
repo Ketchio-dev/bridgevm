@@ -14,7 +14,7 @@ final class HvfRuntimeStartFeedbackTests: XCTestCase {
         ("uefi-vars-missing", "Look for the missing Windows boot settings file in the VM folder or restore it from a backup."),
         ("uefi-vars-access", "BridgeVM can’t access the Windows boot settings, so check the file’s read and write permissions in Finder."),
         ("uefi-vars-size", "The Windows boot settings file has the wrong size, so restore the 64 MiB file from a backup."),
-        ("ram-range", "Set the VM’s memory between 1024 and 65536 MiB, then start Windows again."),
+        ("ram-range", "Set the VM’s memory between 1 GB and 64 GB in Settings, then start Windows again."),
         ("cpu-range", "Choose 1 to 64 CPUs in VM settings, then start Windows again."),
         ("share-invalid", "Choose the shared folder again in VM settings, then start Windows again."),
         ("share-incomplete", "To complete the shared folder setup, choose the folder again in VM settings."),
@@ -64,9 +64,9 @@ final class HvfRuntimeStartFeedbackTests: XCTestCase {
             (.keyAccess, "The operation couldn’t be completed. (OSStatus -25291.)",
              "BridgeVM couldn’t use this VM’s security key in your login keychain, so check that the keychain is unlocked and start Windows again."),
             (.readiness(["relocation-pending"]), "The move has not finished recovering. Check both bundles.",
-             "BridgeVM couldn’t start Windows yet, so choose Refresh and try again."),
+             "BridgeVM couldn’t start Windows yet. Press Command-K in the library window and choose Refresh Library, then try again."),
             (.readiness(["install-cleanup-pending"]), "Windows installation cleanup is incomplete.",
-             "BridgeVM couldn’t start Windows yet, so choose Refresh and try again."),
+             "BridgeVM couldn’t start Windows yet. Press Command-K in the library window and choose Refresh Library, then try again."),
         ]
         for (stage, detail, expected) in cases {
             let text = HvfRuntimeStartOutcome.failed(stage, detail).failureText
@@ -90,7 +90,7 @@ final class HvfRuntimeStartFeedbackTests: XCTestCase {
             let text = try XCTUnwrap(session.guiStartFailureText)
             let selected = codes.first == "cpu-range" ? "cpu-range" : "ram-range"
             XCTAssertEqual(text, readinessSentences.first { $0.0 == selected }?.1)
-            XCTAssertTrue(text.contains(selected == "ram-range" ? "1024 and 65536 MiB" : "1 to 64 CPUs"))
+            XCTAssertTrue(text.contains(selected == "ram-range" ? "1 GB and 64 GB" : "1 to 64 CPUs"))
             for code in codes { XCTAssertTrue(diagnostics.contains { $0.contains("[\(code)]") }) }
         }
     }

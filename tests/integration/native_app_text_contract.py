@@ -28,7 +28,7 @@ def check_text(binary, run, tree):
             assert not error
             assert not any(c in text for c in ("\x1b", "\x07", "\u009b", "\u202e"))
             assert "\nRuntime state: running" not in text and "\nlibrary-line" not in text
-            assert "개발 VM" in text and "Runtime state: unobserved" in text
+            assert "개발 VM" in text and "This command doesn't check whether a VM is running; use status." in text
             output, error = run(binary, args + ["--json"], 0)
             value = json.loads(output)
             assert not error and value["libraryPath"] == str(library)

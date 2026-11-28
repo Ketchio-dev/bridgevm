@@ -32,7 +32,7 @@ struct HvfSystemMicrophonePermission: HvfMicrophonePermission {
 
 /// Why a VM whose microphone setting is on still records silence. The VM starts either way.
 enum HvfMicrophoneNotice {
-    static let denied = "Windows has no microphone because macOS denied access. Allow BridgeVM Control in System Settings > Privacy & Security > Microphone, then restart the VM."
+    static let denied = "Windows has no microphone because macOS denied access. Allow BridgeVM in System Settings > Privacy & Security > Microphone, then restart the VM."
     static let undetermined = "Windows has no microphone yet. macOS asks for access the next time you start this VM from BridgeVM."
     static let restart = "macOS now allows the microphone. Restart the VM so Windows gets it."
 

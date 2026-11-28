@@ -75,7 +75,7 @@ extension HvfVirtualMachineMenuState {
         paused = session.pause.showsResume
         pauses = paused || session.pauseAvailable // HvfPauseControl
         restarts = running // HvfRestartControl
-        // The dashboard's Stop, as a quit asks it: this app's own run, with no stop under way.
+        // The dashboard's Shut Down, as a quit asks it: this app's own run, with no stop under way.
         stops = session.mayHaveOwnedWork && session.terminationStopAvailable && !session.runtimeStartupWorkerPending
         if case .connected = session.connectionState { listsWindows = !session.pause.holdsInput }
         windowsAppsUnavailable = HvfGuestStartApps.unavailableReason(session)
@@ -198,7 +198,7 @@ struct HvfVirtualMachineMenuItems: View {
         Divider()
         Button(HvfPauseControl<EmptyView>.title(paused: state.paused)) { perform(.pause) }.disabled(!state.pauses)
         Button("Restart") { perform(.restart) }.disabled(!state.restarts)
-        Button("Stop") { perform(.stop) }.disabled(!state.stops)
+        Button("Shut Down") { perform(.stop) }.disabled(!state.stops)
         Divider()
         Menu("Windows Apps") {
             if let reason = state.windowsAppsUnavailable {

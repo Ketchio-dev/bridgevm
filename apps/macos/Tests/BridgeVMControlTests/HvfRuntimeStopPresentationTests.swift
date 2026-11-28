@@ -6,7 +6,7 @@ final class HvfRuntimeStopPresentationTests: XCTestCase {
         let enabled = HvfRuntimeStopPresentation.make(
             runtimeActive: true, lifecycleBusy: false, ownsRuntime: true)
         XCTAssertTrue(enabled.isEnabled)
-        XCTAssertEqual(enabled.guidance, "Stop the VM started by this app.")
+        XCTAssertEqual(enabled.guidance, "Shut down the VM started by this app.")
 
         for state in [(false, false, true), (true, true, true), (true, false, false)] {
             XCTAssertFalse(HvfRuntimeStopPresentation.make(
@@ -17,7 +17,7 @@ final class HvfRuntimeStopPresentationTests: XCTestCase {
     func testUnavailableReasonsDistinguishBusyExternalAndStopped() {
         XCTAssertEqual(HvfRuntimeStopPresentation.make(
             runtimeActive: true, lifecycleBusy: true, ownsRuntime: false).guidance,
-            "Wait for the current operation to finish before stopping the VM.")
+            "Wait for the current operation to finish before shutting down the VM.")
         XCTAssertEqual(HvfRuntimeStopPresentation.make(
             runtimeActive: true, lifecycleBusy: false, ownsRuntime: false).guidance,
             "Stop the VM from the app or tool that started it.")

@@ -21,9 +21,9 @@ struct LibraryUnavailableRuntimeDetail: View {
         ContentUnavailableView {
             Label("VM controls unavailable", systemImage: "exclamationmark.shield")
         } description: {
-            Text("The saved VM configuration has changed. Wait for the current operation to finish, then reload the library.")
+            Text("The saved VM configuration has changed. Wait for the current operation to finish, then choose Refresh Library.")
         } actions: {
-            Button("Reload Library", action: library.reload)
+            Button("Refresh Library", action: library.reload)
         }
         // The VM window has the VM's name: two windows of that name in the Window menu and Mission Control.
         .navigationTitle("Library")

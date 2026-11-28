@@ -12,7 +12,7 @@ Invoke-Expression $failureDefinition.Extent.Text
 $declined = New-Object ComponentModel.Win32Exception 1223
 $wrapped = New-Object InvalidOperationException 'This command cannot be run due to the error: The operation was canceled by the user.', $declined
 foreach ($exception in @($declined, $wrapped)) {
-    if ((Get-InstallFailureText $exception) -notlike 'Guest Tools need administrator approval.*') { throw 'ASSERT: a declined administrator prompt must say to approve it' }
+    if ((Get-InstallFailureText $exception) -notlike 'Guest Tools needs administrator approval.*') { throw 'ASSERT: a declined administrator prompt must say to approve it' }
 }
 if ((Get-InstallFailureText (New-Object IO.IOException 'disk full')) -notlike 'Guest Tools could not be installed.*') { throw 'ASSERT: other failures keep the general sentence' }
 $folderDefinition = $ast.Find({param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'New-ToolsFolder'}, $true)

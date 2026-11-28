@@ -17,11 +17,15 @@ final class HvfVMSettingsSheetValueTests: XCTestCase {
         XCTAssertEqual(values(type, in: advanced).count, 0, "no \(type) in advanced", file: file, line: line)
     }
 
-    func testSizesUseGiBAndDriverExplainsUnavailableState() throws {
+    /// Disks stay GiB (Finder counts files in decimal GB); memory reads GB, as macOS shows it.
+    func testDiskSizesUseGiBMemoryUsesGBAndDriverExplainsUnavailableState() throws {
         XCTAssertEqual(HvfDiskSizeSetting.sizeText(64 << 30), "64 GiB")
         XCTAssertEqual(HvfDiskSizeSetting.sizeText(3 << 29), "1.5 GiB")
-        XCTAssertEqual(HvfResourceSetting.memoryText(6144), "6 GiB")
-        XCTAssertEqual(HvfResourceSetting.memoryText(1536), "1.50 GiB")
+        XCTAssertEqual(VMResourceLimits.memoryText(mib: 6144), "6 GB")
+        XCTAssertEqual(VMResourceLimits.memoryText(mib: 1536), "1.5 GB")
+        XCTAssertEqual(VMResourceLimits.memoryText(mib: 1280), "1.25 GB")
+        XCTAssertEqual(VMResourceLimits.cpuText(1), "1 CPU")
+        XCTAssertEqual(VMResourceLimits.cpuText(4), "4 CPUs")
         let fixture = try HvfRuntimeSessionStoreFixture()
         defer { fixture.clean() }
         let saved = fixture.config(); fixture.save(saved)

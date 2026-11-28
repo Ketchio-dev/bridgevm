@@ -118,8 +118,9 @@ struct LibraryDashboardDetail: View {
             Text("Configuration").font(.headline)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 2),
                       alignment: .leading, spacing: 18) {
-                LibraryMetadataLabel(title: "Processor", value: "\(model.cpu) vCPU", symbol: "cpu")
-                LibraryMetadataLabel(title: "Memory", value: memoryText, symbol: "memorychip")
+                LibraryMetadataLabel(title: "CPUs", value: "\(model.cpu)", symbol: "cpu")
+                LibraryMetadataLabel(title: "Memory", value: VMResourceLimits.memoryText(mib: Int((model.memGiB * 1024).rounded())),
+                                     symbol: "memorychip")
                 LibraryMetadataLabel(title: "Display", value: Self.displayText(for: config), symbol: "display")
                 if config.engineKind == .hvfEngine {
                     LibraryMetadataLabel(title: "Network", value: config.networkEnabled == false ? "Off" : "Shared network (NAT)",
@@ -186,12 +187,6 @@ struct LibraryDashboardDetail: View {
         if config.installPending == true { return .orange }
         if library.fileOperationTitle(for: config.slug) != nil { return .blue }
         return runtimeState?.color ?? (model.running ? .green : .secondary)
-    }
-
-    private var memoryText: String {
-        model.memGiB.rounded() == model.memGiB
-            ? "\(Int(model.memGiB)) GiB"
-            : String(format: "%.1f GiB", model.memGiB)
     }
 
     static func displayText(for config: VMConfig) -> String {

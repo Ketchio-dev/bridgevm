@@ -72,7 +72,7 @@ final class ControlDisplayCloseTests: XCTestCase {
     }
     func testAlertHasOnlyAvailableActionsAndRememberCheckbox() {
         let alert = ControlDisplayClose.alert(choices: [.background, .shutdown, .cancel])
-        XCTAssertEqual(alert.buttons.map(\.title), ["Keep running in the background", "Shut down Windows", "Cancel"])
+        XCTAssertEqual(alert.buttons.map(\.title), ["Keep Running in the Background", "Shut Down Windows", "Cancel"])
         XCTAssertEqual(alert.buttons.last?.keyEquivalent, "\u{1b}")
         XCTAssertEqual(alert.suppressionButton?.title, "Remember my choice")
     }

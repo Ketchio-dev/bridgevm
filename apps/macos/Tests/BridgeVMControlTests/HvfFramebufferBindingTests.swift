@@ -59,6 +59,35 @@ final class HvfFramebufferBindingTests: XCTestCase {
         }
     }
 
+    /// A hidden window reports no size, so one that comes back (minimised, then restored on another screen)
+    /// sends the size it has now.
+    func testARevealedWindowSendsItsSize() throws {
+        final class Window: NSWindow {
+            var shown = false
+            override var isVisible: Bool { shown }
+            override var occlusionState: NSWindow.OcclusionState { shown ? [.visible] : [] }
+        }
+
+        try HvfFramebufferAvailabilityFixture.run { fixture, _, view, _ in
+            let window = Window(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+                                styleMask: [], backing: .buffered, defer: true)
+            window.contentView = view
+            defer { window.contentView = nil }
+            NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
+            let resize = { String(decoding: (try? fixture.bytes(fixture.input)) ?? Data(), as: UTF8.self)
+                .split(separator: "\n").filter { $0.hasPrefix("RESIZE ") } }
+            XCTAssertEqual(resize(), [], "hidden: no size")
+            window.shown = true
+            NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
+            XCTAssertEqual(resize(), ["RESIZE 800x600"])
+            window.shown = false
+            NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
+            window.shown = true
+            NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
+            XCTAssertEqual(resize(), ["RESIZE 800x600"], "the same size again is not sent twice")
+        }
+    }
+
     func testOcclusionPausesTheLinkAndRevealResumesTheSameDisplay() throws {
         final class Window: NSWindow {
             var showsContent = true

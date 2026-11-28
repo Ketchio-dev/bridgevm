@@ -5,6 +5,14 @@ enum VMResourceLimits {
     /// At least 10, and on a larger Mac as many as Create and the CLI offer (all cores but one),
     /// so a VM made there can still be changed in Settings.
     static let maximumCPU = max(10, ProcessInfo.processInfo.activeProcessorCount - 1)
+
+    /// Memory as macOS shows it: binary amounts labelled GB. Disk sizes stay GiB because Finder
+    /// counts files in decimal GB.
+    static func memoryText(mib: Int) -> String {
+        mib.isMultiple(of: 1024) ? "\(mib / 1024) GB" : "\((Double(mib) / 1024 * 100).rounded() / 100) GB"
+    }
+
+    static func cpuText(_ count: Int) -> String { count == 1 ? "1 CPU" : "\(count) CPUs" }
 }
 
 // MARK: - Configuration

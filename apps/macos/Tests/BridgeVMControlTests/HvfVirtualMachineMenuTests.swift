@@ -15,7 +15,7 @@ final class HvfVirtualMachineMenuTests: XCTestCase {
         let menu = NSHostingMenu(rootView: HvfVirtualMachineMenuContent())
         menu.update()
         XCTAssertEqual(menu.items.filter { !$0.isSeparatorItem }.map(\.title), [
-            "Settings…", "Send Ctrl+Alt+Delete", "Open Snipping Tool", "Pause", "Restart", "Stop",
+            "Settings…", "Send Ctrl+Alt+Delete", "Open Snipping Tool", "Pause", "Restart", "Shut Down",
             "Windows Apps", "Show Open Windows…"
         ])
         let settings = try XCTUnwrap(menu.items.first)
@@ -70,7 +70,7 @@ final class HvfVirtualMachineMenuTests: XCTestCase {
         XCTAssertFalse(state.stops, "the stop is under way")
     }
 
-    /// Once a Stop waits for Windows the menu's Stop is off, so the display itself shows the wait with the
+    /// Once a Shut Down waits for Windows the menu's Shut Down is off, so the display itself shows the wait with the
     /// library's Shut Down Again and Force Stop; a full-screen VM window had no sign of it and no way out.
     func testTheDisplayShowsAStopWaitingForWindowsWithItsWayOut() async throws {
         let f = try Owned(); defer { f.clean() }

@@ -64,7 +64,12 @@ enum HvfDisplayDriverInstall {
     }
 
     static let stillRunning = Outcome(status: .failed,
-        detail: "The installation hasn’t finished after 15 minutes. It may still be running in Windows. Click Install again to resume waiting.")
+        detail: "The installation hasn’t finished after 15 minutes. It may still be running in Windows. Choose Install Driver again to keep waiting.")
+
+    /// What the user sees for every failure the installer in Windows reports. Its own text is
+    /// Windows' localized exception message or the installer's curl, pnputil and hash details,
+    /// none of which says what to do, so it goes to the log only. Mostly the download failed.
+    static let windowsFailure = "Check that Windows can reach the internet, then choose Install Driver again."
 
     /// install.ps1, the installer (Windows PowerShell 5.1, ASCII), in the locked
     /// `C:\ProgramData\BridgeVM\display-driver` with `launch.token` (the current launch's random
@@ -264,6 +269,10 @@ enum HvfDisplayDriverInstall {
         }
         var detail = rest.dropFirst(token.count).trimmingCharacters(in: .whitespaces)
         if detail.hasPrefix("detail=") { detail = String(detail.dropFirst("detail=".count)) }
+        if status == .failed {
+            NSLog("Display driver install failed in Windows: %@", detail)
+            detail = windowsFailure
+        }
         return .finished(Outcome(status: status, detail: detail))
     }
 
@@ -389,10 +398,11 @@ struct HvfDisplayDriverInstallButton: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Button(action: install) {
-                if compact { Text(installing ? "Installing…" : "Install") }
+                if compact { Text(installing ? "Installing…" : "Install Driver") }
                 else { Label("Install display driver", systemImage: "arrow.down.circle") }
             }
             .disabled(installing || !HvfDisplayDriverInstall.agentReady(session))
+            .accessibilityLabel("Install display driver")
             .accessibilityIdentifier("bridgevm.runtime.display-driver.install")
             .help("Windows downloads the Microsoft-signed display driver from Red Hat (about 95 MB), checks that it’s the expected file, and installs it.")
             if !installing, !compact, let reason = HvfDisplayDriverInstall.unavailableReason(session) {

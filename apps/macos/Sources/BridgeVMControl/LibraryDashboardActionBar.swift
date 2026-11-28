@@ -6,7 +6,8 @@ struct LibraryDashboardActionBar: View {
     let open: () -> Void
     let showAdvanced: () -> Void
     var showSettings: (() -> Void)?
-    /// Checks the VM process and reads the library again: "Refresh the library" messages mean this.
+    /// Checks the VM process and reads the library again, like Refresh Library in the command palette
+    /// that messages point to.
     let refresh: () -> Void
     var clone: (() -> Void)?
     var cloneDisabled = false
@@ -28,7 +29,7 @@ struct LibraryDashboardActionBar: View {
             Button("Advanced", action: showAdvanced)
                 .accessibilityIdentifier("bridgevm.dashboard.advanced")
             Menu {
-                Button("Refresh", systemImage: "arrow.clockwise", action: refresh)
+                Button("Refresh Library", systemImage: "arrow.clockwise", action: refresh)
                 if let clone {
                     Button("Duplicate", systemImage: "plus.square.on.square", action: clone)
                         .disabled(cloneDisabled)

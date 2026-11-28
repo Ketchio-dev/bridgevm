@@ -5,7 +5,7 @@ import Foundation
 struct HvfWindowsInstallCommittedCleanupFailure: LocalizedError {
     let config: VMConfig
     var errorDescription: String? {
-        "Windows is installed. Refresh the library to finish cleaning up temporary files. Keep the VM files and avoid running the installer again."
+        "Windows is installed. Press Command-K in the library window and choose Refresh Library to finish cleaning up temporary files. Keep the VM files and avoid running the installer again."
     }
 }
 

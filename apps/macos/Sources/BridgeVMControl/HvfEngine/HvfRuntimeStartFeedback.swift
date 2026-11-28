@@ -87,7 +87,7 @@ extension HvfRuntimeStartOutcome {
                     case "uefi-vars-size":
                         return "The Windows boot settings file has the wrong size, so restore the 64 MiB file from a backup."
                     case "ram-range":
-                        return "Set the VM’s memory between 1024 and 65536 MiB, then start Windows again."
+                        return "Set the VM’s memory between 1 GB and 64 GB in Settings, then start Windows again."
                     case "cpu-range":
                         return "Choose 1 to 64 CPUs in VM settings, then start Windows again."
                     case "share-invalid":
@@ -103,8 +103,8 @@ extension HvfRuntimeStartOutcome {
                 case "watchdog-range", "evidence-not-directory", "control-path-collision", "vtpm-path-collision", "vtpm-key-id", "vtpm-state-not-directory":
                     return "BridgeVM couldn’t start Windows with these settings, so check the VM settings or restore them from a backup."
                 default:
-                    // An unfinished move or install cleanup: Refresh reads the library again.
-                    return "BridgeVM couldn’t start Windows yet, so choose Refresh and try again."
+                    // An unfinished move or install cleanup: Refresh Library reads the library again.
+                    return "BridgeVM couldn’t start Windows yet. Press Command-K in the library window and choose Refresh Library, then try again."
                 }
             // The keychain's status code stays in the run's event log (HvfGUIStartCompletion).
             case .keyAccess:

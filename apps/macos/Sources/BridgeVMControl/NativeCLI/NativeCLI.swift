@@ -119,9 +119,12 @@ extension NativeCLI {
         }
     }
 
+    /// What JSON's `runtimeState: "unobserved"` means for list, inspect and readiness.
+    static let runningStateNotChecked = "This command doesn't check whether a VM is running; use status."
+
     static func render(_ snapshot: NativeCLIReadiness) -> String {
         let value = NativeCLITextValue.escaped
-        var lines = ["VM readiness: \(value(snapshot.id))", "Runtime state: \(value(snapshot.runtimeState))",
+        var lines = ["VM readiness: \(value(snapshot.id))", runningStateNotChecked,
                      "Launch prerequisites: \(snapshot.launchReady ? "ready" : "blocked")"]
         if !snapshot.engineChecksPerformed {
             lines.append("Engine prerequisite and product release checks were not evaluated.")
@@ -139,7 +142,7 @@ extension NativeCLI {
 
     static func render(_ snapshot: NativeLibrarySnapshot) -> String {
         let value = NativeCLITextValue.escaped
-        var lines = ["VM library: \(value(snapshot.libraryPath))", "Runtime state: unobserved"]
+        var lines = ["VM library: \(value(snapshot.libraryPath))", runningStateNotChecked]
         if snapshot.records.isEmpty { lines.append("No readable saved VMs.") }
         for record in snapshot.records {
             lines.append("\(value(record.id))\t\(NativeCLITextValue.quoted(record.displayName))\t\(value(record.backendKind))")

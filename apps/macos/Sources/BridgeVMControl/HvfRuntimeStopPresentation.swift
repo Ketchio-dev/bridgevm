@@ -6,7 +6,7 @@ struct HvfRuntimeStopPresentation: Equatable {
 
     static func make(runtimeActive: Bool, lifecycleBusy: Bool, ownsRuntime: Bool) -> Self {
         if lifecycleBusy {
-            return Self(isEnabled: false, guidance: "Wait for the current operation to finish before stopping the VM.")
+            return Self(isEnabled: false, guidance: "Wait for the current operation to finish before shutting down the VM.")
         }
         if runtimeActive, !ownsRuntime {
             return Self(isEnabled: false, guidance: "Stop the VM from the app or tool that started it.")
@@ -14,6 +14,6 @@ struct HvfRuntimeStopPresentation: Equatable {
         if !runtimeActive {
             return Self(isEnabled: false, guidance: "The VM is stopped.")
         }
-        return Self(isEnabled: true, guidance: "Stop the VM started by this app.")
+        return Self(isEnabled: true, guidance: "Shut down the VM started by this app.")
     }
 }

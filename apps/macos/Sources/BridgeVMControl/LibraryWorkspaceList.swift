@@ -193,8 +193,8 @@ struct LibraryWorkspaceRow: View {
     private var resourceText: String { Self.resourceText(config) }
 
     nonisolated static func resourceText(_ config: VMConfig) -> String {
-        let cpu = config.cpuCount.map { "\($0) vCPU" } ?? "CPU: Automatic"
-        let memory = config.memMiB.map { $0.isMultiple(of: 1024) ? "\($0 / 1024) GiB RAM" : "\($0) MiB RAM" } ?? "Memory: Automatic"
+        let cpu = config.cpuCount.map(VMResourceLimits.cpuText) ?? "CPUs: Automatic"
+        let memory = config.memMiB.map { "\(VMResourceLimits.memoryText(mib: $0)) memory" } ?? "Memory: Automatic"
         // Only one engine ships, so the row names it only when the VM can't use it.
         return "\(cpu) · \(memory)" + (config.engineKind == .hvfEngine ? "" : " · \(config.engineDetailLabel)")
     }

@@ -23,7 +23,7 @@ struct HvfRuntimeHeartbeatItem: View {
     var body: some View {
         let value = heartbeat.age.map { String(format: "%.1f s ago", $0) } ?? "-"
         VStack(alignment: .leading, spacing: 2) {
-            Text("Guest agent response").font(.caption).foregroundColor(.secondary)
+            Text("Last Guest Tools response").font(.caption).foregroundColor(.secondary)
             Text(value).font(.body.monospaced()).accessibilityIdentifier("bridgevm.windows.runtime.heartbeat")
                 .accessibilityValue(value)
         }

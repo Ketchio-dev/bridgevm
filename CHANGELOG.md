@@ -78,6 +78,9 @@ All notable changes to BridgeVM are documented in this file.
 - On a drive that can't give space back (exFAT, HFS+), the app now says once
   per run that the VM's disk file won't shrink when Windows frees space, and
   suggests moving the VM to an APFS drive. Before, this was silent.
+- With Retina resolution on, a VM window you minimise on one display and
+  restore on a display with another scale now gets the right Windows size,
+  instead of staying soft until you resize it.
 - Deleting the selected VM selects the VM next to it, not the first VM
   in the library.
 - A Mac file that never reaches Windows now gets a notice: when Windows

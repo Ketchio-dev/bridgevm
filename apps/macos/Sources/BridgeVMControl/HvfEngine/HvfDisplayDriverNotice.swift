@@ -21,7 +21,7 @@ enum HvfDisplayDriverNotice: Equatable {
     var text: String {
         switch self {
         case .unbound:
-            return "Windows has no driver for the new display adapter, so the desktop doesn’t resize with this window. Choose Install to install the driver again."
+            return "Windows has no driver for the new display adapter, so the desktop doesn’t resize with this window. Choose Install Driver to install it again."
         case .install: return "Install the display driver to resize the Windows desktop when you resize this window."
         case .restart: return "To use the new display driver, choose Restart Now to shut down Windows and start the VM again."
         }
