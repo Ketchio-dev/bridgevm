@@ -37,6 +37,8 @@ pub struct HostSocketOutboundIpv4Handler {
     /// Host listeners of the inbound port forwards.
     pub(crate) forwards: Vec<ForwardListener>,
     pub(crate) forward_source_cursor: u16,
+    /// `DNS_UNREACHABLE_LINE` was printed and no DNS reply has come back since.
+    pub(crate) dns_unreachable: bool,
     #[cfg(test)]
     pub(crate) idle_sweep_count: u64,
 }
@@ -54,6 +56,21 @@ pub(crate) fn watch_socket(
 }
 
 pub(crate) const HOST_SOCKET_UDP_RECV_SCRATCH_LEN: usize = 2048;
+
+/// The lines the app turns into its notice (HvfPortForwards.swift
+/// HvfPortForwardNotice): Windows can't reach the Mac's DNS server, and later
+/// that it can again.
+pub(crate) const DNS_UNREACHABLE_LINE: &str = "BVNET dns-unreachable";
+pub(crate) const DNS_REACHABLE_LINE: &str = "BVNET dns-reachable";
+
+/// A server on the Mac's own network, such as the router: reaching it needs
+/// macOS Local Network access.
+pub(crate) fn is_local_network_address(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => v4.is_private() || v4.is_link_local(),
+        IpAddr::V6(v6) => v6.is_unicast_link_local() || v6.is_unique_local(),
+    }
+}
 pub(crate) const HOST_SOCKET_ICMP_RECV_SCRATCH_LEN: usize = 2048;
 
 impl Default for HostSocketOutboundIpv4Handler {
@@ -108,6 +125,7 @@ impl HostSocketOutboundIpv4Handler {
             ready_scratch: Vec::new(),
             forwards: Vec::new(),
             forward_source_cursor: 0,
+            dns_unreachable: false,
             #[cfg(test)]
             idle_sweep_count: 0,
         }
@@ -207,7 +225,8 @@ impl HostSocketOutboundIpv4Handler {
 
     pub(crate) fn handle_udp(&mut self, packet: &Ipv4Packet<'_>, udp: &UdpDatagram<'_>) {
         let now = self.now_ms();
-        let socket_dst = if packet.dst == DNS_IP && udp.dst_port == 53 {
+        let dns = packet.dst == DNS_IP && udp.dst_port == 53;
+        let socket_dst = if dns {
             self.dns.server_at(now)
         } else {
             SocketAddr::from((packet.dst, udp.dst_port))
@@ -232,7 +251,12 @@ impl HostSocketOutboundIpv4Handler {
                     Ok(socket)
                 }) {
                     Ok(socket) => socket,
-                    Err(_) => return,
+                    Err(error) => {
+                        if dns {
+                            self.note_dns_send_error(&error, socket_dst);
+                        }
+                        return;
+                    }
                 };
                 let watched = watch_socket(&self.wake, socket.as_raw_fd(), false);
                 entry.insert(UdpFlow {
@@ -252,8 +276,26 @@ impl HostSocketOutboundIpv4Handler {
             if !would_block(&error) && error.raw_os_error() != Some(libc::ENOBUFS) {
                 self.udp_flows.remove(&key);
             }
+            if dns {
+                self.note_dns_send_error(&error, socket_dst);
+            }
         }
         self.evict_idle_flows();
+    }
+
+    /// macOS refuses a send to a local network address with EHOSTUNREACH ("No
+    /// route to host") while BridgeVM's Local Network access is off (TN3179).
+    /// With the Mac's DNS server on that network, Windows then resolves no
+    /// names and nothing said why: say it once, until a reply comes back.
+    pub(crate) fn note_dns_send_error(&mut self, error: &io::Error, server: SocketAddr) {
+        if self.dns_unreachable
+            || error.raw_os_error() != Some(libc::EHOSTUNREACH)
+            || !is_local_network_address(server.ip())
+        {
+            return;
+        }
+        self.dns_unreachable = true;
+        crate::host_log::out(DNS_UNREACHABLE_LINE);
     }
 
     pub(crate) fn handle_tcp(&mut self, packet: &Ipv4Packet<'_>, tcp: &TcpSegment<'_>) {
@@ -368,6 +410,7 @@ impl HostSocketOutboundIpv4Handler {
         };
         let now = self.now_ms();
         let recv_scratch = &mut self.udp_recv_scratch;
+        let dns_unreachable = &mut self.dns_unreachable;
         for (key, flow) in &mut self.udp_flows {
             while flow.readable && !reply_queue_full(reply_queue) {
                 match flow.socket.recv(recv_scratch) {
@@ -384,6 +427,9 @@ impl HostSocketOutboundIpv4Handler {
                         );
                         if key.public_dst == DNS_IP && key.public_dst_port == 53 {
                             stats.dns_replies = stats.dns_replies.saturating_add(1);
+                            if std::mem::take(dns_unreachable) {
+                                crate::host_log::out(DNS_REACHABLE_LINE);
+                            }
                         } else {
                             stats.udp_datagrams_out = stats.udp_datagrams_out.saturating_add(1);
                         }

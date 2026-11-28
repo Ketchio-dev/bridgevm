@@ -92,6 +92,9 @@ All notable changes to BridgeVM are documented in this file.
   new import now gets the next free ID (such as `windows-11-2`), the old folder's
   files are left alone, and the library explains that a folder with no vm.json
   is usually left from a setup that did not finish and can be moved to the Trash.
+- When macOS blocks BridgeVM from the local network, Windows can't reach the Mac's DNS
+  server (usually the router) and no website opens. BridgeVM now says so in the VM's view and
+  where to turn Local Network access back on, and clears the notice once DNS answers again.
 - After an import fails, Virtual machines in the sidebar goes back to Get
   Started again and clears the error. Before, the failed import form stayed with
   no way back, and a later import form still showed the old red error.
