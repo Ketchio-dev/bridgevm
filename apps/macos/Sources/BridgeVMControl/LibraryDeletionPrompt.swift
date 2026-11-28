@@ -10,7 +10,7 @@ struct LibraryDeletionPrompt: Equatable {
     init(config: VMConfig, rootURL: URL) {
         if let target = VMLibrary.deletionTarget(for: config, rootURL: rootURL) {
             confirmTitle = "Delete \(config.name) and Its Disk"
-            message = "This permanently deletes the VM settings and the virtual disk at \(Self.shown(target.path))."
+            message = "This permanently deletes the VM settings, the virtual disk and any snapshots at \(Self.shown(target.path))."
         } else {
             confirmTitle = "Remove \(config.name) from Library"
             message = "This removes the VM from your library. Its files stay in \(Self.shown(config.bundlePath))."

@@ -28,7 +28,7 @@ final class LibraryDeletionPromptTests: XCTestCase {
         let prompt = LibraryDeletionPrompt(config: cfg, rootURL: root)
         XCTAssertEqual(prompt.confirmTitle, "Delete \(cfg.name) and Its Disk", engine)
         XCTAssertEqual(prompt.message,
-                       "This permanently deletes the VM settings and the virtual disk at \(path).", engine)
+                       "This permanently deletes the VM settings, the virtual disk and any snapshots at \(path).", engine)
     }
 
     func testStaleSavedPathNamesTheEntryBundleThatDeletionRemoves() throws {
