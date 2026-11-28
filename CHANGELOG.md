@@ -55,6 +55,12 @@ All notable changes to BridgeVM are documented in this file.
   Windows update could go missing, or a Secure Boot revocation could be
   undone. Now a change is saved to the Mac's disk about a second after
   Windows makes it.
+- Typing a Windows password with a Korean, Japanese or Chinese input source
+  selected on the Mac now works at the sign-in screen after Windows starts and
+  on the lock screen: while Windows can only take plain letters there, the VM
+  window switches the Mac to a Roman layout, as a Mac password field does, and
+  switches back afterwards. Before, the keys became Hangul syllables that
+  Windows refused with a beep, or that went through the Windows clipboard.
 - The installer no longer replaces BridgeVM while BridgeVM or one of its VMs is
   running. It stops before downloading and asks you to shut down your VMs and
   quit BridgeVM first. Before, the old app kept running on top of the new

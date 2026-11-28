@@ -36,6 +36,15 @@ extension HvfEngineSession {
         }
     }
 
+    /// Text other than printable ASCII reaches Windows only through the agent: typed on the ordered route,
+    /// or as a clipboard paste. Before the agent runs (the sign-in screen after a boot) it is refused, and
+    /// on a secure desktop (`fallback`: the lock screen, a UAC prompt) it would go through the Windows
+    /// clipboard. The display view then keeps the Mac's input source to Roman layouts.
+    var guestTakesNonASCIIText: Bool {
+        guard serviceStarted, case .connected = connectionState else { return false }
+        return !inputDriver.router.fallback
+    }
+
     /// Whether `text` sent now reaches the guest before a pointer event sent after it: on the ordered
     /// route, or as HID keys in input.ctl. A clipboard paste completes later and a press cancels it.
     func displayTextPrecedesPointer(_ text: String) -> Bool {

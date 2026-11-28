@@ -121,6 +121,23 @@ final class HvfKeyEventIdentityTests: XCTestCase {
         return event
     }
 
+    /// With no agent yet (the sign-in screen after a boot) Windows takes only printable ASCII, so a Korean
+    /// input source would turn a typed password into refused Hangul: the view keeps the Mac's input source
+    /// to Roman layouts there, as a password field does, and lets it go once the agent takes text.
+    func testInputSourceStaysRomanUntilTheAgentTakesText() throws {
+        try withDisplay { view, session, fixture in
+            let before = view.inputContext?.selectedKeyboardInputSource
+            view.updateSession(session)
+            XCTAssertFalse(session.guestTakesNonASCIIText)
+            XCTAssertEqual(view.inputContext?.allowedInputSourceLocales, [NSAllRomanInputSourcesLocaleIdentifier])
+            try fixture.connect(session)
+            view.updateSession(session)
+            XCTAssertTrue(session.guestTakesNonASCIIText)
+            XCTAssertNil(view.inputContext?.allowedInputSourceLocales)
+            XCTAssertEqual(view.inputContext?.selectedKeyboardInputSource, before, "the input source in use before comes back")
+        }
+    }
+
     private func withDisplay(_ body: (FBLayerView, HvfEngineSession, HvfRuntimeKeyboardDraftFixture) throws -> Void) throws {
         let fixture = try HvfRuntimeKeyboardDraftFixture()
         defer { fixture.remove() }
