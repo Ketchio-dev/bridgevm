@@ -2145,7 +2145,7 @@ using System.Threading;
 using System.Windows.Forms;
 namespace BridgeVM {
     public static class BvClipImage {
-        public const int MaxBytes = 33554432;
+        public const int MaxBytes = 134217728;
         public const int MaxSide = 16384;
         public const int HtmlMaxBytes = 4194304;
         public const int FilesMax = 4096;

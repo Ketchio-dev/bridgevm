@@ -865,7 +865,7 @@ fn every_copy_gets_its_notice_lines() {
     let big = format!("4000 3000 {} - -", CLIP_IMAGE_MAX_BYTES + 1);
     let refused = format!(
         "BVAGENT CLIPSYNC refused guest-image too-large bytes={} width=4000 height=3000 \
-         limit-bytes=33554432 limit-side=16384",
+         limit-bytes=134217728 limit-side=16384",
         CLIP_IMAGE_MAX_BYTES + 1
     );
     let text = |copy: char| format!("BVAGENT CLIPSYNC guest->host bytes=1 copy={copy}");
@@ -921,7 +921,7 @@ fn every_copy_gets_its_notice_lines() {
     let again = take_lines(&mut names);
     let skip = format!(
         "BVAGENT CLIPSYNC skip image too-large bytes={} width=9000 height=9000 \
-         limit-bytes=33554432 limit-side=16384 copy=a",
+         limit-bytes=134217728 limit-side=16384 copy=a",
         CLIP_IMAGE_MAX_BYTES + 1
     );
     if pushed != vec![skip, "BVAGENT CLIPSYNC host->guest bytes=1 copy=a".to_owned()]
@@ -1030,7 +1030,7 @@ fn notice_lines_keep_the_prefixes_the_app_matches() {
     assert_eq!(
         refused,
         "BVAGENT CLIPSYNC refused guest-image too-large bytes=0 width=20000 height=300 \
-         limit-bytes=33554432 limit-side=16384 copy=4 t=913"
+         limit-bytes=134217728 limit-side=16384 copy=4 t=913"
     );
 }
 
