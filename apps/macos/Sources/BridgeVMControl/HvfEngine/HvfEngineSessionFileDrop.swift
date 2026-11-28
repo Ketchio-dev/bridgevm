@@ -30,7 +30,7 @@ extension HvfEngineSession {
     private func finishStaging(id: String, staging: URL, open: Bool, outcome: Result<HvfFileDropStaging.Summary, Error>) {
         // The VM stopped while this drop was staging: never hand it to a later run.
         guard fileDrops.isPending(id) else {
-            try? FileManager.default.removeItem(at: staging)
+            HvfFileDropQueue.discard(staging)
             return
         }
         switch outcome {

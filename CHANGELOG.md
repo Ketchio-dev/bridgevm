@@ -54,6 +54,8 @@ All notable changes to BridgeVM are documented in this file.
 - Dropping a folder that holds items the Mac isn't allowed to read, such as a
   whole USB drive with its hidden .Trashes folder, now copies everything else
   and says how many items were skipped. Before, nothing was copied.
+- BridgeVM no longer freezes for a moment when a drop of a large folder, such
+  as thousands of photos, finishes copying to Windows.
 - When VMs running at the same time together use more memory than your Mac can
   spare, each of them now says so in one sentence and suggests stopping one or
   giving the VMs less memory in Settings. Before, macOS just started swapping
