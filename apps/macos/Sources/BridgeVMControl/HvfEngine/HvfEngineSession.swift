@@ -99,6 +99,10 @@ final class HvfEngineSession: ObservableObject {
     var lastHeartbeatDate: Date?
     var openSettingsSheets = Set<ObjectIdentifier>()
     var serviceStarted = false
+    /// Control lines for settings changed while Windows runs (port forwards), by verb. Each Windows
+    /// restart starts a new VM process with the settings of the start (hvf-runner), so they go again
+    /// at each service start until the VM stops.
+    var liveControlLines: [String: String] = [:]
     var guestStartApps = false // the agent's last READY carried `startapps` (HvfGuestStartApps)
     var hardwareCursorOffSent = false // HWCursor=0 went to the guest after the setting was turned off
     // Windows links (HvfGuestLinks.swift): the registration's removal went to the guest after the setting was
@@ -231,6 +235,13 @@ final class HvfEngineSession: ObservableObject {
         runtimeTransitionInProgress = true
         defer { runtimeTransitionInProgress = false }
         adoptObservedAttachment(reportDuplicateLaunch: reportDuplicateLaunch)
+        return true
+    }
+
+    /// Sends a setting's control line now and again after each Windows restart (liveControlLines).
+    func sendLiveControl(_ line: String, verb: String) -> Bool {
+        guard sendCtl(line) else { return false }
+        liveControlLines[verb] = line
         return true
     }
 
@@ -555,6 +566,7 @@ final class HvfEngineSession: ObservableObject {
         guard !runtimeTransitionInProgress, !mayHaveOwnedWork else { return }
         runtimeTransitionInProgress = true
         resetPendingPrintJobs()
+        liveControlLines = [:]
         appPacing.end(evidenceDir: config.evidenceDir)
         if let process, let identity = ownedProcessIdentity, !process.isRunning {
             lastOwnedExit = HvfOwnedRuntimeExit(identity: identity, process: process)
@@ -602,6 +614,7 @@ final class HvfEngineSession: ObservableObject {
 
     func resetObservedRuntimeState(clearEvents: Bool) {
         resetPendingPrintJobs()
+        liveControlLines = [:]
         if !hasPendingGUIStart { guiStartOperation = nil }
         appPacing.begin()
         legacyPaste = HvfLegacyPasteState()

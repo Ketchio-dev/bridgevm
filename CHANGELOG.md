@@ -60,6 +60,8 @@ All notable changes to BridgeVM are documented in this file.
 - Setting the Mac's clock back by more than a couple of seconds while
   Windows runs now sets Windows' clock back too (through Guest Tools),
   instead of leaving it ahead until the next restart.
+- Port forwards changed while Windows runs stay changed after Windows
+  restarts, instead of going back to the ones the VM started with.
 - In a VM whose Windows account isn't an administrator, BridgeVM no longer
   tries to update Guest Tools at every launch and reports "Guest Tools
   couldn't update" each time. That update can't work without administrator
