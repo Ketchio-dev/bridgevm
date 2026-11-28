@@ -49,6 +49,9 @@ All notable changes to BridgeVM are documented in this file.
 - Move to Another Folder on a running or busy VM now says why right away.
   Before, it first asked for a folder, and only then said the VM had to be
   shut down.
+- Quitting BridgeVM while a VM runs with its window closed now shows that
+  VM's window while Windows shuts down, so a Windows app asking to save your
+  work can be seen. Before, nothing was shown for up to a minute.
 - Files dropped on a VM window, or opened with BridgeVM from Finder, while
   Windows is still starting are now copied once Windows is ready. Before,
   they were refused with a message that stayed over the Windows taskbar. A
