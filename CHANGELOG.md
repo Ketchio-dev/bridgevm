@@ -48,6 +48,9 @@ All notable changes to BridgeVM are documented in this file.
   developer tools" dialog, so it failed or wrongly said the app was not Apple
   Silicon native. It now uses only tools that come with macOS, and every check
   it makes is as strict as before.
+- A guest tools update no longer goes back to the old version when the Mac
+  sleeps while Windows is waiting to confirm it. Setting Windows's clock
+  after the wake ended the wait early.
 - Windows boot entries and Secure Boot settings now survive a crash, a power
   loss or a Force Stop that runs out of time while the VM runs. BridgeVM
   used to save the VM's UEFI settings only when the VM stopped cleanly, so
