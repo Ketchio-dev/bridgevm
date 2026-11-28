@@ -171,6 +171,8 @@ pub struct VirtioGpu {
     pub(crate) scanout_iosurface_verify: bool,
     pub(crate) scanout_iosurface_id: Option<u32>,
     pub(crate) scanout_iosurface_dumped: bool,
+    /// `<BRIDGEVM_DISPLAY_EXPORT_FB>.iosurface`: the scanout IOSurface the app shows while it exists.
+    pub(crate) published_iosurface: Option<std::path::PathBuf>,
     pub(crate) scanout_blit_count: u64,
     pub(crate) scanout_blit_nanoseconds: u64,
     /// 2D copies without the platform lock (unlocked_copy.rs); off until a
@@ -260,6 +262,12 @@ impl VirtioGpu {
             scanout_iosurface_verify: false,
             scanout_iosurface_id: None,
             scanout_iosurface_dumped: false,
+            published_iosurface: std::env::var_os("BRIDGEVM_DISPLAY_EXPORT_FB")
+                .filter(|path| !path.is_empty())
+                .map(|mut path| {
+                    path.push(".iosurface");
+                    path.into()
+                }),
             scanout_blit_count: 0,
             scanout_blit_nanoseconds: 0,
             scanout_readback_bytes: 0,
@@ -312,6 +320,7 @@ impl VirtioGpu {
         self.scanout.clear();
         self.scanout.resize(scanout_len(width, height), 0);
         self.three_d.reset();
+        self.forget_published_iosurface();
         self.pending_fenced.clear();
         self.pending_vblank.clear();
         self.completed_fences_scratch.clear();
