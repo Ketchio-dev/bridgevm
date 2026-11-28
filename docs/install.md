@@ -172,22 +172,32 @@ on current macOS, so the Settings route is the real one.
 
 ### Install Windows from an ISO
 
-1. In v0.1.0, choose **Install Windows** (**새 Windows VM 만들기**), then **Choose ISO…**
-   (**ISO 선택…**) and select your Windows 11 Arm ISO.
-2. Type a VM name in **Name** (**이름**). The displayed “Windows 11” is a
-   placeholder. Choose **Download Drivers** (**드라이버 자동 준비**) or select
+1. Choose **Install Windows** (v0.1.0: **새 Windows VM 만들기**), then **Choose ISO…**
+   (v0.1.0: **ISO 선택…**) and select your Windows 11 Arm ISO.
+2. Keep the name “Windows 11” in **Name (required)** or type another. In v0.1.0
+   the field is **이름** and “Windows 11” is only a placeholder, so type a name.
+   Choose **Download Drivers** (v0.1.0: **드라이버 자동 준비**) or select
    your own driver folder and its manifest.
-3. Choose **Create** (**생성**). In the new VM’s detail view, choose
-   **Start Installation** (**설치 시작**) to begin Windows setup.
+3. Choose **Create** (v0.1.0: **생성**). In the new VM’s detail view, choose
+   **Start Installation** (v0.1.0: **설치 시작**). The view shows the elapsed
+   time; current source builds also show the steps **Check files**, **Prepare
+   media**, **Install Windows** and **Save VM**.
+4. Leave the Mac awake until installation finishes. In current source builds,
+   **Keep Mac awake while Windows is running or installing** (on by default, in a
+   VM’s **Settings** → **General**) prevents idle sleep during installation.
+5. When installation finishes, choose **Start** (v0.1.0: **시작**). Finish Windows
+   setup and sign in in the VM window. BridgeVM then connects to Windows.
 
-- A Windows 11 ARM64 ISO, downloaded from Microsoft yourself. The app does not
-  fetch Windows media; it asks you to choose the ISO file.
+- A Windows 11 Arm64 ISO from Microsoft’s
+  [Windows 11 Arm64 download page](https://www.microsoft.com/en-us/software-download/windows11arm64).
+  An x64 ISO is refused. The app does not fetch Windows media; it asks you to
+  choose the ISO file.
 - Signed ARM64 storage, serial and network drivers. Either:
   - Click **Download Drivers** in the Create window (**드라이버 자동 준비** in
-    v0.1.0), or pass `--fetch-drivers` to `bridgevm app create-windows`.
-    BridgeVM downloads the pinned Red Hat
-    virtio-win 0.1-299 archive (about 95 MB, Microsoft-signed) from the official
-    fedorapeople.org source, refuses it unless its length and SHA-256 match the
+    v0.1.0), or pass `--fetch-drivers` to `bridgevm app create-windows` (see
+    [Installing the command](app-cli.md#installing-the-command) for its full path).
+    BridgeVM downloads the pinned Red Hat virtio-win 0.1-299 archive (about
+    95 MB, Microsoft-signed) from the official fedorapeople.org source, refuses it unless its length and SHA-256 match the
     pins, keeps it under `~/Library/Application Support/BridgeVM/driver-payloads`,
     and writes the `Win11/ARM64` viostor, vioser and netkvm (with `netkvmp.exe`)
     files plus their manifest there; or
@@ -198,23 +208,35 @@ on current macOS, so the Settings route is the real one.
 
   BridgeVM itself does not redistribute these drivers. Either way the app copies
   and seals the payload and manifest in the VM bundle before installation.
-- About 64 GiB of free disk for the guest image.
+- Free disk space for the VM. Its disk is 64 GiB by default, the smallest size
+  offered. Memory is 6 GiB by default (4 GiB on an 8 GiB Mac).
 
-Current source builds copy the selected ISO into the VM bundle. If the installer
-reports a missing or changed ISO, click the ISO filename in the VM detail view
+Current source builds copy the selected ISO into the VM bundle. When the ISO is
+on another drive, that copy needs the ISO’s size plus 1 GiB free on the VM’s
+drive. If the installer reports a missing or changed ISO, click the ISO filename in the VM detail view
 to open its location in Finder. Restore the ISO used to create that VM as
 `disks/installer.iso` in its bundle, then click **Try Again**. BridgeVM checks the
 restored file against its original SHA-256 before preparing Windows.
 
 ### Import an installed Windows disk
 
-1. In v0.1.0, choose **Import an existing disk** (**기존 VM 가져오기**). Keep the
-   prefilled name “Windows 11” or enter a different name.
-2. Beside **Windows disk** (**Windows 디스크**), click **Choose…** (**선택…**)
-   and select the installed Windows 11 Arm disk. If you have its matching UEFI variables
-   file, select it in the separate optional UEFI field.
-3. Choose **Import** (**가져오기**). Select the saved VM in the library and
-   choose **Start** (**시작**) to boot it.
+1. Choose **Import an existing disk** (v0.1.0: **기존 VM 가져오기**). Keep the
+   prefilled name “Windows 11” under **Name in library** or enter a different name.
+2. Beside **Windows disk** (v0.1.0: **Windows 디스크**), click **Choose or drop
+   file…** (v0.1.0: **선택…**) and select the installed Windows 11 Arm disk. If
+   you have its matching UEFI variables file, select it in the separate optional
+   UEFI field.
+3. Choose **Import** (v0.1.0: **가져오기**). Select the saved VM in the library and
+   choose **Start** (v0.1.0: **시작**) to boot it.
+4. After the first start, choose **Install Guest Tools** (v0.1.0: **게스트 도구
+   설치**) when BridgeVM offers it. Shut down Windows and start it again, then run
+   **install.cmd** from the new drive in Windows and approve the administrator
+   prompt. This enables clipboard sharing and shared folders.
+
+Windows on the imported disk must already have the Red Hat VirtIO Serial
+driver; the guest tools install only the BridgeVM agent, which needs it. The VM’s
+network adapter is virtio-net, so Windows also needs the NetKVM driver for
+networking.
 
 See the [Windows desktop after an installed-disk import](media/windows-hvf-import-20261126.webp)
 from a development build running with 3D off.
@@ -227,7 +249,8 @@ Hyper-V VHD. Convert a dynamic VHD to VHDX in Hyper-V before importing.
 For compressed QCOW2 in the v0.1.0 download, import a RAW copy. Builds from
 current source support QEMU's default deflate compression. Use RAW for
 zstd-compressed QCOW2 with either build. Export a RAW copy from the original
-VM app, or use `qemu-img` with a new output filename.
+VM app, or use `qemu-img` with a new output filename. If you don’t have
+`qemu-img`, install it with `brew install qemu`.
 
 ```sh
 qemu-img convert -O raw "Windows.qcow2" "Windows.raw"
@@ -238,20 +261,15 @@ Choose `Windows.raw` in the import wizard.
 ### Display drivers after setup
 
 The General Preview bundles no Windows driver and accepts no graphics-driver
-package at creation; Windows-HVF creation shows that 3D injection is
-unavailable and proceeds without it. Once Windows runs, VM settings offer an
-optional install of the Microsoft-signed Red Hat virtio-win display driver,
-which Windows downloads itself. After a VM restart the display follows the
-window size; without it the resolution is fixed per VM (1280x800 by default).
-
-On November 24, 2026, a development Mac used **드라이버 자동 준비** with
-an empty cache and a Windows 11 Arm ISO. The app checked the archive and
-sealed its driver files into the VM. Driver preflight accepted all three catalogs.
-The installed system reached its first interactive desktop with the guest
-agent, VirtioSerial and NetKVM running. Windows used NVMe for its system
-drive, and DNS and an HTTP request succeeded over the guest network. The
-run used an unattended test account on the development Mac. Clean-machine
-coverage is tracked in [the release criteria](../STATUS.md).
+package at creation; Windows is created with the standard display and 3D
+acceleration off. Once Windows runs and BridgeVM is connected, open **Settings**
+→ **Display** and choose **Install display driver**, or choose **Install** in the
+notice over the Windows display. Windows downloads the Microsoft-signed Red Hat
+virtio-win display driver itself (about 95 MB). Then choose **Restart Now** in
+the notice, or shut down the VM and start it again. Restarting Windows inside
+the VM is not enough: it cannot attach the new display. After that the display
+follows the window size; without it the resolution is fixed per VM (1280x800 by
+default).
 
 ## Updating, rolling back, uninstalling
 

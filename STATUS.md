@@ -80,6 +80,14 @@ payload. Graphics Lab is a separate test-signed workflow on disposable guests;
 it cannot satisfy A9. Windows rejection of test mode remains an explicit error.
 See the [distribution channel contract](docs/distribution-channels.md).
 
+On November 24, 2026, a development Mac used the app's driver download with an
+empty cache and a Windows 11 Arm ISO. The app checked the archive and sealed its
+driver files into the VM. Driver preflight accepted all three catalogs. The
+installed system reached its first interactive desktop with the guest agent,
+VirtioSerial and NetKVM running. Windows used NVMe for its system drive, and DNS
+and an HTTP request succeeded over the guest network. The run used an unattended
+test account on the development Mac, so it is not clean-machine evidence for A9.
+
 The Mac app uses ad-hoc signing, without Developer ID signing or Apple
 notarization. A DMG downloaded in a browser needs the one-time Open Anyway
 step; the copy the terminal installer fetches does not. Windows driver
