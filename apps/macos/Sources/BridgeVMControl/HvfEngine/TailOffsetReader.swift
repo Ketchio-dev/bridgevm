@@ -4,6 +4,8 @@ final class TailOffsetReader {
     private var cursor: HvfTailFileCursor
     private var accumulator = HvfTailLineAccumulator()
     private(set) var bytesReadLastCall = 0
+    /// Where the next read starts: the end of what has been read.
+    var offset: UInt64 { cursor.offset }
     init(startingAt offset: UInt64 = 0) { cursor = HvfTailFileCursor(startingAt: offset) }
     func readNewLines(from url: URL) -> [String] {
         bytesReadLastCall = 0

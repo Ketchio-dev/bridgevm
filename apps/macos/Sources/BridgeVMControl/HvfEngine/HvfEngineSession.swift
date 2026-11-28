@@ -91,6 +91,10 @@ final class HvfEngineSession: ObservableObject {
     var runtimeTransitionInProgress = false
     var timer: Timer?
     var tailReader = TailOffsetReader()
+    /// run.log's size when this app attached to a VM already running: the lines up to there are read
+    /// again from the start, and a notice about one past event (a refused print job) is not shown again.
+    var runLogBacklogEnd: UInt64?
+    var readingRunLogBacklog: Bool { runLogBacklogEnd.map { tailReader.offset <= $0 } ?? false }
     var agentEvents = BvAgentEvent.Stream() // run.log's lines across polls, with tailReader
     var lastHeartbeatDate: Date?
     var openSettingsSheets = Set<ObjectIdentifier>()
@@ -604,6 +608,7 @@ final class HvfEngineSession: ObservableObject {
         heldKeys = HvfHeldKeys()
         inputDriver.attachUnknown(binding: inputBinding)
         tailReader = TailOffsetReader()
+        runLogBacklogEnd = nil
         agentEvents = BvAgentEvent.Stream()
         displayDriverUnboundDismissed = false
         displayDriverUnbound = false
@@ -737,6 +742,8 @@ extension HvfEngineSession {
         attachedToExistingProcess = true
         nextAttachedLivenessCheck = HvfAttachedLivenessSchedule.next(after: Date())
         resetObservedRuntimeState(clearEvents: true)
+        let log = URL(fileURLWithPath: config.evidenceDir).appendingPathComponent("run.log").path
+        runLogBacklogEnd = (try? FileManager.default.attributesOfItem(atPath: log)[.size] as? NSNumber)?.uint64Value
         connectionState = .booting
         startPolling() // reads run.log from the start
         resumeAfterReattach()

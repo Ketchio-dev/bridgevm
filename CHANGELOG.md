@@ -49,6 +49,8 @@ All notable changes to BridgeVM are documented in this file.
 - A Mac change made just as the shared folder is renamed or deleted in
   Windows no longer makes the Windows folder again with only that file,
   after the Guest Tools update.
+- Reopening BridgeVM while Windows runs no longer repeats an old "print
+  job didn't reach your Mac" notice.
 - In a VM whose Windows account isn't an administrator, BridgeVM no longer
   tries to update Guest Tools at every launch and reports "Guest Tools
   couldn't update" each time. That update can't work without administrator
