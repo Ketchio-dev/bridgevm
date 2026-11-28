@@ -417,9 +417,10 @@ impl AgentConsoleHarness {
                         );
                         self.service_line_scratch.push(' ');
                         base64_encode_into(bytes, &mut self.service_line_scratch);
-                        // Agents before the modification time ignore the extra token.
+                        // Agents before the modification time ignore the extra tokens.
                         if let Some(mtime_ms) = mtime_ms {
                             let _ = write!(&mut self.service_line_scratch, " {mtime_ms}");
+                            write_put_guest_version(share, name, &mut self.service_line_scratch);
                         }
                         self.service_line_scratch.push('\n');
                         true
@@ -439,6 +440,7 @@ impl AgentConsoleHarness {
                         );
                         if let Some(mtime_ms) = mtime_ms {
                             let _ = write!(&mut self.service_line_scratch, " {mtime_ms}");
+                            write_put_guest_version(share, name, &mut self.service_line_scratch);
                         }
                         self.service_line_scratch.push('\n');
                         true

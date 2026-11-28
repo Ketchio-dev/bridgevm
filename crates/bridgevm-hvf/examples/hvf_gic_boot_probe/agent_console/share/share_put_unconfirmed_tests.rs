@@ -1,5 +1,5 @@
-//! A refused PUT may have truncated the guest copy (`bvagent.ps1` writes with
-//! `FileMode.Create`), so the record's hash no longer describes that copy. A
+//! A refused PUT may have truncated the guest copy (an agent from before
+//! 2026-11-12 wrote with `FileMode.Create`), so the record's hash no longer describes that copy. A
 //! host file later restored to the last-synced bytes is re-sent, and the
 //! truncated copy is never pulled back over it.
 
@@ -26,6 +26,7 @@ fn refused_then_restored(
 ) -> (Rig, Vec<u8>) {
     let original = vec![b'o'; size];
     let mut rig = Rig::synced(label, "doc.bin", &original);
+    rig.guest.old_agent = true;
     let path = rig.dir.join("doc.bin");
     let synced_mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
     std::fs::write(&path, vec![b'n'; size + 7]).unwrap();

@@ -67,6 +67,9 @@ All notable changes to BridgeVM are documented in this file.
 - When the VM's disk has nothing to start, such as an imported disk with
   Windows for Intel or AMD PCs, BridgeVM now says so instead of leaving the
   window on the firmware's text.
+- Shared folders no longer lose a Windows save when the same file changes on the Mac before
+  BridgeVM has copied that save over. The Windows version is kept next to it as
+  "<name> (Windows copy)" and copied to the Mac, and the Mac version keeps the original name.
 - A Mac change made just as the shared folder is renamed or deleted in
   Windows no longer makes the Windows folder again with only that file,
   after the Guest Tools update.

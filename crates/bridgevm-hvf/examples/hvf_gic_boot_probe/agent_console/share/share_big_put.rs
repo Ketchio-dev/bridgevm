@@ -20,7 +20,7 @@ use std::os::unix::fs::FileExt as _;
 /// One step on the wire; each has a one-line reply.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::agent_console) enum BigPutStep {
-    /// `LPUTBEG <b64(path)> <size> <mtime ms>` -> `OK LPUTBEG`.
+    /// `LPUTBEG <b64(path)> <size> <mtime ms> [<guest size> <guest time>]` -> `OK LPUTBEG`.
     Beg,
     /// `LPUTDATA <seq> <chars>` and the payload line -> `OK LPUTDATA <seq>`.
     Data { seq: u64, bytes: Vec<u8> },
@@ -121,7 +121,9 @@ impl AgentConsoleHarness {
                 write_share_guest_path_into(share, &put.name, &mut self.share_guest_path_scratch);
                 out.push_str("LPUTBEG ");
                 base64_encode_into(self.share_guest_path_scratch.as_bytes(), out);
-                let _ = writeln!(out, " {} {}", put.size, put.mtime_ms);
+                let _ = write!(out, " {} {}", put.size, put.mtime_ms);
+                write_put_guest_version(share, &put.name, out);
+                out.push('\n');
             }
             BigPutStep::Data { seq, bytes } => {
                 let _ = writeln!(out, "LPUTDATA {seq} {}", bytes.len().div_ceil(3) * 4);

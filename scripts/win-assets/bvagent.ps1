@@ -668,6 +668,7 @@ function Close-PutStream {
     $script:BvPutWritten = [int64]0
     $script:BvPutSeq = 0
     $script:BvPutTime = ''
+    $script:BvPutSeen = $null
 }
 
 # >>> large put
@@ -714,6 +715,23 @@ function Get-PutError($err) {
         $e = $e.InnerException
     }
     return $err.Exception.Message
+}
+
+function Save-WindowsCopy([string]$io, [string[]]$seen) {
+    # PUT, PUTBEG and LPUTBEG end with the size and listed time of the Windows file the host last
+    # synced at that name, when it knows it (as DEL). A file there that is not that version is a
+    # Windows save the Mac has not seen: it is kept as "<stem> (Windows copy)<ext>" before the Mac
+    # file takes the name, and the next listing takes it to the Mac.
+    if ($seen.Count -lt 2 -or -not [System.IO.File]::Exists($io)) { return }
+    $file = New-Object System.IO.FileInfo($io)
+    if ($file.Length -eq [int64]$seen[0] -and $file.LastWriteTimeUtc.ToString('o') -ceq $seen[1]) { return }
+    $stem = [System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName($io), [System.IO.Path]::GetFileNameWithoutExtension($io))
+    $n = 1
+    do {
+        $copy = $stem + $(if ($n -eq 1) { ' (Windows copy)' } else { " (Windows copy $n)" }) + $file.Extension
+        $n++
+    } while ([System.IO.File]::Exists($copy) -or [System.IO.Directory]::Exists($copy))
+    [System.IO.File]::Move($io, $copy)
 }
 
 function Move-Replace([string]$from, [string]$to) {
@@ -2926,7 +2944,7 @@ while ($true) {
                     } catch { Write-Line $h ('ERR GETRANGE ' + $_.Exception.Message) 'ERR' }
                 }
                 'PUT' {
-                    # PUT <b64(path)> <b64(rawbytes)> [<mtime ms>] -> PUTOK <b64(path)> <bytes>.
+                    # PUT <b64(path)> <b64(rawbytes)> [<mtime ms> [<size> <time>]] -> PUTOK <b64(path)> <bytes>.
                     # Single-chunk write; the host sends the whole file in one line.
                     $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
@@ -2939,6 +2957,7 @@ while ($true) {
                             $stage.Stream.Write($data, 0, $data.Length)
                             $stage.Stream.Close()
                             if ($parts.Length -ge 3) { Set-PutTime $stage.Temp $parts[2] }
+                            Save-WindowsCopy $io $parts[3..4]
                             Move-Replace $stage.Temp $io
                         } finally {
                             $stage.Stream.Close()
@@ -2948,7 +2967,7 @@ while ($true) {
                     } catch { Write-Line $h ('ERR PUT ' + $_.Exception.Message) 'ERR' }
                 }
                 'PUTBEG' {
-                    # PUTBEG <b64(path)> <total> <nchunks> [<mtime ms>] -> OK PUTBEG.
+                    # PUTBEG <b64(path)> <total> <nchunks> [<mtime ms> [<size> <time>]] -> OK PUTBEG.
                     # Opens a staged sibling; PUTCHUNK/PUTEND publish it only when complete.
                     $script:BvLsrChanges = [long]-1  # our own write: the next LSR lists afresh (share watch)
                     try {
@@ -2964,6 +2983,7 @@ while ($true) {
                         $script:BvPutWritten = [int64]0
                         $script:BvPutSeq = 0
                         if ($parts.Length -ge 4) { $script:BvPutTime = $parts[3] }
+                        $script:BvPutSeen = $parts[4..5]
                         Write-Line $h 'OK PUTBEG' 'OK'
                     } catch {
                         Close-PutStream
@@ -3031,6 +3051,7 @@ while ($true) {
                             Write-Line $h 'ERR PUTEND short' 'ERR'
                         } else {
                             Set-PutTime $script:BvPutTemp $time
+                            Save-WindowsCopy (Get-IoPath $path) $script:BvPutSeen
                             Move-Replace $script:BvPutTemp (Get-IoPath $path)
                             Write-Line $h ('PUTOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($path)) + ' ' + $written) 'PUTOK'
                         }
@@ -3039,7 +3060,7 @@ while ($true) {
                     } finally { Close-PutStream }
                 }
                 'LPUTBEG' {
-                    # LPUTBEG <b64(path)> <total> [<mtime ms>] -> OK LPUTBEG: a large file's own stream into a
+                    # LPUTBEG <b64(path)> <total> [<mtime ms> [<size> <time>]] -> OK LPUTBEG: a large file's own stream into a
                     # new temporary beside <path> (large put); ERR LPUTBEG disk-full when the volume lacks
                     # <total> bytes plus 2 GiB, the margin the Mac side keeps too (SHARE_FREE_MARGIN): a
                     # share or a copied Finder file never fills Windows to zero.
@@ -3060,7 +3081,7 @@ while ($true) {
                         $stream = $stage.Stream
                         $time = ''
                         if ($parts.Length -ge 3) { $time = $parts[2] }
-                        $script:BvLPut = @{ Stream = $stream; Path = $path; Io = $io; Temp = $temp; Total = $total; Written = [int64]0; Seq = 0; Time = $time }
+                        $script:BvLPut = @{ Stream = $stream; Path = $path; Io = $io; Temp = $temp; Total = $total; Written = [int64]0; Seq = 0; Time = $time; Seen = $parts[3..4] }
                         Write-Line $h 'OK LPUTBEG' 'OK'
                     } catch {
                         Close-LargePut
@@ -3101,6 +3122,7 @@ while ($true) {
                         $put.Stream.Flush($true)
                         $put.Stream.Close()
                         Set-PutTime $put.Temp $put.Time
+                        Save-WindowsCopy $put.Io $put.Seen
                         Move-Replace $put.Temp $put.Io
                         $script:BvLPut = $null
                         Write-Line $h ('PUTOK ' + [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($put.Path)) + ' ' + $put.Written) 'PUTOK'

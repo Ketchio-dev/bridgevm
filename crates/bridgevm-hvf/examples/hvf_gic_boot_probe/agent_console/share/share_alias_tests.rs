@@ -8,8 +8,9 @@ use super::*;
 
 /// One service step in which the guest agent restarts part-way through a PUT
 /// (after the first chunk of a chunked one), having truncated the file first:
-/// `bvagent.ps1` writes with `FileMode.Create`.
+/// an agent from before 2026-11-12 wrote with `FileMode.Create`.
 fn restart_mid_put(rig: &mut Rig) {
+    rig.guest.old_agent = true;
     rig.now += Duration::from_secs(1);
     rig.h.service_enqueue(rig.now);
     let queue = &mut rig.h.queue;

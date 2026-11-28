@@ -239,6 +239,7 @@ fn a_put_cut_short_leaves_a_guest_copy_that_is_never_fetched() {
     // The Mac copy goes back to the reverted guest and is cut short: the guest truncated, wrote
     // part of it and stamped it with its own clock; then the session ends (a probe kill).
     let (mut rig, vars, _) = reverted("cut-short");
+    rig.guest.old_agent = true;
     rig.guest.failing.insert("doc.bin".into());
     new_session(&mut rig, Some(&vars));
     rig.run(4);

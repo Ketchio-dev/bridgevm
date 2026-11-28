@@ -208,6 +208,15 @@ pub(super) fn write_share_guest_path_into(share: &ShareState, name: &str, out: &
     share_sync::append_guest_rel_into(name, out);
 }
 
+/// After a PUT's Mac time: ` <size> <time>` of the guest copy last synced, when known. The agent
+/// keeps a different file there as "(Windows copy)" before replacing it; older agents ignore it.
+pub(super) fn write_put_guest_version(share: &ShareState, name: &str, out: &mut String) {
+    if let Some((size, stamp)) = share.engine.synced_guest_stat(name) {
+        use std::fmt::Write as _;
+        let _ = write!(out, " {size} {stamp}");
+    }
+}
+
 impl AgentConsoleHarness {
     /// Recheck the selected root before a host deletion becomes a guest DEL.
     pub(in crate::agent_console) fn write_share_delete_wire(&mut self, name: &str) -> bool {
@@ -230,7 +239,7 @@ impl AgentConsoleHarness {
             &mut self.service_line_scratch,
         );
         if self.delete_if_unchanged {
-            if let Some((size, stamp)) = share.engine.delete_guest_stat(name) {
+            if let Some((size, stamp)) = share.engine.synced_guest_stat(name) {
                 use std::fmt::Write as _;
                 let _ = write!(self.service_line_scratch, " {size} {stamp}");
             } else {
