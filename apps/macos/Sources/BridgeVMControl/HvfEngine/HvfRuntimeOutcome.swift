@@ -10,7 +10,7 @@ struct HvfOwnedRuntimeIdentity: Equatable, Sendable {
 
 enum HvfRuntimeStartFailureStage: Equatable {
     case readiness([String])
-    case preparation, helper, keyAccess, keyAccessDenied, keyStateMissing, keyStateInvalid, keyGeneration, processLaunch, keyDelivery
+    case preparation, helper, keyAccess, keyAccessLocked, keyAccessDenied, keyStateMissing, keyStateInvalid, keyGeneration, processLaunch, keyDelivery
 }
 
 enum HvfRuntimeStartOutcome: Equatable {
