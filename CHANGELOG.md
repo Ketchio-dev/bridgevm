@@ -48,6 +48,9 @@ All notable changes to BridgeVM are documented in this file.
   startup error on the VM status card. It reads only the text on screen.
 - Port forwards changed while Windows runs stay changed after Windows
   restarts, instead of going back to the ones the VM started with.
+- Signing out of Windows and back in no longer loses the shared clipboard:
+  the Mac's copy is sent to Windows again, so Ctrl+V pastes it without
+  copying it once more on the Mac.
 - In a VM whose Windows account isn't an administrator, BridgeVM no longer
   tries to update Guest Tools at every launch and reports "Guest Tools
   couldn't update" each time. That update can't work without administrator
