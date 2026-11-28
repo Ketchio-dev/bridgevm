@@ -19,7 +19,7 @@ struct CreateVMCreationFooter: View {
             if !error.isEmpty {
                 Text(error).font(.caption).foregroundColor(.red)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("bridgevm.create.error").accessibilityValue(failureCode)
+                    .accessibilityIdentifier(Self.errorIdentifier(failureCode))
                     .padding(.horizontal, 20).padding(.top, 10)
             }
             HStack(spacing: 10) {
@@ -44,6 +44,12 @@ struct CreateVMCreationFooter: View {
 
 extension CreateVMCreationFooter {
     static let nameHint = "Enter a name to create this VM."
+
+    /// The end-to-end harness reads the failure code from the identifier. VoiceOver never
+    /// reads identifiers, so it reads only the message.
+    static func errorIdentifier(_ code: String) -> String {
+        code.isEmpty ? "bridgevm.create.error" : "bridgevm.create.error.\(code)"
+    }
 
     var primaryAction: some View {
         Button(recoveryAvailable ? "Load Saved VM" : (working ? "Creating…" : "Create"),

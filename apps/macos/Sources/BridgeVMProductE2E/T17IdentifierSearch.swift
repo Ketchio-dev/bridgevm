@@ -18,7 +18,7 @@ enum T17IdentifierSearch {
                 guard let expectedRole else {
                     return try T17CreationProbe.find(identifier, in: found, identifier: {
                         try attribute($0, kAXIdentifierAttribute)
-                    }, value: { try attribute($0, kAXValueAttribute) })
+                    })
                 }
                 return try T17RoleQualifiedIdentity.find(identifier, role: expectedRole, in: found, identifier: {
                     try attribute($0, kAXIdentifierAttribute)

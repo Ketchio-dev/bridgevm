@@ -5,7 +5,15 @@ struct T17FirstReadyObservation {
     let readyLine, runtimeState, startFailure: String?
     let applicationRunning: Bool
 
+    static let stateIdentifier = "bridgevm.windows.runtime.state"
+    static let failureIdentifier = "bridgevm.windows.runtime.start.failure"
+
     static func normalizedFailure(_ value: String?) -> String? { value == "none" ? nil : value }
+
+    /// The runtime state code, such as "stopped", read from the state item's identifier.
+    static func runtimeState(_ ui: T17UIControlling) -> String? {
+        (try? ui.optionalTexts([stateIdentifier]))?[stateIdentifier]
+    }
 
     static func capture(readyLine: String?, applicationRunning: Bool,
                         ui: T17UIControlling) throws -> Self {
@@ -13,9 +21,9 @@ struct T17FirstReadyObservation {
             return Self(readyLine: readyLine, runtimeState: nil, startFailure: nil,
                         applicationRunning: applicationRunning)
         }
-        let values = try ui.optionalTexts(["bridgevm.windows.runtime.state", "bridgevm.windows.runtime.start.failure"])
-        return Self(readyLine: nil, runtimeState: values["bridgevm.windows.runtime.state"],
-                    startFailure: normalizedFailure(values["bridgevm.windows.runtime.start.failure"]),
+        let values = try ui.optionalTexts([stateIdentifier, failureIdentifier])
+        return Self(readyLine: nil, runtimeState: values[stateIdentifier],
+                    startFailure: normalizedFailure(values[failureIdentifier]),
                     applicationRunning: true)
     }
 }
