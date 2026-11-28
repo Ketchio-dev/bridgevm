@@ -23,6 +23,8 @@ struct LibrarySidebar: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Virtual machines")
+            .accessibilityValue(Self.vmCountText(library.vms.count))
             .accessibilityIdentifier("bridgevm.library.overview")
             .accessibilityAddTraits(library.selectedRetainedControl == nil ? .isSelected : [])
             .padding(.horizontal, 12).padding(.bottom, 8)
@@ -43,6 +45,9 @@ struct LibrarySidebar: View {
             }
         }
     }
+
+    /// VoiceOver reads the button's bare count badge with its unit.
+    static func vmCountText(_ count: Int) -> String { count == 1 ? "1 VM" : "\(count) VMs" }
 
     func showOverview(in presentation: Binding<LibraryWindowPresentation>?) {
         if let presentation, presentation.wrappedValue.showsImportDraft {

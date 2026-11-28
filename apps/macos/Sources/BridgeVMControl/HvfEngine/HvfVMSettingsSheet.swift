@@ -35,7 +35,7 @@ struct HvfVMSettingsSheet: View {
             VStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Text("Settings").font(.title2.bold())
+                        Text("Settings").font(.title2.bold()).accessibilityAddTraits(.isHeader)
                         if let vmName = session.config.libraryContext?.config.displayName {
                             Text(vmName).foregroundStyle(.secondary).lineLimit(1)
                         }

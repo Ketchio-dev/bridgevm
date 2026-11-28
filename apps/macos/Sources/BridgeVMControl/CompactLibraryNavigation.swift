@@ -24,7 +24,8 @@ struct CompactLibraryNavigation: View {
                 Button { showingSidebar.toggle() } label: {
                     Image(systemName: "sidebar.leading")
                 }
-                .accessibilityLabel("Sidebar")
+                .accessibilityLabel(showingSidebar ? "Hide Sidebar" : "Show Sidebar")
+                .help(showingSidebar ? "Hide Sidebar" : "Show Sidebar")
                 .popover(isPresented: $showingSidebar) {
                     LibrarySidebar(library: library, didShowOverview: {
                         showingSidebar = false
