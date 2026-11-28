@@ -172,14 +172,22 @@ fn minutes(value: Option<u32>) -> String {
     value.map_or_else(|| "?".into(), |m| format!("{m}min"))
 }
 
+/// The least charge Windows is shown. At its critical level (5 % in its power plans) Windows runs
+/// its critical battery action, hibernate, which the VM does not offer, so it shut itself down:
+/// measured 8 s after the battery showed 3 %, on AC or not, losing unsaved work while the Mac kept
+/// running. The Mac handles its own low battery (it warns, then sleeps with the VM intact), so
+/// Windows sees at most its low-battery notice, at 10 %.
+pub(crate) const GUEST_BATTERY_FLOOR: u8 = 10;
+
 /// What Windows gets. Until the running guest agent's task survives battery
 /// (`agent_survives_battery`, from its READY), a Mac on battery is shown on
 /// AC and not charging: an older agent's task keeps Task Scheduler's
 /// defaults, which do not start it on battery and stop it when Windows goes
-/// on battery. The percentage is still the Mac's.
+/// on battery. The percentage is the Mac's, down to `GUEST_BATTERY_FLOOR`.
 pub(crate) fn for_guest(power: HostPower, agent_survives_battery: bool) -> HostPower {
+    let floored = |battery: HostBattery| HostBattery { percent: battery.percent.max(GUEST_BATTERY_FLOOR), ..battery };
     if agent_survives_battery || power.ac_online {
-        return power;
+        return HostPower { battery: power.battery.map(floored), ..power };
     }
     HostPower {
         ac_online: true,
@@ -187,7 +195,7 @@ pub(crate) fn for_guest(power: HostPower, agent_survives_battery: bool) -> HostP
             charging: false,
             minutes_to_empty: None,
             minutes_to_full: None,
-            ..battery
+            ..floored(battery)
         }),
     }
 }
