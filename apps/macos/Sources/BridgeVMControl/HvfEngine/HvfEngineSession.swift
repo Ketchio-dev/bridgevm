@@ -495,6 +495,7 @@ final class HvfEngineSession: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.poll() }
         }
+        timer?.tolerance = 0.01 // lets macOS fire it with other wake-ups
         poll()
     }
 
@@ -515,7 +516,7 @@ final class HvfEngineSession: ObservableObject {
         refreshAgentSilence()
         refreshLowSpace()
         if let lastHeartbeatDate { // uptime, so time the Mac slept does not count
-            lastHeartbeatAge = hostNow().timeIntervalSince(lastHeartbeatDate)
+            lastHeartbeatAge = hostNow().timeIntervalSince(lastHeartbeatDate).rounded(.down)
         }
         if let controller = ownedController {
             controller.tick()

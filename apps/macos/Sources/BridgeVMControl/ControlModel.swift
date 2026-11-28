@@ -34,6 +34,7 @@ extension ControlModel {
         timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.pollTick() }
         }
+        timer?.tolerance = 0.3 // lets macOS fire it with other wake-ups
     }
 
     /// Running VMs refresh every 3s; idle VMs every ~12s. Idle VMs rarely change
@@ -76,10 +77,10 @@ extension ControlModel {
         }
     }
 
+    /// Assigns only a change: each assignment republishes the model to the library rows and the dashboard.
     func applyRuntimeStatus(running: Bool) {
-        let wasRunning = self.running
+        guard self.running != running else { return }
         self.running = running
-        guard wasRunning != running else { return }
         statusNote = running ? "Running" : "VM exited"
     }
 }

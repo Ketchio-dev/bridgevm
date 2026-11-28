@@ -49,6 +49,8 @@ All notable changes to BridgeVM are documented in this file.
 - When Windows stops confirming keyboard and mouse input, BridgeVM now switches
   to its basic keyboard and mouse (US key layout) instead of refusing every key
   and click. Restarting Windows brings full input back.
+- The app does less work while Windows sits idle, with fewer redraws and file
+  checks on each tick. The last Guest Tools response time now shows whole seconds.
 - The Insert key of a PC keyboard works in Windows, and Num Lock and F14-F19
   no longer type a junk character.
 - Windows' text looks sharp on a Retina screen when Retina resolution is

@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import BridgeVMControl
 
@@ -18,6 +19,23 @@ final class ControlModelRefreshGenerationTests: XCTestCase {
 
         XCTAssertFalse(model.running)
         XCTAssertEqual(model.statusNote, "VM exited")
+    }
+
+    /// Every 3 s poll that finds the VM as it was must not republish the model: the library rows and the
+    /// dashboard observe it.
+    func testAnUnchangedRunningStateDoesNotRepublishTheModel() {
+        let model = ControlModel(config: makeConfig(), backend: DelayedRefreshBackend(), startsAutomatically: false)
+        var changes = 0
+        let observer = model.objectWillChange.sink { changes += 1 }
+        defer { observer.cancel() }
+        model.applyRuntimeStatus(running: false)
+        XCTAssertEqual(changes, 0, "still stopped")
+        model.applyRuntimeStatus(running: true)
+        XCTAssertGreaterThan(changes, 0, "a start still shows at once")
+        XCTAssertEqual(model.statusNote, "Running")
+        let started = changes
+        model.applyRuntimeStatus(running: true)
+        XCTAssertEqual(changes, started, "still running")
     }
 
     private func waitUntil(timeout: TimeInterval = 1, _ condition: @escaping () -> Bool) async {
