@@ -574,6 +574,9 @@ extension FBLayerView {
         pointerMoves.reset()
         if covered { session?.appPacing.displayWasCovered() }
         link.isPaused = covered
+        // A hidden window reports no size (reportDisplaySize), so a screen-scale change while it was
+        // minimised or hidden, as when its display was unplugged, goes out now. A size already sent is dropped.
+        if !covered { reportDisplaySize(settled: true) }
     }
 
     func stopDisplayLink() {
