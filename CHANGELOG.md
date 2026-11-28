@@ -127,6 +127,10 @@ All notable changes to BridgeVM are documented in this file.
 - A VPN tunnel or call running in Windows over UDP recovers after the Mac
   switches networks. Its traffic kept going to a connection tied to the old
   network, so it stayed dead for as long as Windows kept sending.
+- When Windows can't start because BridgeVM couldn't use the VM's key in your
+  login keychain, or because a move or installation cleanup hasn't finished,
+  the message is now one plain sentence that says what to do. Before, it said
+  "review the error below" and showed a raw system error or an internal note.
 - More Actions > Refresh on a VM's page now also reads the library again, as
   messages that say "Refresh the library" expect. Before, it only checked
   whether the VM was running.
