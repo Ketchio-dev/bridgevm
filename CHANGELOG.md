@@ -52,6 +52,8 @@ All notable changes to BridgeVM are documented in this file.
 - Quitting BridgeVM while a VM runs with its window closed now shows that
   VM's window while Windows shuts down, so a Windows app asking to save your
   work can be seen. Before, nothing was shown for up to a minute.
+- The "Mac microphone didn't start" notice now goes away once a later
+  recording opens the microphone. Before, it stayed until the VM restarted.
 - Files dropped on a VM window, or opened with BridgeVM from Finder, while
   Windows is still starting are now copied once Windows is ready. Before,
   they were refused with a message that stayed over the Windows taskbar. A
