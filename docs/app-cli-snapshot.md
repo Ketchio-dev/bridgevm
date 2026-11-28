@@ -34,6 +34,9 @@ earlier export when the folder contains these files.
 Text output describes the host operation and its limitation. JSON uses
 `schema: "bridgevm.app-snapshot.v1"` with the operation, exact VM ID,
 library path, snapshot path, completion state and refusal reason when present.
+A refusal BridgeVM recognizes (the VM is running, there is no snapshot, the
+drive is full) gives the app's sentence as the reason and the helper's own
+text as `detail`.
 
 Ctrl-C (SIGINT) or SIGTERM stops the running helper and waits for it: the
 VM's disk and vars, a new snapshot and an export destination are each left as

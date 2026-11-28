@@ -59,6 +59,11 @@ All notable changes to BridgeVM are documented in this file.
   which means the VM may have been created. `install` and `inspect` with a
   mistyped ID, a display name used as an ID, and `stop` on a VM that isn't
   running now say what happened and what to do.
+- `bridgevm app snapshot-create`, `snapshot-restore` and `snapshot-export` now
+  give the app's plain sentence when they're refused, for example "Shut down
+  the VM and wait for other operations to finish before creating a snapshot."
+  Before, they printed the helper's lock error, including a process command
+  line and pid. The helper's text is still in the JSON `detail` field.
 - Files dropped on a VM window, or opened with BridgeVM from Finder, while
   Windows is still starting are now copied once Windows is ready. Before,
   they were refused with a message that stayed over the Windows taskbar. A
