@@ -7,7 +7,7 @@ enum T17IdentifierProjection {
         var readFailure: Error?
         for node in nodes {
             do {
-                guard let value = try identifier(node),
+                guard let value = try identifier(node).map(T17CodedIdentifier.base),
                       expected.contains(value), matches[value] == nil else { continue }
                 matches[value] = node
             } catch {

@@ -43,6 +43,9 @@ All notable changes to BridgeVM are documented in this file.
 
 ### Fixed
 
+- VoiceOver no longer reads internal codes such as "hvf-import-invalid",
+  "timed-out" or "none" after the error on the New VM sheet and the state and
+  startup error on the VM status card. It reads only the text on screen.
 - The terminal installer works on a Mac without the Xcode Command Line Tools.
   It used to call Python and `lipo`, which on such a Mac only open the "install
   developer tools" dialog, so it failed or wrongly said the app was not Apple

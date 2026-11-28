@@ -9,9 +9,15 @@ final class T17OptionalTextSnapshotTests: XCTestCase {
     private let failure = "bridgevm.windows.runtime.start.failure"
 
     func testProjectsBothValuesFromOneCompleteSnapshot() throws {
-        let nodes = [Node(id: state, value: "booting", fails: false),
+        let nodes = [Node(id: state + ".booting", value: "Booting Windows", fails: false),
                      Node(id: failure, value: "private", fails: false)]
         XCTAssertEqual(try project(nodes), [state: "booting", failure: "private"])
+    }
+
+    func testCodedIdentifiersGiveTheirCodeAndNotTheTextVoiceOverReads() throws {
+        let nodes = [Node(id: state + ".timed-out", value: "Connection timed out", fails: false),
+                     Node(id: failure + ".none", value: "No startup error", fails: false)]
+        XCTAssertEqual(try project(nodes), [state: "timed-out", failure: "none"])
     }
 
     func testCleanlyAbsentOptionalValueReturnsOnlyReadableMatch() throws {
@@ -28,8 +34,8 @@ final class T17OptionalTextSnapshotTests: XCTestCase {
 
     func testUnrelatedReadFailureDoesNotOverrideStableExactValues() throws {
         let nodes = [Node(id: nil, value: "", fails: true),
-                     Node(id: state, value: "booting", fails: false),
-                     Node(id: failure, value: "none", fails: false)]
+                     Node(id: state + ".booting", value: "Booting Windows", fails: false),
+                     Node(id: failure + ".none", value: "No startup error", fails: false)]
         XCTAssertEqual(try project(nodes), [state: "booting", failure: "none"])
     }
 
