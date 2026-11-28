@@ -248,6 +248,8 @@ struct Copier<'a> {
 
 impl Copier<'_> {
     fn add(&mut self, run: Run) -> Result<()> {
+        // Cancel's SIGTERM: the error drops `out`, which removes the partial image.
+        crate::snapshot_pair::files::stop_requested()?;
         let mut host = match run.source {
             RunSource::Hole => return self.flush(),
             RunSource::Data(offset) => offset,

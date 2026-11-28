@@ -64,6 +64,8 @@ enum HvfMediaImport {
                 try HvfWindowsImportNotice.write(nextTo: toVars)
             }
         }
+        // A cancel just after the last helper finished still leaves nothing behind.
+        if HvfHelperProcess.cancelHandle?.isCancelled == true { throw HvfHelperProcess.Cancelled(signal: SIGTERM) }
         let members = [(copiedDisk, toDisk), (copiedVars, toVars)]
         // A clone keeps the source's mode (read-only media would block Start), so each member becomes
         // 0600 in the private workspace, never via the library path. Existing targets fail; the caller rolls back.

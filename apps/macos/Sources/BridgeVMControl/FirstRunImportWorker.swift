@@ -28,6 +28,8 @@ enum FirstRunImportWorker {
                 prepared.assignNewShare(in: libraryRoot)
                 return finishPublication(publish(prepared.config, libraryRoot), prepared: prepared)
             }
+        } catch is HvfHelperProcess.Cancelled {
+            return .cancelled
         } catch is FirstRunImportDestination.NameInUse {
             return .failed("That name is already in your library. Enter a different name and import again.")
         } catch {

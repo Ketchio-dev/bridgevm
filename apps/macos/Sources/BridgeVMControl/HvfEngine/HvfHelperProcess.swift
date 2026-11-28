@@ -14,8 +14,39 @@ enum HvfHelperProcess {
     /// Killing the snapshot helper leaves the old pair or the complete new one.
     static var forwardsCancelSignals = false
 
-    /// The helper was stopped by a forwarded SIGINT or SIGTERM and did not succeed.
+    /// The helper was stopped by a forwarded SIGINT or SIGTERM, or by its cancel handle, and did not succeed.
     struct Cancelled: Error { let signal: Int32 }
+
+    /// Helper runs in a task bound to a handle (the app's import) stop when the user cancels it.
+    @TaskLocal static var cancelHandle: CancelHandle?
+
+    /// `cancel` sends the running helper SIGTERM, and a later run with this handle is stopped as it
+    /// starts. A helper stopped this way removes its partial copy.
+    final class CancelHandle: @unchecked Sendable {
+        private let lock = NSLock()
+        private var helper: pid_t = 0
+        private var received: Int32?
+
+        var isCancelled: Bool { lock.withLock { received != nil } }
+
+        func cancel(signal: Int32 = SIGTERM) {
+            lock.withLock {
+                if received == nil { received = signal }
+                if helper > 0 { kill(helper, SIGTERM) }
+            }
+        }
+
+        /// A cancel that arrived while the helper was being started is sent now.
+        fileprivate func started(_ pid: pid_t) {
+            lock.withLock {
+                helper = pid
+                if received != nil { kill(pid, SIGTERM) }
+            }
+        }
+
+        /// Called once the helper has exited, before its PID can be reused; returns the cancel's signal.
+        fileprivate func exited() -> Int32? { lock.withLock { helper = 0; return received } }
+    }
 
     struct Completion {
         let output: Data
@@ -48,10 +79,11 @@ enum HvfHelperProcess {
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = pipe
         process.standardError = pipe
-        let forwarder = forwardsCancelSignals ? SignalForwarder() : nil
-        defer { _ = forwarder?.finish() }
+        let handle = cancelHandle ?? (forwardsCancelSignals ? CancelHandle() : nil)
+        let forwarder = forwardsCancelSignals ? handle.map(SignalForwarder.init) : nil
+        defer { forwarder?.finish() }
         try process.run()
-        forwarder?.forward(to: process.processIdentifier)
+        handle?.started(process.processIdentifier)
         // Only the child may hold the write end, or EOF never arrives.
         try? pipe.fileHandleForWriting.close()
         var retained = Data()
@@ -81,7 +113,8 @@ enum HvfHelperProcess {
         // After a read failure, closing makes further child writes fail so the wait ends.
         try? reader.close()
         process.waitUntilExit()
-        let cancelled = forwarder?.finish()
+        forwarder?.finish()
+        let cancelled = handle?.exited()
         if let readFailure { throw readFailure }
         let completion = Completion(output: retained, totalBytes: total,
                                     status: process.terminationStatus, reason: process.terminationReason)
@@ -90,52 +123,35 @@ enum HvfHelperProcess {
         return completion
     }
 
-    /// For one helper run, takes SIGINT and SIGTERM from their default action and sends the helper
-    /// SIGTERM instead. A signal the CLI inherited as ignored (a background job) stays ignored.
+    /// For one helper run, takes SIGINT and SIGTERM from their default action and cancels the helper
+    /// instead. A signal the CLI inherited as ignored (a background job) stays ignored.
     /// Foundation resets the child's signal dispositions, so the helper still dies of SIGTERM.
     private final class SignalForwarder {
         private let queue = DispatchQueue(label: "BridgeVM.HelperSignalForwarder")
         private var previous: [(Int32, sig_t?)] = []
         private var sources: [DispatchSourceSignal] = []
-        private var helper: pid_t = 0
-        private var received: Int32?
 
-        init() {
+        init(_ handle: CancelHandle) {
             for number in [SIGINT, SIGTERM] {
                 let old = signal(number, SIG_IGN)
                 previous.append((number, old))
                 if let old, unsafeBitCast(old, to: Int.self) == unsafeBitCast(SIG_IGN, to: Int.self) { continue }
                 let source = DispatchSource.makeSignalSource(signal: number, queue: queue)
-                // Handlers run on `queue`, and finish cancels them there, so none outlives self.
-                source.setEventHandler { [unowned self] in
-                    if received == nil { received = number }
-                    if helper > 0 { kill(helper, SIGTERM) }
-                }
+                source.setEventHandler { handle.cancel(signal: number) }
                 source.resume()
                 sources.append(source)
             }
         }
 
-        /// A signal that arrived while the helper was being started is forwarded now.
-        func forward(to pid: pid_t) {
+        /// Called once the helper has exited; a repeated call does nothing.
+        func finish() {
+            // Handlers run on `queue`, so none runs after this.
             queue.sync {
-                helper = pid
-                if received != nil { kill(pid, SIGTERM) }
-            }
-        }
-
-        /// Called once the helper has exited, before its PID can be reused. Returns the signal
-        /// that asked to cancel it, if any; a repeated call only returns that signal.
-        func finish() -> Int32? {
-            let signalled = queue.sync {
-                helper = 0
                 for source in sources { source.cancel() }
                 sources = []
-                return received
             }
             for (number, old) in previous { signal(number, old) }
             previous = []
-            return signalled
         }
     }
 
