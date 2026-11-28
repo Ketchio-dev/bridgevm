@@ -19,9 +19,9 @@ fn actual_help_exposes_native_commands_without_discovery() {
         assert!(help.contains("--library") && help.contains("--json"));
     }
     let help = String::from_utf8(fixture.invoke(&["app", "--help"]).stdout).unwrap();
-    assert!(help.contains("vm.json") && help.contains("pending request"));
+    assert!(help.contains("library") && help.contains("ISO and drivers saved with the VM"));
     assert!(help.contains("readiness") && help.contains("  start "));
-    assert!(help.contains("status") && help.contains("already-running app"));
+    assert!(help.contains("status") && help.contains("needs the app open"));
 }
 
 #[test]

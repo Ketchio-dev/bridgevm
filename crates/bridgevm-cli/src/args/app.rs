@@ -7,7 +7,7 @@ use std::path::Component;
 
 #[derive(Debug, Parser)]
 #[command(
-    after_help = "Uses native vm.json registrations. Requires a compatible installed BridgeVM.app (or BridgeVMControl.app); no app window is opened. Create accepts one non-secret absolute ISO path and copies it into the owned VM bundle; snapshot-export accepts one non-secret absolute output directory. Passwords and recovery keys are never accepted. Install uses only the pending request already saved with the VM. Start confirms initial helper startup, not guest boot. Status asks the app for retained observations, not guest health. Stop waits for confirmed owned-process cleanup."
+    after_help = "Works on the VMs in your BridgeVM library. Needs BridgeVM.app (or BridgeVMControl.app) installed; start, stop, status and install also need it open, and no window opens for them. create-windows takes one absolute ISO path and copies the ISO into the new VM; snapshot-export takes one absolute output folder. Passwords and recovery keys are never accepted. install uses the ISO and drivers saved with the VM. start returns once the VM has started; Windows may still be starting up. status reports what BridgeVM sees, not whether Windows is healthy. stop waits until the VM has shut down."
 )]
 pub(crate) struct AppArgs {
     #[command(subcommand)]
@@ -36,13 +36,13 @@ fn absolute_library(value: &str) -> std::result::Result<PathBuf, String> {
 // Read-only native app commands retain their original syntax.
 #[derive(Debug, Subcommand)]
 pub(crate) enum AppQueryCommand {
-    /// List saved native app VM configurations, including inventory issues.
+    /// List the VMs in your library, and any library folders that need attention.
     List,
-    /// Inspect one exact VM ID returned by list, including Korean IDs.
+    /// Show one VM's saved settings, by the exact ID that list prints (Korean IDs too).
     Inspect { id: String },
-    /// Report native launch-input readiness without starting a VM.
+    /// Check whether a VM can start, without starting it.
     Readiness { id: String },
-    /// Query retained runtime observations from the already-running app.
+    /// Show what BridgeVM reports about a VM; needs the app open.
     Status { id: String },
 }
 
@@ -159,10 +159,10 @@ impl AppSnapshotExportArgs {
 pub(crate) enum AppCommand {
     #[command(flatten)]
     Query(AppQueryCommand), #[command(about = "Diagnose native app discovery and CLI protocol compatibility without opening the app.")] Doctor,
-    #[command(about = "Create a saved installation-pending own-HVF Windows VM; does not install or boot it.", after_help = include_str!("app_windows_setup_help.txt"))] CreateWindows(AppCreateWindowsArgs),
-    #[command(about = "Start a saved own-HVF VM and wait for confirmed initial helper startup.")] Start { id: String },
-    #[command(about = "Stop an app-owned runtime and wait for confirmed owned-process cleanup.")] Stop { id: String },
-    #[command(about = "Start or reuse the pending request already saved with this VM; ISO paths and secrets are not accepted on argv.", after_help = include_str!("app_windows_setup_help.txt"))] Install { id: String }, #[command(about = "Read retained progress for the saved pending installation; secrets are not accepted on argv.")] InstallStatus { id: String }, #[command(about = "Request cancellation of the retained installation; secrets are not accepted on argv.")] InstallCancel { id: String }, #[command(about = "Create the saved own-HVF VM's powered-off disk and UEFI-vars snapshot.")] SnapshotCreate { id: String }, #[command(about = "Restore the saved own-HVF VM's powered-off disk and UEFI-vars snapshot.")] SnapshotRestore { id: String }, #[command(about = "Export the currently selected powered-off disk and UEFI-vars pair to an external directory.")] SnapshotExport(AppSnapshotExportArgs),
+    #[command(about = "Create a Windows VM in your library, ready to install; does not install or start it.", after_help = include_str!("app_windows_setup_help.txt"))] CreateWindows(AppCreateWindowsArgs),
+    #[command(about = "Start a VM and wait until BridgeVM confirms it started.")] Start { id: String },
+    #[command(about = "Stop a VM that BridgeVM started and wait until it has shut down.")] Stop { id: String },
+    #[command(about = "Install Windows in a VM created for installation, from the ISO saved with it; no paths or secrets are accepted.", after_help = include_str!("app_windows_setup_help.txt"))] Install { id: String }, #[command(about = "Show the progress of the VM's Windows installation.")] InstallStatus { id: String }, #[command(about = "Cancel the VM's Windows installation.")] InstallCancel { id: String }, #[command(about = "Take a snapshot of a shut-down VM's disk and boot settings.")] SnapshotCreate { id: String }, #[command(about = "Restore a shut-down VM's disk and boot settings from its newest snapshot.")] SnapshotRestore { id: String }, #[command(about = "Copy a shut-down VM's current disk and boot settings to a folder outside the VM.")] SnapshotExport(AppSnapshotExportArgs),
 }
 
 /// Forwarded VM ID and NAME operands must not look like native options.

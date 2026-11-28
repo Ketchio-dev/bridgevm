@@ -11,7 +11,7 @@ fn start_help_does_not_discover_or_start_the_app() {
         assert!(output.stderr.is_empty());
         let help = String::from_utf8(output.stdout).unwrap();
         assert!(help.contains("--library") && help.contains("--json"));
-        assert!(help.contains("confirmed") && help.contains("startup"));
+        assert!(help.contains("confirms it started"));
     }
 }
 
