@@ -54,7 +54,8 @@ final class HvfFileDropQueue: ObservableObject {
     func begin(in root: URL, open: Bool = false, itemName: String? = nil) -> (id: String, staging: URL) {
         if jobs.isEmpty {
             earlierIssue = nil
-            try? FileManager.default.removeItem(at: root)
+            Self.discard(root, root: root)
+            Self.sweep(beside: root)
         }
         let id = UUID().uuidString
         let staging = root.appendingPathComponent(id, isDirectory: true)
@@ -153,10 +154,34 @@ final class HvfFileDropQueue: ObservableObject {
 
     /// The VM stopped: nothing is in flight any more, and no notice outlives the run.
     func reset() {
-        for job in jobs { try? FileManager.default.removeItem(at: job.staging) }
+        for job in jobs { Self.discard(job.staging) }
         jobs = []
         earlierIssue = nil
         if notice != nil { notice = nil }
+    }
+
+    /// A staged tree, or the whole drops folder, is renamed aside next to that folder at once and deleted
+    /// off the main actor: 20,000 cloned files took 0.6 s to delete. Whatever a quit or crash leaves
+    /// aside goes with the next first drop (sweep).
+    /// `url` is a job's staging folder inside `root` (the drops folder), or `root` itself.
+    nonisolated static func discard(_ url: URL, root: URL? = nil) {
+        let root = root ?? url.deletingLastPathComponent()
+        let aside = root.deletingLastPathComponent().appendingPathComponent("\(root.lastPathComponent).\(UUID().uuidString).discarded")
+        guard rename(url.path, aside.path) == 0 else {
+            if errno != ENOENT { try? FileManager.default.removeItem(at: url) }
+            return
+        }
+        Task.detached(priority: .utility) { try? FileManager.default.removeItem(at: aside) }
+    }
+
+    nonisolated static func sweep(beside root: URL) {
+        let parent = root.deletingLastPathComponent(), prefix = root.lastPathComponent + "."
+        Task.detached(priority: .utility) {
+            for name in (try? FileManager.default.contentsOfDirectory(atPath: parent.path)) ?? []
+            where name.hasPrefix(prefix) && name.hasSuffix(".discarded") {
+                try? FileManager.default.removeItem(at: parent.appendingPathComponent(name))
+            }
+        }
     }
 
     static func failureText(_ reason: String) -> String {
@@ -176,14 +201,14 @@ final class HvfFileDropQueue: ObservableObject {
 
     private func abandon(_ text: String) {
         guard jobs.contains(where: \.sent) else { return }
-        for job in jobs where job.sent { try? FileManager.default.removeItem(at: job.staging) }
+        for job in jobs where job.sent { Self.discard(job.staging) }
         jobs.removeAll(where: \.sent)
         notice = Notice(text: text, failed: true)
     }
 
     private func finish(_ index: Int, _ result: Notice) {
         let job = jobs.remove(at: index)
-        try? FileManager.default.removeItem(at: job.staging)
+        Self.discard(job.staging)
         guard jobs.isEmpty else {
             if result.failed {
                 if earlierIssue != nil {

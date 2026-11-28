@@ -64,6 +64,34 @@ final class HvfFileDropQueueTests: XCTestCase {
         XCTAssertEqual(queue.notice?.text, "Nothing was copied because the Mac isn’t allowed to read these items. Check their permissions in Finder.")
     }
 
+    /// A finished drop's staged tree leaves its place at once and is deleted in the background (20,000
+    /// cloned files took 0.6 s to delete on the main actor). The first drop of a run also deletes what an
+    /// earlier run left aside.
+    func testStagingIsRenamedAsideAndDeletedInTheBackground() async throws {
+        let base = scratch()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let fm = FileManager.default
+        let root = base.appendingPathComponent("drops")
+        let leftover = base.appendingPathComponent("drops.0000.discarded/photos")
+        try fm.createDirectory(at: leftover, withIntermediateDirectories: true)
+        try Data("old".utf8).write(to: leftover.appendingPathComponent("a.jpg"))
+        try fm.createDirectory(at: root.appendingPathComponent("from-a-crash"), withIntermediateDirectories: true)
+        let queue = HvfFileDropQueue()
+        let job = queue.begin(in: root)
+        XCTAssertFalse(fm.fileExists(atPath: root.path), "an earlier run's drops folder is moved aside")
+        try fm.createDirectory(at: job.staging, withIntermediateDirectories: true)
+        try Data("new".utf8).write(to: job.staging.appendingPathComponent("b.jpg"))
+        queue.staged(job.id, summary(files: 1, bytes: 0), sent: true)
+        queue.consume(.unknown("BVAGENT DROP done \(job.id) files=1 bytes=0"))
+        XCTAssertFalse(fm.fileExists(atPath: job.staging.path))
+        let deadline = Date().addingTimeInterval(5)
+        while (try fm.contentsOfDirectory(atPath: base.path)) != ["drops"], Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: base.path), ["drops"])
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: root.path), [])
+    }
+
     func testSecondIdenticalCopyKeepsItsOwnCompletionNotice() async throws {
         let queue = HvfFileDropQueue()
         let root = scratch()
