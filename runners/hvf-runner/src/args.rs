@@ -115,15 +115,10 @@ pub(crate) struct Args {
     pub(crate) launch: bool,
     #[command(flatten)]
     pub(crate) typed: crate::launch_spec::LaunchSpecArgs,
-    /// Run CMD (argv, no shell) under the reset-cycle supervisor: exit 42
-    /// means the guest requested SYSTEM_RESET and a fresh process follows
-    /// after the flush receipt; any other success ends the loop.
-    #[arg(long, value_name = "CMD", num_args = 1.., allow_hyphen_values = true)]
-    pub(crate) supervise: Option<Vec<String>>,
-    /// Reset receipt path for --supervise (default: beside the temp dir).
+    /// Reset receipt path for --launch-spec (default: in the temp dir).
     #[arg(long, value_name = "PATH")]
     pub(crate) supervise_receipt: Option<String>,
-    /// Cycle budget for --supervise.
+    /// Reset-cycle budget for --launch-spec.
     #[arg(long, value_name = "N", default_value_t = 100)]
     pub(crate) supervise_max_cycles: u32,
 }
@@ -136,16 +131,6 @@ pub(crate) fn run() -> Result<()> {
 
     if let Some(spec) = &args.typed.launch_spec {
         return crate::launch_spec::run_launch_spec(spec, &args);
-    }
-
-    #[cfg(debug_assertions)]
-    if let Some(argv) = &args.supervise {
-        let default_receipt = std::env::temp_dir().join("bridgevm-reset.receipt");
-        let receipt = args
-            .supervise_receipt
-            .clone()
-            .unwrap_or_else(|| default_receipt.to_string_lossy().into_owned());
-        return crate::supervise_cli::run_supervise(argv, &receipt, args.supervise_max_cycles);
     }
 
     #[cfg(debug_assertions)]

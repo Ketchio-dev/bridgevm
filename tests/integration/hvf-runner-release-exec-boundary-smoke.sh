@@ -62,8 +62,6 @@ expect_refused 'repo override before typed dispatch' 'unavailable in release bui
   "$runner" --repo-root "$fake_repo" --launch-spec "$store/absent.json"
 expect_refused 'legacy launch before typed dispatch' 'unavailable in release builds' \
   "$runner" --launch --launch-spec "$store/absent.json"
-expect_refused 'PATH supervise' 'unavailable in release builds' \
-  env EXEC_MARKER="$marker" PATH="$fake_bin:$PATH" "$runner" --supervise bridgevm-fake-helper
 expect_refused 'PATH helper' 'release helper executable path must be absolute: --helper' \
   env EXEC_MARKER="$marker" PATH="$fake_bin:$PATH" "$runner" \
     --launch-spec "$manifest" --helper bridgevm-fake-helper

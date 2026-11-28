@@ -16,20 +16,17 @@ mod error;
 mod manifest;
 mod owned_child;
 mod owned_control;
-mod reset_cycles;
 mod reset_generation;
 mod reset_receipt;
 mod supervisor;
 mod vm_builder;
 mod vm_event;
 mod vm_process;
-mod vm_run;
 mod vtpm;
 
 pub use error::RuntimeError;
 pub use manifest::{LaunchManifest, MANIFEST_VERSION};
 pub use owned_control::*;
-pub use reset_cycles::{supervise_reset_cycles, HelperExit, ResetCycle};
 pub use reset_generation::{GenerationTag, ResetGeneration};
 pub use reset_receipt::{flush_and_write_receipt, receipt_proves_flush};
 pub use supervisor::{decide_restart, RestartDecision};
@@ -39,5 +36,4 @@ pub use vm_process::{
     helper_env, spawn_helper, AgentUpdateSurface, DeviceSurfaces, GpuSurface, HelperLaunch,
     ShareSurface,
 };
-pub use vm_run::{run_vm, RESET_EXIT_CODE};
-pub use vtpm::{start_swtpm, SwtpmProcess, VtpmConfig};
+pub use vtpm::{SwtpmProcess, VtpmConfig};

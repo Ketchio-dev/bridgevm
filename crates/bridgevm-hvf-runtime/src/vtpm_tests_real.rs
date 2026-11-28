@@ -14,11 +14,14 @@ fn a_real_swtpm_serves_sockets_and_dies_with_the_handle() {
         return;
     }
     let state = scratch_state("real");
-    let process = start_swtpm(&VtpmConfig {
-        state_dir: state.clone(),
-        swtpm_bin: swtpm,
-        state_key: None,
-    })
+    let process = start_swtpm_controlled(
+        &VtpmConfig {
+            state_dir: state.clone(),
+            swtpm_bin: swtpm,
+            state_key: None,
+        },
+        &RuntimeControl::default(),
+    )
     .expect("swtpm starts");
     assert!(process.data_socket().exists());
     assert!(process.control_socket().exists());
@@ -56,11 +59,14 @@ fn a_binary_that_dies_just_after_binding_its_sockets_is_not_trusted() {
     std::fs::set_permissions(&script, permissions).unwrap();
 
     let state = scratch_state("flash");
-    let outcome = start_swtpm(&VtpmConfig {
-        state_dir: state.clone(),
-        swtpm_bin: script,
-        state_key: None,
-    });
+    let outcome = start_swtpm_controlled(
+        &VtpmConfig {
+            state_dir: state.clone(),
+            swtpm_bin: script,
+            state_key: None,
+        },
+        &RuntimeControl::default(),
+    );
     let bound_two = dir.join("flash-swtpm.py.bound-two").exists();
     let error = match outcome {
         Err(error) => error,
@@ -114,21 +120,27 @@ fn an_encrypted_state_dir_refuses_the_wrong_key() {
     let state = scratch_state("keyed");
     let key = vec![0x42u8; 32];
     // First run creates state under the key.
-    let first = start_swtpm(&VtpmConfig {
-        state_dir: state.clone(),
-        swtpm_bin: swtpm.clone(),
-        state_key: Some(key.clone()),
-    })
+    let first = start_swtpm_controlled(
+        &VtpmConfig {
+            state_dir: state.clone(),
+            swtpm_bin: swtpm.clone(),
+            state_key: Some(key.clone()),
+        },
+        &RuntimeControl::default(),
+    )
     .expect("keyed swtpm starts");
     let persisted = wait_for_state_file(&state.join("tpm2-00.permall"));
     drop(first);
     assert!(persisted, "keyed state must persist");
     // Same key: opens.
-    let same = start_swtpm(&VtpmConfig {
-        state_dir: state.clone(),
-        swtpm_bin: swtpm.clone(),
-        state_key: Some(key),
-    });
+    let same = start_swtpm_controlled(
+        &VtpmConfig {
+            state_dir: state.clone(),
+            swtpm_bin: swtpm.clone(),
+            state_key: Some(key),
+        },
+        &RuntimeControl::default(),
+    );
     assert!(same.is_ok(), "the right key must open the state");
     drop(same);
     // Wrong key: swtpm must fail, not serve sockets over unreadable state.
@@ -139,11 +151,14 @@ fn an_encrypted_state_dir_refuses_the_wrong_key() {
         state.join("tpm2-00.permall").exists(),
         "the encrypted state must still exist for the wrong key to be refused"
     );
-    let wrong = start_swtpm(&VtpmConfig {
-        state_dir: state.clone(),
-        swtpm_bin: swtpm,
-        state_key: Some(vec![0x24u8; 32]),
-    });
+    let wrong = start_swtpm_controlled(
+        &VtpmConfig {
+            state_dir: state.clone(),
+            swtpm_bin: swtpm,
+            state_key: Some(vec![0x24u8; 32]),
+        },
+        &RuntimeControl::default(),
+    );
     assert!(wrong.is_err(), "the wrong key must be refused");
     let _ = std::fs::remove_dir_all(&state);
 }
@@ -185,11 +200,14 @@ fn a_swtpm_left_by_a_killed_runner_does_not_block_the_next_start() {
         "the leftover swtpm serves"
     );
 
-    let next = start_swtpm(&VtpmConfig {
-        state_dir: state.clone(),
-        swtpm_bin: swtpm,
-        state_key: None,
-    });
+    let next = start_swtpm_controlled(
+        &VtpmConfig {
+            state_dir: state.clone(),
+            swtpm_bin: swtpm,
+            state_key: None,
+        },
+        &RuntimeControl::default(),
+    );
     let leftover_alive = unsafe { libc::kill(pid, 0) } == 0;
     unsafe { libc::kill(pid, libc::SIGKILL) };
     let started = next.is_ok();
@@ -218,8 +236,9 @@ fn a_live_runners_swtpm_is_left_alone() {
         swtpm_bin: swtpm,
         state_key: None,
     };
-    let mut first = start_swtpm(&config).expect("swtpm starts");
-    let second = start_swtpm(&config);
+    let mut first =
+        start_swtpm_controlled(&config, &RuntimeControl::default()).expect("swtpm starts");
+    let second = start_swtpm_controlled(&config, &RuntimeControl::default());
     let first_alive = super::super::controlled::require_live(
         &mut first,
         "the first swtpm",

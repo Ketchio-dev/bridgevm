@@ -44,11 +44,14 @@ fn a_new_helper_generation_boots_from_cleared_pcrs() {
         return;
     }
     let state = scratch_state("generations");
-    let process = start_swtpm(&VtpmConfig {
-        state_dir: state.clone(),
-        swtpm_bin: swtpm,
-        state_key: None,
-    })
+    let process = start_swtpm_controlled(
+        &VtpmConfig {
+            state_dir: state.clone(),
+            swtpm_bin: swtpm,
+            state_key: None,
+        },
+        &RuntimeControl::default(),
+    )
     .expect("swtpm starts");
     let boot = || {
         SwtpmUnixBackend::connect_for_boot(process.data_socket(), Some(process.control_socket()))
