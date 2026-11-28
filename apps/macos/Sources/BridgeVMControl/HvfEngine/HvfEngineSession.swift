@@ -846,7 +846,7 @@ extension HvfEngineSession: ControlAppTerminationSession {
     var blocksAppTermination: Bool { (mayHaveOwnedWork && !runnerDiedWithoutCleanup) || hasPendingRuntimeStart }
     var terminationName: String? { displayTitle }
 
-    /// This app's own run, with no stop under way yet: the Stop below, and the Virtual Machine menu's, can begin.
+    /// This app's own run, with no stop under way yet: the Shut Down below, and the Virtual Machine menu's, can begin.
     var terminationStopAvailable: Bool {
         guard let controller = ownedController, controller.operation == nil,
               let identity = ownedProcessIdentity else { return false }

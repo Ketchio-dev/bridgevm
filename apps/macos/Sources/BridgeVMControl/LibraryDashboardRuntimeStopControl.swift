@@ -11,7 +11,7 @@ struct LibraryDashboardRuntimeStopControl: View {
     var body: some View {
         HvfForceStopControl(session: session, identifier: "bridgevm.dashboard.runtime") {
             if runtimeActive {
-                Button("Stop", systemImage: "stop.fill") {
+                Button("Shut Down", systemImage: "stop.fill") {
                     LibraryDashboardPrimaryAction.stop(config: config, model: model, library: library)
                 }
                 .disabled(!presentation.isEnabled)

@@ -68,7 +68,7 @@ final class ControlAppPower: ObservableObject {
                 + "so Windows and your Mac may slow down. Give it less memory in Settings."
         }
         return "Your running VMs use \((totalMiB + 512) / 1024) GiB of memory together, more than this Mac can spare, "
-            + "so Windows and your Mac may slow down. Stop one, or give the VMs less memory in Settings."
+            + "so Windows and your Mac may slow down. Shut one down, or give the VMs less memory in Settings."
     }
     /// Each running VM and Windows install shows it (HvfKeepAwakeNoticeView) while the Mac can't be
     /// kept awake; it goes away once it can, the setting is off or that task ends.

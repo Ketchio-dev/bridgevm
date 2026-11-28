@@ -5,9 +5,9 @@ enum ControlDisplayCloseChoice: String, CaseIterable {
     case background, pause, shutdown, cancel
     var title: String {
         switch self {
-        case .background: return "Keep running in the background"
+        case .background: return "Keep Running in the Background"
         case .pause: return "Pause Windows"
-        case .shutdown: return "Shut down Windows"
+        case .shutdown: return "Shut Down Windows"
         case .cancel: return "Cancel"
         }
     }
@@ -19,7 +19,7 @@ enum ControlDisplayCloseChoice: String, CaseIterable {
 enum ControlDisplayClosePlan: Equatable {
     case close, ask([ControlDisplayCloseChoice]), apply(ControlDisplayCloseChoice)
     /// A paused VM stays paused and one already stopping goes on stopping, so their window closes
-    /// without a question. Shut down is offered only when the Stop button would work.
+    /// without a question. Shut down is offered only when the Shut Down button would work.
     @MainActor
     static func make(session: HvfEngineSession, quitting: Bool, remembered: ControlDisplayCloseChoice?) -> Self {
         guard session.hasActiveRuntimeWork, !quitting, !session.pause.showsResume,
@@ -54,7 +54,7 @@ enum ControlDisplayClose {
         defaults.set(choice == .cancel ? nil : choice?.rawValue, forKey: preferenceKey)
     }
     /// Whether the choice took effect. Cancel never does. Only refusals are reported, a stop refusal with
-    /// the ordinary Stop action's message: after Shut down the window shows Windows shutting down.
+    /// the ordinary Shut Down action's message: after Shut Down Windows the window shows Windows shutting down.
     static func apply(_ choice: ControlDisplayCloseChoice, session: HvfEngineSession, report: (String) -> Void) -> Bool {
         switch choice {
         case .cancel: return false

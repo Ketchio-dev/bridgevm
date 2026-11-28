@@ -99,7 +99,7 @@ extension HvfEngineSession {
         guard vmmControlAvailable else { return .refused(Self.restartUnavailable) }
         if let pending = restartRequest, pending.kind == .reset { return .requested(.reset) }
         guard appendVMMControl(Self.resetLine) else {
-            return .refused("Couldn’t send the reset request. Try again or stop the VM.")
+            return .refused("Couldn’t send the reset request. Try again or shut down the VM.")
         }
         restartRequest = HvfPendingRestart(kind: .reset, boot: guestBoot, sentAt: ownedStartNow())
         append(.unknown("VM reset requested"))

@@ -25,7 +25,7 @@ extension ControlAppTerminationSession {
 }
 
 /// Quitting (Cmd+Q, the Dock, the last window, or a Mac logout, restart or shutdown) stops each
-/// running Windows like the Stop button first and exits only after every run's teardown is confirmed,
+/// running Windows like the Shut Down button first and exits only after every run's teardown is confirmed,
 /// so the library owner lock is released after the stops (`applicationWillTerminate`).
 @MainActor
 final class ControlAppTermination {
