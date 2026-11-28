@@ -46,6 +46,10 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- The VM window now says so when the drive with the VM's disk is unplugged
+  or BridgeVM loses contact with Windows, and offers Stop or Force Stop.
+  Before, only the library said so, and the VM window, often in full screen,
+  just went black or froze.
 - Files dropped on a VM window, or opened with BridgeVM from Finder, while
   Windows is still starting are now copied once Windows is ready. Before,
   they were refused with a message that stayed over the Windows taskbar. A

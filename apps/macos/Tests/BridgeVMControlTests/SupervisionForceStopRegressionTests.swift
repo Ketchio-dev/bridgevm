@@ -26,6 +26,8 @@ final class SupervisionForceStopRegressionTests: XCTestCase {
             }
             XCTAssertEqual(session.runtimeSupervisionFailureText,
                 "BridgeVM lost contact with Windows, so choose Force Stop to stop the VM.")
+            XCTAssertEqual(session.displayRunFailureText, session.runtimeSupervisionFailureText,
+                "the VM window says it too, with its Force Stop")
             let target = try XCTUnwrap(session.forceStopTarget, "Lost supervision must still offer Force Stop")
             let wrong = HvfForceStopTarget(identity: .init(token: UUID(), processID: f.process.processIdentifier),
                 operationID: target.operationID)

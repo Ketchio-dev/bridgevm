@@ -56,6 +56,37 @@ struct HvfForceStopControl<Content: View>: View {
     }
 }
 
+/// A running VM whose drive was unplugged, or that BridgeVM lost contact with: the sentence and its
+/// Stop or Force Stop over the display. Only the library said so; the VM window, often full screen, went
+/// black or froze. Once a stop is under way the stop-wait strip below takes over.
+struct HvfRunFailureStrip: View {
+    @ObservedObject var session: HvfEngineSession
+    @State private var dismissed: String?
+
+    var body: some View {
+        if let text = session.displayRunFailureText, dismissed != text {
+            HvfNoticeStrip(identifier: "bridgevm.display.failure", dismiss: { dismissed = text }) {
+                HvfForceStopControl(session: session, identifier: "bridgevm.display.failure", spacing: 6) {
+                    Label(text, systemImage: "exclamationmark.triangle").font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if session.forceStopTarget == nil, session.terminationStopAvailable {
+                        Button("Stop") { session.requestTerminationStop() }
+                            .accessibilityIdentifier("bridgevm.display.failure.stop")
+                    }
+                }
+            }
+        }
+    }
+}
+
+extension HvfEngineSession {
+    /// The supervision failure of a run that is still going, with no stop under way yet.
+    var displayRunFailureText: String? {
+        guard hasActiveRuntimeWork, stopWait == nil else { return nil }
+        return runtimeSupervisionFailureText
+    }
+}
+
 /// The same control as a notice over the VM display while a Stop waits for Windows: the menu's Stop is
 /// off by then, and a full-screen VM window had no sign of the wait and no Force Stop.
 /// Closed, it comes back when the wait changes (Windows still running after the grace).
