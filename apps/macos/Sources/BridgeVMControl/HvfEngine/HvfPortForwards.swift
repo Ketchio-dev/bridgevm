@@ -65,7 +65,7 @@ extension HvfEngineSession {
         }
         if portForwardsLive, let slug = HvfHostSettingLiveSave.liveSlug(self) {
             let text = HvfPortForwards.text(forwards)
-            guard sendCtl("BVNETFORWARD " + text) else {
+            guard sendLiveControl("BVNETFORWARD " + text, verb: "BVNETFORWARD") else {
                 return (text, "BridgeVM couldn’t change the port forwards while Windows runs. Shut down Windows, then try again.")
             }
             HvfHostSettingLiveSave.record("Port forwarding", for: slug) { $0.portForwards = forwards.isEmpty ? nil : text }

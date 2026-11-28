@@ -61,9 +61,16 @@ final class HvfPortForwardsTests: XCTestCase {
         XCTAssertNil(session.portForwardNotice.text, "the VMM says again which ones it couldn’t open")
         XCTAssertEqual(HvfPortForwards.text(session.config.portForwards), "8080:80, 3390:3389", "what Settings shows")
         XCTAssertEqual(library.latestConfiguration(for: saved).portForwards, "8080:80", "vm.json waits for the stop")
+        // Windows restarts: a new VM process opens the forwards of the start, so the change goes again.
+        session.handle(.unknown(HvfGuestResetRecord.processRecreation))
+        session.handle(.serviceStart(tMs: 2))
+        let again = ((try? String(contentsOf: control, encoding: .utf8)) ?? "").split(separator: "\n")
+            .filter { $0.hasPrefix("BVNETFORWARD") }
+        XCTAssertEqual(again, ["BVNETFORWARD 8080:80, 3390:3389", "BVNETFORWARD 8080:80, 3390:3389"])
         session.connectionState = .stopped
         session.markStopped()
         XCTAssertEqual(library.latestConfiguration(for: saved).portForwards, "8080:80, 3390:3389")
+        XCTAssertTrue(session.liveControlLines.isEmpty, "the next start opens what vm.json holds")
         XCTAssertNil(library.operationError)
     }
 
