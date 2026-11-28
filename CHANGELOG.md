@@ -46,6 +46,22 @@ All notable changes to BridgeVM are documented in this file.
 - VoiceOver no longer reads internal codes such as "hvf-import-invalid",
   "timed-out" or "none" after the error on the New VM sheet and the state and
   startup error on the VM status card. It reads only the text on screen.
+- The Insert key of a PC keyboard works in Windows, and Num Lock and F14-F19
+  no longer type a junk character.
+- Windows' text looks sharp on a Retina screen when Retina resolution is
+  off: each Windows pixel is shown as a 2x2 block instead of being smoothed.
+- Shortcuts with - + / , . and other punctuation now reach Windows as the key
+  your Mac keyboard types. On a German keyboard, ⌘- and ⌘+ now zoom in Edge,
+  and ⌘- no longer toggles a comment in VS Code.
+- With experimental 3D, restarting Windows shows its boot and update screens
+  instead of freezing the window on the last desktop.
+- A fast trackpad scroll no longer fills Windows' input queue: scrolls waiting
+  to be sent are combined into one, so keys and clicks after it are not refused,
+  and a mouse-button release is always taken, so the button is not left down.
+- While "Shut down Windows" waits for Windows to close its apps, the open VM
+  window still resizes the Windows desktop and keeps Windows' own pointer. A VM
+  window that is starting now shows "Starting Windows…" until Windows draws its
+  first picture, instead of staying black.
 - Deleting the selected VM selects the VM next to it, not the first VM
   in the library.
 - A Mac file that never reaches Windows now gets a notice: when Windows
@@ -64,6 +80,8 @@ All notable changes to BridgeVM are documented in this file.
 - A Windows copy made while another app briefly held the clipboard (such as
   clipboard history or Office) now still reaches the Mac. Needs the Guest
   Tools update.
+- When Windows can't start from the VM's disk, BridgeVM no longer also asks you
+  to restart Windows for Guest Tools.
 - When the VM's disk has nothing to start, such as an imported disk with
   Windows for Intel or AMD PCs, BridgeVM now says so instead of leaving the
   window on the firmware's text.
@@ -72,6 +90,9 @@ All notable changes to BridgeVM are documented in this file.
   "<name> (Windows copy)" and copied to the Mac, and the Mac version keeps the original name.
 - Photos copied on the Mac now paste in Windows: the clipboard image limit
   is 128 MiB instead of 32 MiB. Needs the Guest Tools update.
+- Importing a Windows disk can now be cancelled while it copies or converts,
+  from the first-run import screen or the Create sheet. BridgeVM stops the
+  copy, removes the partial files and returns to the import fields.
 - A Mac change made just as the shared folder is renamed or deleted in
   Windows no longer makes the Windows folder again with only that file,
   after the Guest Tools update.

@@ -15,10 +15,13 @@ extension LibraryModel {
         guard firstRunImport.publishedConfig == nil else { return firstRunImportError }
         guard !Task.isCancelled else { return "The import did not start." }
         let operation = firstRunImport.begin(displayName: inputs.displayName)
+        let cancel = firstRunImport.cancelHandle
         let root = rootURL
         let result = await Task.detached(priority: .userInitiated) {
-            worker(inputs, root, snapshotHelper) { stage in
-                Task { @MainActor in self.firstRunImport.advance(stage, operation: operation) }
+            HvfHelperProcess.$cancelHandle.withValue(cancel) {
+                worker(inputs, root, snapshotHelper) { stage in
+                    Task { @MainActor in self.firstRunImport.advance(stage, operation: operation) }
+                }
             }
         }.value
         return finishFirstRunImport(result, adopt: adopt)

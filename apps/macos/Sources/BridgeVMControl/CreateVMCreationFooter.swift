@@ -13,6 +13,8 @@ struct CreateVMCreationFooter: View {
     let recover: () -> Void
     /// What the wait is for, such as a QCOW2 conversion and its percent.
     var workingLabel = ""
+    /// While working, Cancel stops a disk import's copy or conversion; without it Cancel is off.
+    var stop: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -31,9 +33,9 @@ struct CreateVMCreationFooter: View {
                         .accessibilityIdentifier(hint == Self.nameHint ? "bridgevm.create.name.required" : "bridgevm.create.hint")
                 }
                 Spacer()
-                Button("Cancel") { if !working { cancel() } }
+                Button("Cancel") { if working { stop?() } else { cancel() } }
                     .keyboardShortcut(.cancelAction)
-                    .disabled(working)
+                    .disabled(working && stop == nil)
                     .accessibilityIdentifier("bridgevm.create.cancel")
                 primaryAction
             }

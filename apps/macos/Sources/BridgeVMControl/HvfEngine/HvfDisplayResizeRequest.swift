@@ -102,7 +102,8 @@ struct HvfDisplayResizeRequest {
         dueAt = -.infinity
     }
 
-    /// The size to write now, if any; the caller reports a successful write with `didSend`.
+    /// The size to write now, if any; the caller reports a successful write with `didSend` and a refused
+    /// one with `sendFailed`.
     mutating func take(at now: TimeInterval, fallback: Size? = nil) -> Size? {
         guard let dueAt, now >= dueAt else { return nil }
         self.dueAt = nil
@@ -112,5 +113,10 @@ struct HvfDisplayResizeRequest {
 
     mutating func didSend(_ size: Size) {
         sent = size
+    }
+
+    /// The write was refused (the VMM was not taking requests): the size stays due for the next try.
+    mutating func sendFailed() {
+        dueAt = -.infinity
     }
 }

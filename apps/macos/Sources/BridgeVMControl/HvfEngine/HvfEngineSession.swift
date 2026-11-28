@@ -39,6 +39,7 @@ final class HvfEngineSession: ObservableObject {
     @Published var displayDriverUnbound = false
     @Published var displayDriverUnboundDismissed = false
     @Published var displayDriverRestarting = false
+    @Published var displayShowedFrame = false // the display window has shown this run's first frame
     /// Why Restart Now didn't restart: refused before the shutdown, or the start after it refused.
     @Published var displayDriverRestartNote: String?
     var repoRoot: URL
@@ -422,9 +423,9 @@ final class HvfEngineSession: ObservableObject {
 
     private func flushDisplayResize() {
         displayResize.retina = config.retinaResizeSetting
-        guard let size = displayResize.take(at: ProcessInfo.processInfo.systemUptime, fallback: savedDisplaySize),
-              appendDisplayResize(size) else { return }
-        displayResize.didSend(size)
+        guard let size = displayResize.take(at: ProcessInfo.processInfo.systemUptime, fallback: savedDisplaySize)
+        else { return }
+        if appendDisplayResize(size) { displayResize.didSend(size) } else { displayResize.sendFailed() }
     }
 
     /// With no laid-out window, restore the saved pixel mode after each service start.
@@ -437,8 +438,9 @@ final class HvfEngineSession: ObservableObject {
         return .init(width: width, height: height)
     }
 
+    /// A Stop waiting for Windows leaves the window open with input on, so its size still reaches Windows.
     private func appendDisplayResize(_ size: HvfDisplayResizeRequest.Size) -> Bool {
-        appendVMMControl(size.command)
+        stopWaitsForWindows ? appendRunControl(size.command) : appendVMMControl(size.command)
     }
 
     /// True while a running VM's VMM takes requests on this run's input channel.
@@ -648,6 +650,7 @@ final class HvfEngineSession: ObservableObject {
         liveInputWriteFailureReported = false
         driveDisconnected = false
         displayResize.deviceRestarted() // a new run's display starts at its default size; an attached one is unknown
+        displayShowedFrame = false
         if clearEvents { events = [] }
     }
 
@@ -657,8 +660,12 @@ final class HvfEngineSession: ObservableObject {
     /// control file the Stop may have found replaced. Until then input uses the legacy device path.
     private var guestTakesInput: Bool {
         if case .connected = connectionState { return true }
-        return connectionState == .stopping && inputDriver.router.activated
-            && ownedController?.waitsForGuestShutdown == true
+        return stopWaitsForWindows && inputDriver.router.activated
+    }
+
+    /// A Stop is waiting for Windows to shut down while the VMM still runs, so Windows takes input.
+    var stopWaitsForWindows: Bool {
+        connectionState == .stopping && ownedController?.waitsForGuestShutdown == true
     }
 
     var inputBinding: [String] {

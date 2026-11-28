@@ -11,9 +11,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// partial copy (tens of GB on a backup drive) in its hidden staging folder.
 static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
 
-/// For the helper's create, restore and import commands: SIGINT and SIGTERM (the app's and the
-/// CLI's cancel) stop the copy or hash in progress at its next chunk, so the attempt's own error
-/// path removes its staging and the command fails. A signal after the copies lets it finish.
+/// For the helper's create, restore, import and convert commands: SIGINT and SIGTERM (the app's
+/// and the CLI's cancel) stop the copy or hash in progress at its next chunk, so the attempt's own
+/// error path removes its staging and the command fails. A signal after the copies lets it finish.
 pub fn stop_copies_on_signals() {
     extern "C" fn request_stop(_: libc::c_int) {
         STOP_REQUESTED.store(true, Ordering::Relaxed);
@@ -25,7 +25,7 @@ pub fn stop_copies_on_signals() {
     }
 }
 
-fn stop_requested() -> io::Result<()> {
+pub(crate) fn stop_requested() -> io::Result<()> {
     #[cfg(test)]
     let requested = stop_for_test::requested() || STOP_REQUESTED.load(Ordering::Relaxed);
     #[cfg(not(test))]

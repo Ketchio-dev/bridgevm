@@ -112,6 +112,18 @@ fn qcow2_v2_and_v3_convert_to_the_raw_disk_they_describe() {
     }
 }
 
+/// Cancel's SIGTERM used to kill the converter outright, leaving its partial image behind.
+#[test]
+fn a_stop_signal_ends_the_conversion_and_removes_the_partial_image() {
+    use crate::snapshot_pair::files::stop_for_test;
+    let s = Scratch::new("stopped");
+    let (image, _) = sample_qcow2(3, 16);
+    stop_for_test::set(true);
+    let result = convert(&s, &image); // asserts that nothing but the source is left
+    stop_for_test::set(false);
+    assert!(matches!(result, Err(ConvertError::Io(_))), "{result:?}");
+}
+
 #[test]
 fn unallocated_zero_and_all_zero_clusters_stay_holes() {
     let s = Scratch::new("q-holes");

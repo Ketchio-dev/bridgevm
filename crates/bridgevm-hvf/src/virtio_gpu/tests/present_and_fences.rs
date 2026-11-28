@@ -208,6 +208,31 @@ fn iosurface_scanout_blits_on_every_service_while_readback_stays_paced() {
 }
 
 #[test]
+fn a_new_helper_or_a_device_reset_forgets_the_published_iosurface() {
+    let (mut dev, _backend, mut mem) = deferred_scanout_dev();
+    let path =
+        std::env::temp_dir().join(format!("bvm-iosurface-{}.fb.iosurface", std::process::id()));
+    // Left by the helper that ran before a Windows restart.
+    std::fs::write(&path, "7 1280 800\n").unwrap();
+    dev.gpu.published_iosurface = Some(path.clone());
+    dev.gpu.set_3d_scanout_iosurface(true, false);
+    assert!(
+        !path.exists(),
+        "the old surface is not shown over the boot screens"
+    );
+    submit_control(&mut dev, &mut mem, &flush_res_31(), 24);
+    dev.gpu.service_deferred_3d_scanout();
+    dev.gpu.service_deferred_3d_scanout();
+    assert!(
+        path.exists(),
+        "Windows drawing through 3D publishes its surface"
+    );
+    dev.gpu.reset_runtime_state();
+    assert!(!path.exists());
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
 fn iosurface_scanout_blits_on_sync_flush_too() {
     let (mut dev, backend, mut mem) = deferred_scanout_dev();
     dev.gpu.set_3d_scanout_deferred(false);

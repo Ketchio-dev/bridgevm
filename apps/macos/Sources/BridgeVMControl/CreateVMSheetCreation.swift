@@ -28,6 +28,8 @@ extension CreateVMSheet {
         library.preparingNewVM = true
         let storage = storageDir
         conversion = selectedMode == .windowsHVF ? HvfImportedDiskFormat.detect(path: target).map { ($0, 0) } : nil
+        let cancel = HvfHelperProcess.CancelHandle()
+        importCancel = selectedMode == .windowsHVF ? cancel : nil
         let width = resolutions[resIndex].0
         let height = resolutions[resIndex].1
         let disk = diskGiB
@@ -39,15 +41,17 @@ extension CreateVMSheet {
             let config: HVFCreationOutcome?
             switch selectedMode {
             case .windowsHVF:
-                config = VMLibrary.createWindowsHVF(
-                    name: normalizedName, targetDiskPath: target, varsPath: vars,
-                    storageDir: storage, width: width, height: height,
-                    memMiB: memory, cpuCount: cpu, networkEnabled: network,
-                    injectViogpu3d: false, libraryRoot: libraryRoot, converting: { format, percent in
-                        Task { @MainActor in
-                            if percent > conversion?.percent ?? -1 { conversion = (format, percent) }
-                        }
-                    })
+                config = HvfHelperProcess.$cancelHandle.withValue(cancel) {
+                    VMLibrary.createWindowsHVF(
+                        name: normalizedName, targetDiskPath: target, varsPath: vars,
+                        storageDir: storage, width: width, height: height,
+                        memMiB: memory, cpuCount: cpu, networkEnabled: network,
+                        injectViogpu3d: false, libraryRoot: libraryRoot, converting: { format, percent in
+                            Task { @MainActor in
+                                if percent > conversion?.percent ?? -1 { conversion = (format, percent) }
+                            }
+                        })
+                }
             case .windowsHVFInstall:
                 if let problem = HvfWindowsInstallISOCheck.problem(isoPath: selectedISO) {
                     config = .refused(problem)

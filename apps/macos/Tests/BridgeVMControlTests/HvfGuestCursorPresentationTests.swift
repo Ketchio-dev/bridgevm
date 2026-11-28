@@ -58,11 +58,14 @@ final class HvfGuestCursorPresentationTests: XCTestCase {
     }
 
     func testOnlyARunningVMsFileCounts() {
-        XCTAssertTrue(HvfConnectionState.booting.guestCursorIsLive)
-        XCTAssertTrue(HvfConnectionState.connected(host: "guest").guestCursorIsLive)
+        XCTAssertTrue(HvfConnectionState.booting.guestCursorIsLive(stopWaitsForWindows: false))
+        XCTAssertTrue(HvfConnectionState.connected(host: "guest").guestCursorIsLive(stopWaitsForWindows: false))
+        XCTAssertTrue(HvfConnectionState.stopping.guestCursorIsLive(stopWaitsForWindows: true),
+                      "a Stop waiting for Windows keeps its window and pointer")
         for state in [HvfConnectionState.stopped, .stopping, .timedOut] {
-            XCTAssertFalse(state.guestCursorIsLive)
+            XCTAssertFalse(state.guestCursorIsLive(stopWaitsForWindows: false))
         }
+        XCTAssertFalse(HvfConnectionState.stopped.guestCursorIsLive(stopWaitsForWindows: true))
     }
 }
 #endif

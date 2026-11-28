@@ -45,10 +45,15 @@ enum HvfHostKeyCommand: Equatable {
         case "\u{f70f}": return .key("f12")
         // F13 (U+F710) sits where a PC keyboard has Print Screen; a Mac keyboard has no PrtSc key.
         case "\u{f710}": return .key(HvfModifierChord.printScreen)
+        // A PC keyboard's Insert key reaches macOS as Help (U+F746); Insert itself is U+F727.
+        case "\u{f746}", "\u{f727}": return .key("insert")
         default:
             guard !characters.isEmpty,
                   !modifiers.contains(.control),
-                  !modifiers.contains(.option) else { return .ignored }
+                  !modifiers.contains(.option),
+                  // Other function keys (Num Lock as Clear, F14-F35, media keys) have no Windows key
+                  // here: typed as text, they were a junk character.
+                  !characters.unicodeScalars.contains(where: { (0xf700...0xf8ff).contains($0.value) }) else { return .ignored }
             return .text(characters)
         }
     }

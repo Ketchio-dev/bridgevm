@@ -3,8 +3,9 @@ import XCTest
 @testable import BridgeVMControl
 
 /// While a request waits for its receipt, a newer absolute move replaces the newest unsent move of the
-/// same generation in place. Nothing else is merged, reordered or rewritten, and only sent requests
-/// are awaited.
+/// same generation in place, and a raw-unit scroll adds into the newest unsent one with the same held
+/// modifiers. Nothing else is merged, nothing merges across another event, nothing is reordered or
+/// rewritten, and only sent requests are awaited.
 final class HvfOrderedPointerCoalescingTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 10_000)
 
@@ -134,6 +135,42 @@ final class HvfOrderedPointerCoalescingTests: XCTestCase {
         XCTAssertEqual(queue.count, 2)
         XCTAssertEqual(queue.acknowledge(active, succeeded: true, now: now), .completed)
         XCTAssertEqual(try sent(queue.poll(now: now)).event, .pointer("move:2x2"))
+    }
+
+    /// A trackpad flick sends scrolls faster than the agent answers: one slot holds them behind the request in flight.
+    func testScrollsBehindAnInFlightRequestBecomeOneQueuedScroll() throws {
+        var queue = HvfOrderedInputQueue()
+        XCTAssertTrue(queue.enqueue(.pointer("scrollunits:-10,0@1x1"), now: now))
+        var ticket = try sent(queue.poll(now: now))
+        for index in 0..<100 { XCTAssertTrue(queue.enqueue(.pointer("scrollunits:-15,3@\(index)x7"), now: now)) }
+        XCTAssertEqual(queue.count, 2)
+        let apart: [HvfOrderedInputQueue.Event] = [.pointer("scrollunits:-15,0@5x5:c"),
+            .pointer("scrollunits:15,0@6x6:c"), .key("enter"), .pointer("scrollunits:-1,0@7x7")]
+        for event in apart { XCTAssertTrue(queue.enqueue(event, now: now)) }
+        XCTAssertEqual(queue.count, 6, "other modifiers, a zero sum and a key between keep scrolls apart")
+        var events: [HvfOrderedInputQueue.Event] = []
+        while queue.acknowledge(ticket, succeeded: true, now: now) == .completed,
+              case let .send(next) = queue.poll(now: now) {
+            XCTAssertNotNil(HvfGuestInputEncoding(next.event), "\(next.event)")
+            events.append(next.event)
+            ticket = next
+        }
+        XCTAssertEqual(events, [.pointer("scrollunits:-1200,300@99x7")] + apart,
+                       "summed within the agent's bound, at the newest position")
+        XCTAssertEqual(queue.byteCount, 0)
+    }
+
+    /// Refusing a release would leave the button down in Windows, and the next move would drag.
+    func testAFullQueueStillTakesAButtonRelease() throws {
+        var queue = HvfOrderedInputQueue()
+        XCTAssertTrue(queue.enqueue(.pointer("press:1x1"), now: now))
+        _ = try sent(queue.poll(now: now))
+        for _ in 1..<HvfOrderedInputQueue.maximumEvents { XCTAssertTrue(queue.enqueue(.key("a"), now: now)) }
+        XCTAssertFalse(queue.enqueue(.pointer("click:2x2"), now: now), "the queue is full")
+        for release in ["release:2x2", "rightrelease:2x2:c", "middlerelease:2x2", "releaseall:2x2"] {
+            XCTAssertTrue(queue.enqueue(.pointer(release), now: now), release)
+        }
+        XCTAssertEqual(queue.count, HvfOrderedInputQueue.maximumEvents + 4)
     }
 
     private func sent(_ transition: HvfOrderedInputQueue.Transition) throws -> HvfOrderedInputQueue.Ticket {

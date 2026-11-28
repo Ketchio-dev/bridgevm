@@ -167,7 +167,10 @@ class HvfFramebufferTextInput: NSView, @preconcurrency NSTextInputClient {
         // A commit outside a key event (a candidate clicked) ends the caret's use; keyDown judges its own.
         if interpretingEvent == nil { forgetCaret() }
         refreshPreedit()
-        if !committed.isEmpty, !sendGuestText(committed) { interpretationRefused = true; textInputRefused() }
+        // AppKit can hand back a function key Windows has no key for (U+F700-U+F7FF: Num Lock as Clear,
+        // F14 and up) as text: it was typed as a junk character. U+F8FF, the Apple logo, stays text.
+        let typed = String(String.UnicodeScalarView(committed.unicodeScalars.filter { !(0xf700...0xf7ff).contains($0.value) }))
+        if !typed.isEmpty, !sendGuestText(typed) { interpretationRefused = true; textInputRefused() }
     }
 
     func unmarkText() {

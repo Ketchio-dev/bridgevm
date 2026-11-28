@@ -31,6 +31,20 @@ impl VirtioGpu {
     pub fn set_3d_scanout_iosurface(&mut self, enabled: bool, verify: bool) {
         self.scanout_iosurface = enabled;
         self.scanout_iosurface_verify = enabled && verify;
+        if enabled {
+            self.forget_published_iosurface();
+        }
+    }
+
+    /// The app shows the surface the file names for as long as the file stays, and keeps that surface
+    /// alive itself: a new helper (a Windows restart) or a device reset removes it, so the boot screens
+    /// in the plain framebuffer show until Windows draws through 3D again. They stayed frozen on the
+    /// last desktop, through updates and recovery screens.
+    pub(crate) fn forget_published_iosurface(&mut self) {
+        self.scanout_iosurface_id = None;
+        if let Some(path) = &self.published_iosurface {
+            let _ = std::fs::remove_file(path);
+        }
     }
 
     pub(crate) fn scanout_readback_due(&self, now: Instant) -> bool {

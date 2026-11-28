@@ -55,6 +55,22 @@ final class HvfAgentSilenceNoticeTests: XCTestCase {
         XCTAssertNil(session.agentSilenceNotice.shown, "the agent is there: the notice clears by itself")
     }
 
+    /// The firmware found nothing to start (HvfBootFailureNotice): no agent will come, and "restart
+    /// Windows" doesn't help, so the agent notice stays off, also after the strip is closed.
+    func testADiskWithNothingToStartAsksForNoRestart() throws {
+        let clock = Clock()
+        let session = try session(clock)
+        try run(session, ["BVBOOT no-bootable-disk"])
+        clock.value += HvfAgentSilenceNotice.readyTimeout
+        try run(session)
+        XCTAssertNotNil(session.bootFailureNotice.text)
+        XCTAssertNil(session.agentSilenceNotice.shown)
+        session.bootFailureNotice.dismiss()
+        clock.value += HvfAgentSilenceNotice.readyTimeout
+        try run(session)
+        XCTAssertNil(session.agentSilenceNotice.shown)
+    }
+
     func testGuestWindowSubtitleWaitsForFirstConnectionAndClearsAtReadyOrStop() throws {
         let clock = Clock()
         let session = try session(clock, agentSeen: false)
