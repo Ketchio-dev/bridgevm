@@ -21,6 +21,13 @@ final class HvfAudioNoticeTests: XCTestCase {
         for event in BvAgentEvent.parse(lines: ["HDA capture: the Mac microphone is on again"]) { session.handle(event) }
         XCTAssertNil(session.audioNotice.text)
         for event in BvAgentEvent.parse(lines: [mic]) { session.handle(event) }
+        // Sound didn't move to a newly connected output: said until it plays again (hda_coreaudio_output.rs).
+        let notOpen = "HDA CoreAudio output: the Mac's current default output did not open after the Mac's default output changed (AudioQueueNewOutput failed with OSStatus -50 (0xffffffce)); trying again while the guest plays"
+        for event in BvAgentEvent.parse(lines: [notOpen]) { session.handle(event) }
+        XCTAssertEqual(session.audioNotice.text, "Windows has no sound right now because the Mac’s current sound output didn’t open. BridgeVM keeps trying while Windows plays sound.")
+        let moved = "HDA CoreAudio output: sound now plays on the Mac's current default output (the Mac's default output changed)"
+        for event in BvAgentEvent.parse(lines: [moved]) { session.handle(event) }
+        XCTAssertEqual(session.audioNotice.text, "The Mac microphone didn’t start, so Windows recorded silence. Windows tries again the next time an app starts recording.")
         let output = "HDA CoreAudio output: off for this run, the Mac's audio output did not start (AudioQueueNewOutput failed with OSStatus -50 (0xffffffce)); Windows runs without sound, restart the VM to try again"
         for event in BvAgentEvent.parse(lines: [output]) { session.handle(event) }
         XCTAssertEqual(session.audioNotice.text, "Windows has no sound this time because the Mac’s audio output didn’t start. Restart the VM to try again.")

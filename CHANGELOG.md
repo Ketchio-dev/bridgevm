@@ -86,6 +86,9 @@ All notable changes to BridgeVM are documented in this file.
 - Windows' sound no longer drifts behind the picture during long videos or
   calls. When more than 120 ms of sound is waiting to play, the oldest part
   is dropped, as the microphone already does.
+- When Windows' sound can't move to a newly chosen or connected Mac output,
+  such as AirPods or AirPlay, the VM now shows a notice until sound plays
+  again. Before, Windows was just silent.
 - Files dropped on a VM window, or opened with BridgeVM from Finder, while
   Windows is still starting are now copied once Windows is ready. Before,
   they were refused with a message that stayed over the Windows taskbar. A
