@@ -50,6 +50,20 @@ All notable changes to BridgeVM are documented in this file.
   started in the app window. Before, status and cancel answered `targetUnavailable`, and `install`
   failed as busy and then reported that failure while Windows went on installing. The code
   `targetUnavailable` also prints as "BridgeVM isn’t installing this VM." in text output.
+- Quitting BridgeVM while it moves, duplicates or deletes a VM now asks to
+  finish first and quits when it is done, as it already did while VM files were
+  being prepared. Before, BridgeVM quit at once: a move cut short left the VM
+  hidden from the library at the next launch.
+- A VM whose disk and firmware settings files were removed outside BridgeVM
+  (in Finder, say) can now be deleted. Every try said its library entry could
+  not be removed from disk. BridgeVM still keeps the VM's folder when it holds a
+  snapshot or any file BridgeVM didn't write, and after a delete that fails the
+  library now shows what is still on disk.
+- Moving a VM whose files are on a disconnected drive now says "BridgeVM can't
+  find this VM's files. Connect the drive that holds them, then try again."
+  before it asks for a folder, and Show in Finder says the same. Before, Move
+  asked for a folder and then said it could not confirm the move, though
+  nothing had moved.
 - Windows connections left idle, such as an SSH session or a database client,
   are no longer cut after 5 minutes without Windows being told. BridgeVM now
   keeps an idle connection open for at least 2 hours, as home routers do.
@@ -74,6 +88,21 @@ All notable changes to BridgeVM are documented in this file.
 - A VPN tunnel or call running in Windows over UDP recovers after the Mac
   switches networks. Its traffic kept going to a connection tied to the old
   network, so it stayed dead for as long as Windows kept sending.
+- More Actions > Refresh on a VM's page now also reads the library again, as
+  messages that say "Refresh the library" expect. Before, it only checked
+  whether the VM was running.
+- Command-N now opens New VM in the library window, bringing that window back
+  if you closed it. Before, it opened a second library window. The Window menu
+  also has a Library item that brings the library back while a VM window is
+  open.
+- The Delete dialog no longer tells you to shut the VM down first. BridgeVM
+  already refuses to delete a running VM and tells you why.
+- If BridgeVM can't archive a deleted VM's vTPM key, the warning now says to
+  give a new VM a different name, instead of asking you to choose a VM ID that
+  BridgeVM never lets you choose.
+- When a running VM leaves the library, the page that keeps its controls now
+  lists guest agent events as readable lines instead of internal program
+  output.
 - When Windows Setup fails during installation, BridgeVM now says "Windows Setup
   didn't finish. Choose Try Again." instead of showing the path to a log file
   that Try Again deletes. The log's location is still in the installation log.
@@ -92,9 +121,16 @@ All notable changes to BridgeVM are documented in this file.
   new import now gets the next free ID (such as `windows-11-2`), the old folder's
   files are left alone, and the library explains that a folder with no vm.json
   is usually left from a setup that did not finish and can be moved to the Trash.
+- When macOS blocks BridgeVM from the local network, Windows can't reach the Mac's DNS
+  server (usually the router) and no website opens. BridgeVM now says so in the VM's view and
+  where to turn Local Network access back on, and clears the notice once DNS answers again.
 - After an import fails, Virtual machines in the sidebar goes back to Get
   Started again and clears the error. Before, the failed import form stayed with
   no way back, and a later import form still showed the old red error.
+- Delete, Duplicate and Move work right after Windows shuts down when a setting
+  changed while it ran, such as "Start when BridgeVM opens" or the Command key.
+  Before, saving that setting at shutdown could leave them saying the VM's
+  registration changed until you chose Reload Library from Command-K.
 - A Windows app that stops answering while it holds copied text no longer
   freezes BridgeVM's helper in Windows. Reading the clipboard text now gives up
   after 20 seconds and keeps the last text, so the shared clipboard, shared

@@ -59,6 +59,8 @@ struct LibraryDashboardDetail: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                     }
+                    // A Quit waits for this VM's move, duplicate or delete; it can be called off here.
+                    if library.fileOperationTitle(for: config.slug) != nil { VMPreparationQuitStatus(library: library) }
                     actionStrip
                 }
                 .padding(20).modifier(LibraryCardSurface())
@@ -133,8 +135,10 @@ struct LibraryDashboardDetail: View {
                 }
                 .accessibilityElement(children: .combine)
                 Spacer(minLength: 0)
-                Button("Show in Finder", action: revealBundle)
-                    .fixedSize()
+                Button("Show in Finder") {
+                    library.revealBundleInFinder(config) { NSWorkspace.shared.activateFileViewerSelecting($0) }
+                }
+                .fixedSize()
             }
         }
         .padding(20).modifier(LibraryCardSurface())
@@ -200,9 +204,5 @@ struct LibraryDashboardDetail: View {
         }
         // Automatic preserves an existing firmware choice. A supplied invalid mode leaves it untouched.
         return config.guestResolution == nil ? "Automatic at startup (1280 × 800 by default)" : "Firmware setting at startup"
-    }
-
-    private func revealBundle() {
-        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: config.bundlePath)])
     }
 }

@@ -9,6 +9,7 @@ use std::{
 };
 
 mod dns_over_tcp;
+mod dns_unreachable;
 mod fake_guest;
 mod helpers;
 mod host_wake_download;

@@ -2,9 +2,55 @@ import XCTest
 @testable import BridgeVMControl
 
 /// Installed external registrations whose bundle or both final media are
-/// definitively absent are removed without the media lease. Every other HVF
-/// deletion keeps the ordinary lease; lookup errors other than ENOENT refuse.
+/// definitively absent are removed without the media lease, and so is an installed
+/// library VM without its disk and vars whose entry holds only BridgeVM's records.
+/// Every other HVF deletion keeps the ordinary lease; lookup errors other than
+/// ENOENT refuse.
 final class HvfUnavailableMediaDeletionTests: XCTestCase {
+    /// The lease opens the disk and vars, so a library VM whose files were removed (in Finder, say)
+    /// failed every delete with “could not be removed from disk” and stayed in the library.
+    @MainActor
+    func testLibraryVMWithoutItsDiskAndVarsCanBeDeleted() async throws {
+        let f = try HvfPendingDeletionFixture()
+        let installed = try install(f, media: false)
+        try f.file("logs/hvf/run.log")
+        try f.file("metadata/vtpm/state.bin")
+        let store = VTPMDeletionTestKeyStore()
+        store.keys[installed.slug] = Data(repeating: 0x35, count: KeychainVTPMStateKeyStore.keyLength)
+        let jobs = HvfUnavailableMediaDeletionJobs()
+        let library = LibraryModel(rootURL: f.library, migrateLegacy: false,
+            actionScheduler: { jobs.pending.append($0) },
+            deletionOperation: { config, root, isRunning in
+                LibraryDeletionKeyArchive.perform(config, rootURL: root, isRunning: isRunning, keyStore: store)
+            }, startsModelsAutomatically: false)
+        let listed = try XCTUnwrap(library.vms.first { $0.slug == installed.slug })
+        library.confirmDeletion(listed)
+        let restore = try useRealHelper(f)
+        defer { restore() }
+        let job = try XCTUnwrap(jobs.pending.first)
+        await job()
+        XCTAssertNil(library.deletionError)
+        XCTAssertFalse(library.vms.contains { $0.slug == listed.slug })
+        XCTAssertFalse(f.fm.fileExists(atPath: f.entry.path))
+        XCTAssertNil(store.keys[installed.slug], "its vTPM key is archived as for any deleted VM")
+    }
+
+    /// Without the disk and vars, anything that may still hold the VM's data keeps the entry: a
+    /// snapshot, a restored disk generation, install staging or a file BridgeVM never writes.
+    func testLibraryVMWithoutItsDiskAndVarsKeepsAnythingOfValue() throws {
+        for kept in ["metadata/snapshots/latest.snapshot/disk.raw", "disks/.bridgevm-pair-v2-0/current/disk.raw",
+                     "metadata/hvf-install-finalization/disk.raw", "disks/copy.raw", "notes.txt"] {
+            let f = try HvfPendingDeletionFixture()
+            let installed = try install(f, media: false)
+            try f.file(kept)
+            let restore = try useRealHelper(f)
+            defer { restore() }
+            XCTAssertFalse(LibraryDeletionProtection.delete(installed, rootURL: f.library), kept)
+            XCTAssertTrue(f.fm.fileExists(atPath: f.bundle.appendingPathComponent(kept).path), kept)
+            XCTAssertTrue(f.fm.fileExists(atPath: f.entry.appendingPathComponent("vm.json").path), kept)
+        }
+    }
+
     func testDetachedExternalVolumeRemovesOnlyTheRegistrationWithRealHelper() throws {
         let f = try HvfPendingDeletionFixture(external: true)
         let installed = try install(f, media: true)
@@ -56,8 +102,10 @@ final class HvfUnavailableMediaDeletionTests: XCTestCase {
     }
 
     func testManagedPresentAndPartialMediaKeepTheOrdinaryLease() throws {
+        // Managed media used to be absent here: that VM is now deleted without the lease
+        // (testLibraryVMWithoutItsDiskAndVarsCanBeDeleted), so the managed case keeps its media.
         let managed = try HvfPendingDeletionFixture()
-        let managedConfig = try install(managed, media: false)
+        let managedConfig = try install(managed, media: true)
         let present = try HvfPendingDeletionFixture(external: true)
         let presentConfig = try install(present, media: true)
         let partial = try HvfPendingDeletionFixture(external: true)
@@ -72,8 +120,12 @@ final class HvfUnavailableMediaDeletionTests: XCTestCase {
         aliasedConfig.diskPath = aliasedConfig.bundlePath + "/disks/hvf-target.raw"
         try aliased.save(aliasedConfig)
         try aliased.fm.removeItem(at: aliased.bundle)
-        for (f, config) in [(managed, managedConfig), (present, presentConfig),
-                            (partial, partialConfig), (aliased, aliasedConfig)] {
+        // It used to be refused here too. Its entry now holds only vm.json, so nothing else can go
+        // with it: it is removed without the lease, which cannot open the missing files.
+        XCTAssertTrue(try aliased.delete(aliasedConfig, refuse: true))
+        XCTAssertFalse(exists(aliased.command), "the media lease helper must not run")
+        XCTAssertFalse(aliased.fm.fileExists(atPath: aliased.entry.path))
+        for (f, config) in [(managed, managedConfig), (present, presentConfig), (partial, partialConfig)] {
             XCTAssertFalse(try f.delete(config, refuse: true))
             XCTAssertEqual(try String(contentsOf: f.command).split(separator: "\n").first, "lease")
             XCTAssertTrue(f.fm.fileExists(atPath: f.entry.appendingPathComponent("vm.json").path))

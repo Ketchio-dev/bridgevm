@@ -5,6 +5,7 @@ import AppKit
 struct ContentView: View {
     @ObservedObject var library: LibraryModel
     @State private var presentation = LibraryWindowPresentation()
+    @ObservedObject private var requests = LibraryWindowRequests.shared
     @State private var libraryQuery = ""
     @State private var showingCompactList = false
     @State private var importDraft = FirstRunFormDraft()
@@ -41,6 +42,7 @@ struct ContentView: View {
         .groupBoxStyle(LibraryGroupBoxStyle())
         .background(LibraryAppearance.canvas)
         .environment(\.libraryWindowPresentation, $presentation)
+        .onChange(of: requests.createRequested, initial: true) { requests.take(into: &presentation) }
         .sheet(item: $presentation.sheet) { sheet in
             switch sheet {
             case .palette:

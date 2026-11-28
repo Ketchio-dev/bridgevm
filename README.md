@@ -39,8 +39,8 @@ curl -fsSL https://raw.githubusercontent.com/Ketchio-dev/bridgevm/main/install.s
 | --- | --- |
 | Windows desktop | Windows 11 Arm on BridgeVM's native HVF engine; create a VM from an ISO or import an installed disk. |
 | VM library | In source builds, choose **Compare VMs** in the toolbar to sort saved VMs by name, engine, CPU count or memory. Select a row and choose **Show VM** to open its dashboard. |
-| Display and input | A native Mac window, keyboard and mouse, local text composition, and configurable Command-key mapping. Window-following resolution needs the guest display driver and a restart. |
-| Mac integration | Clipboard sharing, shared folders, networking and audio output. Display smoothness and audio continuity still need broader validation. |
+| Display and input | A native Mac window, keyboard and mouse, local text composition, and configurable Command-key mapping. Window-following resolution needs the guest display driver and a VM restart (shut down, then start). |
+| Mac integration | Clipboard sharing, shared folders, networking and audio output. Known defects: the display window was choppy in recent runs and its smoothness has not been measured since; Windows audio stuttered audibly, and no listening check has confirmed the stutter is gone. |
 | VM lifecycle | Start, shut down and restart. In current source builds, **Stop** waits for Windows to close its apps. **Force Stop** asks for confirmation because unsaved work may be lost. Persistent storage, TPM/Secure Boot workflows and [powered-off snapshots](docs/windows-arm/snapshot-scope-v1.md) are available. Running-state suspend is outside v1. |
 
 These are preview capabilities. ISO installation and installed-disk import on
@@ -52,11 +52,12 @@ for each feature.
 
 **Host:** Apple silicon and macOS 15+ (the engine uses the macOS 15
 Hypervisor.framework GIC). The declared host matrix is M4/M5;
-M1–M3 are not yet covered. The [installation guide](docs/install.md) has the
-terminal installer, the DMG and its one-time Open Anyway step. Source builds
-require Xcode/Swift, Rust 1.85+ and pinned native dependencies; follow the
-complete [build and packaging guide](docs/install.md#build-the-current-source),
-because `cargo build` and `swift build` alone do not prepare a
+M1–M3 are not yet covered. A VM installed from an ISO gets a 64 GiB disk and
+6 GiB of memory by default (4 GiB on an 8 GiB Mac). The
+[installation guide](docs/install.md) has the terminal installer, the DMG and
+its one-time Open Anyway step. Source builds require Xcode/Swift, Rust 1.85+
+and pinned native dependencies; follow the complete
+[build and packaging guide](docs/install.md#build-the-current-source), because `cargo build` and `swift build` alone do not prepare a
 Windows-installation app.
 
 On first launch, choose the setup path that matches your Windows media.
@@ -67,8 +68,8 @@ installed disk from Finder onto the matching card to open its setup form.
 
 | Starting point | What you provide |
 | --- | --- |
-| **Install Windows** | Choose your licensed Windows 11 Arm ISO. Use **Download Drivers** to fetch and verify the signed Red Hat storage, serial and network drivers (about 95 MB), or choose your own signed Arm64 driver folder and SHA-256 manifest. Choose **Create**, then **Start Installation** in the VM detail view. In the v0.1.0 download, these three buttons read **드라이버 자동 준비**, **생성** and **설치 시작**, respectively. |
-| **Import an existing disk** | Choose your installed Windows 11 Arm disk, select **Import**, then choose **Start** in the library. In v0.1.0, the file picker and these two actions read **선택…**, **가져오기** and **시작**. The download accepts RAW, QCOW2 and Hyper-V VHDX. Current source also supports fixed-size VHD and lets you drop a file on the disk field. Disk import needs no driver payload. |
+| **Install Windows** | Choose your licensed Windows 11 Arm ISO ([download from Microsoft](https://www.microsoft.com/en-us/software-download/windows11arm64); an x64 ISO is refused). Use **Download Drivers** to fetch and verify the signed Red Hat storage, serial and network drivers (about 95 MB), or choose your own signed Arm64 driver folder and SHA-256 manifest. Choose **Create**, then **Start Installation** in the VM detail view, and leave the Mac awake until installation finishes. When it does, choose **Start** and finish Windows setup in the VM window. In the v0.1.0 download, these four buttons read **드라이버 자동 준비**, **생성**, **설치 시작** and **시작**, respectively. |
+| **Import an existing disk** | Choose your installed Windows 11 Arm disk, select **Import**, then choose **Start** in the library. In v0.1.0, the file picker and these two actions read **선택…**, **가져오기** and **시작**. The download accepts RAW, QCOW2 and Hyper-V VHDX. Current source also supports fixed-size VHD and lets you drop a file on the disk field. Disk import needs no driver payload, but Windows on that disk must already have the VirtIO Serial driver (for the guest tools) and the NetKVM driver (for networking). After the first start, choose **Install Guest Tools** (**게스트 도구 설치** in v0.1.0), shut down Windows and start it again, then run **install.cmd** from the new drive in Windows to enable clipboard sharing and shared folders. |
 
 To rename a saved Windows VM in a current source build, shut down Windows,
 open **Settings**, edit **VM name** under **General**, and click **Done**. The VM keeps its disk, snapshots and TPM identity.
@@ -80,10 +81,12 @@ the quit from the progress view or VM settings. If Windows takes longer to shut
 down, press Return to keep waiting or choose **Cancel Quit** to check the VM.
 
 The [installation guide](docs/install.md) covers both paths, required bundle
-resources and first-open trust. After Windows starts, install the signed guest
-display driver from the VM's settings and restart to enable window-following
-resolution. In current source builds, after Windows shuts down, choose
-**Open Library** in its display window to return to that VM and start it again.
+resources and first-open trust. After you sign in to Windows, install the
+signed guest display driver from the VM's settings. Then choose **Restart Now**
+when BridgeVM offers it, or shut down the VM and start it again; restarting
+Windows inside the VM is not enough. The display then follows the window size.
+In current source builds, after Windows shuts down, choose **Open Library** in
+its display window to return to that VM and start it again.
 
 Release and source builds are ad-hoc signed. Developer ID signing and Apple
 notarization remain unfinished. Standard preview packaging includes no Windows

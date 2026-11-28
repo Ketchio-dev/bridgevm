@@ -10,7 +10,7 @@ bridgevm app inspect dev-vm
 bridgevm app install dev-vm
 bridgevm app install-status dev-vm --json
 bridgevm app readiness dev-vm --json
-# After starting and shutting down the new VM once in the app:
+# After you finish Windows setup in the app's VM window and shut the VM down:
 bridgevm app start dev-vm --json
 bridgevm app status dev-vm --json
 bridgevm app stop dev-vm --json
