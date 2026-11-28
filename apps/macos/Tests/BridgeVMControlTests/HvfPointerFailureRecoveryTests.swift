@@ -3,11 +3,11 @@ import XCTest
 @testable import BridgeVMControl
 
 final class HvfPointerFailureRecoveryTests: XCTestCase {
-    func testConfirmedPressGetsOneCleanupWithoutReopeningUserInput() {
+    func testConfirmedPressGetsOneCleanupWithoutReopeningTheOrderedRoute() {
         var fixture = HvfPointerFailureFixture()
         fixture.failAfterConfirmedPress()
         XCTAssertEqual(fixture.router.count, 1)
-        fixture.assertFailedClosed()
+        fixture.assertBasicInput()
         _ = fixture.poll()
         let cleanup = fixture.commands.last!
         XCTAssertEqual(fixture.payloads(), ["press:1x2", "fail", "release:1x2"])
@@ -15,7 +15,7 @@ final class HvfPointerFailureRecoveryTests: XCTestCase {
         XCTAssertEqual(fixture.poll(), .waiting)
         _ = fixture.poll(lines: fixture.receipt(cleanup))
         XCTAssertEqual(fixture.router.count, 0)
-        fixture.assertFailedClosed()
+        fixture.assertBasicInput()
         _ = fixture.router.cancelTarget(now: fixture.now)
         XCTAssertNil(fixture.poll())
         XCTAssertEqual(fixture.commands.count, 3)
@@ -36,7 +36,7 @@ final class HvfPointerFailureRecoveryTests: XCTestCase {
         XCTAssertEqual(fixture.router.count, 1)
         _ = fixture.poll(lines: fixture.receipt(cleanup))
         XCTAssertEqual(fixture.router.count, 0)
-        fixture.assertFailedClosed()
+        fixture.assertBasicInput()
         XCTAssertEqual(fixture.commands.count, 2, "The expired press must never be retransmitted")
     }
 
@@ -48,7 +48,7 @@ final class HvfPointerFailureRecoveryTests: XCTestCase {
             if failure == "receipt" { _ = fixture.poll(lines: fixture.receipt(fixture.commands.last!, inserted: 0)) }
             if failure == "expiry" { fixture.now += 31; _ = fixture.poll() }
             XCTAssertEqual(fixture.router.count, 0, failure)
-            fixture.assertFailedClosed()
+            fixture.assertBasicInput()
             _ = fixture.router.cancelTarget(now: fixture.now)
             XCTAssertNil(fixture.poll())
             XCTAssertEqual(fixture.commands.count, 3, failure)
@@ -71,7 +71,7 @@ final class HvfPointerFailureRecoveryTests: XCTestCase {
             _ = fixture.router.cancelTarget(now: fixture.now)
             XCTAssertNil(fixture.poll())
             XCTAssertEqual(fixture.commands, before)
-            fixture.assertFailedClosed()
+            fixture.assertBasicInput()
         }
     }
 }

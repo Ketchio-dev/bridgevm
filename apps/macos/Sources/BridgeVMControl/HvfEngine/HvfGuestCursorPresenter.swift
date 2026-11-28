@@ -33,6 +33,8 @@ final class HvfGuestCursorPresenter {
     private var sequence: UInt64 = .max
     private var image: CGImage?
     private var cursor: (image: CGImage, scale: CGFloat, made: NSCursor)?
+    /// The frames `apply` last gave the sprite: read back, a layer's frame can differ in its last bit.
+    private var spriteFrames: (clip: CGRect, sprite: CGRect)?
 
     init() {
         spriteClip.addSublayer(sprite)
@@ -71,14 +73,19 @@ final class HvfGuestCursorPresenter {
             restoreArrow()
         }
         guard let frame = presentation.sprite, let fit, let image, let layer else { return hideSprite() }
+        let frames = (clip: fit.rect, sprite: frame.offsetBy(dx: -fit.rect.minX, dy: -fit.rect.minY))
+        // Every display tick asks; a sprite already shown as asked is left alone.
+        if !spriteClip.isHidden, spriteClip.superlayer === layer, sprite.contents as AnyObject? === image,
+           let spriteFrames, spriteFrames == frames { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         if spriteClip.superlayer !== layer { layer.addSublayer(spriteClip) }
-        spriteClip.frame = fit.rect
+        spriteClip.frame = frames.clip
         sprite.contents = image
-        sprite.frame = frame.offsetBy(dx: -fit.rect.minX, dy: -fit.rect.minY)
+        sprite.frame = frames.sprite
         spriteClip.isHidden = false
         CATransaction.commit()
+        spriteFrames = frames
     }
 
     /// The display went away or the view is leaving: the arrow, no sprite, and nothing kept.

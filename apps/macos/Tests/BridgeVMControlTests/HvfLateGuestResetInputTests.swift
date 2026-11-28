@@ -30,7 +30,7 @@ final class HvfLateGuestResetInputTests: XCTestCase {
                 _ = router.pollBatch(binding: binding, serviceReady: true, lines: ["Windows is restarting"], now: now + 40) {
                     _ in XCTFail("sent while failed"); return true
                 }
-                XCTAssertEqual(router.route(.key("a"), binding: binding, now: now + 40), .refused, "no reset yet: \(reset)")
+                XCTAssertEqual(router.route(.key("a"), binding: binding, now: now + 40), .legacy, "basic until reset: \(reset)")
                 _ = router.pollBatch(binding: binding, serviceReady: next.count > 1, lines: next, now: now + 60) {
                     _ in XCTFail("sent in the reset batch: \(next)"); return true
                 }
@@ -146,8 +146,7 @@ final class HvfLateGuestResetInputTests: XCTestCase {
                 XCTAssertEqual(session.sendText("old"), .acceptedForProcessing, reset)
                 let rejected = try fixture.commands().last ?? ""
                 try append("BVAGENT CMD \(rejected) exit=1\nBVAGENT END \(rejected)\n", fixture); session.poll()
-                XCTAssertEqual(session.sendText("lost"), .refused, "failed until the reset record: \(reset)")
-                session.sendKey("a")
+                XCTAssertTrue(session.inputStopped, "basic input until the reset record: \(reset)")
                 try append(reset, fixture); session.poll()
                 try append(Gate.boot, fixture); session.poll(); session.poll()
                 try assertNextGenerationWorks(session, fixture, reset)

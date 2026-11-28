@@ -6,18 +6,22 @@ import Foundation
 /// inserted nothing of an event (a Windows secure desktop), that event and everything queued behind it are handed
 /// back for input.ctl in their original order (`takeLegacyReplay`), later input follows them there, and once
 /// input.ctl is quiet again (and Windows inserted the release an ordered press still owes) the next event tries
-/// the ordered route. Ctrl+Alt+Delete always takes the VMM keyboard, and on an active route nothing overtakes it
-/// there: input after it follows it on input.ctl (`fallback`), and behind ordered input still going in it waits,
-/// with input after it, until that input has gone in (`takeSecureAttention`). An agent restart within the boot
-/// (re-READY, a new SERVICE start) starts the owned boot over: the new agent instance negotiates again
-/// (HvfSessionInputGeneration.swift). A held key (`down:<key>` until `up:<key>`, HvfModifierChord.down) goes up on the
+/// the ordered route. A request Windows never confirmed (`requestFailed`: a receipt deadline, a failed agent.ctl
+/// write, a rejected or partly inserted request) is dropped with everything queued behind it, never re-sent on either
+/// route (it may still run), and the router stays in `fallback` (basic keyboard and mouse) until an agent restart or a
+/// guest reset re-arms it (HvfSessionInputGeneration.swift). Ctrl+Alt+Delete always takes the VMM keyboard, and on an
+/// active route nothing overtakes it there: input after it follows it on input.ctl (`fallback`), and behind ordered
+/// input still going in it waits, with input after it, until that input has gone in (`takeSecureAttention`). An agent
+/// restart within the boot (re-READY, a new SERVICE start) starts the owned boot over: the new agent instance
+/// negotiates again (HvfSessionInputGeneration.swift). A held key (`down:<key>` until `up:<key>`, HvfModifierChord.down) goes up on the
 /// route it went down (`routeKeyUp`): on input.ctl while the VMM holds it, which also keeps the switch waiting; on the
 /// ordered route, or through its cleanup (HvfPointerCleanup) like a held button.
 struct HvfSessionInputRouter {
     private(set) var binding: [String]?
     private(set) var eligible = false
     private(set) var activated = false
-    /// An activated router writing input to input.ctl; the ordered queue is empty whenever this is set.
+    /// An activated router writing input to input.ctl; the ordered queue is empty whenever this is set. The only
+    /// failure it outlasts is `requestFailed` (`fail` clears it).
     private(set) var fallback = false
     private(set) var failure: HvfSessionInputFailure? // see `endsAtGuestReset` for re-arming
     var failed: Bool { failure != nil }
@@ -45,7 +49,7 @@ struct HvfSessionInputRouter {
     /// Whether a key can be held from its press to its release now: on the legacy route the VMM shipped with this app
     /// holds it; on the ordered route only an agent with the HOLD marker. Never behind a Ctrl+Alt+Delete: input there
     /// reaches input.ctl later, after its release could have gone.
-    var keyHold: Bool { held.isEmpty && !failed && (!eligible || fallback || stream.keyHold) }
+    var keyHold: Bool { held.isEmpty && (!failed || fallback) && (!eligible || fallback || stream.keyHold) }
     /// The keys input.ctl holds down (HvfLegacyInputActivity): their release goes there too.
     var legacyHeldKeys: [String] { legacy.keys }
 
@@ -79,7 +83,7 @@ struct HvfSessionInputRouter {
             return .queued
         }
         if secureAttention { return .legacy }
-        guard !failed else { return .refused }
+        guard !failed || fallback else { return .refused }
         guard eligible, !fallback else { return .legacy }
         let admission = stream.enqueue(event, now: now)
         return admission == .legacy && activated ? .refused : admission
@@ -103,7 +107,7 @@ struct HvfSessionInputRouter {
         // A key the VMM holds always goes up there, even once the router failed: nothing else would release it.
         let release = line.hasPrefix("KEY " + HvfModifierChord.up)
             && legacy.keys.contains(HvfModifierChord.heldAction(String(line.dropFirst(4))) ?? "")
-        guard secureAttention || release || (!failed && (!activated || fallback)) else { return false }
+        guard secureAttention || release || fallback || (!failed && !activated) else { return false }
         // Input after the chord follows it on input.ctl (Windows may switch desktops only once the VMM's keyboard
         // queue moves), until the VMM has taken it and input.ctl is quiet.
         if secureAttention, activated, !failed, stream.count == 0, stream.state == .ready { fallback = true }
@@ -135,18 +139,20 @@ struct HvfSessionInputRouter {
         if fallback, quiet, !stream.isRecovering, stream.owesRelease { stream.releaseOwed(now: now) }
         var update = stream.poll(serviceReady: serviceReady, legacyQuiescent: quiet,
                                  lines: lines, now: now, send: send)
-        if fallback, quiet, !stream.isRecovering, !stream.owesRelease { fallback = false }
+        if fallback, !failed, quiet, !stream.isRecovering, !stream.owesRelease { fallback = false }
         if stream.state == .ready { activated = true }
         if case let .cancelled(reason, _) = update, activated {
             if reason.permitsLegacyRetry {
                 // Not discarded: the caller writes them to input.ctl (takeLegacyReplay).
                 replay += stream.takeNotInserted()
-                fallback = true
                 legacy.restart(now: now)
                 update = .cancelled(reason, discarded: 0)
             } else {
+                // Discarded, never re-sent: the request may still run. Later input takes input.ctl until the failure
+                // ends, so a late request can land after it, but nothing types twice.
                 failure = .requestFailed
             }
+            fallback = true
         }
         // A boot that never activated stays owned and legacy: the stream asks the next agent instance again.
         if stream.state == .unavailable, activated { failure = .unavailable }

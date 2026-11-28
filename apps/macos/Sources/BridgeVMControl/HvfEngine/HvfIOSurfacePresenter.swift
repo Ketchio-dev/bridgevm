@@ -4,12 +4,18 @@ import IOSurface
 
 struct HvfIOSurfaceDescriptorPoller {
     static let interval: TimeInterval = 0.1
+    /// No sidecar (the 2D display, the default): looked for about once a second, so 3D shows within one.
+    static let missingInterval: TimeInterval = 1
     private var nextCheck: TimeInterval = 0
 
     mutating func reloadDue(at now: TimeInterval) -> Bool {
         guard now >= nextCheck else { return false }
         nextCheck = now + Self.interval
         return true
+    }
+
+    mutating func sidecarMissing(at now: TimeInterval) {
+        nextCheck = now + Self.missingInterval
     }
 
     mutating func reset() {
@@ -36,6 +42,8 @@ struct HvfIOSurfacePresenter {
         var changed = false
         if poller.reloadDue(at: now) {
             let loaded = HvfIOSurfaceDescriptor.load(from: url)
+            // A shown sidecar that reads empty keeps the 10 Hz pace: the VMM rewrites it in place.
+            if loaded == nil, descriptor == nil { poller.sidecarMissing(at: now) }
             if loaded != descriptor || surface == nil {
                 descriptor = loaded
                 surface = loaded.flatMap(HvfIOSurfaceScanout.lookup)?.surface

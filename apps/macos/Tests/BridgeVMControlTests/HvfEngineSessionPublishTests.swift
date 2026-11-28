@@ -12,19 +12,21 @@ final class HvfEngineSessionPublishTests: XCTestCase {
     static let polls = 20
     static let boot = "BVAGENT READY host=t t=1\nBVAGENT SERVICE start t=2\n"
 
+    /// 16 polls over 2 s with no new heartbeat: the heartbeat texts change once a second (the age is shown in
+    /// whole seconds), not on every poll, and the session not at all.
     func testHeartbeatOnlyPollsDoNotRepublishTheSession() throws {
         let root = try Self.root(); defer { try? FileManager.default.removeItem(at: root) }
-        let session = try Self.attached(root, log: Self.boot + "BVAGENT SERVICE alive t=3\n")
-        let age = try XCTUnwrap(session.lastHeartbeatAge)
+        var uptime: TimeInterval = 1_000
+        let session = try Self.attached(root, log: Self.boot + "BVAGENT SERVICE alive t=3\n") { uptime }
+        XCTAssertEqual(session.lastHeartbeatAge, 0)
         let events = session.events, state = session.connectionState
-        let polls = Self.count(session) { for _ in 0..<Self.polls { session.poll() } }
-        print("session-publish: heartbeat-only polls=\(Self.polls) session=\(polls.session) connectionState=\(polls.state)"
+        let polls = Self.count(session) { for _ in 0..<16 { uptime += 0.125; session.poll() } }
+        print("session-publish: heartbeat-only polls=16 session=\(polls.session) connectionState=\(polls.state)"
             + " heartbeat=\(polls.heartbeat)")
         XCTAssertEqual(polls.session, 0, "heartbeat-only polls must not invalidate session observers")
         XCTAssertEqual(polls.state, 0)
-        XCTAssertEqual(polls.heartbeat, Self.polls, "the heartbeat texts still update on every poll")
-        let advanced = try XCTUnwrap(session.lastHeartbeatAge)
-        XCTAssertGreaterThan(advanced, age, "every poll still advances the heartbeat age")
+        XCTAssertEqual(polls.heartbeat, 2, "the heartbeat texts change at 1 s and 2 s, not on every poll")
+        XCTAssertEqual(session.lastHeartbeatAge, 2)
         XCTAssertEqual(session.events, events)
         XCTAssertEqual(session.connectionState, state)
         session.markStopped()
@@ -44,7 +46,7 @@ final class HvfEngineSessionPublishTests: XCTestCase {
         XCTAssertEqual(session.lastHeartbeatAge, 0)
         uptime += 2.5
         session.poll()
-        XCTAssertEqual(session.lastHeartbeatAge, 2.5)
+        XCTAssertEqual(session.lastHeartbeatAge, 2, "whole seconds")
         session.markStopped()
     }
 
@@ -82,8 +84,10 @@ final class HvfEngineSessionPublishTests: XCTestCase {
         return (changes, states, heartbeats)
     }
 
-    private static func attached(_ root: URL, log: String) throws -> HvfEngineSession {
+    private static func attached(_ root: URL, log: String,
+                                 uptime: @escaping () -> TimeInterval) throws -> HvfEngineSession {
         let session = HvfEngineSession(config: config(root), repoRoot: root) { _ in true }
+        session.ownedStartNow = uptime
         try append(log, root)
         XCTAssertTrue(session.attachToRunningVM())
         session.timer?.invalidate(); session.timer = nil // the test drives every poll itself

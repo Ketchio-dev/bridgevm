@@ -29,7 +29,7 @@ final class HvfFailedPointerReleaseTests: XCTestCase {
                 XCTAssertTrue(text.hasPrefix("TEXTINPUT "))
                 try receipt(text, inserted: nil, fixture: fixture)
                 session.poll()
-                XCTAssertEqual(session.sendText("must stay refused"), .refused)
+                XCTAssertEqual(session.sendText("ab"), .legacyAttempted, "later input takes basic input")
             }
             let before = try fixture.commands()
             // These are the public session paths used by mouseUp, focus loss and Pause, Stop or teardown.
@@ -46,8 +46,10 @@ final class HvfFailedPointerReleaseTests: XCTestCase {
                 let payload = Data(base64Encoded: String(fields[2])).map { String(decoding: $0, as: UTF8.self) }
                 XCTAssertTrue(payload?.hasPrefix("release:") == true, "Expected left release, got \(payload ?? "invalid")")
             } else { XCTFail("Expected encoded cleanup command") }
-            if failed { XCTAssertEqual(session.sendText("still refused"), .refused) }
-            XCTAssertNil(try fixture.bytes(fixture.input))
+            if failed { XCTAssertEqual(session.sendText("cd"), .legacyAttempted) }
+            // The mouse-up goes there too; the HID mouse cannot release a SendInput press, so the cleanup above does.
+            let legacy = try fixture.bytes(fixture.input).map { String(decoding: $0, as: UTF8.self) }
+            XCTAssertEqual(legacy, failed ? "KEY text-hex:6162\nPOINTER release:16384x16384\nKEY text-hex:6364\n" : nil)
         }
     }
 

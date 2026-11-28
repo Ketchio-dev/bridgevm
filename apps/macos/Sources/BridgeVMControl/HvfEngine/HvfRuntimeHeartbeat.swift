@@ -2,8 +2,8 @@ import Foundation
 import SwiftUI
 
 /// Every runtime poll (100 ms, or 10 ms while ordered input is pumped) recomputes the guest
-/// heartbeat age. It is published here, not by `HvfEngineSession`, so those ticks re-render only
-/// the two heartbeat texts below instead of every session observer (the live display included).
+/// heartbeat age in whole seconds. It is published here, not by `HvfEngineSession`, and only when it
+/// changes, so those ticks re-render only the two heartbeat texts below, about once a second.
 @MainActor
 final class HvfRuntimeHeartbeat: ObservableObject {
     @Published var age: TimeInterval?
@@ -12,7 +12,7 @@ final class HvfRuntimeHeartbeat: ObservableObject {
 extension HvfEngineSession {
     var lastHeartbeatAge: TimeInterval? {
         get { heartbeat.age }
-        set { heartbeat.age = newValue }
+        set { if heartbeat.age != newValue { heartbeat.age = newValue } }
     }
 }
 
@@ -21,7 +21,7 @@ struct HvfRuntimeHeartbeatItem: View {
     @ObservedObject var heartbeat: HvfRuntimeHeartbeat
 
     var body: some View {
-        let value = heartbeat.age.map { String(format: "%.1f s ago", $0) } ?? "-"
+        let value = heartbeat.age.map { String(format: "%.0f s ago", $0) } ?? "-"
         VStack(alignment: .leading, spacing: 2) {
             Text("Last Guest Tools response").font(.caption).foregroundColor(.secondary)
             Text(value).font(.body.monospaced()).accessibilityIdentifier("bridgevm.windows.runtime.heartbeat")
@@ -36,7 +36,7 @@ struct RetainedRuntimeHeartbeatText: View {
 
     var body: some View {
         if let age = heartbeat.age {
-            Text("Last response \(age, specifier: "%.1f") s ago").font(.caption)
+            Text("Last response \(age, specifier: "%.0f") s ago").font(.caption)
         }
     }
 }

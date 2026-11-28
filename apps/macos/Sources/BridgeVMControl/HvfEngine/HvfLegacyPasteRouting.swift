@@ -38,8 +38,9 @@ extension HvfEngineSession {
 
     /// Text other than printable ASCII reaches Windows only through the agent: typed on the ordered route,
     /// or as a clipboard paste. Before the agent runs (the sign-in screen after a boot) it is refused, and
-    /// on a secure desktop (`fallback`: the lock screen, a UAC prompt) it would go through the Windows
-    /// clipboard. The display view then keeps the Mac's input source to Roman layouts.
+    /// on a secure desktop or after a request Windows never confirmed (`fallback`: the lock screen, a UAC
+    /// prompt, basic input) it would go through the Windows clipboard. The display view then keeps the Mac's
+    /// input source to Roman layouts.
     var guestTakesNonASCIIText: Bool {
         guard serviceStarted, case .connected = connectionState else { return false }
         return !inputDriver.router.fallback
