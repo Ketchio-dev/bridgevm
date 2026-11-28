@@ -307,7 +307,11 @@ impl HostSocketOutboundIpv4Handler {
             dst_port: tcp.dst_port,
         };
         if tcp.flags & TCP_FLAG_RST != 0 {
-            self.tcp_flows.remove(&key);
+            if let Some(flow) = self.tcp_flows.remove(&key) {
+                if flow.state == TcpProxyState::Opening {
+                    self.note_forward_answer(key.guest_port, false);
+                }
+            }
             return;
         }
         // Windows retries a lookup over TCP when the UDP answer was truncated;
@@ -363,6 +367,7 @@ impl HostSocketOutboundIpv4Handler {
             let syn_ack = TCP_FLAG_SYN | TCP_FLAG_ACK;
             if tcp.flags & syn_ack == syn_ack && tcp.ack == flow.our_seq.wrapping_add(1) {
                 flow.open_from_syn_ack(tcp);
+                self.note_forward_answer(key.guest_port, true);
             }
             return;
         }
@@ -616,9 +621,16 @@ impl HostSocketOutboundIpv4Handler {
                 }
             }
         }
-        for key in self.tcp_remove_scratch.drain(..) {
-            self.tcp_flows.remove(&key);
+        let mut removed = std::mem::take(&mut self.tcp_remove_scratch);
+        for key in removed.drain(..) {
+            // A forwarded connection still Opening here is one whose SYN the guest never answered.
+            if let Some(flow) = self.tcp_flows.remove(&key) {
+                if flow.state == TcpProxyState::Opening {
+                    self.note_forward_answer(key.guest_port, false);
+                }
+            }
         }
+        self.tcp_remove_scratch = removed;
     }
 
     pub(crate) fn poll_icmp(
