@@ -25,6 +25,6 @@ final class HvfBootFailureNoticeTests: XCTestCase {
         XCTAssertEqual(session.bootFailureNotice.text,
             "Windows can’t start because this VM’s disk has nothing to start. If you imported the disk, check that it has Windows 11 for Arm on it.")
         session.bootFailureNotice.dismiss()
-        XCTAssertNil(session.bootFailureNotice.text)
+        XCTAssertTrue(session.bootFailureNotice.dismissed)
     }
 }

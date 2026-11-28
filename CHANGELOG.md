@@ -80,6 +80,8 @@ All notable changes to BridgeVM are documented in this file.
 - A Windows copy made while another app briefly held the clipboard (such as
   clipboard history or Office) now still reaches the Mac. Needs the Guest
   Tools update.
+- When Windows can't start from the VM's disk, BridgeVM no longer also asks you
+  to restart Windows for Guest Tools.
 - When the VM's disk has nothing to start, such as an imported disk with
   Windows for Intel or AMD PCs, BridgeVM now says so instead of leaving the
   window on the firmware's text.
