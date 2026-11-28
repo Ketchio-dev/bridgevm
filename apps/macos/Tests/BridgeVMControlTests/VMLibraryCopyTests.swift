@@ -39,7 +39,7 @@ final class VMLibraryCopyTests: XCTestCase {
         let copiedDisk = copy.appendingPathComponent("disks/hvf-target.raw")
         let values = try copiedDisk.resourceValues(forKeys: [.fileSizeKey, .totalFileAllocatedSizeKey])
         XCTAssertEqual(values.fileSize, 128 * mib)
-        XCTAssertLessThanOrEqual(try XCTUnwrap(values.totalFileAllocatedSize), 16 * mib)
+        XCTAssertGreaterThanOrEqual(16 * mib, try XCTUnwrap(values.totalFileAllocatedSize))
         XCTAssertEqual(try Data(contentsOf: copiedDisk), try Data(contentsOf: disk))
         let copiedVars = copy.appendingPathComponent("vars.fd")
         XCTAssertEqual(try Data(contentsOf: copiedVars), Data([1, 2, 3]))
