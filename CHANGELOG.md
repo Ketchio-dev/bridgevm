@@ -57,6 +57,9 @@ All notable changes to BridgeVM are documented in this file.
 - "Keep Mac awake" no longer fails silently: when macOS refuses it, the
   library card of each running VM or Windows install says so and asks
   you to check the Mac's sleep settings.
+- Setting the Mac's clock back by more than a couple of seconds while
+  Windows runs now sets Windows' clock back too (through Guest Tools),
+  instead of leaving it ahead until the next restart.
 - In a VM whose Windows account isn't an administrator, BridgeVM no longer
   tries to update Guest Tools at every launch and reports "Guest Tools
   couldn't update" each time. That update can't work without administrator
