@@ -15,7 +15,7 @@ enum HvfGuestCommandError: Error, Equatable {
         case let .tooLong(actual, maximum):
             return "The command uses \(actual) bytes and the limit is \(maximum) bytes."
         case let .protocolVerb(verb):
-            return "Guest Tools reserve the uppercase command “\(verb)”. "
+            return "Guest Tools reserves the uppercase command “\(verb)”. "
                 + "Enter lowercase “\(verb.lowercased())” to run it in the Windows shell."
         }
     }

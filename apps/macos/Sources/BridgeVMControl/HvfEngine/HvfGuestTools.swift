@@ -3,8 +3,9 @@ import SwiftUI
 
 enum HvfGuestTools {
     static let missing = "Choose Install Guest Tools to enable clipboard sharing and shared folders."
-    static let nextStart = "Shut down Windows, start it again, then run install.cmd from the new drive."
-    static let attached = "Run install.cmd from the new drive in Windows and approve the administrator prompt."
+    /// BVTOOLS is the drive's label in Windows (scripts/build-guest-tools-volume.sh).
+    static let nextStart = "Shut down Windows, start it again, then run install.cmd from the BVTOOLS drive."
+    static let attached = "Run install.cmd from the BVTOOLS drive in Windows and approve the administrator prompt."
     static let failed = "Check the free space on your Mac, then choose Install Guest Tools again."
 
     static func image(_ config: HvfEngineConfig) -> URL? {

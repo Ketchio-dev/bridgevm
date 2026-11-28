@@ -28,7 +28,7 @@ final class HvfDisplayDriverNoticeTests: XCTestCase {
         XCTAssertTrue(HvfDisplayDriverNotice.unbound.offersInstall)
         XCTAssertFalse(HvfDisplayDriverNotice.restart.offersInstall)
         XCTAssertEqual(HvfDisplayDriverNotice.unbound.text,
-            "Windows has no driver for the new display adapter, so the desktop doesn’t resize with this window. Choose Install to install the driver again.")
+            "Windows has no driver for the new display adapter, so the desktop doesn’t resize with this window. Choose Install Driver to install it again.")
         report("")
         report("virtio=future")
         XCTAssertEqual(session.displayDriverNotice, .unbound, "Absent or unknown fields must not clear the notice")

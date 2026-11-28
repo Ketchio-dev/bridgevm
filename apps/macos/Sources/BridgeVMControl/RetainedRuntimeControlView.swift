@@ -19,7 +19,7 @@ struct RetainedRuntimeControlView: View {
                     Button("Dismiss", action: dismiss)
                         .accessibilityIdentifier("bridgevm.retained.runtime.dismiss")
                 }
-                // The same bounded event lines as the dashboard's Guest agent events, not Swift's debug form.
+                // The same bounded event lines as the dashboard's Guest Tools activity, not Swift's debug form.
                 Text(HvfEventFeedText.render(session.events))
                     .font(.caption.monospaced())
             }

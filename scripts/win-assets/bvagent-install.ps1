@@ -52,7 +52,7 @@ function Install-ToolsFiles([string]$Source, [string]$Staging, [string]$Target) 
 function Get-InstallFailureText($exception) {
     for ($cause = $exception; $null -ne $cause; $cause = $cause.InnerException) {
         if ($cause -is [ComponentModel.Win32Exception] -and $cause.NativeErrorCode -eq 1223) {
-            return 'Guest Tools need administrator approval. Run install.cmd again and choose Yes when Windows asks.'
+            return 'Guest Tools needs administrator approval. Run install.cmd again and choose Yes when Windows asks.'
         }
     }
     return 'Guest Tools could not be installed. Close this window and run install.cmd again.'
@@ -81,7 +81,7 @@ try {
     . (Join-Path $target 'bvagent-task.ps1')
     Register-ScheduledTask -TaskName 'BridgeVM Guest Agent' -Xml (Get-GuestAgentTaskXml $user (Join-Path $target 'bvagent.ps1')) -Force | Out-Null
     Start-ScheduledTask -TaskName 'BridgeVM Guest Agent'
-    Write-Host 'Guest Tools are installed. This window closes in a few seconds.'
+    Write-Host 'Guest Tools is installed. This window closes in a few seconds.'
     Start-Sleep -Seconds 3
 } catch {
     try {
