@@ -50,6 +50,10 @@ All notable changes to BridgeVM are documented in this file.
   spare, each of them now says so in one sentence and suggests stopping one or
   giving the VMs less memory in Settings. Before, macOS just started swapping
   and Windows and the Mac slowed down with no explanation. Nothing is refused.
+- The VM window no longer stutters once a second while it shows a VM that
+  BridgeVM did not start itself, such as one still running after the app was
+  quit and reopened. The check that this VM is still running now happens in
+  the background instead of pausing the window each time.
 - The terminal installer works on a Mac without the Xcode Command Line Tools.
   It used to call Python and `lipo`, which on such a Mac only open the "install
   developer tools" dialog, so it failed or wrongly said the app was not Apple
