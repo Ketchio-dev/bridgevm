@@ -26,6 +26,7 @@ final class LibraryDeletionPromptTests: XCTestCase {
         XCTAssertEqual(VMLibrary.deletionImpact(for: cfg, rootURL: root), .managedBundleDeleted, engine)
         XCTAssertEqual(VMLibrary.deletionTarget(for: cfg, rootURL: root)?.path, path, engine)
         let prompt = LibraryDeletionPrompt(config: cfg, rootURL: root)
+        XCTAssertEqual(prompt.title, "Delete this virtual machine?", engine)
         XCTAssertEqual(prompt.confirmTitle, "Delete \(cfg.name) and Its Disk", engine)
         XCTAssertEqual(prompt.message,
                        "This permanently deletes the VM settings, the virtual disk and any snapshots at \(path).", engine)
@@ -68,6 +69,7 @@ final class LibraryDeletionPromptTests: XCTestCase {
             XCTAssertEqual(VMLibrary.deletionImpact(for: cfg, rootURL: root), .registrationOnly, engine)
             XCTAssertNil(VMLibrary.deletionTarget(for: cfg, rootURL: root), engine)
             let prompt = LibraryDeletionPrompt(config: cfg, rootURL: root)
+            XCTAssertEqual(prompt.title, "Remove this virtual machine from the library?", engine)
             XCTAssertEqual(prompt.confirmTitle, "Remove \(slug) from Library", engine)
             XCTAssertEqual(prompt.message,
                            "This removes the VM from your library. Its files stay in \(external.path).", engine)
